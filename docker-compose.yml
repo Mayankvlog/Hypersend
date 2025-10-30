@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: hypersend_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=${MONGODB_URL}
+      - MONGODB_DB_NAME=hypersend
+      - SECRET_KEY=${SECRET_KEY}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    networks:
+      - hypersend_network
+
+  frontend:
+    build: ./frontend
+    container_name: hypersend_frontend
+    ports:
+      - "8550:8550"
+    environment:
+      - API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - hypersend_network
+
+networks:
+  hypersend_network:
+    driver: bridge
+
+volumes:
+  uploads:
