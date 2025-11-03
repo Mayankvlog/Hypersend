@@ -6,7 +6,7 @@ db = None
 
 
 async def connect_db():
-    """Connect to MongoDB Atlas"""
+    """Connect to MongoDB"""
     global client, db
     client = AsyncIOMotorClient(settings.MONGODB_URI)
     db = client.hypersend

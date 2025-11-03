@@ -10,7 +10,7 @@
 - 🎨 **Modern UI** - Elegant dark/light themes with Material Design 3
 - 📱 **Mobile-First** - Optimized for Android devices
 - 🐳 **Fully Dockerized** - Easy deployment with Docker Compose
-- 💾 **MongoDB Atlas** - Cloud database with free tier support
+- 💾 **MongoDB** - Self-hosted database (local or your server)
 - 🔒 **Local Storage** - No AWS S3 or Google Cloud dependencies
 
 ## 🛠️ Tech Stack
@@ -19,7 +19,7 @@
 |-------|-----------|---------|
 | **Frontend** | Flet (Python) | Cross-platform interactive UI |
 | **Backend** | FastAPI (Python) | RESTful API with async support |
-| **Database** | MongoDB Atlas | Cloud NoSQL database |
+| **Database** | MongoDB | Self-hosted NoSQL database |
 | **Auth** | PyJWT + Passlib | Secure token-based authentication |
 | **Files** | Local `/data` directory | 40 GB chunked upload/download |
 | **Container** | Docker + Docker Compose | Isolated deployment |
@@ -28,7 +28,7 @@
 
 - Python 3.11+
 - Docker & Docker Compose
-- MongoDB Atlas account (free tier available)
+- MongoDB Community Server (running locally or on your server)
 - 40+ GB storage for file uploads
 
 ## 🚀 Quick Start
@@ -40,15 +40,14 @@ cd hyper_send
 cp .env.example .env
 ```
 
-### 2. Configure MongoDB Atlas
+### 2. Configure MongoDB
 
-1. Create a free account at [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
-2. Create a new cluster
-3. Get your connection string
-4. Update `.env` file:
+1. Install MongoDB Community Server.
+2. Ensure mongod is running and accessible.
+3. Update `.env` file:
 
 ```env
-MONGODB_URL=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
+MONGODB_URI=mongodb://localhost:27017/hypersend
 SECRET_KEY=your-very-secure-random-secret-key-here
 ```
 
@@ -270,8 +269,8 @@ jobs:
 ## 🔒 Security Considerations
 
 - ✅ Change `SECRET_KEY` in production
-- ✅ Use strong MongoDB Atlas passwords
-- ✅ Enable MongoDB IP whitelist
+- ✅ Use strong MongoDB passwords
+- ✅ Bind MongoDB to private/local interfaces and restrict via firewall
 - ✅ Use HTTPS in production (reverse proxy with nginx/Caddy)
 - ✅ Implement rate limiting for uploads
 - ✅ Add virus scanning for uploaded files
@@ -298,8 +297,8 @@ find /data/uploads -mtime +30 -type f -delete
 
 **MongoDB Connection Issues:**
 - Check connection string format
-- Verify IP whitelist in MongoDB Atlas
-- Test connection: `ping` your cluster URL
+- Verify mongod bindIp and firewall rules
+- Test connection: `mongosh "mongodb://localhost:27017/hypersend"`
 
 **File Upload Fails:**
 - Check disk space: `df -h`
