@@ -182,8 +182,38 @@ CHUNK_SIZE = 5 * 1024 * 1024  # 5MB chunks (adjustable)
 git clone <your-repo>
 cd hyper_send
 cp .env.example .env
-# Edit .env with production values
+# Edit .env with production values (MONGODB_URI, SECRET_KEY, API_BASE_URL, DATA_ROOT)
 docker-compose up -d
+```
+
+#### Nginx reverse proxy (HTTPS, WebSocket, large uploads)
+Example TLS config (Let’s Encrypt paths). Adjust domains.
+
+```nginx
+# HTTP → HTTPS
+server {
+  listen 80; server_name api.yourdomain.com;
+  return 301 https://$host$request_uri;
+}
+# API behind Uvicorn (WS + large uploads)
+server {
+  listen 443 ssl http2; server_name api.yourdomain.com;
+  ssl_certificate /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/api.yourdomain.com/privkey.pem;
+
+  client_max_body_size 0;
+  proxy_read_timeout 3600s;
+  proxy_send_timeout 3600s;
+  proxy_request_buffering off;
+
+  location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+}
 ```
 
 ### Option 2: Android APK Distribution
@@ -193,6 +223,49 @@ docker-compose up -d
    - **Pixeladz** - https://pixeladz.com
    - **Uptodown** - https://www.uptodown.com
    - Google Play Store (requires developer account)
+
+### ⚙️ CI/CD with GitHub Actions (example)
+Build Docker image on push and deploy to a VPS over SSH.
+
+```yaml
+name: deploy-backend
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'backend/**', 'docker-compose.yml', '.env.example' ]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t ghcr.io/${{ github.repository }}-backend:latest ./backend
+      - name: Login GHCR
+        run: echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Push image
+        run: docker push ghcr.io/${{ github.repository }}-backend:latest
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /srv/hypersend
+            docker compose pull && docker compose up -d --build
+```
+
+### 🧩 Appwrite (self‑hosted) — optional integration
+- Phase 1: store completed files in Appwrite Storage (bucket), keep FastAPI/Mongo for API/metadata.
+- Phase 2: move Auth to Appwrite Users. Keep P2P WebSocket relay in FastAPI.
+
+### 🔧 Environment notes
+- Backend expects `MONGODB_URI` (not `MONGODB_URL`). If your compose uses `MONGODB_URL`, rename it or set both.
+- For large files, ensure `DATA_ROOT=/data` and mount host `./data:/data` in compose.
+
+### 🐞 APK build tips
+- First build can take 10–20 minutes (Flutter/Gradle caches). Do not interrupt.
+- Pre-cache: `flutter precache --android` then `flet build apk --flutter-build-args "--stacktrace"`.
 
 ## 🔒 Security Considerations
 
