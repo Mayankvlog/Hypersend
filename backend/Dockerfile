@@ -2,18 +2,23 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Optional system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
-COPY app ./app
+# Copy backend source as a Python package at /app/backend
+COPY . /app/backend
 
-# Create data directory
-RUN mkdir -p /data/uploads
+# Runtime env
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    DATA_ROOT=/data
 
-# Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start FastAPI (imports from package "backend")
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

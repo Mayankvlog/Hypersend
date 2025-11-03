@@ -2,14 +2,17 @@ version: '3.8'
 
 services:
   backend:
+    image: ghcr.io/mayankvlog/hypersend-backend:latest
     build: ./backend
     container_name: hypersend_backend
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URL=${MONGODB_URL}
-      - MONGODB_DB_NAME=hypersend
+      - MONGODB_URI=${MONGODB_URI}
       - SECRET_KEY=${SECRET_KEY}
+      - DATA_ROOT=/data
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -32,6 +35,3 @@ services:
 networks:
   hypersend_network:
     driver: bridge
-
-volumes:
-  uploads:
