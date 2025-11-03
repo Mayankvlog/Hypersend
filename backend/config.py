@@ -6,7 +6,7 @@ load_dotenv()
 
 
 class Settings:
-    # MongoDB
+    # MongoDB (Local server - MongoDB Compass can connect to this)
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017/hypersend")
     
     # Security
