@@ -2,11 +2,8 @@ import httpx
 import os
 from typing import Optional, Dict, Any
 
-# Production backend URL (change after AWS deployment)
-API_BASE_URL = os.getenv("API_BASE_URL", "https://your-aws-backend-url.com")
-
-# For local development, set environment variable:
-# export API_BASE_URL=http://localhost:8000
+# Backend API URL - configurable via environment variable
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
 class APIClient:

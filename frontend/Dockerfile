@@ -8,7 +8,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY app.py .
+COPY api_client.py .
+COPY theme.py .
+COPY update_manager.py .
 COPY assets ./assets
+COPY views ./views
+COPY __init__.py .
 
 # Expose port
 EXPOSE 8550
