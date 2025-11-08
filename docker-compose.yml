@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    image: ghcr.io/mayankvlog/hypersend-backend:latest
+    image: ${DOCKERHUB_USERNAME:-mayankvlog}/hypersend-backend:latest
     build: ./backend
     container_name: hypersend_backend
     ports:

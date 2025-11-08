@@ -1,0 +1,114 @@
+name: Deploy to DigitalOcean via DockerHub
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy-dockerhub.yml'
+  workflow_dispatch:
+
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  IMAGE_BACKEND: hypersend-backend
+  IMAGE_FRONTEND: hypersend-frontend
+
+jobs:
+  build-and-push:
+    name: Build and Push to DockerHub
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_BACKEND }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_BACKEND }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_BACKEND }}:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_BACKEND }}:buildcache,mode=max
+          platforms: linux/amd64
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_FRONTEND }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_FRONTEND }}:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_FRONTEND }}:buildcache,mode=max
+          platforms: linux/amd64
+
+  deploy:
+    name: Deploy to VPS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to DigitalOcean VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            # Navigate to project directory
+            cd ~/Hypersend || exit 1
+            
+            # Pull latest code
+            git pull origin main
+            
+            # Login to DockerHub
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            
+            # Pull latest images
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_BACKEND }}:latest
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_FRONTEND }}:latest
+            
+            # Stop and remove old containers
+            docker-compose down
+            
+            # Start new containers
+            docker-compose up -d
+            
+            # Clean up old images
+            docker image prune -af
+            
+            # Show running containers
+            echo "=== Running Containers ==="
+            docker-compose ps
+            
+            # Show logs (last 50 lines)
+            echo "=== Recent Logs ==="
+            docker-compose logs --tail=50
+
+      - name: Health Check
+        run: |
+          echo "Waiting 30 seconds for services to start..."
+          sleep 30
+          
+          echo "Checking backend health..."
+          curl -f http://${{ secrets.VPS_HOST }}:8000/health || exit 1
+          
+          echo "✅ Deployment successful!"
