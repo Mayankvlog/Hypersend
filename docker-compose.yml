@@ -20,6 +20,7 @@ services:
       - hypersend_network
 
   frontend:
+    image: ${DOCKERHUB_USERNAME:-mayankvlog}/hypersend-frontend:latest
     build: ./frontend
     container_name: hypersend_frontend
     ports:

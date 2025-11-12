@@ -9,7 +9,7 @@ from typing import Optional
 from frontend.update_manager import check_app_updates
 
 # API Configuration
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_BASE_URL", os.getenv("API_URL", "http://localhost:8000"))
 
 class HyperSendApp:
     def __init__(self, page: ft.Page):
