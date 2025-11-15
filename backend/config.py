@@ -34,7 +34,8 @@ class Settings:
     RATE_LIMIT_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
     
     # Development
-    DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+    # Default DEBUG to False for production safety; enable explicitly via env when needed
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
     
     @classmethod
     def init_directories(cls):

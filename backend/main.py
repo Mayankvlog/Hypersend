@@ -13,7 +13,8 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     await connect_db()
-    print(f"🚀 HyperSend API running on {settings.API_HOST}:{settings.API_PORT}")
+    if settings.DEBUG:
+        print(f"🚀 HyperSend API running on {settings.API_HOST}:{settings.API_PORT}")
     yield
     # Shutdown
     await close_db()

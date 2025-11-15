@@ -10,7 +10,13 @@ async def connect_db():
     global client, db
     client = AsyncIOMotorClient(settings.MONGODB_URI)
     db = client.hypersend
-    print(f"✅ Connected to MongoDB: {settings.MONGODB_URI.split('@')[-1]}")
+    # Avoid leaking full connection string in logs; only log when DEBUG is enabled
+    if settings.DEBUG:
+        try:
+            safe_uri = settings.MONGODB_URI.split("@")[-1]
+        except Exception:
+            safe_uri = "[redacted]"
+        print(f"✅ Connected to MongoDB: {safe_uri}")
 
 
 async def close_db():
@@ -18,7 +24,8 @@ async def close_db():
     global client
     if client:
         client.close()
-        print("🔌 MongoDB connection closed")
+        if settings.DEBUG:
+            print("🔌 MongoDB connection closed")
 
 
 def get_db():

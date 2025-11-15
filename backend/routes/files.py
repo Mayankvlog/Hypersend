@@ -29,9 +29,16 @@ async def init_upload(file_req: FileInitRequest, current_user: str = Depends(get
             detail=f"File size exceeds maximum of {settings.MAX_FILE_SIZE_BYTES} bytes"
         )
     
-    # Check user quota
+    # Check user quota (use safe defaults if fields are missing)
     user = await users_collection().find_one({"_id": current_user})
-    if user["quota_used"] + file_req.size > user["quota_limit"]:
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    quota_used = user.get("quota_used", 0)
+    quota_limit = user.get("quota_limit", settings.MAX_FILE_SIZE_BYTES)
+    if quota_used + file_req.size > quota_limit:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Quota exceeded"
