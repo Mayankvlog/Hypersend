@@ -310,24 +310,5 @@ find /data/uploads -mtime +30 -type f -delete
 - Check `API_URL` environment variable
 - Verify CORS settings in `backend/app/main.py`
 
-## 📝 License
-
-MIT License - feel free to use for personal or commercial projects.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
-## 📧 Support
-
-For issues and questions:
-- GitHub Issues: [Create an issue]
-- Email: support@hypersend.app
-
----
 
 **Built with ❤️ using Python, FastAPI, Flet, and MongoDB**
