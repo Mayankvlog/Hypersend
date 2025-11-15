@@ -36,7 +36,8 @@
 ### 1. Clone & Setup
 
 ```bash
-cd hyper_send
+git clone https://github.com/Mayankvlog/Hypersend.git
+cd Hypersend
 cp .env.example .env
 ```
 
@@ -70,9 +71,9 @@ docker-compose up -d
 
 **Backend:**
 ```bash
-cd backend
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
+# from project root
+pip install -r backend/requirements.txt
+python -m uvicorn backend.main:app --reload
 ```
 
 **Frontend:**
