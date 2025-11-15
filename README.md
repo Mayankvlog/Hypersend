@@ -255,10 +255,6 @@ jobs:
             docker compose pull && docker compose up -d --build
 ```
 
-### 🧩 Appwrite (self‑hosted) — optional integration
-- Phase 1: store completed files in Appwrite Storage (bucket), keep FastAPI/Mongo for API/metadata.
-- Phase 2: move Auth to Appwrite Users. Keep P2P WebSocket relay in FastAPI.
-
 ### 🔧 Environment notes
 - Backend expects `MONGODB_URI` (not `MONGODB_URL`). If your compose uses `MONGODB_URL`, rename it or set both.
 - For large files, ensure `DATA_ROOT=/data` and mount host `./data:/data` in compose.
