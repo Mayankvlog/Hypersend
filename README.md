@@ -159,15 +159,6 @@ hyper_send/
 - `GET /files/{file_id}/info` - Get file info
 - `DELETE /files/{file_id}` - Delete file
 
-## 🎨 Customization
-
-### Theme Colors (frontend/app.py)
-```python
-self.primary_color = "#0088cc"  # Telegram blue
-self.bg_dark = "#0e1621"
-self.bg_light = "#17212b"
-```
-
 ### File Chunk Size (backend/app/routes/files.py)
 ```python
 CHUNK_SIZE = 5 * 1024 * 1024  # 5MB chunks (adjustable)
