@@ -78,9 +78,8 @@ python -m uvicorn backend.main:app --reload
 
 **Frontend:**
 ```bash
-cd frontend
-pip install -r requirements.txt
-python app.py
+pip install -r frontent/requirements.txt
+python -m frontend.app
 ```
 
 ## 📱 Building Android APK
