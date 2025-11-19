@@ -194,23 +194,10 @@ class HyperSendApp:
             on_click=toggle_mode
         )
         
-        # Logo
-        logo = ft.Container(
-            content=ft.Column(
-                [
-                    ft.Icon(icons.SEND_ROUNDED, size=80, color=self.primary_color)
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=10
-            ),
-            margin=ft.margin.only(bottom=50)
-        )
-        
         self.page.controls = [
             ft.Container(
                 content=ft.Column(
                     [
-                        logo,
                         email_field,
                         username_field,
                         password_field,
@@ -221,8 +208,8 @@ class HyperSendApp:
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=15
                 ),
-                padding=30,
-                alignment=ft.alignment.center,
+                padding=ft.padding.only(left=30, right=30, top=150, bottom=30),
+                alignment=ft.alignment.top_center,
                 expand=True
             )
         ]
