@@ -1,5 +1,10 @@
 import flet as ft
-from frontend.theme import PRIMARY_COLOR, SPACING_SMALL, SPACING_MEDIUM
+from frontend.theme import (
+    PRIMARY_COLOR,
+    SPACING_SMALL,
+    SPACING_MEDIUM,
+    TEXT_BLACK,
+)
 
 
 class ChatsView(ft.Container):
@@ -24,13 +29,13 @@ class ChatsView(ft.Container):
                 ft.Container(
                     content=ft.Row(
                         [
-                            ft.Text("HyperSend", size=20, weight=ft.FontWeight.BOLD),
+                            ft.Container(expand=True),
                             ft.IconButton(
                                 icon=ft.icons.LOGOUT,
                                 on_click=lambda e: self.page.run_task(self.handle_logout, e)
                             )
                         ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                        alignment=ft.MainAxisAlignment.END
                     ),
                     padding=SPACING_MEDIUM,
                     bgcolor=PRIMARY_COLOR
@@ -52,6 +57,7 @@ class ChatsView(ft.Container):
     
     async def load_chats(self):
         """Load user's chats"""
+        print("DEBUG: ChatsView.load_chats FROM_LOCAL_FILE")
         try:
             data = await self.api_client.list_chats()
             self.chat_list.controls.clear()
@@ -68,7 +74,7 @@ class ChatsView(ft.Container):
                     ], spacing=SPACING_MEDIUM),
                     padding=SPACING_MEDIUM
                 ),
-                on_click=lambda e: self.page.run_task(self.open_saved_messages)
+                on_click=lambda e: self.page.run_task(self.open_saved_messages_view)
             )
             self.chat_list.controls.append(saved_card)
             
@@ -88,60 +94,72 @@ class ChatsView(ft.Container):
             print(f"Error loading chats: {e}")
     
     def create_chat_card(self, chat):
-        """Create a chat list item"""
+        """Create a chat list item (Telegram-style: white card + black name)"""
         chat_name = chat.get("name", "Private Chat")
         last_msg = chat.get("last_message", {}).get("text", "No messages")
         
         return ft.Card(
+            color=ft.colors.WHITE,
+            surface_tint_color=ft.colors.TRANSPARENT,
             content=ft.Container(
-                content=ft.Column([
-                    ft.Text(chat_name, weight=ft.FontWeight.BOLD),
-                    ft.Text(last_msg, size=12, opacity=0.7, max_lines=1)
-                ]),
-                padding=SPACING_MEDIUM
+                content=ft.Row(
+                    controls=[
+                        ft.CircleAvatar(
+                            radius=18,
+                            bgcolor=ft.colors.BLUE_100,
+                            content=ft.Text(
+                                (chat_name or "?")[:2].upper(),
+                                color=TEXT_BLACK,
+                                weight=ft.FontWeight.BOLD,
+                                size=12,
+                            ),
+                        ),
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    chat_name,
+                                    weight=ft.FontWeight.BOLD,
+                                    color=TEXT_BLACK,
+                                    size=14,
+                                ),
+                                ft.Text(
+                                    last_msg,
+                                    size=12,
+                                    color=ft.colors.BLACK54,
+                                    max_lines=1,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                            ],
+                            spacing=2,
+                            expand=True,
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.START,
+                    spacing=SPACING_MEDIUM,
+                ),
+                padding=SPACING_MEDIUM,
             ),
-            on_click=lambda e, c=chat: self.open_chat(c)
+            on_click=lambda e, c=chat: self.open_chat(c),
         )
     
     def open_chat(self, chat):
         """Open chat detail view"""
-        from frontend.views.file_upload import FileUploadView
+        from frontend.views.message_view import MessageView
         
-        # Show file upload dialog
-        upload_view = FileUploadView(
+        # Show message view
+        message_view = MessageView(
             page=self.page,
             api_client=self.api_client,
-            chat_id=chat['_id'],
-            on_complete=lambda file_id: self.on_upload_complete(chat['_id'], file_id)
+            chat=chat,
+            current_user=self.current_user,
+            on_back=lambda: self.page.run_task(self.load_chats)
         )
         
-        # Show in dialog
-        dialog = ft.AlertDialog(
-            title=ft.Text(f"Upload to {chat.get('name', 'Private Chat')}"),
-            content=upload_view,
-            actions=[
-                ft.TextButton("Close", on_click=lambda e: self.close_dialog())
-            ],
-            modal=True
-        )
-        
-        self.page.dialog = dialog
-        dialog.open = True
+        self.page.clean()
+        self.page.add(message_view)
         self.page.update()
     
-    def on_upload_complete(self, chat_id: str, file_id: str):
-        """Handle upload completion"""
-        print(f"File {file_id} uploaded to chat {chat_id}")
-        self.close_dialog()
-        # Reload chats to show new message
-        self.page.run_task(self.load_chats)
     
-    def close_dialog(self):
-        """Close current dialog"""
-        if self.page.dialog:
-            self.page.dialog.open = False
-            self.page.update()
-
     async def open_saved_messages(self, e=None):
         """Open or create the Saved Messages chat and show upload UI to add content to it"""
         try:
@@ -152,6 +170,21 @@ class ChatsView(ft.Container):
             self.open_chat(chat)
         except Exception as ex:
             print(f"Failed to open Saved Messages: {ex}")
+
+    async def open_saved_messages_view(self, e=None):
+        """Open the Saved Messages view to display all saved messages"""
+        from frontend.views.saved_messages import SavedMessagesView
+        
+        saved_view = SavedMessagesView(
+            page=self.page,
+            api_client=self.api_client,
+            current_user=self.current_user,
+            on_back=lambda: self.page.run_task(self.load_chats)
+        )
+        
+        self.page.clean()
+        self.page.add(saved_view)
+        self.page.update()
     
     def new_chat(self, e):
         """Start new chat"""

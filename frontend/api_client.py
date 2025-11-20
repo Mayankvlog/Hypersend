@@ -142,6 +142,37 @@ class APIClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def save_message(self, message_id: str) -> Dict[str, Any]:
+        """Save a message to Saved Messages"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/messages/{message_id}/save",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def unsave_message(self, message_id: str) -> Dict[str, Any]:
+        """Unsave a message from Saved Messages"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/messages/{message_id}/unsave",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_saved_messages(self, limit: int = 50) -> Dict[str, Any]:
+        """Get all saved messages"""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_url}/messages/saved",
+                params={"limit": limit},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
     
     # File endpoints
     async def init_upload(self, filename: str, size: int, mime: str, chat_id: str, checksum: Optional[str] = None) -> Dict[str, Any]:
