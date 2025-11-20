@@ -41,10 +41,7 @@ class LoginView(ft.Container):
         
         # Layout
         self.content = ft.Column(
-            [
-                ft.Container(height=60),
-                ft.Icon(ft.icons.SEND_ROUNDED, size=80, color=PRIMARY_COLOR),
-                ft.Container(height=40),
+                [
                 self.name_field,
                 self.email_field,
                 self.password_field,
