@@ -14,11 +14,11 @@ API_URL = os.getenv("API_BASE_URL", os.getenv("API_URL", "http://localhost:8000"
 class HyperSendApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.page.title = "HyperSend"
+        self.page.title = ""
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
-        self.page.window_width = 400
-        self.page.window_height = 850
+        self.page.window.width = 400
+        self.page.window.height = 850
         
         # State
         self.token: Optional[str] = None
@@ -229,7 +229,50 @@ class HyperSendApp:
         
         def update_chat_list():
             chat_items = []
+            
+            # Add Saved Messages at the top
+            saved_messages_item = ft.Container(
+                content=ft.Row(
+                    [
+                        ft.CircleAvatar(
+                            content=ft.Icon(icons.BOOKMARK, size=24, color=ft.colors.WHITE),
+                            bgcolor=self.primary_color,
+                            radius=20
+                        ),
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    "Saved Messages",
+                                    size=16,
+                                    weight=ft.FontWeight.W_500,
+                                    color=ft.colors.BLACK
+                                ),
+                                ft.Text(
+                                    "Your personal collection",
+                                    size=13,
+                                    color=ft.colors.BLACK54
+                                )
+                            ],
+                            spacing=5,
+                            expand=True
+                        )
+                    ],
+                    spacing=15
+                ),
+                padding=15,
+                on_click=lambda e: self.show_saved_messages(),
+                ink=True,
+                bgcolor=ft.colors.WHITE
+            )
+            chat_items.append(saved_messages_item)
+            chat_items.append(ft.Divider(height=1, color=self.bg_light))
+            
+            # Add regular chats
             for chat in self.chats:
+                # Skip saved type chats from regular list
+                if chat.get("type") == "saved":
+                    continue
+                    
                 # Determine chat name and avatar based on backend schema
                 chat_name = chat.get("name") or ("Group Chat" if chat.get("type") == "group" else "Private Chat")
                 avatar = (
@@ -298,7 +341,7 @@ class HyperSendApp:
         
         # AppBar
         appbar = ft.AppBar(
-            title=ft.Text("HyperSend", weight=ft.FontWeight.BOLD),
+            title=ft.Text("", weight=ft.FontWeight.BOLD),
             center_title=False,
             bgcolor=self.bg_light,
             actions=[
@@ -323,9 +366,44 @@ class HyperSendApp:
         ]
         
         # Load chats
-        asyncio.create_task(load_chats())
+        self.page.run_task(load_chats)
         self.page.update()
     
+    def show_saved_messages(self):
+        """Open the 'Saved Messages' chat if it exists, else show info page"""
+        # Find a chat marked as saved (type == 'saved')
+        saved_chat = next((c for c in self.chats if c.get("type") == "saved"), None)
+
+        if saved_chat:
+            # Re-use existing chat UI
+            self.show_chat(saved_chat)
+            return
+
+        # Fallback screen if backend has no saved chat yet
+        self.page.appbar = ft.AppBar(
+            leading=ft.IconButton(
+                icon=icons.ARROW_BACK,
+                icon_color=ft.colors.BLACK,
+                on_click=lambda e: self.show_chat_list(),
+            ),
+            title=ft.Text("Saved Messages", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
+            center_title=False,
+            bgcolor=ft.colors.WHITE,
+        )
+
+        self.page.controls = [
+            ft.Container(
+                content=ft.Text(
+                    "No saved messages chat is available yet.",
+                    color=self.text_secondary,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                alignment=ft.alignment.center,
+                expand=True,
+            )
+        ]
+        self.page.update()
+
     def show_chat(self, chat: dict):
         """Show chat messages"""
         self.current_chat = chat
@@ -509,7 +587,7 @@ class HyperSendApp:
         ]
         
         # Load messages
-        asyncio.create_task(load_messages())
+        self.page.run_task(load_messages)
         self.page.update()
     
     async def upload_file_chunked(self, file_path: str, chat_id: str):
