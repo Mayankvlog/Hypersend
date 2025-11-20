@@ -9,6 +9,24 @@ from backend.auth.utils import get_current_user
 router = APIRouter(tags=["Chats"])
 
 
+@router.get("/chats/saved", response_model=dict)
+async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)):
+    """Get or create the personal Saved Messages chat for the current user"""
+    existing = await chats_collection().find_one({"type": "saved", "members": current_user})
+    if existing:
+        return {"chat_id": existing["_id"], "chat": existing}
+
+    chat_doc = {
+        "_id": str(ObjectId()),
+        "type": "saved",
+        "name": "Saved Messages",
+        "members": [current_user],
+        "created_at": datetime.utcnow()
+    }
+    await chats_collection().insert_one(chat_doc)
+    return {"chat_id": chat_doc["_id"], "chat": chat_doc}
+
+
 @router.post("/chats", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_user)):
     """Create a new chat (private or group)"""
@@ -22,12 +40,24 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Private chats must have exactly 2 members"
         )
+    if chat.type == "saved" and len(chat.member_ids) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Saved chat must have exactly 1 member (yourself)"
+        )
     
-    # Check if private chat already exists
+    # Check if private or saved chat already exists
     if chat.type == "private":
         existing = await chats_collection().find_one({
             "type": "private",
             "members": {"$all": chat.member_ids}
+        })
+        if existing:
+            return {"chat_id": existing["_id"], "message": "Chat already exists"}
+    if chat.type == "saved":
+        existing = await chats_collection().find_one({
+            "type": "saved",
+            "members": current_user
         })
         if existing:
             return {"chat_id": existing["_id"], "message": "Chat already exists"}
@@ -40,6 +70,10 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
         "members": chat.member_ids,
         "created_at": datetime.utcnow()
     }
+
+    # Default name for saved chat
+    if chat_doc["type"] == "saved" and not chat_doc["name"]:
+        chat_doc["name"] = "Saved Messages"
     
     await chats_collection().insert_one(chat_doc)
     
@@ -149,3 +183,82 @@ async def send_message(
     await messages_collection().insert_one(msg_doc)
     
     return {"message_id": msg_doc["_id"], "created_at": msg_doc["created_at"]}
+
+
+@router.post("/messages/{message_id}/save", status_code=status.HTTP_200_OK)
+async def save_message(
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Save a message to Saved Messages"""
+    
+    # Find the message
+    message = await messages_collection().find_one({"_id": message_id})
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found"
+        )
+    
+    # Verify user is member of the chat
+    chat = await chats_collection().find_one({"_id": message["chat_id"], "members": current_user})
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this message"
+        )
+    
+    # Add user to saved_by list if not already there
+    if current_user not in message.get("saved_by", []):
+        await messages_collection().update_one(
+            {"_id": message_id},
+            {"$push": {"saved_by": current_user}}
+        )
+    
+    return {"status": "saved"}
+
+
+@router.post("/messages/{message_id}/unsave", status_code=status.HTTP_200_OK)
+async def unsave_message(
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Unsave a message from Saved Messages"""
+    
+    # Find the message
+    message = await messages_collection().find_one({"_id": message_id})
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found"
+        )
+    
+    # Verify user is member of the chat
+    chat = await chats_collection().find_one({"_id": message["chat_id"], "members": current_user})
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this message"
+        )
+    
+    # Remove user from saved_by list
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$pull": {"saved_by": current_user}}
+    )
+    
+    return {"status": "unsaved"}
+
+
+@router.get("/messages/saved")
+async def get_saved_messages(
+    current_user: str = Depends(get_current_user),
+    limit: int = 50
+):
+    """Get all messages saved by current user"""
+    
+    messages = []
+    async for msg in messages_collection().find({"saved_by": current_user}).sort("created_at", -1).limit(limit):
+        messages.append(msg)
+    
+    return {"messages": list(reversed(messages))}
