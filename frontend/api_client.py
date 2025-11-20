@@ -110,6 +110,16 @@ class APIClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def get_saved_chat(self) -> Dict[str, Any]:
+        """Get or create the Saved Messages chat for current user"""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_url}/chats/saved",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
     
     async def get_messages(self, chat_id: str, limit: int = 50) -> Dict[str, Any]:
         """Get messages in a chat"""
@@ -128,6 +138,37 @@ class APIClient:
             response = await client.post(
                 f"{self.base_url}/chats/{chat_id}/messages",
                 json={"chat_id": chat_id, "text": text, "file_id": file_id},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def save_message(self, message_id: str) -> Dict[str, Any]:
+        """Save a message to Saved Messages"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/messages/{message_id}/save",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def unsave_message(self, message_id: str) -> Dict[str, Any]:
+        """Unsave a message from Saved Messages"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/messages/{message_id}/unsave",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_saved_messages(self, limit: int = 50) -> Dict[str, Any]:
+        """Get all saved messages"""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_url}/messages/saved",
+                params={"limit": limit},
                 headers=self._get_headers()
             )
             response.raise_for_status()
