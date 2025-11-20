@@ -183,3 +183,82 @@ async def send_message(
     await messages_collection().insert_one(msg_doc)
     
     return {"message_id": msg_doc["_id"], "created_at": msg_doc["created_at"]}
+
+
+@router.post("/messages/{message_id}/save", status_code=status.HTTP_200_OK)
+async def save_message(
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Save a message to Saved Messages"""
+    
+    # Find the message
+    message = await messages_collection().find_one({"_id": message_id})
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found"
+        )
+    
+    # Verify user is member of the chat
+    chat = await chats_collection().find_one({"_id": message["chat_id"], "members": current_user})
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this message"
+        )
+    
+    # Add user to saved_by list if not already there
+    if current_user not in message.get("saved_by", []):
+        await messages_collection().update_one(
+            {"_id": message_id},
+            {"$push": {"saved_by": current_user}}
+        )
+    
+    return {"status": "saved"}
+
+
+@router.post("/messages/{message_id}/unsave", status_code=status.HTTP_200_OK)
+async def unsave_message(
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Unsave a message from Saved Messages"""
+    
+    # Find the message
+    message = await messages_collection().find_one({"_id": message_id})
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found"
+        )
+    
+    # Verify user is member of the chat
+    chat = await chats_collection().find_one({"_id": message["chat_id"], "members": current_user})
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this message"
+        )
+    
+    # Remove user from saved_by list
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$pull": {"saved_by": current_user}}
+    )
+    
+    return {"status": "unsaved"}
+
+
+@router.get("/messages/saved")
+async def get_saved_messages(
+    current_user: str = Depends(get_current_user),
+    limit: int = 50
+):
+    """Get all messages saved by current user"""
+    
+    messages = []
+    async for msg in messages_collection().find({"saved_by": current_user}).sort("created_at", -1).limit(limit):
+        messages.append(msg)
+    
+    return {"messages": list(reversed(messages))}

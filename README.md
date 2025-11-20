@@ -78,9 +78,8 @@ python -m uvicorn backend.main:app --reload
 
 **Frontend:**
 ```bash
-cd frontend
-pip install -r requirements.txt
-python app.py
+pip install -r frontent/requirements.txt
+python -m frontend.app
 ```
 
 ## 📱 Building Android APK
@@ -158,15 +157,6 @@ hyper_send/
 - `GET /files/download/{file_id}` - Download file
 - `GET /files/{file_id}/info` - Get file info
 - `DELETE /files/{file_id}` - Delete file
-
-## 🎨 Customization
-
-### Theme Colors (frontend/app.py)
-```python
-self.primary_color = "#0088cc"  # Telegram blue
-self.bg_dark = "#0e1621"
-self.bg_light = "#17212b"
-```
 
 ### File Chunk Size (backend/app/routes/files.py)
 ```python
