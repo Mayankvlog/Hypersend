@@ -56,6 +56,22 @@ class ChatsView(ft.Container):
             data = await self.api_client.list_chats()
             self.chat_list.controls.clear()
             
+            # Add Saved Messages card at the top
+            saved_card = ft.Card(
+                content=ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.icons.BOOKMARK, color=PRIMARY_COLOR),
+                        ft.Column([
+                            ft.Text("Saved Messages", weight=ft.FontWeight.BOLD),
+                            ft.Text("Your personal notes and bookmarks", size=12, opacity=0.7)
+                        ], expand=True)
+                    ], spacing=SPACING_MEDIUM),
+                    padding=SPACING_MEDIUM
+                ),
+                on_click=lambda e: self.page.run_task(self.open_saved_messages)
+            )
+            self.chat_list.controls.append(saved_card)
+            
             for chat in data.get("chats", []):
                 chat_card = self.create_chat_card(chat)
                 self.chat_list.controls.append(chat_card)
@@ -125,6 +141,17 @@ class ChatsView(ft.Container):
         if self.page.dialog:
             self.page.dialog.open = False
             self.page.update()
+
+    async def open_saved_messages(self, e=None):
+        """Open or create the Saved Messages chat and show upload UI to add content to it"""
+        try:
+            data = await self.api_client.get_saved_chat()
+            chat = data.get("chat")
+            if not chat:
+                return
+            self.open_chat(chat)
+        except Exception as ex:
+            print(f"Failed to open Saved Messages: {ex}")
     
     def new_chat(self, e):
         """Start new chat"""
