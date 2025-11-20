@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import uuid
 import jwt
+import hashlib
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -12,14 +13,28 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 
+def _normalize_password(password: str) -> str:
+    """
+    Normalize password to handle bcrypt's 72-byte limit.
+    Uses SHA256 hash of the password if it exceeds 72 bytes.
+    """
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        # Hash the password with SHA256 to reduce it to 64 bytes
+        return hashlib.sha256(password_bytes).hexdigest()
+    return password
+
+
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt"""
-    return pwd_context.hash(password)
+    normalized_password = _normalize_password(password)
+    return pwd_context.hash(normalized_password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    normalized_password = _normalize_password(plain_password)
+    return pwd_context.verify(normalized_password, hashed_password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
