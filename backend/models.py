@@ -104,6 +104,7 @@ class MessageInDB(BaseModel):
     text: Optional[str] = None
     file_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    saved_by: List[str] = []  # List of user IDs who saved this message
 
     class Config:
         populate_by_name = True
