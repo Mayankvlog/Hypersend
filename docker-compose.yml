@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    image: mayank035/hers:latest    
+    image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     ports:
       - "8000:8000"
@@ -33,4 +33,4 @@ services:
 
 networks:
   hypersend_network:
-    driver: bridge  
+   driver: bridge
