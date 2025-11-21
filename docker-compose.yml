@@ -33,4 +33,4 @@ services:
 
 networks:
   hypersend_network:
-   driver: bridge
+    driver: bridge
