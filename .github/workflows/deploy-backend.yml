@@ -42,5 +42,5 @@ jobs:
           script: |
             cd /hypersend/Hypersend
             git pull
-            docker compose -f docker-compose.backend.yml pull
-            docker compose -f docker-compose.backend.yml up -d
+            docker compose pull
+            docker compose up -d
