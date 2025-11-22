@@ -3,7 +3,7 @@ import os
 from typing import Optional, Dict, Any
 
 # Backend API URL - configurable via environment variable
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://139.59.82.105:8000")
 
 
 class APIClient:
