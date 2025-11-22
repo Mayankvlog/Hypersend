@@ -2,8 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    image: ${DOCKERHUB_USERNAME:-mayankvlog}/hypersend-backend:latest
-    build: ./backend
+    image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     ports:
       - "8000:8000"
@@ -20,8 +19,7 @@ services:
       - hypersend_network
 
   frontend:
-    image: ${DOCKERHUB_USERNAME:-mayankvlog}/hypersend-frontend:latest
-    build: ./frontend
+    image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     ports:
       - "8550:8550"
@@ -34,5 +32,5 @@ services:
       - hypersend_network
 
 networks:
-  hypersend_network:
-    driver: bridge
+  hypersend_network:  
+   driver: bridge

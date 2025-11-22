@@ -1,0 +1,46 @@
+name: Build & Deploy Backend
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/hypersend-backend
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Deploy to VPS (Docker Compose, password SSH)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            cd /hypersend/Hypersend
+            git pull
+            docker compose -f docker-compose.backend.yml pull
+            docker compose -f docker-compose.backend.yml up -d
