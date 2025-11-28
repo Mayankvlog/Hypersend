@@ -46,6 +46,12 @@ tmp/
 .pytest_cache/
 .coverage
 htmlcov/
+test_app.py
+
+# Temporary/Old folders
+.myenv/
+.qodo/
+~/
 
 # Logs
 *.log
