@@ -107,8 +107,6 @@ hypersend/
 │   ├── update_manager.py       # Auto-update checker
 │   ├── build_apk.py            # ⭐ NEW: Automated APK builder
 │   ├── .env.production         # ⭐ NEW: Production config
-│   ├── BUILD_APK.md            # ⭐ NEW: Build documentation
-│   ├── APK_BUILD_HINDI.md      # ⭐ NEW: Hindi guide
 │   ├── assets/                 # Images, icons
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -688,3 +686,4 @@ If you find this project useful, please give it a star! ⭐
 **Built with ❤️ by [Mayankvlog](https://github.com/Mayankvlog)**
 
 **Self-host your own Telegram/WhatsApp alternative today! 🚀**
+
