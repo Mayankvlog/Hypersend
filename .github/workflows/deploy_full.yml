@@ -64,10 +64,8 @@ jobs:
       - name: Encode docker-compose to base64
         id: encode
         run: |
-          base64 docker-compose.yml | tr -d '\n' > docker-compose.base64
-          echo "encoded<<EOF" >> $GITHUB_OUTPUT
-          cat docker-compose.base64 >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          encoded=$(base64 docker-compose.yml | tr -d '\n')
+          echo "encoded=$encoded" >> $GITHUB_OUTPUT
 
       - name: Ensure remote directory and write compose file
         uses: appleboy/ssh-action@v0.1.8
