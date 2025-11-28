@@ -1,24 +1,55 @@
 import flet as ft
-from flet import icons
+# Compatibility shims
+icons = ft.Icons
+colors = ft.Colors
+ft.colors = ft.Colors
 import httpx
 import asyncio
 import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
-from frontend.update_manager import check_app_updates
+from dotenv import load_dotenv
 
-# API Configuration
-API_URL = "http://139.59.82.105:8000"
+# Load environment variables
+load_dotenv()
+
+try:
+    from .update_manager import check_app_updates
+except Exception:  
+    async def check_app_updates(page: ft.Page):
+        return
+
+# API Configuration - use environment variable with fallback to localhost
+# For development: uses localhost:8000
+# For production: set API_BASE_URL environment variable
+API_URL = os.getenv("API_BASE_URL", "http://localhost:8000").strip()
+# Ensure we're using localhost for development if no env var is set
+if not os.getenv("API_BASE_URL"):
+    API_URL = "http://localhost:8000"
+
+# Debug mode - disable in production for better performance
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+
+def debug_log(msg: str):
+    """Log debug messages only when DEBUG is enabled"""
+    if DEBUG:
+        print(msg)
+
+debug_log(f"[CONFIG] API URL: {API_URL}")
 
 class HyperSendApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.page.title = ""
+        self.page.title = "HyperSend"
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
         self.page.window.width = 400
         self.page.window.height = 850
+        
+        # Performance optimizations for mobile
+        self.page.scroll = None  # Disable page-level scroll for better performance
+        self.page.auto_scroll = False
         
         # State
         self.token: Optional[str] = None
@@ -27,8 +58,13 @@ class HyperSendApp:
         self.chats: list = []
         self.messages: list = []
         
-        # HTTP client
-        self.client = httpx.AsyncClient(base_url=API_URL, timeout=60.0)
+        # HTTP client - optimized for production VPS with connection pooling
+        self.client = httpx.AsyncClient(
+            base_url=API_URL,
+            timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
+            http2=True  # Enable HTTP/2 for better performance
+        )
         
         # Theme colors
         self.primary_color = "#0088cc"
@@ -89,7 +125,14 @@ class HyperSendApp:
                 self.page.update()
                 return
             
+            # Show loading state
+            login_btn.disabled = True
+            login_btn.text = "Logging in..."
+            error_text.visible = False
+            self.page.update()
+            
             try:
+                debug_log(f"[LOGIN] Attempting login to {self.client.base_url}/api/v1/auth/login")
                 response = await self.client.post(
                     "/api/v1/auth/login",
                     json={
@@ -97,22 +140,66 @@ class HyperSendApp:
                         "password": password_field.value
                     }
                 )
+                debug_log(f"[LOGIN] Response status: {response.status_code}")
                 
                 if response.status_code == 200:
                     data = response.json()
                     self.token = data["access_token"]
+                    debug_log(f"[LOGIN] Token received, fetching user info")
+                    
                     # Fetch user info after login
                     self.client.headers["Authorization"] = f"Bearer {self.token}"
                     user_response = await self.client.get("/api/v1/users/me")
+                    
                     if user_response.status_code == 200:
                         self.current_user = user_response.json()
-                    self.show_chat_list()
+                        debug_log(f"[LOGIN] Success! User: {self.current_user.get('email')}")
+                        self.show_chat_list()
+                    else:
+                        error_text.value = "Login successful but failed to fetch user info"
+                        error_text.visible = True
+                        login_btn.disabled = False
+                        login_btn.text = "Login"
                 else:
-                    error_text.value = response.json().get("detail", "Login failed")
+                    # Handle specific error codes
+                    try:
+                        error_data = response.json()
+                        error_detail = error_data.get("detail", "Login failed")
+                    except Exception:
+                        error_detail = response.text[:100] if response.text else "Unknown error"
+                    
+                    if response.status_code == 401:
+                        error_text.value = "❌ Incorrect email or password"
+                    elif response.status_code == 500:
+                        error_text.value = f"⚠️ Server error: {error_detail}"
+                        debug_log(f"[LOGIN] 500 Error detail: {error_detail}")
+                    elif response.status_code == 503:
+                        error_text.value = "⚠️ Database connection error. Try again later."
+                    else:
+                        error_text.value = f"Login failed ({response.status_code}): {error_detail}"
+                    
                     error_text.visible = True
-            except Exception as ex:
-                error_text.value = f"Error: {str(ex)}"
+                    login_btn.disabled = False
+                    login_btn.text = "Login"
+                    
+            except httpx.TimeoutException as ex:
+                debug_log(f"[LOGIN] Timeout: {ex}")
+                error_text.value = "⏱️ Request timeout. Check your internet connection."
                 error_text.visible = True
+                login_btn.disabled = False
+                login_btn.text = "Login"
+            except httpx.ConnectError as ex:
+                debug_log(f"[LOGIN] Connection error: {ex}")
+                error_text.value = f"🔌 Cannot connect to server.\nURL: {API_URL}\n\n⚠️ SOLUTION:\n1. Start backend: python run_backend.py\n2. Backend must be listening on port 8000\n\nError: {str(ex)[:50]}"
+                error_text.visible = True
+                login_btn.disabled = False
+                login_btn.text = "Login"
+            except Exception as ex:
+                debug_log(f"[LOGIN] Unexpected error: {type(ex).__name__}: {ex}")
+                error_text.value = f"❗ Error: {str(ex)}"
+                error_text.visible = True
+                login_btn.disabled = False
+                login_btn.text = "Login"
             
             self.page.update()
         
@@ -123,7 +210,14 @@ class HyperSendApp:
                 self.page.update()
                 return
             
+            # Show loading state
+            login_btn.disabled = True
+            login_btn.text = "Registering..."
+            error_text.visible = False
+            self.page.update()
+            
             try:
+                debug_log(f"[REGISTER] Attempting registration for: {email_field.value}")
                 response = await self.client.post(
                     "/api/v1/auth/register",
                     json={
@@ -135,6 +229,8 @@ class HyperSendApp:
                 
                 if response.status_code == 201:
                     data = response.json()
+                    debug_log(f"[REGISTER] Registration successful, logging in...")
+                    
                     # Registration successful, now login
                     login_response = await self.client.post(
                         "/api/v1/auth/login",
@@ -148,16 +244,50 @@ class HyperSendApp:
                         self.token = login_data["access_token"]
                         self.current_user = data
                         self.client.headers["Authorization"] = f"Bearer {self.token}"
+                        debug_log(f"[REGISTER] Success! User: {email_field.value}")
                         self.show_chat_list()
                     else:
-                        error_text.value = "Registration successful but login failed"
+                        error_text.value = "Registration successful but auto-login failed. Please login manually."
                         error_text.visible = True
+                        login_btn.disabled = False
+                        login_btn.text = "Register"
                 else:
-                    error_text.value = response.json().get("detail", "Registration failed")
+                    try:
+                        error_data = response.json()
+                        error_detail = error_data.get("detail", "Registration failed")
+                    except Exception:
+                        error_detail = response.text[:100] if response.text else "Unknown error"
+                    
+                    if response.status_code == 400:
+                        error_text.value = "❌ Email already registered"
+                    elif response.status_code == 500:
+                        error_text.value = f"⚠️ Server error: {error_detail}"
+                        debug_log(f"[REGISTER] 500 Error: {error_detail}")
+                    else:
+                        error_text.value = f"Registration failed ({response.status_code}): {error_detail}"
+                    
                     error_text.visible = True
-            except Exception as ex:
-                error_text.value = f"Error: {str(ex)}"
+                    login_btn.disabled = False
+                    login_btn.text = "Register"
+                    
+            except httpx.TimeoutException as ex:
+                debug_log(f"[REGISTER] Timeout: {ex}")
+                error_text.value = "⏱️ Request timeout. Check your internet connection."
                 error_text.visible = True
+                login_btn.disabled = False
+                login_btn.text = "Register"
+            except httpx.ConnectError as ex:
+                debug_log(f"[REGISTER] Connection error: {ex}")
+                error_text.value = f"🔌 Cannot connect to server.\nURL: {API_URL}\n\n⚠️ SOLUTION:\n1. Start backend: python run_backend.py\n2. Backend must be listening on port 8000\n\nError: {str(ex)[:50]}"
+                error_text.visible = True
+                login_btn.disabled = False
+                login_btn.text = "Register"
+            except Exception as ex:
+                debug_log(f"[REGISTER] Unexpected error: {type(ex).__name__}: {ex}")
+                error_text.value = f"❗ Error: {str(ex)}"
+                error_text.visible = True
+                login_btn.disabled = False
+                login_btn.text = "Register"
             
             self.page.update()
         
@@ -194,6 +324,11 @@ class HyperSendApp:
             on_click=toggle_mode
         )
         
+        forgot_password_btn = ft.TextButton(
+            "Forgot Password?",
+            on_click=lambda e: self.show_forgot_password()
+        )
+        
         self.page.controls = [
             ft.Container(
                 content=ft.Column(
@@ -203,6 +338,7 @@ class HyperSendApp:
                         password_field,
                         error_text,
                         login_btn,
+                        forgot_password_btn,
                         register_btn
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -215,17 +351,264 @@ class HyperSendApp:
         ]
         self.page.update()
     
+    def show_forgot_password(self):
+        """Show forgot password screen"""
+        step = "email"  # email or reset
+        reset_token = None
+        
+        # Email step UI
+        email_field = ft.TextField(
+            label="Enter your email",
+            keyboard_type=ft.KeyboardType.EMAIL,
+            prefix_icon=icons.EMAIL,
+            filled=True,
+            autofocus=True
+        )
+        
+        email_submit_btn = ft.ElevatedButton(
+            "Request Reset",
+            style=ft.ButtonStyle(
+                color=ft.colors.WHITE,
+                bgcolor=self.primary_color,
+                padding=15
+            ),
+            width=300
+        )
+        
+        # Reset password step UI
+        token_field = ft.TextField(
+            label="Reset Token (check email)",
+            password=True,
+            prefix_icon=icons.VPN_KEY,
+            filled=True,
+            visible=False
+        )
+        
+        new_password_field = ft.TextField(
+            label="New Password",
+            password=True,
+            can_reveal_password=True,
+            prefix_icon=icons.LOCK,
+            filled=True,
+            visible=False
+        )
+        
+        confirm_password_field = ft.TextField(
+            label="Confirm Password",
+            password=True,
+            can_reveal_password=True,
+            prefix_icon=icons.LOCK,
+            filled=True,
+            visible=False
+        )
+        
+        reset_submit_btn = ft.ElevatedButton(
+            "Reset Password",
+            style=ft.ButtonStyle(
+                color=ft.colors.WHITE,
+                bgcolor=self.primary_color,
+                padding=15
+            ),
+            width=300,
+            visible=False
+        )
+        
+        error_text = ft.Text(
+            "",
+            color=ft.colors.RED,
+            size=12,
+            visible=False
+        )
+        
+        success_text = ft.Text(
+            "",
+            color=ft.colors.GREEN,
+            size=12,
+            visible=False
+        )
+        
+        info_text = ft.Text(
+            "Enter your email to receive a password reset token",
+            size=13,
+            color=ft.colors.GREY_700
+        )
+        
+        back_btn = ft.TextButton(
+            "← Back to Login",
+            on_click=lambda e: self.show_login()
+        )
+        
+        async def request_reset_clicked(e):
+            email = email_field.value.strip()
+            
+            if not email:
+                error_text.value = "Please enter your email"
+                error_text.visible = True
+                success_text.visible = False
+                self.page.update()
+                return
+            
+            email_submit_btn.disabled = True
+            email_submit_btn.text = "Sending..."
+            error_text.visible = False
+            success_text.visible = False
+            self.page.update()
+            
+            try:
+                response = await self.client.post(
+                    "/api/v1/auth/forgot-password",
+                    json={"email": email}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    nonlocal step, reset_token
+                    step = "reset"
+                    
+                    # Show reset form
+                    info_text.value = "Check your email for the reset token"
+                    email_field.visible = False
+                    email_submit_btn.visible = False
+                    
+                    token_field.visible = True
+                    new_password_field.visible = True
+                    confirm_password_field.visible = True
+                    reset_submit_btn.visible = True
+                    
+                    # If dev mode and token is in response, auto-fill it
+                    if "reset_token" in data:
+                        token_field.value = data["reset_token"]
+                        success_text.value = f"✅ Token: {data['reset_token'][:20]}..."
+                    else:
+                        success_text.value = f"✅ {data.get('message', 'Reset token sent to your email')}"
+                    
+                    success_text.visible = True
+                else:
+                    error_text.value = f"Error: {response.status_code}"
+                    error_text.visible = True
+                
+            except Exception as ex:
+                error_text.value = f"Error: {str(ex)}"
+                error_text.visible = True
+            finally:
+                email_submit_btn.disabled = False
+                email_submit_btn.text = "Request Reset"
+                self.page.update()
+        
+        async def reset_password_clicked(e):
+            token = token_field.value.strip()
+            password = new_password_field.value
+            confirm = confirm_password_field.value
+            
+            if not token or not password or not confirm:
+                error_text.value = "Please fill all fields"
+                error_text.visible = True
+                success_text.visible = False
+                self.page.update()
+                return
+            
+            if password != confirm:
+                error_text.value = "Passwords don't match"
+                error_text.visible = True
+                success_text.visible = False
+                self.page.update()
+                return
+            
+            if len(password) < 8:
+                error_text.value = "Password must be at least 8 characters"
+                error_text.visible = True
+                success_text.visible = False
+                self.page.update()
+                return
+            
+            reset_submit_btn.disabled = True
+            reset_submit_btn.text = "Resetting..."
+            error_text.visible = False
+            success_text.visible = False
+            self.page.update()
+            
+            try:
+                response = await self.client.post(
+                    "/api/v1/auth/reset-password",
+                    json={"token": token, "new_password": password}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    success_text.value = f"✅ {data.get('message', 'Password reset successful!')}"
+                    success_text.visible = True
+                    self.page.update()
+                    
+                    # Go back to login immediately
+                    await asyncio.sleep(0.5)
+                    self.show_login()
+                else:
+                    error_data = response.json() if response.status_code < 500 else {}
+                    error_text.value = error_data.get("detail", f"Error: {response.status_code}")
+                    error_text.visible = True
+                
+            except Exception as ex:
+                error_text.value = f"Error: {str(ex)}"
+                error_text.visible = True
+            finally:
+                reset_submit_btn.disabled = False
+                reset_submit_btn.text = "Reset Password"
+                self.page.update()
+        
+        email_submit_btn.on_click = lambda e: self.page.run_task(request_reset_clicked, e)
+        reset_submit_btn.on_click = lambda e: self.page.run_task(reset_password_clicked, e)
+        
+        self.page.controls = [
+            ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text("Reset Password", size=24, weight="bold", color=ft.colors.BLACK),
+                        ft.Container(height=10),
+                        info_text,
+                        ft.Container(height=20),
+                        email_field,
+                        token_field,
+                        new_password_field,
+                        confirm_password_field,
+                        error_text,
+                        success_text,
+                        ft.Container(height=20),
+                        email_submit_btn,
+                        reset_submit_btn,
+                        ft.Container(height=20),
+                        back_btn
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=12
+                ),
+                padding=ft.padding.only(left=30, right=30, top=100, bottom=30),
+                alignment=ft.alignment.top_center,
+                expand=True
+            )
+        ]
+        self.page.update()
+    
     def show_chat_list(self):
         """Show list of chats"""
         async def load_chats():
             try:
+                debug_log(f"[CHATS] Loading chats from {self.client.base_url}/api/v1/chats/")
                 response = await self.client.get("/api/v1/chats/")
+                debug_log(f"[CHATS] Response status: {response.status_code}")
+                
                 if response.status_code == 200:
                     payload = response.json()
                     self.chats = payload.get("chats", [])
+                    debug_log(f"[CHATS] Loaded {len(self.chats)} chats")
+                    update_chat_list()
+                else:
+                    debug_log(f"[CHATS] Failed to load chats: {response.status_code}")
+                    # Still call update to show at least Saved Messages
                     update_chat_list()
             except Exception as ex:
-                print(f"Error loading chats: {ex}")
+                debug_log(f"[CHATS] Error loading chats: {type(ex).__name__}: {ex}")
+                # Still show Saved Messages even if loading fails
+                update_chat_list()
         
         def update_chat_list():
             chat_items = []
@@ -365,7 +748,10 @@ class HyperSendApp:
             )
         ]
         
-        # Load chats
+        # Show Saved Messages immediately
+        update_chat_list()
+        
+        # Load chats in background
         self.page.run_task(load_chats)
         self.page.update()
     
