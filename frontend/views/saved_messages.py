@@ -42,7 +42,7 @@ class SavedMessagesView(ft.Container):
                         alignment=ft.MainAxisAlignment.START
                     ),
                     padding=SPACING_MEDIUM,
-                    bgcolor=ft.colors.WHITE,
+                    bgcolor=ft.Colors.WHITE,
                 ),
                 # Messages
                 self.messages_list,

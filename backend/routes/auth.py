@@ -1,12 +1,18 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from backend.models import UserCreate, UserLogin, Token, RefreshTokenRequest, UserInDB, UserResponse
-from backend.database import users_collection, refresh_tokens_collection
+from backend.models import (
+    UserCreate, UserLogin, Token, RefreshTokenRequest, UserInDB, UserResponse,
+    ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse
+)
+from backend.database import users_collection, refresh_tokens_collection, reset_tokens_collection
 from backend.auth.utils import (
     hash_password, verify_password, create_access_token, 
     create_refresh_token, decode_token, get_current_user
 )
-from datetime import datetime
+from backend.config import settings
+from datetime import datetime, timedelta
 from bson import ObjectId
+import asyncio
+import jwt
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -14,111 +20,475 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate):
     """Register a new user"""
-    users = users_collection()
-    
-    # Check if user already exists
-    existing_user = await users.find_one({"email": user.email})
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+    try:
+        print(f"[AUTH] Registration request for email: {user.email}")
+        
+        # Get users collection - this will raise RuntimeError if DB not connected
+        try:
+            users = users_collection()
+        except RuntimeError as e:
+            print(f"[AUTH] Database not initialized: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is unavailable. Please try again later."
+            )
+        
+        # Check if user already exists (with timeout)
+        try:
+            existing_user = await asyncio.wait_for(
+                users.find_one({"email": user.email}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Database query timeout for {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        if existing_user:
+            print(f"[AUTH] Registration failed - Email already exists: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Create user document
+        user_doc = {
+            "_id": str(ObjectId()),
+            "name": user.name,
+            "email": user.email,
+            "password_hash": hash_password(user.password),
+            "quota_used": 0,
+            "quota_limit": 42949672960,  # 40 GiB
+            "created_at": datetime.utcnow()
+        }
+        
+        try:
+            await asyncio.wait_for(
+                users.insert_one(user_doc),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Insert operation timeout for {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        print(f"[AUTH] User registered successfully: {user.email} (ID: {user_doc['_id']})")
+        
+        return UserResponse(
+            id=user_doc["_id"],
+            name=user_doc["name"],
+            email=user_doc["email"],
+            quota_used=user_doc["quota_used"],
+            quota_limit=user_doc["quota_limit"],
+            created_at=user_doc["created_at"]
         )
     
-    # Create user document
-    user_doc = {
-        "_id": str(ObjectId()),
-        "name": user.name,
-        "email": user.email,
-        "password_hash": hash_password(user.password),
-        "quota_used": 0,
-        "quota_limit": 42949672960,  # 40 GiB
-        "created_at": datetime.utcnow()
-    }
-    
-    await users.insert_one(user_doc)
-    
-    return UserResponse(
-        id=user_doc["_id"],
-        name=user_doc["name"],
-        email=user_doc["email"],
-        quota_used=user_doc["quota_used"],
-        quota_limit=user_doc["quota_limit"],
-        created_at=user_doc["created_at"]
-    )
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log the actual error for debugging
+        print(f"[AUTH] Registration failed with error: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed. Please try again."
+        )
 
 
 @router.post("/login", response_model=Token)
 async def login(credentials: UserLogin):
     """Login and receive JWT tokens"""
-    users = users_collection()
+    try:
+        print(f"[AUTH] Login attempt for email: {credentials.email}")
+        
+        # Get users collection
+        try:
+            users = users_collection()
+        except RuntimeError as e:
+            print(f"[AUTH] Database not initialized: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is unavailable. Please try again later."
+            )
+        
+        # Find user with timeout
+        try:
+            user = await asyncio.wait_for(
+                users.find_one({"email": credentials.email}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Database query timeout for {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        if not user:
+            print(f"[AUTH] Login failed - User not found: {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password"
+            )
+        
+        print(f"[AUTH] User found: {user.get('_id')} - Verifying password")
+        
+        # Verify password
+        if not verify_password(credentials.password, user["password_hash"]):
+            print(f"[AUTH] Login failed - Incorrect password for: {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password"
+            )
+        
+        print(f"[AUTH] Password verified - Creating tokens for user: {user.get('_id')}")
+        
+        # Create tokens
+        access_token = create_access_token(data={"sub": user["_id"]})
+        refresh_token, jti = create_refresh_token(data={"sub": user["_id"]})
+        
+        print(f"[AUTH] Tokens created - Storing refresh token")
+        
+        # Store refresh token with timeout
+        try:
+            await asyncio.wait_for(
+                refresh_tokens_collection().insert_one({
+                    "token": refresh_token,
+                    "jti": jti,
+                    "user_id": user["_id"],
+                    "created_at": datetime.utcnow()
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Database operation timeout storing refresh token")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        print(f"[AUTH] Login successful for: {credentials.email}")
+        
+        return Token(access_token=access_token, refresh_token=refresh_token)
     
-    # Find user
-    user = await users.find_one({"email": credentials.email})
-    if not user or not verify_password(credentials.password, user["password_hash"]):
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 401 Unauthorized)
+        raise
+    except Exception as e:
+        # Log the actual error for debugging
+        print(f"[AUTH] Login failed with unexpected error: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed. Please try again."
         )
-    
-    # Create tokens
-    access_token = create_access_token(data={"sub": user["_id"]})
-    refresh_token, jti = create_refresh_token(data={"sub": user["_id"]})
-    
-    # Store refresh token
-    await refresh_tokens_collection().insert_one({
-        "token": refresh_token,
-        "jti": jti,
-        "user_id": user["_id"],
-        "created_at": datetime.utcnow()
-    })
-    
-    return Token(access_token=access_token, refresh_token=refresh_token)
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(refresh_request: RefreshTokenRequest):
     """Refresh access token using refresh token"""
-    token_data = decode_token(refresh_request.refresh_token)
+    try:
+        token_data = decode_token(refresh_request.refresh_token)
+        
+        if token_data.token_type != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type"
+            )
+        
+        # Verify refresh token exists in database with timeout
+        try:
+            stored_token = await asyncio.wait_for(
+                refresh_tokens_collection().find_one({
+                    "token": refresh_request.refresh_token,
+                    "user_id": token_data.user_id
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Token verification timeout for user: {token_data.user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        if not stored_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+        
+        # Create new tokens
+        access_token = create_access_token(data={"sub": token_data.user_id})
+        new_refresh_token, new_jti = create_refresh_token(data={"sub": token_data.user_id})
+        
+        # Delete old refresh token with timeout
+        try:
+            await asyncio.wait_for(
+                refresh_tokens_collection().delete_one({"token": refresh_request.refresh_token}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Delete token timeout for user: {token_data.user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        # Store new refresh token with timeout
+        try:
+            await asyncio.wait_for(
+                refresh_tokens_collection().insert_one({
+                    "token": new_refresh_token,
+                    "jti": new_jti,
+                    "user_id": token_data.user_id,
+                    "created_at": datetime.utcnow()
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Insert token timeout for user: {token_data.user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        print(f"[AUTH] Token refresh successful for user: {token_data.user_id}")
+        return Token(access_token=access_token, refresh_token=new_refresh_token)
     
-    if token_data.token_type != "refresh":
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[AUTH] Token refresh failed: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh failed. Please try again."
         )
-    
-    # Verify refresh token exists in database
-    stored_token = await refresh_tokens_collection().find_one({
-        "token": refresh_request.refresh_token,
-        "user_id": token_data.user_id
-    })
-    
-    if not stored_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token"
-        )
-    
-    # Create new tokens
-    access_token = create_access_token(data={"sub": token_data.user_id})
-    new_refresh_token, new_jti = create_refresh_token(data={"sub": token_data.user_id})
-    
-    # Delete old refresh token and store new one
-    await refresh_tokens_collection().delete_one({"token": refresh_request.refresh_token})
-    await refresh_tokens_collection().insert_one({
-        "token": new_refresh_token,
-        "jti": new_jti,
-        "user_id": token_data.user_id,
-        "created_at": datetime.utcnow()
-    })
-    
-    return Token(access_token=access_token, refresh_token=new_refresh_token)
 
 
 @router.post("/logout")
 async def logout(refresh_request: RefreshTokenRequest, current_user: str = Depends(get_current_user)):
     """Logout by revoking refresh token"""
-    await refresh_tokens_collection().delete_one({
-        "token": refresh_request.refresh_token,
-        "user_id": current_user
-    })
-    return {"message": "Logged out successfully"}
+    try:
+        # Delete refresh token with timeout
+        try:
+            await asyncio.wait_for(
+                refresh_tokens_collection().delete_one({
+                    "token": refresh_request.refresh_token,
+                    "user_id": current_user
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Logout operation timeout for user: {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Logout operation timed out. Please try again."
+            )
+        
+        print(f"[AUTH] Logout successful for user: {current_user}")
+        return {"message": "Logged out successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[AUTH] Logout failed: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Logout failed. Please try again."
+        )
+
+
+# Password Reset Endpoints
+@router.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    """Request password reset token"""
+    
+    try:
+        print(f"[AUTH] Password reset request for email: {request.email}")
+        
+        users = users_collection()
+        
+        # Check if user exists (with timeout)
+        try:
+            user = await asyncio.wait_for(
+                users.find_one({"email": request.email}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[AUTH] Database query timeout for {request.email}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        if not user:
+            # Return success anyway (security: don't reveal if email exists)
+            print(f"[AUTH] Password reset requested for non-existent email: {request.email}")
+            return {
+                "message": "If an account exists with this email, a password reset link has been sent.",
+                "success": True
+            }
+        
+        # Create password reset token (valid for 1 hour)
+        reset_token = create_access_token(
+            data={"sub": str(user["_id"]), "type": "password_reset"},
+            expires_delta=timedelta(hours=1)
+        )
+        
+        # Store reset token in database
+        reset_tokens = reset_tokens_collection()
+        try:
+            await asyncio.wait_for(
+                reset_tokens.insert_one({
+                    "token": reset_token,
+                    "user_id": str(user["_id"]),
+                    "email": request.email,
+                    "created_at": datetime.utcnow(),
+                    "expires_at": datetime.utcnow() + timedelta(hours=1),
+                    "used": False
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to generate reset token. Please try again."
+            )
+        
+        # TODO: Send email with reset link containing the token
+        # For now, we'll return the token in response (for testing/development)
+        print(f"[AUTH] Password reset token generated for: {request.email}")
+        
+        return {
+            "message": "If an account exists with this email, a password reset link has been sent.",
+            "success": True,
+            "reset_token": reset_token  # For development - remove in production
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[AUTH] Forgot password failed: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process password reset request."
+        )
+
+
+@router.post("/reset-password", response_model=PasswordResetResponse)
+async def reset_password(request: PasswordResetRequest):
+    """Reset password using reset token"""
+    
+    try:
+        print(f"[AUTH] Password reset attempt")
+        
+        # Validate reset token by decoding JWT directly
+        try:
+            payload = jwt.decode(request.token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            token_type = payload.get("type")
+            if token_type != "password_reset":
+                print(f"[AUTH] Invalid token type: {token_type}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid reset token type"
+                )
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid reset token"
+                )
+        except jwt.ExpiredSignatureError:
+            print(f"[AUTH] Reset token expired")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset token has expired"
+            )
+        except jwt.JWTError as e:
+            print(f"[AUTH] Invalid reset token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+        except Exception as e:
+            print(f"[AUTH] Unexpected error decoding token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+        
+        users = users_collection()
+        reset_tokens = reset_tokens_collection()
+        
+        # Check if token was already used (with timeout)
+        try:
+            token_record = await asyncio.wait_for(
+                reset_tokens.find_one({"token": request.token}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        
+        if not token_record or token_record.get("used"):
+            print(f"[AUTH] Reset token already used or not found")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+        
+        # Update user password (with timeout)
+        hashed_password = hash_password(request.new_password)
+        try:
+            await asyncio.wait_for(
+                users.update_one(
+                    {"_id": ObjectId(user_id)},
+                    {"$set": {"password_hash": hashed_password}}
+                ),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to update password. Please try again."
+            )
+        
+        # Mark token as used
+        try:
+            await asyncio.wait_for(
+                reset_tokens.update_one(
+                    {"token": request.token},
+                    {"$set": {"used": True}}
+                ),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            pass  # Non-critical, continue anyway
+        
+        print(f"[AUTH] Password reset successful for user: {user_id}")
+        return PasswordResetResponse(
+            message="Password has been reset successfully. Please login with your new password.",
+            success=True
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[AUTH] Password reset failed: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset password. Please try again."
+        )
+

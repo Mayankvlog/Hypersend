@@ -1,15 +1,19 @@
 import httpx
 import json
 import asyncio
+import os
 from pathlib import Path
 import flet as ft
 from datetime import datetime
 
 class UpdateManager:
     def __init__(self):
-        self.current_version = "1.0.0"  # This should match pyproject.toml
-        self.update_server_url = "https://your-server.com/api/updates"  # Your update server
-        self.client = httpx.AsyncClient()
+        self.current_version = "1.0.0" 
+        self.update_server_url = os.getenv("UPDATE_SERVER_URL", "http://localhost:8000/api/updates")
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=5.0),
+            limits=httpx.Limits(max_keepalive_connections=2, max_connections=5)
+        )
     
     async def check_for_updates(self) -> dict:
         """Check if updates are available"""

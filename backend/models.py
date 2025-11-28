@@ -71,6 +71,21 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+# Password Reset Models
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+
+
+class PasswordResetResponse(BaseModel):
+    message: str
+    success: bool
+
+
 # Chat Models
 class ChatCreate(BaseModel):
     type: str = "private"  # private or group
@@ -91,7 +106,6 @@ class ChatInDB(BaseModel):
 
 # Message Models
 class MessageCreate(BaseModel):
-    chat_id: str
     text: Optional[str] = None
     file_id: Optional[str] = None
 

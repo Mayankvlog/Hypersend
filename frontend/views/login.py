@@ -3,11 +3,12 @@ from frontend.theme import PRIMARY_COLOR, SPACING_MEDIUM, SPACING_LARGE, BORDER_
 
 
 class LoginView(ft.Container):
-    def __init__(self, page, api_client, on_success):
+    def __init__(self, page, api_client, on_success, on_forgot_password):
         super().__init__()
         self.page = page
         self.api_client = api_client
         self.on_success = on_success
+        self.on_forgot_password = on_forgot_password
         self.is_login_mode = True
         
         # UI Elements
@@ -27,7 +28,7 @@ class LoginView(ft.Container):
             password=True,
             can_reveal_password=True
         )
-        self.error_text = ft.Text("", color=ft.colors.RED_400, visible=False)
+        self.error_text = ft.Text("", color=ft.Colors.RED_400, visible=False)
         self.submit_button = ft.ElevatedButton(
             "Login",
             on_click=lambda e: self.page.run_task(self.handle_submit, e),
@@ -37,6 +38,11 @@ class LoginView(ft.Container):
         self.toggle_button = ft.TextButton(
             "Don't have an account? Register",
             on_click=self.toggle_mode
+        )
+        self.forgot_password_button = ft.TextButton(
+            "Forgot Password?",
+            on_click=on_forgot_password,
+            visible=True  # Only visible in login mode
         )
         
         # Layout
@@ -48,6 +54,7 @@ class LoginView(ft.Container):
                 self.error_text,
                 ft.Container(height=20),
                 self.submit_button,
+                self.forgot_password_button,
                 self.toggle_button,
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -63,6 +70,7 @@ class LoginView(ft.Container):
         self.name_field.visible = not self.is_login_mode
         self.submit_button.text = "Login" if self.is_login_mode else "Register"
         self.toggle_button.text = "Don't have an account? Register" if self.is_login_mode else "Already have an account? Login"
+        self.forgot_password_button.visible = self.is_login_mode  # Only show in login mode
         self.error_text.visible = False
         self.page.update()
     

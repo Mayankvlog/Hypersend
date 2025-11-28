@@ -20,8 +20,6 @@ except Exception:
     async def check_app_updates(page: ft.Page):
         return
 
-# API Configuration - use environment variable with fallback to localhost
-# For development: uses localhost:8000
 # For production: set API_BASE_URL environment variable
 API_URL = os.getenv("API_BASE_URL", "http://localhost:8000").strip()
 # Ensure we're using localhost for development if no env var is set

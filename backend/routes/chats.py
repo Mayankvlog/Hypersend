@@ -6,10 +6,10 @@ from backend.models import ChatCreate, ChatInDB, MessageCreate, MessageInDB, Use
 from backend.database import chats_collection, messages_collection, users_collection
 from backend.auth.utils import get_current_user
 
-router = APIRouter(tags=["Chats"])
+router = APIRouter(prefix="/chats", tags=["Chats"])
 
 
-@router.get("/chats/saved", response_model=dict)
+@router.get("/saved", response_model=dict)
 async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)):
     """Get or create the personal Saved Messages chat for the current user"""
     existing = await chats_collection().find_one({"type": "saved", "members": current_user})
@@ -27,7 +27,7 @@ async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)
     return {"chat_id": chat_doc["_id"], "chat": chat_doc}
 
 
-@router.post("/chats", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_user)):
     """Create a new chat (private or group)"""
     
@@ -80,7 +80,7 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
     return {"chat_id": chat_doc["_id"], "message": "Chat created"}
 
 
-@router.get("/chats/{chat_id}")
+@router.get("/{chat_id}")
 async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     """Get chat details"""
     
@@ -94,8 +94,7 @@ async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     return chat
 
 
-@router.get("/chats")
-@router.get("/chats/")
+@router.get("/")
 async def list_chats(current_user: str = Depends(get_current_user)):
     """List all chats for current user"""
     
@@ -113,7 +112,7 @@ async def list_chats(current_user: str = Depends(get_current_user)):
     return {"chats": chats}
 
 
-@router.get("/chats/{chat_id}/messages")
+@router.get("/{chat_id}/messages")
 async def get_messages(
     chat_id: str,
     limit: int = 50,
@@ -145,7 +144,7 @@ async def get_messages(
     return {"messages": list(reversed(messages))}
 
 
-@router.post("/chats/{chat_id}/messages", status_code=status.HTTP_201_CREATED)
+@router.post("/{chat_id}/messages", status_code=status.HTTP_201_CREATED)
 async def send_message(
     chat_id: str,
     message: MessageCreate,
