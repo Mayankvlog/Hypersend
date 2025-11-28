@@ -43,12 +43,10 @@ jobs:
             set -e
             cd /hypersend/Hypersend || { echo "❌ Directory /hypersend/Hypersend not found"; exit 1; }
 
-            # Configure git pull strategy to avoid "Need to specify how to reconcile divergent branches" error
-            git config pull.rebase false
-
-            # Update repo from GitHub (stash any local changes like .env)
-            git stash || true
-            git pull origin main
+            # Safely sync repo with remote without creating merge commits
+            # (keeps untracked files like .env, but resets tracked files to origin/main)
+            git fetch origin main
+            git reset --hard origin/main
 
             # Use main docker-compose.yml and update only backend service
             docker compose pull backend
