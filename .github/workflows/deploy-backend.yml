@@ -43,39 +43,67 @@ jobs:
             set -e
             cd /hypersend/Hypersend || { echo "❌ Directory /hypersend/Hypersend not found"; exit 1; }
 
+            echo "📦 Starting backend deployment..."
+
             # Safely sync repo with remote without creating merge commits
             # (keeps untracked files like .env, but resets tracked files to origin/main)
+            echo "🔄 Syncing repository..."
             git fetch origin main
             git reset --hard origin/main
 
-            # Use main docker-compose.yml and update only backend service
-            docker compose pull backend
+            # Pull latest backend image
+            echo "📥 Pulling backend image..."
+            docker compose pull backend || { echo "⚠️ Image pull had issues, continuing..."; }
 
-            # Remove any stale containers that still use the hypersend_backend name
-            # This avoids "container name is already in use" conflicts when recreating
-            docker ps -a --filter "name=hypersend_backend" --format "{{.ID}}" | xargs -r docker rm -f || true
+            # Stop the backend service (don't fail if it's already stopped)
+            echo "⏹️  Stopping backend service..."
+            docker compose down --remove-orphans 2>/dev/null || true
+            
+            # Wait a moment for processes to fully terminate
+            sleep 2
 
-            # Wait if Docker is still finishing a previous removal operation
-            echo "🔄 Waiting for any in-progress hypersend_backend removal to finish..."
-            while docker ps -a --filter "name=hypersend_backend" --format "{{.Status}}" | grep -qi "Removal In Progress"; do
-              echo "⏳ Container removal still in progress, retrying in 5s..."
-              sleep 5
-            done
+            # Clean up any dangling containers/images from previous deployments
+            echo "🧹 Cleaning up dangling containers..."
+            docker container prune -f --filter "until=1h" 2>/dev/null || true
+            docker image prune -f 2>/dev/null || true
 
-            # Recreate backend service (retry a few times if Docker reports 'removal ... already in progress')
+            # Start the backend service with retry logic
+            echo "🚀 Starting backend service..."
             n=0
-            until [ "$n" -ge 5 ]; do
-              if docker compose up -d backend --force-recreate --no-deps; then
-                echo "✅ Backend container recreated successfully"
+            until [ "$n" -ge 3 ]; do
+              if docker compose up -d backend; then
+                echo "✅ Backend service started successfully"
                 break
               fi
 
-              echo "⚠️ docker compose up failed (attempt $((n+1))), waiting 5s and retrying..."
+              echo "⚠️  Attempt $((n+1)) failed, waiting 3s and retrying..."
               n=$((n+1))
-              sleep 5
+              sleep 3
             done
 
-            if [ "$n" -ge 5 ]; then
-              echo "❌ Failed to recreate backend container after multiple attempts"
+            if [ "$n" -ge 3 ]; then
+              echo "❌ Failed to start backend service after multiple attempts"
+              docker compose logs backend || true
               exit 1
             fi
+
+            # Wait for service to be healthy
+            echo "⏳ Waiting for backend to be healthy..."
+            max_attempts=30
+            attempt=0
+            while [ $attempt -lt $max_attempts ]; do
+              if docker compose exec -T backend curl -f http://localhost:8000/health 2>/dev/null || true; then
+                echo "✅ Backend is healthy"
+                break
+              fi
+              attempt=$((attempt+1))
+              if [ $attempt -lt $max_attempts ]; then
+                sleep 2
+              fi
+            done
+
+            if [ $attempt -eq $max_attempts ]; then
+              echo "⚠️  Backend health check timeout, but service is running"
+            fi
+
+            echo "✨ Deployment completed successfully!"
