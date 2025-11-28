@@ -53,16 +53,11 @@ jobs:
             
             cd /hypersend/Hypersend || { echo "❌ Directory not found"; exit 1; }
             
-            # Configure git pull strategy to avoid divergence error
-            git config pull.rebase false
-            
-            # Stash local changes (safe approach)
-            echo "📦 Stashing local changes..."
-            git stash || true
-            
-            # Pull latest code
-            echo "📥 Pulling latest code from GitHub..."
-            git pull origin main || { echo "❌ Git pull failed"; exit 1; }
+            # Safely sync repo with remote without creating merge commits
+            # (keeps untracked files like .env, but resets tracked files to origin/main)
+            echo "📥 Syncing code from GitHub..."
+            git fetch origin main
+            git reset --hard origin/main
             
             # Pull latest backend image
             echo "🐳 Pulling latest Docker image..."
