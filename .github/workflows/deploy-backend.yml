@@ -53,7 +53,29 @@ jobs:
 
             # Remove any stale containers that still use the hypersend_backend name
             # This avoids "container name is already in use" conflicts when recreating
-            docker ps -a --filter "name=hypersend_backend" --format "{{.ID}}" | xargs -r docker rm -f
+            docker ps -a --filter "name=hypersend_backend" --format "{{.ID}}" | xargs -r docker rm -f || true
 
-            # Recreate backend service
-            docker compose up -d backend --force-recreate --no-deps
+            # Wait if Docker is still finishing a previous removal operation
+            echo "🔄 Waiting for any in-progress hypersend_backend removal to finish..."
+            while docker ps -a --filter "name=hypersend_backend" --format "{{.Status}}" | grep -qi "Removal In Progress"; do
+              echo "⏳ Container removal still in progress, retrying in 5s..."
+              sleep 5
+            done
+
+            # Recreate backend service (retry a few times if Docker reports 'removal ... already in progress')
+            n=0
+            until [ "$n" -ge 5 ]; do
+              if docker compose up -d backend --force-recreate --no-deps; then
+                echo "✅ Backend container recreated successfully"
+                break
+              fi
+
+              echo "⚠️ docker compose up failed (attempt $((n+1))), waiting 5s and retrying..."
+              n=$((n+1))
+              sleep 5
+            done
+
+            if [ "$n" -ge 5 ]; then
+              echo "❌ Failed to recreate backend container after multiple attempts"
+              exit 1
+            fi
