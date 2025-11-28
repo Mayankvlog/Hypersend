@@ -1,9 +1,22 @@
 import httpx
 import os
 from typing import Optional, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Backend API URL - configurable via environment variable
-API_BASE_URL = os.getenv("API_BASE_URL", "http://139.59.82.105:8000")
+# Default to localhost backend for development
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+
+# Debug mode
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+
+def debug_log(msg: str):
+    """Log debug messages only when DEBUG is enabled"""
+    if DEBUG:
+        print(msg)
 
 
 class APIClient:
@@ -11,7 +24,12 @@ class APIClient:
         self.base_url = API_BASE_URL
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
-        self.client = httpx.AsyncClient(timeout=30.0)
+        # Optimized timeout and connection pooling for production VPS
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
+            http2=True  # Enable HTTP/2 for better performance
+        )
     
     def set_tokens(self, access_token: str, refresh_token: str):
         """Set authentication tokens"""
@@ -33,36 +51,62 @@ class APIClient:
     # Auth endpoints
     async def register(self, name: str, email: str, password: str) -> Dict[str, Any]:
         """Register a new user"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/auth/register",
-                json={"username": name, "email": email, "password": password}
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.post(
+            f"{self.base_url}/auth/register",
+            json={"name": name, "email": email, "password": password}
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def login(self, email: str, password: str) -> Dict[str, Any]:
         """Login and receive tokens"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
+        try:
+            debug_log(f"[API] Attempting login to {self.base_url}/auth/login")
+            response = await self.client.post(
                 f"{self.base_url}/auth/login",
                 json={"email": email, "password": password}
             )
-            response.raise_for_status()
+            debug_log(f"[API] Login response status: {response.status_code}")
+            
+            if response.status_code != 200:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", str(error_data))
+                except Exception:
+                    error_detail = response.text[:200]
+                debug_log(f"[API] Login failed: {error_detail}")
+                raise httpx.HTTPStatusError(
+                    f"Login failed: {error_detail}",
+                    request=response.request,
+                    response=response
+                )
+            
             data = response.json()
             self.set_tokens(data["access_token"], data["refresh_token"])
+            debug_log(f"[API] Login successful")
             return data
+        except httpx.TimeoutException as e:
+            debug_log(f"[API] Login timeout: {e}")
+            raise Exception(f"Request timeout. Please check your internet connection.")
+        except httpx.ConnectError as e:
+            debug_log(f"[API] Connection error: {e}")
+            raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
+        except httpx.HTTPStatusError as e:
+            raise Exception(str(e))
+        except Exception as e:
+            debug_log(f"[API] Unexpected error during login: {type(e).__name__}: {e}")
+            raise Exception(f"Login failed: {str(e)}")
     
     async def logout(self):
         """Logout"""
         if self.refresh_token:
             try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        f"{self.base_url}/auth/logout",
-                        json={"refresh_token": self.refresh_token},
-                        headers=self._get_headers()
-                    )
+                await self.client.post(
+                    f"{self.base_url}/auth/logout",
+                    json={"refresh_token": self.refresh_token},
+                    headers=self._get_headers()
+                )
             except:
                 pass
         self.clear_tokens()
@@ -70,121 +114,126 @@ class APIClient:
     # User endpoints
     async def get_current_user(self) -> Dict[str, Any]:
         """Get current user profile"""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
+        try:
+            response = await self.client.get(
                 f"{self.base_url}/users/me",
-                headers=self._get_headers()
+                headers=self._get_headers(),
+                timeout=30.0
             )
             response.raise_for_status()
             return response.json()
+        except httpx.TimeoutException as e:
+            debug_log(f"[API] Get user timeout: {e}")
+            raise Exception("Fetching user profile timed out. Please try again.")
+        except httpx.HTTPStatusError as e:
+            try:
+                error_data = e.response.json()
+                detail = error_data.get("detail", str(error_data))
+            except Exception:
+                detail = e.response.text[:200]
+            debug_log(f"[API] Get user failed: {detail}")
+            raise Exception(f"Failed to fetch user info: {detail}")
+        except Exception as e:
+            debug_log(f"[API] Get user error: {e}")
+            raise Exception(f"Error fetching user profile: {str(e)}")
     
     async def search_users(self, query: str) -> Dict[str, Any]:
         """Search users"""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_url}/users/search",
-                params={"q": query},
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.get(
+            f"{self.base_url}/users/search",
+            params={"q": query},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     # Chat endpoints
     async def create_chat(self, member_ids: list, chat_type: str = "private", name: Optional[str] = None) -> Dict[str, Any]:
         """Create a new chat"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/chats",
-                json={"type": chat_type, "name": name, "member_ids": member_ids},
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.post(
+            f"{self.base_url}/chats",
+            json={"type": chat_type, "name": name, "member_ids": member_ids},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def list_chats(self) -> Dict[str, Any]:
         """List all chats"""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_url}/chats",
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.get(
+            f"{self.base_url}/chats",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def get_saved_chat(self) -> Dict[str, Any]:
         """Get or create the Saved Messages chat for current user"""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_url}/chats/saved",
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.get(
+            f"{self.base_url}/chats/saved",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def get_messages(self, chat_id: str, limit: int = 50) -> Dict[str, Any]:
         """Get messages in a chat"""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_url}/chats/{chat_id}/messages",
-                params={"limit": limit},
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.get(
+            f"{self.base_url}/chats/{chat_id}/messages",
+            params={"limit": limit},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def send_message(self, chat_id: str, text: Optional[str] = None, file_id: Optional[str] = None) -> Dict[str, Any]:
         """Send a message"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/chats/{chat_id}/messages",
-                json={"chat_id": chat_id, "text": text, "file_id": file_id},
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.post(
+            f"{self.base_url}/chats/{chat_id}/messages",
+            json={"text": text, "file_id": file_id},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def save_message(self, message_id: str) -> Dict[str, Any]:
         """Save a message to Saved Messages"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/messages/{message_id}/save",
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.post(
+            f"{self.base_url}/messages/{message_id}/save",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def unsave_message(self, message_id: str) -> Dict[str, Any]:
         """Unsave a message from Saved Messages"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/messages/{message_id}/unsave",
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.post(
+            f"{self.base_url}/messages/{message_id}/unsave",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def get_saved_messages(self, limit: int = 50) -> Dict[str, Any]:
         """Get all saved messages"""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_url}/messages/saved",
-                params={"limit": limit},
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.get(
+            f"{self.base_url}/messages/saved",
+            params={"limit": limit},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     # File endpoints
     async def init_upload(self, filename: str, size: int, mime: str, chat_id: str, checksum: Optional[str] = None) -> Dict[str, Any]:
         """Initialize file upload"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/files/init",
-                json={"filename": filename, "size": size, "mime": mime, "chat_id": chat_id, "checksum": checksum},
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.post(
+            f"{self.base_url}/files/init",
+            json={"filename": filename, "size": size, "mime": mime, "chat_id": chat_id, "checksum": checksum},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def upload_chunk(self, upload_id: str, chunk_index: int, chunk_data: bytes, checksum: Optional[str] = None) -> Dict[str, Any]:
         """Upload a single chunk"""
@@ -192,34 +241,68 @@ class APIClient:
         if checksum:
             headers["X-Chunk-Checksum"] = checksum
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.put(
-                f"{self.base_url}/files/{upload_id}/chunk",
-                params={"chunk_index": chunk_index},
-                content=chunk_data,
-                headers=headers
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.put(
+            f"{self.base_url}/files/{upload_id}/chunk",
+            params={"chunk_index": chunk_index},
+            content=chunk_data,
+            headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def complete_upload(self, upload_id: str) -> Dict[str, Any]:
         """Complete file upload"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/files/{upload_id}/complete",
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.post(
+            f"{self.base_url}/files/{upload_id}/complete",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def cancel_upload(self, upload_id: str):
         """Cancel file upload"""
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{self.base_url}/files/{upload_id}/cancel",
-                headers=self._get_headers()
-            )
+        await self.client.post(
+            f"{self.base_url}/files/{upload_id}/cancel",
+            headers=self._get_headers()
+        )
     
     def get_download_url(self, file_id: str) -> str:
         """Get file download URL"""
         return f"{self.base_url}/files/{file_id}/download"
+    
+    # Password Reset endpoints
+    async def forgot_password(self, email: str) -> Dict[str, Any]:
+        """Request password reset token"""
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/auth/forgot-password",
+                json={"email": email}
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.TimeoutException:
+            raise Exception("Request timeout. Please check your internet connection.")
+        except httpx.HTTPStatusError as e:
+            try:
+                error_data = e.response.json()
+                raise Exception(error_data.get("detail", str(e)))
+            except Exception:
+                raise Exception("Failed to request password reset.")
+    
+    async def reset_password(self, token: str, new_password: str) -> Dict[str, Any]:
+        """Reset password with token"""
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/auth/reset-password",
+                json={"token": token, "new_password": new_password}
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.TimeoutException:
+            raise Exception("Request timeout. Please check your internet connection.")
+        except httpx.HTTPStatusError as e:
+            try:
+                error_data = e.response.json()
+                raise Exception(error_data.get("detail", str(e)))
+            except Exception:
+                raise Exception("Failed to reset password.")
