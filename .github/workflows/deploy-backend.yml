@@ -60,12 +60,10 @@ jobs:
             set -e
             cd /hypersend/Hypersend || { echo "❌ Directory /hypersend/Hypersend not found"; exit 1; }
 
-            # Configure git pull strategy to avoid divergent branches error
-            git config pull.rebase false
-
-            # Stash local changes (e.g., .env) then pull latest code
-            git stash || true
-            git pull origin main || { echo "❌ Git pull failed"; exit 1; }
+            # Safely sync repo with remote without creating merge commits
+            # (keeps untracked files like .env, but resets tracked files to origin/main)
+            git fetch origin main
+            git reset --hard origin/main
 
             # Pull latest images and recreate containers using repo docker-compose.yml
             docker compose pull || true
