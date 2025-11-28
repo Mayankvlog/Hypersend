@@ -57,12 +57,21 @@ class HyperSendApp:
         self.messages: list = []
         
         # HTTP client - optimized for production VPS with connection pooling
-        self.client = httpx.AsyncClient(
-            base_url=API_URL,
-            timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
-            http2=True  # Enable HTTP/2 for better performance
-        )
+        # Prefer HTTP/2 when available, but gracefully fall back to HTTP/1.1 if h2 is missing
+        try:
+            self.client = httpx.AsyncClient(
+                base_url=API_URL,
+                timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
+                http2=True  # Enable HTTP/2 for better performance
+            )
+        except ImportError:
+            debug_log("[WARN] HTTP/2 not available (h2 package not installed), using HTTP/1.1")
+            self.client = httpx.AsyncClient(
+                base_url=API_URL,
+                timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0)
+            )
         
         # Theme colors
         self.primary_color = "#0088cc"

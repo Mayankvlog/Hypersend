@@ -5,7 +5,7 @@ description = "HyperSend - self-hosted chat + large file transfer app "
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-  { name = "Mayank", email = "" }
+  { name = "Mayank", email = "mayank@example.com" }
 ]
 license = { text = "Apache-2.0" }
 
@@ -21,7 +21,9 @@ passlib = { version = "==1.7.4", extras = ["bcrypt"] }
 bcrypt = "==4.1.2"
 python-multipart = "==0.0.6"
 aiofiles = "==23.2.1"
-httpx = "==0.25.1"
+# HTTP client with HTTP/2 support
+httpx = { version = ">=0.28.1", extras = ["http2"] }
+h2 = ">=4.1.0"
 python-dotenv = "==1.0.0"
 PyJWT = "==2.10.1"
 # Frontend deps
@@ -40,14 +42,16 @@ backend = [
   "bcrypt==4.1.2",
   "python-multipart==0.0.6",
   "aiofiles==23.2.1",
-  "httpx==0.25.1",
+  "httpx[http2]>=0.28.1",
+  "h2>=4.1.0",
   "python-dotenv==1.0.0",
   "PyJWT==2.10.1",
 ]
 
 # Pure frontend environment (matches frontend/requirements.txt)
 frontend = [
-  "httpx==0.25.1",
+  "httpx[http2]>=0.27.0",
+  "h2>=4.1.0",
   "flet>=0.28.3",
   "asyncio==3.4.3",
   "python-multipart==0.0.6",
