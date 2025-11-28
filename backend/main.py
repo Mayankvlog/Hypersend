@@ -13,20 +13,23 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     try:
+        print(f"[START] HyperSend API starting on {settings.API_HOST}:{settings.API_PORT}")
+        print(f"[DB] Connecting to MongoDB at {settings.MONGODB_URI}...")
         await connect_db()
         if settings.DEBUG:
             print(f"[START] HyperSend API running on {settings.API_HOST}:{settings.API_PORT}")
-        print("[DEBUG] Lifespan startup complete, yielding control")
+        print("[START] Lifespan startup complete, all services ready")
         yield
-        print("[DEBUG] Lifespan shutdown starting")
+        print("[SHUTDOWN] Lifespan shutdown starting")
     except Exception as e:
-        print(f"[ERROR] Exception in lifespan: {str(e)}")
+        print(f"[ERROR] CRITICAL: Failed to start backend - {str(e)}")
+        print(f"[ERROR] Ensure MongoDB is running: {settings.MONGODB_URI}")
         raise
     finally:
         # Shutdown
-        print("[DEBUG] Lifespan cleanup starting")
+        print("[SHUTDOWN] Cleaning up resources")
         await close_db()
-        print("[DEBUG] Lifespan cleanup complete")
+        print("[SHUTDOWN] All cleanup complete")
 
 
 app = FastAPI(
