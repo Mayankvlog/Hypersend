@@ -1,12 +1,26 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+# Core Framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# Database
 motor==3.6.0
-pydantic[email]==2.5.0
+
+# Data Validation
+pydantic[email]==2.10.3
+pydantic-settings==2.6.1
+
+# Authentication & Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.1.2
-python-multipart==0.0.6
-aiofiles==23.2.1
-httpx==0.25.1
-python-dotenv==1.0.0
+bcrypt==4.2.1
 PyJWT==2.10.1
+
+# File Handling
+python-multipart==0.0.20
+aiofiles==24.1.0
+
+# HTTP Client
+httpx==0.28.1
+
+# Configuration
+python-dotenv==1.0.1
