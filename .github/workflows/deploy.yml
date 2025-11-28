@@ -40,7 +40,16 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            cd /hypersend/Hypersend
-            git pull
-            docker compose -f docker-compose.backend.yml pull
-            docker compose -f docker-compose.backend.yml up -d
+            set -e
+            cd /hypersend/Hypersend || { echo "❌ Directory /hypersend/Hypersend not found"; exit 1; }
+
+            # Configure git pull strategy to avoid "Need to specify how to reconcile divergent branches" error
+            git config pull.rebase false
+
+            # Update repo from GitHub (stash any local changes like .env)
+            git stash || true
+            git pull origin main
+
+            # Use main docker-compose.yml and update only backend service
+            docker compose pull backend
+            docker compose up -d backend --force-recreate --no-deps
