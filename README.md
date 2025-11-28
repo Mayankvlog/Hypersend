@@ -25,7 +25,7 @@
 - Saved messages feature (like Telegram)
 - Message search and filtering
 
-### 📁 **Large File Transfer (Server-Stored)**
+### 📁 **Large File Transfer**
 - Chunked upload/download with resume support
 - Files up to **40 GB** (configurable)
 - Progress tracking and checksums
@@ -686,4 +686,5 @@ If you find this project useful, please give it a star! ⭐
 **Built with ❤️ by [Mayankvlog](https://github.com/Mayankvlog)**
 
 **Self-host your own Telegram/WhatsApp alternative today! 🚀**
+
 
