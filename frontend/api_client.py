@@ -8,7 +8,8 @@ load_dotenv()
 
 # Backend API URL - configurable via environment variable
 # Default to localhost backend for development
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+# IMPORTANT: Do NOT include /api/v1 suffix - endpoints add it automatically
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # Debug mode
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
@@ -25,11 +26,20 @@ class APIClient:
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
         # Optimized timeout and connection pooling for production VPS
-        self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
-            http2=True  # Enable HTTP/2 for better performance
-        )
+        # HTTP/2 requires 'h2' package: pip install httpx[http2]
+        try:
+            self.client = httpx.AsyncClient(
+                timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
+                http2=True  # Enable HTTP/2 for better performance
+            )
+        except ImportError:
+            # Fallback to HTTP/1.1 if h2 is not installed
+            debug_log("[WARN] HTTP/2 not available (h2 package not installed), using HTTP/1.1")
+            self.client = httpx.AsyncClient(
+                timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0)
+            )
     
     def set_tokens(self, access_token: str, refresh_token: str):
         """Set authentication tokens"""
@@ -52,7 +62,7 @@ class APIClient:
     async def register(self, name: str, email: str, password: str) -> Dict[str, Any]:
         """Register a new user"""
         response = await self.client.post(
-            f"{self.base_url}/auth/register",
+            f"{self.base_url}/api/v1/auth/register",
             json={"name": name, "email": email, "password": password}
         )
         response.raise_for_status()
@@ -61,9 +71,9 @@ class APIClient:
     async def login(self, email: str, password: str) -> Dict[str, Any]:
         """Login and receive tokens"""
         try:
-            debug_log(f"[API] Attempting login to {self.base_url}/auth/login")
+            debug_log(f"[API] Attempting login to {self.base_url}/api/v1/auth/login")
             response = await self.client.post(
-                f"{self.base_url}/auth/login",
+                f"{self.base_url}/api/v1/auth/login",
                 json={"email": email, "password": password}
             )
             debug_log(f"[API] Login response status: {response.status_code}")
@@ -103,7 +113,7 @@ class APIClient:
         if self.refresh_token:
             try:
                 await self.client.post(
-                    f"{self.base_url}/auth/logout",
+                    f"{self.base_url}/api/v1/auth/logout",
                     json={"refresh_token": self.refresh_token},
                     headers=self._get_headers()
                 )
@@ -116,7 +126,7 @@ class APIClient:
         """Get current user profile"""
         try:
             response = await self.client.get(
-                f"{self.base_url}/users/me",
+                f"{self.base_url}/api/v1/users/me",
                 headers=self._get_headers(),
                 timeout=30.0
             )
@@ -140,7 +150,7 @@ class APIClient:
     async def search_users(self, query: str) -> Dict[str, Any]:
         """Search users"""
         response = await self.client.get(
-            f"{self.base_url}/users/search",
+            f"{self.base_url}/api/v1/users/search",
             params={"q": query},
             headers=self._get_headers()
         )
@@ -151,7 +161,7 @@ class APIClient:
     async def create_chat(self, member_ids: list, chat_type: str = "private", name: Optional[str] = None) -> Dict[str, Any]:
         """Create a new chat"""
         response = await self.client.post(
-            f"{self.base_url}/chats",
+            f"{self.base_url}/api/v1/chats",
             json={"type": chat_type, "name": name, "member_ids": member_ids},
             headers=self._get_headers()
         )
@@ -161,7 +171,7 @@ class APIClient:
     async def list_chats(self) -> Dict[str, Any]:
         """List all chats"""
         response = await self.client.get(
-            f"{self.base_url}/chats",
+            f"{self.base_url}/api/v1/chats",
             headers=self._get_headers()
         )
         response.raise_for_status()
@@ -170,7 +180,7 @@ class APIClient:
     async def get_saved_chat(self) -> Dict[str, Any]:
         """Get or create the Saved Messages chat for current user"""
         response = await self.client.get(
-            f"{self.base_url}/chats/saved",
+            f"{self.base_url}/api/v1/chats/saved",
             headers=self._get_headers()
         )
         response.raise_for_status()
@@ -179,7 +189,7 @@ class APIClient:
     async def get_messages(self, chat_id: str, limit: int = 50) -> Dict[str, Any]:
         """Get messages in a chat"""
         response = await self.client.get(
-            f"{self.base_url}/chats/{chat_id}/messages",
+            f"{self.base_url}/api/v1/chats/{chat_id}/messages",
             params={"limit": limit},
             headers=self._get_headers()
         )
@@ -189,7 +199,7 @@ class APIClient:
     async def send_message(self, chat_id: str, text: Optional[str] = None, file_id: Optional[str] = None) -> Dict[str, Any]:
         """Send a message"""
         response = await self.client.post(
-            f"{self.base_url}/chats/{chat_id}/messages",
+            f"{self.base_url}/api/v1/chats/{chat_id}/messages",
             json={"text": text, "file_id": file_id},
             headers=self._get_headers()
         )
@@ -199,7 +209,7 @@ class APIClient:
     async def save_message(self, message_id: str) -> Dict[str, Any]:
         """Save a message to Saved Messages"""
         response = await self.client.post(
-            f"{self.base_url}/messages/{message_id}/save",
+            f"{self.base_url}/api/v1/messages/{message_id}/save",
             headers=self._get_headers()
         )
         response.raise_for_status()
@@ -208,7 +218,7 @@ class APIClient:
     async def unsave_message(self, message_id: str) -> Dict[str, Any]:
         """Unsave a message from Saved Messages"""
         response = await self.client.post(
-            f"{self.base_url}/messages/{message_id}/unsave",
+            f"{self.base_url}/api/v1/messages/{message_id}/unsave",
             headers=self._get_headers()
         )
         response.raise_for_status()
@@ -217,7 +227,7 @@ class APIClient:
     async def get_saved_messages(self, limit: int = 50) -> Dict[str, Any]:
         """Get all saved messages"""
         response = await self.client.get(
-            f"{self.base_url}/messages/saved",
+            f"{self.base_url}/api/v1/messages/saved",
             params={"limit": limit},
             headers=self._get_headers()
         )
@@ -228,7 +238,7 @@ class APIClient:
     async def init_upload(self, filename: str, size: int, mime: str, chat_id: str, checksum: Optional[str] = None) -> Dict[str, Any]:
         """Initialize file upload"""
         response = await self.client.post(
-            f"{self.base_url}/files/init",
+            f"{self.base_url}/api/v1/files/init",
             json={"filename": filename, "size": size, "mime": mime, "chat_id": chat_id, "checksum": checksum},
             headers=self._get_headers()
         )
@@ -242,7 +252,7 @@ class APIClient:
             headers["X-Chunk-Checksum"] = checksum
         
         response = await self.client.put(
-            f"{self.base_url}/files/{upload_id}/chunk",
+            f"{self.base_url}/api/v1/files/{upload_id}/chunk",
             params={"chunk_index": chunk_index},
             content=chunk_data,
             headers=headers
@@ -253,7 +263,7 @@ class APIClient:
     async def complete_upload(self, upload_id: str) -> Dict[str, Any]:
         """Complete file upload"""
         response = await self.client.post(
-            f"{self.base_url}/files/{upload_id}/complete",
+            f"{self.base_url}/api/v1/files/{upload_id}/complete",
             headers=self._get_headers()
         )
         response.raise_for_status()
@@ -262,20 +272,20 @@ class APIClient:
     async def cancel_upload(self, upload_id: str):
         """Cancel file upload"""
         await self.client.post(
-            f"{self.base_url}/files/{upload_id}/cancel",
+            f"{self.base_url}/api/v1/files/{upload_id}/cancel",
             headers=self._get_headers()
         )
     
     def get_download_url(self, file_id: str) -> str:
         """Get file download URL"""
-        return f"{self.base_url}/files/{file_id}/download"
+        return f"{self.base_url}/api/v1/files/{file_id}/download"
     
     # Password Reset endpoints
     async def forgot_password(self, email: str) -> Dict[str, Any]:
         """Request password reset token"""
         try:
             response = await self.client.post(
-                f"{self.base_url}/auth/forgot-password",
+                f"{self.base_url}/api/v1/auth/forgot-password",
                 json={"email": email}
             )
             response.raise_for_status()
@@ -293,7 +303,7 @@ class APIClient:
         """Reset password with token"""
         try:
             response = await self.client.post(
-                f"{self.base_url}/auth/reset-password",
+                f"{self.base_url}/api/v1/auth/reset-password",
                 json={"token": token, "new_password": new_password}
             )
             response.raise_for_status()
