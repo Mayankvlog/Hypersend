@@ -53,57 +53,119 @@ jobs:
 
             # Pull latest backend image
             echo "📥 Pulling backend image..."
-            docker compose pull backend || { echo "⚠️ Image pull had issues, continuing..."; }
+            docker compose pull backend 2>/dev/null || { echo "⚠️  Image pull had issues, continuing..."; }
 
-            # Stop the backend service (don't fail if it's already stopped)
-            echo "⏹️  Stopping backend service..."
-            docker compose down --remove-orphans 2>/dev/null || true
-            
-            # Wait a moment for processes to fully terminate
-            sleep 2
+            # Function to safely stop backend service
+            stop_backend_safe() {
+              echo "⏹️  Stopping backend service..."
+              
+              # Try graceful stop first
+              docker compose stop backend 2>/dev/null || true
+              sleep 2
+              
+              # Then remove with retries
+              local max_stop_attempts=5
+              local stop_attempt=0
+              while [ $stop_attempt -lt $max_stop_attempts ]; do
+                # Try to remove
+                if docker compose down 2>&1 | tee /tmp/docker_output.log; then
+                  echo "✅ Backend stopped successfully"
+                  return 0
+                fi
+                
+                # Check if error is "removal in progress"
+                if grep -q "removal.*in progress" /tmp/docker_output.log; then
+                  stop_attempt=$((stop_attempt+1))
+                  echo "⏳ Docker daemon busy (removal in progress), attempt $stop_attempt/$max_stop_attempts..."
+                  sleep 3
+                else
+                  # Different error, might be safe to continue
+                  echo "⚠️  docker compose down had issues, continuing..."
+                  break
+                fi
+              done
+              
+              if [ $stop_attempt -ge $max_stop_attempts ]; then
+                echo "⚠️  Could not cleanly stop via compose, forcing container removal..."
+                # Force remove any remaining containers
+                docker ps -a --filter "name=hypersend_backend" --format "{{.ID}}" 2>/dev/null | \
+                  while read container_id; do
+                    if [ -n "$container_id" ]; then
+                      docker rm -f "$container_id" 2>/dev/null || true
+                    fi
+                  done
+              fi
+              
+              # Wait for Docker daemon to finish all operations
+              echo "🔄 Waiting for Docker daemon to finish cleanup..."
+              sleep 3
+            }
+
+            # Execute safe stop
+            stop_backend_safe
 
             # Clean up any dangling containers/images from previous deployments
-            echo "🧹 Cleaning up dangling containers..."
+            echo "🧹 Cleaning up dangling resources..."
             docker container prune -f --filter "until=1h" 2>/dev/null || true
             docker image prune -f 2>/dev/null || true
 
-            # Start the backend service with retry logic
+            # Start the backend service with robust retry logic
             echo "🚀 Starting backend service..."
             n=0
-            until [ "$n" -ge 3 ]; do
-              if docker compose up -d backend; then
-                echo "✅ Backend service started successfully"
+            max_start_attempts=5
+            until [ "$n" -ge $max_start_attempts ]; do
+              if docker compose up -d backend 2>&1 | tee /tmp/start_output.log; then
+                echo "✅ Backend container created successfully"
                 break
               fi
-
-              echo "⚠️  Attempt $((n+1)) failed, waiting 3s and retrying..."
-              n=$((n+1))
-              sleep 3
+              
+              # Check if it's a transient error
+              if grep -q "removal.*in progress\|bind.*address already in use" /tmp/start_output.log; then
+                n=$((n+1))
+                if [ "$n" -lt $max_start_attempts ]; then
+                  echo "⚠️  Transient error on attempt $n/$max_start_attempts, waiting 5s..."
+                  sleep 5
+                fi
+              else
+                # Unrecoverable error
+                echo "❌ Unrecoverable error starting service"
+                cat /tmp/start_output.log
+                exit 1
+              fi
             done
 
-            if [ "$n" -ge 3 ]; then
-              echo "❌ Failed to start backend service after multiple attempts"
-              docker compose logs backend || true
+            if [ "$n" -ge $max_start_attempts ]; then
+              echo "❌ Failed to start backend after $max_start_attempts attempts"
+              docker compose logs backend 2>/dev/null || true
               exit 1
             fi
 
+            # Wait for container to be fully running
+            echo "⏳ Waiting for backend container to stabilize..."
+            sleep 5
+
             # Wait for service to be healthy
-            echo "⏳ Waiting for backend to be healthy..."
-            max_attempts=30
-            attempt=0
-            while [ $attempt -lt $max_attempts ]; do
-              if docker compose exec -T backend curl -f http://localhost:8000/health 2>/dev/null || true; then
-                echo "✅ Backend is healthy"
+            echo "🏥 Checking backend health..."
+            max_health_attempts=30
+            health_attempt=0
+            while [ $health_attempt -lt $max_health_attempts ]; do
+              if docker compose exec -T backend curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "✅ Backend is healthy and responding"
                 break
               fi
-              attempt=$((attempt+1))
-              if [ $attempt -lt $max_attempts ]; then
+              health_attempt=$((health_attempt+1))
+              if [ $health_attempt -lt $max_health_attempts ]; then
+                echo "⏳ Health check attempt $health_attempt/$max_health_attempts, retrying in 2s..."
                 sleep 2
               fi
             done
 
-            if [ $attempt -eq $max_attempts ]; then
-              echo "⚠️  Backend health check timeout, but service is running"
+            if [ $health_attempt -eq $max_health_attempts ]; then
+              echo "⚠️  Backend health check timed out after 1 minute"
+              echo "Container status:"
+              docker compose ps backend
+              echo "Recent logs:"
+              docker compose logs backend --tail 20
+            else
+              echo "✨ Deployment completed successfully!"
             fi
-
-            echo "✨ Deployment completed successfully!"
