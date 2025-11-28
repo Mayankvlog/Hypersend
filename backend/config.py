@@ -2,11 +2,18 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load environment variables from .env file
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
+# Also check current directory
+if not os.getenv("MONGODB_URI"):
+    load_dotenv()
 
 
 class Settings:
     # MongoDB (Local server - MongoDB Compass can connect to this)
+    # Priority: .env > environment variable > default
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017/hypersend")
     
     # Security
