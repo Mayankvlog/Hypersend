@@ -19,8 +19,9 @@ PyJWT==2.10.1
 python-multipart==0.0.20
 aiofiles==24.1.0
 
-# HTTP Client
-httpx==0.28.1
+# HTTP Client - with HTTP/2 support
+httpx[http2]>=0.28.1
+h2>=4.1.0
 
 # Configuration
 python-dotenv==1.0.1

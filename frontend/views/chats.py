@@ -99,14 +99,14 @@ class ChatsView(ft.Container):
         last_msg = chat.get("last_message", {}).get("text", "No messages")
         
         return ft.Card(
-            color=ft.colors.WHITE,
-            surface_tint_color=ft.colors.TRANSPARENT,
+            color=ft.Colors.WHITE,
+            surface_tint_color=ft.Colors.TRANSPARENT,
             content=ft.Container(
                 content=ft.Row(
                     controls=[
                         ft.CircleAvatar(
                             radius=18,
-                            bgcolor=ft.colors.BLUE_100,
+                            bgcolor=ft.Colors.BLUE_100,
                             content=ft.Text(
                                 (chat_name or "?")[:2].upper(),
                                 color=TEXT_BLACK,
@@ -125,7 +125,7 @@ class ChatsView(ft.Container):
                                 ft.Text(
                                     last_msg,
                                     size=12,
-                                    color=ft.colors.BLACK54,
+                                    color=ft.Colors.BLACK54,
                                     max_lines=1,
                                     overflow=ft.TextOverflow.ELLIPSIS,
                                 ),

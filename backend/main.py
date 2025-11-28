@@ -12,12 +12,21 @@ from backend.config import settings
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
-    await connect_db()
-    if settings.DEBUG:
-        print(f"🚀 HyperSend API running on {settings.API_HOST}:{settings.API_PORT}")
-    yield
-    # Shutdown
-    await close_db()
+    try:
+        await connect_db()
+        if settings.DEBUG:
+            print(f"[START] HyperSend API running on {settings.API_HOST}:{settings.API_PORT}")
+        print("[DEBUG] Lifespan startup complete, yielding control")
+        yield
+        print("[DEBUG] Lifespan shutdown starting")
+    except Exception as e:
+        print(f"[ERROR] Exception in lifespan: {str(e)}")
+        raise
+    finally:
+        # Shutdown
+        print("[DEBUG] Lifespan cleanup starting")
+        await close_db()
+        print("[DEBUG] Lifespan cleanup complete")
 
 
 app = FastAPI(

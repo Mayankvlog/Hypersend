@@ -1,7 +1,7 @@
 [project]
 name = "hypersend"
 version = "1.0.0"
-description = "HyperSend - self-hosted chat + large file transfer app (FastAPI backend + Flet frontend)"
+description = "HyperSend - self-hosted chat + large file transfer app "
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
