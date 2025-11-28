@@ -50,4 +50,10 @@ jobs:
 
             # Use main docker-compose.yml and update only backend service
             docker compose pull backend
+
+            # Remove any stale containers that still use the hypersend_backend name
+            # This avoids "container name is already in use" conflicts when recreating
+            docker ps -a --filter "name=hypersend_backend" --format "{{.ID}}" | xargs -r docker rm -f
+
+            # Recreate backend service
             docker compose up -d backend --force-recreate --no-deps
