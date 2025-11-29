@@ -52,6 +52,16 @@ class HyperSendApp:
         self.page.padding = 0
         self.page.window.width = 400
         self.page.window.height = 850
+
+        # Ensure a stable background color on launch to avoid black/white flashing
+        # while the first frame is being rendered on Android.
+        self.primary_color = "#0088cc"
+        self.bg_dark = "#FDFBFB"
+        self.bg_light = "#F6F5F5F6"
+        self.text_primary = "#ffffff"
+        self.text_secondary = "#8e8e93"
+        self.page.bgcolor = self.bg_dark
+        self.page.window_bgcolor = self.bg_dark
         
         # Performance optimizations for mobile
         self.page.scroll = None  # Disable page-level scroll for better performance
@@ -81,13 +91,7 @@ class HyperSendApp:
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0)
             )
         
-        # Theme colors
-        self.primary_color = "#0088cc"
-        self.bg_dark = "#FDFBFB"
-        self.bg_light = "#F6F5F5F6"
-        self.text_primary = "#ffffff"
-        self.text_secondary = "#8e8e93"
-        
+        # Theme colors already initialized above (before we set page.bgcolor)
         # Setup custom theme
         self.page.theme = ft.Theme(
             color_scheme_seed=self.primary_color,
@@ -251,7 +255,12 @@ class HyperSendApp:
                 )
                 
                 if response.status_code == 201:
-                    data = response.json()
+                    # Some environments (reverse proxies, error pages, etc.) may return
+                    # non-JSON even with 201, so be defensive here.
+                    try:
+                        data = response.json()
+                    except Exception:
+                        data = {}
                     debug_log(f"[REGISTER] Registration successful, logging in...")
                     
                     # Registration successful, now login
@@ -265,8 +274,17 @@ class HyperSendApp:
                     if login_response.status_code == 200:
                         login_data = login_response.json()
                         self.token = login_data["access_token"]
-                        self.current_user = data
                         self.client.headers["Authorization"] = f"Bearer {self.token}"
+                        
+                        # Always fetch user profile from backend instead of trusting
+                        # the register response payload.
+                        try:
+                            user_response = await self.client.get("/api/v1/users/me")
+                            if user_response.status_code == 200:
+                                self.current_user = user_response.json()
+                        except Exception as profile_ex:
+                            debug_log(f"[REGISTER] Failed to fetch profile after registration: {profile_ex}")
+                        
                         debug_log(f"[REGISTER] Success! User: {email_field.value}")
                         self.show_chat_list()
                     else:
@@ -399,9 +417,12 @@ class HyperSendApp:
         )
         
         # Reset password step UI
+        # Show token in plain text so users can see/copy it when backend returns
+        # it in the API response (useful during development or when SMTP is not
+        # configured). The field is still hidden until a token is generated.
         token_field = ft.TextField(
             label="Reset Token (check email)",
-            password=True,
+            password=False,
             prefix_icon=icons.VPN_KEY,
             filled=True,
             visible=False
@@ -484,12 +505,18 @@ class HyperSendApp:
                 )
                 
                 if response.status_code == 200:
-                    data = response.json()
+                    # Be defensive: some environments (reverse proxies, error pages)
+                    # may return non-JSON content even with 200 status.
+                    try:
+                        data = response.json()
+                    except Exception:
+                        data = {"message": response.text or "Password reset request processed."}
+
                     nonlocal step, reset_token
                     step = "reset"
                     
                     # Show reset form
-                    info_text.value = "Check your email for the reset token"
+                    info_text.value = "Check your email or copy the token below"
                     email_field.visible = False
                     email_submit_btn.visible = False
                     
@@ -498,16 +525,22 @@ class HyperSendApp:
                     confirm_password_field.visible = True
                     reset_submit_btn.visible = True
                     
-                    # If dev mode and token is in response, auto-fill it
-                    if "reset_token" in data:
+                    # Auto-fill token if backend returned it (now always true for our API)
+                    if "reset_token" in data and data["reset_token"]:
                         token_field.value = data["reset_token"]
-                        success_text.value = f"✅ Token: {data['reset_token'][:20]}..."
+                        success_text.value = f"✅ Token copied here. Also sent by email if configured."
                     else:
                         success_text.value = f"✅ {data.get('message', 'Reset token sent to your email')}"
                     
                     success_text.visible = True
                 else:
-                    error_text.value = f"Error: {response.status_code}"
+                    # Try to show detailed backend error when available
+                    try:
+                        err = response.json()
+                        detail = err.get("detail", f"Error: {response.status_code}")
+                    except Exception:
+                        detail = f"Error: {response.status_code}"
+                    error_text.value = detail
                     error_text.visible = True
                 
             except Exception as ex:

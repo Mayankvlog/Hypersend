@@ -61,12 +61,38 @@ class APIClient:
     # Auth endpoints
     async def register(self, name: str, email: str, password: str) -> Dict[str, Any]:
         """Register a new user"""
-        response = await self.client.post(
-            f"{self.base_url}/api/v1/auth/register",
-            json={"name": name, "email": email, "password": password}
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            debug_log(f"[API] Registering user at {self.base_url}/api/v1/auth/register")
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/auth/register",
+                json={"name": name, "email": email, "password": password}
+            )
+
+            # Treat non-201 as error and surface backend detail when possible
+            if response.status_code != 201:
+                try:
+                    error_data = response.json()
+                    detail = error_data.get("detail", str(error_data))
+                except Exception:
+                    detail = response.text[:200]
+                debug_log(f"[API] Register failed ({response.status_code}): {detail}")
+                raise Exception(f"Registration failed ({response.status_code}): {detail}")
+
+            try:
+                return response.json()
+            except Exception:
+                # Some environments return empty body with 201; return minimal payload
+                debug_log("[API] Register response had no JSON body, returning empty dict")
+                return {}
+        except httpx.TimeoutException as e:
+            debug_log(f"[API] Register timeout: {e}")
+            raise Exception("Request timeout. Please check your internet connection.")
+        except httpx.ConnectError as e:
+            debug_log(f"[API] Register connection error: {e}")
+            raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
+        except Exception as e:
+            # Bubble up a clean message to the UI
+            raise Exception(str(e))
     
     async def login(self, email: str, password: str) -> Dict[str, Any]:
         """Login and receive tokens"""
@@ -288,16 +314,26 @@ class APIClient:
                 f"{self.base_url}/api/v1/auth/forgot-password",
                 json={"email": email}
             )
-            response.raise_for_status()
-            return response.json()
+
+            if response.status_code != 200:
+                try:
+                    error_data = response.json()
+                    detail = error_data.get("detail", str(error_data))
+                except Exception:
+                    detail = response.text[:200]
+                raise Exception(f"Password reset request failed ({response.status_code}): {detail}")
+
+            try:
+                return response.json()
+            except Exception:
+                # Fallback if response is not JSON for some reason
+                return {"message": response.text or "Password reset request processed."}
         except httpx.TimeoutException:
             raise Exception("Request timeout. Please check your internet connection.")
-        except httpx.HTTPStatusError as e:
-            try:
-                error_data = e.response.json()
-                raise Exception(error_data.get("detail", str(e)))
-            except Exception:
-                raise Exception("Failed to request password reset.")
+        except httpx.ConnectError as e:
+            raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
+        except Exception as e:
+            raise Exception(str(e))
     
     async def reset_password(self, token: str, new_password: str) -> Dict[str, Any]:
         """Reset password with token"""
@@ -306,13 +342,22 @@ class APIClient:
                 f"{self.base_url}/api/v1/auth/reset-password",
                 json={"token": token, "new_password": new_password}
             )
-            response.raise_for_status()
-            return response.json()
+
+            if response.status_code != 200:
+                try:
+                    error_data = response.json()
+                    detail = error_data.get("detail", str(error_data))
+                except Exception:
+                    detail = response.text[:200]
+                raise Exception(f"Password reset failed ({response.status_code}): {detail}")
+
+            try:
+                return response.json()
+            except Exception:
+                return {"message": response.text or "Password reset successful."}
         except httpx.TimeoutException:
             raise Exception("Request timeout. Please check your internet connection.")
-        except httpx.HTTPStatusError as e:
-            try:
-                error_data = e.response.json()
-                raise Exception(error_data.get("detail", str(e)))
-            except Exception:
-                raise Exception("Failed to reset password.")
+        except httpx.ConnectError as e:
+            raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
+        except Exception as e:
+            raise Exception(str(e))
