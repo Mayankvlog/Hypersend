@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Optimized APK Build Script for HyperSend
+Optimized APK Build Script for Zaply
 This script builds an optimized production APK with proper configuration
 """
 
@@ -36,7 +36,7 @@ def print_warning(message):
 def main():
     print(f"{Colors.HEADER}{Colors.BOLD}")
     print("=" * 60)
-    print("  HyperSend APK Builder - Optimized Production Build")
+    print("  Zaply APK Builder - Optimized Production Build")
     print("=" * 60)
     print(f"{Colors.ENDC}")
     
@@ -77,8 +77,8 @@ def main():
     
     build_cmd = [
         "flet", "build", "apk",
-        "--name", "HyperSend",
-        "--org", "com.hypersend",
+        "--name", "Zaply",
+        "--org", "com.zaply",
         "--description", "Fast File Transfer and Messaging",
         "--no-ios-no-provisioning-profile",
         "--release",  # Release build for better performance

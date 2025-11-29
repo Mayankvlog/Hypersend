@@ -13,11 +13,11 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     try:
-        print(f"[START] HyperSend API starting on {settings.API_HOST}:{settings.API_PORT}")
+        print(f"[START] Zaply API starting on {settings.API_HOST}:{settings.API_PORT}")
         print(f"[DB] Connecting to MongoDB at {settings.MONGODB_URI}...")
         await connect_db()
         if settings.DEBUG:
-            print(f"[START] HyperSend API running on {settings.API_HOST}:{settings.API_PORT}")
+            print(f"[START] Zaply API running on {settings.API_HOST}:{settings.API_PORT}")
         print("[START] Lifespan startup complete, all services ready")
         yield
         print("[SHUTDOWN] Lifespan shutdown starting")
@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="HyperSend API",
+    title="Zaply API",
     description="Fast file transfer and messaging application",
     version="1.0.0",
     lifespan=lifespan
@@ -53,7 +53,7 @@ app.add_middleware(
 async def root():
     """Health check endpoint"""
     return {
-        "app": "HyperSend",
+        "app": "Zaply",
         "version": "1.0.0",
         "status": "running"
     }

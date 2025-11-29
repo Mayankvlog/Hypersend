@@ -7,7 +7,7 @@ from frontend.app import API_URL, debug_log
 async def test_api():
     """Test API connectivity"""
     print("=" * 50)
-    print("HyperSend App Test")
+    print("Zaply App Test")
     print("=" * 50)
     
     print(f"\n✓ API_BASE_URL (from api_client): {API_BASE_URL}")

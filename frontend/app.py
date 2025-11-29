@@ -47,7 +47,7 @@ debug_log(f"[CONFIG] API URL: {API_URL}")
 class HyperSendApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.page.title = "HyperSend"
+        self.page.title = "Zaply"
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
         self.page.window.width = 400
