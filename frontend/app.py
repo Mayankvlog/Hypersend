@@ -20,11 +20,11 @@ except Exception:
     async def check_app_updates(page: ft.Page):
         return
 
-# For production: set API_BASE_URL environment variable
-API_URL = os.getenv("API_BASE_URL", "http://localhost:8000").strip()
-# Ensure we're using localhost for development if no env var is set
-if not os.getenv("API_BASE_URL"):
-    API_URL = "http://localhost:8000"
+# API configuration
+# In production (APK / VPS), we want to talk to the public backend by default.
+# Local development can override this by setting API_BASE_URL in .env.
+DEFAULT_API_URL = "http://139.59.82.105:8000"
+API_URL = os.getenv("API_BASE_URL", DEFAULT_API_URL).strip() or DEFAULT_API_URL
 
 # Debug mode - disable in production for better performance
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
@@ -197,7 +197,15 @@ class HyperSendApp:
                 login_btn.text = "Login"
             except httpx.ConnectError as ex:
                 debug_log(f"[LOGIN] Connection error: {ex}")
-                error_text.value = f"🔌 Cannot connect to server.\nURL: {API_URL}\n\n⚠️ SOLUTION:\n1. Start backend: python run_backend.py\n2. Backend must be listening on port 8000\n\nError: {str(ex)[:50]}"
+                error_text.value = (
+                    "🔌 Cannot connect to server.\n"
+                    f"URL: {API_URL}\n\n"
+                    "⚠️ SOLUTION:\n"
+                    "1. Make sure the backend API is running and reachable.\n"
+                    f"   (For VPS: {DEFAULT_API_URL})\n"
+                    "2. Check your internet connection.\n\n"
+                    f"Error: {str(ex)[:50]}"
+                )
                 error_text.visible = True
                 login_btn.disabled = False
                 login_btn.text = "Login"
