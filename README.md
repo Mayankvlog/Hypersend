@@ -1,6 +1,6 @@
 # 🚀 HyperSend
 
-**HyperSend** is a modern, Telegram/WhatsApp-style **chat + large-file transfer** application built with a pure Python stack. Self-host fast messaging and share very large files (tested up to ~40 GB) from your own server or VPS, with a mobile-first UI that can be built into an **optimized Android APK**.
+**HyperSend** is a modern, **chat + large-file transfer** application built with a pure Python stack. Self-host fast messaging and share very large files (tested up to ~40 GB) from your own server or VPS, with a mobile-first UI that can be built into an **optimized Android APK**.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Latest-009688.svg)](https://fastapi.tiangolo.com/)
@@ -32,7 +32,7 @@
 - Automatic cleanup of expired uploads
 - Storage quota management per user
 
-### 🔄 **P2P File Transfer (WhatsApp-Style)**
+### 🔄 **P2P File Transfer**
 - Optional peer-to-peer mode
 - Server handles signaling only
 - WebSocket-based real-time sync
@@ -686,5 +686,6 @@ If you find this project useful, please give it a star! ⭐
 **Built with ❤️ by [Mayankvlog](https://github.com/Mayankvlog)**
 
 **Self-host your own Telegram/WhatsApp alternative today! 🚀**
+
 
 
