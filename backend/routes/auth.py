@@ -395,14 +395,14 @@ async def forgot_password(request: ForgotPasswordRequest):
 
         print(f"[AUTH] Password reset token generated for: {request.email}")
 
+        # Always include reset token in API response so users can reset their password
+        # even if SMTP is misconfigured or emails are delayed.
         response = {
             "message": "If an account exists with this email, a password reset link has been sent.",
             "success": True,
+            "email_sent": email_sent,
+            "reset_token": reset_token,
         }
-
-        # In development or when email couldn't be sent, return token in response for easier testing
-        if settings.DEBUG or not email_sent:
-            response["reset_token"] = reset_token
 
         return response
     
