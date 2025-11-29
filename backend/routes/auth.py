@@ -372,11 +372,11 @@ async def forgot_password(request: ForgotPasswordRequest):
         if settings.SMTP_HOST and settings.EMAIL_FROM:
             try:
                 msg = EmailMessage()
-                msg["Subject"] = "HyperSend password reset"
+                msg["Subject"] = "Zaply password reset"
                 msg["From"] = settings.EMAIL_FROM
                 msg["To"] = request.email
                 msg.set_content(
-                    "You requested a password reset for your HyperSend account.\n\n"
+                    "You requested a password reset for your Zaply account.\n\n"
                     f"Your reset token is:\n\n{reset_token}\n\n"
                     "This token is valid for 1 hour. If you did not request this, you can ignore this email."
                 )

@@ -1,6 +1,6 @@
-# 🚀 HyperSend
+# 🚀 Zaply
 
-**HyperSend** is a modern, Telegram/WhatsApp-style **chat + large-file transfer** application built with a pure Python stack. Self-host fast messaging and share very large files (tested up to ~40 GB) from your own server or VPS, with a mobile-first UI that can be built into an **optimized Android APK**.
+**Zaply** is a modern, Telegram/WhatsApp-style **chat + large-file transfer** application built with a pure Python stack. Self-host fast messaging and share very large files (tested up to ~40 GB) from your own server or VPS, with a mobile-first UI that can be built into an **optimized Android APK**.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Latest-009688.svg)](https://fastapi.tiangolo.com/)
@@ -251,7 +251,7 @@ copy .env.production .env  # Windows
 cp .env.production .env    # Linux/Mac
 
 # Build optimized APK
-flet build apk --name HyperSend --org com.hypersend --release --optimize
+flet build apk --name Zaply --org com.zaply --release --optimize
 ```
 
 ### ⚡ Performance Optimizations
