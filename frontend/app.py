@@ -22,9 +22,17 @@ except Exception:
 
 # API configuration
 # In production (APK / VPS), we want to talk to the public backend by default.
-# Local development can override this by setting API_BASE_URL in .env.
+# Local development can override this by setting API_BASE_URL in .env, BUT we
+# never allow localhost/127.0.0.1 as the final URL in production builds.
 DEFAULT_API_URL = "http://139.59.82.105:8000"
-API_URL = os.getenv("API_BASE_URL", DEFAULT_API_URL).strip() or DEFAULT_API_URL
+_raw_api_url = os.getenv("API_BASE_URL", DEFAULT_API_URL) or DEFAULT_API_URL
+_raw_api_url = _raw_api_url.strip()
+
+# If env accidentally uses localhost, force VPS URL instead
+if "localhost" in _raw_api_url or "127.0.0.1" in _raw_api_url:
+    API_URL = DEFAULT_API_URL
+else:
+    API_URL = _raw_api_url
 
 # Debug mode - disable in production for better performance
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
