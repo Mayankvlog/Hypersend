@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 import asyncio
 import jwt
+import smtplib
+from email.message import EmailMessage
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -365,15 +367,44 @@ async def forgot_password(request: ForgotPasswordRequest):
                 detail="Failed to generate reset token. Please try again."
             )
         
-        # TODO: Send email with reset link containing the token
-        # For now, we'll return the token in response (for testing/development)
+        # Try to send email with reset token if SMTP is configured
+        email_sent = False
+        if settings.SMTP_HOST and settings.EMAIL_FROM:
+            try:
+                msg = EmailMessage()
+                msg["Subject"] = "HyperSend password reset"
+                msg["From"] = settings.EMAIL_FROM
+                msg["To"] = request.email
+                msg.set_content(
+                    "You requested a password reset for your HyperSend account.\n\n"
+                    f"Your reset token is:\n\n{reset_token}\n\n"
+                    "This token is valid for 1 hour. If you did not request this, you can ignore this email."
+                )
+
+                with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+                    if settings.SMTP_USE_TLS:
+                        server.starttls()
+                    if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
+                        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+                    server.send_message(msg)
+
+                email_sent = True
+                print(f"[AUTH] Password reset email sent to: {request.email}")
+            except Exception as e:
+                print(f"[AUTH] Failed to send reset email: {type(e).__name__}: {e}")
+
         print(f"[AUTH] Password reset token generated for: {request.email}")
-        
-        return {
+
+        response = {
             "message": "If an account exists with this email, a password reset link has been sent.",
             "success": True,
-            "reset_token": reset_token  # For development - remove in production
         }
+
+        # In development or when email couldn't be sent, return token in response for easier testing
+        if settings.DEBUG or not email_sent:
+            response["reset_token"] = reset_token
+
+        return response
     
     except HTTPException:
         raise
