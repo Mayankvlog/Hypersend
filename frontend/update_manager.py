@@ -5,11 +5,18 @@ import os
 from pathlib import Path
 import flet as ft
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Ensure .env is loaded so API_BASE_URL / UPDATE_SERVER_URL are available
+load_dotenv()
 
 class UpdateManager:
     def __init__(self):
         self.current_version = "1.0.0" 
-        self.update_server_url = os.getenv("UPDATE_SERVER_URL", "http://localhost:8000/api/updates")
+        # Base backend URL for updates: prefer explicit UPDATE_SERVER_URL, then API_BASE_URL, then localhost
+        api_base = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
+        default_updates_url = f"{api_base}/api/v1/updates"
+        self.update_server_url = os.getenv("UPDATE_SERVER_URL", default_updates_url).rstrip("/")
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(15.0, connect=5.0),
             limits=httpx.Limits(max_keepalive_connections=2, max_connections=5)

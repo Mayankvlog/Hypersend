@@ -98,9 +98,11 @@ class HyperSendApp:
             use_material3=True
         )
         
-        # TODO: Re-enable update check after fixing asyncio compatibility
-        # Check for updates on startup
-        # asyncio.create_task(check_app_updates(self.page))
+        # Check for updates on startup using Flet's task runner to avoid event loop issues
+        try:
+            self.page.run_task(check_app_updates, self.page)
+        except Exception as e:
+            debug_log(f"[UPDATES] Failed to schedule update check: {e}")
         
         # Show login screen
         self.show_login()
@@ -1124,7 +1126,39 @@ class HyperSendApp:
 
 
 async def main(page: ft.Page):
-    app = HyperSendApp(page)
+    """Flet entrypoint with robust startup error handling.
+
+    If anything goes wrong while building the first page, show a simple
+    error screen instead of leaving the user on a blank white screen.
+    """
+    try:
+        HyperSendApp(page)
+    except Exception as e:
+        # Log the error to console for debugging
+        debug_log(f"[FATAL] Failed to start HyperSendApp: {type(e).__name__}: {e}")
+
+        # Show a minimal fallback UI so the user never sees an empty page
+        page.controls = [
+            ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text(
+                            "App failed to start. Please close and reopen.\n"
+                            "If this keeps happening, reinstall the app.",
+                            size=14,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=10,
+                ),
+                alignment=ft.alignment.center,
+                expand=True,
+            )
+        ]
+        page.update()
 
 
 if __name__ == "__main__":
