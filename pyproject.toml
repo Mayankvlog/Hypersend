@@ -58,8 +58,8 @@ frontend = [
   "pydantic==2.11.5",
 ]
 
-[tool.hypersend]
-app_name = "HyperSend"
+[tool.Zaply]
+app_name = "Zaply"
 backend_url = "http://139.59.82.105:8000"
 frontend_dir = "frontend"
 backend_dir = "backend"
