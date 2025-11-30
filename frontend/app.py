@@ -37,6 +37,24 @@ else:
 # Debug mode - disable in production for better performance
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
 
+# Supported UI languages for the app
+LANGUAGES = [
+    ("en", "English"),
+    ("hi", "हिन्दी (Hindi)"),
+    ("te", "తెలుగు (Telugu)"),
+    ("ta", "தமிழ் (Tamil)"),
+    ("mr", "मराठी (Marathi)"),
+    ("pa", "ਪੰਜਾਬੀ (Punjabi)"),
+    ("gu", "ગુજરાતી (Gujarati)"),
+    ("bho", "भोजपुरी (Bhojpuri)"),
+    ("bn", "বাংলা (Bengali)"),
+    ("ur", "اردو (Urdu)"),
+    ("ar", "العربية (Arabic)"),
+    ("fr", "Français (French)"),
+    ("de", "Deutsch (German)"),
+    ("ja", "日本語 (Japanese)"),
+    ("zh", "中文 (Chinese)")
+]
 def debug_log(msg: str):
     """Log debug messages only when DEBUG is enabled"""
     if DEBUG:
@@ -73,6 +91,8 @@ class HyperSendApp:
         self.current_chat: Optional[dict] = None
         self.chats: list = []
         self.messages: list = []
+        # Selected UI language (default English)
+        self.language: str = "en"
         
         # HTTP client - optimized for production VPS with connection pooling
         # Prefer HTTP/2 when available, but gracefully fall back to HTTP/1.1 if h2 is missing
@@ -109,6 +129,23 @@ class HyperSendApp:
     
     def show_login(self):
         """Show login/register screen"""
+        
+        # Language selector at the top of auth screen
+        def on_language_change(e: ft.ControlEvent):
+            self.language = e.control.value or "en"
+            debug_log(f"[LANG] Selected UI language: {self.language}")
+            self.page.update()
+        
+        language_dropdown = ft.Dropdown(
+            label="Language / भाषा",
+            value=self.language,
+            options=[
+                ft.dropdown.Option(code, label) for code, label in LANGUAGES
+            ],
+            on_change=on_language_change,
+            width=300,
+        )
+        
         email_field = ft.TextField(
             label="Email",
             autofocus=True,
@@ -376,6 +413,7 @@ class HyperSendApp:
             ft.Container(
                 content=ft.Column(
                     [
+                        language_dropdown,
                         email_field,
                         username_field,
                         password_field,
@@ -937,6 +975,14 @@ class HyperSendApp:
             spacing=5
         )
         
+        # Language selector for composing messages in this chat
+        chat_language_dropdown = ft.Dropdown(
+            value=self.language,
+            width=130,
+            options=[ft.dropdown.Option(code, label) for code, label in LANGUAGES],
+            on_change=lambda e: setattr(self, "language", e.control.value or "en"),
+        )
+        
         message_input = ft.TextField(
             hint_text="Type a message...",
             border=ft.InputBorder.NONE,
@@ -955,7 +1001,9 @@ class HyperSendApp:
                 response = await self.client.post(
                     f"/api/v1/chats/{chat['_id']}/messages",
                     json={
-                        "text": message_input.value
+                        "text": message_input.value,
+                        # Pass selected language code to backend
+                        "language": self.language,
                     }
                 )
                 
@@ -1005,6 +1053,7 @@ class HyperSendApp:
                         ft.Container(
                             content=ft.Row(
                                 [
+                                    chat_language_dropdown,
                                     ft.IconButton(
                                         icon=icons.ATTACH_FILE,
                                         on_click=pick_file
@@ -1052,7 +1101,7 @@ class HyperSendApp:
             )
             
             if response.status_code != 200:
-                print("Failed to start upload")
+                debug_log("Failed to start upload")
                 return
             
             upload_info = response.json()
@@ -1074,7 +1123,7 @@ class HyperSendApp:
                     )
                     
                     if response.status_code != 200:
-                        print(f"Failed to upload chunk {chunk_index}")
+                        debug_log(f"Failed to upload chunk {chunk_index}")
                         return
             
             # Complete upload
@@ -1083,7 +1132,7 @@ class HyperSendApp:
             )
             
             if response.status_code != 200:
-                print("Failed to complete upload")
+                debug_log("Failed to complete upload")
                 return
                 
             complete_info = response.json()
@@ -1097,10 +1146,10 @@ class HyperSendApp:
                 }
             )
             
-            print("File uploaded successfully")
+            debug_log("File uploaded successfully")
             
         except Exception as ex:
-            print(f"Upload error: {ex}")
+            debug_log(f"Upload error: {ex}")
     
     async def download_file(self, file_id: str):
         """Download file"""
@@ -1115,9 +1164,9 @@ class HyperSendApp:
                 with open(save_path, 'wb') as f:
                     f.write(response.content)
                 
-                print(f"File downloaded to {save_path}")
+                debug_log(f"File downloaded to {save_path}")
         except Exception as ex:
-            print(f"Download error: {ex}")
+            debug_log(f"Download error: {ex}")
     
     def show_new_chat_dialog(self):
         """Show dialog to create new chat"""

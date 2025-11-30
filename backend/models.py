@@ -108,6 +108,8 @@ class ChatInDB(BaseModel):
 class MessageCreate(BaseModel):
     text: Optional[str] = None
     file_id: Optional[str] = None
+    # Optional language code for the message (e.g. "en", "hi")
+    language: Optional[str] = None
 
 
 class MessageInDB(BaseModel):
@@ -117,6 +119,8 @@ class MessageInDB(BaseModel):
     type: str = "text"  # text or file
     text: Optional[str] = None
     file_id: Optional[str] = None
+    # Persist language code with the message for UI display / filtering
+    language: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     saved_by: List[str] = []  # List of user IDs who saved this message
 

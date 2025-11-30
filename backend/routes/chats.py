@@ -176,6 +176,8 @@ async def send_message(
         "type": msg_type,
         "text": message.text,
         "file_id": message.file_id,
+        # Store language code if provided (frontend may send it)
+        "language": message.language,
         "created_at": datetime.utcnow()
     }
     
