@@ -1,11 +1,11 @@
 [project]
-name = "hypersend"
+name = "Zaply"
 version = "1.0.0"
-description = "HyperSend - self-hosted chat + large file transfer app "
+description = "Zaply - chat + large file transfer app "
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-  { name = "Mayank", email = "mayank@example.com" }
+  { name = "Mayank", email = "mayank.kr0311@gmail.com" }
 ]
 license = { text = "Apache-2.0" }
 
