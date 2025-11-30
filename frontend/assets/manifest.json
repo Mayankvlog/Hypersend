@@ -1,7 +1,7 @@
 {
-  "name": "HyperSend",
-  "short_name": "HyperSend",
-  "description": "Chat. Share. 40 GB fast.",
+  "name": "Zaply",
+  "short_name": "Zaply",
+  "description": "Zaply - Fast chat & file sharing (up to 40 GB).",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0B1220",
