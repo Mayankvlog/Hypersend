@@ -57,7 +57,6 @@ class ChatsView(ft.Container):
     
     async def load_chats(self):
         """Load user's chats"""
-        print("DEBUG: ChatsView.load_chats FROM_LOCAL_FILE")
         try:
             data = await self.api_client.list_chats()
             self.chat_list.controls.clear()
