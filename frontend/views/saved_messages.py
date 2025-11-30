@@ -90,6 +90,7 @@ class SavedMessagesView(ft.Container):
         sender_id = message.get("sender_id", "Unknown")
         created_at = message.get("created_at", "")
         message_id = message.get("_id", "")
+        language = message.get("language") or "en"
         
         # Format timestamp
         if isinstance(created_at, str):
@@ -103,7 +104,11 @@ class SavedMessagesView(ft.Container):
                     ft.Row([
                         ft.Column([
                             ft.Text(f"From: {sender_id}", size=12, opacity=0.7),
-                            ft.Text(timestamp, size=10, opacity=0.5)
+                            ft.Text(
+                                f"{timestamp}  •  Lang: {language}",
+                                size=10,
+                                opacity=0.5,
+                            ),
                         ], expand=True),
                         ft.IconButton(
                             icon=ft.icons.BOOKMARK_REMOVE,
