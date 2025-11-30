@@ -83,6 +83,10 @@ def main():
         "--no-ios-no-provisioning-profile",
         "--release",  # Release build for better performance
         "--optimize",  # Enable optimizations
+        # Make startup look clean and avoid long black screen while Flutter loads
+        "--splash-color", "#FDFBFB",           # light splash background (same as app bg)
+        "--splash-dark-color", "#000000",      # dark mode background (optional)
+        "--android-adaptive-icon-background", "#FFFFFF",  # white icon background
     ]
     
     try:
