@@ -1,6 +1,6 @@
-# 🚀 HyperSend
+# 🚀 Zaply
 
-**HyperSend** is a modern, **chat + large-file transfer** application built with a pure Python stack. Self-host fast messaging and share very large files (tested up to ~40 GB) from your own server or VPS, with a mobile-first UI that can be built into an **optimized Android APK**.
+**Zaply** is a modern, **chat + large-file transfer** application built with a pure Python stack. Self-host fast messaging and share very large files (tested up to ~40 GB) from your own server or VPS, with a mobile-first UI that can be built into an **optimized Android APK**.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Latest-009688.svg)](https://fastapi.tiangolo.com/)
@@ -141,8 +141,8 @@ hypersend/
 #### 1. Clone Repository
 
 ```bash
-git clone https://github.com/Mayankvlog/Hypersend.git
-cd Hypersend
+git clone https://github.com/Mayankvlog/Zaply.git
+cd Zaply
 ```
 
 #### 2. Setup Environment
@@ -249,7 +249,7 @@ copy .env.production .env  # Windows
 cp .env.production .env    # Linux/Mac
 
 # Build optimized APK
-flet build apk --name HyperSend --org com.hypersend --release --optimize
+flet build apk --name Zaply --org com.zaply --release --optimize
 ```
 
 ### ⚡ Performance Optimizations
@@ -357,8 +357,8 @@ sudo apt install docker-compose -y
 #### 2. Clone and Configure
 
 ```bash
-git clone https://github.com/Mayankvlog/Hypersend.git
-cd Hypersend
+git clone https://github.com/Mayankvlog/Zaply.git
+cd Zaply
 
 # Configure environment
 cp .env.example .env
@@ -368,7 +368,7 @@ nano .env  # Edit with your values
 **Important environment variables:**
 ```bash
 # MongoDB (use remote server for production)
-MONGODB_URI=mongodb://your-mongo-server:27017/hypersend
+MONGODB_URI=mongodb://your-mongo-server:27017/zaply
 
 # Security (generate strong random key)
 SECRET_KEY=your-super-secret-key-here
@@ -414,7 +414,7 @@ sudo ufw enable
 For production with HTTPS:
 
 ```nginx
-# /etc/nginx/sites-available/hypersend
+# /etc/nginx/sites-available/zaply
 server {
     listen 80;
     server_name api.yourdomain.com;
@@ -451,7 +451,7 @@ server {
 
 Enable and restart:
 ```bash
-sudo ln -s /etc/nginx/sites-available/hypersend /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/zaply /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl restart nginx
 ```
@@ -502,7 +502,7 @@ adb logcat | grep flutter
 sudo systemctl status mongod
 
 # Test connection
-mongosh mongodb://localhost:27017/hypersend
+mongosh mongodb://localhost:27017/zaply
 ```
 
 **Port already in use:**
@@ -556,7 +556,7 @@ UPLOAD_EXPIRE_HOURS=48
 
 ```bash
 # MongoDB
-MONGODB_URI=mongodb://localhost:27017/hypersend
+MONGODB_URI=mongodb://localhost:27017/zaply
 
 # Security
 SECRET_KEY=your-secret-key-min-32-chars
@@ -636,7 +636,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support & Contact
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/Mayankvlog/Hypersend/issues)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/Mayankvlog/Zaply/issues)
 - **Documentation**: Check `frontend/BUILD_APK.md` for APK build details
 - **Email**: [Your contact email]
 

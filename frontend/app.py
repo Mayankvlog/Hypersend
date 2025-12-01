@@ -61,10 +61,10 @@ def debug_log(msg: str):
 
 debug_log(f"[CONFIG] API URL: {API_URL}")
 
-class HyperSendApp:
+class ZaplyApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.page.title = "Hypersend"
+        self.page.title = "Zaply"
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
         self.page.window.width = 400
@@ -128,7 +128,7 @@ class HyperSendApp:
     
     def show_login(self):
         """Show login/register screen"""
-        debug_log(f"[INIT] HyperSendApp initialized, API URL: {API_URL}")
+        debug_log(f"[INIT] ZaplyApp initialized, API URL: {API_URL}")
         def on_language_change(e: ft.ControlEvent):
             self.language = e.control.value or "en"
             debug_log(f"[LANG] Selected UI language: {self.language}")
@@ -1180,17 +1180,17 @@ async def main(page: ft.Page):
     error screen instead of leaving the user on a blank white screen.
     """
     try:
-        HyperSendApp(page)
+        ZaplyApp(page)
     except Exception as e:
         # Log the error to console for debugging
-        debug_log(f"[FATAL] Failed to start HyperSendApp: {type(e).__name__}: {e}")
+        debug_log(f"[FATAL] Failed to start ZaplyApp: {type(e).__name__}: {e}")
 
         # Show a minimal fallback UI so the user never sees an empty page
         page.controls = [
             ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text("Hypersend", size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD),
                         ft.Text(
                             "App failed to start. Please close and reopen.\n"
                             "If this keeps happening, reinstall the app.",
