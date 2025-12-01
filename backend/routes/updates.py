@@ -11,7 +11,7 @@ VERSION_INFO = {
         "version": "1.0.0",
         "build_number": 1,
         "release_date": "2025-01-28",
-        "download_url": "https://your-server.com/downloads/zaply-1.0.0.apk",
+        "download_url": "https://your-server.com/downloads/hypersend-1.0.0.apk",
         "changelog": "Initial release with chat and file sharing features",
         "min_supported_version": "1.0.0",
         "force_update": False
@@ -20,7 +20,7 @@ VERSION_INFO = {
         "version": "1.1.0", 
         "build_number": 2,
         "release_date": "2025-02-01",
-        "download_url": "https://your-server.com/downloads/zaply-1.1.0.apk",
+        "download_url": "https://your-server.com/downloads/hypersend-1.1.0.apk",
         "changelog": "Bug fixes and performance improvements\n- Fixed file upload issues\n- Improved chat UI\n- Better error handling",
         "min_supported_version": "1.0.0",
         "force_update": False

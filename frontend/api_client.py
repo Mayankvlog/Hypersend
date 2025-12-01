@@ -6,10 +6,25 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Backend API URL - configurable via environment variable
-# Default to localhost backend for development
+# Backend API URL - configurable via environment variables
+# Priority: PRODUCTION_API_URL (for VPS) > API_BASE_URL (for dev/docker) > localhost
 # IMPORTANT: Do NOT include /api/v1 suffix - endpoints add it automatically
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+#
+# Development examples:
+#   API_BASE_URL=http://localhost:8000        # Local backend
+#   API_BASE_URL=http://backend:8000          # Docker service name
+#
+# Production examples:
+#   PRODUCTION_API_URL=http://your-vps-ip:8000
+#   PRODUCTION_API_URL=https://api.yourdomain.com
+#
+PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
+DEV_API_URL = os.getenv("API_BASE_URL", "http://localhost:8000").strip()
+
+if PRODUCTION_API_URL and PRODUCTION_API_URL not in ("localhost", "127.0.0.1"):
+    API_BASE_URL = PRODUCTION_API_URL
+else:
+    API_BASE_URL = DEV_API_URL
 
 # Debug mode
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")

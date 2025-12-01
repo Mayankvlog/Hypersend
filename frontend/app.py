@@ -20,19 +20,18 @@ except Exception:
     async def check_app_updates(page: ft.Page):
         return
 
-# API configuration
-# In production (APK / VPS), we want to talk to the public backend by default.
-# Local development can override this by setting API_BASE_URL in .env, BUT we
-# never allow localhost/127.0.0.1 as the final URL in production builds.
-DEFAULT_API_URL = "http://139.59.82.105:8000"
-_raw_api_url = os.getenv("API_BASE_URL", DEFAULT_API_URL) or DEFAULT_API_URL
-_raw_api_url = _raw_api_url.strip()
+#
+DEFAULT_DEV_URL = "http://localhost:8000"
+PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
+DEV_API_URL = os.getenv("API_BASE_URL", DEFAULT_DEV_URL).strip()
 
-# If env accidentally uses localhost, force VPS URL instead
-if "localhost" in _raw_api_url or "127.0.0.1" in _raw_api_url:
-    API_URL = DEFAULT_API_URL
+# Select which URL to use
+if PRODUCTION_API_URL and PRODUCTION_API_URL not in ("localhost", "127.0.0.1"):
+    # Use production URL if explicitly provided
+    API_URL = PRODUCTION_API_URL
 else:
-    API_URL = _raw_api_url
+    # Use development URL (supports localhost, docker service name, or custom URL)
+    API_URL = DEV_API_URL
 
 # Debug mode - disable in production for better performance
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
@@ -65,7 +64,7 @@ debug_log(f"[CONFIG] API URL: {API_URL}")
 class HyperSendApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.page.title = "Zaply"
+        self.page.title = "Hypersend"
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
         self.page.window.width = 400
@@ -129,8 +128,7 @@ class HyperSendApp:
     
     def show_login(self):
         """Show login/register screen"""
-        
-        # Language selector at the top of auth screen
+        debug_log(f"[INIT] HyperSendApp initialized, API URL: {API_URL}")
         def on_language_change(e: ft.ControlEvent):
             self.language = e.control.value or "en"
             debug_log(f"[LANG] Selected UI language: {self.language}")
@@ -252,9 +250,10 @@ class HyperSendApp:
                     "🔌 Cannot connect to server.\n"
                     f"URL: {API_URL}\n\n"
                     "⚠️ SOLUTION:\n"
-                    "1. Make sure the backend API is running and reachable.\n"
-                    f"   (For VPS: {DEFAULT_API_URL})\n"
-                    "2. Check your internet connection.\n\n"
+                    "1. Start the backend: python -m uvicorn backend.main:app\n"
+                    "2. Check API_BASE_URL environment variable\n"
+                    "3. For VPS: Set PRODUCTION_API_URL in .env\n"
+                    "4. Check your internet connection.\n\n"
                     f"Error: {str(ex)[:50]}"
                 )
                 error_text.visible = True
@@ -1191,7 +1190,7 @@ async def main(page: ft.Page):
             ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Hypersend", size=24, weight=ft.FontWeight.BOLD),
                         ft.Text(
                             "App failed to start. Please close and reopen.\n"
                             "If this keeps happening, reinstall the app.",
