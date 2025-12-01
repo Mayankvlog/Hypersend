@@ -19,17 +19,23 @@ from email.message import EmailMessage
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+def auth_log(message: str) -> None:
+    """Log auth-related messages only when DEBUG is enabled."""
+    if settings.DEBUG:
+        print(message)
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate):
     """Register a new user"""
     try:
-        print(f"[AUTH] Registration request for email: {user.email}")
+        auth_log(f"[AUTH] Registration request for email: {user.email}")
         
         # Get users collection - this will raise RuntimeError if DB not connected
         try:
             users = users_collection()
         except RuntimeError as e:
-            print(f"[AUTH] Database not initialized: {e}")
+            auth_log(f"[AUTH] Database not initialized: {e}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database service is unavailable. Please try again later."
@@ -42,14 +48,14 @@ async def register(user: UserCreate):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Database query timeout for {user.email}")
+            auth_log(f"[AUTH] Database query timeout for {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
             )
         
         if existing_user:
-            print(f"[AUTH] Registration failed - Email already exists: {user.email}")
+            auth_log(f"[AUTH] Registration failed - Email already exists: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
@@ -78,7 +84,7 @@ async def register(user: UserCreate):
                 detail="Database operation timed out. Please try again."
             )
         
-        print(f"[AUTH] User registered successfully: {user.email} (ID: {user_doc['_id']})")
+        auth_log(f"[AUTH] User registered successfully: {user.email} (ID: {user_doc['_id']})")
         
         return UserResponse(
             id=user_doc["_id"],
@@ -93,10 +99,11 @@ async def register(user: UserCreate):
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Log the actual error for debugging
-        print(f"[AUTH] Registration failed with error: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        # Log the actual error for debugging when DEBUG is enabled
+        if settings.DEBUG:
+            import traceback
+            print(f"[AUTH] Registration failed with error: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed. Please try again."
@@ -107,13 +114,13 @@ async def register(user: UserCreate):
 async def login(credentials: UserLogin):
     """Login and receive JWT tokens"""
     try:
-        print(f"[AUTH] Login attempt for email: {credentials.email}")
+        auth_log(f"[AUTH] Login attempt for email: {credentials.email}")
         
         # Get users collection
         try:
             users = users_collection()
         except RuntimeError as e:
-            print(f"[AUTH] Database not initialized: {e}")
+            auth_log(f"[AUTH] Database not initialized: {e}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database service is unavailable. Please try again later."
@@ -126,36 +133,36 @@ async def login(credentials: UserLogin):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Database query timeout for {credentials.email}")
+            auth_log(f"[AUTH] Database query timeout for {credentials.email}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
             )
         
         if not user:
-            print(f"[AUTH] Login failed - User not found: {credentials.email}")
+            auth_log(f"[AUTH] Login failed - User not found: {credentials.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
             )
         
-        print(f"[AUTH] User found: {user.get('_id')} - Verifying password")
+        auth_log(f"[AUTH] User found: {user.get('_id')} - Verifying password")
         
         # Verify password
         if not verify_password(credentials.password, user["password_hash"]):
-            print(f"[AUTH] Login failed - Incorrect password for: {credentials.email}")
+            auth_log(f"[AUTH] Login failed - Incorrect password for: {credentials.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
             )
         
-        print(f"[AUTH] Password verified - Creating tokens for user: {user.get('_id')}")
+        auth_log(f"[AUTH] Password verified - Creating tokens for user: {user.get('_id')}")
         
         # Create tokens
         access_token = create_access_token(data={"sub": user["_id"]})
         refresh_token, jti = create_refresh_token(data={"sub": user["_id"]})
         
-        print(f"[AUTH] Tokens created - Storing refresh token")
+        auth_log(f"[AUTH] Tokens created - Storing refresh token")
         
         # Store refresh token with timeout
         try:
@@ -169,13 +176,13 @@ async def login(credentials: UserLogin):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Database operation timeout storing refresh token")
+            auth_log(f"[AUTH] Database operation timeout storing refresh token")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
             )
         
-        print(f"[AUTH] Login successful for: {credentials.email}")
+        auth_log(f"[AUTH] Login successful for: {credentials.email}")
         
         return Token(access_token=access_token, refresh_token=refresh_token)
     
@@ -183,10 +190,11 @@ async def login(credentials: UserLogin):
         # Re-raise HTTP exceptions (like 401 Unauthorized)
         raise
     except Exception as e:
-        # Log the actual error for debugging
-        print(f"[AUTH] Login failed with unexpected error: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        # Log the actual error for debugging when DEBUG is enabled
+        if settings.DEBUG:
+            import traceback
+            print(f"[AUTH] Login failed with unexpected error: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed. Please try again."
@@ -215,7 +223,7 @@ async def refresh_token(refresh_request: RefreshTokenRequest):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Token verification timeout for user: {token_data.user_id}")
+            auth_log(f"[AUTH] Token verification timeout for user: {token_data.user_id}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -238,7 +246,7 @@ async def refresh_token(refresh_request: RefreshTokenRequest):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Delete token timeout for user: {token_data.user_id}")
+            auth_log(f"[AUTH] Delete token timeout for user: {token_data.user_id}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -256,7 +264,7 @@ async def refresh_token(refresh_request: RefreshTokenRequest):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Insert token timeout for user: {token_data.user_id}")
+            auth_log(f"[AUTH] Insert token timeout for user: {token_data.user_id}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -268,9 +276,10 @@ async def refresh_token(refresh_request: RefreshTokenRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[AUTH] Token refresh failed: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        if settings.DEBUG:
+            import traceback
+            print(f"[AUTH] Token refresh failed: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Token refresh failed. Please try again."
@@ -291,19 +300,19 @@ async def logout(refresh_request: RefreshTokenRequest, current_user: str = Depen
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Logout operation timeout for user: {current_user}")
+            auth_log(f"[AUTH] Logout operation timeout for user: {current_user}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Logout operation timed out. Please try again."
             )
         
-        print(f"[AUTH] Logout successful for user: {current_user}")
+        auth_log(f"[AUTH] Logout successful for user: {current_user}")
         return {"message": "Logged out successfully"}
     
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[AUTH] Logout failed: {type(e).__name__}: {str(e)}")
+        auth_log(f"[AUTH] Logout failed: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Logout failed. Please try again."
@@ -316,7 +325,7 @@ async def forgot_password(request: ForgotPasswordRequest):
     """Request password reset token"""
     
     try:
-        print(f"[AUTH] Password reset request for email: {request.email}")
+        auth_log(f"[AUTH] Password reset request for email: {request.email}")
         
         users = users_collection()
         
@@ -327,7 +336,7 @@ async def forgot_password(request: ForgotPasswordRequest):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Database query timeout for {request.email}")
+            auth_log(f"[AUTH] Database query timeout for {request.email}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -335,7 +344,7 @@ async def forgot_password(request: ForgotPasswordRequest):
         
         if not user:
             # Return success anyway (security: don't reveal if email exists)
-            print(f"[AUTH] Password reset requested for non-existent email: {request.email}")
+            auth_log(f"[AUTH] Password reset requested for non-existent email: {request.email}")
             return {
                 "message": "If an account exists with this email, a password reset link has been sent.",
                 "success": True
@@ -389,11 +398,11 @@ async def forgot_password(request: ForgotPasswordRequest):
                     server.send_message(msg)
 
                 email_sent = True
-                print(f"[AUTH] Password reset email sent to: {request.email}")
+                auth_log(f"[AUTH] Password reset email sent to: {request.email}")
             except Exception as e:
-                print(f"[AUTH] Failed to send reset email: {type(e).__name__}: {e}")
+                auth_log(f"[AUTH] Failed to send reset email: {type(e).__name__}: {e}")
 
-        print(f"[AUTH] Password reset token generated for: {request.email}")
+        auth_log(f"[AUTH] Password reset token generated for: {request.email}")
 
         # Always include reset token in API response so users can reset their password
         # even if SMTP is misconfigured or emails are delayed.
@@ -409,7 +418,7 @@ async def forgot_password(request: ForgotPasswordRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[AUTH] Forgot password failed: {type(e).__name__}: {str(e)}")
+        auth_log(f"[AUTH] Forgot password failed: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process password reset request."
@@ -421,14 +430,14 @@ async def reset_password(request: PasswordResetRequest):
     """Reset password using reset token"""
     
     try:
-        print(f"[AUTH] Password reset attempt")
+        auth_log(f"[AUTH] Password reset attempt")
         
         # Validate reset token by decoding JWT directly
         try:
             payload = jwt.decode(request.token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             token_type = payload.get("type")
             if token_type != "password_reset":
-                print(f"[AUTH] Invalid token type: {token_type}")
+                auth_log(f"[AUTH] Invalid token type: {token_type}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid reset token type"
@@ -440,19 +449,19 @@ async def reset_password(request: PasswordResetRequest):
                     detail="Invalid reset token"
                 )
         except jwt.ExpiredSignatureError:
-            print(f"[AUTH] Reset token expired")
+            auth_log(f"[AUTH] Reset token expired")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Reset token has expired"
             )
         except jwt.JWTError as e:
-            print(f"[AUTH] Invalid reset token: {str(e)}")
+            auth_log(f"[AUTH] Invalid reset token: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired reset token"
             )
         except Exception as e:
-            print(f"[AUTH] Unexpected error decoding token: {str(e)}")
+            auth_log(f"[AUTH] Unexpected error decoding token: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired reset token"
@@ -474,7 +483,7 @@ async def reset_password(request: PasswordResetRequest):
             )
         
         if not token_record or token_record.get("used"):
-            print(f"[AUTH] Reset token already used or not found")
+            auth_log(f"[AUTH] Reset token already used or not found")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired reset token"
@@ -508,7 +517,7 @@ async def reset_password(request: PasswordResetRequest):
         except asyncio.TimeoutError:
             pass  # Non-critical, continue anyway
         
-        print(f"[AUTH] Password reset successful for user: {user_id}")
+        auth_log(f"[AUTH] Password reset successful for user: {user_id}")
         return PasswordResetResponse(
             message="Password has been reset successfully. Please login with your new password.",
             success=True
@@ -517,7 +526,7 @@ async def reset_password(request: PasswordResetRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[AUTH] Password reset failed: {type(e).__name__}: {str(e)}")
+        auth_log(f"[AUTH] Password reset failed: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset password. Please try again."
