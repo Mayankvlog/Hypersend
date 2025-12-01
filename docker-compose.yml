@@ -1,62 +1,188 @@
+# Hypersend - Unified Docker Compose Configuration
+# Complete backend-database-frontend stack for VPS deployment
+# 
+# DEPLOYMENT GUIDE:
+#   1. Copy .env.example to .env
+#   2. Update .env with VPS configuration:
+#      - MONGODB_PASSWORD=secure-password
+#      - SECRET_KEY=generated-secure-key
+#      - VPS_IP=139.59.82.105 (your actual VPS IP)
+#   3. Run: docker-compose up -d
+#   4. Check: docker-compose ps
+#
+# SERVICE COMMUNICATION:
+#   Frontend -> Backend: http://backend:8000 (internal Docker network)
+#   Backend -> MongoDB: mongodb://user:pass@mongodb:27017/hypersend
+#   External -> Backend: http://139.59.82.105:8000 (VPS public IP)
+#   External -> Frontend: http://139.59.82.105:8550 (VPS public IP)
+#
 version: '3.8'
 
 services:
+  # ============================================================
+  # MongoDB Database Service
+  # ============================================================
   mongodb:
-    image: mongo:6.0
+    image: mongo:7.0
     container_name: hypersend_mongodb
     restart: unless-stopped
+    
+    # Expose MongoDB port for local development only
     ports:
       - "27017:27017"
+    
+    # Environment variables for MongoDB authentication
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme}
+      MONGO_INITDB_DATABASE: hypersend
+    
+    # Data persistence across container restarts
     volumes:
       - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    
+    # Internal network communication
     networks:
       - hypersend_network
+    
+    # Health check with proper MongoDB authentication ping
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      test: |
+        echo 'db.adminCommand("ping").ok' | mongosh 
+        -u ${MONGO_USER:-admin} 
+        -p ${MONGO_PASSWORD:-changeme} 
+        --authenticationDatabase admin 
+        localhost:27017/test --quiet
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
+    
+    # Enable MongoDB authentication
+    command: mongod --auth --replSet rs0 --bind_ip_all
 
+  # ============================================================
+  # Backend API Service (FastAPI)
+  # ============================================================
   backend:
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
+    
     ports:
       - "8000:8000"
+    
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
+    
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/hypersend
-      - SECRET_KEY=${SECRET_KEY}
-      - DATA_ROOT=/data
-      - UPLOADS_PATH=/app/uploads
-      - MAX_FILE_SIZE=524288000
-      - CHUNK_SIZE=5242880
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
+      # Database Connection with Authentication
+      MONGODB_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/hypersend?authSource=admin&replicaSet=rs0
+      
+      # Security (REQUIRED: Generate and set in .env file)
+      SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      REFRESH_TOKEN_EXPIRE_DAYS: 30
+      
+      # File Storage Configuration (40GB)
+      DATA_ROOT: /data
+      UPLOADS_PATH: /app/uploads
+      MAX_FILE_SIZE_BYTES: 42949672960
+      CHUNK_SIZE: 4194304
+      MAX_PARALLEL_CHUNKS: 4
+      UPLOAD_EXPIRE_HOURS: 24
+      FILE_RETENTION_HOURS: 0
+      
+      # API Configuration
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_BASE_URL: http://${VPS_IP:-139.59.82.105}:8000
+      
+      # Rate Limiting
+      RATE_LIMIT_PER_USER: 100
+      RATE_LIMIT_WINDOW_SECONDS: 60
+      
+      # Debug Settings
+      DEBUG: ${DEBUG:-False}
+      
+      # SMTP Configuration (optional)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+    
     depends_on:
       mongodb:
         condition: service_healthy
+    
     networks:
       - hypersend_network
+    
+    healthcheck:
+      test: wget --quiet --tries=1 --spider http://localhost:8000/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
+  # ============================================================
+  # Frontend Service (Flet Web App)
+  # ============================================================
   frontend:
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
+    
     ports:
       - "8550:8550"
+    
     environment:
-      - API_BASE_URL=http://backend:8000
+      # For internal Docker communication
+      API_BASE_URL: http://backend:8000
+      
+      # For external VPS access (set in .env)
+      PRODUCTION_API_URL: http://${VPS_IP:-139.59.82.105}:8000
+      
+      # Debug mode
+      DEBUG: ${DEBUG:-False}
+    
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    
     networks:
       - hypersend_network
+    
+    healthcheck:
+      test: wget --quiet --tries=1 --spider http://localhost:8550 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
+# ============================================================
+# Internal Network (Service Discovery)
+# ============================================================
 networks:
   hypersend_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
 
+# ============================================================
+# Persistent Volumes
+# ============================================================
 volumes:
+  # MongoDB data persistence
   mongodb_data:
+    driver: local
+  # MongoDB configuration persistence
+  mongodb_config:
+    driver: local

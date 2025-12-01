@@ -52,6 +52,41 @@ class Settings:
     # Default DEBUG to False for production safety; enable explicitly via env when needed
     DEBUG: bool = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
     
+    # CORS Configuration
+    # For development: allow all origins
+    # For production: restrict to specific domains (e.g., ["https://yourdomain.com", "https://app.yourdomain.com"])
+    CORS_ORIGINS: list = [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://localhost:8550",
+        "http://127.0.0.1",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8550",
+        "http://0.0.0.0:8000",  # Docker internal
+        "http://backend:8000",   # Docker service discovery
+    ] if not DEBUG else ["*"]  # Allow all in development/DEBUG mode
+    
+    @classmethod
+    def validate_production(cls):
+        """Validate production-safe settings"""
+        if not cls.DEBUG:
+            # Production mode validations
+            if cls.SECRET_KEY == "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION":
+                raise ValueError(
+                    "CRITICAL: SECRET_KEY must be changed in production! "
+                    "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+            if cls.CORS_ORIGINS == ["*"]:
+                raise ValueError(
+                    "CRITICAL: CORS_ORIGINS set to wildcard in production! "
+                    "Update config.py CORS_ORIGINS to specific domains only."
+                )
+            print("[INFO] Production validations passed")
+        else:
+            print("[INFO] Debug mode enabled - production validations skipped")
+    
     @classmethod
     def init_directories(cls):
         """Create necessary directories"""

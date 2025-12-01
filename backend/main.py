@@ -13,13 +13,32 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     try:
-        print(f"[START] Zaply API starting on {settings.API_HOST}:{settings.API_PORT}")
+        print(f"[START] Hypersend API starting on {settings.API_HOST}:{settings.API_PORT}")
+        print(f"[START] Environment: {'DEBUG' if settings.DEBUG else 'PRODUCTION'}")
         print(f"[DB] Connecting to MongoDB at {settings.MONGODB_URI}...")
+        
+        # Validate production settings
+        try:
+            settings.validate_production()
+        except ValueError as ve:
+            print(f"[ERROR] {str(ve)}")
+            raise
+        
+        # Connect to database with error handling
         await connect_db()
+        
         if settings.DEBUG:
-            print(f"[START] Zaply API running on {settings.API_HOST}:{settings.API_PORT}")
+            print(f"[START] Hypersend API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
+            print(f"[CORS] Allowing all origins (DEBUG mode)")
+        else:
+            print(f"[START] Hypersend API running in PRODUCTION mode")
+            print(f"[CORS] Restricted to configured origins")
+        
         print("[START] Lifespan startup complete, all services ready")
+        print("[START] ✅ Backend is fully operational")
+        
         yield
+        
         print("[SHUTDOWN] Lifespan shutdown starting")
     except Exception as e:
         print(f"[ERROR] CRITICAL: Failed to start backend - {str(e)}")
@@ -33,19 +52,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Zaply API",
-    description="Fast file transfer and messaging application",
+    title="Hypersend API",
+    description="Secure peer-to-peer file transfer and messaging application",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# CORS middleware
+# CORS middleware - configured from settings to respect DEBUG/PRODUCTION modes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Total-Count"],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
 
 
@@ -53,9 +74,10 @@ app.add_middleware(
 async def root():
     """Health check endpoint"""
     return {
-        "app": "Zaply",
+        "app": "Hypersend",
         "version": "1.0.0",
-        "status": "running"
+        "status": "running",
+        "environment": "debug" if settings.DEBUG else "production"
     }
 
 
