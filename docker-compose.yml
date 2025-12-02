@@ -56,8 +56,9 @@ services:
       - ./backend/uploads:/app/uploads
     
     environment:
-      # Database Connection with Authentication
-      MONGODB_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/hypersend?authSource=admin
+      # Database Connection with Authentication (password must be URL-encoded)
+      # Mayank@#03 encodes to Mayank%40%2303
+      MONGODB_URI: mongodb://${MONGO_USER:-admin}:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin
       
       # Security (REQUIRED: Generate and set in .env file)
       SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
