@@ -81,25 +81,25 @@ case $BUILD_TYPE in
         echo "${GREEN}Selected: Minimal Build (ARM64 only)${NC}"
         echo ""
         echo "${YELLOW}[Step 4/5]${NC} Building APK (minimal)..."
-        echo "Command: python -m flet build apk --obfuscate --verbose"
+        echo "Command: flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose"
         echo ""
-        python -m flet build apk --obfuscate --verbose
+        flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose
         ;;
     split)
         echo "${GREEN}Selected: Split Build (per architecture)${NC}"
         echo ""
         echo "${YELLOW}[Step 4/5]${NC} Building split APKs..."
-        echo "Command: python -m flet build apk --obfuscate --split-per-abi --verbose"
+        echo "Command: flet build apk --compile-app --cleanup-app --split-per-abi --verbose"
         echo ""
-        python -m flet build apk --obfuscate --split-per-abi --verbose
+        flet build apk --compile-app --cleanup-app --split-per-abi --verbose
         ;;
     *)
         echo "${GREEN}Selected: Standard Build (all architectures)${NC}"
         echo ""
         echo "${YELLOW}[Step 4/5]${NC} Building APK with optimizations..."
-        echo "Command: python -m flet build apk --obfuscate --split-per-abi --verbose"
+        echo "Command: flet build apk --compile-app --cleanup-app --split-per-abi --verbose"
         echo ""
-        python -m flet build apk --obfuscate --split-per-abi --verbose
+        flet build apk --compile-app --cleanup-app --split-per-abi --verbose
         ;;
 esac
 

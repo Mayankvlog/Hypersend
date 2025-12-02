@@ -57,27 +57,27 @@ if "%1"=="split" goto build_split
 echo Selected: Standard Build (all architectures)
 echo.
 echo [Step 4/5] Building APK with optimizations...
-echo Command: python -m flet build apk --obfuscate --split-per-abi --verbose
+echo Command: flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 echo.
-python -m flet build apk --obfuscate --split-per-abi --verbose
+flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 goto check_result
 
 :build_minimal
 echo Selected: Minimal Build (ARM64 only)
 echo.
 echo [Step 4/5] Building APK (minimal)...
-echo Command: python -m flet build apk --obfuscate --verbose
+echo Command: flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose
 echo.
-python -m flet build apk --obfuscate --verbose
+flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose
 goto check_result
 
 :build_split
 echo Selected: Split Build (per architecture)
 echo.
 echo [Step 4/5] Building split APKs...
-echo Command: python -m flet build apk --obfuscate --split-per-abi --verbose
+echo Command: flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 echo.
-python -m flet build apk --obfuscate --split-per-abi --verbose
+flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 
 :check_result
 if errorlevel 1 (

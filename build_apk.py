@@ -147,8 +147,9 @@ class APKBuilder:
         self.log("Building standard APK with optimizations...", "INFO")
         
         cmd = (
-            "python -m flet build apk "
-            "--obfuscate "
+            "flet build apk "
+            "--compile-app "
+            "--cleanup-app "
             "--split-per-abi "
             "--verbose"
         )
@@ -162,8 +163,10 @@ class APKBuilder:
         
         # Flet minimal build
         cmd = (
-            "python -m flet build apk "
-            "--obfuscate "
+            "flet build apk "
+            "--compile-app "
+            "--cleanup-app "
+            "--arch arm64-v8a "
             "--verbose"
         )
         
@@ -175,8 +178,9 @@ class APKBuilder:
         self.log("Building split APKs (smaller per-architecture APKs)...", "INFO")
         
         cmd = (
-            "python -m flet build apk "
-            "--obfuscate "
+            "flet build apk "
+            "--compile-app "
+            "--cleanup-app "
             "--split-per-abi "
             "--verbose"
         )
