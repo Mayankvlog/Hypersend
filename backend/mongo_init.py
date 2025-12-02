@@ -12,9 +12,16 @@ async def init_mongodb():
     This runs once when the backend starts
     """
     try:
-        # Connect directly to MongoDB admin database
+        # Parse the MongoDB URI to extract connection details
+        from urllib.parse import urlparse, unquote
+        
+        parsed = urlparse(settings.MONGODB_URI)
+        # For initialization, connect to admin database
+        admin_uri = f"{parsed.scheme}://{parsed.netloc}/admin"
+        
+        # Create client for admin database
         client = AsyncIOMotorClient(
-            settings.MONGODB_URI.replace("/hypersend", ""),  # Connect to default database
+            admin_uri,
             serverSelectionTimeoutMS=5000,
         )
         
