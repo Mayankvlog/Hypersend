@@ -1,21 +1,3 @@
-# Hypersend - Unified Docker Compose Configuration
-# Complete backend-database-frontend stack for VPS deployment
-# 
-# DEPLOYMENT GUIDE:
-#   1. Copy .env.example to .env
-#   2. Update .env with VPS configuration:
-#      - MONGODB_PASSWORD=secure-password
-#      - SECRET_KEY=generated-secure-key
-#      - VPS_IP=139.59.82.105 (your actual VPS IP)
-#   3. Run: docker-compose up -d
-#   4. Check: docker-compose ps
-#
-# SERVICE COMMUNICATION:
-#   Frontend -> Backend: http://backend:8000 (internal Docker network)
-#   Backend -> MongoDB: mongodb://user:pass@mongodb:27017/hypersend
-#   External -> Backend: http://139.59.82.105:8000 (VPS public IP)
-#   External -> Frontend: http://139.59.82.105:8550 (VPS public IP)
-#
 version: '3.8'
 
 services:
