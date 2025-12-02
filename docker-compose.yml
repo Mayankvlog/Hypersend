@@ -103,7 +103,7 @@ services:
       - hypersend_network
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -138,7 +138,7 @@ services:
       - hypersend_network
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8550/"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8550/').read()"]
       interval: 10s
       timeout: 5s
       retries: 3
