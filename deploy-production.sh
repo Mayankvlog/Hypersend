@@ -54,6 +54,23 @@ echo -e "${GREEN}✓${NC} Working directory: $(pwd)"
 echo ""
 
 # ============================================================
+# Step 2.5: Ensure Docker & Docker Compose are installed
+# ============================================================
+if ! command -v docker &> /dev/null; then
+   echo -e "${RED}✗${NC} Docker is not installed on this VPS."
+   echo "   Fix: run setup-vps.sh first to install Docker and Docker Compose:"
+   echo "        curl -fsSL https://raw.githubusercontent.com/Mayankvlog/Hypersend/main/setup-vps.sh | bash"
+   exit 1
+fi
+
+if ! command -v docker-compose &> /dev/null; then
+   echo -e "${RED}✗${NC} docker-compose is not installed on this VPS."
+   echo "   Fix: run setup-vps.sh first to install Docker Compose:"
+   echo "        curl -fsSL https://raw.githubusercontent.com/Mayankvlog/Hypersend/main/setup-vps.sh | bash"
+   exit 1
+fi
+
+# ============================================================
 # Step 3: Pull latest code from GitHub
 # ============================================================
 echo -e "${BLUE}[1/6]${NC} Pulling latest code from GitHub..."
