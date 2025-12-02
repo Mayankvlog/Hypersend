@@ -42,8 +42,8 @@ services:
       retries: 5
       start_period: 15s
     
-    # Enable MongoDB authentication
-    command: mongod --auth --replSet rs0 --bind_ip_all
+    # Enable MongoDB authentication without replica set (single-node)
+    command: mongod --auth --bind_ip_all
 
   # ============================================================
   # Backend API Service (FastAPI)
@@ -62,7 +62,7 @@ services:
     
     environment:
       # Database Connection with Authentication
-      MONGODB_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/hypersend?authSource=admin&replicaSet=rs0
+      MONGODB_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/hypersend?authSource=admin
       
       # Security (REQUIRED: Generate and set in .env file)
       SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
