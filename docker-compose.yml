@@ -43,6 +43,10 @@ services:
   # Backend API Service (FastAPI)
   # ============================================================
   backend:
+    # Build backend image from local source to ensure latest code is used.
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped

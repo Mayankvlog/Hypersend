@@ -60,14 +60,15 @@ fi
 echo -e "${GREEN}✓${NC} Docker is installed"
 
 # ============================================================
-# Step 3: Check if Docker Compose is installed
+# Step 3: Check if Docker Compose plugin is installed (docker compose)
 # ============================================================
-if ! command -v docker-compose &> /dev/null; then
-   echo -e "${YELLOW}Installing Docker Compose...${NC}"
-   curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-   chmod +x /usr/local/bin/docker-compose
+if ! docker compose version &> /dev/null; then
+   echo -e "${YELLOW}Installing Docker Compose plugin...${NC}"
+   mkdir -p /usr/local/lib/docker/cli-plugins
+   curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
+   chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 fi
-echo -e "${GREEN}✓${NC} Docker Compose is installed"
+echo -e "${GREEN}✓${NC} Docker Compose plugin is installed (docker compose)"
 echo ""
 
 # ============================================================
@@ -107,7 +108,7 @@ echo ""
 # Step 6: Pull Docker images
 # ============================================================
 echo -e "${BLUE}[4/7]${NC} Pulling Docker images..."
-docker-compose pull
+docker compose pull
 echo -e "${GREEN}✓${NC} Images pulled"
 echo ""
 
@@ -115,8 +116,8 @@ echo ""
 # Step 7: Start services
 # ============================================================
 echo -e "${BLUE}[5/7]${NC} Starting services..."
-docker-compose down 2>/dev/null || true
-docker-compose up -d
+docker compose down 2>/dev/null || true
+docker compose up -d --build
 echo -e "${GREEN}✓${NC} Services started"
 echo ""
 
@@ -126,9 +127,9 @@ echo ""
 echo -e "${BLUE}[6/7]${NC} Waiting for services to be ready..."
 sleep 5
 
-BACKEND_RUNNING=$(docker-compose ps | grep hypersend_backend | grep -c "Up" || echo "0")
-FRONTEND_RUNNING=$(docker-compose ps | grep hypersend_frontend | grep -c "Up" || echo "0")
-MONGODB_RUNNING=$(docker-compose ps | grep hypersend_mongodb | grep -c "Up" || echo "0")
+BACKEND_RUNNING=$(docker compose ps | grep hypersend_backend | grep -c "Up" || echo "0")
+FRONTEND_RUNNING=$(docker compose ps | grep hypersend_frontend | grep -c "Up" || echo "0")
+MONGODB_RUNNING=$(docker compose ps | grep hypersend_mongodb | grep -c "Up" || echo "0")
 
 if [ "$BACKEND_RUNNING" == "1" ] && [ "$FRONTEND_RUNNING" == "1" ] && [ "$MONGODB_RUNNING" == "1" ]; then
    echo -e "${GREEN}✓${NC} All services running"
@@ -166,13 +167,13 @@ echo "  📁 Project:     $REPO_DIR"
 echo "  ⚙️  Config:      .env"
 echo "  🐳 Compose:     docker-compose.yml"
 echo ""
+
 echo "Useful commands:"
-echo "  View status:    docker-compose ps"
+echo "  View status:    docker compose ps"
 echo "  View logs:      docker logs -f hypersend_backend"
-echo "  Stop services:  docker-compose down"
-echo "  Restart:        docker-compose restart"
+echo "  Stop services:  docker compose down"
+echo "  Restart:        docker compose restart"
 echo ""
-echo "Documentation:"
 echo "  • QUICK_DEPLOY.md     - Quick deployment guide"
 echo "  • VPS_DEBUG_GUIDE.md  - Troubleshooting guide"
 echo "  • README.md           - Full documentation"
