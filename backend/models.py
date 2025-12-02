@@ -40,6 +40,14 @@ class UserInDB(BaseModel):
     quota_used: int = 0
     quota_limit: int = 42949672960  # 40 GiB default
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    permissions: dict = Field(default_factory=lambda: {
+        "location": False,
+        "camera": False,
+        "microphone": False,
+        "contacts": False,
+        "phone": False,
+        "storage": False
+    })
 
     class Config:
         populate_by_name = True
