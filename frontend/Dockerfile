@@ -18,5 +18,5 @@ COPY __init__.py .
 # Expose port
 EXPOSE 8550
 
-# Run the application
-CMD ["flet", "run", "--web", "--port", "8550", "app.py"]
+# Run the application with Python directly (Flet web mode)
+CMD ["python", "app.py"]
