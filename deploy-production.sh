@@ -91,7 +91,7 @@ if [ ! -f ".env.production" ]; then
    echo ""
    echo "   Required changes:"
    echo "   - MONGO_PASSWORD: Set a strong password"
-   echo "   - SECRET_KEY: Already pre-filled with secure key"
+   echo "   - SECRET_KEY: Generate with: python3 -c 'import secrets; print(secrets.token_urlsafe(32))'"
    echo "   - VPS_IP: Set to your server IP (139.59.82.105)"
    echo ""
    echo "   Then run this script again."
@@ -111,9 +111,11 @@ if [ -z "$SECRET_KEY" ]; then
    exit 1
 fi
 
-if [[ "$SECRET_KEY" == *"YOUR_GENERATED"* ]] || [[ "$SECRET_KEY" == "" ]]; then
-   echo -e "${RED}✗${NC} SECRET_KEY is still invalid. Edit .env.production:"
+# Disallow placeholder values checked in to Git
+if [[ "$SECRET_KEY" == "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION" ]] || [[ "$SECRET_KEY" == *"YOUR_GENERATED"* ]]; then
+   echo -e "${RED}✗${NC} SECRET_KEY is still a placeholder. Edit .env.production and set a real secret:"
    echo ""
+   echo "   python3 -c 'import secrets; print(secrets.token_urlsafe(32))'"
    echo "   nano .env.production"
    echo ""
    exit 1
