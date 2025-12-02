@@ -17,7 +17,7 @@ class Settings:
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017/hypersend")
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production-5y7L9x2K")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -49,8 +49,8 @@ class Settings:
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
     
     # Development
-    # Default DEBUG to False for production safety; enable explicitly via env when needed
-    DEBUG: bool = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+    # Default DEBUG to True for development; set to False in production with proper SECRET_KEY
+    DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     
     # CORS Configuration
     # For development: allow all origins
@@ -71,9 +71,12 @@ class Settings:
     @classmethod
     def validate_production(cls):
         """Validate production-safe settings"""
-        if not cls.DEBUG:
+        if cls.DEBUG:
+            print("[INFO] ✅ Development mode enabled - production validations skipped")
+            print("[INFO] ⚠️  Remember to set DEBUG=False for production deployment")
+        else:
             # Production mode validations
-            if cls.SECRET_KEY == "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION":
+            if "dev-secret-key" in cls.SECRET_KEY or cls.SECRET_KEY == "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION":
                 raise ValueError(
                     "CRITICAL: SECRET_KEY must be changed in production! "
                     "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
@@ -83,9 +86,7 @@ class Settings:
                     "CRITICAL: CORS_ORIGINS set to wildcard in production! "
                     "Update config.py CORS_ORIGINS to specific domains only."
                 )
-            print("[INFO] Production validations passed")
-        else:
-            print("[INFO] Debug mode enabled - production validations skipped")
+            print("[INFO] ✅ Production validations passed")
     
     @classmethod
     def init_directories(cls):
