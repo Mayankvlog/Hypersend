@@ -20,6 +20,11 @@ except Exception:
     async def check_app_updates(page: ft.Page):
         return
 
+try:
+    from .views.settings import SettingsView
+except Exception:
+    SettingsView = None
+
 #
 DEFAULT_DEV_URL = "http://localhost:8000"
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
@@ -830,6 +835,10 @@ class ZaplyApp:
                 ft.IconButton(
                     icon=icons.ADD,
                     on_click=lambda e: self.show_new_chat_dialog()
+                ),
+                ft.IconButton(
+                    icon=icons.SETTINGS,
+                    on_click=lambda e: self.show_settings()
                 )
             ]
         )
@@ -884,6 +893,27 @@ class ZaplyApp:
             )
         ]
         self.page.update()
+
+    def show_settings(self):
+        """Show settings view"""
+        if not SettingsView:
+            print("[ERROR] SettingsView not available")
+            return
+        
+        try:
+            settings_view = SettingsView(
+                page=self.page,
+                api_client=self.client,
+                current_user=self.current_user,
+                on_logout=self.handle_logout,
+                on_back=self.show_chat_list
+            )
+            self.page.clean()
+            self.page.add(settings_view)
+            self.page.update()
+        except Exception as e:
+            debug_log(f"[SETTINGS] Error opening settings: {e}")
+            print(f"Error opening settings: {e}")
 
     def show_chat(self, chat: dict):
         """Show chat messages"""
@@ -1171,6 +1201,14 @@ class ZaplyApp:
         """Show dialog to create new chat"""
         # Simplified - in production, show user search
         pass
+
+    def handle_logout(self):
+        """Handle logout action"""
+        self.token = None
+        self.current_user = None
+        self.chats = []
+        self.messages = []
+        self.show_login()
 
 
 async def main(page: ft.Page):
