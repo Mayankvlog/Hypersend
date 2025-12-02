@@ -376,3 +376,50 @@ class APIClient:
             raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
         except Exception as e:
             raise Exception(str(e))
+    
+    # Permissions endpoints
+    async def get_permissions(self) -> Dict[str, bool]:
+        """Get current user's permissions"""
+        try:
+            debug_log(f"[API] Fetching permissions from {self.base_url}/api/v1/users/permissions")
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/users/permissions",
+                headers=self._get_headers()
+            )
+            
+            if response.status_code != 200:
+                debug_log(f"[API] Failed to get permissions: {response.status_code}")
+                return {}
+            
+            return response.json()
+        except Exception as e:
+            debug_log(f"[API] Error fetching permissions: {e}")
+            return {}
+    
+    async def update_permissions(self, permissions: Dict[str, bool]) -> Dict[str, Any]:
+        """Update user's permissions"""
+        try:
+            debug_log(f"[API] Updating permissions to {self.base_url}/api/v1/users/permissions")
+            response = await self.client.put(
+                f"{self.base_url}/api/v1/users/permissions",
+                json=permissions,
+                headers=self._get_headers()
+            )
+            
+            if response.status_code not in [200, 201]:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", str(error_data))
+                except Exception:
+                    error_detail = response.text[:200]
+                debug_log(f"[API] Update permissions failed: {error_detail}")
+                raise Exception(f"Failed to update permissions: {error_detail}")
+            
+            return response.json()
+        except httpx.TimeoutException:
+            raise Exception("Request timeout. Please check your internet connection.")
+        except httpx.ConnectError as e:
+            raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
+        except Exception as e:
+            raise Exception(str(e))
