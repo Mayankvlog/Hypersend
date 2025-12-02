@@ -16,14 +16,14 @@
 **Best for:** General distribution to all devices
 
 ```bash
-python -m flet build apk --obfuscate --split-per-abi --verbose
+flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 ```
 
 **What it does:**
 - Optimized for production
 - Creates separate APKs for different CPU architectures
-- Removes debug symbols
-- Users download only what they need
+- Compiles Python files to .pyc
+- Removes unnecessary files
 
 **Expected Size:** 80-120 MB total (split across 2-3 APKs)
 **Compatibility:** All Android devices
@@ -40,14 +40,13 @@ python -m flet build apk --obfuscate --split-per-abi --verbose
 **Best for:** Maximum size reduction
 
 ```bash
-python -m flet build apk --obfuscate --verbose
+flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose
 ```
 
 **What it does:**
 - Single APK for ARM64 architecture
-- Maximum obfuscation
+- Compiles Python files and removes unnecessary data
 - Smallest possible file size
-- Removes all unnecessary data
 
 **Expected Size:** 60-80 MB (single APK)
 **Compatibility:** ARM64 devices only
@@ -180,10 +179,10 @@ find . -name "*.pyc" -delete
 ### Step 3: Choose Build Type and Execute
 ```bash
 # Option A: Standard (Recommended)
-python -m flet build apk --obfuscate --split-per-abi --verbose
+flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 
 # Option B: Minimal (Smallest)
-python -m flet build apk --obfuscate --verbose
+flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose
 
 # Option C: Using script
 python build_apk.py standard
@@ -427,14 +426,14 @@ flet build apk --product --obfuscate --split-per-abi --verbose
 
 1. **For Testing:**
    ```bash
-   python -m flet build apk --obfuscate --verbose
+   flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose
    ```
    - Smallest, fastest to build
    - Good for initial testing
 
 2. **For Distribution:**
    ```bash
-   python -m flet build apk --obfuscate --split-per-abi --verbose
+   flet build apk --compile-app --cleanup-app --split-per-abi --verbose
    ```
    - Optimized for all devices
    - Good for Google Play

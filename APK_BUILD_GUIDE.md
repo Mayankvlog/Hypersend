@@ -4,11 +4,12 @@
 
 ### 1. **Standard APK Build (Recommended)**
 ```bash
-python -m flet build apk --obfuscate --split-per-abi --verbose
+flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 ```
 
 **What it does:**
-- `--obfuscate`: Minifies code and removes debug symbols
+- `--compile-app`: Compiles Python files to .pyc for faster loading
+- `--cleanup-app`: Removes unnecessary app files
 - `--split-per-abi`: Creates separate APKs for different CPU architectures
 
 **Expected Size:** 80-120 MB
@@ -17,13 +18,13 @@ python -m flet build apk --obfuscate --split-per-abi --verbose
 
 ### 2. **Minimal APK Build (Smallest Size)**
 ```bash
-python -m flet build apk --obfuscate --verbose
+flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose
 ```
 
 **What it does:**
-- Creates single APK for ARM64 architecture
-- Removes all debug information
-- Minimal dependencies
+- Creates single APK for ARM64 architecture only
+- Compiles Python files to .pyc
+- Removes unnecessary files and assets
 
 **Expected Size:** 60-80 MB
 **Limitation:** Works only on ARM64 devices
@@ -32,7 +33,7 @@ python -m flet build apk --obfuscate --verbose
 
 ### 3. **Split APK Build (Fastest Install)**
 ```bash
-python -m flet build apk --obfuscate --split-per-abi --verbose
+flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 ```
 
 **What it does:**
@@ -49,12 +50,12 @@ python -m flet build apk --obfuscate --split-per-abi --verbose
 
 ### 4. **Ultra-Optimized Build**
 ```bash
-python -m flet build apk --obfuscate --split-per-abi --verbose
+flet build apk --compile-app --cleanup-app --split-per-abi --verbose
 ```
 
 **What it does:**
 - All optimizations above
-- Removes unnecessary assets
+- Compiles Python files and removes unnecessary assets
 - Shows detailed build output
 
 **Expected Size:** 70-100 MB (split)
