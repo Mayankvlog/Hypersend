@@ -4,11 +4,10 @@
 
 ### 1. **Standard APK Build (Recommended)**
 ```bash
-flet build apk --product --obfuscate --split-per-abi
+python -m flet build apk --obfuscate --split-per-abi --verbose
 ```
 
 **What it does:**
-- `--product`: Production mode (optimized)
 - `--obfuscate`: Minifies code and removes debug symbols
 - `--split-per-abi`: Creates separate APKs for different CPU architectures
 
@@ -18,7 +17,7 @@ flet build apk --product --obfuscate --split-per-abi
 
 ### 2. **Minimal APK Build (Smallest Size)**
 ```bash
-flet build apk --product --obfuscate
+python -m flet build apk --obfuscate --verbose
 ```
 
 **What it does:**
@@ -33,7 +32,7 @@ flet build apk --product --obfuscate
 
 ### 3. **Split APK Build (Fastest Install)**
 ```bash
-flet build apk --product --obfuscate --split-per-abi
+python -m flet build apk --obfuscate --split-per-abi --verbose
 ```
 
 **What it does:**
@@ -50,12 +49,12 @@ flet build apk --product --obfuscate --split-per-abi
 
 ### 4. **Ultra-Optimized Build**
 ```bash
-flet build apk --product --obfuscate --split-per-abi --no-web --verbose
+python -m flet build apk --obfuscate --split-per-abi --verbose
 ```
 
 **What it does:**
 - All optimizations above
-- Removes web assets
+- Removes unnecessary assets
 - Shows detailed build output
 
 **Expected Size:** 70-100 MB (split)

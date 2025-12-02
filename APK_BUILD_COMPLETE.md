@@ -16,7 +16,7 @@
 **Best for:** General distribution to all devices
 
 ```bash
-flet build apk --product --obfuscate --split-per-abi --verbose
+python -m flet build apk --obfuscate --split-per-abi --verbose
 ```
 
 **What it does:**
@@ -40,7 +40,7 @@ flet build apk --product --obfuscate --split-per-abi --verbose
 **Best for:** Maximum size reduction
 
 ```bash
-flet build apk --product --obfuscate --verbose
+python -m flet build apk --obfuscate --verbose
 ```
 
 **What it does:**
@@ -67,7 +67,7 @@ flet build apk --product --obfuscate --verbose
 **Best for:** Different device architectures
 
 ```bash
-flet build apk --product --obfuscate --split-per-abi --verbose
+python -m flet build apk --obfuscate --split-per-abi --verbose
 ```
 
 **What it does:**
@@ -180,10 +180,10 @@ find . -name "*.pyc" -delete
 ### Step 3: Choose Build Type and Execute
 ```bash
 # Option A: Standard (Recommended)
-flet build apk --product --obfuscate --split-per-abi --verbose
+python -m flet build apk --obfuscate --split-per-abi --verbose
 
 # Option B: Minimal (Smallest)
-flet build apk --product --obfuscate --verbose
+python -m flet build apk --obfuscate --verbose
 
 # Option C: Using script
 python build_apk.py standard
@@ -427,14 +427,14 @@ flet build apk --product --obfuscate --split-per-abi --verbose
 
 1. **For Testing:**
    ```bash
-   flet build apk --product --obfuscate --verbose
+   python -m flet build apk --obfuscate --verbose
    ```
    - Smallest, fastest to build
    - Good for initial testing
 
 2. **For Distribution:**
    ```bash
-   flet build apk --product --obfuscate --split-per-abi --verbose
+   python -m flet build apk --obfuscate --split-per-abi --verbose
    ```
    - Optimized for all devices
    - Good for Google Play
