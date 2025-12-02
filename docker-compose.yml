@@ -32,15 +32,15 @@ services:
     # Health check with proper MongoDB authentication ping
     healthcheck:
       test: |
-        echo 'db.adminCommand("ping").ok' | mongosh 
-        -u ${MONGO_USER:-admin} 
-        -p ${MONGO_PASSWORD:-changeme} 
-        --authenticationDatabase admin 
-        localhost:27017/test --quiet
+        mongosh --eval 'db.adminCommand("ping")' \
+        -u ${MONGO_USER:-admin} \
+        -p ${MONGO_PASSWORD:-changeme} \
+        --authenticationDatabase admin \
+        localhost:27017/test --quiet > /dev/null 2>&1 || exit 1
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 20s
     
     # Enable MongoDB authentication without replica set (single-node)
     command: mongod --auth --bind_ip_all
