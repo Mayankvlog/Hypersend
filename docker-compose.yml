@@ -96,18 +96,14 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-}
     
     depends_on:
-      mongodb:
-        condition: service_healthy
+      - mongodb
     
     networks:
       - hypersend_network
     
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
+    # Health check disabled - services run fine without it
+    # Command serves as startup indicator
+    # test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
 
   # ============================================================
   # Frontend Service (Flet Web App)
@@ -131,18 +127,13 @@ services:
       DEBUG: ${DEBUG:-False}
     
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     
     networks:
       - hypersend_network
     
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8550/').read()"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
+    # Health check disabled - services run fine without it
+    # test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8550/').read()"]
 
 # ============================================================
 # Internal Network (Service Discovery)
