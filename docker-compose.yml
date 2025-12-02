@@ -60,7 +60,8 @@ services:
       MONGODB_URI: mongodb://${MONGO_USER:-admin}:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin
       
       # Security (REQUIRED: Generate and set in .env file)
-      SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
+      # Default allows development to work. Set actual SECRET_KEY in .env for production.
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-5y7L9x2K}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30
