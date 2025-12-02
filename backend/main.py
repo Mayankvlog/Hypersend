@@ -6,6 +6,7 @@ from pathlib import Path
 from backend.database import connect_db, close_db
 from backend.routes import auth, files, chats, users, updates
 from backend.config import settings
+from backend.mongo_init import ensure_mongodb_ready
 
 
 @asynccontextmanager
@@ -15,6 +16,11 @@ async def lifespan(app: FastAPI):
     try:
         print(f"[START] Zaply API starting on {settings.API_HOST}:{settings.API_PORT}")
         print(f"[START] Environment: {'DEBUG' if settings.DEBUG else 'PRODUCTION'}")
+        print(f"[DB] Initializing MongoDB...")
+        
+        # Initialize MongoDB (create users, collections, indexes)
+        await ensure_mongodb_ready()
+        
         print(f"[DB] Connecting to MongoDB at {settings.MONGODB_URI}...")
         
         # Validate production settings
