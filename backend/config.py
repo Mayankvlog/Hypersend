@@ -76,12 +76,18 @@ class Settings:
             print("[INFO] ⚠️  Remember to set DEBUG=False for production deployment")
         else:
             # Production mode validations
-            if "dev-secret-key" in cls.SECRET_KEY or cls.SECRET_KEY == "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION":
+            if "dev-secret-key" in cls.SECRET_KEY.lower() or cls.SECRET_KEY == "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION":
+                print("[ERROR] ⚠️  PRODUCTION MODE DETECTED but using development SECRET_KEY!")
+                print("[ERROR] To fix, set environment variable before starting:")
+                print("[ERROR]   export SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')")
+                print("[ERROR] Then restart the container.")
                 raise ValueError(
                     "CRITICAL: SECRET_KEY must be changed in production! "
                     "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
                 )
             if cls.CORS_ORIGINS == ["*"]:
+                print("[ERROR] ⚠️  CORS_ORIGINS set to wildcard in production!")
+                print("[ERROR] Update docker-compose.yml or .env.production to restrict CORS")
                 raise ValueError(
                     "CRITICAL: CORS_ORIGINS set to wildcard in production! "
                     "Update config.py CORS_ORIGINS to specific domains only."
