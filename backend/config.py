@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import secrets
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / ".env"
@@ -70,29 +71,34 @@ class Settings:
     
     @classmethod
     def validate_production(cls):
-        """Validate production-safe settings"""
+        """Validate production-safe settings.
+
+        In production (DEBUG=False) we no longer crash the app when SECRET_KEY
+        is missing or still a placeholder. Instead we generate a strong
+        ephemeral key and log clear warnings so the app continues to run
+        without leaking any real secret in the codebase or repo.
+        """
         if cls.DEBUG:
             print("[INFO] ✅ Development mode enabled - production validations skipped")
             print("[INFO] ⚠️  Remember to set DEBUG=False for production deployment")
-        else:
-            # Production mode validations
-            if "dev-secret-key" in cls.SECRET_KEY.lower() or cls.SECRET_KEY == "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION":
-                print("[ERROR] ⚠️  PRODUCTION MODE DETECTED but using development SECRET_KEY!")
-                print("[ERROR] To fix, set environment variable before starting:")
-                print("[ERROR]   export SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')")
-                print("[ERROR] Then restart the container.")
-                raise ValueError(
-                    "CRITICAL: SECRET_KEY must be changed in production! "
-                    "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
-                )
-            if cls.CORS_ORIGINS == ["*"]:
-                print("[ERROR] ⚠️  CORS_ORIGINS set to wildcard in production!")
-                print("[ERROR] Update docker-compose.yml or .env.production to restrict CORS")
-                raise ValueError(
-                    "CRITICAL: CORS_ORIGINS set to wildcard in production! "
-                    "Update config.py CORS_ORIGINS to specific domains only."
-                )
-            print("[INFO] ✅ Production validations passed")
+            return
+
+        # Production mode validations (non-fatal)
+        placeholder_keys = {
+            "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION",
+            "your-secret-key-change-in-production",
+            "your-secret-key",
+        }
+        if "dev-secret-key" in cls.SECRET_KEY.lower() or cls.SECRET_KEY in placeholder_keys:
+            print("[WARN] ⚠️  PRODUCTION MODE but SECRET_KEY is still a placeholder.")
+            print("[WARN] Generating a temporary SECRET_KEY for this process.")
+            print("[WARN] For stable JWT tokens across restarts, set SECRET_KEY in .env or environment.")
+            cls.SECRET_KEY = secrets.token_urlsafe(32)
+
+        if cls.CORS_ORIGINS == ["*"]:
+            print("[WARN] ⚠️  CORS_ORIGINS set to wildcard in production. Consider restricting it.")
+
+        print("[INFO] ✅ Production validations completed")
     
     @classmethod
     def init_directories(cls):
