@@ -2,6 +2,37 @@ version: '3.8'
 
 services:
   # ============================================================
+  # Nginx Reverse Proxy
+  # ============================================================
+  nginx:
+    image: nginx:alpine
+    container_name: hypersend_nginx
+    restart: unless-stopped
+    
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./data:/data:ro
+      - nginx_cache:/var/cache/nginx
+    
+    depends_on:
+      - backend
+      - frontend
+    
+    networks:
+      - hypersend_network
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================
   # MongoDB Database Service
   # ============================================================
   mongodb:
@@ -159,4 +190,7 @@ volumes:
     driver: local
   # MongoDB configuration persistence
   mongodb_config:
+    driver: local
+  # Nginx cache
+  nginx_cache:
     driver: local
