@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+import sys
+import platform
 
 # dotenv is optional in some Android build environments; import defensively
 try:
@@ -20,16 +22,20 @@ except Exception:  # ImportError or any other unexpected issue
 # Load environment variables if available
 load_dotenv()
 
-try:
-    from .update_manager import check_app_updates
-except Exception:  
-    async def check_app_updates(page: ft.Page):
-        return
+async def check_app_updates(page: ft.Page):
+    """Dummy update check - can be extended later"""
+    return
 
+def SettingsView(*args, **kwargs):
+    """Dummy settings view - will be implemented later"""
+    return None
+
+# Import permissions manager
 try:
-    from .views.settings import SettingsView
-except Exception:
-    SettingsView = None
+    from frontend.permissions_manager import request_android_permissions
+except ImportError:
+    def request_android_permissions():
+        return False
 
 #
 # Default backend URL now points to your DigitalOcean VPS
@@ -71,6 +77,16 @@ def debug_log(msg: str):
     """Log debug messages only when DEBUG is enabled"""
     if DEBUG:
         print(msg)
+
+async def request_app_permissions(page: ft.Page):
+    """Request required permissions on app startup"""
+    try:
+        if sys.platform == "android":
+            debug_log("[PERMS] Requesting app permissions...")
+            request_android_permissions()
+            debug_log("[PERMS] Permission request completed")
+    except Exception as e:
+        debug_log(f"[PERMS] Error during permission request: {e}")
 
 debug_log(f"[CONFIG] API URL: {API_URL}")
 
@@ -129,6 +145,12 @@ class ZaplyApp:
             color_scheme_seed=self.primary_color,
             use_material3=True
         )
+        
+        # Request permissions on startup (Android)
+        try:
+            self.page.run_task(request_app_permissions, self.page)
+        except Exception as e:
+            debug_log(f"[PERMS] Failed to request permissions: {e}")
         
         # Check for updates on startup using Flet's task runner to avoid event loop issues
         try:
