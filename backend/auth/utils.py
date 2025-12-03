@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import uuid
 import jwt
+from jwt import PyJWTError
 import hashlib
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
@@ -79,7 +80,9 @@ def decode_token(token: str) -> TokenData:
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except jwt.JWTError:
+    except PyJWTError:
+        # Any JWT-related error (invalid signature, bad format, etc.)
+        # should surface as a 401 Unauthorized rather than 500.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
