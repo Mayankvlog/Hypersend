@@ -13,8 +13,8 @@ load_dotenv()
 class UpdateManager:
     def __init__(self):
         self.current_version = "1.0.0" 
-        # Base backend URL for updates: prefer explicit UPDATE_SERVER_URL, then API_BASE_URL, then localhost
-        api_base = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
+        # Base backend URL for updates: prefer explicit UPDATE_SERVER_URL, then API_BASE_URL, then VPS IP
+        api_base = os.getenv("API_BASE_URL", "http://139.59.82.105:8000").rstrip("/")
         default_updates_url = f"{api_base}/api/v1/updates"
         self.update_server_url = os.getenv("UPDATE_SERVER_URL", default_updates_url).rstrip("/")
         self.client = httpx.AsyncClient(

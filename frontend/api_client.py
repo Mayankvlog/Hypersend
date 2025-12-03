@@ -19,7 +19,8 @@ load_dotenv()
 #   PRODUCTION_API_URL=https://api.yourdomain.com
 #
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
-DEV_API_URL = os.getenv("API_BASE_URL", "http://localhost:8000").strip()
+# Default to your DigitalOcean VPS when API_BASE_URL is not set
+DEV_API_URL = os.getenv("API_BASE_URL", "http://139.59.82.105:8000").strip()
 
 if PRODUCTION_API_URL and PRODUCTION_API_URL not in ("localhost", "127.0.0.1"):
     API_BASE_URL = PRODUCTION_API_URL
