@@ -362,7 +362,18 @@ class ZaplyApp:
                 login_btn.text = "Register"
             except httpx.ConnectError as ex:
                 debug_log(f"[REGISTER] Connection error: {ex}")
-                error_text.value = f"🔌 Cannot connect to server.\nURL: {API_URL}\n\n⚠️ SOLUTION:\n1. Start backend: python run_backend.py\n2. Backend must be listening on port 8000\n\nError: {str(ex)[:50]}"
+                # Show the same helpful message as the login handler so users
+                # know exactly how to fix backend connectivity for both flows.
+                error_text.value = (
+                    "🔌 Cannot connect to server.\n"
+                    f"URL: {API_URL}\n\n"
+                    "⚠️ SOLUTION:\n"
+                    "1. Start the backend: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000\n"
+                    "2. Check API_BASE_URL / PRODUCTION_API_URL in your .env file\n"
+                    "3. For Android APK: build using .env.production so it uses your VPS URL\n"
+                    "4. Make sure your phone and server have internet access.\n\n"
+                    f"Error: {str(ex)[:50]}"
+                )
                 error_text.visible = True
                 login_btn.disabled = False
                 login_btn.text = "Register"
