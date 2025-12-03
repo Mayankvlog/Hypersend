@@ -16,7 +16,7 @@ bcrypt==4.2.1
 PyJWT==2.10.1
 
 # File Handling
-python-multipart==0.0.20
+python-multipart==0.0.18
 aiofiles==24.1.0
 
 # HTTP Client - with HTTP/2 support
