@@ -9,9 +9,15 @@ import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
-from dotenv import load_dotenv
 
-# Load environment variables
+# dotenv is optional in some Android build environments; import defensively
+try:
+    from dotenv import load_dotenv
+except Exception:  # ImportError or any other unexpected issue
+    def load_dotenv(*args, **kwargs):  # type: ignore
+        return None
+
+# Load environment variables if available
 load_dotenv()
 
 try:
@@ -136,6 +142,9 @@ class ZaplyApp:
     def show_login(self):
         """Show login/register screen"""
         debug_log(f"[INIT] ZaplyApp initialized, API URL: {API_URL}")
+        # Ensure page is properly styled
+        self.page.bgcolor = self.bg_dark
+        
         def on_language_change(e: ft.ControlEvent):
             self.language = e.control.value or "en"
             debug_log(f"[LANG] Selected UI language: {self.language}")
@@ -1230,23 +1239,32 @@ async def main(page: ft.Page):
     If anything goes wrong while building the first page, show a simple
     error screen instead of leaving the user on a blank white screen.
     """
+    # Set page properties first
+    page.title = "Zaply"
+    page.theme_mode = ft.ThemeMode.LIGHT
+    page.padding = 0
+    page.bgcolor = "#FDFBFB"
+    
     try:
         ZaplyApp(page)
     except Exception as e:
         # Log the error to console for debugging
         debug_log(f"[FATAL] Failed to start ZaplyApp: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
 
         # Show a minimal fallback UI so the user never sees an empty page
         page.controls = [
             ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
                         ft.Text(
                             "App failed to start. Please close and reopen.\n"
                             "If this keeps happening, reinstall the app.",
                             size=14,
                             text_align=ft.TextAlign.CENTER,
+                            color=ft.colors.BLACK87,
                         ),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -1255,10 +1273,11 @@ async def main(page: ft.Page):
                 ),
                 alignment=ft.alignment.center,
                 expand=True,
+                bgcolor="#FDFBFB",
             )
         ]
         page.update()
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(target=main, name="Zaply")
