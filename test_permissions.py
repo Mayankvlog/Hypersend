@@ -9,8 +9,8 @@ import httpx
 import json
 from typing import Dict, Any
 
-# Configuration
-API_BASE_URL = "http://localhost:8000/api/v1"
+# Configuration (point tests to your DigitalOcean VPS backend)
+API_BASE_URL = "http://139.59.82.105:8000/api/v1"
 TEST_TOKEN = "test_token_here"  # Replace with actual token from login
 
 class PermissionsTestSuite:
@@ -154,7 +154,7 @@ async def main():
     """Main entry point"""
     print("\n🔐 PERMISSIONS SYSTEM TESTING\n")
     print("Prerequisites:")
-    print("1. Backend must be running on http://localhost:8000")
+    print("1. Backend must be running on http://139.59.82.105:8000")
     print("2. MongoDB must be running")
     print("3. You must have a valid JWT token from login")
     print("\nUsage:")

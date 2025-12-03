@@ -15,7 +15,8 @@ if not os.getenv("MONGODB_URI"):
 class Settings:
     # MongoDB (Local server - MongoDB Compass can connect to this)
     # Priority: .env > environment variable > default
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017/hypersend")
+    # Default to DigitalOcean VPS MongoDB; can be overridden via MONGODB_URI.
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://139.59.82.105:27017/hypersend")
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production-5y7L9x2K")
@@ -35,7 +36,8 @@ class Settings:
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000")
+    # Default public API base URL for this deployment (DigitalOcean VPS)
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://139.59.82.105:8000")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -57,14 +59,11 @@ class Settings:
     # For development: allow all origins
     # For production: restrict to specific domains (e.g., ["https://yourdomain.com", "https://app.yourdomain.com"])
     CORS_ORIGINS: list = [
-        "http://localhost",
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://localhost:8550",
-        "http://127.0.0.1",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000",
-        "http://127.0.0.1:8550",
+        "http://139.59.82.105",
+        "http://139.59.82.105:8000",
+        "http://139.59.82.105:8550",
+        "https://139.59.82.105",
+        "https://139.59.82.105:8000",
         "http://0.0.0.0:8000",  # Docker internal
         "http://backend:8000",   # Docker service discovery
     ] if not DEBUG else ["*"]  # Allow all in development/DEBUG mode

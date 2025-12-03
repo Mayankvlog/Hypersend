@@ -11,8 +11,8 @@ import hashlib
 import secrets
 import sys
 
-# Configuration
-MONGO_URI = "mongodb://hypersend:Mayank@#03@localhost:27017/hypersend?authSource=admin&replicaSet=rs0"
+# Configuration (points directly to your DigitalOcean VPS MongoDB)
+MONGO_URI = "mongodb://hypersend:Mayank@#03@139.59.82.105:27017/hypersend?authSource=admin&replicaSet=admin"
 DB_NAME = "hypersend"
 
 # Sample data
@@ -349,7 +349,7 @@ class HypersendSeeder:
             print("\n✅ Database seeding completed successfully!")
             print("\n💡 Next Steps:")
             print("   1. Open MongoDB Compass")
-            print("   2. Connect to: localhost:27017")
+            print("   2. Connect to: 139.59.82.105:27017")
             print("   3. Username: hypersend")
             print("   4. Password: Mayank@#03")
             print("   5. Browse hypersend database")
