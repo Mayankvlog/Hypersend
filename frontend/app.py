@@ -32,11 +32,12 @@ PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
 DEV_API_URL = os.getenv("API_BASE_URL", DEFAULT_DEV_URL).strip()
 
 # Select which URL to use
-if PRODUCTION_API_URL and PRODUCTION_API_URL not in ("localhost", "127.0.0.1"):
-    # Use production URL if explicitly provided
+# Prefer explicit PRODUCTION_API_URL when set; otherwise fall back to DEV_API_URL.
+if PRODUCTION_API_URL:
+    # Use production URL if explicitly provided (VPS, domain, etc.)
     API_URL = PRODUCTION_API_URL
 else:
-    # Use development URL (supports localhost, docker service name, or custom URL)
+    # Fallback to development URL (typically your VPS IP from API_BASE_URL)
     API_URL = DEV_API_URL
 
 # Debug mode - disable in production for better performance

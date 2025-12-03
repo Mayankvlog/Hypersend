@@ -7,22 +7,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Backend API URL - configurable via environment variables
-# Priority: PRODUCTION_API_URL (for VPS) > API_BASE_URL (for dev/docker) > localhost
+# Priority: PRODUCTION_API_URL (for VPS/domain) > API_BASE_URL (for dev/docker)
 # IMPORTANT: Do NOT include /api/v1 suffix - endpoints add it automatically
 #
 # Development examples:
-#   API_BASE_URL=http://localhost:8000        # Local backend
 #   API_BASE_URL=http://backend:8000          # Docker service name
 #
 # Production examples:
-#   PRODUCTION_API_URL=http://your-vps-ip:8000
+#   PRODUCTION_API_URL=http://139.59.82.105:8000
 #   PRODUCTION_API_URL=https://api.yourdomain.com
 #
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
 # Default to your DigitalOcean VPS when API_BASE_URL is not set
 DEV_API_URL = os.getenv("API_BASE_URL", "http://139.59.82.105:8000").strip()
 
-if PRODUCTION_API_URL and PRODUCTION_API_URL not in ("localhost", "127.0.0.1"):
+# Select final base URL
+if PRODUCTION_API_URL:
     API_BASE_URL = PRODUCTION_API_URL
 else:
     API_BASE_URL = DEV_API_URL

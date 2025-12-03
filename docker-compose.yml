@@ -108,7 +108,7 @@ services:
     
     # Health check disabled - services run fine without it
     # Command serves as startup indicator
-    # test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+    # test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://backend:8000/health').read()"]
 
   # ============================================================
   # Frontend Service (Flet Web App)
@@ -138,7 +138,7 @@ services:
       - hypersend_network
     
     # Health check disabled - services run fine without it
-    # test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8550/').read()"]
+    # test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://frontend:8550/').read()"]
 
 # ============================================================
 # Internal Network (Service Discovery)
