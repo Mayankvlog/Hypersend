@@ -6,7 +6,7 @@ uvicorn[standard]==0.32.1
 motor==3.6.0
 
 # Data Validation
-pydantic[email]==2.10.3
+pydantic[email]==2.11.5
 pydantic-settings==2.6.1
 
 # Authentication & Security
