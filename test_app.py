@@ -2,9 +2,22 @@
 """Test script to verify app functionality with support for local and VPS testing"""
 import asyncio
 import os
+import pytest
 from frontend.api_client import APIClient, API_BASE_URL, DEBUG
 from frontend.app import API_URL, debug_log
 
+@pytest.fixture
+def vps_url() -> str:
+    """Fixture to supply VPS URL for tests.
+
+    If TEST_VPS_URL is not set, skip the VPS test instead of failing.
+    """
+    url = os.getenv("TEST_VPS_URL", "").strip()
+    if not url:
+        pytest.skip("TEST_VPS_URL is not set; skipping VPS connectivity test")
+    return url
+
+@pytest.mark.asyncio
 async def test_local_api():
     """Test local API connectivity (development)"""
     print("\n" + "==" * 30)
@@ -44,6 +57,7 @@ async def test_local_api():
     print("==" * 30)
     return True
 
+@pytest.mark.asyncio
 async def test_vps_api(vps_url: str):
     """Test VPS API connectivity (production)"""
     print("\n" + "==" * 30)

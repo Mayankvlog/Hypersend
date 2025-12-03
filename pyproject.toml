@@ -10,24 +10,22 @@ authors = [
 license = { text = "Apache-2.0" }
 
 # Core dependencies used by the full project (backend + frontend)
-[project.dependencies]
-fastapi = "==0.104.1"
-uvicorn = "==0.24.0"
-motor = "==3.6.0"
-# Use main pydantic version for shared use; backend also pins email extra in optional deps
-pydantic = "==2.11.5"
-python-jose = { version = "==3.3.0", extras = ["cryptography"] }
-passlib = { version = "==1.7.4", extras = ["bcrypt"] }
-bcrypt = "==4.1.2"
-python-multipart = "==0.0.6"
-aiofiles = "==23.2.1"
-# HTTP client with HTTP/2 support
-httpx = { version = ">=0.28.1", extras = ["http2"] }
-h2 = ">=4.1.0"
-python-dotenv = "==1.0.0"
-PyJWT = "==2.10.1"
-# Frontend deps
-flet = ">=0.28.3"
+dependencies = [
+  "fastapi==0.104.1",
+  "uvicorn==0.24.0",
+  "motor==3.6.0",
+  "pydantic==2.11.5",
+  "python-jose[cryptography]==3.3.0",
+  "passlib[bcrypt]==1.7.4",
+  "bcrypt==4.1.2",
+  "python-multipart==0.0.6",
+  "aiofiles==23.2.1",
+  "httpx[http2]>=0.28.1",
+  "h2>=4.1.0",
+  "python-dotenv==1.0.0",
+  "PyJWT==2.10.1",
+  "flet>=0.28.3",
+]
 
 [project.optional-dependencies]
 # Pure backend environment (matches backend/requirements.txt as close as possible)
