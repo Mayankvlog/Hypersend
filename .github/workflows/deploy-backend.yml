@@ -161,7 +161,7 @@ jobs:
             max_health_attempts=30
             health_attempt=0
             while [ $health_attempt -lt $max_health_attempts ]; do
-              if docker compose exec -T backend curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              if docker compose exec -T backend curl -sf http://127.0.0.1:8000/health > /dev/null 2>&1; then
                 echo "✅ Backend is healthy and responding"
                 break
               fi

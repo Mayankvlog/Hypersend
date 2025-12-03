@@ -163,14 +163,14 @@ cp .env.example .env
 # Install dependencies
 pip install -r backend/requirements.txt
 
-# Run backend
+# Run backend on your VPS
 python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Backend available at:
-- API: `http://localhost:8000`
-- Docs: `http://localhost:8000/docs`
-- Health: `http://localhost:8000/health`
+Backend available at (VPS):
+- API: `http://139.59.82.105:8000`
+- Docs: `http://139.59.82.105:8000/docs`
+- Health: `http://139.59.82.105:8000/health`
 
 #### 4. Start Frontend
 
@@ -208,10 +208,10 @@ docker-compose logs -f
 docker-compose down
 ```
 
-Services:
-- **MongoDB**: `localhost:27017`
-- **Backend**: `http://localhost:8000`
-- **Frontend**: `http://localhost:8550`
+Services (VPS):
+- **MongoDB**: `139.59.82.105:27017`
+- **Backend**: `http://139.59.82.105:8000`
+- **Frontend**: `http://139.59.82.105:8550`
 
 ---
 
@@ -367,10 +367,10 @@ cp .env.example .env
 nano .env  # Edit with your values
 ```
 
-**Important environment variables:**
+**Important environment variables (VPS default):**
 ```bash
-# MongoDB (use remote server for production)
-MONGODB_URI=mongodb://your-mongo-server:27017/hypersend
+# MongoDB (DigitalOcean VPS)
+MONGODB_URI=mongodb://139.59.82.105:27017/hypersend
 
 # Security (generate strong random key)
 SECRET_KEY=your-super-secret-key-here
@@ -378,7 +378,7 @@ SECRET_KEY=your-super-secret-key-here
 # API Configuration
 API_HOST=0.0.0.0
 API_PORT=8000
-API_BASE_URL=http://your-vps-ip:8000
+API_BASE_URL=http://139.59.82.105:8000
 
 # Storage
 DATA_ROOT=/data
@@ -439,7 +439,7 @@ server {
 
     # Backend proxy
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://139.59.82.105:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_http_version 1.1;
@@ -478,8 +478,8 @@ pytest --cov=backend backend/tests/
 # Test on desktop
 python frontend/app.py
 
-# Test API connectivity
-python -c "import httpx; print(httpx.get('http://localhost:8000/health').json())"
+# Test API connectivity (VPS)
+python -c "import httpx; print(httpx.get('http://139.59.82.105:8000/health').json())"
 ```
 
 ### APK Testing
@@ -503,8 +503,8 @@ adb logcat | grep flutter
 # Check MongoDB is running
 sudo systemctl status mongod
 
-# Test connection
-mongosh mongodb://localhost:27017/hypersend
+# Test connection (VPS)
+mongosh mongodb://139.59.82.105:27017/hypersend
 ```
 
 **Port already in use:**
@@ -519,7 +519,7 @@ netstat -ano | findstr :8000  # Windows
 ### Frontend Issues
 
 **Cannot connect to backend:**
-1. Check backend is running: `curl http://localhost:8000/health`
+1. Check backend is running: `curl http://139.59.82.105:8000/health`
 2. Verify `API_BASE_URL` in `.env` or `frontend/.env.production`
 3. Check firewall allows port 8000
 
@@ -557,8 +557,8 @@ UPLOAD_EXPIRE_HOURS=48
 ### Environment Variables
 
 ```bash
-# MongoDB
-MONGODB_URI=mongodb://localhost:27017/hypersend
+# MongoDB (VPS)
+MONGODB_URI=mongodb://139.59.82.105:27017/hypersend
 
 # Security
 SECRET_KEY=your-secret-key-min-32-chars
@@ -566,10 +566,10 @@ ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=15
 REFRESH_TOKEN_EXPIRE_DAYS=30
 
-# API Server
+# API Server (VPS)
 API_HOST=0.0.0.0
 API_PORT=8000
-API_BASE_URL=http://localhost:8000
+API_BASE_URL=http://139.59.82.105:8000
 
 # File Storage
 DATA_ROOT=./data

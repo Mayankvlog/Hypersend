@@ -146,23 +146,23 @@ cd ..
 
 ### 6. Configure MongoDB
 ```bash
-# Using Docker
+# Using Docker (on your VPS 139.59.82.105)
 docker run -d \
   -p 27017:27017 \
   -v mongodb_data:/data/db \
   --name zaply_mongo \
   mongo:7.0
 
-# OR using local MongoDB
-# Ensure MongoDB is running and accessible at localhost:27017
+# OR using MongoDB directly on the VPS
+# Ensure MongoDB is running and accessible at 139.59.82.105:27017
 ```
 
 ### 7. Start Backend Server
 ```bash
 cd backend
 python main.py
-# Server runs at http://localhost:8000
-# API docs at http://localhost:8000/docs
+# Server runs at http://139.59.82.105:8000  (your DigitalOcean VPS)
+# API docs at http://139.59.82.105:8000/docs
 ```
 
 ### 8. Start Frontend App
@@ -284,8 +284,8 @@ Zaply/
 
 ### Backend Configuration (`backend/config.py`)
 ```python
-# MongoDB
-MONGODB_URL = "mongodb://localhost:27017"
+# MongoDB (VPS)
+MONGODB_URL = "mongodb://139.59.82.105:27017"
 DATABASE_NAME = "zaply"
 
 # JWT
@@ -300,8 +300,8 @@ PORT = 8000
 
 ### Frontend Configuration (`frontend/app.py`)
 ```python
-# API Settings
-API_BASE_URL = "http://localhost:8000"
+# API Settings (VPS)
+API_BASE_URL = "http://139.59.82.105:8000"
 API_TIMEOUT = 30
 
 # App Settings
@@ -389,11 +389,11 @@ docker-compose build
 docker-compose up -d
 ```
 
-#### Access Application
-- **Frontend**: http://localhost:8080
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-- **MongoDB**: localhost:27017
+#### Access Application (VPS)
+- **Frontend**: http://139.59.82.105:8550
+- **Backend API**: http://139.59.82.105:8000
+- **API Docs**: http://139.59.82.105:8000/docs
+- **MongoDB**: 139.59.82.105:27017
 
 #### View Logs
 ```bash
@@ -417,9 +417,9 @@ docker-compose logs -f mongo
 ## 📚 API Documentation
 
 ### Auto-Generated Docs
-Once backend is running, visit:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+Once backend is running on your VPS, visit:
+- **Swagger UI**: http://139.59.82.105:8000/docs
+- **ReDoc**: http://139.59.82.105:8000/redoc
 
 ### Key Endpoints
 
