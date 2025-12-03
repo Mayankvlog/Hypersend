@@ -151,7 +151,7 @@ class ZaplyApp:
             self.page.update()
         
         language_dropdown = ft.Dropdown(
-            label="Language / भाषा",
+            label="Language",
             value=self.language,
             options=[
                 ft.dropdown.Option(code, label) for code, label in LANGUAGES
