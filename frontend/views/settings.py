@@ -1,170 +1,133 @@
-"""
-Settings View - User account settings and preferences
-"""
 import flet as ft
-from frontend.theme import PRIMARY_COLOR, SPACING_MEDIUM, SPACING_LARGE, BORDER_RADIUS
-from frontend.views.permissions import PermissionsView, PermissionsSettingsCard
+import asyncio
+import os
+import sys
 
+from frontend.permissions_manager import REQUIRED_PERMISSIONS, check_permission, request_android_permissions
 
-class SettingsView(ft.Container):
-    """User settings and preferences view"""
+def SettingsView(
+    page: ft.Page,
+    api_client,
+    current_user: dict,
+    on_logout: callable,
+    on_back: callable
+):
+    """
+    Flet view for application settings, including permission management.
+    """
     
-    def __init__(self, page, api_client, current_user, on_logout, on_back):
-        super().__init__()
-        self.page = page
-        self.api_client = api_client
-        self.current_user = current_user
-        self.on_logout = on_logout
-        self.on_back = on_back
-        self.permissions_data = {}
+    # Placeholder for the actual content of SettingsView
+    # This will be replaced with actual UI logic
+    
+    # --- Permission UI ---
+    def get_permission_status_icon(perm_name: str):
+        if sys.platform != "android":
+            return ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN_500)
         
-        # Header
-        self.header = ft.Row(
-            [
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
+        if check_permission(perm_name):
+            return ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN_500)
+        else:
+            return ft.Icon(ft.icons.CANCEL, color=ft.colors.RED_500)
+
+    async def _request_permissions_on_click(e):
+        e.control.disabled = True
+        e.control.text = "Requesting..."
+        page.update()
+        # Request permissions
+        await asyncio.sleep(0.1) # Give UI time to update
+        request_android_permissions() # This will trigger system dialog
+        await asyncio.sleep(1) # Give user time to react to dialog
+        e.control.disabled = False
+        e.control.text = "Request Permissions Again"
+        # Update UI to reflect new status
+        for perm_row in permissions_list.controls:
+            perm_name = perm_row.data
+            perm_row.controls[1] = get_permission_status_icon(perm_name)
+        page.update()
+
+    permissions_list = ft.Column(
+        controls=[
+            ft.Row(
+                controls=[
+                    ft.Text(perm.split(".")[-1], expand=True),
+                    get_permission_status_icon(perm),
+                ],
+                data=perm # Store permission name for later update
+            ) for perm in REQUIRED_PERMISSIONS
+        ],
+        spacing=10
+    )
+
+    permission_section = ft.Column(
+        controls=[
+            ft.Text("Permissions", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text(
+                "Manage app permissions. Permissions not granted here can be "
+                "managed in your device's system settings.",
+                size=12,
+                color=ft.colors.BLACK54
+            ),
+            ft.Container(height=10),
+            permissions_list,
+            ft.Container(height=10),
+            ft.ElevatedButton(
+                text="Request Permissions Again",
+                on_click=_request_permissions_on_click,
+                visible=sys.platform == "android"
+            ),
+            ft.TextButton(
+                text="Open App Settings (Android)",
+                on_click=lambda e: print("Open Android App Settings (Not Implemented)"), # TODO: Implement jnius call to open app settings
+                visible=sys.platform == "android"
+            )
+        ]
+    )
+
+    # --- Other Settings (Placeholders) ---
+    account_section = ft.Column(
+        controls=[
+            ft.Text("Account", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text(f"Logged in as: {current_user.get('email', 'N/A')}"),
+            ft.ElevatedButton("Logout", on_click=lambda e: on_logout()),
+        ]
+    )
+
+    about_section = ft.Column(
+        controls=[
+            ft.Text("About", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text("Zaply App Version 1.0.0"),
+            ft.Text("Made with ❤️ by Mayan"),
+        ]
+    )
+
+
+    # Main Layout
+    view_controls = ft.Column(
+        controls=[
+            permission_section,
+            ft.Divider(),
+            account_section,
+            ft.Divider(),
+            about_section,
+        ],
+        scroll=ft.ScrollMode.AUTO,
+        expand=True,
+        spacing=20,
+        padding=20
+    )
+
+    return ft.View(
+        "/settings",
+        [
+            ft.AppBar(
+                leading=ft.IconButton(
+                    icon=ft.icons.ARROW_BACK,
                     on_click=lambda e: on_back()
                 ),
-                ft.Text("Settings", size=20, weight="bold", expand=True),
-                ft.Container(width=48)
-            ],
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN
-        )
-        
-        # Settings content
-        self.settings_column = ft.Column(
-            spacing=SPACING_MEDIUM,
-            scroll=ft.ScrollMode.AUTO
-        )
-        
-        # Build UI
-        self.build_ui()
-        
-        # Load permissions
-        self.page.run_task(self.load_permissions)
-        
-        # Main layout
-        self.content = ft.Column(
-            [
-                self.header,
-                ft.Divider(),
-                self.settings_column,
-                ft.Container(height=SPACING_LARGE),
-                ft.ElevatedButton(
-                    "Logout",
-                    on_click=lambda e: self.page.run_task(self.handle_logout),
-                    width=300,
-                    height=45,
-                    bgcolor=ft.Colors.RED_400,
-                    color=ft.Colors.WHITE
-                ),
-            ],
-            spacing=SPACING_MEDIUM,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER
-        )
-        
-        self.padding = SPACING_LARGE
-        self.expand = True
-    
-    def build_ui(self):
-        """Build settings UI"""
-        # User Info Section
-        self.settings_column.controls.append(
-            ft.Text("Account", size=14, weight="bold", color=PRIMARY_COLOR)
-        )
-        
-        # Current user email
-        self.settings_column.controls.append(
-            ft.Card(
-                content=ft.Container(
-                    content=ft.Column(
-                        [
-                            ft.Text("Email", size=12, color=ft.Colors.GREY_700),
-                            ft.Text(
-                                self.current_user.get("email", "N/A"),
-                                size=14,
-                                weight="bold"
-                            )
-                        ],
-                        spacing=4
-                    ),
-                    padding=SPACING_MEDIUM
-                )
-            )
-        )
-        
-        # Permissions Section
-        self.settings_column.controls.append(
-            ft.Container(height=SPACING_MEDIUM)
-        )
-        
-        self.settings_column.controls.append(
-            ft.Text("Permissions", size=14, weight="bold", color=PRIMARY_COLOR)
-        )
-        
-        # Permissions card (will be populated after loading)
-        self.permissions_card_container = ft.Container()
-        self.settings_column.controls.append(self.permissions_card_container)
-        
-        # App Info Section
-        self.settings_column.controls.append(
-            ft.Container(height=SPACING_MEDIUM)
-        )
-        
-        self.settings_column.controls.append(
-            ft.Text("About", size=14, weight="bold", color=PRIMARY_COLOR)
-        )
-        
-        self.settings_column.controls.append(
-            ft.Card(
-                content=ft.Container(
-                    content=ft.Column(
-                        [
-                            ft.Row([
-                                ft.Text("App Version", size=12, color=ft.Colors.GREY_700, expand=True),
-                                ft.Text("1.0.0", size=12, weight="bold")
-                            ]),
-                            ft.Divider(),
-                            ft.Row([
-                                ft.Text("App Name", size=12, color=ft.Colors.GREY_700, expand=True),
-                                ft.Text("Zaply", size=12, weight="bold")
-                            ])
-                        ],
-                        spacing=8
-                    ),
-                    padding=SPACING_MEDIUM
-                )
-            )
-        )
-    
-    async def load_permissions(self):
-        """Load user's current permissions"""
-        try:
-            self.permissions_data = await self.api_client.get_permissions()
-            
-            # Update permissions card
-            def open_permissions_view():
-                """Open full permissions view"""
-                perm_view = PermissionsView(self.page, self.api_client, self.on_back)
-                self.page.clean()
-                self.page.add(perm_view)
-                self.page.update()
-            
-            permissions_card = PermissionsSettingsCard(
-                self.permissions_data,
-                on_edit=open_permissions_view
-            )
-            
-            self.permissions_card_container.content = permissions_card
-            self.page.update()
-        except Exception as e:
-            print(f"Error loading permissions: {e}")
-    
-    async def handle_logout(self, e):
-        """Handle logout"""
-        try:
-            await self.api_client.logout()
-            self.on_logout()
-        except Exception as error:
-            print(f"Logout error: {error}")
-            self.on_logout()  # Logout anyway
+                title=ft.Text("Settings"),
+                center_title=False,
+                bgcolor=ft.colors.SURFACE_VARIANT
+            ),
+            view_controls
+        ]
+    )
