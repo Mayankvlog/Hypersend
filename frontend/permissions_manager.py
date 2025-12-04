@@ -34,16 +34,20 @@ def request_android_permissions():
     Request Android runtime permissions using JNI.
     Only works on Android API 23+
     """
+    debug_log("[PERMS] Starting permission request process...")
     if sys.platform != "android":
         debug_log("[PERMS] Not on Android, skipping permission request")
         return False
     
     try:
+        debug_log("[PERMS] Attempting to import jnius...")
         from jnius import autoclass, cast
+        debug_log("[PERMS] jnius imported successfully.")
         
         # Get the Android activity
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
         activity = PythonActivity.mActivity
+        debug_log(f"[PERMS] Android activity obtained: {activity}")
         
         # Get Context for permission checking
         Context = autoclass('android.content.Context')
@@ -51,37 +55,29 @@ def request_android_permissions():
         
         # Create String array
         String = autoclass('java.lang.String')
-        perm_array = autoclass('[Ljava/lang/String;')
         
         # Filter permissions that are not already granted
         permissions_to_request = []
+        debug_log(f"[PERMS] Checking {len(REQUIRED_PERMISSIONS)} required permissions.")
         
         for perm in REQUIRED_PERMISSIONS:
             try:
                 # Check if permission is already granted
                 result = activity.checkSelfPermission(String(perm))
                 if result != PackageManager.PERMISSION_GRANTED:
+                    debug_log(f"[PERMS] - {perm}: Not granted")
                     permissions_to_request.append(perm)
                 else:
-                    debug_log(f"[PERMS] {perm} already granted")
+                    debug_log(f"[PERMS] - {perm}: Already granted")
             except Exception as e:
                 debug_log(f"[PERMS] Error checking {perm}: {e}")
                 permissions_to_request.append(perm)
         
         if not permissions_to_request:
-            debug_log("[PERMS] All permissions already granted")
+            debug_log("[PERMS] All necessary permissions are already granted.")
             return True
         
-        debug_log(f"[PERMS] Requesting {len(permissions_to_request)} permissions")
-        
-        # Convert list to Java String array
-        java_perms = autoclass('java.lang.reflect.Array')
-        perm_array = autoclass('[Ljava/lang/String;')
-        
-        # Create array and populate
-        perm_array_obj = String(permissions_to_request[0])
-        for perm in permissions_to_request:
-            perm_array_obj = cast(perm_array_obj, String)
+        debug_log(f"[PERMS] Requesting {len(permissions_to_request)} new permissions: {', '.join(permissions_to_request)}")
         
         # Request permissions with request code 1
         activity.requestPermissions(
@@ -89,14 +85,14 @@ def request_android_permissions():
             1
         )
         
-        debug_log("[PERMS] Permission request sent to Android")
+        debug_log("[PERMS] Android permission request dialog has been triggered.")
         return True
         
     except ImportError:
-        debug_log("[PERMS] JNI not available, permissions cannot be requested")
+        debug_log("[PERMS] FATAL: jnius module not found. Permissions cannot be requested. Is it installed in the build?")
         return False
     except Exception as e:
-        debug_log(f"[PERMS] Error requesting permissions: {type(e).__name__}: {e}")
+        debug_log(f"[PERMS] FATAL: An unhandled error occurred while requesting permissions: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return False
