@@ -44,6 +44,26 @@ def SettingsView(
             perm_name = perm_row.data
             perm_row.controls[1] = get_permission_status_icon(perm_name)
         page.update()
+    
+    def _open_app_settings(e):
+        if sys.platform == "android":
+            try:
+                from jnius import autoclass
+                
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Intent = autoclass('android.content.Intent')
+                Uri = autoclass('android.net.Uri')
+                
+                # Create an Intent to open app settings
+                intent = Intent()
+                intent.setAction("android.settings.APPLICATION_DETAILS_SETTINGS")
+                uri = Uri.fromParts("package", PythonActivity.mActivity.getPackageName(), None)
+                intent.setData(uri)
+                
+                # Start the activity
+                PythonActivity.mActivity.startActivity(intent)
+            except Exception as ex:
+                print(f"Error opening app settings: {ex}")
 
     permissions_list = ft.Column(
         controls=[
@@ -62,8 +82,7 @@ def SettingsView(
         controls=[
             ft.Text("Permissions", size=18, weight=ft.FontWeight.BOLD),
             ft.Text(
-                "Manage app permissions. Permissions not granted here can be "
-                "managed in your device's system settings.",
+                "Permissions are managed by Android. Tap 'Open App Settings' to change them.",
                 size=12,
                 color=ft.colors.BLACK54
             ),
@@ -77,7 +96,7 @@ def SettingsView(
             ),
             ft.TextButton(
                 text="Open App Settings (Android)",
-                on_click=lambda e: print("Open Android App Settings (Not Implemented)"), # TODO: Implement jnius call to open app settings
+                on_click=_open_app_settings,
                 visible=sys.platform == "android"
             )
         ]
