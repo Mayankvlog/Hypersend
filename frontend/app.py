@@ -26,9 +26,7 @@ async def check_app_updates(page: ft.Page):
     """Dummy update check - can be extended later"""
     return
 
-def SettingsView(*args, **kwargs):
-    """Dummy settings view - will be implemented later"""
-    return None
+from frontend.views.settings import SettingsView
 
 # Import permissions manager
 try:
