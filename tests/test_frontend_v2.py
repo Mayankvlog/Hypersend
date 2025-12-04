@@ -111,7 +111,7 @@ def test_pubspec():
         pubspec_content = pubspec_path.read_text()
         
         checks = [
-            ('name: zaply', "App name"),
+            ('name: Zaply', "App name"),
             ('version: 1.0.0+1', "Version"),
             ('flutter:', "Flutter config"),
         ]
