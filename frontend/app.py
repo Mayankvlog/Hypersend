@@ -1266,8 +1266,28 @@ async def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     page.bgcolor = "#FDFBFB"
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.vertical_alignment = ft.MainAxisAlignment.CENTER
+
+    # Show a loading indicator immediately to prevent a blank screen on startup
+    page.controls.clear()
+    page.add(
+        ft.Column(
+            [
+                ft.ProgressRing(width=32, height=32, stroke_width=3),
+                ft.Text("Initializing...", size=14, color=ft.colors.BLACK54),
+            ],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=20,
+        )
+    )
+    page.update()
+
+    # Let the loading indicator render for a moment, making the transition smoother
+    await asyncio.sleep(0.5)
     
     try:
+        # Now, initialize the main application which will build and display the real UI
         ZaplyApp(page)
     except Exception as e:
         # Log the error to console for debugging
@@ -1276,7 +1296,8 @@ async def main(page: ft.Page):
         traceback.print_exc()
 
         # Show a minimal fallback UI so the user never sees an empty page
-        page.controls = [
+        page.controls.clear()
+        page.controls.append(
             ft.Container(
                 content=ft.Column(
                     [
@@ -1297,7 +1318,7 @@ async def main(page: ft.Page):
                 expand=True,
                 bgcolor="#FDFBFB",
             )
-        ]
+        )
         page.update()
 
 
