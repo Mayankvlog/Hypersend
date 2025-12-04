@@ -122,6 +122,11 @@ class ZaplyApp:
         # Selected UI language (default English)
         self.language: str = "en"
         
+
+    
+    async def initialize_app(self):
+        self.client: Optional[httpx.AsyncClient] = None # Initialize to None
+
         # HTTP client - optimized for production VPS with connection pooling
         # Prefer HTTP/2 when available, but gracefully fall back to HTTP/1.1 if h2 is missing
         try:
@@ -139,28 +144,19 @@ class ZaplyApp:
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0)
             )
         
-        # Theme colors already initialized above (before we set page.bgcolor)
-        # Setup custom theme
-        self.page.theme = ft.Theme(
-            color_scheme_seed=self.primary_color,
-            use_material3=True
-        )
-        
         # Request permissions on startup (Android)
         try:
+            # Run as a task, but await for critical permissions if necessary
             self.page.run_task(request_app_permissions, self.page)
         except Exception as e:
-            debug_log(f"[PERMS] Failed to request permissions: {e}")
+            debug_log(f"[PERMS] Failed to schedule permission request: {e}")
         
         # Check for updates on startup using Flet's task runner to avoid event loop issues
         try:
             self.page.run_task(check_app_updates, self.page)
         except Exception as e:
             debug_log(f"[UPDATES] Failed to schedule update check: {e}")
-        
-        # Show login screen
-        self.show_login()
-    
+
     def show_login(self):
         """Show login/register screen"""
         debug_log(f"[INIT] ZaplyApp initialized, API URL: {API_URL}")
@@ -1283,12 +1279,13 @@ async def main(page: ft.Page):
     )
     page.update()
 
-    # Let the loading indicator render for a moment, making the transition smoother
-    await asyncio.sleep(0.5)
-    
     try:
-        # Now, initialize the main application which will build and display the real UI
-        ZaplyApp(page)
+        # Now, initialize the main application class lightly
+        app_instance = ZaplyApp(page)
+        # Perform heavy initialization asynchronously
+        await app_instance.initialize_app()
+        # Once fully initialized, show the login screen
+        app_instance.show_login()
     except Exception as e:
         # Log the error to console for debugging
         debug_log(f"[FATAL] Failed to start ZaplyApp: {type(e).__name__}: {e}")
