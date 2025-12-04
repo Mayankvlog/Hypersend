@@ -13,7 +13,7 @@ async def init_mongodb():
     """
     try:
         # Parse the MongoDB URI to extract connection details
-        from urllib.parse import urlparse, unquote
+        from urllib.parse import urlparse
         
         parsed = urlparse(settings.MONGODB_URI)
         # For initialization, connect to admin database
@@ -79,38 +79,38 @@ async def init_mongodb():
         try:
             await app_db.users.create_index([('email', 1)], unique=True)
             print("[MONGO_INIT] Created index: users.email")
-        except:
+        except Exception:
             pass  # Index might already exist
         
         try:
             await app_db.chats.create_index([('members', 1)])
             print("[MONGO_INIT] Created index: chats.members")
-        except:
+        except Exception:
             pass
         
         try:
             await app_db.messages.create_index([('chat_id', 1), ('created_at', -1)])
             print("[MONGO_INIT] Created index: messages.chat_id, created_at")
-        except:
+        except Exception:
             pass
         
         try:
             await app_db.files.create_index([('chat_id', 1), ('owner_id', 1)])
             print("[MONGO_INIT] Created index: files.chat_id, owner_id")
-        except:
+        except Exception:
             pass
         
         # Create TTL indexes for token cleanup
         try:
             await app_db.refresh_tokens.create_index([('expires_at', 1)], expireAfterSeconds=0)
             print("[MONGO_INIT] Created TTL index: refresh_tokens.expires_at")
-        except:
+        except Exception:
             pass
         
         try:
             await app_db.reset_tokens.create_index([('expires_at', 1)], expireAfterSeconds=0)
             print("[MONGO_INIT] Created TTL index: reset_tokens.expires_at")
-        except:
+        except Exception:
             pass
         
         print("[MONGO_INIT] ✅ MongoDB initialization complete")
@@ -121,7 +121,7 @@ async def init_mongodb():
     finally:
         try:
             client.close()
-        except:
+        except Exception:
             pass
 
 

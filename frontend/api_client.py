@@ -136,11 +136,11 @@ class APIClient:
             
             data = response.json()
             self.set_tokens(data["access_token"], data["refresh_token"])
-            debug_log(f"[API] Login successful")
+            debug_log("[API] Login successful")
             return data
         except httpx.TimeoutException as e:
             debug_log(f"[API] Login timeout: {e}")
-            raise Exception(f"Request timeout. Please check your internet connection.")
+            raise Exception("Request timeout. Please check your internet connection.")
         except httpx.ConnectError as e:
             debug_log(f"[API] Connection error: {e}")
             raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
@@ -159,7 +159,7 @@ class APIClient:
                     json={"refresh_token": self.refresh_token},
                     headers=self._get_headers()
                 )
-            except:
+            except Exception:
                 pass
         self.clear_tokens()
     
@@ -346,7 +346,7 @@ class APIClient:
                 return {"message": response.text or "Password reset request processed."}
         except httpx.TimeoutException:
             raise Exception("Request timeout. Please check your internet connection.")
-        except httpx.ConnectError as e:
+        except httpx.ConnectError:
             raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
         except Exception as e:
             raise Exception(str(e))
@@ -373,7 +373,7 @@ class APIClient:
                 return {"message": response.text or "Password reset successful."}
         except httpx.TimeoutException:
             raise Exception("Request timeout. Please check your internet connection.")
-        except httpx.ConnectError as e:
+        except httpx.ConnectError:
             raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
         except Exception as e:
             raise Exception(str(e))
@@ -420,7 +420,7 @@ class APIClient:
             return response.json()
         except httpx.TimeoutException:
             raise Exception("Request timeout. Please check your internet connection.")
-        except httpx.ConnectError as e:
+        except httpx.ConnectError:
             raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
         except Exception as e:
             raise Exception(str(e))

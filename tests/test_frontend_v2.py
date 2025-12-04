@@ -7,7 +7,6 @@ Tests all components of the Zaply frontend application
 import sys
 import os
 from pathlib import Path
-import pytest
 
 # Add frontend to path
 frontend_path = (Path(__file__).parent.parent / "frontend").resolve()
@@ -56,7 +55,7 @@ def test_android_manifest():
             manifest_path = frontend_path / "android" / "AndroidManifest.xml"
         
         if not manifest_path.exists():
-            print(f"[FAIL] AndroidManifest.xml not found")
+            print("[FAIL] AndroidManifest.xml not found")
             assert False, "AndroidManifest.xml not found"
         
         print(f"[OK] Manifest found: {manifest_path}")
@@ -79,9 +78,9 @@ def test_android_manifest():
         print(f"[OK] Found {found}/{len(required_perms)} required permissions")
         
         if 'package="com.zaply.app"' in manifest_content:
-            print(f"[OK] Package name: com.zaply.app")
+            print("[OK] Package name: com.zaply.app")
         else:
-            print(f"[WARN] Package name not set correctly")
+            print("[WARN] Package name not set correctly")
         
         assert found == len(required_perms), f"Only {found}/{len(required_perms)} permissions found"
         
@@ -104,7 +103,7 @@ def test_pubspec():
             pubspec_path = frontend_path / "pubspec.yaml"
         
         if not pubspec_path.exists():
-            print(f"[FAIL] pubspec.yaml not found")
+            print("[FAIL] pubspec.yaml not found")
             assert False, "pubspec.yaml not found"
         
         print(f"[OK] Pubspec found: {pubspec_path}")
@@ -142,7 +141,7 @@ def test_permissions_module():
     try:
         from frontend.permissions_manager import REQUIRED_PERMISSIONS
         
-        print(f"[OK] Permissions manager imported")
+        print("[OK] Permissions manager imported")
         print(f"[OK] {len(REQUIRED_PERMISSIONS)} required permissions configured:")
         
         for perm in REQUIRED_PERMISSIONS:
@@ -173,7 +172,7 @@ def test_theme():
             TEXT_SECONDARY,
         )
         
-        print(f"[OK] Theme imported successfully")
+        print("[OK] Theme imported successfully")
         print(f"[OK] Primary Color:      {PRIMARY_COLOR}")
         print(f"[OK] Secondary Color:    {SECONDARY_COLOR}")
         print(f"[OK] Background Light:   {BACKGROUND_LIGHT}")

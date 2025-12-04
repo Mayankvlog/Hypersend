@@ -1,8 +1,4 @@
 import flet as ft
-# Compatibility shims
-icons = ft.Icons
-colors = ft.Colors
-ft.colors = ft.Colors
 import httpx
 import asyncio
 import os
@@ -10,7 +6,12 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import sys
-import platform
+from frontend.views.settings import SettingsView
+
+# Compatibility shims
+icons = ft.Icons
+colors = ft.Colors
+ft.colors = ft.Colors
 
 # dotenv is optional in some Android build environments; import defensively
 try:
@@ -25,8 +26,6 @@ load_dotenv()
 async def check_app_updates(page: ft.Page):
     """Dummy update check - can be extended later"""
     return
-
-from frontend.views.settings import SettingsView
 
 # Import permissions manager
 try:
@@ -233,7 +232,7 @@ class ZaplyApp:
                 if response.status_code == 200:
                     data = response.json()
                     self.token = data["access_token"]
-                    debug_log(f"[LOGIN] Token received, fetching user info")
+                    debug_log("[LOGIN] Token received, fetching user info")
                     
                     # Fetch user info after login
                     self.client.headers["Authorization"] = f"Bearer {self.token}"
@@ -328,10 +327,10 @@ class ZaplyApp:
                     # Some environments (reverse proxies, error pages, etc.) may return
                     # non-JSON even with 201, so be defensive here.
                     try:
-                        data = response.json()
+                        _ = response.json() # Assign to _ to indicate it's intentionally unused
                     except Exception:
-                        data = {}
-                    debug_log(f"[REGISTER] Registration successful, logging in...")
+                        pass # data would not be defined, but not used below so fine.
+                    debug_log("[REGISTER] Registration successful, logging in...")
                     
                     # Registration successful, now login
                     login_response = await self.client.post(
@@ -610,7 +609,7 @@ class ZaplyApp:
                     # Auto-fill token if backend returned it (now always true for our API)
                     if "reset_token" in data and data["reset_token"]:
                         token_field.value = data["reset_token"]
-                        success_text.value = f"✅ Token copied here. Also sent by email if configured."
+                        success_text.value = "✅ Token copied here. Also sent by email if configured."
                     else:
                         success_text.value = f"✅ {data.get('message', 'Reset token sent to your email')}"
                     

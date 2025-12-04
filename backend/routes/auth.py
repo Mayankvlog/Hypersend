@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from backend.models import (
-    UserCreate, UserLogin, Token, RefreshTokenRequest, UserInDB, UserResponse,
+    UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
     ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse
 )
 from backend.database import users_collection, refresh_tokens_collection, reset_tokens_collection
@@ -162,7 +162,7 @@ async def login(credentials: UserLogin):
         access_token = create_access_token(data={"sub": user["_id"]})
         refresh_token, jti = create_refresh_token(data={"sub": user["_id"]})
         
-        auth_log(f"[AUTH] Tokens created - Storing refresh token")
+        auth_log("[AUTH] Tokens created - Storing refresh token")
         
         # Store refresh token with timeout
         try:
@@ -176,7 +176,7 @@ async def login(credentials: UserLogin):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            auth_log(f"[AUTH] Database operation timeout storing refresh token")
+            auth_log("[AUTH] Database operation timeout storing refresh token")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -430,7 +430,7 @@ async def reset_password(request: PasswordResetRequest):
     """Reset password using reset token"""
     
     try:
-        auth_log(f"[AUTH] Password reset attempt")
+        auth_log("[AUTH] Password reset attempt")
         
         # Validate reset token by decoding JWT directly
         try:
@@ -449,7 +449,7 @@ async def reset_password(request: PasswordResetRequest):
                     detail="Invalid reset token"
                 )
         except jwt.ExpiredSignatureError:
-            auth_log(f"[AUTH] Reset token expired")
+            auth_log("[AUTH] Reset token expired")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Reset token has expired"
@@ -483,7 +483,7 @@ async def reset_password(request: PasswordResetRequest):
             )
         
         if not token_record or token_record.get("used"):
-            auth_log(f"[AUTH] Reset token already used or not found")
+            auth_log("[AUTH] Reset token already used or not found")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired reset token"

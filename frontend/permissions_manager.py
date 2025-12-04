@@ -41,7 +41,7 @@ def request_android_permissions():
     
     try:
         debug_log("[PERMS] Attempting to import jnius...")
-        from jnius import autoclass, cast
+        from jnius import autoclass
         debug_log("[PERMS] jnius imported successfully.")
         
         # Get the Android activity
@@ -50,7 +50,7 @@ def request_android_permissions():
         debug_log(f"[PERMS] Android activity obtained: {activity}")
         
         # Get Context for permission checking
-        Context = autoclass('android.content.Context')
+
         PackageManager = autoclass('android.content.pm.PackageManager')
         
         # Create String array
