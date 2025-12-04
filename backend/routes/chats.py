@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime
 from bson import ObjectId
-from backend.models import ChatCreate, ChatInDB, MessageCreate, MessageInDB, UserResponse
-from backend.database import chats_collection, messages_collection, users_collection
+from backend.models import ChatCreate, MessageCreate
+from backend.database import chats_collection, messages_collection
 from backend.auth.utils import get_current_user
 
 router = APIRouter(prefix="/chats", tags=["Chats"])

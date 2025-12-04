@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pathlib import Path
 from backend.database import connect_db, close_db
-from backend.routes import auth, files, chats, users, updates
+from backend.routes import auth, files, chats, users, updates, p2p_transfer
 from backend.config import settings
 from backend.mongo_init import ensure_mongodb_ready
 
@@ -16,7 +16,7 @@ async def lifespan(app: FastAPI):
     try:
         print(f"[START] Zaply API starting on {settings.API_HOST}:{settings.API_PORT}")
         print(f"[START] Environment: {'DEBUG' if settings.DEBUG else 'PRODUCTION'}")
-        print(f"[DB] Initializing MongoDB...")
+        print("[DB] Initializing MongoDB...")
         
         # Initialize MongoDB (create users, collections, indexes)
         await ensure_mongodb_ready()
@@ -35,10 +35,10 @@ async def lifespan(app: FastAPI):
         
         if settings.DEBUG:
             print(f"[START] Zaply API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
-            print(f"[CORS] Allowing all origins (DEBUG mode)")
+            print("[CORS] Allowing all origins (DEBUG mode)")
         else:
-            print(f"[START] Zaply API running in PRODUCTION mode")
-            print(f"[CORS] Restricted to configured origins")
+            print("[START] Zaply API running in PRODUCTION mode")
+            print("[CORS] Restricted to configured origins")
         
         print("[START] Lifespan startup complete, all services ready")
         print("[START] ✅ Backend is fully operational")
@@ -109,10 +109,9 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(chats.router, prefix="/api/v1")
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(updates.router, prefix="/api/v1")
-
-# WhatsApp-style P2P transfer (no server storage)
-from backend.routes import p2p_transfer
 app.include_router(p2p_transfer.router, prefix="/api/v1")
+
+
 
 
 if __name__ == "__main__":

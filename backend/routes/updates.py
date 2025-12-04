@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 from datetime import datetime
-import json
 
 router = APIRouter(prefix="/updates", tags=["Updates"])
 
@@ -53,7 +52,7 @@ async def check_for_updates(current_version: str, platform: str = "android") -> 
     
     # Update available
     latest_info = VERSION_INFO[LATEST_VERSION]
-    current_info = VERSION_INFO[current_version]
+
     
     return {
         "update_available": True,

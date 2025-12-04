@@ -1,10 +1,8 @@
 import httpx
-import json
 import asyncio
 import os
 from pathlib import Path
 import flet as ft
-from datetime import datetime
 from dotenv import load_dotenv
 
 # Ensure .env is loaded so API_BASE_URL / UPDATE_SERVER_URL are available

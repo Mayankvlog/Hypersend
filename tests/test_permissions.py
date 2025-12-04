@@ -45,11 +45,11 @@ class PermissionsTestSuite:
             
             if response.status_code == 200:
                 data = response.json()
-                print(f"[TEST] ✅ GET /permissions PASSED")
+                print("[TEST] ✅ GET /permissions PASSED")
                 print(f"[TEST] Permissions returned: {json.dumps(data, indent=2)}")
                 return data
             else:
-                print(f"[TEST] ❌ GET /permissions FAILED")
+                print("[TEST] ❌ GET /permissions FAILED")
                 print(f"[TEST] Error: {response.text}")
                 return None
         
@@ -63,7 +63,7 @@ class PermissionsTestSuite:
     
     async def test_put_permissions(self, permissions: Dict[str, bool]) -> bool:
         """Test PUT /users/permissions endpoint"""
-        print(f"\n[TEST] Testing PUT /users/permissions")
+        print("\n[TEST] Testing PUT /users/permissions")
         print(f"[TEST] Endpoint: {self.base_url}/users/permissions")
         print(f"[TEST] Payload: {json.dumps(permissions, indent=2)}")
         
@@ -79,11 +79,11 @@ class PermissionsTestSuite:
             
             if response.status_code == 200:
                 data = response.json()
-                print(f"[TEST] ✅ PUT /permissions PASSED")
+                print("[TEST] ✅ PUT /permissions PASSED")
                 print(f"[TEST] Response: {json.dumps(data, indent=2)}")
                 return True
             else:
-                print(f"[TEST] ❌ PUT /permissions FAILED")
+                print("[TEST] ❌ PUT /permissions FAILED")
                 print(f"[TEST] Error: {response.text}")
                 return False
         

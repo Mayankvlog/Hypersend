@@ -112,7 +112,7 @@ class HypersendSeeder:
         
         # Create index for email
         self.db.users.create_index("email", unique=True)
-        print(f"   ✓ Created unique index on email")
+        print("   ✓ Created unique index on email")
         
         return [str(uid) for uid in result.inserted_ids]
     
@@ -143,7 +143,7 @@ class HypersendSeeder:
         # Create indexes
         self.db.chats.create_index("members")
         self.db.chats.create_index("created_at")
-        print(f"   ✓ Created indexes on members and created_at")
+        print("   ✓ Created indexes on members and created_at")
         
         return [str(cid) for cid in result.inserted_ids]
     
@@ -174,7 +174,7 @@ class HypersendSeeder:
         # Create indexes
         self.db.messages.create_index([("chat_id", 1), ("created_at", -1)])
         self.db.messages.create_index("sender_id")
-        print(f"   ✓ Created indexes on chat_id, created_at, and sender_id")
+        print("   ✓ Created indexes on chat_id, created_at, and sender_id")
         
         return [str(mid) for mid in result.inserted_ids]
     
@@ -215,7 +215,7 @@ class HypersendSeeder:
         # Create indexes
         self.db.files.create_index([("owner_id", 1), ("chat_id", 1)])
         self.db.files.create_index("upload_id")
-        print(f"   ✓ Created indexes on owner_id, chat_id, and upload_id")
+        print("   ✓ Created indexes on owner_id, chat_id, and upload_id")
         
         return [str(fid) for fid in result.inserted_ids]
     
@@ -250,11 +250,11 @@ class HypersendSeeder:
         # Create indexes
         self.db.uploads.create_index("upload_id")
         self.db.uploads.create_index("expires_at")
-        print(f"   ✓ Created indexes on upload_id and expires_at")
+        print("   ✓ Created indexes on upload_id and expires_at")
     
     def create_tokens(self, user_ids, refresh_count=500, reset_count=100):
         """Create sample refresh and reset tokens"""
-        print(f"\n🔐 Creating sample tokens...")
+        print("\n🔐 Creating sample tokens...")
         
         # Refresh tokens
         refresh_tokens = []
@@ -288,7 +288,7 @@ class HypersendSeeder:
         self.db.refresh_tokens.create_index("expires_at")
         self.db.reset_tokens.create_index("user_id")
         self.db.reset_tokens.create_index("expires_at")
-        print(f"   ✓ Created indexes on tokens")
+        print("   ✓ Created indexes on tokens")
     
     def print_statistics(self):
         """Print database statistics"""
@@ -321,7 +321,7 @@ class HypersendSeeder:
             stats = self.db.command("dbstats")
             size_mb = stats.get("dataSize", 0) / (1024 * 1024)
             print(f"Database Size: {size_mb:.2f} MB")
-        except:
+        except Exception:
             pass
     
     def seed(self):

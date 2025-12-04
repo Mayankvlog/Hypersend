@@ -5,7 +5,7 @@ import math
 import os
 from pathlib import Path
 from typing import Optional, Callable
-from frontend.theme import PRIMARY_COLOR, ACCENT_COLOR, SPACING_SMALL, SPACING_MEDIUM
+from frontend.theme import PRIMARY_COLOR, SPACING_SMALL, SPACING_MEDIUM
 
 
 class FileUploadView(ft.Container):
@@ -152,7 +152,7 @@ class FileUploadView(ft.Container):
             # Check file size limit (40GB)
             max_size = 40 * 1024 * 1024 * 1024  # 40GB in bytes
             if self.file_size > max_size:
-                self.error_text.value = f"⚠️ File too large! Maximum size is 40 GB"
+                self.error_text.value = "⚠️ File too large! Maximum size is 40 GB"
                 self.error_text.visible = True
                 self.upload_button.disabled = True
             
@@ -302,7 +302,7 @@ class FileUploadView(ft.Container):
                         
                         break  # Success
                     
-                    except Exception as e:
+                    except Exception:
                         if attempt == max_retries - 1:
                             raise
                         await asyncio.sleep(2 ** attempt)  # Exponential backoff
@@ -363,7 +363,7 @@ class FileUploadView(ft.Container):
         if self.upload_id:
             try:
                 await self.api_client.cancel_upload(self.upload_id)
-            except:
+            except Exception:
                 pass
         
         self.is_uploading = False

@@ -1,6 +1,5 @@
 import flet as ft
 import asyncio
-import os
 import sys
 
 from frontend.permissions_manager import REQUIRED_PERMISSIONS, check_permission, request_android_permissions

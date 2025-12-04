@@ -4,7 +4,6 @@ from backend.database import users_collection
 from backend.auth.utils import get_current_user
 import asyncio
 from pydantic import BaseModel
-from typing import Dict
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
