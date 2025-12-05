@@ -2,7 +2,14 @@
 
 **Error:** `Firefox can't establish a connection to the server at 139.59.82.105:8000`
 
-## Immediate Fix (Copy-Paste)
+## ⚡ ONE-LINE FIX (FASTEST)
+
+```bash
+# SSH and run emergency startup script
+ssh root@139.59.82.105 "cd /root/Hypersend && bash vps_startup.sh"
+```
+
+## Alternative: Step-by-Step Fix
 
 ### On VPS (139.59.82.105)
 
@@ -13,19 +20,23 @@ ssh root@139.59.82.105
 # 2. Navigate to project
 cd /root/Hypersend
 
-# 3. Check service status
+# 3. Run emergency startup script (RECOMMENDED)
+bash vps_startup.sh
+
+# OR: Manual startup
+# 4. Check service status
 docker-compose ps
 
-# 4. Start all services
+# 5. Start all services
 docker-compose up -d
 
-# 5. Wait 10 seconds
+# 6. Wait 10 seconds
 sleep 10
 
-# 6. Verify backend is running
+# 7. Verify backend is running
 docker-compose logs backend | tail -20
 
-# 7. Test backend health
+# 8. Test backend health
 curl http://localhost:8000/health
 ```
 
