@@ -73,8 +73,8 @@ services:
       - ./data:/data
       - ./backend/uploads:/app/uploads
     environment:
-      # Database Connection with Authentication
-      MONGODB_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/hypersend?authSource=admin
+      # Database Connection with Authentication (Remote DigitalOcean VPS)
+      MONGODB_URI: mongodb://hypersend:Mayank%40%2303@139.59.82.105:27017/hypersend?authSource=admin
       
       # Security - CHANGE THESE IN PRODUCTION
       SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
