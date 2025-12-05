@@ -13,10 +13,6 @@ load_dotenv()
 # Development examples:
 #   API_BASE_URL=http://backend:8000          # Docker service name
 #
-# Production examples:
-#   PRODUCTION_API_URL=http://139.59.82.105:8000
-#   PRODUCTION_API_URL=https://api.yourdomain.com
-#
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
 # Default to your DigitalOcean VPS when API_BASE_URL is not set
 DEV_API_URL = os.getenv("API_BASE_URL", "http://139.59.82.105:8000").strip()
