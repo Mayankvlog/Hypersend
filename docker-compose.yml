@@ -1,4 +1,8 @@
+# Hypersend Full-Stack Application
+# Fixed version with security improvements and port conflict resolution
+
 services:
+
   # ============================================================
   # Nginx Reverse Proxy
   # ============================================================
@@ -6,23 +10,18 @@ services:
     image: nginx:alpine
     container_name: hypersend_nginx
     restart: unless-stopped
-    
     ports:
-      - "${NGINX_PORT:-80}:80"
-      - "${NGINX_PORT_SSL:-443}:443"
-    
+      - "${NGINX_PORT:-8080}:80"      # Changed default to 8080 (use 80 if you free the port)
+      - "${NGINX_PORT_SSL:-8443}:443" # Changed default to 8443
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./data:/data:ro
       - nginx_cache:/var/cache/nginx
-    
     depends_on:
       - backend
       - frontend
-    
     networks:
       - hypersend_network
-    
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
@@ -37,64 +36,46 @@ services:
     image: mongo:7.0
     container_name: hypersend_mongodb
     restart: unless-stopped
-    
-    # Expose MongoDB port for local development only
-    ports:
-      - "27017:27017"
-    
-    # Environment variables for MongoDB authentication
+    # SECURITY: DO NOT expose to public internet
+    # MongoDB only accessible internally within Docker network
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme}
       MONGO_INITDB_DATABASE: hypersend
-    
-    # Data persistence across container restarts
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
-    
-    # Internal network communication
     networks:
       - hypersend_network
-    
-    # Health check - simple TCP port check
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
-    
-    # Enable MongoDB authentication without replica set (single-node)
-    command: mongod --auth --bind_ip_all
+    # SECURITY: Bind only to internal Docker network
+    command: mongod --auth --bind_ip 127.0.0.1,mongodb
 
   # ============================================================
   # Backend API Service (FastAPI)
   # ============================================================
   backend:
-    # Build backend image from local source to ensure latest code is used.
     build:
       context: ./backend
       dockerfile: Dockerfile
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
-    
     ports:
       - "8000:8000"
-    
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
-    
     environment:
       # Database Connection with Authentication
-      # Uses MONGO_USER and MONGO_PASSWORD from .env file
       MONGODB_URI: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/hypersend?authSource=admin
       
-      # Security (REQUIRED: Set in .env file)
-      # WARNING: CHANGE-THIS-SECRET-KEY-IN-PRODUCTION is a placeholder only.
-      # Always override SECRET_KEY via .env or environment variables.
+      # Security - CHANGE THESE IN PRODUCTION
       SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
@@ -128,16 +109,10 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
       EMAIL_FROM: ${EMAIL_FROM:-}
-    
     depends_on:
       - mongodb
-    
     networks:
       - hypersend_network
-    
-    # Health check disabled - services run fine without it
-    # Command serves as startup indicator
-    # test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://backend:8000/health').read()"]
 
   # ============================================================
   # Frontend Service (Flet Web App)
@@ -146,10 +121,8 @@ services:
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
-    
     ports:
       - "8550:8550"
-    
     environment:
       # For internal Docker communication
       API_BASE_URL: http://backend:8000
@@ -159,15 +132,10 @@ services:
       
       # Debug mode
       DEBUG: ${DEBUG:-False}
-    
     depends_on:
       - backend
-    
     networks:
       - hypersend_network
-    
-    # Health check disabled - services run fine without it
-    # test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://frontend:8550/').read()"]
 
 # ============================================================
 # Internal Network (Service Discovery)
@@ -186,9 +154,11 @@ volumes:
   # MongoDB data persistence
   mongodb_data:
     driver: local
+  
   # MongoDB configuration persistence
   mongodb_config:
     driver: local
+  
   # Nginx cache
   nginx_cache:
     driver: local
