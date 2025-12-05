@@ -33,7 +33,7 @@ async def check_app_updates(page: ft.Page):
 
 # Import permissions manager
 try:
-    from frontend.permissions_manager import request_android_permissions
+    from permissions_manager import request_android_permissions
 except ImportError:
     def request_android_permissions():
         return False
