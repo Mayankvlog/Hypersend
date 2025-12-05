@@ -13,10 +13,10 @@ if not os.getenv("MONGODB_URI"):
 
 
 class Settings:
-    # MongoDB (Local server - MongoDB Compass can connect to this)
+    # MongoDB (Remote server on DigitalOcean VPS)
     # Priority: .env > environment variable > default
-    # Default to DigitalOcean VPS MongoDB; can be overridden via MONGODB_URI.
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://139.59.82.105:27017/hypersend")
+    # Uses authenticated connection to DigitalOcean VPS MongoDB
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:Mayank%40%2303@139.59.82.105:27017/hypersend?authSource=admin")
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production-5y7L9x2K")
