@@ -6,7 +6,11 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import sys
-from frontend.views.settings import SettingsView
+import os
+
+# Add the parent directory of 'frontend' to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from .views.settings import SettingsView
 
 # Compatibility shims
 icons = ft.Icons
