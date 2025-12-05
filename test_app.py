@@ -30,16 +30,16 @@ async def test_local_api():
     
     # Test health endpoint
     try:
-        print(f"\n⏳ Testing /health endpoint...")
+        print(f"\nTesting /health endpoint...")
         response = await client.client.get(f"{API_BASE_URL}/health")
         print(f"✓ Health check successful!")
         print(f"  Status: {response.status_code}")
         print(f"  Response: {response.json()}")
     except Exception as e:
-        print(f"✗ Health check failed: {type(e).__name__}: {e}")
-        print(f"\n⚠️  Make sure backend is running:")
+        print(f"âœ— Health check failed: {type(e).__name__}: {e}")
+        print(f"\nâš ï¸  Make sure backend is running:")
         print(f"   python -m uvicorn backend.main:app --reload")
-        return False
+        pytest.fail(f"Health check failed: {type(e).__name__}: {e}")
     
     # Test root endpoint
     try:
@@ -49,14 +49,12 @@ async def test_local_api():
         print(f"  Status: {response.status_code}")
         print(f"  Response: {response.json()}")
     except Exception as e:
-        print(f"✗ Root endpoint failed: {e}")
-        return False
+        print(f"âœ— Root endpoint failed: {e}")
+        pytest.fail(f"Root endpoint failed: {e}")
     
     print("\n" + "==" * 30)
-    print("✓ All local tests passed!")
+    print("âœ“ All local tests passed!")
     print("==" * 30)
-    return True
-
 @pytest.mark.asyncio
 async def test_vps_api(vps_url: str):
     """Test VPS API connectivity (production)"""
@@ -83,59 +81,13 @@ async def test_vps_api(vps_url: str):
             print(f"  Status: {response.status_code}")
             print(f"  Response: {response.text[:100]}")
     except Exception as e:
-        print(f"✗ VPS connection failed: {type(e).__name__}: {e}")
-        print(f"\n⚠️  Check that:")
+        print(f"âœ— VPS connection failed: {type(e).__name__}: {e}")
+        print(f"\nâš ï¸  Check that:")
         print(f"   1. VPS is running and reachable")
         print(f"   2. Backend service is listening on port 8000")
         print(f"   3. Network/firewall allows connections")
-        return False
+        pytest.fail(f"VPS connection failed: {type(e).__name__}: {e}")
     
     print("\n" + "==" * 30)
     print("✓ VPS tests passed!")
     print("==" * 30)
-    return True
-
-async def main():
-    """Main test runner"""
-    print("\n" + "#" * 60)
-    print("# HYPERSEND APP TEST SUITE")
-    print("#" * 60)
-    
-    print(f"\n📋 Configuration:")
-    print(f"  API_BASE_URL (from api_client): {API_BASE_URL}")
-    print(f"  API_URL (from app): {API_URL}")
-    print(f"  DEBUG mode: {DEBUG}")
-    
-    # Test local API first
-    local_result = await test_local_api()
-    
-    if not local_result:
-        print(f"\n⚠️  Local API test failed!")
-    
-    # Optionally test VPS if environment variable is set
-    vps_url = os.getenv("TEST_VPS_URL", "").strip()
-    if vps_url:
-        print(f"\n✓ TEST_VPS_URL environment variable found: {vps_url}")
-        vps_result = await test_vps_api(vps_url)
-        if not vps_result:
-            print(f"\n⚠️  VPS test failed!")
-            return 1
-    else:
-        print(f"\n💡 To test VPS connectivity, set TEST_VPS_URL environment variable:")
-        print(f"   set TEST_VPS_URL=http://your-vps-ip:8000")
-        print(f"   python test_app.py")
-    
-    if local_result:
-        print("\n\n" + "#" * 60)
-        print("# ✓ PRIMARY TESTS PASSED")
-        print("#" * 60)
-        return 0
-    else:
-        print("\n\n" + "#" * 60)
-        print("# ✗ TESTS FAILED")
-        print("#" * 60)
-        return 1
-
-if __name__ == "__main__":
-    result = asyncio.run(main())
-    exit(result)
