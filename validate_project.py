@@ -220,4 +220,8 @@ def main():
         return 1
 
 if __name__ == "__main__":
+    # Set UTF-8 encoding for Windows console
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.exit(main())
