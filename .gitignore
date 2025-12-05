@@ -60,6 +60,13 @@ test_app.py
 .DS_Store
 Thumbs.db
 
+# Screenshots and temporary files
+Screenshot*.png
+Screenshot*.jpg
+Screenshot*.jpeg
+*.bak
+*.tmp
+
 # PWA Build
 frontend/build/
 frontend/.flet/
