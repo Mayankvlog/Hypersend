@@ -11,7 +11,7 @@ load_dotenv()
 # IMPORTANT: Do NOT include /api/v1 suffix - endpoints add it automatically
 #
 # Development examples:
-#   API_BASE_URL=http://backend:8000          # Docker service name
+#   API_BASE_URL=http://backend:8000         
 #
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
 # Default to your DigitalOcean VPS when API_BASE_URL is not set
