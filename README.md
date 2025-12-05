@@ -416,21 +416,37 @@ docker-compose logs -f mongo
 
 ## 🔧 Troubleshooting
 
+### Port 27017 Already in Use (MongoDB conflict)
+
+**Cause:** Old MongoDB container or process still using the port
+
+**Quick Fix:**
+```bash
+# On VPS
+docker compose down -v
+docker volume rm hypersend_mongodb_data hypersend_mongodb_config 2>/dev/null || true
+sudo lsof -ti :27017 | xargs -r kill -9 2>/dev/null || true
+docker compose up -d --build
+docker compose ps  # Verify all services running
+```
+
 ### Backend Connection Error: "Unable to connect to 139.59.82.105:8000"
 
 **Cause:** Backend services not running on VPS
 
 **Quick Fix (Fastest):**
 ```bash
-ssh root@139.59.82.105 "cd /root/Hypersend && bash vps_startup.sh"
+ssh root@139.59.82.105 "cd /root/Hypersend && docker compose up -d --build"
 ```
 
 **Manual Fix:**
 ```bash
 ssh root@139.59.82.105
 cd /root/Hypersend
-docker-compose up -d
-sleep 10
+docker-compose down -v
+docker-compose up -d --build
+sleep 15
+docker-compose ps
 curl http://localhost:8000/health
 ```
 
