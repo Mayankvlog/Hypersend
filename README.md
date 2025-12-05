@@ -414,6 +414,52 @@ docker-compose logs -f mongo
 
 ---
 
+## 🔧 Troubleshooting
+
+### Backend Connection Error: "Unable to connect to 139.59.82.105:8000"
+
+**Cause:** Backend services not running on VPS
+
+**Quick Fix (Fastest):**
+```bash
+ssh root@139.59.82.105 "cd /root/Hypersend && bash vps_startup.sh"
+```
+
+**Manual Fix:**
+```bash
+ssh root@139.59.82.105
+cd /root/Hypersend
+docker-compose up -d
+sleep 10
+curl http://localhost:8000/health
+```
+
+### Service Not Responding
+
+**Check service status:**
+```bash
+docker-compose ps
+```
+
+**View logs:**
+```bash
+docker-compose logs backend    # Backend API
+docker-compose logs mongodb    # Database
+docker-compose logs nginx      # Web server
+```
+
+**Restart services:**
+```bash
+docker-compose restart
+```
+
+**For detailed help:**
+- See [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) - Comprehensive troubleshooting guide
+- See [`QUICK_FIX.md`](QUICK_FIX.md) - Quick reference for common issues
+- See [`DEPLOY_PRODUCTION.md`](DEPLOY_PRODUCTION.md) - Full deployment documentation
+
+---
+
 ## 📚 API Documentation
 
 ### Auto-Generated Docs
