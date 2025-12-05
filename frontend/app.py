@@ -123,6 +123,45 @@ class ZaplyApp:
         # Selected UI language (default English)
         self.language: str = "en"
         
+    def _display_fatal_error(self, message: str):
+        """Displays a fatal error message and stops app initialization."""
+        self.page.controls.clear()
+        self.page.controls.append(
+            ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
+                        ft.Text(
+                            "An error occurred during startup:",
+                            size=16,
+                            color=ft.colors.RED_900,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                        ft.Text(
+                            message,
+                            size=14,
+                            text_align=ft.TextAlign.CENTER,
+                            color=ft.colors.BLACK87,
+                        ),
+                        ft.Text(
+                            "Please check your backend server and internet connection.",
+                            size=14,
+                            text_align=ft.TextAlign.CENTER,
+                            color=ft.colors.BLACK54,
+                        ),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=10,
+                ),
+                alignment=ft.alignment.center,
+                expand=True,
+                bgcolor="#FDFBFB",
+            )
+        )
+        self.page.update()
+
+        
 
     
     async def initialize_app(self):
@@ -133,7 +172,7 @@ class ZaplyApp:
         try:
             self.client = httpx.AsyncClient(
                 base_url=API_URL,
-                timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
+                timeout=httpx.Timeout(60.0, connect=5.0, read=45.0, write=30.0),
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
                 http2=True  # Enable HTTP/2 for better performance
             )
@@ -141,9 +180,28 @@ class ZaplyApp:
             debug_log("[WARN] HTTP/2 not available (h2 package not installed), using HTTP/1.1")
             self.client = httpx.AsyncClient(
                 base_url=API_URL,
-                timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
+                timeout=httpx.Timeout(60.0, connect=5.0, read=45.0, write=30.0),
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0)
             )
+        
+        # Perform initial backend health check
+        try:
+            debug_log(f"[INIT] Checking backend health at {self.client.base_url}/health")
+            response = await self.client.get("/health")
+            if response.status_code == 200:
+                debug_log("[INIT] Backend health check successful.")
+            else:
+                self._display_fatal_error(f"Backend API is unreachable or unhealthy. Status: {response.status_code}")
+                return
+        except httpx.ConnectError as e:
+            self._display_fatal_error(f"Cannot connect to backend API: {e}. Is the backend running at {self.client.base_url}?")
+            return
+        except httpx.TimeoutException as e:
+            self._display_fatal_error(f"Backend API connection timed out: {e}. Is the backend running and responsive?")
+            return
+        except Exception as e:
+            self._display_fatal_error(f"Failed to check backend health: {e}")
+            return
         
         # Request permissions on startup (Android)
         try:
