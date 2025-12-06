@@ -1,8 +1,4 @@
 services:
-
-  # ============================================================
-  # Nginx Reverse Proxy
-  # ============================================================
   nginx:
     image: nginx:alpine
     container_name: hypersend_nginx
@@ -26,49 +22,29 @@ services:
       retries: 3
       start_period: 10s
 
-  # ============================================================
-  # MongoDB Database (Docker Container)
-  # Data stored on VPS /var/lib/mongodb (persistent across restarts)
-  # Managed by Docker Compose
-  # ============================================================
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
     restart: unless-stopped
-    
-    # Expose MongoDB port for connections
     ports:
-      - "27017:27017"
-    
-    # Environment variables for initial setup
+      - "27018:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-Mayank@#03}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
       MONGO_INITDB_DATABASE: hypersend
-    
-    # Mount host directory as Docker volume (single source of truth)
     volumes:
-      - /var/lib/mongodb:/data/db          # Host path -> Container DB dir (CRITICAL)
-      - mongodb_config:/data/configdb      # Config dir (can be local to Docker)
-    
+      - /var/lib/mongodb:/data/db
+      - mongodb_config:/data/configdb
     networks:
       - hypersend_network
-    
-    # Health check to confirm MongoDB is ready
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
-    
-    # Start MongoDB with authentication + listen on all interfaces
     command: mongod --auth --bind_ip 0.0.0.0
 
-  # ============================================================
-  # Backend API Service (FastAPI/Uvicorn)
-  # Connects to MongoDB via Docker service name 'mongodb'
-  # ============================================================
   backend:
     build:
       context: ./backend
@@ -76,25 +52,17 @@ services:
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
-    
     ports:
       - "8000:8000"
-    
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
-    
     environment:
-      # MongoDB connection: use Docker service name 'mongodb' (internal network)
-      MONGODB_URI: mongodb://hypersend:Mayank@#03@mongodb:27017/hypersend?authSource=admin&retryWrites=true
-      
-      # Security - CHANGE IN PRODUCTION
-      SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
+      MONGODB_URI: "mongodb://${MONGO_USER}:$(python3 -c \"import urllib.parse; print(urllib.parse.quote_plus('${MONGO_PASSWORD}'))\")@mongodb:27017/hypersend?authSource=admin"
+      SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30
-      
-      # File Storage (40GB max)
       DATA_ROOT: /data
       UPLOADS_PATH: /app/uploads
       MAX_FILE_SIZE_BYTES: 42949672960
@@ -102,35 +70,17 @@ services:
       MAX_PARALLEL_CHUNKS: 4
       UPLOAD_EXPIRE_HOURS: 24
       FILE_RETENTION_HOURS: 0
-      
-      # API Configuration
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: http://${VPS_IP:-139.59.82.105}:8000
-      
-      # Rate Limiting
+      API_BASE_URL: http://${VPS_IP}:8000
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
-      
-      # Debug
-      DEBUG: ${DEBUG:-False}
-      
-      # SMTP (optional)
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
-      EMAIL_FROM: ${EMAIL_FROM:-}
-    
-    # Wait for MongoDB to be healthy before starting backend
+      DEBUG: ${DEBUG}
     depends_on:
       mongodb:
         condition: service_healthy
-    
     networks:
       - hypersend_network
-    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
@@ -138,38 +88,22 @@ services:
       retries: 5
       start_period: 60s
 
-  # ============================================================
-  # Frontend Service (Flet Web App)
-  # ============================================================
   frontend:
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
-    
     ports:
       - "8550:8550"
-    
     environment:
-      # For internal Docker network communication
       API_BASE_URL: http://backend:8000
-      
-      # For external/browser access (from VPS public IP)
-      PRODUCTION_API_URL: http://${VPS_IP:-139.59.82.105}:8000
-      
-      # Debug mode
-      DEBUG: ${DEBUG:-False}
-    
+      PRODUCTION_API_URL: http://${VPS_IP}:8000
+      DEBUG: ${DEBUG}
     depends_on:
       backend:
         condition: service_started
-    
     networks:
       - hypersend_network
 
-# ============================================================
-# Internal Docker Network (Service Discovery)
-# Services can reach each other via service names
-# ============================================================
 networks:
   hypersend_network:
     driver: bridge
@@ -177,15 +111,8 @@ networks:
       config:
         - subnet: 172.20.0.0/16
 
-# ============================================================
-# Persistent Volumes
-# mongodb_config: Docker-managed volume for Mongo config
-# nginx_cache: Docker-managed volume for Nginx cache
-# Database data: stored on host /var/lib/mongodb (mounted directly)
-# ============================================================
 volumes:
   mongodb_config:
     driver: local
-  
   nginx_cache:
-    driver: local 
+    driver: local
