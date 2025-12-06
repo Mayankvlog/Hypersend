@@ -79,6 +79,5 @@ description = "Secure P2P File Transfer and Messaging"
 build_android_split_per_abi = true
 android_architectures = ["arm64-v8a"]
 
-[tool.flet.android]
 # Permissions - set to true to request, false to not request
 permissions = { location = true, camera = true, microphone = true, contacts = true, phone = true, storage = true }
