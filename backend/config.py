@@ -14,10 +14,10 @@ if not os.getenv("MONGODB_URI"):
 
 class Settings:
     # MongoDB Connection
-    # MongoDB runs on VPS as local service (not in Docker)
-    # Backend Docker container connects via host.docker.internal:27017
-    # host.docker.internal = VPS localhost from Docker container perspective
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:Mayank%40%2303@host.docker.internal:27017/hypersend?authSource=admin&retryWrites=true")
+    # MongoDB runs in Docker container as part of docker-compose
+    # Backend connects to MongoDB via Docker service name "mongodb" on internal network
+    # Data persisted on VPS at /var/lib/mongodb
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true")
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production-5y7L9x2K")
