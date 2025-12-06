@@ -74,8 +74,10 @@ services:
       - ./data:/data
       - ./backend/uploads:/app/uploads
     environment:
-      # Database Connection with Authentication (Remote DigitalOcean VPS)
-      MONGODB_URI: mongodb://hypersend:Mayank%40%2303@139.59.82.105:27017/hypersend?authSource=admin
+      # Database Connection - Use Docker service name for internal communication
+      # For Docker: uses 'mongodb' service name on internal network
+      # MongoDB will handle both Docker and external connections
+      MONGODB_URI: mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin
       
       # Security - CHANGE THESE IN PRODUCTION
       SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
@@ -95,6 +97,7 @@ services:
       # API Configuration
       API_HOST: 0.0.0.0
       API_PORT: 8000
+      # Public API URL - Points to VPS IP for external access
       API_BASE_URL: http://${VPS_IP:-139.59.82.105}:8000
       
       # Rate Limiting
