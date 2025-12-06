@@ -9,6 +9,7 @@ authors = [
 ]
 license = { text = "Apache-2.0" }
 
+# Full project deps (backend + frontend dev env)
 dependencies = [
   "fastapi==0.115.5",
   "uvicorn[standard]==0.32.1",
@@ -69,13 +70,14 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.flet]
+# Python module file: frontend/app.py
 module_name = "frontend.app"
 product = "Zaply"
 project = "zaply"
 org = "com.zaply"
 description = "Secure P2P File Transfer and Messaging"
 
-# Size reduction
+# Reduce APK size
 build_android_split_per_abi = true
 android_architectures = ["arm64-v8a"]
 
