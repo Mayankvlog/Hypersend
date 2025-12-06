@@ -5,7 +5,7 @@ import math
 import os
 from pathlib import Path
 from typing import Optional, Callable
-from frontend.theme import PRIMARY_COLOR, SPACING_SMALL, SPACING_MEDIUM
+from theme import PRIMARY_COLOR, SPACING_SMALL, SPACING_MEDIUM
 
 
 class FileUploadView(ft.Container):

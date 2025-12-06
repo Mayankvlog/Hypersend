@@ -1,5 +1,5 @@
 import flet as ft
-from frontend.theme import SPACING_MEDIUM, SPACING_LARGE, BORDER_RADIUS
+from theme import SPACING_MEDIUM, SPACING_LARGE, BORDER_RADIUS
 
 
 class LoginView(ft.Container):

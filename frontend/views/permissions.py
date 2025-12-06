@@ -3,7 +3,7 @@ Permissions Management View - Similar to Telegram permissions system
 Handles user-controlled access to location, camera, microphone, contacts, phone, storage
 """
 import flet as ft
-from frontend.theme import SPACING_MEDIUM, SPACING_LARGE
+from theme import SPACING_MEDIUM, SPACING_LARGE
 
 
 class PermissionsView(ft.Container):

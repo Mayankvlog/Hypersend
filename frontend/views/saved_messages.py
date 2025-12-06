@@ -1,5 +1,5 @@
 import flet as ft
-from frontend.theme import SPACING_SMALL, SPACING_MEDIUM, TEXT_BLACK
+from theme import SPACING_SMALL, SPACING_MEDIUM, TEXT_BLACK
 
 
 class SavedMessagesView(ft.Container):

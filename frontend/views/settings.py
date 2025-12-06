@@ -2,7 +2,7 @@ import flet as ft
 import asyncio
 import sys
 
-from frontend.permissions_manager import REQUIRED_PERMISSIONS, check_permission, request_android_permissions
+from permissions_manager import REQUIRED_PERMISSIONS, check_permission, request_android_permissions
 
 def SettingsView(
     page: ft.Page,
