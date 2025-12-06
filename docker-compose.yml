@@ -44,7 +44,7 @@ services:
     
     # Expose MongoDB port for remote access (if firewall allows)
     ports:
-      - "27017:27017"
+      - "27018:27017"
     
     # Environment variables for initial setup
     environment:
