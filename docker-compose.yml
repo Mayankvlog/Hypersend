@@ -77,7 +77,7 @@ services:
       # Database Connection - Use Docker service name for internal communication
       # For Docker: uses 'mongodb' service name on internal network
       # MongoDB will handle both Docker and external connections
-      MONGODB_URI: mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin
+      MONGODB_URI: mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true
       
       # Security - CHANGE THESE IN PRODUCTION
       SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
