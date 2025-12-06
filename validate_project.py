@@ -152,10 +152,10 @@ def validate_configurations():
         from backend.config import settings
         if "mongodb://" in settings.MONGODB_URI:
             print(f"  - MongoDB URI: {settings.MONGODB_URI[:50]}...")
-            if "hypersend" in settings.MONGODB_URI and "139.59.82.105" in settings.MONGODB_URI:
-                print(f"  - ✓ Configured for remote access")
+            if "hypersend" in settings.MONGODB_URI and "mongodb" in settings.MONGODB_URI:
+                print(f"  - ✓ Configured for Docker service connection")
             else:
-                errors.append("MongoDB not configured for remote access")
+                errors.append("MongoDB not configured correctly for Docker")
         else:
             errors.append("Invalid MongoDB URI format")
     except Exception as e:

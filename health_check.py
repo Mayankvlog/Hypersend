@@ -127,7 +127,7 @@ from motor.motor_asyncio import AsyncClient
 from motor.motor_asyncio import AsyncClient
 
 async def test_mongodb():
-    uri = "mongodb://hypersend:Mayank%40%2303@139.59.82.105:27017/hypersend?authSource=admin"
+    uri = "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
     try:
         client = AsyncClient(uri, serverSelectionTimeoutMS=5000)
         await client.admin.command('ping')
