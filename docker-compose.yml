@@ -58,7 +58,7 @@ services:
       - ./data:/data
       - ./backend/uploads:/app/uploads
     environment:
-      MONGODB_URI: "mongodb://${MONGO_USER}:$(python3 -c \"import urllib.parse; print(urllib.parse.quote_plus('${MONGO_PASSWORD}'))\")@mongodb:27017/hypersend?authSource=admin"
+      MONGODB_URI: "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30
