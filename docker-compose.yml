@@ -1,9 +1,3 @@
-# Hypersend Full-Stack Application
-# MongoDB runs in Docker, data stored on VPS /var/lib/mongodb
-# Docker manages: Nginx + MongoDB + Backend + Frontend
-
-version: '3.9'
-
 services:
 
   # ============================================================
