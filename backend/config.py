@@ -13,10 +13,11 @@ if not os.getenv("MONGODB_URI"):
 
 
 class Settings:
-    # MongoDB (Remote server on DigitalOcean VPS)
-    # Priority: .env > environment variable > default
-    # Uses authenticated connection to DigitalOcean VPS MongoDB
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:Mayank%40%2303@139.59.82.105:27017/hypersend?authSource=admin")
+    # MongoDB Connection
+    # Priority: Environment variable > Docker default (mongodb:27017) > VPS IP fallback
+    # In Docker: connects to 'mongodb' service on internal network
+    # On VPS directly: connects to 139.59.82.105:27017
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin")
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production-5y7L9x2K")
