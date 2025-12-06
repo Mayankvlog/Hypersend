@@ -1,5 +1,5 @@
 import flet as ft
-from frontend.theme import PRIMARY_COLOR, SPACING_SMALL, SPACING_MEDIUM
+from theme import PRIMARY_COLOR, SPACING_SMALL, SPACING_MEDIUM
 
 
 class MessageView(ft.Container):

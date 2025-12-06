@@ -1,5 +1,5 @@
 import flet as ft
-from frontend.theme import (
+from theme import (
     PRIMARY_COLOR,
     SPACING_SMALL,
     SPACING_MEDIUM,
@@ -143,7 +143,7 @@ class ChatsView(ft.Container):
     
     def open_chat(self, chat):
         """Open chat detail view"""
-        from frontend.views.message_view import MessageView
+        from views.message_view import MessageView
         
         # Show message view
         message_view = MessageView(
@@ -172,7 +172,7 @@ class ChatsView(ft.Container):
 
     async def open_saved_messages_view(self, e=None):
         """Open the Saved Messages view to display all saved messages"""
-        from frontend.views.saved_messages import SavedMessagesView
+        from views.saved_messages import SavedMessagesView
         
         saved_view = SavedMessagesView(
             page=self.page,
