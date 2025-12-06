@@ -1,5 +1,8 @@
 # Hypersend Full-Stack Application
-# MongoDB runs on VPS (local service), Docker manages backend/frontend/nginx only
+# MongoDB runs in Docker, data stored on VPS /var/lib/mongodb
+# Docker manages: Nginx + MongoDB + Backend + Frontend
+
+version: '3.9'
 
 services:
 
@@ -11,8 +14,8 @@ services:
     container_name: hypersend_nginx
     restart: unless-stopped
     ports:
-      - "${NGINX_PORT:-8080}:80"      # Changed default to 8080 (use 80 if you free the port)
-      - "${NGINX_PORT_SSL:-8443}:443" # Changed default to 8443
+      - "${NGINX_PORT:-8080}:80"
+      - "${NGINX_PORT_SSL:-8443}:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./data:/data:ro
@@ -30,8 +33,47 @@ services:
       start_period: 10s
 
   # ============================================================
-  # Backend API Service (FastAPI)
-  # Connects to MongoDB running on VPS (localhost:27017)
+  # MongoDB Database (Docker Container)
+  # Data stored on VPS /var/lib/mongodb (persistent across restarts)
+  # Managed by Docker Compose
+  # ============================================================
+  mongodb:
+    image: mongo:7.0
+    container_name: hypersend_mongodb
+    restart: unless-stopped
+    
+    # Expose MongoDB port for remote access (if firewall allows)
+    ports:
+      - "27017:27017"
+    
+    # Environment variables for initial setup
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-Mayank@#03}
+      MONGO_INITDB_DATABASE: hypersend
+    
+    # Mount host directory as Docker volume (single source of truth)
+    volumes:
+      - /var/lib/mongodb:/data/db          # Host path -> Container DB dir (CRITICAL)
+      - mongodb_config:/data/configdb      # Config dir (can be local to Docker)
+    
+    networks:
+      - hypersend_network
+    
+    # Health check to confirm MongoDB is ready
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    
+    # Start MongoDB with authentication + listen on all interfaces
+    command: mongod --auth --bind_ip 0.0.0.0
+
+  # ============================================================
+  # Backend API Service (FastAPI/Uvicorn)
+  # Connects to MongoDB via Docker service name 'mongodb'
   # ============================================================
   backend:
     build:
@@ -40,24 +82,25 @@ services:
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
+    
     ports:
       - "8000:8000"
+    
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
+    
     environment:
-      # Database Connection - Points to MongoDB on VPS (localhost from container perspective)
-      # MongoDB runs as local service on VPS, NOT in Docker
-      # Use host.docker.internal to reach VPS localhost from container
-      MONGODB_URI: mongodb://hypersend:Mayank%40%2303@host.docker.internal:27017/hypersend?authSource=admin&retryWrites=true
+      # MongoDB connection: use Docker service name 'mongodb' (internal network)
+      MONGODB_URI: mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true
       
-      # Security - CHANGE THESE IN PRODUCTION
+      # Security - CHANGE IN PRODUCTION
       SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30
       
-      # File Storage Configuration (40GB)
+      # File Storage (40GB max)
       DATA_ROOT: /data
       UPLOADS_PATH: /app/uploads
       MAX_FILE_SIZE_BYTES: 42949672960
@@ -69,25 +112,31 @@ services:
       # API Configuration
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      # Public API URL - Points to VPS IP for external access
       API_BASE_URL: http://${VPS_IP:-139.59.82.105}:8000
       
       # Rate Limiting
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       
-      # Debug Settings
+      # Debug
       DEBUG: ${DEBUG:-False}
       
-      # SMTP Configuration (optional)
+      # SMTP (optional)
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
       EMAIL_FROM: ${EMAIL_FROM:-}
+    
+    # Wait for MongoDB to be healthy before starting backend
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    
     networks:
       - hypersend_network
+    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
@@ -102,25 +151,30 @@ services:
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
+    
     ports:
       - "8550:8550"
+    
     environment:
-      # For internal Docker communication
+      # For internal Docker network communication
       API_BASE_URL: http://backend:8000
       
-      # For external VPS access (set in .env)
+      # For external/browser access (from VPS public IP)
       PRODUCTION_API_URL: http://${VPS_IP:-139.59.82.105}:8000
       
       # Debug mode
       DEBUG: ${DEBUG:-False}
+    
     depends_on:
       backend:
         condition: service_started
+    
     networks:
       - hypersend_network
 
 # ============================================================
-# Internal Network (Service Discovery)
+# Internal Docker Network (Service Discovery)
+# Services can reach each other via service names
 # ============================================================
 networks:
   hypersend_network:
@@ -130,9 +184,14 @@ networks:
         - subnet: 172.20.0.0/16
 
 # ============================================================
-# Persistent Volumes (MongoDB volume removed - uses local VPS service)
+# Persistent Volumes
+# mongodb_config: Docker-managed volume for Mongo config
+# nginx_cache: Docker-managed volume for Nginx cache
+# Database data: stored on host /var/lib/mongodb (mounted directly)
 # ============================================================
 volumes:
-  # Nginx cache
+  mongodb_config:
+    driver: local
+  
   nginx_cache:
     driver: local
