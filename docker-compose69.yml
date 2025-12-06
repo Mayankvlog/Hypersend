@@ -29,8 +29,8 @@ services:
     ports:
       - "27018:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: hypersend
-      MONGO_INITDB_ROOT_PASSWORD: Mayank@#03
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
       MONGO_INITDB_DATABASE: hypersend
     volumes:
       - /var/lib/mongodb:/data/db
@@ -55,9 +55,8 @@ services:
       - ./data:/data
       - ./backend/uploads:/app/uploads
     environment:
-      # IMPORTANT: Password MUST be URL-encoded (@ = %40, # = %23)
-      MONGODB_URI: "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
-      SECRET_KEY: your-super-secret-production-key-change-this-2025
+      MONGODB_URI: "mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
+      SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30
@@ -70,10 +69,10 @@ services:
       FILE_RETENTION_HOURS: 0
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: http://139.59.82.105:8000
+      API_BASE_URL: http://${VPS_IP}:8000
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
-      DEBUG: True
+      DEBUG: ${DEBUG}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -94,8 +93,8 @@ services:
       - "8550:8550"
     environment:
       API_BASE_URL: http://backend:8000
-      PRODUCTION_API_URL: http://139.59.82.105:8000
-      DEBUG: True
+      PRODUCTION_API_URL: http://${VPS_IP}:8000
+      DEBUG: ${DEBUG}
     depends_on:
       backend:
         condition: service_started
