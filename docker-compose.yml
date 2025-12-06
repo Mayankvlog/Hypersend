@@ -36,9 +36,9 @@ services:
     container_name: hypersend_mongodb
     restart: unless-stopped
     
-    # Expose MongoDB port for remote access (if firewall allows)
+    # Expose MongoDB port for connections
     ports:
-      - "27018:27017"
+      - "27017:27017"
     
     # Environment variables for initial setup
     environment:
@@ -86,7 +86,7 @@ services:
     
     environment:
       # MongoDB connection: use Docker service name 'mongodb' (internal network)
-      MONGODB_URI: mongodb://hypersend:Mayank@#03@mongodb:27018/hypersend?authSource=admin&retryWrites=true
+      MONGODB_URI: mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true
       
       # Security - CHANGE IN PRODUCTION
       SECRET_KEY: ${SECRET_KEY:-CHANGE-THIS-SECRET-KEY-IN-PRODUCTION}
