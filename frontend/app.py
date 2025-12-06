@@ -7,26 +7,17 @@ from datetime import datetime
 from typing import Optional
 import sys
 
-# Add the parent directory of 'frontend' to sys.path
-sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+# Add the current directory to sys.path for imports
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-# Try relative imports first (package), fallback to absolute (script)
-try:
-    from .views.settings import SettingsView
-    from .views.login import LoginView
-    from .views.chats import ChatsView
-    from .views.message_view import MessageView
-    from .views.file_upload import FileUploadView
-    from .views.permissions import PermissionsView
-    from .views.saved_messages import SavedMessagesView
-except ImportError:
-    from views.settings import SettingsView
-    from views.login import LoginView
-    from views.chats import ChatsView
-    from views.message_view import MessageView
-    from views.file_upload import FileUploadView
-    from views.permissions import PermissionsView
-    from views.saved_messages import SavedMessagesView
+# Import views (running as script, not package)
+from views.settings import SettingsView
+from views.login import LoginView
+from views.chats import ChatsView
+from views.message_view import MessageView
+from views.file_upload import FileUploadView
+from views.permissions import PermissionsView
+from views.saved_messages import SavedMessagesView
 
 # Compatibility shims
 icons = ft.Icons
