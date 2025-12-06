@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies (updated 2025-12-06)
+# Install dependencies (cache invalidation: 2025-12-06-v2)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
