@@ -416,6 +416,64 @@ docker-compose logs -f mongo
 
 ## 🔧 Troubleshooting
 
+### ⚠️ MongoDB Connection Issues (Docker vs Local Service)
+
+**Problem:** Backend can't connect to MongoDB, or local mongod service keeps failing
+
+**Root Cause:** 
+- Docker containers use internal service names (mongodb:27017) for container-to-container communication
+- Local VPS mongod service (exit-code 14) is deprecated - use Docker MongoDB instead
+- Port 27017 conflicts between local service and Docker container
+
+**Complete Fix (Recommended):**
+```bash
+# On VPS
+cd /hypersend/Hypersend
+
+# 1. Stop and disable local MongoDB service (free port 27017)
+sudo systemctl stop mongod 2>/dev/null || true
+sudo systemctl disable mongod 2>/dev/null || true
+
+# 2. Kill any process using port 27017
+sudo lsof -ti :27017 | xargs -r sudo kill -9 2>/dev/null || true
+
+# 3. Pull latest fixes from GitHub
+git pull origin main
+
+# 4. Clean up Docker resources
+docker compose down -v
+docker volume rm hypersend_mongodb_data hypersend_mongodb_config 2>/dev/null || true
+
+# 5. Build and start services
+docker compose up -d --build
+
+# 6. Wait for services to initialize
+sleep 60
+
+# 7. Verify services are healthy
+docker compose ps
+
+# 8. Test connectivity
+curl http://localhost:8000/health
+```
+
+**Verify MongoDB is working inside Docker:**
+```bash
+# Test MongoDB connectivity from backend
+docker exec hypersend_backend curl -s http://localhost:8000/health
+
+# Check MongoDB logs
+docker compose logs mongodb --tail=20
+
+# Check backend logs for connection messages
+docker compose logs backend --tail=20
+```
+
+**Important Configuration Changes:**
+- ✅ `MONGODB_URI` in docker-compose.yml now uses `mongodb:27017` (Docker service name)
+- ✅ Backend config.py updated to use Docker service name as default
+- ✅ This allows container-to-container communication on internal Docker network (172.20.0.0/16)
+
 ### Port 27017 Already in Use (MongoDB conflict)
 
 **Cause:** Old MongoDB container or process still using the port
@@ -425,6 +483,7 @@ docker-compose logs -f mongo
 # On VPS
 docker compose down -v
 docker volume rm hypersend_mongodb_data hypersend_mongodb_config 2>/dev/null || true
+sudo systemctl stop mongod 2>/dev/null || true
 sudo lsof -ti :27017 | xargs -r kill -9 2>/dev/null || true
 docker compose up -d --build
 docker compose ps  # Verify all services running
@@ -436,17 +495,18 @@ docker compose ps  # Verify all services running
 
 **Quick Fix (Fastest):**
 ```bash
-ssh root@139.59.82.105 "cd /root/Hypersend && docker compose up -d --build"
+cd /hypersend/Hypersend && bash FIX_VPS.sh
 ```
 
 **Manual Fix:**
 ```bash
 ssh root@139.59.82.105
-cd /root/Hypersend
-docker-compose down -v
-docker-compose up -d --build
-sleep 15
-docker-compose ps
+cd /hypersend/Hypersend
+git pull origin main
+docker compose down -v
+docker compose up -d --build
+sleep 60
+docker compose ps
 curl http://localhost:8000/health
 ```
 
@@ -454,25 +514,26 @@ curl http://localhost:8000/health
 
 **Check service status:**
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 **View logs:**
 ```bash
-docker-compose logs backend    # Backend API
-docker-compose logs mongodb    # Database
-docker-compose logs nginx      # Web server
+docker compose logs backend    # Backend API
+docker compose logs mongodb    # Database
+docker compose logs nginx      # Web server
+docker compose logs frontend   # Frontend
 ```
 
 **Restart services:**
 ```bash
-docker-compose restart
+docker compose restart
 ```
 
-**For detailed help:**
-- See [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) - Comprehensive troubleshooting guide
-- See [`QUICK_FIX.md`](QUICK_FIX.md) - Quick reference for common issues
-- See [`DEPLOY_PRODUCTION.md`](DEPLOY_PRODUCTION.md) - Full deployment documentation
+**Verify MongoDB connection from backend:**
+```bash
+docker compose logs backend | grep -i "mongodb\|connected"
+```
 
 ---
 
