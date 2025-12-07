@@ -19,18 +19,19 @@ def SettingsView(
     Flet view for application settings, including permission management.
     """
     
-    # Placeholder for the actual content of SettingsView
-    # This will be replaced with actual UI logic
-    
     # --- Permission UI ---
     def get_permission_status_icon(perm_name: str):
-        if sys.platform != "android":
-            return ft.Icon(icons.CHECK_CIRCLE, color=colors.GREEN_500)
-        
-        if check_permission(perm_name):
-            return ft.Icon(icons.CHECK_CIRCLE, color=colors.GREEN_500)
-        else:
-            return ft.Icon(icons.CANCEL, color=colors.RED_500)
+        try:
+            if sys.platform != "android":
+                return ft.Icon(icons.CHECK_CIRCLE, color=colors.GREEN_500, size=20)
+            
+            if check_permission(perm_name):
+                return ft.Icon(icons.CHECK_CIRCLE, color=colors.GREEN_500, size=20)
+            else:
+                return ft.Icon(icons.CANCEL, color=colors.RED_500, size=20)
+        except Exception as e:
+            print(f"Error creating icon: {e}")
+            return ft.Text("✓", color=colors.GREEN_500)
 
     async def _request_permissions_on_click(e):
         e.control.disabled = True
@@ -72,13 +73,15 @@ def SettingsView(
         controls=[
             ft.Row(
                 controls=[
-                    ft.Text(perm.split(".")[-1], expand=True),
+                    ft.Text(perm.split(".")[-1], expand=True, size=13),
                     get_permission_status_icon(perm),
                 ],
-                data=perm # Store permission name for later update
+                spacing=10,
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
             ) for perm in REQUIRED_PERMISSIONS
         ],
-        spacing=10
+        spacing=8,
+        expand=False
     )
 
     permission_section = ft.Column(
@@ -89,53 +92,63 @@ def SettingsView(
                 size=12,
                 color=colors.BLACK54
             ),
-            ft.Container(height=10),
+            ft.Divider(height=20),
             permissions_list,
-            ft.Container(height=10),
+            ft.Divider(height=20),
             ft.ElevatedButton(
-                text="Request Permissions Again",
+                text="Request Permissions",
                 on_click=_request_permissions_on_click,
-                visible=sys.platform == "android"
+                visible=sys.platform == "android",
+                expand=True
             ),
             ft.TextButton(
-                text="Open App Settings (Android)",
+                text="Open App Settings",
                 on_click=_open_app_settings,
-                visible=sys.platform == "android"
+                visible=sys.platform == "android",
+                expand=True
             )
-        ]
+        ],
+        spacing=10,
+        expand=False
     )
 
     # --- Other Settings (Placeholders) ---
     account_section = ft.Column(
         controls=[
             ft.Text("Account", size=18, weight=ft.FontWeight.BOLD),
-            ft.Text(f"Logged in as: {current_user.get('email', 'N/A')}"),
-            ft.ElevatedButton("Logout", on_click=lambda e: on_logout()),
-        ]
+            ft.Text(f"User: {current_user.get('email', 'N/A')}", size=13),
+            ft.ElevatedButton(
+                "Logout",
+                on_click=lambda e: on_logout(),
+                expand=True
+            ),
+        ],
+        spacing=10,
+        expand=False
     )
 
     about_section = ft.Column(
         controls=[
             ft.Text("About", size=18, weight=ft.FontWeight.BOLD),
-            ft.Text("Zaply App Version 1.0.0"),
-            ft.Text("Made with ❤️ by Mayan"),
-        ]
+            ft.Text("App: Zaply v1.0.0", size=13),
+            ft.Text("Made with love", size=13, color=colors.BLACK54),
+        ],
+        spacing=10,
+        expand=False
     )
 
-
     # Main Layout
-    view_controls = ft.Column(
+    view_controls = ft.ListView(
         controls=[
             permission_section,
-            ft.Divider(),
+            ft.Divider(height=20),
             account_section,
-            ft.Divider(),
+            ft.Divider(height=20),
             about_section,
         ],
-        scroll=ft.ScrollMode.AUTO,
-        expand=True,
         spacing=20,
-        padding=20
+        padding=20,
+        expand=True
     )
 
     settings_view = ft.View(
@@ -146,13 +159,12 @@ def SettingsView(
                     icon=icons.ARROW_BACK,
                     on_click=lambda e: on_back()
                 ),
-                title=ft.Text("Settings"),
+                title=ft.Text("Settings", size=20),
                 center_title=False,
                 bgcolor=colors.SURFACE_VARIANT
             ),
             view_controls
-        ],
-        scroll=ft.ScrollMode.AUTO
+        ]
     )
     
     return settings_view
