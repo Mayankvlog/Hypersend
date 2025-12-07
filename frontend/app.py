@@ -130,6 +130,25 @@ class ZaplyApp:
         # Selected UI language (default English)
         self.language: str = "en"
         
+        # Setup route handler
+        self.page.on_route_change = self.route_change
+        
+        
+    def route_change(self, route):
+        """Handle route changes for navigation"""
+        debug_log(f"[ROUTE] Route changed to: {route.route}")
+        self.page.views.clear()
+        
+        if route.route == "/":
+            if self.token:
+                self.show_chat_list()
+            else:
+                self.show_login()
+        elif route.route == "/settings":
+            self.show_settings()
+        else:
+            self.show_login()
+    
     def _display_fatal_error(self, message: str):
         """Displays a fatal error message and stops app initialization."""
         self.page.controls.clear()
@@ -944,7 +963,7 @@ class ZaplyApp:
                 ),
                 ft.IconButton(
                     icon=icons.SETTINGS,
-                    on_click=lambda e: self.show_settings()
+                    on_click=lambda e: self.page.go("/settings")
                 )
             ]
         )
@@ -1003,7 +1022,7 @@ class ZaplyApp:
     def show_settings(self):
         """Show settings view"""
         if not SettingsView:
-            print("[ERROR] SettingsView not available")
+            debug_log("[SETTINGS] SettingsView not available")
             return
         
         try:
@@ -1013,7 +1032,7 @@ class ZaplyApp:
                 api_client=self.client,
                 current_user=self.current_user,
                 on_logout=self.handle_logout,
-                on_back=self.show_chat_list
+                on_back=lambda: self.page.go("/")
             )
             
             if settings_view is None:
@@ -1022,7 +1041,6 @@ class ZaplyApp:
             
             debug_log(f"[SETTINGS] Settings view created: {type(settings_view)}")
             self.page.views.append(settings_view)
-            self.page.go("/settings")
             self.page.update()
             debug_log("[SETTINGS] Settings view displayed")
         except Exception as e:

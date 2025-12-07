@@ -147,7 +147,8 @@ def SettingsView(
                 bgcolor=ft.colors.SURFACE_VARIANT
             ),
             view_controls
-        ]
+        ],
+        scroll=ft.ScrollMode.AUTO
     )
     
     return settings_view
