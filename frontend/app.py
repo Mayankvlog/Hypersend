@@ -1051,18 +1051,42 @@ class ZaplyApp:
             bgcolor=ft.colors.WHITE,
         )
 
-        # Create saved messages view
+        # Create saved messages view with back button and empty state
         saved_view = ft.View(
             "/",
             [
                 ft.Container(
-                    content=ft.Text(
-                        "No saved messages chat is available yet.",
-                        color=self.text_secondary,
-                        text_align=ft.TextAlign.CENTER,
+                    content=ft.Column(
+                        [
+                            ft.Row(
+                                [
+                                    ft.IconButton(
+                                        icon=icons.ARROW_BACK,
+                                        icon_size=24,
+                                        on_click=lambda e: self.show_chat_list(),
+                                    ),
+                                    ft.Text(
+                                        "Saved Messages",
+                                        size=20,
+                                        weight=ft.FontWeight.BOLD,
+                                    ),
+                                    ft.Container(expand=True)
+                                ],
+                                alignment=ft.MainAxisAlignment.START
+                            ),
+                            ft.Container(
+                                content=ft.Text(
+                                    "No saved messages chat is available yet.",
+                                    color=self.text_secondary,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                                alignment=ft.alignment.center,
+                                expand=True,
+                            )
+                        ],
+                        spacing=0
                     ),
-                    alignment=ft.alignment.center,
-                    expand=True,
+                    expand=True
                 )
             ]
         )
