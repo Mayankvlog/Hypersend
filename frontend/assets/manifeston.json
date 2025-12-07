@@ -61,13 +61,5 @@
   "categories": ["social", "productivity"],
   "dir": "ltr",
   "lang": "en-US",
-  "screenshots": [],
-  "colors": {
-    "primary": "#1F8EF1",   
-    "secondary": "#B3E034", 
-    "accent": "#0087CF",    
-    "background": "#0B1220",
-    "card": "#FFFFFF",      
-    "glow": "#B5F4FF"       
-  }
+  "screenshots": []
 }
