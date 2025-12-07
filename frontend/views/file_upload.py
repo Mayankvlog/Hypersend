@@ -42,28 +42,28 @@ class FileUploadView(ft.Container):
         
         self.upload_button = ft.ElevatedButton(
             "Upload",
-            icon=ft.icons.UPLOAD_FILE,
+            icon=ft.Icons.UPLOAD_FILE,
             on_click=lambda e: self.page.run_task(self.start_upload),
             disabled=True,
             bgcolor=PRIMARY_COLOR
         )
         
         self.pause_button = ft.IconButton(
-            icon=ft.icons.PAUSE,
+            icon=ft.Icons.PAUSE,
             tooltip="Pause upload",
             on_click=self.pause_upload,
             visible=False
         )
         
         self.resume_button = ft.IconButton(
-            icon=ft.icons.PLAY_ARROW,
+            icon=ft.Icons.PLAY_ARROW,
             tooltip="Resume upload",
             on_click=lambda e: self.page.run_task(self.resume_upload),
             visible=False
         )
         
         self.cancel_button = ft.IconButton(
-            icon=ft.icons.CANCEL,
+            icon=ft.Icons.CANCEL,
             tooltip="Cancel upload",
             on_click=lambda e: self.page.run_task(self.cancel_upload),
             visible=False
@@ -79,7 +79,7 @@ class FileUploadView(ft.Container):
                 content=ft.Column([
                     ft.ElevatedButton(
                         "Select File",
-                        icon=ft.icons.FOLDER_OPEN,
+                        icon=ft.Icons.FOLDER_OPEN,
                         on_click=lambda _: self.file_picker.pick_files(
                             allow_multiple=False,
                             dialog_title="Select file to upload (up to 40GB)"

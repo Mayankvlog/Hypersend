@@ -31,7 +31,7 @@ class ChatsView(ft.Container):
                         [
                             ft.Container(expand=True),
                             ft.IconButton(
-                                icon=ft.icons.LOGOUT,
+                                icon=ft.Icons.LOGOUT,
                                 on_click=lambda e: self.page.run_task(self.handle_logout, e)
                             )
                         ],
@@ -44,7 +44,7 @@ class ChatsView(ft.Container):
                 self.chat_list,
                 # New chat button
                 ft.FloatingActionButton(
-                    icon=ft.icons.ADD,
+                    icon=ft.Icons.ADD,
                     on_click=self.new_chat
                 )
             ],
@@ -65,7 +65,7 @@ class ChatsView(ft.Container):
             saved_card = ft.Card(
                 content=ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.icons.BOOKMARK, color=PRIMARY_COLOR),
+                        ft.Icon(ft.Icons.BOOKMARK, color=PRIMARY_COLOR),
                         ft.Column([
                             ft.Text("Saved Messages", weight=ft.FontWeight.BOLD),
                             ft.Text("Your personal notes and bookmarks", size=12, opacity=0.7)
