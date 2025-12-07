@@ -32,7 +32,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database operation timed out. Please try again."
         )
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch user: {str(e)}"
@@ -90,7 +90,7 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Search operation timed out. Please try again."
         )
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Search failed: {str(e)}"
@@ -128,7 +128,7 @@ async def get_permissions(current_user: str = Depends(get_current_user)):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database operation timed out. Please try again."
         )
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch permissions: {str(e)}"
@@ -176,7 +176,7 @@ async def update_permissions(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database operation timed out. Please try again."
         )
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update permissions: {str(e)}"

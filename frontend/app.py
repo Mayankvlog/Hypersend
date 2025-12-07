@@ -27,7 +27,7 @@ ft.colors = ft.Colors
 # dotenv is optional in some Android build environments; import defensively
 try:
     from dotenv import load_dotenv
-except Exception:  # ImportError or any other unexpected issue
+except ImportError:
     def load_dotenv(*args, **kwargs):  # type: ignore
         return None
 
@@ -45,7 +45,6 @@ except ImportError:
     def request_android_permissions():
         return False
 
-#
 # Default backend URL now points to your DigitalOcean VPS
 DEFAULT_DEV_URL = "http://139.59.82.105:8000"
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
@@ -81,6 +80,7 @@ LANGUAGES = [
     ("ja", "日本語 (Japanese)"),
     ("zh", "中文 (Chinese)")
 ]
+
 def debug_log(msg: str):
     """Log debug messages only when DEBUG is enabled"""
     if DEBUG:
@@ -88,13 +88,13 @@ def debug_log(msg: str):
 
 async def request_app_permissions(page: ft.Page):
     """Request required permissions on app startup"""
-    try:
-        if sys.platform == "android":
+    if sys.platform == "android":
+        try:
             debug_log("[PERMS] Requesting app permissions...")
             request_android_permissions()
             debug_log("[PERMS] Permission request completed")
-    except Exception as e:
-        debug_log(f"[PERMS] Error during permission request: {e}")
+        except (ImportError, RuntimeError, OSError) as e:
+            debug_log(f"[PERMS] Error during permission request: {e}")
 
 debug_log(f"[CONFIG] API URL: {API_URL}")
 
@@ -545,7 +545,19 @@ class ZaplyApp:
                 ft.Container(
                     content=ft.Column(
                         [
+                            # Zaply Icon at top
+                            ft.Container(
+                                content=ft.Image(
+                                    src="/assets/icon.png",
+                                    width=100,
+                                    height=100,
+                                    fit=ft.ImageFit.CONTAIN,
+                                ),
+                                padding=20,
+                            ),
+                            ft.Container(height=10),
                             language_dropdown,
+                            ft.Container(height=10),
                             email_field,
                             username_field,
                             password_field,
@@ -557,7 +569,7 @@ class ZaplyApp:
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=15
                     ),
-                    padding=ft.padding.only(left=30, right=30, top=150, bottom=30),
+                    padding=ft.padding.only(left=30, right=30, top=50, bottom=30),
                     alignment=ft.alignment.top_center,
                     expand=True
                 )
@@ -796,6 +808,16 @@ class ZaplyApp:
                 ft.Container(
                     content=ft.Column(
                         [
+                            # Zaply Icon at top
+                            ft.Container(
+                                content=ft.Image(
+                                    src="/assets/icon.png",
+                                    width=100,
+                                    height=100,
+                                    fit=ft.ImageFit.CONTAIN,
+                                ),
+                                padding=20,
+                            ),
                             ft.Text("Reset Password", size=24, weight="bold", color=ft.colors.BLACK),
                             ft.Container(height=10),
                             info_text,
@@ -1383,6 +1405,7 @@ async def main(page: ft.Page):
     """
     # Set page properties first
     page.title = "Zaply"
+    page.window.icon = "/assets/icon.png"  # Set window icon to Zaply icon
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     page.bgcolor = "#FDFBFB"
@@ -1397,7 +1420,7 @@ async def main(page: ft.Page):
                 # Zaply Icon - Professional Splash Screen
                 ft.Container(
                     content=ft.Image(
-                        src="/assets/icons.png",
+                        src="/assets/icon.png",
                         width=120,
                         height=120,
                         fit=ft.ImageFit.CONTAIN,

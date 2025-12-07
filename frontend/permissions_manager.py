@@ -69,7 +69,7 @@ def request_android_permissions():
                     permissions_to_request.append(perm)
                 else:
                     debug_log(f"[PERMS] - {perm}: Already granted")
-            except Exception as e:
+            except (AttributeError, RuntimeError, OSError) as e:
                 debug_log(f"[PERMS] Error checking {perm}: {e}")
                 permissions_to_request.append(perm)
         
@@ -91,7 +91,7 @@ def request_android_permissions():
     except ImportError:
         debug_log("[PERMS] FATAL: jnius module not found. Permissions cannot be requested. Is it installed in the build?")
         return False
-    except Exception as e:
+    except (AttributeError, RuntimeError, OSError, TypeError) as e:
         debug_log(f"[PERMS] FATAL: An unhandled error occurred while requesting permissions: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
