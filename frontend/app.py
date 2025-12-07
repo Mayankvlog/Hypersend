@@ -1383,23 +1383,36 @@ async def main(page: ft.Page):
     """
     # Set page properties first
     page.title = "Zaply"
-    page.icon = "/favicon.ico"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     page.bgcolor = "#FDFBFB"
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
 
-    # Show a loading indicator immediately to prevent a blank screen on startup
+    # Show splash screen with Zaply icon immediately to prevent a blank screen on startup
     page.controls.clear()
     page.add(
         ft.Column(
             [
+                # Zaply Icon - Professional Splash Screen
+                ft.Container(
+                    content=ft.Image(
+                        src="/assets/icon.png",
+                        width=120,
+                        height=120,
+                        fit=ft.ImageFit.CONTAIN,
+                    ),
+                    padding=20,
+                ),
+                ft.Text("Zaply", size=32, weight=ft.FontWeight.BOLD, color="#1F8EF1"),
+                ft.Text("Fast Chat & File Sharing", size=14, color=ft.colors.BLACK54),
+                ft.Container(height=20),
                 ft.ProgressRing(width=32, height=32, stroke_width=3),
                 ft.Text("Initializing...", size=14, color=ft.colors.BLACK54),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=20,
+            alignment=ft.MainAxisAlignment.CENTER,
         )
     )
     page.update()
@@ -1446,10 +1459,16 @@ async def main(page: ft.Page):
 
 if __name__ == "__main__":
     import os
-    assets_path = os.path.join(os.path.dirname(__file__), "assets")
+    
+    # Get the absolute path to assets directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    assets_path = os.path.join(current_dir, "assets")
+    
+    # Launch Flet app with proper configuration
     ft.app(
         target=main, 
         name="Zaply",
         assets_dir=assets_path,
-        web_renderer="html"
+        web_renderer="html",
+        view=ft.AppView.WEB_BROWSER if os.environ.get("FLET_WEB") else ft.AppView.FLET_APP,
     )

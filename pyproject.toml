@@ -75,8 +75,10 @@ product = "Zaply"
 project = "zaply"
 org = "com.zaply"
 description = "Secure P2P File Transfer and Messaging"
-# Zaply Lightning + Z icon - properly configured for all platforms
+# Zaply Lightning + Z icon - Used for all platforms (APK, Web, Desktop)
 icon = "frontend/assets/icon.png"
+# Splash screen icon
+package_icons_dir = "frontend/assets"
 
 # APK Size Optimization
 build_android_split_per_abi = true
