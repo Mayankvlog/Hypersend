@@ -1007,6 +1007,7 @@ class ZaplyApp:
             return
         
         try:
+            debug_log("[SETTINGS] Opening settings view")
             settings_view = SettingsView(
                 page=self.page,
                 api_client=self.client,
@@ -1014,12 +1015,22 @@ class ZaplyApp:
                 on_logout=self.handle_logout,
                 on_back=self.show_chat_list
             )
-            self.page.clean()
-            self.page.add(settings_view)
+            
+            if settings_view is None:
+                debug_log("[SETTINGS] SettingsView returned None")
+                return
+            
+            debug_log(f"[SETTINGS] Settings view created: {type(settings_view)}")
+            self.page.views.append(settings_view)
+            self.page.go("/settings")
             self.page.update()
+            debug_log("[SETTINGS] Settings view displayed")
         except Exception as e:
+            import traceback
             debug_log(f"[SETTINGS] Error opening settings: {e}")
+            debug_log(f"[SETTINGS] Traceback: {traceback.format_exc()}")
             print(f"Error opening settings: {e}")
+            print(traceback.format_exc())
 
     def show_chat(self, chat: dict):
         """Show chat messages"""
