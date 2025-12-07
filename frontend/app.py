@@ -872,44 +872,7 @@ class ZaplyApp:
         def update_chat_list():
             chat_items = []
             
-            # Add Saved Messages at the top
-            saved_messages_item = ft.Container(
-                content=ft.Row(
-                    [
-                        ft.CircleAvatar(
-                            content=ft.Icon(icons.BOOKMARK, size=24, color=ft.colors.WHITE),
-                            bgcolor=self.primary_color,
-                            radius=20
-                        ),
-                        ft.Column(
-                            [
-                                ft.Text(
-                                    "Saved Messages",
-                                    size=16,
-                                    weight=ft.FontWeight.W_500,
-                                    color=ft.colors.BLACK
-                                ),
-                                ft.Text(
-                                    "Your personal collection",
-                                    size=13,
-                                    color=ft.colors.BLACK54
-                                )
-                            ],
-                            spacing=5,
-                            expand=True
-                        )
-                    ],
-                    spacing=15
-                ),
-                padding=15,
-                on_click=lambda e: self.show_saved_messages(),
-                ink=True,
-                bgcolor=ft.colors.WHITE
-            )
-            chat_items.append(saved_messages_item)
-            chat_items.append(ft.Divider(height=1, color=self.bg_light))
-            
-            # Add regular chats
+            # Add regular chats first
             for chat in self.chats:
                 # Skip saved type chats from regular list
                 if chat.get("type") == "saved":
@@ -962,6 +925,48 @@ class ZaplyApp:
                 )
                 chat_items.append(chat_item)
                 chat_items.append(ft.Divider(height=1, color=self.bg_light))
+            
+            # Add Saved Messages at the bottom
+            if chat_items:
+                # Remove last divider before adding Saved Messages
+                if chat_items and isinstance(chat_items[-1], ft.Divider):
+                    chat_items.pop()
+                chat_items.append(ft.Divider(height=1, color=self.bg_light))
+            
+            saved_messages_item = ft.Container(
+                content=ft.Row(
+                    [
+                        ft.CircleAvatar(
+                            content=ft.Icon(icons.BOOKMARK, size=24, color=ft.colors.WHITE),
+                            bgcolor=self.primary_color,
+                            radius=20
+                        ),
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    "Saved Messages",
+                                    size=16,
+                                    weight=ft.FontWeight.W_500,
+                                    color=ft.colors.BLACK
+                                ),
+                                ft.Text(
+                                    "Your personal collection",
+                                    size=13,
+                                    color=ft.colors.BLACK54
+                                )
+                            ],
+                            spacing=5,
+                            expand=True
+                        )
+                    ],
+                    spacing=15
+                ),
+                padding=15,
+                on_click=lambda e: self.show_saved_messages(),
+                ink=True,
+                bgcolor=ft.colors.WHITE
+            )
+            chat_items.append(saved_messages_item)
             
             chat_list_view.controls = chat_items if chat_items else [
                 ft.Container(
