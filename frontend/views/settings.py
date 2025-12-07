@@ -134,7 +134,7 @@ def SettingsView(
         padding=20
     )
 
-    return ft.View(
+    settings_view = ft.View(
         "/settings",
         [
             ft.AppBar(
@@ -149,3 +149,5 @@ def SettingsView(
             view_controls
         ]
     )
+    
+    return settings_view
