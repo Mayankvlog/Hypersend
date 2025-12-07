@@ -27,7 +27,7 @@ class SavedMessagesView(ft.Container):
                     content=ft.Row(
                         [
                             ft.IconButton(
-                                icon=ft.icons.ARROW_BACK,
+                                icon=ft.Icons.ARROW_BACK,
                                 icon_color=TEXT_BLACK,
                                 on_click=lambda e: self.on_back()
                             ),
@@ -111,7 +111,7 @@ class SavedMessagesView(ft.Container):
                             ),
                         ], expand=True),
                         ft.IconButton(
-                            icon=ft.icons.BOOKMARK_REMOVE,
+                            icon=ft.Icons.BOOKMARK_REMOVE,
                             tooltip="Remove from saved",
                             on_click=lambda e, mid=message_id: self.page.run_task(self.unsave_message, mid)
                         )

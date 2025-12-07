@@ -29,7 +29,7 @@ class MessageView(ft.Container):
                     content=ft.Row(
                         [
                             ft.IconButton(
-                                icon=ft.icons.ARROW_BACK,
+                                icon=ft.Icons.ARROW_BACK,
                                 on_click=lambda e: self.on_back()
                             ),
                             ft.Text(chat.get("name", "Chat"), size=20, weight=ft.FontWeight.BOLD),
@@ -97,7 +97,7 @@ class MessageView(ft.Container):
         
         # Save button
         save_button = ft.IconButton(
-            icon=ft.icons.BOOKMARK if is_saved else ft.icons.BOOKMARK_BORDER,
+            icon=ft.Icons.BOOKMARK if is_saved else ft.Icons.BOOKMARK_BORDER,
             tooltip="Save message" if not is_saved else "Remove from saved",
             on_click=lambda e, mid=message_id, saved=is_saved: self.page.run_task(
                 self.toggle_save_message, mid, saved
