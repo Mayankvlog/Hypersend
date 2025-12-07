@@ -75,8 +75,8 @@ product = "Zaply"
 project = "zaply"
 org = "com.zaply"
 description = "Secure P2P File Transfer and Messaging"
-# Purana Lightning + Z icon yahan use hoga
-icon = "assets/icon.png"
+# Zaply Lightning + Z icon - properly configured for all platforms
+icon = "frontend/assets/icon.png"
 
 # APK Size Optimization
 build_android_split_per_abi = true
