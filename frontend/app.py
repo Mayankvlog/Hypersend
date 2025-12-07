@@ -1035,8 +1035,8 @@ class ZaplyApp:
         saved_chat = next((c for c in self.chats if c.get("type") == "saved"), None)
 
         if saved_chat:
-            # Re-use existing chat UI
-            self.show_chat(saved_chat)
+            # Re-use existing chat UI with back button
+            self.show_chat(saved_chat, is_saved_messages=True)
             return
 
         # Fallback screen if backend has no saved chat yet
@@ -1103,7 +1103,7 @@ class ZaplyApp:
             print(f"Error opening settings: {e}")
             print(traceback.format_exc())
 
-    def show_chat(self, chat: dict):
+    def show_chat(self, chat: dict, is_saved_messages: bool = False):
         """Show chat messages"""
         self.current_chat = chat
         
@@ -1246,14 +1246,18 @@ class ZaplyApp:
         self.page.overlay.append(file_picker)
         
         # AppBar for chat
-        chat_name = chat.get("other_user", {}).get("username", "Chat") if not chat.get("is_group") else chat.get("group_name", "Group")
+        if is_saved_messages:
+            chat_name = "Saved Messages"
+        else:
+            chat_name = chat.get("other_user", {}).get("username", "Chat") if not chat.get("is_group") else chat.get("group_name", "Group")
         
         self.page.appbar = ft.AppBar(
             leading=ft.IconButton(
                 icon=icons.ARROW_BACK,
+                icon_color=ft.colors.BLACK,
                 on_click=lambda e: self.show_chat_list()
             ),
-            title=ft.Text(chat_name, weight=ft.FontWeight.BOLD),
+            title=ft.Text(chat_name, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
             center_title=False,
             bgcolor=self.bg_light
         )
