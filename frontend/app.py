@@ -1405,7 +1405,12 @@ async def main(page: ft.Page):
     """
     # Set page properties first
     page.title = "Zaply"
-    page.window.icon = "/assets/icon.png"  # Set window icon to Zaply icon
+    # Use absolute path for window icon to avoid caching issues
+    try:
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
+        page.window.icon = icon_path  # Set window icon to Zaply icon (absolute path for fresh load)
+    except Exception as e:
+        debug_log(f"[INIT] Warning: Could not set window icon: {e}")
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     page.bgcolor = "#FDFBFB"
