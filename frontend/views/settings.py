@@ -161,7 +161,7 @@ def SettingsView(
                 ),
                 title=ft.Text("Settings", size=20),
                 center_title=False,
-                bgcolor=colors.SURFACE_VARIANT
+                bgcolor=colors.SURFACE
             ),
             view_controls
         ]
