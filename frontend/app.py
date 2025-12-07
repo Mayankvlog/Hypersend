@@ -1383,6 +1383,7 @@ async def main(page: ft.Page):
     """
     # Set page properties first
     page.title = "Zaply"
+    page.icon = "assets/favicon.ico"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     page.bgcolor = "#FDFBFB"
@@ -1444,4 +1445,9 @@ async def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main, name="Zaply")
+    ft.app(
+        target=main, 
+        name="Zaply",
+        assets_dir="assets",
+        web_renderer="html"
+    )
