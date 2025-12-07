@@ -1405,12 +1405,10 @@ async def main(page: ft.Page):
     """
     # Set page properties first
     page.title = "Zaply"
-    # Set window icon - use absolute path with forward slashes for cross-platform compatibility
+    # Set window icon to favicon.ico (Zaply Lightning + Z design)
     try:
-        # Get absolute path to icon
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(current_dir, "assets", "icon.png")
-        # Normalize path with forward slashes for Flet compatibility
+        icon_path = os.path.join(current_dir, "assets", "favicon.ico")
         icon_path_normalized = icon_path.replace("\\", "/")
         page.window.icon = icon_path_normalized
     except Exception as e:
