@@ -50,7 +50,6 @@ def request_android_permissions():
         debug_log(f"[PERMS] Android activity obtained: {activity}")
         
         # Get Context for permission checking
-
         PackageManager = autoclass('android.content.pm.PackageManager')
         
         # Create String array
@@ -79,11 +78,26 @@ def request_android_permissions():
         
         debug_log(f"[PERMS] Requesting {len(permissions_to_request)} new permissions: {', '.join(permissions_to_request)}")
         
-        # Request permissions with request code 1
-        activity.requestPermissions(
-            [String(p) for p in permissions_to_request],
-            1
-        )
+        # Convert to Java String array
+        try:
+            # Try using array directly
+            activity.requestPermissions(
+                [String(p) for p in permissions_to_request],
+                1
+            )
+            debug_log("[PERMS] Android permission request dialog triggered (direct method)")
+        except TypeError:
+            # Fallback: use Java array if direct method fails
+            try:
+                ArrayList = autoclass('java.util.ArrayList')
+                perm_list = ArrayList()
+                for p in permissions_to_request:
+                    perm_list.add(String(p))
+                activity.requestPermissions(perm_list.toArray([String("")]), 1)
+                debug_log("[PERMS] Android permission request dialog triggered (ArrayList method)")
+            except Exception as e2:
+                debug_log(f"[PERMS] Both permission request methods failed: {e2}")
+                raise
         
         debug_log("[PERMS] Android permission request dialog has been triggered.")
         return True

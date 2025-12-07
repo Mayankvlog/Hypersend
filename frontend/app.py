@@ -90,6 +90,9 @@ async def request_app_permissions(page: ft.Page):
     """Request required permissions on app startup"""
     if sys.platform == "android":
         try:
+            import asyncio
+            # Add a small delay to ensure app is fully initialized
+            await asyncio.sleep(1)
             debug_log("[PERMS] Requesting app permissions...")
             request_android_permissions()
             debug_log("[PERMS] Permission request completed")
