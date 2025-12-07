@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 authors = [
   { name = "Mayank", email = "mayank.kr0311@gmail.com" }
 ]
-license = { text = "Apache-2.0" }
+license = { text = "nginx" }
 
 dependencies = [
   "fastapi==0.115.5",
@@ -76,7 +76,7 @@ project = "zaply"
 org = "com.zaply"
 description = "Secure P2P File Transfer and Messaging"
 # Zaply Lightning + Z icon - Used for all platforms (APK, Web, Desktop)
-icon = "frontend/assets/icon.png"
+icon = "frontend/assets"
 # Splash screen icon
 package_icons_dir = "frontend/assets"
 
