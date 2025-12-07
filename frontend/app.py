@@ -1219,10 +1219,42 @@ class ZaplyApp:
             spacing=5
         )
         
+        # Popular emojis for quick access
+        popular_emojis = ["😀", "😂", "❤️", "👍", "🎉", "🔥", "💯", "✨", "😍", "🤔", "😢", "👏", "🎊", "💬", "📸", "🎬", "🎵", "🍕", "☕", "⭐"]
+        
+        # Emoji picker dialog
+        emoji_buttons = ft.Row(
+            [ft.TextButton(emoji, on_click=lambda e, em=emoji: emoji_input_handler(em)) 
+             for emoji in popular_emojis],
+            wrap=True,
+            spacing=5
+        )
+        
+        emoji_dialog = ft.AlertDialog(
+            title=ft.Text("Select Emoji"),
+            content=ft.Container(
+                content=emoji_buttons,
+                width=300,
+                height=200,
+            ),
+            modal=True
+        )
+        
+        def show_emoji_picker(e):
+            emoji_dialog.open = True
+            self.page.update()
+        
+        def emoji_input_handler(emoji):
+            message_input.value += emoji
+            emoji_dialog.open = False
+            self.page.update()
+        
+        self.page.dialog = emoji_dialog
+        
         # Language selector for composing messages in this chat
         chat_language_dropdown = ft.Dropdown(
             value=self.language,
-            width=130,
+            width=100,
             options=[ft.dropdown.Option(code, label) for code, label in LANGUAGES],
             on_change=lambda e: setattr(self, "language", e.control.value or "en"),
         )
@@ -1299,22 +1331,53 @@ class ZaplyApp:
                             padding=10
                         ),
                         ft.Container(
-                            content=ft.Row(
+                            content=ft.Column(
                                 [
-                                    chat_language_dropdown,
-                                    ft.IconButton(
-                                        icon=icons.ATTACH_FILE,
-                                        on_click=pick_file
+                                    # Language and action buttons row
+                                    ft.Row(
+                                        [
+                                            chat_language_dropdown,
+                                            ft.IconButton(
+                                                icon=icons.INSERT_PHOTO,
+                                                tooltip="Upload Image",
+                                                on_click=pick_file,
+                                                icon_size=20
+                                            ),
+                                            ft.IconButton(
+                                                icon=icons.ATTACH_FILE,
+                                                tooltip="Upload File",
+                                                on_click=pick_file,
+                                                icon_size=20
+                                            ),
+                                            ft.IconButton(
+                                                icon=icons.EMOJI_EMOTIONS,
+                                                tooltip="Emoji",
+                                                on_click=show_emoji_picker,
+                                                icon_size=20
+                                            ),
+                                            ft.Container(expand=True)
+                                        ],
+                                        spacing=5,
+                                        height=40
                                     ),
-                                    message_input,
-                                    ft.IconButton(
-                                        icon=icons.SEND,
-                                        on_click=send_message,
-                                        bgcolor=self.primary_color,
-                                        icon_color=ft.colors.WHITE
+                                    # Message input and send button row
+                                    ft.Row(
+                                        [
+                                            message_input,
+                                            ft.IconButton(
+                                                icon=icons.SEND,
+                                                on_click=send_message,
+                                                bgcolor=self.primary_color,
+                                                icon_color=ft.colors.WHITE,
+                                                tooltip="Send Message",
+                                                icon_size=20
+                                            )
+                                        ],
+                                        spacing=8,
+                                        alignment=ft.MainAxisAlignment.START
                                     )
                                 ],
-                                spacing=10
+                                spacing=5
                             ),
                             padding=10,
                             bgcolor=self.bg_light
