@@ -1040,6 +1040,8 @@ class ZaplyApp:
                 return
             
             debug_log(f"[SETTINGS] Settings view created: {type(settings_view)}")
+            # Use page.views properly - clear first, then add
+            self.page.views.clear()
             self.page.views.append(settings_view)
             self.page.update()
             debug_log("[SETTINGS] Settings view displayed")
