@@ -98,7 +98,7 @@ async def register(user: UserCreate):
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         # Log the actual error for debugging when DEBUG is enabled
         if settings.DEBUG:
             import traceback
@@ -189,7 +189,7 @@ async def login(credentials: UserLogin):
     except HTTPException:
         # Re-raise HTTP exceptions (like 401 Unauthorized)
         raise
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         # Log the actual error for debugging when DEBUG is enabled
         if settings.DEBUG:
             import traceback
@@ -275,14 +275,14 @@ async def refresh_token(refresh_request: RefreshTokenRequest):
     
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         if settings.DEBUG:
             import traceback
-            print(f"[AUTH] Token refresh failed: {type(e).__name__}: {str(e)}")
+            print(f"[AUTH] Token refresh failed with error: {type(e).__name__}: {str(e)}")
             traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Token refresh failed. Please try again."
+            detail="Token refresh failed"
         )
 
 
@@ -311,7 +311,7 @@ async def logout(refresh_request: RefreshTokenRequest, current_user: str = Depen
     
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         auth_log(f"[AUTH] Logout failed: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -417,7 +417,7 @@ async def forgot_password(request: ForgotPasswordRequest):
     
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         auth_log(f"[AUTH] Forgot password failed: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -525,7 +525,7 @@ async def reset_password(request: PasswordResetRequest):
     
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, OSError) as e:
         auth_log(f"[AUTH] Password reset failed: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

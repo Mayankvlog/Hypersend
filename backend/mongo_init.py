@@ -36,7 +36,7 @@ async def init_mongodb():
         try:
             await admin_db.command('createUser', 'admin', pwd='changeme', roles=['root'])
             print("[MONGO_INIT] Created root admin user")
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             if "already exists" in str(e):
                 print("[MONGO_INIT] Root admin user already exists")
             else:
@@ -54,7 +54,7 @@ async def init_mongodb():
                 ]
             )
             print("[MONGO_INIT] Created application user: hypersend")
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             if "already exists" in str(e):
                 print("[MONGO_INIT] Application user already exists")
             else:
@@ -68,7 +68,7 @@ async def init_mongodb():
                 # Try to create collection
                 await app_db.create_collection(collection_name)
                 print(f"[MONGO_INIT] Created collection: {collection_name}")
-            except Exception as e:
+            except (RuntimeError, OSError) as e:
                 if "already exists" in str(e):
                     print(f"[MONGO_INIT] Collection already exists: {collection_name}")
                 else:
