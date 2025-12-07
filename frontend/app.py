@@ -1397,7 +1397,7 @@ async def main(page: ft.Page):
                 # Zaply Icon - Professional Splash Screen
                 ft.Container(
                     content=ft.Image(
-                        src="/assets/icon.png",
+                        src="/assets/icons.png",
                         width=120,
                         height=120,
                         fit=ft.ImageFit.CONTAIN,

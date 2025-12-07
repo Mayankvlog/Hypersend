@@ -75,7 +75,7 @@ project = "zaply"
 org = "com.zaply"
 description = "Secure P2P File Transfer and Messaging"
 version = "1.0.0"
-icon = "frontend/assets/icon.png"
+icon = "frontend/assets/icons.png"
 
 # Size reduction
 build_android_split_per_abi = true
