@@ -4,6 +4,10 @@ import sys
 
 from permissions_manager import REQUIRED_PERMISSIONS, check_permission, request_android_permissions
 
+# Icon compatibility
+icons = ft.Icons
+colors = ft.Colors
+
 def SettingsView(
     page: ft.Page,
     api_client,
@@ -21,12 +25,12 @@ def SettingsView(
     # --- Permission UI ---
     def get_permission_status_icon(perm_name: str):
         if sys.platform != "android":
-            return ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN_500)
+            return ft.Icon(icons.CHECK_CIRCLE, color=colors.GREEN_500)
         
         if check_permission(perm_name):
-            return ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN_500)
+            return ft.Icon(icons.CHECK_CIRCLE, color=colors.GREEN_500)
         else:
-            return ft.Icon(ft.icons.CANCEL, color=ft.colors.RED_500)
+            return ft.Icon(icons.CANCEL, color=colors.RED_500)
 
     async def _request_permissions_on_click(e):
         e.control.disabled = True
@@ -83,7 +87,7 @@ def SettingsView(
             ft.Text(
                 "Permissions are managed by Android. Tap 'Open App Settings' to change them.",
                 size=12,
-                color=ft.colors.BLACK54
+                color=colors.BLACK54
             ),
             ft.Container(height=10),
             permissions_list,
@@ -139,12 +143,12 @@ def SettingsView(
         [
             ft.AppBar(
                 leading=ft.IconButton(
-                    icon=ft.icons.ARROW_BACK,
+                    icon=icons.ARROW_BACK,
                     on_click=lambda e: on_back()
                 ),
                 title=ft.Text("Settings"),
                 center_title=False,
-                bgcolor=ft.colors.SURFACE_VARIANT
+                bgcolor=colors.SURFACE_VARIANT
             ),
             view_controls
         ],
