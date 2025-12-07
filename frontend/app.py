@@ -538,27 +538,33 @@ class ZaplyApp:
             on_click=lambda e: self.show_forgot_password()
         )
         
-        self.page.controls = [
-            ft.Container(
-                content=ft.Column(
-                    [
-                        language_dropdown,
-                        email_field,
-                        username_field,
-                        password_field,
-                        error_text,
-                        login_btn,
-                        forgot_password_btn,
-                        register_btn
-                    ],
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=15
-                ),
-                padding=ft.padding.only(left=30, right=30, top=150, bottom=30),
-                alignment=ft.alignment.top_center,
-                expand=True
-            )
-        ]
+        # Create login view
+        login_view = ft.View(
+            "/",
+            [
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            language_dropdown,
+                            email_field,
+                            username_field,
+                            password_field,
+                            error_text,
+                            login_btn,
+                            forgot_password_btn,
+                            register_btn
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=15
+                    ),
+                    padding=ft.padding.only(left=30, right=30, top=150, bottom=30),
+                    alignment=ft.alignment.top_center,
+                    expand=True
+                )
+            ]
+        )
+        self.page.views.clear()
+        self.page.views.append(login_view)
         self.page.update()
     
     def show_forgot_password(self):
@@ -783,34 +789,40 @@ class ZaplyApp:
         email_submit_btn.on_click = lambda e: self.page.run_task(request_reset_clicked, e)
         reset_submit_btn.on_click = lambda e: self.page.run_task(reset_password_clicked, e)
         
-        self.page.controls = [
-            ft.Container(
-                content=ft.Column(
-                    [
-                        ft.Text("Reset Password", size=24, weight="bold", color=ft.colors.BLACK),
-                        ft.Container(height=10),
-                        info_text,
-                        ft.Container(height=20),
-                        email_field,
-                        token_field,
-                        new_password_field,
-                        confirm_password_field,
-                        error_text,
-                        success_text,
-                        ft.Container(height=20),
-                        email_submit_btn,
-                        reset_submit_btn,
-                        ft.Container(height=20),
-                        back_btn
-                    ],
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=12
-                ),
-                padding=ft.padding.only(left=30, right=30, top=100, bottom=30),
-                alignment=ft.alignment.top_center,
-                expand=True
-            )
-        ]
+        # Create forgot password view
+        forgot_view = ft.View(
+            "/",
+            [
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("Reset Password", size=24, weight="bold", color=ft.colors.BLACK),
+                            ft.Container(height=10),
+                            info_text,
+                            ft.Container(height=20),
+                            email_field,
+                            token_field,
+                            new_password_field,
+                            confirm_password_field,
+                            error_text,
+                            success_text,
+                            ft.Container(height=20),
+                            email_submit_btn,
+                            reset_submit_btn,
+                            ft.Container(height=20),
+                            back_btn
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=12
+                    ),
+                    padding=ft.padding.only(left=30, right=30, top=100, bottom=30),
+                    alignment=ft.alignment.top_center,
+                    expand=True
+                )
+            ]
+        )
+        self.page.views.clear()
+        self.page.views.append(forgot_view)
         self.page.update()
     
     def show_chat_list(self):
@@ -969,13 +981,19 @@ class ZaplyApp:
         )
         
         self.page.appbar = appbar
-        self.page.controls = [
-            ft.Container(
-                content=chat_list_view,
-                bgcolor=self.bg_dark,
-                expand=True
-            )
-        ]
+        # Create a view for chat list
+        chat_list_container = ft.View(
+            "/",
+            [
+                ft.Container(
+                    content=chat_list_view,
+                    bgcolor=self.bg_dark,
+                    expand=True
+                )
+            ]
+        )
+        self.page.views.append(chat_list_container)
+        self.page.update()
         
         # Show Saved Messages immediately
         update_chat_list()
@@ -1006,17 +1024,23 @@ class ZaplyApp:
             bgcolor=ft.colors.WHITE,
         )
 
-        self.page.controls = [
-            ft.Container(
-                content=ft.Text(
-                    "No saved messages chat is available yet.",
-                    color=self.text_secondary,
-                    text_align=ft.TextAlign.CENTER,
-                ),
-                alignment=ft.alignment.center,
-                expand=True,
-            )
-        ]
+        # Create saved messages view
+        saved_view = ft.View(
+            "/",
+            [
+                ft.Container(
+                    content=ft.Text(
+                        "No saved messages chat is available yet.",
+                        color=self.text_secondary,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    alignment=ft.alignment.center,
+                    expand=True,
+                )
+            ]
+        )
+        self.page.views.clear()
+        self.page.views.append(saved_view)
         self.page.update()
 
     def show_settings(self):
@@ -1207,7 +1231,7 @@ class ZaplyApp:
             bgcolor=self.bg_light
         )
         
-        self.page.controls = [
+        chat_view = ft.View("/chat", [
             ft.Container(
                 content=ft.Column(
                     [
@@ -1243,7 +1267,10 @@ class ZaplyApp:
                 bgcolor=self.bg_dark,
                 expand=True
             )
-        ]
+        ])
+        
+        self.page.views.clear()
+        self.page.views.append(chat_view)
         
         # Load messages
         self.page.run_task(load_messages)
