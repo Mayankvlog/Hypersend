@@ -323,6 +323,11 @@ class APIClient:
     async def create_chat(self, name: str, user_ids: list, chat_type: str = "private") -> Dict[str, Any]:
         """Create a new chat"""
         try:
+            # Debug: Log token status before request
+            print(f"[API] create_chat - access_token present: {bool(self.access_token)}, refresh_token present: {bool(self.refresh_token)}")
+            if self.access_token:
+                print(f"[API] create_chat - using access_token: {self.access_token[:30]}...")
+            
             response = await self.client.post(
                 f"{self.base_url}/api/v1/chats/",
                 json={"name": name, "member_ids": user_ids, "type": chat_type},
@@ -331,16 +336,25 @@ class APIClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401 and self.refresh_token:
-                # Try to refresh token and retry once
-                if await self.refresh_access_token():
-                    response = await self.client.post(
-                        f"{self.base_url}/api/v1/chats/",
-                        json={"name": name, "member_ids": user_ids, "type": chat_type},
-                        headers=self._get_headers()
-                    )
-                    response.raise_for_status()
-                    return response.json()
+            print(f"[API] create_chat HTTP error: {e.response.status_code}")
+            if e.response.status_code == 401:
+                print(f"[API] 401 Unauthorized - refresh_token present: {bool(self.refresh_token)}")
+                if self.refresh_token:
+                    # Try to refresh token and retry once
+                    print("[API] Attempting token refresh...")
+                    if await self.refresh_access_token():
+                        print("[API] Token refreshed successfully, retrying create_chat...")
+                        response = await self.client.post(
+                            f"{self.base_url}/api/v1/chats/",
+                            json={"name": name, "member_ids": user_ids, "type": chat_type},
+                            headers=self._get_headers()
+                        )
+                        response.raise_for_status()
+                        return response.json()
+                    else:
+                        print("[API] Token refresh failed!")
+                else:
+                    print("[API] No refresh_token available to refresh!")
             debug_log(f"[API] Create chat error: {e}")
             raise Exception(f"Failed to create chat: {str(e)}")
         except Exception as e:
