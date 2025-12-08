@@ -1274,7 +1274,8 @@ class ZaplyApp:
             expand=True,
             multiline=True,
             min_lines=1,
-            max_lines=5
+            max_lines=5,
+            keyboard_type=ft.KeyboardType.TEXT
         )
         
         async def send_message(e):
