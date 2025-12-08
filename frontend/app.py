@@ -1388,40 +1388,6 @@ class ZaplyApp:
         
         self.page.dialog = emoji_dialog
         
-        typing_timer = None
-        
-        def on_message_change(e):
-            """Track when user is typing"""
-            nonlocal typing_timer
-            
-            # Send typing status to backend
-            async def send_typing():
-                try:
-                    await self.client.post(
-                        "/api/v1/updates/typing",
-                        json={"chat_id": chat["_id"], "is_typing": True}
-                    )
-                except:
-                    pass
-            
-            if typing_timer:
-                typing_timer.cancel()
-            
-            self.page.run_task(send_typing)
-            
-            # Auto-stop typing after 3 seconds of inactivity
-            async def stop_typing():
-                await asyncio.sleep(3)
-                try:
-                    await self.client.post(
-                        "/api/v1/updates/typing",
-                        json={"chat_id": chat["_id"], "is_typing": False}
-                    )
-                except:
-                    pass
-            
-            typing_timer = asyncio.ensure_future(stop_typing())
-        
         message_input = ft.TextField(
             hint_text="Write a message...",
             border=ft.InputBorder.NONE,
@@ -1431,8 +1397,7 @@ class ZaplyApp:
             min_lines=1,
             max_lines=5,
             keyboard_type=ft.KeyboardType.TEXT,
-            autofocus=False,  # Don't auto-focus on open
-            on_change=on_message_change
+            autofocus=False  # Don't auto-focus on open
         )
         
         async def send_message(e):
