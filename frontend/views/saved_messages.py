@@ -314,7 +314,39 @@ class SavedMessagesView(ft.View):
         except Exception as e:
             print(f"Error creating {char_type}: {e}")
             self.page.close(dialog)
-            self.show_error(f"Could not create {char_type}")
+            error_msg = str(e)
+            if "401" in error_msg or "403" in error_msg:
+                self.show_session_expired_dialog()
+            else:
+                self.show_error(f"Could not create {char_type}")
+    
+    def show_session_expired_dialog(self):
+        """Show session expired dialog prompting user to re-login"""
+        def do_logout(e):
+            from session_manager import SessionManager
+            SessionManager.clear_session()
+            # Navigate to login
+            self.page.close(expired_dialog)
+            if self.on_back:
+                self.on_back()
+        
+        expired_dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(ft.Icons.WARNING, color=ft.Colors.ORANGE),
+                ft.Text("Session Expired", weight=ft.FontWeight.BOLD)
+            ]),
+            content=ft.Column([
+                ft.Text("Your session has expired and could not be refreshed."),
+                ft.Text("Please log out and log in again to continue.", size=13),
+                ft.Container(height=10),
+                ft.Text("This usually happens when your login session is old.", size=12, color=ft.Colors.GREY)
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(expired_dialog)),
+                ft.ElevatedButton("Logout & Re-login", on_click=do_logout, bgcolor=ft.Colors.BLUE, color=ft.Colors.WHITE)
+            ]
+        )
+        self.page.open(expired_dialog)
 
     def show_backend_error_dialog(self):
         """Show specific dialog for backend mismatch"""
