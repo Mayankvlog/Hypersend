@@ -54,6 +54,22 @@ except ImportError:
     def get_emojis_by_category(cat):
         return []
 
+# Import session manager for persistent login
+try:
+    from session_manager import SessionManager
+except ImportError:
+    class SessionManager:
+        @staticmethod
+        def save_session(*args, **kwargs): return False
+        @staticmethod
+        def load_session(): return None
+        @staticmethod
+        def clear_session(): return False
+        @staticmethod
+        def session_exists(): return False
+        @staticmethod
+        def update_tokens(*args, **kwargs): return False
+
 # Default backend URL now points to your DigitalOcean VPS
 DEFAULT_DEV_URL = "http://139.59.82.105:8000"
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
@@ -241,6 +257,18 @@ class ZaplyApp:
             self._display_fatal_error(f"Failed to check backend health: {e}")
             return
         
+        # Try to restore session from saved credentials (persistent login)
+        try:
+            saved_session = SessionManager.load_session()
+            if saved_session:
+                debug_log("[SESSION] Attempting to restore session from saved credentials...")
+                self.token = saved_session.get('access_token')
+                self.current_user = saved_session.get('user_data', {})
+                debug_log("[SESSION] ✅ Session restored successfully - user can skip login")
+        except Exception as e:
+            debug_log(f"[SESSION] Could not restore session: {e}")
+            self.token = None
+        
         # Request permissions on startup (Android)
         try:
             # Run as a task, but await for critical permissions if necessary
@@ -257,6 +285,13 @@ class ZaplyApp:
     def show_login(self):
         """Show login/register screen"""
         debug_log(f"[INIT] ZaplyApp initialized, API URL: {API_URL}")
+        
+        # If user already has a valid token from saved session, go directly to chat list
+        if self.token and self.current_user:
+            debug_log("[LOGIN] ✅ Valid session found - skipping login screen")
+            self.show_chat_list()
+            return
+        
         # Ensure page is properly styled
         self.page.bgcolor = self.bg_dark
         
@@ -331,6 +366,17 @@ class ZaplyApp:
                     if user_response.status_code == 200:
                         self.current_user = user_response.json()
                         debug_log(f"[LOGIN] Success! User: {self.current_user.get('email')}")
+                        
+                        # 💾 Save session for persistent login (no need to login next time)
+                        refresh_token = data.get("refresh_token", "")
+                        SessionManager.save_session(
+                            email=email_field.value,
+                            access_token=self.token,
+                            refresh_token=refresh_token,
+                            user_data=self.current_user
+                        )
+                        debug_log("[LOGIN] 💾 Session saved - next app launch won't require login")
+                        
                         self.show_chat_list()
                     else:
                         error_text.value = "Login successful but failed to fetch user info"
@@ -1520,6 +1566,11 @@ class ZaplyApp:
         self.current_user = None
         self.chats = []
         self.messages = []
+        
+        # 🗑️ Clear saved session so user must login again
+        SessionManager.clear_session()
+        debug_log("[LOGOUT] ✅ Session cleared - user must login on next app launch")
+        
         self.show_login()
 
 
