@@ -149,14 +149,12 @@ class SavedMessagesView(ft.View):
         menu_items = [
             self.drawer_item("👤", "My Profile", lambda e: self.page.go("/profile")),
             ft.Divider(height=1, color="#E0E0E0"),
-            self.drawer_item("👥", "New Group", lambda e: self.create_new_group()),
-            self.drawer_item("📢", "New Channel", lambda e: self.create_new_channel()),
+            self.drawer_item("👥", "New Group", lambda e: self.page.run_task(self.create_new_group)),
+            self.drawer_item("📢", "New Channel", lambda e: self.page.run_task(self.create_new_channel)),
             ft.Divider(height=1, color="#E0E0E0"),
-            self.drawer_item("📇", "Contacts", lambda e: self.show_coming_soon("Contacts")),
-            self.drawer_item("📞", "Calls", lambda e: self.show_coming_soon("Calls")),
             self.drawer_item("💾", "Saved Messages", lambda e: self.close_drawer()), # Already here
             ft.Divider(height=1, color="#E0E0E0"),
-            self.drawer_item("⚙️", "Settings", lambda e: self.page.go("/settings")),
+            self.drawer_item("⚙️", "Settings", lambda e: self.open_settings()),
             # Night mode with switch
             ft.Container(
                 content=ft.Row([
@@ -168,9 +166,6 @@ class SavedMessagesView(ft.View):
                 padding=ft.padding.symmetric(horizontal=20, vertical=12),
                 on_click=lambda e: self.toggle_night_mode_click()
             ),
-            ft.Divider(height=1, color="#E0E0E0"),
-            self.drawer_item("❓", "Zaply FAQ", lambda e: self.show_coming_soon("FAQ")),
-            self.drawer_item("💬", "Zaply Features", lambda e: self.show_coming_soon("Features")),
             ft.Divider(),
             self.drawer_item("⬅️", "Back to Chats", lambda e: self.go_back()),
         ]
@@ -205,6 +200,31 @@ class SavedMessagesView(ft.View):
     
     def close_drawer(self):
         self.drawer.open = False
+        self.page.update()
+
+    def open_settings(self):
+        """Open settings view"""
+        self.close_drawer()
+        try:
+            from views.settings import SettingsView
+            settings_view = SettingsView(
+                page=self.page,
+                api_client=self.api_client,
+                current_user={"id": self.current_user} if isinstance(self.current_user, str) else self.current_user,
+                on_logout=None,
+                on_back=lambda: self.page.run_task(self.return_to_saved)
+            )
+            self.page.views.clear()
+            self.page.views.append(settings_view)
+            self.page.update()
+        except Exception as e:
+            print(f"Error opening settings: {e}")
+            self.show_error(f"Could not open settings: {e}")
+    
+    async def return_to_saved(self):
+        """Return from settings to saved messages"""
+        self.build_ui()
+        await self.load_saved_messages()
         self.page.update()
 
     def toggle_night_mode(self, e):
@@ -244,13 +264,11 @@ class SavedMessagesView(ft.View):
             title=ft.Text("New Group"),
             content=ft.Column([ft.Text("Enter group name:"), name_field], tight=True),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog)),
                 ft.ElevatedButton("Create", on_click=create_click)
             ]
         )
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.page.open(dialog)
 
     async def create_new_channel(self):
         self.close_drawer()
@@ -271,13 +289,11 @@ class SavedMessagesView(ft.View):
                 ft.Text("Channels are for broadcasting.", size=12)
             ], tight=True),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog)),
                 ft.ElevatedButton("Create", on_click=create_click)
             ]
         )
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.page.open(dialog)
 
     async def do_create_chat(self, name: str, char_type: str, dialog):
         try:
@@ -285,8 +301,7 @@ class SavedMessagesView(ft.View):
             user_id = self.current_user if isinstance(self.current_user, str) else self.current_user.get("id", self.current_user.get("_id"))
             
             await self.api_client.create_chat(name=name, user_ids=[user_id], chat_type=char_type)
-            dialog.open = False
-            self.page.update()
+            self.page.close(dialog)
             
             # Show success and maybe navigate back to chats to see it?
             # Since we are in Saved Messages, we might want to stay here or go to the new chat.
@@ -298,8 +313,7 @@ class SavedMessagesView(ft.View):
             
         except Exception as e:
             print(f"Error creating {char_type}: {e}")
-            dialog.open = False
-            self.page.update()
+            self.page.close(dialog)
             self.show_error(f"Could not create {char_type}")
 
     def show_backend_error_dialog(self):

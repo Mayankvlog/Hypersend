@@ -120,11 +120,9 @@ class ChatsView(ft.View):
         menu_items = [
             self.drawer_item("👤", "My Profile", lambda e: self.open_profile()),
             ft.Divider(height=1, color="#E0E0E0"),
-            self.drawer_item("👥", "New Group", lambda e: self.create_new_group()),
-            self.drawer_item("📢", "New Channel", lambda e: self.create_new_channel()),
+            self.drawer_item("👥", "New Group", lambda e: self.page.run_task(self.create_new_group)),
+            self.drawer_item("📢", "New Channel", lambda e: self.page.run_task(self.create_new_channel)),
             ft.Divider(height=1, color="#E0E0E0"),
-            self.drawer_item("📇", "Contacts", lambda e: self.open_contacts()),
-            self.drawer_item("📞", "Calls", lambda e: self.open_calls()),
             self.drawer_item("💾", "Saved Messages", lambda e: self.show_saved_messages()),
             ft.Divider(height=1, color="#E0E0E0"),
             self.drawer_item("⚙️", "Settings", lambda e: self.open_settings()),
@@ -139,9 +137,6 @@ class ChatsView(ft.View):
                 padding=ft.padding.symmetric(horizontal=20, vertical=12),
                 on_click=lambda e: self.toggle_night_mode_click()
             ),
-            ft.Divider(height=1, color="#E0E0E0"),
-            self.drawer_item("❓", "Zaply FAQ", lambda e: self.show_faq()),
-            self.drawer_item("💬", "Zaply Features", lambda e: self.show_features()),
         ]
         
         # Create drawer
@@ -223,13 +218,11 @@ class ChatsView(ft.View):
                 name_field
             ], tight=True),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: self.close_dialog(dialog)),
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog)),
                 ft.ElevatedButton("Create", on_click=create_click)
             ]
         )
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.page.open(dialog)
     
     async def create_new_channel(self):
         """Create new channel"""
@@ -254,13 +247,11 @@ class ChatsView(ft.View):
                 ft.Text("Channels are for broadcasting public messages.", size=12, color=self.text_secondary)
             ], tight=True),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: self.close_dialog(dialog)),
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog)),
                 ft.ElevatedButton("Create", on_click=create_click)
             ]
         )
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.page.open(dialog)
     
     async def do_create_chat(self, name: str, char_type: str, dialog):
         """Perform chat creation"""
@@ -269,16 +260,14 @@ class ChatsView(ft.View):
             user_id = self.current_user.get("id", self.current_user.get("_id"))
             await self.api_client.create_chat(name=name, user_ids=[user_id], chat_type=char_type)
             
-            dialog.open = False
-            self.page.update()
+            self.page.close(dialog)
             
             show_success("Success", f"{char_type.capitalize()} '{name}' created!")
             await self.load_chats()
             
         except Exception as e:
             print(f"Error creating {char_type}: {e}")
-            dialog.open = False
-            self.page.update()
+            self.page.close(dialog)
             show_error("Error", f"Could not create {char_type}")
 
     
@@ -306,11 +295,13 @@ class ChatsView(ft.View):
                 on_logout=self.on_logout,
                 on_back=lambda: self.page.run_task(self.load_chats)
             )
-            self.page.clean()
-            self.page.add(settings_view)
+            self.page.views.clear()
+            self.page.views.append(settings_view)
             self.page.update()
         except Exception as e:
             print(f"Error opening settings: {e}")
+            import traceback
+            traceback.print_exc()
     
     def show_faq(self):
         """Show FAQ"""

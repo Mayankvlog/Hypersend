@@ -224,18 +224,43 @@ class ProfileView(ft.View):
             expand=True
         )
         
-        # Set up the view
+        # Back button at the top of content for visibility
+        back_button_row = ft.Container(
+            content=ft.Row([
+                ft.IconButton(
+                    icon=ft.Icons.ARROW_BACK,
+                    icon_color=ft.colors.BLACK,
+                    icon_size=28,
+                    tooltip="Back",
+                    on_click=lambda e: self.go_back()
+                ),
+                ft.Text("Profile", size=20, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Container(expand=True),
+                ft.IconButton(
+                    icon=ft.Icons.MORE_VERT,
+                    icon_color=ft.colors.BLACK,
+                    on_click=self.show_more_options
+                )
+            ], alignment=ft.MainAxisAlignment.START),
+            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+            bgcolor=self.bg_color
+        )
+        
+        # Set up the view with header included
         self.controls = [
             ft.Container(
-                content=main_content,
-                padding=ft.padding.all(20),
+                content=ft.Column([
+                    back_button_row,
+                    main_content
+                ], spacing=0),
+                padding=ft.padding.only(top=10, left=20, right=20, bottom=20),
                 bgcolor=self.bg_color,
                 expand=True
             )
         ]
         
-        # Set app bar
-        self.page.appbar = ft.AppBar(
+        # Also set view's appbar for proper Flet behavior
+        self.appbar = ft.AppBar(
             title=ft.Text("Profile", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
             bgcolor=self.bg_color,
             leading=ft.IconButton(

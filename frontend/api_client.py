@@ -324,7 +324,7 @@ class APIClient:
         """Create a new chat"""
         try:
             response = await self.client.post(
-                f"{self.base_url}/api/v1/chats",
+                f"{self.base_url}/api/v1/chats/",
                 json={"name": name, "member_ids": user_ids, "type": chat_type},
                 headers=self._get_headers()
             )
