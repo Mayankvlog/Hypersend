@@ -15,8 +15,8 @@ services:
       - frontend
     networks:
       - hypersend_network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -29,8 +29,8 @@ services:
     ports:
       - "27018:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: hypersend
-      MONGO_INITDB_ROOT_PASSWORD: Mayank@#03
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-hypersend}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: hypersend
     volumes:
       - /var/lib/mongodb:/data/db
@@ -56,8 +56,8 @@ services:
       - ./backend/uploads:/app/uploads
     environment:
       # IMPORTANT: Password MUST be URL-encoded (@ = %40, # = %23)
-      MONGODB_URI: "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
-      SECRET_KEY: your-super-secret-production-key-change-this-2025
+      MONGODB_URI: "mongodb://${MONGO_ROOT_USERNAME:-hypersend}:${MONGO_ROOT_PASSWORD}@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
+      SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30

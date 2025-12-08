@@ -17,10 +17,23 @@ class Settings:
     # MongoDB runs in Docker container as part of docker-compose
     # Backend connects to MongoDB via Docker service name "mongodb" on internal network
     # Data persisted on VPS at /var/lib/mongodb
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&retryWrites=true")
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:password@mongodb:27017/hypersend?authSource=admin&retryWrites=true")
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production-5y7L9x2K")
+    SECRET_KEY: str = os.getenv("SECRET_KEY")
+    
+    def __init__(self):
+        """Initialize settings and validate critical configuration"""
+        self.validate_config()
+    
+    def validate_config(self):
+        """Validate critical configuration"""
+        if not self.SECRET_KEY or self.SECRET_KEY in ["dev-secret-key-change-in-production-5y7L9x2K", "your-super-secret-production-key-change-this-2025"]:
+            if not os.getenv("DEBUG", "False").lower() in ("true", "1", "yes"):
+                raise ValueError("SECRET_KEY must be set to a secure, unique value in production!")
+        
+        if self.SECRET_KEY and len(self.SECRET_KEY) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters long!")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -79,8 +92,8 @@ class Settings:
         without leaking any real secret in the codebase or repo.
         """
         if cls.DEBUG:
-            print("[INFO] ✅ Development mode enabled - production validations skipped")
-            print("[INFO] ⚠️  Remember to set DEBUG=False for production deployment")
+            print("[INFO] Development mode enabled - production validations skipped")
+            print("[INFO] WARNING: Remember to set DEBUG=False for production deployment")
             return
 
         # Production mode validations (non-fatal)
@@ -90,15 +103,15 @@ class Settings:
             "your-secret-key",
         }
         if "dev-secret-key" in cls.SECRET_KEY.lower() or cls.SECRET_KEY in placeholder_keys:
-            print("[WARN] ⚠️  PRODUCTION MODE but SECRET_KEY is still a placeholder.")
+            print("[WARN] WARNING: PRODUCTION MODE but SECRET_KEY is still a placeholder.")
             print("[WARN] Generating a temporary SECRET_KEY for this process.")
             print("[WARN] For stable JWT tokens across restarts, set SECRET_KEY in .env or environment.")
             cls.SECRET_KEY = secrets.token_urlsafe(32)
 
         if cls.CORS_ORIGINS == ["*"]:
-            print("[WARN] ⚠️  CORS_ORIGINS set to wildcard in production. Consider restricting it.")
+            print("[WARN] WARNING: CORS_ORIGINS set to wildcard in production. Consider restricting it.")
 
-        print("[INFO] ✅ Production validations completed")
+        print("[INFO] Production validations completed")
     
     @classmethod
     def init_directories(cls):

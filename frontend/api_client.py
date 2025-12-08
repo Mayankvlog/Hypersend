@@ -12,16 +12,20 @@ load_dotenv()
 #
 # Development examples:
 #   API_BASE_URL=http://backend:8000         
+#   API_BASE_URL=http://localhost:8000
 #
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
-# Default to your DigitalOcean VPS when API_BASE_URL is not set
-DEV_API_URL = os.getenv("API_BASE_URL", "http://139.59.82.105:8000").strip()
+DEV_API_URL = os.getenv("API_BASE_URL", "http://localhost:8000").strip()
 
 # Select final base URL
 if PRODUCTION_API_URL:
     API_BASE_URL = PRODUCTION_API_URL
 else:
     API_BASE_URL = DEV_API_URL
+
+# Security: Warn if no production URL is set
+if not PRODUCTION_API_URL and not DEV_API_URL:
+    print("[WARNING] No API URL configured. Please set PRODUCTION_API_URL or API_BASE_URL environment variable.")
 
 # Debug mode
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
@@ -37,6 +41,7 @@ class APIClient:
         self.base_url = API_BASE_URL
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
+        self._refreshing = False  # Prevent simultaneous refresh attempts
         # Optimized timeout and connection pooling for production VPS
         # HTTP/2 requires 'h2' package: pip install httpx[http2]
         try:
@@ -69,6 +74,42 @@ class APIClient:
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
         return headers
+    
+    async def refresh_access_token(self) -> bool:
+        """
+        Refresh the access token using the refresh token.
+        Returns True if successful, False otherwise.
+        """
+        if self._refreshing or not self.refresh_token:
+            return False
+        
+        self._refreshing = True
+        try:
+            debug_log("[API] Attempting to refresh access token...")
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/auth/refresh",
+                json={"refresh_token": self.refresh_token},
+                timeout=30.0
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                new_access_token = data.get("access_token")
+                new_refresh_token = data.get("refresh_token", self.refresh_token)
+                if new_access_token:
+                    self.set_tokens(new_access_token, new_refresh_token)
+                    debug_log("[API] ✅ Token refreshed successfully")
+                    return True
+            else:
+                debug_log(f"[API] Token refresh failed with status {response.status_code}")
+                self.clear_tokens()
+                return False
+        except Exception as e:
+            debug_log(f"[API] Error refreshing token: {e}")
+            self.clear_tokens()
+            return False
+        finally:
+            self._refreshing = False
     
     # Auth endpoints
     async def register(self, name: str, email: str, password: str) -> Dict[str, Any]:
@@ -217,12 +258,24 @@ class APIClient:
 
     async def get_saved_chat(self) -> Dict[str, Any]:
         """Get or create the Saved Messages chat for current user"""
-        response = await self.client.get(
-            f"{self.base_url}/api/v1/chats/saved",
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/chats/saved",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and self.refresh_token:
+                # Try to refresh token and retry once
+                if await self.refresh_access_token():
+                    response = await self.client.get(
+                        f"{self.base_url}/api/v1/chats/saved",
+                        headers=self._get_headers()
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            raise
     
     async def get_messages(self, chat_id: str, limit: int = 50) -> Dict[str, Any]:
         """Get messages in a chat"""
@@ -236,13 +289,26 @@ class APIClient:
     
     async def send_message(self, chat_id: str, text: Optional[str] = None, file_id: Optional[str] = None) -> Dict[str, Any]:
         """Send a message"""
-        response = await self.client.post(
-            f"{self.base_url}/api/v1/chats/{chat_id}/messages",
-            json={"text": text, "file_id": file_id},
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/chats/{chat_id}/messages",
+                json={"text": text, "file_id": file_id},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and self.refresh_token:
+                # Try to refresh token and retry once
+                if await self.refresh_access_token():
+                    response = await self.client.post(
+                        f"{self.base_url}/api/v1/chats/{chat_id}/messages",
+                        json={"text": text, "file_id": file_id},
+                        headers=self._get_headers()
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            raise
 
     async def save_message(self, message_id: str) -> Dict[str, Any]:
         """Save a message to Saved Messages"""
@@ -255,22 +321,47 @@ class APIClient:
 
     async def unsave_message(self, message_id: str) -> Dict[str, Any]:
         """Unsave a message from Saved Messages"""
-        response = await self.client.post(
-            f"{self.base_url}/api/v1/messages/{message_id}/unsave",
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/messages/{message_id}/unsave",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and self.refresh_token:
+                # Try to refresh token and retry once
+                if await self.refresh_access_token():
+                    response = await self.client.post(
+                        f"{self.base_url}/api/v1/messages/{message_id}/unsave",
+                        headers=self._get_headers()
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            raise
 
     async def get_saved_messages(self, limit: int = 50) -> Dict[str, Any]:
         """Get all saved messages"""
-        response = await self.client.get(
-            f"{self.base_url}/api/v1/chats/messages/saved",
-            params={"limit": limit},
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/chats/messages/saved",
+                params={"limit": limit},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and self.refresh_token:
+                # Try to refresh token and retry once
+                if await self.refresh_access_token():
+                    response = await self.client.get(
+                        f"{self.base_url}/api/v1/chats/messages/saved",
+                        params={"limit": limit},
+                        headers=self._get_headers()
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            raise
     
     # File endpoints
     async def init_upload(self, filename: str, size: int, mime: str, chat_id: str, checksum: Optional[str] = None) -> Dict[str, Any]:

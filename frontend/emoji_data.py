@@ -1,11 +1,23 @@
 """
 Comprehensive emoji data for Zaply messaging app
-Contains 3000+ emojis organized by categories
+Contains 3000+ emojis organized by categories with lazy loading
 """
 
-# Extended emoji list with categories
-EMOJI_CATEGORIES = {
-    "Smileys & Emotion": [
+# Popular emojis that load immediately
+POPULAR_EMOJIS = [
+    "😀", "😂", "❤️", "👍", "🔥", "✨", "🎉", "😊", "🤔", "😎",
+    "👏", "🙌", "💯", "🚀", "💪", "🎯", "⭐", "🌟", "💖", "😍"
+]
+
+# Lazy-loaded emoji categories
+_EMOJI_CATEGORIES_CACHE = None
+
+def get_emoji_categories():
+    """Get emoji categories with lazy loading"""
+    global _EMOJI_CATEGORIES_CACHE
+    if _EMOJI_CATEGORIES_CACHE is None:
+        _EMOJI_CATEGORIES_CACHE = {
+            "Smileys & Emotion": [
         "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊",
         "😇", "🥰", "😍", "🤩", "😘", "😗", "😚", "😙", "🥲", "😋", "😛", "😜",
         "🤪", "😝", "😌", "😔", "😒", "😐", "😑", "😶", "🙁", "😏", "😞", "😖",
@@ -85,10 +97,14 @@ EMOJI_CATEGORIES = {
     ],
 }
 
-# Flat list of all emojis
-ALL_EMOJIS = []
-for category_emojis in EMOJI_CATEGORIES.values():
-    ALL_EMOJIS.extend(category_emojis)
+# Flat list of all emojis (computed lazily)
+def get_all_emojis():
+    """Get all emojis as a flat list"""
+    all_emojis = []
+    categories = get_emoji_categories()
+    for category_emojis in categories.values():
+        all_emojis.extend(category_emojis)
+    return all_emojis
 
 # Popular emojis for quick access
 POPULAR_EMOJIS = [
@@ -99,11 +115,18 @@ POPULAR_EMOJIS = [
 
 def get_emojis_by_category(category):
     """Get emojis for a specific category"""
-    return EMOJI_CATEGORIES.get(category, [])
+    categories = get_emoji_categories()
+    return categories.get(category, [])
+
+# For backward compatibility
+EMOJI_CATEGORIES = get_emoji_categories()
 
 def get_all_emojis():
     """Get all emojis"""
-    return ALL_EMOJIS
+    all_emojis = []
+    for emojis in EMOJI_CATEGORIES.values():
+        all_emojis.extend(emojis)
+    return all_emojis
 
 def search_emojis(query):
     """Search for emojis by category name"""

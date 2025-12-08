@@ -2,11 +2,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pathlib import Path
-from backend.database import connect_db, close_db
-from backend.routes import auth, files, chats, users, updates, p2p_transfer
-from backend.config import settings
-from backend.mongo_init import ensure_mongodb_ready
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+
+from database import connect_db, close_db
+from routes import auth, files, chats, users, updates, p2p_transfer
+from config import settings
+from mongo_init import ensure_mongodb_ready
+from security import SecurityConfig
 
 
 @asynccontextmanager
@@ -19,19 +25,37 @@ async def lifespan(app: FastAPI):
         print("[DB] Initializing MongoDB...")
         
         # Initialize MongoDB (create users, collections, indexes)
-        await ensure_mongodb_ready()
+        try:
+            await ensure_mongodb_ready()
+            print("[DB] MongoDB initialization completed")
+        except Exception as e:
+            print(f"[ERROR] MongoDB initialization failed: {str(e)}")
+            print("[ERROR] Please check MongoDB connection and configuration")
+            raise
         
-        print(f"[DB] Connecting to MongoDB at {settings.MONGODB_URI}...")
+        print(f"[DB] Connecting to MongoDB...")
         
         # Validate production settings
         try:
             settings.validate_production()
         except ValueError as ve:
-            print(f"[ERROR] {str(ve)}")
+            print(f"[ERROR] Configuration validation failed: {str(ve)}")
+            raise
+        except Exception as e:
+            print(f"[ERROR] Unexpected validation error: {str(e)}")
             raise
         
         # Connect to database with error handling
-        await connect_db()
+        try:
+            await connect_db()
+            print("[DB] Database connection established")
+        except Exception as e:
+            print(f"[ERROR] Database connection failed: {str(e)}")
+            print("[ERROR] Please check:")
+            print("  - MongoDB is running")
+            print("  - Connection string is correct")
+            print("  - Network connectivity")
+            raise
         
         if settings.DEBUG:
             print(f"[START] Zaply API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
@@ -41,7 +65,7 @@ async def lifespan(app: FastAPI):
             print("[CORS] Restricted to configured origins")
         
         print("[START] Lifespan startup complete, all services ready")
-        print("[START] ✅ Backend is fully operational")
+        print("[START] Backend is fully operational")
         
         yield
         
@@ -64,6 +88,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# TrustedHost middleware for additional security
+if not settings.DEBUG:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["139.59.82.105", "localhost", "127.0.0.1"]  # Configure appropriately for your domain
+    )
+
 # CORS middleware - configured from settings to respect DEBUG/PRODUCTION modes
 app.add_middleware(
     CORSMiddleware,
@@ -74,6 +105,18 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "X-Total-Count"],
     max_age=600,  # Cache preflight requests for 10 minutes
 )
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    
+    # Add security headers
+    security_headers = SecurityConfig.get_security_headers()
+    for header, value in security_headers.items():
+        response.headers[header] = value
+    
+    return response
 
 
 @app.get("/")

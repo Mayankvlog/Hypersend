@@ -12,8 +12,11 @@ import asyncio
 import uuid
 import json
 from datetime import datetime, timedelta
-from backend.database import files_collection, chats_collection
-from backend.auth.utils import get_current_user
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from database import files_collection, chats_collection
+from auth.utils import get_current_user
 
 router = APIRouter(prefix="/p2p", tags=["P2P Transfer"])
 

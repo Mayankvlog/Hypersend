@@ -3,7 +3,7 @@ MongoDB initialization - Creates admin and application users on first startup
 """
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
-from backend.config import settings
+from config import settings
 
 
 async def init_mongodb():
@@ -32,33 +32,12 @@ async def init_mongodb():
         await admin_db.command('ping')
         print("[MONGO_INIT] Connected to MongoDB")
         
-        # Try to create root admin user (will fail silently if exists)
-        try:
-            await admin_db.command('createUser', 'admin', pwd='changeme', roles=['root'])
-            print("[MONGO_INIT] Created root admin user")
-        except (RuntimeError, OSError) as e:
-            if "already exists" in str(e):
-                print("[MONGO_INIT] Root admin user already exists")
-            else:
-                print(f"[MONGO_INIT] Note: {str(e)}")
-        
-        # Try to create application user (will fail silently if exists)
-        try:
-            await admin_db.command(
-                'createUser',
-                'hypersend',
-                pwd='Mayank@#03',
-                roles=[
-                    {'role': 'readWrite', 'db': 'hypersend'},
-                    {'role': 'dbOwner', 'db': 'hypersend'}
-                ]
-            )
-            print("[MONGO_INIT] Created application user: hypersend")
-        except (RuntimeError, OSError) as e:
-            if "already exists" in str(e):
-                print("[MONGO_INIT] Application user already exists")
-            else:
-                print(f"[MONGO_INIT] Note: {str(e)}")
+        # Skip user creation in production - users should be created manually
+        print("[MONGO_INIT] Skipping automatic user creation - users should be created manually")
+        print("[MONGO_INIT] To create users manually, connect to MongoDB and run:")
+        print("[MONGO_INIT]   use admin")
+        print("[MONGO_INIT]   db.createUser({user: 'admin', pwd: 'your-secure-password', roles: ['root']})")
+        print("[MONGO_INIT]   db.createUser({user: 'hypersend', pwd: 'your-secure-password', roles: [{role: 'readWrite', db: 'hypersend'}]})")
         
         # Create collections if they don't exist
         collections = ['users', 'chats', 'messages', 'files', 'uploads', 'refresh_tokens', 'reset_tokens']
@@ -113,7 +92,7 @@ async def init_mongodb():
         except Exception:
             pass
         
-        print("[MONGO_INIT] ✅ MongoDB initialization complete")
+        print("[MONGO_INIT] [OK] MongoDB initialization complete")
         
     except Exception as e:
         print(f"[MONGO_INIT] Warning: Could not fully initialize MongoDB: {str(e)}")

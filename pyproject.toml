@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 authors = [
   { name = "Mayank", email = "mayank.kr0311@gmail.com" }
 ]
-license = { text = "nginx" }
+license = { text = "MIT" }
 
 dependencies = [
   "fastapi==0.115.5",

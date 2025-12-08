@@ -9,12 +9,15 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request, Header
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional
 import aiofiles
-from backend.models import (
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
-from backend.database import files_collection, uploads_collection, users_collection
-from backend.auth.utils import get_current_user
-from backend.config import settings
+from database import files_collection, uploads_collection, users_collection
+from auth.utils import get_current_user
+from config import settings
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -24,8 +27,19 @@ router = APIRouter(prefix="/files", tags=["Files"])
 
 
 @router.post("/init", response_model=FileInitResponse)
-async def init_upload(file_req: FileInitRequest, current_user: str = Depends(get_current_user)):
+async def initialize_upload(
+    file_req: FileInitRequest,
+    current_user: str = Depends(get_current_user)
+):
     """Initialize a resumable file upload"""
+    
+    # Validate filename and sanitize
+    import re
+    if not file_req.filename or re.search(r'[<>:"/\\|?*]', file_req.filename):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename. Please use a valid filename."
+        )
     
     # Validate file size
     if file_req.size > settings.MAX_FILE_SIZE_BYTES:
