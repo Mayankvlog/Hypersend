@@ -78,7 +78,7 @@ except ImportError:
         def update_tokens(*args, **kwargs): return False
 
 # Default backend URL - use VPS for testing
-DEFAULT_DEV_URL = "http://139.59.82.105:8000"
+DEFAULT_DEV_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
 DEV_API_URL = os.getenv("API_BASE_URL", DEFAULT_DEV_URL).strip()
 

@@ -92,7 +92,7 @@ app = FastAPI(
 if not settings.DEBUG:
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["139.59.82.105", "localhost", "127.0.0.1"]  # Configure appropriately for your domain
+        allowed_hosts=[os.getenv("VPS_IP", "localhost"), "localhost", "127.0.0.1"]  # Configure appropriately for your domain
     )
 
 # CORS middleware - configured from settings to respect DEBUG/PRODUCTION modes
