@@ -134,6 +134,10 @@ class ZaplyApp:
         self.page.padding = 0
         self.page.window.width = 400
         self.page.window.height = 850
+        
+        # Enable keyboard view insets for proper keyboard handling on mobile
+        # This ensures input field stays visible when keyboard appears
+        self.page.view_insets = True
 
         # Ensure a stable background color on launch to avoid black/white flashing
         # while the first frame is being rendered on Android.
@@ -1321,7 +1325,8 @@ class ZaplyApp:
             multiline=True,
             min_lines=1,
             max_lines=5,
-            keyboard_type=ft.KeyboardType.TEXT
+            keyboard_type=ft.KeyboardType.TEXT,
+            autofocus=False  # Don't auto-focus on open
         )
         
         async def send_message(e):
@@ -1383,6 +1388,7 @@ class ZaplyApp:
                             expand=True,
                             padding=10
                         ),
+                        ft.Divider(height=1),
                         ft.Container(
                             content=ft.Column(
                                 [
@@ -1431,7 +1437,8 @@ class ZaplyApp:
                                             ft.Container(expand=True)
                                         ],
                                         spacing=3,
-                                        height=40
+                                        height=40,
+                                        vertical_alignment=ft.CrossAxisAlignment.CENTER
                                     ),
                                     # Message input and send button row
                                     ft.Row(
@@ -1447,7 +1454,8 @@ class ZaplyApp:
                                             )
                                         ],
                                         spacing=8,
-                                        alignment=ft.MainAxisAlignment.START
+                                        alignment=ft.MainAxisAlignment.START,
+                                        vertical_alignment=ft.CrossAxisAlignment.END
                                     )
                                 ],
                                 spacing=5
@@ -1462,6 +1470,9 @@ class ZaplyApp:
                 expand=True
             )
         ])
+        
+        # Enable keyboard handling for proper focus and resizing on Android
+        self.page.view_insets = True
         
         self.page.views.clear()
         self.page.views.append(chat_view)
