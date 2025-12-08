@@ -3,7 +3,7 @@ from theme import SPACING_SMALL, SPACING_MEDIUM, TEXT_BLACK
 
 
 class SavedMessagesView(ft.Container):
-    """View to display all saved messages"""
+    """View to display all saved messages with typing capability"""
     
     def __init__(self, page, api_client, current_user, on_back):
         super().__init__()
@@ -17,6 +17,21 @@ class SavedMessagesView(ft.Container):
             spacing=SPACING_SMALL,
             padding=SPACING_MEDIUM,
             expand=True
+        )
+        
+        # Message input field (like Telegram Saved Messages)
+        self.message_input = ft.TextField(
+            hint_text="Message yourself...",
+            border=ft.InputBorder.NONE,
+            filled=True,
+            expand=True,
+            multiline=True,
+            min_lines=1,
+            max_lines=5,
+            keyboard_type=ft.KeyboardType.TEXT,
+            autofocus=True,
+            read_only=False,
+            disabled=False,
         )
         
         # Layout
@@ -46,6 +61,24 @@ class SavedMessagesView(ft.Container):
                 ),
                 # Messages
                 self.messages_list,
+                # Message input at bottom
+                ft.Divider(height=1),
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            self.message_input,
+                            ft.IconButton(
+                                icon=ft.Icons.SEND,
+                                icon_color=ft.Colors.BLUE,
+                                tooltip="Send message",
+                                on_click=lambda e: self.page.run_task(self.send_message)
+                            )
+                        ],
+                        spacing=SPACING_SMALL
+                    ),
+                    padding=SPACING_MEDIUM,
+                    bgcolor=ft.Colors.WHITE
+                )
             ],
             spacing=0
         )
@@ -122,6 +155,34 @@ class SavedMessagesView(ft.Container):
                 padding=SPACING_MEDIUM
             )
         )
+    
+    async def send_message(self):
+        """Send a message to saved messages"""
+        if not self.message_input.value or not self.message_input.value.strip():
+            return
+        
+        try:
+            # Get or create saved messages chat
+            saved_chat = await self.api_client.get_saved_chat()
+            chat_id = saved_chat.get("_id")
+            
+            if not chat_id:
+                print("Error: Could not get saved chat ID")
+                return
+            
+            # Send the message
+            await self.api_client.send_message(
+                chat_id=chat_id,
+                text=self.message_input.value
+            )
+            
+            # Clear input and reload messages
+            self.message_input.value = ""
+            await self.load_saved_messages()
+            self.page.update()
+            
+        except Exception as e:
+            print(f"Error sending message: {e}")
     
     async def unsave_message(self, message_id: str):
         """Remove a message from saved"""
