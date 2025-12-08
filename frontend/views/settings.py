@@ -233,10 +233,10 @@ class SettingsView(ft.View):
         logout_section = ft.Container(
             content=ft.ElevatedButton(
                 "Logout",
-                icon=ft.icons.LOGOUT,
+                icon=ft.Icons.LOGOUT,
                 style=ft.ButtonStyle(
-                    color=ft.colors.WHITE,
-                    bgcolor=ft.colors.RED_500,
+                    color=ft.Colors.WHITE,
+                    bgcolor=ft.Colors.RED_500,
                     padding=ft.padding.symmetric(vertical=15, horizontal=20)
                 ),
                 on_click=self.confirm_logout,
@@ -310,11 +310,11 @@ class SettingsView(ft.View):
         
         # Set app bar
         self.page.appbar = ft.AppBar(
-            title=ft.Text("Settings", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
+            title=ft.Text("Settings", weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
             bgcolor=self.bg_color,
             leading=ft.IconButton(
-                icon=ft.icons.ARROW_BACK,
-                icon_color=ft.colors.BLACK,
+                icon=ft.Icons.ARROW_BACK,
+                icon_color=ft.Colors.BLACK,
                 on_click=lambda e: self.go_back()
             )
         )
@@ -466,10 +466,10 @@ class SettingsView(ft.View):
                 ft.Container(height=15),
                 ft.ElevatedButton(
                     "Request Permissions",
-                    icon=ft.icons.SECURITY,
+                    icon=ft.Icons.SECURITY,
                     on_click=self.request_permissions,
                     style=ft.ButtonStyle(
-                        color=ft.colors.WHITE,
+                        color=ft.Colors.WHITE,
                         bgcolor=self.primary_color
                     )
                 ),
@@ -785,8 +785,8 @@ class SettingsView(ft.View):
                 ft.ElevatedButton(
                     "Logout",
                     style=ft.ButtonStyle(
-                        color=ft.colors.WHITE,
-                        bgcolor=ft.colors.RED_500
+                        color=ft.Colors.WHITE,
+                        bgcolor=ft.Colors.RED_500
                     ),
                     on_click=lambda e: self.do_logout(dialog)
                 )
@@ -811,3 +811,4 @@ class SettingsView(ft.View):
             self.on_back()
         else:
             self.page.go("/")
+

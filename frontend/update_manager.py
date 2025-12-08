@@ -153,3 +153,4 @@ async def check_app_updates(page: ft.Page):
     
     if update_info.get("update_available", False):
         update_manager.show_update_dialog(page, update_info)
+

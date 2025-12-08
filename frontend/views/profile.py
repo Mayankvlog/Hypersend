@@ -33,7 +33,7 @@ class ProfileView(ft.View):
                                 self.get_initial(),
                                 size=40,
                                 weight=ft.FontWeight.BOLD,
-                                color=ft.colors.WHITE
+                                color=ft.Colors.WHITE
                             ),
                             bgcolor=self.primary_color,
                             radius=60
@@ -183,7 +183,7 @@ class ProfileView(ft.View):
                         "Edit Profile",
                         icon=ft.Icons.EDIT,
                         style=ft.ButtonStyle(
-                            color=ft.colors.WHITE,
+                            color=ft.Colors.WHITE,
                             bgcolor=self.primary_color,
                             padding=ft.padding.symmetric(vertical=15, horizontal=20)
                         ),
@@ -229,7 +229,7 @@ class ProfileView(ft.View):
             content=ft.Row([
                 ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
-                    icon_color=ft.colors.BLACK,
+                    icon_color=ft.Colors.BLACK,
                     icon_size=28,
                     tooltip="Back",
                     on_click=lambda e: self.go_back()
@@ -238,7 +238,7 @@ class ProfileView(ft.View):
                 ft.Container(expand=True),
                 ft.IconButton(
                     icon=ft.Icons.MORE_VERT,
-                    icon_color=ft.colors.BLACK,
+                    icon_color=ft.Colors.BLACK,
                     on_click=self.show_more_options
                 )
             ], alignment=ft.MainAxisAlignment.START),
@@ -261,17 +261,17 @@ class ProfileView(ft.View):
         
         # Also set view's appbar for proper Flet behavior
         self.appbar = ft.AppBar(
-            title=ft.Text("Profile", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
+            title=ft.Text("Profile", weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
             bgcolor=self.bg_color,
             leading=ft.IconButton(
                 icon=ft.Icons.ARROW_BACK,
-                icon_color=ft.colors.BLACK,
+                icon_color=ft.Colors.BLACK,
                 on_click=lambda e: self.go_back()
             ),
             actions=[
                 ft.IconButton(
                     icon=ft.Icons.MORE_VERT,
-                    icon_color=ft.colors.BLACK,
+                    icon_color=ft.Colors.BLACK,
                     on_click=self.show_more_options
                 )
             ]
@@ -395,7 +395,7 @@ class ProfileView(ft.View):
                             selectable=True
                         ),
                         padding=ft.padding.all(10),
-                        bgcolor=ft.colors.GREY_100,
+                        bgcolor=ft.Colors.GREY_100,
                         border_radius=ft.border_radius.all(8)
                     )
                 ],
@@ -440,3 +440,4 @@ class ProfileView(ft.View):
             self.on_back()
         else:
             self.page.go("/")
+

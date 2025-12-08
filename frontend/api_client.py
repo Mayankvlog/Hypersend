@@ -558,3 +558,4 @@ class APIClient:
         except Exception as e:
             debug_log(f"[API] Download file error: {e}")
             raise Exception(f"Failed to download file: {str(e)}")
+

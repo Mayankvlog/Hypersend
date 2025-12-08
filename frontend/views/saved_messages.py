@@ -32,7 +32,7 @@ except ImportError:
 # Compatibility shims
 icons = ft.Icons
 colors = ft.Colors
-ft.colors = ft.Colors
+ft.Colors = ft.Colors
 
 
 class SavedMessagesView(ft.View):
@@ -958,3 +958,4 @@ class SavedMessagesView(ft.View):
             self.on_back()
         else:
             self.page.go("/")
+

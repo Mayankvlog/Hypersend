@@ -117,7 +117,7 @@ class FileUploadView(ft.Container):
                     ft.Text("• Parallel uploads: 4 streams", size=12, opacity=0.7),
                 ], spacing=SPACING_SMALL),
                 padding=SPACING_MEDIUM,
-                bgcolor=ft.colors.SURFACE_VARIANT,
+                bgcolor=ft.Colors.SURFACE_VARIANT,
                 border_radius=10
             )
         ], spacing=SPACING_MEDIUM, scroll=ft.ScrollMode.AUTO)
@@ -444,3 +444,5 @@ class FileUploadView(ft.Container):
         }
         
         return mime_types.get(ext, "application/octet-stream")
+
+

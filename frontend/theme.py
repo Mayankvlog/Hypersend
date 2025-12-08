@@ -239,3 +239,5 @@ def get_theme(dark_mode=False):
     """Legacy theme getter for backwards compatibility"""
     theme = ZaplyTheme(dark_mode)
     return theme.get_flet_theme()
+
+
