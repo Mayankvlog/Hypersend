@@ -1085,68 +1085,18 @@ class ZaplyApp:
         self.page.update()
     
     def show_saved_messages(self):
-        """Open the 'Saved Messages' chat if it exists, else show info page"""
-        # Find a chat marked as saved (type == 'saved')
-        saved_chat = next((c for c in self.chats if c.get("type") == "saved"), None)
-
-        if saved_chat:
-            # Re-use existing chat UI with back button
-            self.show_chat(saved_chat, is_saved_messages=True)
-            return
-
-        # Fallback screen if backend has no saved chat yet
-        self.page.appbar = ft.AppBar(
-            leading=ft.IconButton(
-                icon=icons.ARROW_BACK,
-                icon_color=ft.colors.BLACK,
-                on_click=lambda e: self.show_chat_list(),
-            ),
-            title=ft.Text("Saved Messages", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
-            center_title=False,
-            bgcolor=ft.colors.WHITE,
+        """Open the 'Saved Messages' view with typing capability"""
+        # Use SavedMessagesView which has message input field
+        saved_view = SavedMessagesView(
+            page=self.page,
+            api_client=self.client,
+            current_user=self.current_user.get("id", self.current_user.get("_id")),
+            on_back=lambda: self.show_chat_list()
         )
-
-        # Create saved messages view with back button and empty state
-        saved_view = ft.View(
-            "/",
-            [
-                ft.Container(
-                    content=ft.Column(
-                        [
-                            ft.Row(
-                                [
-                                    ft.IconButton(
-                                        icon=icons.ARROW_BACK,
-                                        icon_size=24,
-                                        on_click=lambda e: self.show_chat_list(),
-                                    ),
-                                    ft.Text(
-                                        "Saved Messages",
-                                        size=20,
-                                        weight=ft.FontWeight.BOLD,
-                                    ),
-                                    ft.Container(expand=True)
-                                ],
-                                alignment=ft.MainAxisAlignment.START
-                            ),
-                            ft.Container(
-                                content=ft.Text(
-                                    "No saved messages chat is available yet.",
-                                    color=self.text_secondary,
-                                    text_align=ft.TextAlign.CENTER,
-                                ),
-                                alignment=ft.alignment.center,
-                                expand=True,
-                            )
-                        ],
-                        spacing=0
-                    ),
-                    expand=True
-                )
-            ]
-        )
+        
+        # Clear views and show saved messages
         self.page.views.clear()
-        self.page.views.append(saved_view)
+        self.page.views.append(ft.View("/saved", [saved_view]))
         self.page.update()
 
     def show_settings(self):
