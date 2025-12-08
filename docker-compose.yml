@@ -29,8 +29,8 @@ services:
     ports:
       - "27018:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-hypersend}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
       MONGO_INITDB_DATABASE: hypersend
     volumes:
       - /var/lib/mongodb:/data/db
@@ -56,7 +56,7 @@ services:
       - ./backend/uploads:/app/uploads
     environment:
       # IMPORTANT: Password MUST be URL-encoded (@ = %40, # = %23)
-      MONGODB_URI: "mongodb://${MONGO_ROOT_USERNAME:-hypersend}:${MONGO_ROOT_PASSWORD}@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
+      MONGODB_URI: "mongodb://${MONGO_USER:-hypersend}:${MONGO_PASSWORD}@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
       SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
