@@ -101,3 +101,89 @@ async def release_new_version(version_data: dict):
     LATEST_VERSION = version
     
     return {"message": f"Version {version} released successfully"}
+
+
+# Typing indicators and online status tracking
+USER_TYPING_STATUS = {}  # {user_id: {chat_id: timestamp}}
+USER_ONLINE_STATUS = {}  # {user_id: {"last_seen": datetime, "is_online": bool}}
+
+
+from fastapi import Depends
+from backend.auth.utils import get_current_user
+
+
+@router.post("/typing")
+async def set_typing_status(
+    chat_id: str,
+    is_typing: bool,
+    current_user: str = Depends(get_current_user)
+):
+    """Update typing status in a chat"""
+    if current_user not in USER_TYPING_STATUS:
+        USER_TYPING_STATUS[current_user] = {}
+    
+    if is_typing:
+        USER_TYPING_STATUS[current_user][chat_id] = datetime.utcnow()
+    else:
+        USER_TYPING_STATUS[current_user].pop(chat_id, None)
+    
+    return {
+        "status": "updated",
+        "user_id": current_user,
+        "chat_id": chat_id,
+        "is_typing": is_typing
+    }
+
+
+@router.get("/typing/{chat_id}")
+async def get_typing_users(chat_id: str):
+    """Get users currently typing in a chat"""
+    typing_users = []
+    
+    for user_id, chats in USER_TYPING_STATUS.items():
+        if chat_id in chats:
+            # Check if typing status is still valid (not older than 5 seconds)
+            if (datetime.utcnow() - chats[chat_id]).total_seconds() < 5:
+                typing_users.append(user_id)
+    
+    return {"chat_id": chat_id, "typing_users": typing_users}
+
+
+@router.post("/online-status")
+async def set_online_status(
+    current_user: str = Depends(get_current_user)
+):
+    """Update user online status"""
+    USER_ONLINE_STATUS[current_user] = {
+        "last_seen": datetime.utcnow(),
+        "is_online": True
+    }
+    
+    return {"status": "online", "user_id": current_user}
+
+
+@router.post("/offline-status")
+async def set_offline_status(
+    current_user: str = Depends(get_current_user)
+):
+    """Mark user as offline"""
+    if current_user in USER_ONLINE_STATUS:
+        USER_ONLINE_STATUS[current_user]["is_online"] = False
+        USER_ONLINE_STATUS[current_user]["last_seen"] = datetime.utcnow()
+    
+    return {"status": "offline", "user_id": current_user}
+
+
+@router.get("/user-status/{user_id}")
+async def get_user_status(user_id: str):
+    """Get user online status and last seen"""
+    status_info = USER_ONLINE_STATUS.get(user_id, {
+        "is_online": False,
+        "last_seen": None
+    })
+    
+    return {
+        "user_id": user_id,
+        "is_online": status_info.get("is_online", False),
+        "last_seen": status_info.get("last_seen")
+    }
