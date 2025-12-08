@@ -35,6 +35,22 @@ async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)
     return {"chat_id": chat_doc["_id"], "chat": chat_doc}
 
 
+# IMPORTANT: This route MUST come BEFORE /{chat_id}/messages
+# Otherwise FastAPI will match "messages" as a chat_id
+@router.get("/messages/saved")
+async def get_saved_messages(
+    current_user: str = Depends(get_current_user),
+    limit: int = 50
+):
+    """Get all messages saved by current user"""
+    
+    messages = []
+    async for msg in messages_collection().find({"saved_by": current_user}).sort("created_at", -1).limit(limit):
+        messages.append(msg)
+    
+    return {"messages": list(reversed(messages))}
+
+
 @router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_user)):
     """Create a new chat (private or group)"""
@@ -88,20 +104,6 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
     return {"chat_id": chat_doc["_id"], "message": "Chat created"}
 
 
-@router.get("/{chat_id}")
-async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
-    """Get chat details"""
-    
-    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
-    if not chat:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat not found"
-        )
-    
-    return chat
-
-
 @router.get("/")
 async def list_chats(current_user: str = Depends(get_current_user)):
     """List all chats for current user"""
@@ -118,6 +120,20 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         chats.append(chat)
     
     return {"chats": chats}
+
+
+@router.get("/{chat_id}")
+async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
+    """Get chat details"""
+    
+    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat not found"
+        )
+    
+    return chat
 
 
 @router.get("/{chat_id}/messages")
@@ -361,17 +377,3 @@ async def delete_message(
     await messages_collection().delete_one({"_id": message_id})
     
     return {"status": "deleted", "message_id": message_id}
-
-
-@router.get("/messages/saved")
-async def get_saved_messages(
-    current_user: str = Depends(get_current_user),
-    limit: int = 50
-):
-    """Get all messages saved by current user"""
-    
-    messages = []
-    async for msg in messages_collection().find({"saved_by": current_user}).sort("created_at", -1).limit(limit):
-        messages.append(msg)
-    
-    return {"messages": list(reversed(messages))}
