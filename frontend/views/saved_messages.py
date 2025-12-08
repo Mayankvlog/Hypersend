@@ -170,25 +170,27 @@ class SavedMessagesView(ft.Container):
             print(f"Error loading saved messages: {e}")
             self.messages_list.controls.clear()
             self.messages_list.controls.append(
-                ft.Column([
-                    ft.Icon(ft.Icons.ERROR_OUTLINE, size=64, color=ft.Colors.RED_300),
-                    ft.Text(
-                        "Failed to load messages",
-                        size=16,
-                        weight=ft.FontWeight.W_500,
-                        text_align=ft.TextAlign.CENTER,
-                        color=ft.Colors.RED_400
-                    ),
-                    ft.Text(
-                        str(e)[:100],
-                        size=12,
-                        text_align=ft.TextAlign.CENTER,
-                        color=ft.Colors.RED_200,
-                        opacity=0.7
-                    ),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-                alignment=ft.alignment.center,
-                expand=True
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.ERROR_OUTLINE, size=64, color=ft.Colors.RED_300),
+                        ft.Text(
+                            "Failed to load messages",
+                            size=16,
+                            weight=ft.FontWeight.W_500,
+                            text_align=ft.TextAlign.CENTER,
+                            color=ft.Colors.RED_400
+                        ),
+                        ft.Text(
+                            str(e)[:100],
+                            size=12,
+                            text_align=ft.TextAlign.CENTER,
+                            color=ft.Colors.RED_200,
+                            opacity=0.7
+                        ),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                    alignment=ft.alignment.center,
+                    expand=True
+                )
             )
             self.page.update()
     
