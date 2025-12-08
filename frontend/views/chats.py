@@ -72,20 +72,229 @@ class ChatsView(ft.View):
         # State
         self.chats: List[Dict[str, Any]] = []
         self.loading = False
+        self.dark_mode = False
         
+        # Build drawer first
+        self.build_drawer()
         self.build_ui()
+    
+    def build_drawer(self):
+        """Build Telegram-style navigation drawer"""
+        user_name = self.current_user.get("name", self.current_user.get("username", "User"))
+        user_email = self.current_user.get("email", "")
+        user_initials = user_name[0].upper() if user_name else "U"
+        
+        # Drawer header with user info
+        drawer_header = ft.Container(
+            content=ft.Column([
+                # User avatar
+                ft.Container(
+                    content=ft.Text(user_initials, size=28, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                    width=60,
+                    height=60,
+                    bgcolor=self.primary_color,
+                    border_radius=30,
+                    alignment=ft.alignment.center,
+                ),
+                ft.Container(height=12),
+                # User name
+                ft.Row([
+                    ft.Text(user_name, size=18, weight=ft.FontWeight.W_600, color=ft.Colors.WHITE),
+                    ft.Icon(ft.Icons.EXPAND_MORE, color=ft.Colors.WHITE, size=20)
+                ], spacing=4),
+                # User status/email
+                ft.Text(user_email or "Set Emoji Status", size=13, color=ft.Colors.WHITE70),
+            ], spacing=4),
+            padding=ft.padding.all(20),
+            bgcolor=self.primary_color,
+        )
+        
+        # Night mode switch
+        self.night_mode_switch = ft.Switch(
+            value=self.dark_mode,
+            active_color=self.primary_color,
+            on_change=self.toggle_night_mode
+        )
+        
+        # Drawer menu items
+        menu_items = [
+            self.drawer_item("👤", "My Profile", lambda e: self.open_profile()),
+            ft.Divider(height=1, color="#E0E0E0"),
+            self.drawer_item("👥", "New Group", lambda e: self.create_new_group()),
+            self.drawer_item("📢", "New Channel", lambda e: self.create_new_channel()),
+            ft.Divider(height=1, color="#E0E0E0"),
+            self.drawer_item("📇", "Contacts", lambda e: self.open_contacts()),
+            self.drawer_item("📞", "Calls", lambda e: self.open_calls()),
+            self.drawer_item("💾", "Saved Messages", lambda e: self.show_saved_messages()),
+            ft.Divider(height=1, color="#E0E0E0"),
+            self.drawer_item("⚙️", "Settings", lambda e: self.open_settings()),
+            # Night mode with switch
+            ft.Container(
+                content=ft.Row([
+                    ft.Text("🌙", size=20),
+                    ft.Container(width=12),
+                    ft.Text("Night Mode", size=16, color=self.text_color, expand=True),
+                    self.night_mode_switch
+                ], spacing=0),
+                padding=ft.padding.symmetric(horizontal=20, vertical=12),
+                on_click=lambda e: self.toggle_night_mode_click(),
+                ink=True
+            ),
+            ft.Divider(height=1, color="#E0E0E0"),
+            self.drawer_item("❓", "Zaply FAQ", lambda e: self.show_faq()),
+            self.drawer_item("💬", "Zaply Features", lambda e: self.show_features()),
+        ]
+        
+        # Create drawer
+        self.drawer = ft.NavigationDrawer(
+            controls=[
+                drawer_header,
+                ft.Container(
+                    content=ft.Column(menu_items, spacing=0),
+                    bgcolor=self.card_color,
+                    expand=True
+                )
+            ],
+            bgcolor=self.card_color,
+        )
+        
+        self.page.drawer = self.drawer
+    
+    def drawer_item(self, emoji: str, text: str, on_click):
+        """Create a drawer menu item"""
+        return ft.Container(
+            content=ft.Row([
+                ft.Text(emoji, size=20),
+                ft.Container(width=12),
+                ft.Text(text, size=16, color=self.text_color)
+            ], spacing=0),
+            padding=ft.padding.symmetric(horizontal=20, vertical=14),
+            on_click=on_click,
+            ink=True
+        )
+    
+    def toggle_night_mode(self, e):
+        """Toggle night/dark mode"""
+        self.dark_mode = e.control.value
+        self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+        self.page.update()
+    
+    def toggle_night_mode_click(self):
+        """Toggle night mode from row click"""
+        self.dark_mode = not self.dark_mode
+        self.night_mode_switch.value = self.dark_mode
+        self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+        self.page.update()
+    
+    def open_profile(self):
+        """Open profile page"""
+        self.page.drawer.open = False
+        self.page.update()
+        try:
+            profile_view = ProfileView(
+                page=self.page,
+                api_client=self.api_client,
+                current_user=self.current_user,
+                on_back=lambda: self.page.run_task(self.load_chats)
+            )
+            self.page.clean()
+            self.page.add(profile_view)
+            self.page.update()
+        except Exception as e:
+            print(f"Error opening profile: {e}")
+    
+    def create_new_group(self):
+        """Create new group chat"""
+        self.page.drawer.open = False
+        self.page.update()
+        self.show_coming_soon_dialog("New Group", "Create group chats with friends and family")
+    
+    def create_new_channel(self):
+        """Create new channel"""
+        self.page.drawer.open = False
+        self.page.update()
+        self.show_coming_soon_dialog("New Channel", "Broadcast messages to unlimited subscribers")
+    
+    def open_contacts(self):
+        """Open contacts"""
+        self.page.drawer.open = False
+        self.page.update()
+        self.show_coming_soon_dialog("Contacts", "View and manage your contacts")
+    
+    def open_calls(self):
+        """Open calls history"""
+        self.page.drawer.open = False
+        self.page.update()
+        self.show_coming_soon_dialog("Calls", "View your call history")
+    
+    def open_settings(self):
+        """Open settings"""
+        self.page.drawer.open = False
+        self.page.update()
+        try:
+            settings_view = SettingsView(
+                page=self.page,
+                api_client=self.api_client,
+                current_user=self.current_user,
+                on_logout=self.on_logout,
+                on_back=lambda: self.page.run_task(self.load_chats)
+            )
+            self.page.clean()
+            self.page.add(settings_view)
+            self.page.update()
+        except Exception as e:
+            print(f"Error opening settings: {e}")
+    
+    def show_faq(self):
+        """Show FAQ"""
+        self.page.drawer.open = False
+        self.page.update()
+        self.show_coming_soon_dialog("Zaply FAQ", "Frequently asked questions")
+    
+    def show_features(self):
+        """Show features"""
+        self.page.drawer.open = False
+        self.page.update()
+        self.show_coming_soon_dialog("Zaply Features", "Discover what Zaply can do")
+    
+    def show_coming_soon_dialog(self, title: str, description: str):
+        """Show coming soon dialog"""
+        dialog = ft.AlertDialog(
+            title=ft.Text(title),
+            content=ft.Column([
+                ft.Text(description),
+                ft.Container(height=10),
+                ft.Text("🚧 Coming soon in the next update!", color=self.text_secondary)
+            ], tight=True),
+            actions=[ft.TextButton("OK", on_click=lambda e: self.close_dialog(dialog))]
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+    
+    def close_dialog(self, dialog):
+        dialog.open = False
+        self.page.update()
+    
+    def open_drawer(self):
+        """Open navigation drawer"""
+        self.page.drawer.open = True
+        self.page.update()
+
     
     def build_ui(self):
         """Build the chats interface"""
-        # AppBar
+        # AppBar with hamburger menu
         self.page.appbar = ft.AppBar(
-            title=ft.Text("Chats", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
+            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK, size=22),
             bgcolor=self.bg_color,
             leading=ft.IconButton(
-                icon=ft.Icons.ARROW_BACK,
+                icon=ft.Icons.MENU,
                 icon_color=ft.colors.BLACK,
-                on_click=lambda e: self.go_back()
+                tooltip="Menu",
+                on_click=lambda e: self.open_drawer()
             ),
+
             actions=[
                 ft.IconButton(
                     icon=ft.Icons.SEARCH,
