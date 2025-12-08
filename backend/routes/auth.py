@@ -1,14 +1,18 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from fastapi import APIRouter, HTTPException, status, Depends
-from backend.models import (
+from models import (
     UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
     ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse
 )
-from backend.database import users_collection, refresh_tokens_collection, reset_tokens_collection
-from backend.auth.utils import (
+from database import users_collection, refresh_tokens_collection, reset_tokens_collection
+from auth.utils import (
     hash_password, verify_password, create_access_token, 
     create_refresh_token, decode_token, get_current_user
 )
-from backend.config import settings
+from config import settings
 from datetime import datetime, timedelta
 from bson import ObjectId
 import asyncio
@@ -404,13 +408,12 @@ async def forgot_password(request: ForgotPasswordRequest):
 
         auth_log(f"[AUTH] Password reset token generated for: {request.email}")
 
-        # Always include reset token in API response so users can reset their password
-        # even if SMTP is misconfigured or emails are delayed.
+        # Security: Never include reset token in API response
+        # Token should only be sent via email to prevent account takeover
         response = {
             "message": "If an account exists with this email, a password reset link has been sent.",
             "success": True,
             "email_sent": email_sent,
-            "reset_token": reset_token,
         }
 
         return response

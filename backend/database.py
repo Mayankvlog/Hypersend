@@ -1,5 +1,9 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+
 from motor.motor_asyncio import AsyncIOMotorClient
-from backend.config import settings
+from config import settings
 
 client = None
 db = None
@@ -27,7 +31,14 @@ async def connect_db():
                 safe_uri = "[redacted]"
             print(f"[OK] Connected to MongoDB: {safe_uri}")
     except Exception as e:
-        print(f"[ERROR] Failed to connect to MongoDB: {str(e)}")
+        error_msg = str(e)
+        print(f"[ERROR] Failed to connect to MongoDB")
+        print(f"[ERROR] Details: {error_msg}")
+        print("[ERROR] Troubleshooting steps:")
+        print("  1. Check if MongoDB is running")
+        print("  2. Verify connection string format")
+        print("  3. Check network connectivity")
+        print("  4. Validate authentication credentials")
         raise
 
 
@@ -42,48 +53,43 @@ async def close_db():
 
 def get_db():
     """Get database instance"""
+    if db is None:
+        raise RuntimeError("Database not connected. Call connect_db() first.")
     return db
 
 
 # Collection shortcuts
 def users_collection():
-    if db is None:
-        raise RuntimeError("Database not connected. Call connect_db() first.")
-    return db.users
+    database = get_db()
+    return database.users
 
 
 def chats_collection():
-    if db is None:
-        raise RuntimeError("Database not connected. Call connect_db() first.")
-    return db.chats
+    database = get_db()
+    return database.chats
 
 
 def messages_collection():
-    if db is None:
-        raise RuntimeError("Database not connected. Call connect_db() first.")
-    return db.messages
+    database = get_db()
+    return database.messages
 
 
 def files_collection():
-    if db is None:
-        raise RuntimeError("Database not connected. Call connect_db() first.")
-    return db.files
+    database = get_db()
+    return database.files
 
 
 def uploads_collection():
-    if db is None:
-        raise RuntimeError("Database not connected. Call connect_db() first.")
-    return db.uploads
+    database = get_db()
+    return database.uploads
 
 
 def refresh_tokens_collection():
-    if db is None:
-        raise RuntimeError("Database not connected. Call connect_db() first.")
-    return db.refresh_tokens
+    database = get_db()
+    return database.refresh_tokens
 
 
 def reset_tokens_collection():
-    if db is None:
-        raise RuntimeError("Database not connected. Call connect_db() first.")
-    return db.reset_tokens
+    database = get_db()
+    return database.reset_tokens
 

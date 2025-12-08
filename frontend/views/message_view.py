@@ -59,11 +59,10 @@ class MessageView(ft.Container):
             messages = data.get("messages", [])
             
             if not messages:
-                self.messages_list.controls.append(
-                    ft.Text("No messages yet", 
+                empty_text = ft.Text("No messages yet", 
                            text_align=ft.TextAlign.CENTER,
                            opacity=0.6)
-                )
+                self.messages_list.controls.append(empty_text)
             else:
                 for msg in messages:
                     msg_card = self.create_message_card(msg)
@@ -73,11 +72,10 @@ class MessageView(ft.Container):
         except Exception as e:
             print(f"Error loading messages: {e}")
             self.messages_list.controls.clear()
-            self.messages_list.controls.append(
-                ft.Text(f"Error loading messages: {str(e)}", 
+            error_text = ft.Text(f"Error loading messages: {str(e)}", 
                        text_align=ft.TextAlign.CENTER,
                        color="red")
-            )
+            self.messages_list.controls.append(error_text)
             self.page.update()
     
     def create_message_card(self, message):

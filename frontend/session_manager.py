@@ -5,6 +5,7 @@ Saves and loads authentication tokens from local file storage to avoid frequent 
 
 import os
 import json
+import hashlib
 from pathlib import Path
 from typing import Optional, Dict, Any
 import sys
@@ -46,20 +47,24 @@ class SessionManager:
             user_data: Optional user profile data
         """
         try:
+            # Create a simple hash for basic obfuscation (not true encryption)
+            session_key = hashlib.sha256(email.encode()).hexdigest()[:16]
+            
             session_data = {
                 "email": email,
                 "access_token": access_token,
                 "refresh_token": refresh_token,
-                "user_data": user_data or {}
+                "user_data": user_data or {},
+                "session_key": session_key
             }
-            
+           
             with open(SESSION_FILE, 'w') as f:
                 json.dump(session_data, f)
-            
-            debug_log(f"✅ Session saved for {email}")
+           
+            debug_log(f"[OK] Session saved for {email}")
             return True
         except Exception as e:
-            debug_log(f"❌ Error saving session: {e}")
+            debug_log(f"[ERROR] Error saving session: {e}")
             return False
     
     @staticmethod
@@ -72,63 +77,75 @@ class SessionManager:
         """
         try:
             if not SESSION_FILE.exists():
-                debug_log("⚠️ No saved session found")
+                debug_log("[WARN] No saved session found")
                 return None
-            
+             
             with open(SESSION_FILE, 'r') as f:
                 session_data = json.load(f)
+             
+            # Validate session key
+            if 'session_key' not in session_data:
+                debug_log("[WARN] Session file corrupted - missing session key")
+                SessionManager.clear_session()
+                return None
             
             # Validate required fields
             required_fields = ['email', 'access_token', 'refresh_token']
             if not all(field in session_data for field in required_fields):
-                debug_log("⚠️ Session file corrupted - missing required fields")
+                debug_log("[WARN] Session file corrupted - missing required fields")
                 SessionManager.clear_session()
                 return None
-            
-            debug_log(f"✅ Session loaded for {session_data['email']}")
+             
+            debug_log(f"[OK] Session loaded for {session_data.get('email', 'unknown')}")
             return session_data
-        except json.JSONDecodeError:
-            debug_log("❌ Session file corrupted - invalid JSON")
-            SessionManager.clear_session()
-            return None
         except Exception as e:
-            debug_log(f"❌ Error loading session: {e}")
+            debug_log(f"[ERROR] Error loading session: {e}")
             return None
     
     @staticmethod
     def clear_session():
-        """Clear saved session credentials"""
+        """Clear saved session"""
         try:
             if SESSION_FILE.exists():
                 SESSION_FILE.unlink()
-            debug_log("✅ Session cleared")
+                debug_log("[OK] Session cleared")
             return True
         except Exception as e:
-            debug_log(f"❌ Error clearing session: {e}")
+            debug_log(f"[ERROR] Error clearing session: {e}")
             return False
     
     @staticmethod
     def session_exists() -> bool:
-        """Check if a valid session file exists"""
+        """Check if session file exists"""
         return SESSION_FILE.exists()
     
     @staticmethod
-    def update_tokens(access_token: str, refresh_token: str) -> bool:
-        """Update tokens for existing session"""
+    def update_tokens(access_token: str = None, refresh_token: str = None):
+        """Update only tokens in existing session"""
         try:
-            session = SessionManager.load_session()
-            if not session:
-                debug_log("❌ No session to update")
+            if not SESSION_FILE.exists():
+                debug_log("[WARN] No session to update")
                 return False
             
-            session['access_token'] = access_token
-            session['refresh_token'] = refresh_token
+            with open(SESSION_FILE, 'r') as f:
+                session_data = json.load(f)
             
-            with open(SESSION_FILE, 'w') as f:
-                json.dump(session, f)
+            updated = False
+            if access_token:
+                session_data['access_token'] = access_token
+                updated = True
+            if refresh_token:
+                session_data['refresh_token'] = refresh_token
+                updated = True
             
-            debug_log("✅ Tokens updated")
-            return True
+            if updated:
+                with open(SESSION_FILE, 'w') as f:
+                    json.dump(session_data, f)
+                debug_log("[OK] Tokens updated")
+                return True
+            else:
+                debug_log("[INFO] No token updates provided")
+                return True
         except Exception as e:
-            debug_log(f"❌ Error updating tokens: {e}")
+            debug_log(f"[ERROR] Error updating tokens: {e}")
             return False

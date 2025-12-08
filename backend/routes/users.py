@@ -1,9 +1,15 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from fastapi import APIRouter, HTTPException, status, Depends
-from backend.models import UserResponse
-from backend.database import users_collection
-from backend.auth.utils import get_current_user
+from models import UserResponse
+from database import users_collection
+from auth.utils import get_current_user
 import asyncio
 from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -52,6 +58,123 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         quota_limit=user["quota_limit"],
         created_at=user["created_at"]
     )
+
+
+class ProfileUpdate(BaseModel):
+    """Profile update model"""
+    name: Optional[str] = None
+    username: Optional[str] = None
+    bio: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@router.put("/profile")
+async def update_profile(
+    profile_data: ProfileUpdate,
+    current_user: str = Depends(get_current_user)
+):
+    """Update current user's profile"""
+    try:
+        # Prepare update data
+        update_data = {}
+        if profile_data.name is not None:
+            update_data["name"] = profile_data.name
+        if profile_data.username is not None:
+            update_data["username"] = profile_data.username
+        if profile_data.bio is not None:
+            update_data["bio"] = profile_data.bio
+        if profile_data.phone is not None:
+            update_data["phone"] = profile_data.phone
+        
+        # Add updated timestamp
+        update_data["updated_at"] = datetime.utcnow()
+        
+        # Update user profile in database
+        result = await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {"$set": update_data}
+            ),
+            timeout=5.0
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        return {
+            "message": "Profile updated successfully",
+            "updated_fields": list(update_data.keys())
+        }
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update profile: {str(e)}"
+        )
+
+
+@router.get("/stats")
+async def get_user_stats(current_user: str = Depends(get_current_user)):
+    """Get current user's statistics"""
+    try:
+        # Get user data
+        user = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get message count from chats collection
+        from database import chats_collection, messages_collection
+        
+        # Count total messages sent by user
+        message_count = await asyncio.wait_for(
+            messages_collection().count_documents({"sender_id": current_user}),
+            timeout=5.0
+        )
+        
+        # Count files shared by user
+        from database import files_collection
+        file_count = await asyncio.wait_for(
+            files_collection().count_documents({"uploaded_by": current_user}),
+            timeout=5.0
+        )
+        
+        # Calculate storage usage
+        quota_used = user.get("quota_used", 0)
+        quota_limit = user.get("quota_limit", 1024 * 1024 * 1024)  # 1GB default
+        
+        return {
+            "messages_sent": message_count,
+            "files_shared": file_count,
+            "storage_used_mb": round(quota_used / (1024 * 1024), 2),
+            "storage_limit_mb": round(quota_limit / (1024 * 1024), 2),
+            "storage_percentage": round((quota_used / quota_limit) * 100, 1) if quota_limit > 0 else 0,
+            "account_created": user.get("created_at"),
+            "last_active": user.get("last_active", datetime.utcnow())
+        }
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch stats: {str(e)}"
+        )
 
 
 @router.get("/search")

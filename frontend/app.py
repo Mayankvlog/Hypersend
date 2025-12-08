@@ -13,8 +13,12 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 # Import API client
 from api_client import APIClient
 
+# Import error handler
+from error_handler import init_error_handler, handle_error, show_success, show_info
+
 # Import views (running as script, not package)
 from views.settings import SettingsView
+from views.profile import ProfileView
 from views.login import LoginView
 from views.chats import ChatsView
 from views.message_view import MessageView
@@ -73,8 +77,8 @@ except ImportError:
         @staticmethod
         def update_tokens(*args, **kwargs): return False
 
-# Default backend URL now points to your DigitalOcean VPS
-DEFAULT_DEV_URL = "http://139.59.82.105:8000"
+# Default backend URL - use localhost for development
+DEFAULT_DEV_URL = "http://localhost:8000"
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
 DEV_API_URL = os.getenv("API_BASE_URL", DEFAULT_DEV_URL).strip()
 
@@ -181,6 +185,8 @@ class ZaplyApp:
                 self.show_login()
         elif route.route == "/settings":
             self.show_settings()
+        elif route.route == "/profile":
+            self.show_profile()
         else:
             self.show_login()
     
@@ -274,7 +280,9 @@ class ZaplyApp:
                 refresh_token = saved_session.get('refresh_token', '')
                 self.current_user = saved_session.get('user_data', {})
                 # ✅ IMPORTANT: Set tokens in api_client so it can make authenticated requests
+                debug_log(f"[SESSION] Setting tokens in api_client - access_token present: {bool(self.token)}")
                 self.api_client.set_tokens(self.token, refresh_token)
+                debug_log(f"[SESSION] API client tokens set - access_token: {self.api_client.access_token[:20] if self.api_client.access_token else 'None'}...")
                 debug_log("[SESSION] ✅ Session restored successfully - user can skip login")
         except Exception as e:
             debug_log(f"[SESSION] Could not restore session: {e}")
@@ -444,7 +452,8 @@ class ZaplyApp:
                 login_btn.text = "Login"
             except Exception as ex:
                 debug_log(f"[LOGIN] Unexpected error: {type(ex).__name__}: {ex}")
-                error_text.value = f"❗ Error: {str(ex)}"
+                handle_error(ex, "Login process")
+                error_text.value = f"❗ Error: {str(ex)[:50]}"
                 error_text.visible = True
                 login_btn.disabled = False
                 login_btn.text = "Login"
@@ -1056,21 +1065,35 @@ class ZaplyApp:
         
         # AppBar
         appbar = ft.AppBar(
-            title=ft.Text("", weight=ft.FontWeight.BOLD),
+            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD),
             center_title=False,
             bgcolor=self.bg_light,
             actions=[
                 ft.IconButton(
                     icon=icons.SEARCH,
-                    on_click=lambda e: print("Search")
+                    tooltip="Search",
+                    on_click=lambda e: print("Search coming soon")
                 ),
                 ft.IconButton(
                     icon=icons.ADD,
+                    tooltip="New Chat",
                     on_click=lambda e: self.show_new_chat_dialog()
                 ),
-                ft.IconButton(
-                    icon=icons.SETTINGS,
-                    on_click=lambda e: self.page.go("/settings")
+                ft.PopupMenuButton(
+                    icon=icons.MORE_VERT,
+                    tooltip="More Options",
+                    items=[
+                        ft.PopupMenuItem(
+                            text="👤 Profile",
+                            icon=icons.PERSON,
+                            on_click=lambda e: self.page.go("/profile")
+                        ),
+                        ft.PopupMenuItem(
+                            text="⚙️ Settings",
+                            icon=icons.SETTINGS,
+                            on_click=lambda e: self.page.go("/settings")
+                        ),
+                    ]
                 )
             ]
         )
@@ -1114,10 +1137,6 @@ class ZaplyApp:
 
     def show_settings(self):
         """Show settings view"""
-        if not SettingsView:
-            debug_log("[SETTINGS] SettingsView not available")
-            return
-        
         try:
             debug_log("[SETTINGS] Opening settings view")
             settings_view = SettingsView(
@@ -1127,10 +1146,6 @@ class ZaplyApp:
                 on_logout=self.handle_logout,
                 on_back=lambda: self.page.go("/")
             )
-            
-            if settings_view is None:
-                debug_log("[SETTINGS] SettingsView returned None")
-                return
             
             debug_log(f"[SETTINGS] Settings view created: {type(settings_view)}")
             # Use page.views properly - clear first, then add
@@ -1143,6 +1158,29 @@ class ZaplyApp:
             debug_log(f"[SETTINGS] Error opening settings: {e}")
             debug_log(f"[SETTINGS] Traceback: {traceback.format_exc()}")
             print(f"Error opening settings: {e}")
+            print(traceback.format_exc())
+    
+    def show_profile(self):
+        """Show profile view"""
+        try:
+            debug_log("[PROFILE] Opening profile view")
+            profile_view = ProfileView(
+                page=self.page,
+                current_user=self.current_user,
+                on_back=lambda: self.page.go("/"),
+                api_client=self.api_client
+            )
+            
+            debug_log(f"[PROFILE] Profile view created: {type(profile_view)}")
+            self.page.views.clear()
+            self.page.views.append(profile_view)
+            self.page.update()
+            debug_log("[PROFILE] Profile view displayed")
+        except Exception as e:
+            import traceback
+            debug_log(f"[PROFILE] Error opening profile: {e}")
+            debug_log(f"[PROFILE] Traceback: {traceback.format_exc()}")
+            print(f"Error opening profile: {e}")
             print(traceback.format_exc())
 
     def show_chat(self, chat: dict, is_saved_messages: bool = False):
@@ -1687,6 +1725,9 @@ async def main(page: ft.Page):
     If anything goes wrong while building the first page, show a simple
     error screen instead of leaving the user on a blank white screen.
     """
+    # Initialize error handler first
+    error_handler = init_error_handler(page)
+    
     # Set page properties first
     page.title = "Zaply"
     # Set window icon to favicon.ico (Zaply Lightning + Z design)

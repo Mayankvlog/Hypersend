@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, validator
 from bson import ObjectId
+import re
 
 
 class PyObjectId(ObjectId):
@@ -25,6 +26,23 @@ class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(..., min_length=8)
+    
+    @validator('name')
+    def validate_name(cls, v):
+        # Remove any HTML tags and prevent XSS
+        if not v or not v.strip():
+            raise ValueError('Name cannot be empty')
+        # Remove HTML tags
+        v = re.sub(r'<[^>]*>', '', v)
+        # Remove potentially dangerous characters
+        v = re.sub(r'[<>"\']', '', v)
+        return v.strip()
+    
+    @validator('password')
+    def validate_password(cls, v):
+        if not v:
+            raise ValueError('Password cannot be empty')
+        return v
 
 
 class UserLogin(BaseModel):
@@ -118,6 +136,31 @@ class MessageCreate(BaseModel):
     file_id: Optional[str] = None
     # Optional language code for the message (e.g. "en", "hi")
     language: Optional[str] = None
+    
+    @validator('text')
+    def validate_text(cls, v):
+        if v is None:
+            return v
+        if not v.strip():
+            raise ValueError('Message text cannot be empty')
+        # Sanitize text to prevent XSS
+        # Remove HTML tags
+        v = re.sub(r'<[^>]*>', '', v)
+        # Remove potentially dangerous characters
+        v = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', v)
+        # Limit length to prevent DoS
+        if len(v) > 10000:
+            raise ValueError('Message text too long (max 10000 characters)')
+        return v.strip()
+    
+    @validator('language')
+    def validate_language(cls, v):
+        if v is None:
+            return v
+        # Only allow standard language codes
+        if not re.match(r'^[a-z]{2}(-[A-Z]{2})?$', v):
+            raise ValueError('Invalid language code format')
+        return v.lower()
 
 
 class MessageInDB(BaseModel):

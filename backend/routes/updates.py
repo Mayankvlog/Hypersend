@@ -1,6 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 from datetime import datetime
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 router = APIRouter(prefix="/updates", tags=["Updates"])
 
@@ -109,7 +112,7 @@ USER_ONLINE_STATUS = {}  # {user_id: {"last_seen": datetime, "is_online": bool}}
 
 
 from fastapi import Depends
-from backend.auth.utils import get_current_user
+from auth.utils import get_current_user
 
 
 @router.post("/typing")
