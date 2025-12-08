@@ -5,6 +5,11 @@ from bson import ObjectId
 from backend.models import ChatCreate, MessageCreate
 from backend.database import chats_collection, messages_collection
 from backend.auth.utils import get_current_user
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/chats", tags=["Chats"])
 
