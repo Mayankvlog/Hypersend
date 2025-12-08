@@ -168,9 +168,12 @@ class ZaplyApp:
         self.messages: list = []
         # Selected UI language (default English)
         self.language: str = "en"
+        # Dark mode state (default: light mode)
+        self.dark_mode: bool = False
         
         # Setup route handler
         self.page.on_route_change = self.route_change
+
         
         
     def route_change(self, route):
