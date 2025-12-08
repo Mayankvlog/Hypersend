@@ -138,10 +138,27 @@ class SavedMessagesView(ft.Container):
             messages = data.get("messages", [])
             
             if not messages:
+                # Show empty state
                 self.messages_list.controls.append(
-                    ft.Text("No saved messages yet", 
-                           text_align=ft.TextAlign.CENTER,
-                           opacity=0.6)
+                    ft.Column([
+                        ft.Icon(ft.Icons.BOOKMARK_BORDER, size=64, color=ft.Colors.BLUE_GREY_300),
+                        ft.Text(
+                            "No saved messages yet",
+                            size=18,
+                            weight=ft.FontWeight.W_500,
+                            text_align=ft.TextAlign.CENTER,
+                            color=ft.Colors.BLUE_GREY_400
+                        ),
+                        ft.Text(
+                            "Messages you save will appear here",
+                            size=12,
+                            text_align=ft.TextAlign.CENTER,
+                            color=ft.Colors.BLUE_GREY_300,
+                            opacity=0.7
+                        ),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20),
+                    alignment=ft.alignment.center,
+                    expand=True
                 )
             else:
                 for msg in messages:
@@ -153,9 +170,25 @@ class SavedMessagesView(ft.Container):
             print(f"Error loading saved messages: {e}")
             self.messages_list.controls.clear()
             self.messages_list.controls.append(
-                ft.Text(f"Error loading messages: {str(e)}", 
-                       text_align=ft.TextAlign.CENTER,
-                       color="red")
+                ft.Column([
+                    ft.Icon(ft.Icons.ERROR_OUTLINE, size=64, color=ft.Colors.RED_300),
+                    ft.Text(
+                        "Failed to load messages",
+                        size=16,
+                        weight=ft.FontWeight.W_500,
+                        text_align=ft.TextAlign.CENTER,
+                        color=ft.Colors.RED_400
+                    ),
+                    ft.Text(
+                        str(e)[:100],
+                        size=12,
+                        text_align=ft.TextAlign.CENTER,
+                        color=ft.Colors.RED_200,
+                        opacity=0.7
+                    ),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                alignment=ft.alignment.center,
+                expand=True
             )
             self.page.update()
     
