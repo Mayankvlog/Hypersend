@@ -1296,6 +1296,44 @@ class ZaplyApp:
             spacing=5
         )
         
+        # Share menu dialog with Photo, Document, File, Location options
+        def show_share_menu(e):
+            """Show share menu with options"""
+            menu = ft.PopupMenuButton(
+                items=[
+                    ft.PopupMenuItem(
+                        text="📸 Photo",
+                        on_click=lambda e: handle_share_photo()
+                    ),
+                    ft.PopupMenuItem(
+                        text="📄 Document",
+                        on_click=lambda e: handle_share_document()
+                    ),
+                    ft.PopupMenuItem(
+                        text="📁 File",
+                        on_click=pick_file
+                    ),
+                    ft.PopupMenuItem(
+                        text="📍 Location",
+                        on_click=lambda e: handle_share_location()
+                    ),
+                ]
+            )
+            self.page.open(menu)
+        
+        def handle_share_photo():
+            """Handle photo sharing"""
+            file_picker.pick_files(allow_multiple=False)
+        
+        def handle_share_document():
+            """Handle document sharing"""
+            file_picker.pick_files(allow_multiple=False)
+        
+        def handle_share_location():
+            """Handle location sharing"""
+            debug_log("[CHAT] Location sharing - feature coming soon")
+            # Future: integrate GPS location sharing
+        
         # Comprehensive emoji picker with categories
         def create_emoji_content():
             """Create tabbed emoji picker with 3000+ emojis"""
@@ -1463,9 +1501,9 @@ class ZaplyApp:
                                             # Location & Emoji
                                             ft.IconButton(
                                                 icon=icons.LOCATION_ON,
-                                                tooltip="Share Location (Coming Soon)",
+                                                tooltip="Share Location",
                                                 icon_size=20,
-                                                on_click=lambda e: print("Location sharing coming soon")
+                                                on_click=lambda e: show_share_menu(e)
                                             ),
                                             ft.IconButton(
                                                 icon=icons.EMOJI_EMOTIONS,

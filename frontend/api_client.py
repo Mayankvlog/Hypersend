@@ -265,7 +265,7 @@ class APIClient:
     async def get_saved_messages(self, limit: int = 50) -> Dict[str, Any]:
         """Get all saved messages"""
         response = await self.client.get(
-            f"{self.base_url}/api/v1/messages/saved",
+            f"{self.base_url}/api/v1/chats/saved",
             params={"limit": limit},
             headers=self._get_headers()
         )
