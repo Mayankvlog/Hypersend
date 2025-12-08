@@ -29,9 +29,20 @@ class SavedMessagesView(ft.Container):
             min_lines=1,
             max_lines=5,
             keyboard_type=ft.KeyboardType.TEXT,
-            autofocus=True,
+            autofocus=False,
             read_only=False,
             disabled=False,
+        )
+        
+        # File picker for uploads
+        self.file_picker = ft.FilePicker(on_result=lambda e: self.handle_file_upload(e))
+        page.overlay.append(self.file_picker)
+        
+        # Share menu button
+        self.share_btn = ft.IconButton(
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
+            tooltip="Share photo, file, document, or location",
+            on_click=lambda e: self.show_share_menu()
         )
         
         # Layout
@@ -64,18 +75,49 @@ class SavedMessagesView(ft.Container):
                 # Message input at bottom
                 ft.Divider(height=1),
                 ft.Container(
-                    content=ft.Row(
-                        [
-                            self.message_input,
+                    content=ft.Column([
+                        # Share button row (photo, document, file, location)
+                        ft.Row([
                             ft.IconButton(
-                                icon=ft.Icons.SEND,
-                                icon_color=ft.Colors.BLUE,
-                                tooltip="Send message",
-                                on_click=lambda e: self.page.run_task(self.send_message)
-                            )
-                        ],
-                        spacing=SPACING_SMALL
-                    ),
+                                icon=ft.Icons.PHOTO,
+                                tooltip="Upload Photo",
+                                icon_size=20,
+                                on_click=lambda e: self.pick_photo()
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.DESCRIPTION,
+                                tooltip="Share Document",
+                                icon_size=20,
+                                on_click=lambda e: self.pick_document()
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.ATTACH_FILE,
+                                tooltip="Upload File",
+                                icon_size=20,
+                                on_click=lambda e: self.pick_file()
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.LOCATION_ON,
+                                tooltip="Share Location",
+                                icon_size=20,
+                                on_click=lambda e: self.share_location()
+                            ),
+                            ft.Container(expand=True)
+                        ], spacing=5, height=40),
+                        # Message input row
+                        ft.Row(
+                            [
+                                self.message_input,
+                                ft.IconButton(
+                                    icon=ft.Icons.SEND,
+                                    icon_color=ft.Colors.BLUE,
+                                    tooltip="Send message",
+                                    on_click=lambda e: self.page.run_task(self.send_message)
+                                )
+                            ],
+                            spacing=SPACING_SMALL
+                        )
+                    ], spacing=5),
                     padding=SPACING_MEDIUM,
                     bgcolor=ft.Colors.WHITE
                 )
@@ -191,3 +233,57 @@ class SavedMessagesView(ft.Container):
             await self.load_saved_messages()
         except Exception as e:
             print(f"Error unsaving message: {e}")
+    
+    def show_share_menu(self):
+        """Show share menu with photo, document, file, location options"""
+        # Menu is shown via individual buttons below
+        pass
+    
+    def pick_photo(self):
+        """Open file picker for photo"""
+        self.file_picker.pick_files(
+            allowed_extensions=["jpg", "jpeg", "png", "gif", "webp"],
+            allow_multiple=False,
+            dialog_title="Select Photo"
+        )
+    
+    def pick_document(self):
+        """Open file picker for document"""
+        self.file_picker.pick_files(
+            allowed_extensions=["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"],
+            allow_multiple=False,
+            dialog_title="Select Document"
+        )
+    
+    def pick_file(self):
+        """Open file picker for any file"""
+        self.file_picker.pick_files(allow_multiple=False)
+    
+    def share_location(self):
+        """Share location (coming soon)"""
+        # Future: Integrate GPS location sharing
+        print("Location sharing - feature coming soon")
+    
+    async def handle_file_upload(self, e: ft.FilePickerResultEvent):
+        """Handle file upload from picker"""
+        if not e.files:
+            return
+        
+        try:
+            file = e.files[0]
+            # Future: Upload file to server
+            print(f"Selected file: {file.name}")
+            # For now, just add a note about the file to saved messages
+            saved_chat = await self.api_client.get_saved_chat()
+            chat_id = saved_chat.get("_id")
+            
+            if chat_id:
+                # Send a text message about the file
+                await self.api_client.send_message(
+                    chat_id=chat_id,
+                    text=f"📎 File: {file.name}"
+                )
+                await self.load_saved_messages()
+                self.page.update()
+        except Exception as e:
+            print(f"Error uploading file: {e}")
