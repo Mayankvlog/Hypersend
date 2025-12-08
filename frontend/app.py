@@ -1132,7 +1132,7 @@ class ZaplyApp:
         
         # Clear views and show saved messages
         self.page.views.clear()
-        self.page.views.append(ft.View("/saved", [saved_view]))
+        self.page.views.append(saved_view)
         self.page.update()
 
     def show_settings(self):
