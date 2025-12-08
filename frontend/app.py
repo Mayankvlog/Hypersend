@@ -265,16 +265,6 @@ class ZaplyApp:
             debug_log(f"[LANG] Selected UI language: {self.language}")
             self.page.update()
         
-        language_dropdown = ft.Dropdown(
-            label="Language",
-            value=self.language,
-            options=[
-                ft.dropdown.Option(code, label) for code, label in LANGUAGES
-            ],
-            on_change=on_language_change,
-            width=300,
-        )
-        
         email_field = ft.TextField(
             label="Email",
             autofocus=True,
@@ -567,8 +557,6 @@ class ZaplyApp:
                                 ),
                                 padding=20,
                             ),
-                            ft.Container(height=10),
-                            language_dropdown,
                             ft.Container(height=10),
                             email_field,
                             username_field,
