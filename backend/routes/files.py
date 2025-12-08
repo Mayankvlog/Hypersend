@@ -2,6 +2,7 @@ import hashlib
 import uuid
 import json
 import math
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Header
@@ -14,6 +15,10 @@ from backend.models import (
 from backend.database import files_collection, uploads_collection, users_collection
 from backend.auth.utils import get_current_user
 from backend.config import settings
+
+# Setup logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
