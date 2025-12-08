@@ -1397,7 +1397,7 @@ class ZaplyApp:
             min_lines=1,
             max_lines=5,
             keyboard_type=ft.KeyboardType.TEXT,
-            autofocus=True,  # Auto-focus when entering chat
+            autofocus=False,  # Flet Views don't handle autofocus well, use focus() instead
             read_only=False,  # Ensure it's writable
             disabled=False,  # Ensure it's enabled
             text_vertical_align=ft.TextVerticalAlign.TOP
