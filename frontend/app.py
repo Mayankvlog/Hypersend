@@ -1397,7 +1397,10 @@ class ZaplyApp:
             min_lines=1,
             max_lines=5,
             keyboard_type=ft.KeyboardType.TEXT,
-            autofocus=False  # Don't auto-focus on open
+            autofocus=True,  # Auto-focus when entering chat
+            read_only=False,  # Ensure it's writable
+            disabled=False,  # Ensure it's enabled
+            text_vertical_align=ft.TextVerticalAlign.TOP
         )
         
         async def send_message(e):
