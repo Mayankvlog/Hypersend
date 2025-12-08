@@ -22,8 +22,19 @@ else:
     # Desktop/iOS: Use home directory
     config_dir = Path.home() / ".zaply"
 
-# Ensure config directory exists
-config_dir.mkdir(parents=True, exist_ok=True)
+# Ensure config directory exists with proper error handling
+try:
+    config_dir.mkdir(parents=True, exist_ok=True)
+except PermissionError:
+    # Fallback to temp directory if home directory not writable
+    import tempfile
+    config_dir = Path(tempfile.gettempdir()) / "zaply"
+    config_dir.mkdir(exist_ok=True)
+except Exception as e:
+    print(f"[SESSION] Warning: Could not create config directory: {e}")
+    config_dir = Path.cwd() / "sessions"
+    config_dir.mkdir(exist_ok=True)
+
 SESSION_FILE = config_dir / "session.json"
 
 

@@ -1,49 +1,36 @@
+"""
+API Client for Zaply Backend
+Handles HTTP requests to the FastAPI backend with proper error handling and token management.
+"""
+
 import httpx
+import asyncio
+import sys
 import os
 from typing import Optional, Dict, Any
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Add current directory to sys.path for imports
+sys.path.insert(0, os.path.dirname(__file__))
 
-# Backend API URL - configurable via environment variables
-# Priority: PRODUCTION_API_URL (for VPS/domain) > API_BASE_URL (for dev/docker)
-# IMPORTANT: Do NOT include /api/v1 suffix - endpoints add it automatically
-#
-# Development examples:
-#   API_BASE_URL=http://backend:8000         
-#   API_BASE_URL=http://localhost:8000
-#
-PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
-DEV_API_URL = os.getenv("API_BASE_URL", "http://localhost:8000").strip()
-
-# Select final base URL
-if PRODUCTION_API_URL:
-    API_BASE_URL = PRODUCTION_API_URL
-else:
-    API_BASE_URL = DEV_API_URL
-
-# Security: Warn if no production URL is set
-if not PRODUCTION_API_URL and not DEV_API_URL:
-    print("[WARNING] No API URL configured. Please set PRODUCTION_API_URL or API_BASE_URL environment variable.")
-
-# Debug mode
-DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+# Import error handler
+from error_handler import init_error_handler, handle_error, show_success, show_info
 
 def debug_log(msg: str):
     """Log debug messages only when DEBUG is enabled"""
+    DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
     if DEBUG:
         print(msg)
 
-
 class APIClient:
-    def __init__(self):
-        self.base_url = API_BASE_URL
+    """HTTP client for Zaply backend API"""
+    
+    def __init__(self, base_url: str):
+        self.base_url = base_url.rstrip('/')
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
-        self._refreshing = False  # Prevent simultaneous refresh attempts
-        # Optimized timeout and connection pooling for production VPS
-        # HTTP/2 requires 'h2' package: pip install httpx[http2]
+        self._refreshing = False
+        
+        # Initialize HTTP client with HTTP/2 support and better performance
         try:
             self.client = httpx.AsyncClient(
                 timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
@@ -73,24 +60,32 @@ class APIClient:
         headers = {"Content-Type": "application/json"}
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
+            debug_log(f"[API] Using access token: {self.access_token[:20]}...")
+        else:
+            debug_log("[API] No access token available")
         return headers
     
     async def refresh_access_token(self) -> bool:
         """
-        Refresh the access token using the refresh token.
+        Refresh access token using refresh token.
         Returns True if successful, False otherwise.
         """
         if self._refreshing or not self.refresh_token:
+            debug_log(f"[API] Cannot refresh - refreshing: {self._refreshing}, has refresh_token: {bool(self.refresh_token)}")
             return False
         
         self._refreshing = True
         try:
             debug_log("[API] Attempting to refresh access token...")
+            debug_log(f"[API] Using refresh token: {self.refresh_token[:20]}...")
+            
             response = await self.client.post(
                 f"{self.base_url}/api/v1/auth/refresh",
                 json={"refresh_token": self.refresh_token},
                 timeout=30.0
             )
+            
+            debug_log(f"[API] Refresh response status: {response.status_code}")
             
             if response.status_code == 200:
                 data = response.json()
@@ -100,8 +95,17 @@ class APIClient:
                     self.set_tokens(new_access_token, new_refresh_token)
                     debug_log("[API] ✅ Token refreshed successfully")
                     return True
+                else:
+                    debug_log("[API] Refresh response missing access_token")
+                    self.clear_tokens()
+                    return False
             else:
                 debug_log(f"[API] Token refresh failed with status {response.status_code}")
+                try:
+                    error_data = response.json()
+                    debug_log(f"[API] Refresh error: {error_data}")
+                except:
+                    debug_log(f"[API] Refresh error text: {response.text}")
                 self.clear_tokens()
                 return False
         except Exception as e:
@@ -120,7 +124,7 @@ class APIClient:
                 f"{self.base_url}/api/v1/auth/register",
                 json={"name": name, "email": email, "password": password}
             )
-
+            
             # Treat non-201 as error and surface backend detail when possible
             if response.status_code != 201:
                 try:
@@ -130,7 +134,7 @@ class APIClient:
                     detail = response.text[:200]
                 debug_log(f"[API] Register failed ({response.status_code}): {detail}")
                 raise Exception(f"Registration failed ({response.status_code}): {detail}")
-
+            
             try:
                 return response.json()
             except Exception:
@@ -164,41 +168,90 @@ class APIClient:
                     error_detail = error_data.get("detail", str(error_data))
                 except Exception:
                     error_detail = response.text[:200]
-                debug_log(f"[API] Login failed: {error_detail}")
-                raise httpx.HTTPStatusError(
-                    f"Login failed: {error_detail}",
-                    request=response.request,
-                    response=response
-                )
+                debug_log(f"[API] Login failed ({response.status_code}): {error_detail}")
+                raise Exception(f"Login failed: {error_detail}")
             
             data = response.json()
-            self.set_tokens(data["access_token"], data["refresh_token"])
-            debug_log("[API] Login successful")
-            return data
+            access_token = data.get("access_token")
+            refresh_token = data.get("refresh_token")
+            
+            if access_token and refresh_token:
+                self.set_tokens(access_token, refresh_token)
+                debug_log("[API] ✅ Login successful, tokens stored")
+                return data
+            else:
+                debug_log("[API] Login response missing tokens")
+                raise Exception("Invalid response from server")
+                
         except httpx.TimeoutException as e:
             debug_log(f"[API] Login timeout: {e}")
             raise Exception("Request timeout. Please check your internet connection.")
         except httpx.ConnectError as e:
-            debug_log(f"[API] Connection error: {e}")
+            debug_log(f"[API] Login connection error: {e}")
             raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
-        except httpx.HTTPStatusError as e:
-            raise Exception(str(e))
         except Exception as e:
-            debug_log(f"[API] Unexpected error during login: {type(e).__name__}: {e}")
-            raise Exception(f"Login failed: {str(e)}")
+            debug_log(f"[API] Login error: {e}")
+            raise Exception(str(e))
     
-    async def logout(self):
-        """Logout"""
-        if self.refresh_token:
-            try:
-                await self.client.post(
-                    f"{self.base_url}/api/v1/auth/logout",
-                    json={"refresh_token": self.refresh_token},
-                    headers=self._get_headers()
-                )
-            except Exception:
-                pass
-        self.clear_tokens()
+    async def logout(self) -> bool:
+        """Logout and clear tokens"""
+        try:
+            debug_log("[API] Attempting logout")
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/auth/logout",
+                headers=self._get_headers()
+            )
+            
+            # Always clear local tokens regardless of server response
+            self.clear_tokens()
+            debug_log("[API] ✅ Logged out, tokens cleared")
+            return True
+            
+        except Exception as e:
+            debug_log(f"[API] Logout error: {e}")
+            # Still clear local tokens on error
+            self.clear_tokens()
+            return False
+    
+    async def forgot_password(self, email: str) -> Dict[str, Any]:
+        """Request password reset"""
+        try:
+            debug_log(f"[API] Requesting password reset for {email}")
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/auth/forgot-password",
+                json={"email": email}
+            )
+            
+            if response.status_code == 200:
+                debug_log("[API] ✅ Password reset request sent")
+                return {"message": "Password reset email sent"}
+            else:
+                debug_log(f"[API] Password reset failed: {response.status_code}")
+                raise Exception("Failed to send password reset email")
+                
+        except Exception as e:
+            debug_log(f"[API] Password reset error: {e}")
+            raise Exception(str(e))
+    
+    async def reset_password(self, token: str, new_password: str) -> Dict[str, Any]:
+        """Reset password with token"""
+        try:
+            debug_log("[API] Resetting password")
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/auth/reset-password",
+                json={"token": token, "new_password": new_password}
+            )
+            
+            if response.status_code == 200:
+                debug_log("[API] ✅ Password reset successful")
+                return {"message": "Password reset successful"}
+            else:
+                debug_log(f"[API] Password reset failed: {response.status_code}")
+                raise Exception("Failed to reset password")
+                
+        except Exception as e:
+            debug_log(f"[API] Password reset error: {e}")
+            raise Exception(str(e))
     
     # User endpoints
     async def get_current_user(self) -> Dict[str, Any]:
@@ -228,36 +281,61 @@ class APIClient:
     
     async def search_users(self, query: str) -> Dict[str, Any]:
         """Search users"""
-        response = await self.client.get(
-            f"{self.base_url}/api/v1/users/search",
-            params={"q": query},
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/users/search",
+                params={"q": query},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            debug_log(f"[API] Search users error: {e}")
+            raise Exception(f"Search failed: {str(e)}")
     
     # Chat endpoints
-    async def create_chat(self, member_ids: list, chat_type: str = "private", name: Optional[str] = None) -> Dict[str, Any]:
-        """Create a new chat"""
-        response = await self.client.post(
-            f"{self.base_url}/api/v1/chats",
-            json={"type": chat_type, "name": name, "member_ids": member_ids},
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
-    
     async def list_chats(self) -> Dict[str, Any]:
         """List all chats"""
-        response = await self.client.get(
-            f"{self.base_url}/api/v1/chats",
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
-
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/chats",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            debug_log(f"[API] List chats error: {e}")
+            raise Exception(f"Failed to load chats: {str(e)}")
+    
+    async def get_chat(self, chat_id: str) -> Dict[str, Any]:
+        """Get chat details"""
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/chats/{chat_id}",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            debug_log(f"[API] Get chat error: {e}")
+            raise Exception(f"Failed to load chat: {str(e)}")
+    
+    async def create_chat(self, name: str, user_ids: list, chat_type: str = "private") -> Dict[str, Any]:
+        """Create a new chat"""
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/chats",
+                json={"name": name, "member_ids": user_ids, "type": chat_type},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            debug_log(f"[API] Create chat error: {e}")
+            raise Exception(f"Failed to create chat: {str(e)}")
+    
     async def get_saved_chat(self) -> Dict[str, Any]:
-        """Get or create the Saved Messages chat for current user"""
+        """Get or create a Saved Messages chat for current user"""
         try:
             response = await self.client.get(
                 f"{self.base_url}/api/v1/chats/saved",
@@ -276,16 +354,35 @@ class APIClient:
                     response.raise_for_status()
                     return response.json()
             raise
+        except Exception as e:
+            debug_log(f"[API] Get saved chat error: {e}")
+            raise Exception(f"Failed to load saved messages: {str(e)}")
     
     async def get_messages(self, chat_id: str, limit: int = 50) -> Dict[str, Any]:
         """Get messages in a chat"""
-        response = await self.client.get(
-            f"{self.base_url}/api/v1/chats/{chat_id}/messages",
-            params={"limit": limit},
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/chats/{chat_id}/messages",
+                params={"limit": limit},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and self.refresh_token:
+                # Try to refresh token and retry once
+                if await self.refresh_access_token():
+                    response = await self.client.get(
+                        f"{self.base_url}/api/v1/chats/{chat_id}/messages",
+                        params={"limit": limit},
+                        headers=self._get_headers()
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            raise
+        except Exception as e:
+            debug_log(f"[API] Get messages error: {e}")
+            raise Exception(f"Failed to load messages: {str(e)}")
     
     async def send_message(self, chat_id: str, text: Optional[str] = None, file_id: Optional[str] = None) -> Dict[str, Any]:
         """Send a message"""
@@ -309,37 +406,10 @@ class APIClient:
                     response.raise_for_status()
                     return response.json()
             raise
-
-    async def save_message(self, message_id: str) -> Dict[str, Any]:
-        """Save a message to Saved Messages"""
-        response = await self.client.post(
-            f"{self.base_url}/api/v1/messages/{message_id}/save",
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
-
-    async def unsave_message(self, message_id: str) -> Dict[str, Any]:
-        """Unsave a message from Saved Messages"""
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/api/v1/messages/{message_id}/unsave",
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401 and self.refresh_token:
-                # Try to refresh token and retry once
-                if await self.refresh_access_token():
-                    response = await self.client.post(
-                        f"{self.base_url}/api/v1/messages/{message_id}/unsave",
-                        headers=self._get_headers()
-                    )
-                    response.raise_for_status()
-                    return response.json()
-            raise
-
+        except Exception as e:
+            debug_log(f"[API] Send message error: {e}")
+            raise Exception(f"Failed to send message: {str(e)}")
+    
     async def get_saved_messages(self, limit: int = 50) -> Dict[str, Any]:
         """Get all saved messages"""
         try:
@@ -362,17 +432,48 @@ class APIClient:
                     response.raise_for_status()
                     return response.json()
             raise
+        except Exception as e:
+            debug_log(f"[API] Get saved messages error: {e}")
+            raise Exception(f"Failed to load saved messages: {str(e)}")
+    
+    async def unsave_message(self, message_id: str) -> Dict[str, Any]:
+        """Unsave a message from Saved Messages"""
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/chats/messages/{message_id}/unsave",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and self.refresh_token:
+                # Try to refresh token and retry once
+                if await self.refresh_access_token():
+                    response = await self.client.post(
+                        f"{self.base_url}/api/v1/chats/messages/{message_id}/unsave",
+                        headers=self._get_headers()
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            raise
+        except Exception as e:
+            debug_log(f"[API] Unsave message error: {e}")
+            raise Exception(f"Failed to unsave message: {str(e)}")
     
     # File endpoints
     async def init_upload(self, filename: str, size: int, mime: str, chat_id: str, checksum: Optional[str] = None) -> Dict[str, Any]:
-        """Initialize file upload"""
-        response = await self.client.post(
-            f"{self.base_url}/api/v1/files/init",
-            json={"filename": filename, "size": size, "mime": mime, "chat_id": chat_id, "checksum": checksum},
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
+        """Initialize a resumable file upload"""
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/files/init",
+                json={"filename": filename, "size": size, "mime": mime, "chat_id": chat_id, "checksum": checksum},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            debug_log(f"[API] Init upload error: {e}")
+            raise Exception(f"Failed to initialize upload: {str(e)}")
     
     async def upload_chunk(self, upload_id: str, chunk_index: int, chunk_data: bytes, checksum: Optional[str] = None) -> Dict[str, Any]:
         """Upload a single chunk"""
@@ -398,116 +499,35 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
-    async def cancel_upload(self, upload_id: str):
-        """Cancel file upload"""
-        await self.client.post(
-            f"{self.base_url}/api/v1/files/{upload_id}/cancel",
-            headers=self._get_headers()
-        )
-    
-    def get_download_url(self, file_id: str) -> str:
-        """Get file download URL"""
-        return f"{self.base_url}/api/v1/files/{file_id}/download"
-    
-    # Password Reset endpoints
-    async def forgot_password(self, email: str) -> Dict[str, Any]:
-        """Request password reset token"""
+    async def get_file_info(self, file_id: str) -> Dict[str, Any]:
+        """Get file information"""
         try:
-            response = await self.client.post(
-                f"{self.base_url}/api/v1/auth/forgot-password",
-                json={"email": email}
-            )
-
-            if response.status_code != 200:
-                try:
-                    error_data = response.json()
-                    detail = error_data.get("detail", str(error_data))
-                except Exception:
-                    detail = response.text[:200]
-                raise Exception(f"Password reset request failed ({response.status_code}): {detail}")
-
-            try:
-                return response.json()
-            except Exception:
-                # Fallback if response is not JSON for some reason
-                return {"message": response.text or "Password reset request processed."}
-        except httpx.TimeoutException:
-            raise Exception("Request timeout. Please check your internet connection.")
-        except httpx.ConnectError:
-            raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
-        except Exception as e:
-            raise Exception(str(e))
-    
-    async def reset_password(self, token: str, new_password: str) -> Dict[str, Any]:
-        """Reset password with token"""
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/api/v1/auth/reset-password",
-                json={"token": token, "new_password": new_password}
-            )
-
-            if response.status_code != 200:
-                try:
-                    error_data = response.json()
-                    detail = error_data.get("detail", str(error_data))
-                except Exception:
-                    detail = response.text[:200]
-                raise Exception(f"Password reset failed ({response.status_code}): {detail}")
-
-            try:
-                return response.json()
-            except Exception:
-                return {"message": response.text or "Password reset successful."}
-        except httpx.TimeoutException:
-            raise Exception("Request timeout. Please check your internet connection.")
-        except httpx.ConnectError:
-            raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
-        except Exception as e:
-            raise Exception(str(e))
-    
-    # Permissions endpoints
-    async def get_permissions(self) -> Dict[str, bool]:
-        """Get current user's permissions"""
-        try:
-            debug_log(f"[API] Fetching permissions from {self.base_url}/api/v1/users/permissions")
             response = await self.client.get(
-                f"{self.base_url}/api/v1/users/permissions",
+                f"{self.base_url}/api/v1/files/{file_id}",
                 headers=self._get_headers()
             )
-            
-            if response.status_code != 200:
-                debug_log(f"[API] Failed to get permissions: {response.status_code}")
-                return {}
-            
+            response.raise_for_status()
             return response.json()
         except Exception as e:
-            debug_log(f"[API] Error fetching permissions: {e}")
-            return {}
+            debug_log(f"[API] Get file info error: {e}")
+            raise Exception(f"Failed to get file info: {str(e)}")
     
-    async def update_permissions(self, permissions: Dict[str, bool]) -> Dict[str, Any]:
-        """Update user's permissions"""
+    async def download_file(self, file_id: str, output_path: str) -> bool:
+        """Download a file"""
         try:
-            debug_log(f"[API] Updating permissions to {self.base_url}/api/v1/users/permissions")
-            response = await self.client.put(
-                f"{self.base_url}/api/v1/users/permissions",
-                json=permissions,
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/files/{file_id}/download",
                 headers=self._get_headers()
             )
+            response.raise_for_status()
             
-            if response.status_code not in [200, 201]:
-                error_detail = "Unknown error"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", str(error_data))
-                except Exception:
-                    error_detail = response.text[:200]
-                debug_log(f"[API] Update permissions failed: {error_detail}")
-                raise Exception(f"Failed to update permissions: {error_detail}")
+            # Save file
+            with open(output_path, 'wb') as f:
+                async for chunk in response.aiter_bytes():
+                    f.write(chunk)
             
-            return response.json()
-        except httpx.TimeoutException:
-            raise Exception("Request timeout. Please check your internet connection.")
-        except httpx.ConnectError:
-            raise Exception(f"Cannot connect to server at {self.base_url}. Server might be down.")
+            debug_log(f"[API] ✅ File downloaded to {output_path}")
+            return True
         except Exception as e:
-            raise Exception(str(e))
+            debug_log(f"[API] Download file error: {e}")
+            raise Exception(f"Failed to download file: {str(e)}")
