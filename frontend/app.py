@@ -1279,16 +1279,8 @@ class ZaplyApp:
         
         self.page.dialog = emoji_dialog
         
-        # Language selector for composing messages in this chat
-        chat_language_dropdown = ft.Dropdown(
-            value=self.language,
-            width=100,
-            options=[ft.dropdown.Option(code, label) for code, label in LANGUAGES],
-            on_change=lambda e: setattr(self, "language", e.control.value or "en"),
-        )
-        
         message_input = ft.TextField(
-            hint_text="Type a message...",
+            hint_text="Write a message...",
             border=ft.InputBorder.NONE,
             filled=True,
             expand=True,
@@ -1305,9 +1297,7 @@ class ZaplyApp:
                 response = await self.client.post(
                     f"/api/v1/chats/{chat['_id']}/messages",
                     json={
-                        "text": message_input.value,
-                        # Pass selected language code to backend
-                        "language": self.language,
+                        "text": message_input.value
                     }
                 )
                 
@@ -1361,10 +1351,9 @@ class ZaplyApp:
                         ft.Container(
                             content=ft.Column(
                                 [
-                                    # Language and action buttons row
+                                    # Action buttons row
                                     ft.Row(
                                         [
-                                            chat_language_dropdown,
                                             # File & Image uploads
                                             ft.IconButton(
                                                 icon=icons.INSERT_PHOTO,
