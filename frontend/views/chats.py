@@ -360,10 +360,33 @@ class ChatsView(ft.View):
             show_error("Error", "Could not open saved messages")
     
     def open_chat(self, chat: dict):
-        """Open a specific chat"""
+        """Open a specific chat with full messaging interface"""
         debug_log(f"[CHATS] Opening chat: {chat.get('name', 'Unknown')}")
-        # TODO: Implement chat opening
-        print("Chat opening feature coming soon")
+        try:
+            from views.message_view import MessageView
+            
+            message_view = MessageView(
+                page=self.page,
+                api_client=self.api_client,
+                chat=chat,
+                current_user=self.current_user.get("id", self.current_user.get("_id", "")),
+                on_back=lambda: self.page.run_task(self.return_to_chats),
+                dark_mode=False
+            )
+            
+            self.page.clean()
+            self.page.views.append(message_view)
+            self.page.update()
+        except Exception as e:
+            debug_log(f"[CHATS] Error opening chat: {e}")
+            print(f"Error opening chat: {e}")
+    
+    async def return_to_chats(self):
+        """Return to chats list after closing a chat"""
+        self.page.views.pop()
+        self.build_ui()
+        await self.load_chats()
+
     
     def new_chat(self, e):
         """Start new chat"""
