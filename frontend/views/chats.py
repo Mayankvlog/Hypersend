@@ -524,10 +524,14 @@ class ChatsView(ft.View):
                 continue
                 
             chat_name = chat.get("name") or ("Group Chat" if chat.get("type") == "group" else "Private Chat")
-            avatar = (
-                ft.Icon(icons.GROUP, size=40)
-                if chat.get("type") == "group"
-                else ft.CircleAvatar(
+            
+            # Determine avatar based on chat type
+            if chat.get("type") == "group":
+                avatar = ft.Icon(icons.GROUP, size=40)
+            elif chat.get("type") == "channel":
+                avatar = ft.Icon(icons.CAMPAIGN, size=40)
+            else:
+                avatar = ft.CircleAvatar(
                     content=ft.Text(
                         (chat_name or "?")[0].upper(),
                         size=20,
@@ -535,7 +539,6 @@ class ChatsView(ft.View):
                     ),
                     bgcolor=self.primary_color
                 )
-            )
             
             last_message_text = (chat.get("last_message") or {}).get("text", "No messages yet")
             
