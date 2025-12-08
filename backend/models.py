@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from bson import ObjectId
 import re
 
@@ -27,7 +27,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
     
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_name(cls, v):
         # Remove any HTML tags and prevent XSS
         if not v or not v.strip():
@@ -38,7 +39,8 @@ class UserCreate(BaseModel):
         v = re.sub(r'[<>"\']', '', v)
         return v.strip()
     
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v):
         if not v:
             raise ValueError('Password cannot be empty')
@@ -51,6 +53,8 @@ class UserLogin(BaseModel):
 
 
 class UserInDB(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     name: str
     email: EmailStr
@@ -66,10 +70,6 @@ class UserInDB(BaseModel):
         "phone": False,
         "storage": False
     })
-
-    class Config:
-        populate_by_name = True
-        json_encoders = {ObjectId: str}
 
 
 class UserResponse(BaseModel):
@@ -120,14 +120,13 @@ class ChatCreate(BaseModel):
 
 
 class ChatInDB(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     type: str
     name: Optional[str] = None
     members: List[str]
     created_at: datetime = Field(default_factory=datetime.utcnow)
-
-    class Config:
-        populate_by_name = True
 
 
 # Message Models
@@ -137,7 +136,8 @@ class MessageCreate(BaseModel):
     # Optional language code for the message (e.g. "en", "hi")
     language: Optional[str] = None
     
-    @validator('text')
+    @field_validator('text')
+    @classmethod
     def validate_text(cls, v):
         if v is None:
             return v
@@ -153,7 +153,8 @@ class MessageCreate(BaseModel):
             raise ValueError('Message text too long (max 10000 characters)')
         return v.strip()
     
-    @validator('language')
+    @field_validator('language')
+    @classmethod
     def validate_language(cls, v):
         if v is None:
             return v
@@ -164,6 +165,8 @@ class MessageCreate(BaseModel):
 
 
 class MessageInDB(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     chat_id: str
     sender_id: str
@@ -174,9 +177,6 @@ class MessageInDB(BaseModel):
     language: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     saved_by: List[str] = []  # List of user IDs who saved this message
-
-    class Config:
-        populate_by_name = True
 
 
 # File Models
@@ -211,6 +211,8 @@ class FileCompleteResponse(BaseModel):
 
 
 class FileInDB(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     upload_id: str
     file_uuid: str
@@ -224,11 +226,10 @@ class FileInDB(BaseModel):
     status: str = "pending"  # pending, completed, failed
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
-
 
 class UploadInDB(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     upload_id: str = Field(default_factory=lambda: str(ObjectId()))
     owner_id: str
     filename: str
@@ -241,6 +242,3 @@ class UploadInDB(BaseModel):
     checksum: Optional[str] = None
     expires_at: datetime
     created_at: datetime = Field(default_factory=datetime.utcnow)
-
-    class Config:
-        populate_by_name = True
