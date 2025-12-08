@@ -695,28 +695,81 @@ class SettingsView(ft.View):
         self.page.update()
     
     def show_about(self, e):
-        """Show about dialog"""
+        """Show about dialog with comprehensive Zaply features"""
+        
+        # Feature sections
+        messaging_features = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(icons.MESSAGE, color=self.primary_color, size=24),
+                    ft.Text("Messaging", weight=ft.FontWeight.BOLD, size=16)
+                ], spacing=10),
+                ft.Text("• Send text, formatted text, photos, videos & files up to 40 GB", size=13),
+                ft.Text("• Edit messages up to 48 hours (shows 'edited' icon)", size=13),
+                ft.Text("• Delete messages & chats for both sides without trace", size=13),
+            ], spacing=5),
+            padding=10
+        )
+        
+        encryption_features = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(icons.SECURITY, color=colors.GREEN, size=24),
+                    ft.Text("Encryption", weight=ft.FontWeight.BOLD, size=16)
+                ], spacing=10),
+                ft.Text("Cloud Chats:", weight=ft.FontWeight.W_600, size=13),
+                ft.Text("• MTProto 2.0 protocol with AES-256 encryption", size=12),
+                ft.Text("• SHA-256 hashing & Diffie-Hellman key exchange", size=12),
+                ft.Container(height=5),
+                ft.Text("Secret Chats (E2EE):", weight=ft.FontWeight.W_600, size=13),
+                ft.Text("• End-to-end encrypted - only you & recipient have keys", size=12),
+                ft.Text("• 256-bit AES + 2048-bit RSA encryption", size=12),
+                ft.Text("• Not stored on servers, no forwarding allowed", size=12),
+                ft.Text("• Self-destructing messages supported", size=12),
+            ], spacing=3),
+            padding=10,
+            bgcolor=colors.with_opacity(0.1, colors.GREEN)
+        )
+        
+        privacy_features = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(icons.PRIVACY_TIP, color=colors.BLUE, size=24),
+                    ft.Text("Privacy & Control", weight=ft.FontWeight.BOLD, size=16)
+                ], spacing=10),
+                ft.Text("• Complete control over your messages", size=13),
+                ft.Text("• Delete for everyone without leaving traces", size=13),
+                ft.Text("• Message edit history visible with icon", size=13),
+                ft.Text("• Self-destructing messages in secret chats", size=13),
+            ], spacing=5),
+            padding=10
+        )
+        
         dialog = ft.AlertDialog(
-            title=ft.Text("About Zaply"),
-            content=ft.Column(
-                [
-                    ft.Text("Zaply v1.0.0", weight=ft.FontWeight.BOLD),
-                    ft.Text("Fast Chat & File Sharing"),
-                    ft.Text("Made with ❤️ for seamless communication"),
-                    ft.Container(height=10),
-                    ft.Text("© 2025 Zaply Inc.", size=12, color=self.text_secondary)
-                ],
-                tight=True,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER
+            title=ft.Row([
+                ft.Icon(icons.INFO, color=self.primary_color),
+                ft.Text("About Zaply", weight=ft.FontWeight.BOLD)
+            ], spacing=10),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Zaply v1.0.0", weight=ft.FontWeight.BOLD, size=18, color=self.primary_color),
+                    ft.Text("Fast, Secure Chat & File Sharing", size=14),
+                    ft.Divider(),
+                    messaging_features,
+                    encryption_features,
+                    privacy_features,
+                    ft.Divider(),
+                    ft.Text("© 2025 Zaply Inc.", size=12, color=self.text_secondary, text_align=ft.TextAlign.CENTER)
+                ], spacing=5, scroll=ft.ScrollMode.AUTO),
+                width=350,
+                height=450
             ),
             actions=[
-                ft.TextButton("OK", on_click=lambda e: setattr(dialog, 'open', False))
+                ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))
             ]
         )
         
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.page.open(dialog)
     
     def confirm_logout(self, e):
         """Confirm logout"""
