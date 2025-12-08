@@ -250,7 +250,7 @@ class ZaplyApp:
             )
         
         # Create API client (for views that need proper API methods)
-        self.api_client = APIClient()
+        self.api_client = APIClient(base_url=API_URL)
         
         # Perform initial backend health check
         try:
@@ -1821,7 +1821,7 @@ if __name__ == "__main__":
     
     # Launch Flet app with proper configuration
     ft.app(
-        target=main, 
+        target=main,
         name="Zaply",
         assets_dir=assets_path,
         web_renderer="html",

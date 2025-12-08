@@ -82,28 +82,28 @@ class ChatsView(ft.View):
             title=ft.Text("Chats", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
             bgcolor=self.bg_color,
             leading=ft.IconButton(
-                icon=ft.icons.ARROW_BACK,
+                icon=ft.Icons.ARROW_BACK,
                 icon_color=ft.colors.BLACK,
                 on_click=lambda e: self.go_back()
             ),
             actions=[
                 ft.IconButton(
-                    icon=ft.icons.SEARCH,
+                    icon=ft.Icons.SEARCH,
                     tooltip="Search",
                     on_click=lambda e: print("Search coming soon")
                 ),
                 ft.PopupMenuButton(
-                    icon=ft.icons.MORE_VERT,
+                    icon=ft.Icons.MORE_VERT,
                     tooltip="More Options",
                     items=[
                         ft.PopupMenuItem(
                             text="👤 Profile",
-                            icon=ft.icons.PERSON,
+                            icon=ft.Icons.PERSON,
                             on_click=lambda e: self.page.go("/profile")
                         ),
                         ft.PopupMenuItem(
                             text="⚙️ Settings",
-                            icon=ft.icons.SETTINGS,
+                            icon=ft.Icons.SETTINGS,
                             on_click=lambda e: self.page.go("/settings")
                         ),
                     ]

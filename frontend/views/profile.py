@@ -181,7 +181,7 @@ class ProfileView(ft.View):
                     # Edit Profile button
                     ft.ElevatedButton(
                         "Edit Profile",
-                        icon=ft.icons.EDIT,
+                        icon=ft.Icons.EDIT,
                         style=ft.ButtonStyle(
                             color=ft.colors.WHITE,
                             bgcolor=self.primary_color,
@@ -196,7 +196,7 @@ class ProfileView(ft.View):
                     # Share Profile button
                     ft.OutlinedButton(
                         "Share Profile",
-                        icon=ft.icons.SHARE,
+                        icon=ft.Icons.SHARE,
                         style=ft.ButtonStyle(
                             color=self.primary_color,
                             side=ft.BorderSide(1, self.primary_color),
@@ -239,13 +239,13 @@ class ProfileView(ft.View):
             title=ft.Text("Profile", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
             bgcolor=self.bg_color,
             leading=ft.IconButton(
-                icon=ft.icons.ARROW_BACK,
+                icon=ft.Icons.ARROW_BACK,
                 icon_color=ft.colors.BLACK,
                 on_click=lambda e: self.go_back()
             ),
             actions=[
                 ft.IconButton(
-                    icon=ft.icons.MORE_VERT,
+                    icon=ft.Icons.MORE_VERT,
                     icon_color=ft.colors.BLACK,
                     on_click=self.show_more_options
                 )
