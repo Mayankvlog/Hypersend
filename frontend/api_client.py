@@ -330,6 +330,19 @@ class APIClient:
             )
             response.raise_for_status()
             return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and self.refresh_token:
+                # Try to refresh token and retry once
+                if await self.refresh_access_token():
+                    response = await self.client.post(
+                        f"{self.base_url}/api/v1/chats/",
+                        json={"name": name, "member_ids": user_ids, "type": chat_type},
+                        headers=self._get_headers()
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            debug_log(f"[API] Create chat error: {e}")
+            raise Exception(f"Failed to create chat: {str(e)}")
         except Exception as e:
             debug_log(f"[API] Create chat error: {e}")
             raise Exception(f"Failed to create chat: {str(e)}")
