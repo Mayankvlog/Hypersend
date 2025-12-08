@@ -172,3 +172,5 @@ if __name__ == "__main__":
             print(f"  - {perm}")
     else:
         print("Not on Android, test skipped")
+
+

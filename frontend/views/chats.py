@@ -23,7 +23,7 @@ from views.saved_messages import SavedMessagesView
 # Compatibility shims
 icons = ft.Icons
 colors = ft.Colors
-ft.colors = ft.Colors
+ft.Colors = ft.Colors
 
 # dotenv is optional in some Android build environments; import defensively
 try:
@@ -376,11 +376,11 @@ class ChatsView(ft.View):
         """Build the chats interface"""
         # AppBar with hamburger menu
         self.page.appbar = ft.AppBar(
-            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color=ft.colors.BLACK, size=22),
+            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK, size=22),
             bgcolor=self.bg_color,
             leading=ft.IconButton(
                 icon=ft.Icons.MENU,
-                icon_color=ft.colors.BLACK,
+                icon_color=ft.Colors.BLACK,
                 tooltip="Menu",
                 on_click=lambda e: self.open_drawer()
             ),
@@ -444,7 +444,7 @@ class ChatsView(ft.View):
             content=ft.Row(
                 [
                     ft.CircleAvatar(
-                        content=ft.Icon(icons.BOOKMARK, size=24, color=ft.colors.WHITE),
+                        content=ft.Icon(icons.BOOKMARK, size=24, color=ft.Colors.WHITE),
                         bgcolor=self.primary_color,
                         radius=20
                     ),
@@ -454,12 +454,12 @@ class ChatsView(ft.View):
                                 "Saved Messages",
                                 size=16,
                                 weight=ft.FontWeight.W_500,
-                                color=ft.colors.BLACK
+                                color=ft.Colors.BLACK
                             ),
                             ft.Text(
                                 "Your personal collection",
                                 size=13,
-                                color=ft.colors.BLACK54
+                                color=ft.Colors.BLACK54
                             )
                         ],
                         spacing=5,
@@ -470,7 +470,7 @@ class ChatsView(ft.View):
             ),
             padding=15,
             on_click=lambda e: self.show_saved_messages(),
-            bgcolor=ft.colors.WHITE
+            bgcolor=ft.Colors.WHITE
         )
         
         # Set initial content
@@ -582,7 +582,7 @@ class ChatsView(ft.View):
             content=ft.Row(
                 [
                     ft.CircleAvatar(
-                        content=ft.Icon(icons.BOOKMARK, size=24, color=ft.colors.WHITE),
+                        content=ft.Icon(icons.BOOKMARK, size=24, color=ft.Colors.WHITE),
                         bgcolor=self.primary_color,
                         radius=20
                     ),
@@ -592,12 +592,12 @@ class ChatsView(ft.View):
                                 "Saved Messages",
                                 size=16,
                                 weight=ft.FontWeight.W_500,
-                                color=ft.colors.BLACK
+                                color=ft.Colors.BLACK
                             ),
                             ft.Text(
                                 "Your personal collection",
                                 size=13,
-                                color=ft.colors.BLACK54
+                                color=ft.Colors.BLACK54
                             )
                         ],
                         spacing=5,
@@ -608,7 +608,7 @@ class ChatsView(ft.View):
             ),
             padding=15,
             on_click=lambda e: self.show_saved_messages(),
-            bgcolor=ft.colors.WHITE
+            bgcolor=ft.Colors.WHITE
         )
         chat_items.append(saved_messages_item)
         
@@ -705,3 +705,4 @@ class ChatsView(ft.View):
     def go_back(self):
         """Go back to previous screen"""
         self.page.go("/")
+

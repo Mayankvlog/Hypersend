@@ -242,3 +242,5 @@ class LoginView(ft.Container):
             self.submit_button.text = original_text
             self.submit_button.disabled = False
             self.page.update()
+
+

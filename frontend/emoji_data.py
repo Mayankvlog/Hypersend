@@ -211,3 +211,5 @@ def search_emojis(query: str) -> list:
         if query in category.lower():
             results.extend(emojis)
     return results if results else POPULAR_EMOJIS[:50]
+
+

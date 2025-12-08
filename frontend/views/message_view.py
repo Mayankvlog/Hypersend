@@ -29,7 +29,7 @@ except ImportError:
 # Compatibility
 icons = ft.Icons
 colors = ft.Colors
-ft.colors = ft.Colors
+ft.Colors = ft.Colors
 
 
 class MessageView(ft.View):
@@ -728,3 +728,5 @@ class MessageView(ft.View):
             self.on_back()
         else:
             self.page.go("/")
+
+

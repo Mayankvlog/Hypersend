@@ -29,7 +29,6 @@ from views.saved_messages import SavedMessagesView
 # Compatibility shims
 icons = ft.Icons
 colors = ft.Colors
-ft.colors = ft.Colors
 
 # dotenv is optional in some Android build environments; import defensively
 try:
@@ -200,24 +199,24 @@ class ZaplyApp:
             ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
+                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
                         ft.Text(
                             "An error occurred during startup:",
                             size=16,
-                            color=ft.colors.RED_900,
+                            color=ft.Colors.RED_900,
                             text_align=ft.TextAlign.CENTER,
                         ),
                         ft.Text(
                             message,
                             size=14,
                             text_align=ft.TextAlign.CENTER,
-                            color=ft.colors.BLACK87,
+                            color=ft.Colors.BLACK87,
                         ),
                         ft.Text(
                             "Please check your backend server and internet connection.",
                             size=14,
                             text_align=ft.TextAlign.CENTER,
-                            color=ft.colors.BLACK54,
+                            color=ft.Colors.BLACK54,
                         ),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -349,7 +348,7 @@ class ZaplyApp:
         
         error_text = ft.Text(
             "",
-            color=ft.colors.RED,
+            color=ft.Colors.RED,
             size=12,
             visible=False
         )
@@ -600,7 +599,7 @@ class ZaplyApp:
             "Login",
             on_click=login_clicked,
             style=ft.ButtonStyle(
-                color=ft.colors.WHITE,
+                color=ft.Colors.WHITE,
                 bgcolor=self.primary_color,
                 padding=15
             ),
@@ -673,7 +672,7 @@ class ZaplyApp:
         email_submit_btn = ft.ElevatedButton(
             "Request Reset",
             style=ft.ButtonStyle(
-                color=ft.colors.WHITE,
+                color=ft.Colors.WHITE,
                 bgcolor=self.primary_color,
                 padding=15
             ),
@@ -716,7 +715,7 @@ class ZaplyApp:
         reset_submit_btn = ft.ElevatedButton(
             "Reset Password",
             style=ft.ButtonStyle(
-                color=ft.colors.WHITE,
+                color=ft.Colors.WHITE,
                 bgcolor=self.primary_color,
                 padding=15
             ),
@@ -726,14 +725,14 @@ class ZaplyApp:
         
         error_text = ft.Text(
             "",
-            color=ft.colors.RED,
+            color=ft.Colors.RED,
             size=12,
             visible=False
         )
         
         success_text = ft.Text(
             "",
-            color=ft.colors.GREEN,
+            color=ft.Colors.GREEN,
             size=12,
             visible=False
         )
@@ -741,7 +740,7 @@ class ZaplyApp:
         info_text = ft.Text(
             "Enter your email to receive a password reset token",
             size=13,
-            color=ft.colors.GREY_700
+            color=ft.Colors.GREY_700
         )
         
         back_btn = ft.TextButton(
@@ -898,7 +897,7 @@ class ZaplyApp:
                                 ),
                                 padding=20,
                             ),
-                            ft.Text("Reset Password", size=24, weight="bold", color=ft.colors.BLACK),
+                            ft.Text("Reset Password", size=24, weight="bold", color=ft.Colors.BLACK),
                             ft.Container(height=10),
                             info_text,
                             ft.Container(height=20),
@@ -1016,7 +1015,7 @@ class ZaplyApp:
                 content=ft.Row(
                     [
                         ft.CircleAvatar(
-                            content=ft.Icon(icons.BOOKMARK, size=24, color=ft.colors.WHITE),
+                            content=ft.Icon(icons.BOOKMARK, size=24, color=ft.Colors.WHITE),
                             bgcolor=self.primary_color,
                             radius=20
                         ),
@@ -1026,12 +1025,12 @@ class ZaplyApp:
                                     "Saved Messages",
                                     size=16,
                                     weight=ft.FontWeight.W_500,
-                                    color=ft.colors.BLACK
+                                    color=ft.Colors.BLACK
                                 ),
                                 ft.Text(
                                     "Your personal collection",
                                     size=13,
-                                    color=ft.colors.BLACK54
+                                    color=ft.Colors.BLACK54
                                 )
                             ],
                             spacing=5,
@@ -1042,7 +1041,7 @@ class ZaplyApp:
                 ),
                 padding=15,
                 on_click=lambda e: self.show_saved_messages(),
-                bgcolor=ft.colors.WHITE
+                bgcolor=ft.Colors.WHITE
             )
             chat_items.append(saved_messages_item)
             
@@ -1308,7 +1307,7 @@ class ZaplyApp:
                                     ft.Text(
                                         "✓✓" if msg.get("read_by") else "✓",
                                         size=10,
-                                        color=ft.colors.BLUE if msg.get("read_by") else self.text_secondary,
+                                        color=ft.Colors.BLUE if msg.get("read_by") else self.text_secondary,
                                         visible=is_mine
                                     ),
                                     # Show reaction count if exists
@@ -1489,16 +1488,16 @@ class ZaplyApp:
             chat_name = chat.get("other_user", {}).get("username", "Chat") if not chat.get("is_group") else chat.get("group_name", "Group")
         
         # Status indicator (online/typing)
-        status_text = ft.Text("🟢 Online", size=12, color=ft.colors.GREEN)
+        status_text = ft.Text("🟢 Online", size=12, color=ft.Colors.GREEN)
         
         self.page.appbar = ft.AppBar(
             leading=ft.IconButton(
                 icon=icons.ARROW_BACK,
-                icon_color=ft.colors.BLACK,
+                icon_color=ft.Colors.BLACK,
                 on_click=lambda e: self.show_chat_list()
             ),
             title=ft.Column([
-                ft.Text(chat_name, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK, size=16),
+                ft.Text(chat_name, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK, size=16),
                 status_text
             ], spacing=0),
             center_title=False,
@@ -1574,7 +1573,7 @@ class ZaplyApp:
                                                 icon=icons.SEND,
                                                 on_click=send_message,
                                                 bgcolor=self.primary_color,
-                                                icon_color=ft.colors.WHITE,
+                                                icon_color=ft.Colors.WHITE,
                                                 tooltip="Send Message",
                                                 icon_size=20
                                             )
@@ -1762,10 +1761,10 @@ async def main(page: ft.Page):
                     padding=20,
                 ),
                 ft.Text("Zaply", size=32, weight=ft.FontWeight.BOLD, color="#1F8EF1"),
-                ft.Text("Fast Chat & File Sharing", size=14, color=ft.colors.BLACK54),
+                ft.Text("Fast Chat & File Sharing", size=14, color=ft.Colors.BLACK54),
                 ft.Container(height=20),
                 ft.ProgressRing(width=32, height=32, stroke_width=3),
-                ft.Text("Initializing...", size=14, color=ft.colors.BLACK54),
+                ft.Text("Initializing...", size=14, color=ft.Colors.BLACK54),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=20,
@@ -1793,13 +1792,13 @@ async def main(page: ft.Page):
             ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
+                        ft.Text("Zaply", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
                         ft.Text(
                             "App failed to start. Please close and reopen.\n"
                             "If this keeps happening, reinstall the app.",
                             size=14,
                             text_align=ft.TextAlign.CENTER,
-                            color=ft.colors.BLACK87,
+                            color=ft.Colors.BLACK87,
                         ),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -1829,3 +1828,5 @@ if __name__ == "__main__":
         web_renderer="html",
         view=ft.AppView.WEB_BROWSER if os.environ.get("FLET_WEB") else ft.AppView.FLET_APP,
     )
+
+

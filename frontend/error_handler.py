@@ -213,3 +213,4 @@ def show_info(message: str, duration: int = 2000):
     """Convenience function to show info message"""
     if _error_handler:
         _error_handler.show_info_snackbar(message, duration)
+

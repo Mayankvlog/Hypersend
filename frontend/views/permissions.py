@@ -309,3 +309,5 @@ class PermissionsSettingsCard(ft.Card):
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN
         )
+
+
