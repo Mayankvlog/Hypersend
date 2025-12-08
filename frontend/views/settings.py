@@ -107,7 +107,7 @@ class SettingsView(ft.View):
                 self.switch_item(
                     "Vibration",
                     "Vibrate for notifications",
-                    icons.VIBRATE,
+                    icons.VIBRATION,
                     True,
                     on_change=lambda e: print("Vibration toggle coming soon")
                 ),
@@ -324,11 +324,13 @@ class SettingsView(ft.View):
         return ft.Container(
             content=ft.Column(
                 [
-                    ft.Text(
-                        title,
-                        size=18,
-                        weight=ft.FontWeight.BOLD,
-                        color=self.text_color,
+                    ft.Container(
+                        content=ft.Text(
+                            title,
+                            size=18,
+                            weight=ft.FontWeight.BOLD,
+                            color=self.text_color
+                        ),
                         margin=ft.margin.only(bottom=15)
                     )
                 ] + items,
@@ -452,10 +454,12 @@ class SettingsView(ft.View):
         return self.create_section(
             "Permissions",
             [
-                ft.Text(
-                    "Permissions are managed by Android. Tap 'Open App Settings' to change them.",
-                    size=12,
-                    color=self.text_secondary,
+                ft.Container(
+                    content=ft.Text(
+                        "Permissions are managed by Android. Tap 'Open App Settings' to change them.",
+                        size=12,
+                        color=self.text_secondary
+                    ),
                     margin=ft.margin.only(bottom=15)
                 ),
                 permissions_list,
