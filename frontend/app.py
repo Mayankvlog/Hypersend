@@ -316,12 +316,14 @@ class ZaplyApp:
             label="Password",
             password=True,
             can_reveal_password=True,
+            keyboard_type=ft.KeyboardType.VISIBLE_PASSWORD,
             prefix_icon=icons.LOCK,
             filled=True
         )
         
         username_field = ft.TextField(
             label="Username",
+            keyboard_type=ft.KeyboardType.NAME,
             prefix_icon=icons.PERSON,
             filled=True,
             visible=False
@@ -660,6 +662,7 @@ class ZaplyApp:
         token_field = ft.TextField(
             label="Reset Token (check email)",
             password=False,
+            keyboard_type=ft.KeyboardType.TEXT,
             prefix_icon=icons.VPN_KEY,
             filled=True,
             visible=False
@@ -669,6 +672,7 @@ class ZaplyApp:
             label="New Password",
             password=True,
             can_reveal_password=True,
+            keyboard_type=ft.KeyboardType.VISIBLE_PASSWORD,
             prefix_icon=icons.LOCK,
             filled=True,
             visible=False
@@ -678,6 +682,7 @@ class ZaplyApp:
             label="Confirm Password",
             password=True,
             can_reveal_password=True,
+            keyboard_type=ft.KeyboardType.VISIBLE_PASSWORD,
             prefix_icon=icons.LOCK,
             filled=True,
             visible=False
@@ -1397,7 +1402,7 @@ class ZaplyApp:
             min_lines=1,
             max_lines=5,
             keyboard_type=ft.KeyboardType.TEXT,
-            autofocus=False,  # Flet Views don't handle autofocus well, use focus() instead
+            autofocus=True,  # Enable autofocus to show keyboard immediately
             read_only=False,  # Ensure it's writable
             disabled=False,  # Ensure it's enabled
             text_vertical_align=ft.TextVerticalAlign.TOP
@@ -1560,8 +1565,8 @@ class ZaplyApp:
         # Load messages asynchronously
         async def initialize_chat():
             await load_messages()
-            # Small delay to ensure view is fully rendered before focusing
-            await asyncio.sleep(0.1)
+            # Increased delay to ensure view is fully rendered before focusing (Android fix)
+            await asyncio.sleep(0.3)
             try:
                 message_input.focus()
                 debug_log("[CHAT] Message input focused successfully")

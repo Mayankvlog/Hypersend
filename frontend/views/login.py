@@ -15,18 +15,27 @@ class LoginView(ft.Container):
         self.name_field = ft.TextField(
             label="Name",
             border_radius=BORDER_RADIUS,
-            visible=False
+            visible=False,
+            keyboard_type=ft.KeyboardType.NAME,
+            read_only=False,
+            disabled=False
         )
         self.email_field = ft.TextField(
             label="Email",
             border_radius=BORDER_RADIUS,
-            keyboard_type=ft.KeyboardType.EMAIL
+            keyboard_type=ft.KeyboardType.EMAIL,
+            autofocus=True,
+            read_only=False,
+            disabled=False
         )
         self.password_field = ft.TextField(
             label="Password",
             border_radius=BORDER_RADIUS,
             password=True,
-            can_reveal_password=True
+            can_reveal_password=True,
+            keyboard_type=ft.KeyboardType.TEXT,
+            read_only=False,
+            disabled=False
         )
         self.error_text = ft.Text("", color=ft.Colors.RED_400, visible=False)
         self.submit_button = ft.ElevatedButton(
