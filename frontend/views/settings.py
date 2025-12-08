@@ -369,7 +369,7 @@ class SettingsView(ft.View):
                             expand=True
                         ),
                         ft.Icon(
-                            ft.icons.CHEVRON_RIGHT,
+                            ft.Icons.CHEVRON_RIGHT,
                             color=self.text_secondary,
                             size=20
                         )
@@ -379,8 +379,7 @@ class SettingsView(ft.View):
                 ),
                 padding=ft.padding.symmetric(vertical=12, horizontal=0)
             ),
-            on_tap=on_click,
-            ink=True
+            on_tap=on_click
         )
     
     def switch_item(self, title: str, subtitle: str, icon, value: bool, on_change):
@@ -473,7 +472,7 @@ class SettingsView(ft.View):
                 ft.Container(height=10),
                 ft.OutlinedButton(
                     "Open App Settings",
-                    icon=ft.icons.SETTINGS,
+                    icon=ft.Icons.SETTINGS,
                     on_click=self.open_app_settings,
                     style=ft.ButtonStyle(
                         color=self.primary_color,

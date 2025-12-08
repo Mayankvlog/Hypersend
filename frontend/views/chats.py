@@ -35,8 +35,8 @@ except ImportError:
 # Load environment variables if available
 load_dotenv()
 
-# Default backend URL - use localhost for development
-DEFAULT_DEV_URL = "http://localhost:8000"
+# Default backend URL - use VPS for testing
+DEFAULT_DEV_URL = "http://139.59.82.105:8000"
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
 DEV_API_URL = os.getenv("API_BASE_URL", DEFAULT_DEV_URL).strip()
 
@@ -137,8 +137,7 @@ class ChatsView(ft.View):
                     self.night_mode_switch
                 ], spacing=0),
                 padding=ft.padding.symmetric(horizontal=20, vertical=12),
-                on_click=lambda e: self.toggle_night_mode_click(),
-                ink=True
+                on_click=lambda e: self.toggle_night_mode_click()
             ),
             ft.Divider(height=1, color="#E0E0E0"),
             self.drawer_item("❓", "Zaply FAQ", lambda e: self.show_faq()),
@@ -169,8 +168,7 @@ class ChatsView(ft.View):
                 ft.Text(text, size=16, color=self.text_color)
             ], spacing=0),
             padding=ft.padding.symmetric(horizontal=20, vertical=14),
-            on_click=on_click,
-            ink=True
+            on_click=on_click
         )
     
     def toggle_night_mode(self, e):
@@ -449,7 +447,6 @@ class ChatsView(ft.View):
             ),
             padding=15,
             on_click=lambda e: self.show_saved_messages(),
-            ink=True,
             bgcolor=ft.colors.WHITE
         )
         
@@ -544,8 +541,7 @@ class ChatsView(ft.View):
                     spacing=15
                 ),
                 padding=15,
-                on_click=lambda e, c=chat: self.open_chat(c),
-                ink=True
+                on_click=lambda e, c=chat: self.open_chat(c)
             )
             chat_items.append(chat_item)
             chat_items.append(ft.Divider(height=1, color="#E0E0E0"))
@@ -586,7 +582,6 @@ class ChatsView(ft.View):
             ),
             padding=15,
             on_click=lambda e: self.show_saved_messages(),
-            ink=True,
             bgcolor=ft.colors.WHITE
         )
         chat_items.append(saved_messages_item)
