@@ -203,17 +203,86 @@ class ChatsView(ft.View):
         except Exception as e:
             print(f"Error opening profile: {e}")
     
-    def create_new_group(self):
+    async def create_new_group(self):
         """Create new group chat"""
         self.page.drawer.open = False
         self.page.update()
-        self.show_coming_soon_dialog("New Group", "Create group chats with friends and family")
+        
+        name_field = ft.TextField(label="Group Name", autofocus=True)
+        
+        def create_click(e):
+            if not name_field.value:
+                name_field.error_text = "Name is required"
+                name_field.update()
+                return
+            
+            self.page.run_task(self.do_create_chat, name_field.value, "group", dialog)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("New Group"),
+            content=ft.Column([
+                ft.Text("Enter group name:"),
+                name_field
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: self.close_dialog(dialog)),
+                ft.ElevatedButton("Create", on_click=create_click)
+            ]
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
     
-    def create_new_channel(self):
+    async def create_new_channel(self):
         """Create new channel"""
         self.page.drawer.open = False
         self.page.update()
-        self.show_coming_soon_dialog("New Channel", "Broadcast messages to unlimited subscribers")
+        
+        name_field = ft.TextField(label="Channel Name", autofocus=True)
+        
+        def create_click(e):
+            if not name_field.value:
+                name_field.error_text = "Name is required"
+                name_field.update()
+                return
+            
+            self.page.run_task(self.do_create_chat, name_field.value, "channel", dialog)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("New Channel"),
+            content=ft.Column([
+                ft.Text("Enter channel name:"),
+                name_field,
+                ft.Text("Channels are for broadcasting public messages.", size=12, color=self.text_secondary)
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: self.close_dialog(dialog)),
+                ft.ElevatedButton("Create", on_click=create_click)
+            ]
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+    
+    async def do_create_chat(self, name: str, char_type: str, dialog):
+        """Perform chat creation"""
+        try:
+            # Pass empty list for user_ids for now, or self user id
+            user_id = self.current_user.get("id", self.current_user.get("_id"))
+            await self.api_client.create_chat(name=name, user_ids=[user_id], chat_type=char_type)
+            
+            dialog.open = False
+            self.page.update()
+            
+            show_success("Success", f"{char_type.capitalize()} '{name}' created!")
+            await self.load_chats()
+            
+        except Exception as e:
+            print(f"Error creating {char_type}: {e}")
+            dialog.open = False
+            self.page.update()
+            show_error("Error", f"Could not create {char_type}")
+
     
     def open_contacts(self):
         """Open contacts"""

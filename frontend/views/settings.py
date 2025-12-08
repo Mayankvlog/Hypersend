@@ -246,6 +246,38 @@ class SettingsView(ft.View):
             alignment=ft.alignment.center
         )
         
+        # Devices Section
+        devices_section = self.create_section(
+            "Devices",
+            [
+                self.setting_item(
+                    "Active Sessions",
+                    "Manage devices logged into your account",
+                    icons.DEVICES,
+                    on_click=self.show_devices_dialog
+                ),
+                self.setting_item(
+                    "Link Desktop Device",
+                    "Scan QR code to log in",
+                    icons.QR_CODE,
+                    on_click=lambda e: print("QR scan coming soon")
+                ),
+            ]
+        )
+
+        # Language Section
+        language_section = self.create_section(
+            "Language",
+            [
+                self.setting_item(
+                    "Language",
+                    "English",
+                    icons.LANGUAGE,
+                    on_click=self.show_language_dialog
+                ),
+            ]
+        )
+
         # Main content
         main_content = ft.Column(
             [
@@ -255,6 +287,8 @@ class SettingsView(ft.View):
                 privacy_section,
                 data_section,
                 chat_section,
+                devices_section,
+                language_section,
                 help_section,
                 permissions_section,
                 logout_section
@@ -530,6 +564,80 @@ class SettingsView(ft.View):
         dialog.open = True
         self.page.update()
     
+    def show_devices_dialog(self, e):
+        """Show devices dialog"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("Active Sessions"),
+            content=ft.Column(
+                [
+                    ft.Text("This Device", weight=ft.FontWeight.BOLD, color=self.primary_color),
+                    ft.ListTile(
+                        leading=ft.Icon(icons.SMARTPHONE, size=30, color=self.primary_color),
+                        title=ft.Text("Zaply for Windows", weight=ft.FontWeight.W_500),
+                        subtitle=ft.Text("Online now • Washington, USA", size=12)
+                    ),
+                    ft.Divider(),
+                    ft.Text("Active Sessions", weight=ft.FontWeight.BOLD),
+                    ft.ListTile(
+                        leading=ft.Icon(icons.ANDROID, size=30),
+                        title=ft.Text("Android 14", weight=ft.FontWeight.W_500),
+                        subtitle=ft.Text("Last active: 10 min ago", size=12),
+                        trailing=ft.IconButton(icons.DELETE_OUTLINE, icon_color=colors.RED_400)
+                    ),
+                ],
+                tight=True,
+                width=400
+            ),
+            actions=[
+                ft.TextButton("Terminate All Other Sessions", style=ft.ButtonStyle(color=colors.RED_500)),
+                ft.TextButton("Close", on_click=lambda e: setattr(dialog, 'open', False))
+            ]
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    def show_language_dialog(self, e):
+        """Show language selection dialog"""
+        languages = [
+            "English", "Spanish", "French", "German", "Russian", 
+            "Arabic", "Hindi", "Chinese", "Japanese"
+        ]
+        
+        def select_language(lang):
+            print(f"Selected language: {lang}")
+            dialog.open = False
+            self.page.update()
+            
+            snack = ft.SnackBar(content=ft.Text(f"Language changed to {lang}"), bgcolor=colors.GREEN_600)
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Language"),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.ListTile(
+                            title=ft.Text(lang),
+                            on_click=lambda e, l=lang: select_language(l),
+                            leading=ft.Radio(value=lang, group="lang") if lang == "English" else ft.Radio(value=lang, group="lang")
+                        ) for lang in languages
+                    ],
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+                height=300,
+                width=300
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False))
+            ]
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
     def show_storage_usage(self, e):
         """Show storage usage"""
         dialog = ft.AlertDialog(

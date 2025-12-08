@@ -1144,7 +1144,7 @@ class ZaplyApp:
             debug_log("[SETTINGS] Opening settings view")
             settings_view = SettingsView(
                 page=self.page,
-                api_client=self.client,
+                api_client=self.api_client,
                 current_user=self.current_user,
                 on_logout=self.handle_logout,
                 on_back=lambda: self.page.go("/")
@@ -1157,6 +1157,7 @@ class ZaplyApp:
             self.page.update()
             debug_log("[SETTINGS] Settings view displayed")
         except Exception as e:
+
             import traceback
             debug_log(f"[SETTINGS] Error opening settings: {e}")
             debug_log(f"[SETTINGS] Traceback: {traceback.format_exc()}")
