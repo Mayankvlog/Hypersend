@@ -271,7 +271,10 @@ class ZaplyApp:
             if saved_session:
                 debug_log("[SESSION] Attempting to restore session from saved credentials...")
                 self.token = saved_session.get('access_token')
+                refresh_token = saved_session.get('refresh_token', '')
                 self.current_user = saved_session.get('user_data', {})
+                # ✅ IMPORTANT: Set tokens in api_client so it can make authenticated requests
+                self.api_client.set_tokens(self.token, refresh_token)
                 debug_log("[SESSION] ✅ Session restored successfully - user can skip login")
         except Exception as e:
             debug_log(f"[SESSION] Could not restore session: {e}")
@@ -367,10 +370,13 @@ class ZaplyApp:
                 if response.status_code == 200:
                     data = response.json()
                     self.token = data["access_token"]
+                    refresh_token = data.get("refresh_token", "")
                     debug_log("[LOGIN] Token received, fetching user info")
                     
-                    # Fetch user info after login
+                    # Set token in both clients
                     self.client.headers["Authorization"] = f"Bearer {self.token}"
+                    self.api_client.set_tokens(self.token, refresh_token)  # ✅ IMPORTANT: Set tokens in api_client too
+                    
                     user_response = await self.client.get("/api/v1/users/me")
                     
                     if user_response.status_code == 200:
@@ -489,7 +495,10 @@ class ZaplyApp:
                     if login_response.status_code == 200:
                         login_data = login_response.json()
                         self.token = login_data["access_token"]
+                        refresh_token = login_data.get("refresh_token", "")
+                        # ✅ Set tokens in both clients
                         self.client.headers["Authorization"] = f"Bearer {self.token}"
+                        self.api_client.set_tokens(self.token, refresh_token)
                         
                         # Always fetch user profile from backend instead of trusting
                         # the register response payload.
