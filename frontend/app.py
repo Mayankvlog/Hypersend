@@ -1557,15 +1557,19 @@ class ZaplyApp:
         self.page.views.clear()
         self.page.views.append(chat_view)
         
-        # Load messages
-        self.page.run_task(load_messages)
-        self.page.update()
+        # Load messages asynchronously
+        async def initialize_chat():
+            await load_messages()
+            # Small delay to ensure view is fully rendered before focusing
+            await asyncio.sleep(0.1)
+            try:
+                message_input.focus()
+                debug_log("[CHAT] Message input focused successfully")
+            except Exception as e:
+                debug_log(f"[CHAT] Warning: Could not focus message input: {e}")
         
-        # Focus the message input field after page is rendered
-        try:
-            message_input.focus()
-        except Exception as e:
-            debug_log(f"Warning: Could not focus message input: {e}")
+        self.page.run_task(initialize_chat)
+        self.page.update()
     
     async def upload_file_chunked(self, file_path: str, chat_id: str):
         """Upload file in chunks"""
