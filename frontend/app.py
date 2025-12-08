@@ -45,6 +45,15 @@ except ImportError:
     def request_android_permissions():
         return False
 
+# Import emoji data
+try:
+    from emoji_data import EMOJI_CATEGORIES, POPULAR_EMOJIS, get_emojis_by_category
+except ImportError:
+    EMOJI_CATEGORIES = {}
+    POPULAR_EMOJIS = ["😀", "😂", "❤️", "👍", "🔥", "✨"]
+    def get_emojis_by_category(cat):
+        return []
+
 # Default backend URL now points to your DigitalOcean VPS
 DEFAULT_DEV_URL = "http://139.59.82.105:8000"
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
@@ -1219,23 +1228,42 @@ class ZaplyApp:
             spacing=5
         )
         
-        # Popular emojis for quick access
-        popular_emojis = ["😀", "😂", "❤️", "👍", "🎉", "🔥", "💯", "✨", "😍", "🤔", "😢", "👏", "🎊", "💬", "📸", "🎬", "🎵", "🍕", "☕", "⭐"]
-        
-        # Emoji picker dialog
-        emoji_buttons = ft.Row(
-            [ft.TextButton(emoji, on_click=lambda e, em=emoji: emoji_input_handler(em)) 
-             for emoji in popular_emojis],
-            wrap=True,
-            spacing=5
-        )
+        # Comprehensive emoji picker with categories
+        def create_emoji_content():
+            """Create tabbed emoji picker with 3000+ emojis"""
+            tabs = []
+            
+            # Add category tabs
+            for category_name in EMOJI_CATEGORIES.keys():
+                category_emojis = get_emojis_by_category(category_name)
+                emoji_buttons = ft.GridView(
+                    controls=[
+                        ft.TextButton(
+                            emoji,
+                            on_click=lambda e, em=emoji: emoji_input_handler(em)
+                        ) for emoji in category_emojis
+                    ],
+                    runs_count=8,
+                    spacing=5,
+                    run_spacing=5,
+                    expand=True,
+                )
+                
+                tabs.append(
+                    ft.Tab(
+                        text=category_name[:15],
+                        content=emoji_buttons
+                    )
+                )
+            
+            return ft.Tabs(tabs=tabs, expand=True)
         
         emoji_dialog = ft.AlertDialog(
-            title=ft.Text("Select Emoji"),
+            title=ft.Text("Emoji (3000+)"),
             content=ft.Container(
-                content=emoji_buttons,
-                width=300,
-                height=200,
+                content=create_emoji_content(),
+                width=400,
+                height=400,
             ),
             modal=True
         )
@@ -1337,6 +1365,7 @@ class ZaplyApp:
                                     ft.Row(
                                         [
                                             chat_language_dropdown,
+                                            # File & Image uploads
                                             ft.IconButton(
                                                 icon=icons.INSERT_PHOTO,
                                                 tooltip="Upload Image",
@@ -1349,15 +1378,35 @@ class ZaplyApp:
                                                 on_click=pick_file,
                                                 icon_size=20
                                             ),
+                                            # Voice & Video
+                                            ft.IconButton(
+                                                icon=icons.MIC,
+                                                tooltip="Voice Message (Coming Soon)",
+                                                icon_size=20,
+                                                on_click=lambda e: print("Voice message feature coming soon")
+                                            ),
+                                            ft.IconButton(
+                                                icon=icons.VIDEOCAM,
+                                                tooltip="Video Call (Coming Soon)",
+                                                icon_size=20,
+                                                on_click=lambda e: print("Video call feature coming soon")
+                                            ),
+                                            # Location & Emoji
+                                            ft.IconButton(
+                                                icon=icons.LOCATION_ON,
+                                                tooltip="Share Location (Coming Soon)",
+                                                icon_size=20,
+                                                on_click=lambda e: print("Location sharing coming soon")
+                                            ),
                                             ft.IconButton(
                                                 icon=icons.EMOJI_EMOTIONS,
-                                                tooltip="Emoji",
+                                                tooltip="Emoji (3000+)",
                                                 on_click=show_emoji_picker,
                                                 icon_size=20
                                             ),
                                             ft.Container(expand=True)
                                         ],
-                                        spacing=5,
+                                        spacing=3,
                                         height=40
                                     ),
                                     # Message input and send button row
