@@ -1232,27 +1232,98 @@ class ZaplyApp:
                         spacing=10
                     )
                 
-                message_bubble = ft.Container(
-                    content=ft.Column(
-                        [
-                            content,
-                            ft.Text(
-                                datetime.fromisoformat(msg.get("created_at", msg.get("timestamp", "")).replace("Z", "+00:00")).strftime("%H:%M"),
-                                size=10,
-                                color=self.text_secondary
-                            )
-                        ],
-                        spacing=5
-                    ),
-                    bgcolor=self.primary_color if is_mine else self.bg_light,
-                    padding=10,
-                    border_radius=10,
-                    margin=ft.margin.only(
-                        left=50 if is_mine else 0,
-                        right=0 if is_mine else 50,
-                        top=5,
-                        bottom=5
+                # Create message actions row
+                def open_message_menu(msg_id, msg_text, sender_id):
+                    async def handle_delete():
+                        try:
+                            await self.client.delete(f"/api/v1/chats/{msg_id}")
+                            await load_messages()
+                        except Exception as e:
+                            print(f"Delete error: {e}")
+                    
+                    async def handle_edit():
+                        # Show edit dialog
+                        edit_input = ft.TextField(value=msg_text, multiline=True, min_lines=2)
+                        
+                        async def save_edit():
+                            try:
+                                await self.client.patch(
+                                    f"/api/v1/chats/{msg_id}/edit",
+                                    json={"text": edit_input.value}
+                                )
+                                message_menu.open = False
+                                await load_messages()
+                            except Exception as e:
+                                print(f"Edit error: {e}")
+                        
+                        message_menu = ft.AlertDialog(
+                            title=ft.Text("Edit Message"),
+                            content=edit_input,
+                            actions=[
+                                ft.TextButton("Cancel", on_click=lambda e: setattr(message_menu, 'open', False)),
+                                ft.TextButton("Save", on_click=lambda e: self.page.run_task(save_edit))
+                            ]
+                        )
+                        self.page.dialog = message_menu
+                        message_menu.open = True
+                        self.page.update()
+                    
+                    actions = []
+                    actions.append(ft.TextButton("❤️ React", on_click=lambda e: print("Reactions coming soon")))
+                    actions.append(ft.TextButton("📌 Pin", on_click=lambda e: print("Pinning coming soon")))
+                    
+                    if sender_id == self.current_user.get("id", self.current_user.get("_id")):
+                        actions.append(ft.TextButton("✏️ Edit", on_click=lambda e: self.page.run_task(handle_edit)))
+                        actions.append(ft.TextButton("🗑️ Delete", on_click=lambda e: self.page.run_task(handle_delete)))
+                    
+                    message_menu = ft.AlertDialog(
+                        title=ft.Text("Message Options"),
+                        content=ft.Column(actions, spacing=5),
+                        actions=[ft.TextButton("Close", on_click=lambda e: setattr(message_menu, 'open', False))]
                     )
+                    self.page.dialog = message_menu
+                    message_menu.open = True
+                    self.page.update()
+                
+                message_bubble = ft.GestureDetector(
+                    content=ft.Container(
+                        content=ft.Column(
+                            [
+                                content,
+                                ft.Row([
+                                    ft.Text(
+                                        datetime.fromisoformat(msg.get("created_at", msg.get("timestamp", "")).replace("Z", "+00:00")).strftime("%H:%M"),
+                                        size=10,
+                                        color=self.text_secondary
+                                    ),
+                                    # Show read receipt checkmarks for sent messages
+                                    ft.Text(
+                                        "✓✓" if msg.get("read_by") else "✓",
+                                        size=10,
+                                        color=ft.colors.BLUE if msg.get("read_by") else self.text_secondary,
+                                        visible=is_mine
+                                    ),
+                                    # Show reaction count if exists
+                                    ft.Text(
+                                        f"😍 {len(msg.get('reactions', {}).get('😍', []))}",
+                                        size=9,
+                                        visible=bool(msg.get('reactions'))
+                                    ) if msg.get('reactions') else ft.Container()
+                                ], spacing=10)
+                            ],
+                            spacing=5
+                        ),
+                        bgcolor=self.primary_color if is_mine else self.bg_light,
+                        padding=10,
+                        border_radius=10,
+                        margin=ft.margin.only(
+                            left=50 if is_mine else 0,
+                            right=0 if is_mine else 50,
+                            top=5,
+                            bottom=5
+                        )
+                    ),
+                    on_long_press=lambda: open_message_menu(msg.get("_id"), msg.get("text", ""), msg.get("sender_id"))
                 )
                 
                 message_items.append(message_bubble)
@@ -1317,6 +1388,40 @@ class ZaplyApp:
         
         self.page.dialog = emoji_dialog
         
+        typing_timer = None
+        
+        def on_message_change(e):
+            """Track when user is typing"""
+            nonlocal typing_timer
+            
+            # Send typing status to backend
+            async def send_typing():
+                try:
+                    await self.client.post(
+                        "/api/v1/updates/typing",
+                        json={"chat_id": chat["_id"], "is_typing": True}
+                    )
+                except:
+                    pass
+            
+            if typing_timer:
+                typing_timer.cancel()
+            
+            self.page.run_task(send_typing)
+            
+            # Auto-stop typing after 3 seconds of inactivity
+            async def stop_typing():
+                await asyncio.sleep(3)
+                try:
+                    await self.client.post(
+                        "/api/v1/updates/typing",
+                        json={"chat_id": chat["_id"], "is_typing": False}
+                    )
+                except:
+                    pass
+            
+            typing_timer = asyncio.ensure_future(stop_typing())
+        
         message_input = ft.TextField(
             hint_text="Write a message...",
             border=ft.InputBorder.NONE,
@@ -1326,7 +1431,8 @@ class ZaplyApp:
             min_lines=1,
             max_lines=5,
             keyboard_type=ft.KeyboardType.TEXT,
-            autofocus=False  # Don't auto-focus on open
+            autofocus=False,  # Don't auto-focus on open
+            on_change=on_message_change
         )
         
         async def send_message(e):
@@ -1368,13 +1474,19 @@ class ZaplyApp:
         else:
             chat_name = chat.get("other_user", {}).get("username", "Chat") if not chat.get("is_group") else chat.get("group_name", "Group")
         
+        # Status indicator (online/typing)
+        status_text = ft.Text("🟢 Online", size=12, color=ft.colors.GREEN)
+        
         self.page.appbar = ft.AppBar(
             leading=ft.IconButton(
                 icon=icons.ARROW_BACK,
                 icon_color=ft.colors.BLACK,
                 on_click=lambda e: self.show_chat_list()
             ),
-            title=ft.Text(chat_name, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK),
+            title=ft.Column([
+                ft.Text(chat_name, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK, size=16),
+                status_text
+            ], spacing=0),
             center_title=False,
             bgcolor=self.bg_light
         )
