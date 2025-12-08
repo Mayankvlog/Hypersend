@@ -10,6 +10,9 @@ import sys
 # Add the current directory to sys.path for imports
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
+# Import API client
+from api_client import APIClient
+
 # Import views (running as script, not package)
 from views.settings import SettingsView
 from views.login import LoginView
@@ -223,10 +226,8 @@ class ZaplyApp:
 
     
     async def initialize_app(self):
-        self.client: Optional[httpx.AsyncClient] = None # Initialize to None
-
-        # HTTP client - optimized for production VPS with connection pooling
-        # Prefer HTTP/2 when available, but gracefully fall back to HTTP/1.1 if h2 is missing
+        """Initialize httpx client and check backend health on startup"""
+        # Create httpx client (for internal use)
         try:
             self.client = httpx.AsyncClient(
                 base_url=API_URL,
@@ -241,6 +242,9 @@ class ZaplyApp:
                 timeout=httpx.Timeout(60.0, connect=5.0, read=45.0, write=30.0),
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0)
             )
+        
+        # Create API client (for views that need proper API methods)
+        self.api_client = APIClient()
         
         # Perform initial backend health check
         try:
@@ -1089,7 +1093,7 @@ class ZaplyApp:
         # Use SavedMessagesView which has message input field
         saved_view = SavedMessagesView(
             page=self.page,
-            api_client=self.client,
+            api_client=self.api_client,  # Use api_client (has get_saved_messages method)
             current_user=self.current_user.get("id", self.current_user.get("_id")),
             on_back=lambda: self.show_chat_list()
         )
