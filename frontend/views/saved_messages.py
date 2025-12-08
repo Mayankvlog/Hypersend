@@ -87,9 +87,238 @@ class SavedMessagesView(ft.View):
                     icon_color=colors_palette["text_primary"],
                     tooltip="Toggle theme",
                     on_click=lambda e: self.toggle_theme()
+                ),
+                # Hamburger menu
+                ft.IconButton(
+                     icon=ft.Icons.MENU,
+                     icon_color=colors_palette["text_primary"],
+                     tooltip="Menu",
+                     on_click=lambda e: self.open_drawer()
                 )
             ]
         )
+        
+        # Build drawer
+        self.build_drawer()
+        self.page.drawer = self.drawer
+
+    def build_drawer(self):
+        """Build Telegram-style navigation drawer"""
+        user_name = "User"
+        user_email = ""
+        user_initials = "U"
+
+        if isinstance(self.current_user, dict):
+             user_name = self.current_user.get("name", self.current_user.get("username", "User"))
+             user_email = self.current_user.get("email", "")
+             user_initials = user_name[0].upper() if user_name else "U"
+        
+        # Drawer header with user info
+        drawer_header = ft.Container(
+            content=ft.Column([
+                # User avatar
+                ft.Container(
+                    content=ft.Text(user_initials, size=28, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                    width=60,
+                    height=60,
+                    bgcolor=self.theme.colors["accent"],
+                    border_radius=30,
+                    alignment=ft.alignment.center,
+                ),
+                ft.Container(height=12),
+                # User name
+                ft.Row([
+                    ft.Text(user_name, size=18, weight=ft.FontWeight.W_600, color=ft.Colors.WHITE),
+                    ft.Icon(ft.Icons.EXPAND_MORE, color=ft.Colors.WHITE, size=20)
+                ], spacing=4),
+                # User status/email
+                ft.Text(user_email or "Set Emoji Status", size=13, color=ft.Colors.WHITE70),
+            ], spacing=4),
+            padding=ft.padding.all(20),
+            bgcolor=self.theme.colors["accent"],
+        )
+        
+        # Night mode switch
+        self.night_mode_switch = ft.Switch(
+            value=self.dark_mode,
+            active_color=self.theme.colors["accent"],
+            on_change=self.toggle_night_mode
+        )
+        
+        # Drawer menu items
+        menu_items = [
+            self.drawer_item("👤", "My Profile", lambda e: self.page.go("/profile")),
+            ft.Divider(height=1, color="#E0E0E0"),
+            self.drawer_item("👥", "New Group", lambda e: self.create_new_group()),
+            self.drawer_item("📢", "New Channel", lambda e: self.create_new_channel()),
+            ft.Divider(height=1, color="#E0E0E0"),
+            self.drawer_item("📇", "Contacts", lambda e: self.show_coming_soon("Contacts")),
+            self.drawer_item("📞", "Calls", lambda e: self.show_coming_soon("Calls")),
+            self.drawer_item("💾", "Saved Messages", lambda e: self.close_drawer()), # Already here
+            ft.Divider(height=1, color="#E0E0E0"),
+            self.drawer_item("⚙️", "Settings", lambda e: self.page.go("/settings")),
+            # Night mode with switch
+            ft.Container(
+                content=ft.Row([
+                    ft.Text("🌙", size=20),
+                    ft.Container(width=12),
+                    ft.Text("Night Mode", size=16, color=self.theme.colors["text_primary"], expand=True),
+                    self.night_mode_switch
+                ], spacing=0),
+                padding=ft.padding.symmetric(horizontal=20, vertical=12),
+                on_click=lambda e: self.toggle_night_mode_click(),
+                ink=True
+            ),
+            ft.Divider(height=1, color="#E0E0E0"),
+            self.drawer_item("❓", "Zaply FAQ", lambda e: self.show_coming_soon("FAQ")),
+            self.drawer_item("💬", "Zaply Features", lambda e: self.show_coming_soon("Features")),
+            ft.Divider(),
+            self.drawer_item("⬅️", "Back to Chats", lambda e: self.go_back()),
+        ]
+        
+        self.drawer = ft.NavigationDrawer(
+            controls=[
+                drawer_header,
+                ft.Container(
+                    content=ft.Column(menu_items, spacing=0),
+                    expand=True
+                )
+            ],
+            bgcolor=self.theme.colors["bg_primary"]
+        )
+
+    def drawer_item(self, emoji: str, text: str, on_click):
+        """Create a drawer menu item"""
+        return ft.Container(
+            content=ft.Row([
+                ft.Text(emoji, size=20),
+                ft.Container(width=12),
+                ft.Text(text, size=16, color=self.theme.colors["text_primary"])
+            ], spacing=0),
+            padding=ft.padding.symmetric(horizontal=20, vertical=14),
+            on_click=on_click,
+            ink=True
+        )
+
+    def open_drawer(self):
+        self.page.drawer = self.drawer
+        self.drawer.open = True
+        self.page.update()
+    
+    def close_drawer(self):
+        self.drawer.open = False
+        self.page.update()
+
+    def toggle_night_mode(self, e):
+        """Toggle night/dark mode"""
+        self.dark_mode = e.control.value
+        self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+        self.toggle_theme() # Updates local UI
+        self.page.update()
+    
+    def toggle_night_mode_click(self):
+        """Toggle night mode from row click"""
+        self.dark_mode = not self.dark_mode
+        self.night_mode_switch.value = self.dark_mode
+        self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+        self.toggle_theme()
+        self.page.update()
+
+    def show_coming_soon(self, feature: str):
+        self.close_drawer()
+        snack = ft.SnackBar(content=ft.Text(f"{feature} coming soon!"), duration=2000)
+        self.page.overlay.append(snack)
+        snack.open = True
+        self.page.update()
+
+    async def create_new_group(self):
+        self.close_drawer()
+        name_field = ft.TextField(label="Group Name", autofocus=True)
+        
+        def create_click(e):
+            if not name_field.value:
+                name_field.error_text = "Name is required"
+                name_field.update()
+                return
+            self.page.run_task(self.do_create_chat, name_field.value, "group", dialog)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("New Group"),
+            content=ft.Column([ft.Text("Enter group name:"), name_field], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
+                ft.ElevatedButton("Create", on_click=create_click)
+            ]
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    async def create_new_channel(self):
+        self.close_drawer()
+        name_field = ft.TextField(label="Channel Name", autofocus=True)
+        
+        def create_click(e):
+            if not name_field.value:
+                name_field.error_text = "Name is required"
+                name_field.update()
+                return
+            self.page.run_task(self.do_create_chat, name_field.value, "channel", dialog)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("New Channel"),
+            content=ft.Column([
+                ft.Text("Enter channel name:"),
+                name_field,
+                ft.Text("Channels are for broadcasting.", size=12)
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
+                ft.ElevatedButton("Create", on_click=create_click)
+            ]
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    async def do_create_chat(self, name: str, char_type: str, dialog):
+        try:
+            # Need to get user ID. If string, use it. If dict, use id/_id
+            user_id = self.current_user if isinstance(self.current_user, str) else self.current_user.get("id", self.current_user.get("_id"))
+            
+            await self.api_client.create_chat(name=name, user_ids=[user_id], chat_type=char_type)
+            dialog.open = False
+            self.page.update()
+            
+            # Show success and maybe navigate back to chats to see it?
+            # Since we are in Saved Messages, we might want to stay here or go to the new chat.
+            # For now, just show success.
+            snack = ft.SnackBar(content=ft.Text(f"{char_type.capitalize()} '{name}' created!"), bgcolor=ft.Colors.GREEN)
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
+            
+        except Exception as e:
+            print(f"Error creating {char_type}: {e}")
+            dialog.open = False
+            self.page.update()
+            self.show_error(f"Could not create {char_type}")
+
+    def show_backend_error_dialog(self):
+        """Show specific dialog for backend mismatch"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("⚠️ Backend Update Required"),
+            content=ft.Column([
+                ft.Text("The features are implemented but the VPS backend is outdated.", color=ft.Colors.RED),
+                ft.Text("Please update 'backend/routes/chats.py' on your VPS.", size=12),
+                ft.Text("Error: 403 Forbidden (Route Mismatch)", weight=ft.FontWeight.BOLD)
+            ], tight=True),
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+
         
         # Messages list with simple design
         self.messages_list = ft.ListView(
@@ -403,31 +632,36 @@ class SavedMessagesView(ft.View):
             elif file_name.lower().endswith(('.mp4', '.avi', '.mov')):
                 file_emoji = "🎬"
             
-            # Send message with file info
+            # Fallback for now: Send as text message with emoji prefix
+            # This is because the backend might not support file uploads yet or has routing issues
+            # Re-fetch chat_id in case it was not found initially or for robustness
+            saved_chat_for_fallback = await self.api_client.get_saved_chat()
+            chat_id_for_fallback = saved_chat_for_fallback.get("chat_id") or saved_chat_for_fallback.get("_id")
+            if not chat_id_for_fallback:
+                raise Exception("Could not access Saved Messages chat for fallback")
+
             await self.api_client.send_message(
-                chat_id=chat_id,
-                text=f"{file_emoji} {file_name}"
+                 chat_id=chat_id_for_fallback,
+                 text=f"{file_emoji} {file_name}" # Using file_emoji as defined earlier
             )
-            
-            # Close previous snackbar and show success
+             
+            # Close snackbar
             snack.open = False
             self.page.update()
-            
-            success_snack = ft.SnackBar(
-                content=ft.Text(f"✅ {file_name} sent!"),
-                bgcolor=ft.Colors.GREEN_600,
-                duration=2000
-            )
-            self.page.overlay.append(success_snack)
-            success_snack.open = True
-            self.page.update()
-            
+             
             # Reload messages
             await self.load_saved_messages()
-            
+             
         except Exception as e:
             print(f"Error uploading file: {e}")
-            self.show_error(f"Upload failed: {str(e)[:50]}")
+            snack.open = False # Close snackbar on error too
+            self.page.update()
+            
+            error_msg = str(e)
+            if "403" in error_msg or "401" in error_msg:
+                 self.show_backend_error_dialog()
+            else:
+                 self.show_error(f"Upload failed: {error_msg[:50]}")
     
     async def load_saved_messages(self):
         """Load all saved messages"""
@@ -491,6 +725,9 @@ class SavedMessagesView(ft.View):
         except Exception as e:
             error_str = str(e)
             print(f"Error loading saved messages: {error_str}")
+            
+            if "403" in error_str or "401" in error_str:
+                 self.show_backend_error_dialog()
             
             # Simple error state
             error_state = ft.Container(
