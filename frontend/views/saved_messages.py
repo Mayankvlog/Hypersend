@@ -166,10 +166,26 @@ class SavedMessagesView(ft.View):
         colors_palette = self.theme.colors
         
         try:
-            data = await self.api_client.get_saved_messages()
-            self.messages_list.controls.clear()
+            # Try primary endpoint first
+            try:
+                data = await self.api_client.get_saved_messages()
+                messages = data.get("messages", [])
+            except Exception as primary_error:
+                print(f"Primary endpoint failed: {primary_error}")
+                # Fallback: Get saved chat and then fetch its messages
+                try:
+                    saved_chat = await self.api_client.get_saved_chat()
+                    chat_id = saved_chat.get("chat_id") or saved_chat.get("_id")
+                    if chat_id:
+                        msg_data = await self.api_client.get_messages(chat_id)
+                        messages = msg_data.get("messages", [])
+                    else:
+                        messages = []
+                except Exception as fallback_error:
+                    print(f"Fallback also failed: {fallback_error}")
+                    messages = []
             
-            messages = data.get("messages", [])
+            self.messages_list.controls.clear()
             
             if not messages:
                 # Simple empty state
