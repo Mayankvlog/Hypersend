@@ -251,6 +251,110 @@ async def unsave_message(
     return {"status": "unsaved"}
 
 
+@router.patch("/{message_id}/edit")
+async def edit_message(
+    message_id: str,
+    edit_data: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Edit a message (only by sender)"""
+    message = await messages_collection().find_one({"_id": message_id})
+    
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    if message["sender_id"] != current_user:
+        raise HTTPException(status_code=403, detail="Can only edit your own messages")
+    
+    new_text = edit_data.get("text", "").strip()
+    if not new_text:
+        raise HTTPException(status_code=400, detail="Message text cannot be empty")
+    
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$set": {
+            "text": new_text,
+            "edited_at": datetime.utcnow(),
+            "is_edited": True
+        }}
+    )
+    
+    return {"status": "edited", "message_id": message_id}
+
+
+@router.post("/{message_id}/react")
+async def react_to_message(
+    message_id: str,
+    reaction_data: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Add emoji reaction to a message"""
+    emoji = reaction_data.get("emoji", "").strip()
+    
+    if not emoji:
+        raise HTTPException(status_code=400, detail="Emoji required")
+    
+    message = await messages_collection().find_one({"_id": message_id})
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    reactions = message.get("reactions", {})
+    if emoji not in reactions:
+        reactions[emoji] = []
+    
+    if current_user not in reactions[emoji]:
+        reactions[emoji].append(current_user)
+    
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$set": {"reactions": reactions}}
+    )
+    
+    return {"status": "reacted", "emoji": emoji}
+
+
+@router.post("/{message_id}/pin")
+async def pin_message(
+    chat_id: str,
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Pin a message to the top of chat"""
+    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    if not chat:
+        raise HTTPException(status_code=403, detail="Not a member of this chat")
+    
+    message = await messages_collection().find_one({"_id": message_id})
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$set": {"is_pinned": True}}
+    )
+    
+    return {"status": "pinned", "message_id": message_id}
+
+
+@router.delete("/{message_id}")
+async def delete_message(
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete a message"""
+    message = await messages_collection().find_one({"_id": message_id})
+    
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    if message["sender_id"] != current_user:
+        raise HTTPException(status_code=403, detail="Can only delete your own messages")
+    
+    await messages_collection().delete_one({"_id": message_id})
+    
+    return {"status": "deleted", "message_id": message_id}
+
+
 @router.get("/messages/saved")
 async def get_saved_messages(
     current_user: str = Depends(get_current_user),
