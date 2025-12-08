@@ -166,8 +166,7 @@ class SavedMessagesView(ft.View):
                     self.night_mode_switch
                 ], spacing=0),
                 padding=ft.padding.symmetric(horizontal=20, vertical=12),
-                on_click=lambda e: self.toggle_night_mode_click(),
-                ink=True
+                on_click=lambda e: self.toggle_night_mode_click()
             ),
             ft.Divider(height=1, color="#E0E0E0"),
             self.drawer_item("❓", "Zaply FAQ", lambda e: self.show_coming_soon("FAQ")),
@@ -196,8 +195,7 @@ class SavedMessagesView(ft.View):
                 ft.Text(text, size=16, color=self.theme.colors["text_primary"])
             ], spacing=0),
             padding=ft.padding.symmetric(horizontal=20, vertical=14),
-            on_click=on_click,
-            ink=True
+            on_click=on_click
         )
 
     def open_drawer(self):
@@ -473,8 +471,7 @@ class SavedMessagesView(ft.View):
                         content=ft.Text(emoji, size=22, text_align=ft.TextAlign.CENTER),
                         on_click=lambda e, em=emoji: insert_emoji(em),
                         border_radius=8,
-                        padding=4,
-                        ink=True,
+                        padding=4
                     ) for emoji in emojis[:max_items]
                 ],
                 expand=True,

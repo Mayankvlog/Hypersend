@@ -294,8 +294,7 @@ class MessageView(ft.View):
                         content=ft.Text(emoji, size=22, text_align=ft.TextAlign.CENTER),
                         on_click=lambda e, em=emoji: insert_emoji(em),
                         border_radius=8,
-                        padding=4,
-                        ink=True,
+                        padding=4
                     ) for emoji in emojis[:max_items]
                 ],
                 expand=True,

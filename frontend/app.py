@@ -77,8 +77,8 @@ except ImportError:
         @staticmethod
         def update_tokens(*args, **kwargs): return False
 
-# Default backend URL - use localhost for development
-DEFAULT_DEV_URL = "http://localhost:8000"
+# Default backend URL - use VPS for testing
+DEFAULT_DEV_URL = "http://139.59.82.105:8000"
 PRODUCTION_API_URL = os.getenv("PRODUCTION_API_URL", "").strip()
 DEV_API_URL = os.getenv("API_BASE_URL", DEFAULT_DEV_URL).strip()
 
@@ -1000,8 +1000,7 @@ class ZaplyApp:
                         spacing=15
                     ),
                     padding=15,
-                    on_click=lambda e, c=chat: self.show_chat(c),
-                    ink=True
+                    on_click=lambda e, c=chat: self.show_chat(c)
                 )
                 chat_items.append(chat_item)
                 chat_items.append(ft.Divider(height=1, color=self.bg_light))
@@ -1043,7 +1042,6 @@ class ZaplyApp:
                 ),
                 padding=15,
                 on_click=lambda e: self.show_saved_messages(),
-                ink=True,
                 bgcolor=ft.colors.WHITE
             )
             chat_items.append(saved_messages_item)
