@@ -93,6 +93,22 @@ class APIClient:
                 new_refresh_token = data.get("refresh_token", self.refresh_token)
                 if new_access_token:
                     self.set_tokens(new_access_token, new_refresh_token)
+                    # Update session manager with new tokens
+                    try:
+                        from session_manager import SessionManager
+                        # Load current session to get email
+                        current_session = SessionManager.load_session()
+                        if current_session:
+                            SessionManager.save_session(
+                                current_session.get('email'),
+                                new_access_token,
+                                new_refresh_token,
+                                current_session.get('user_data', {})
+                            )
+                            debug_log("[API] Session updated with new tokens")
+                    except Exception as session_e:
+                        debug_log(f"[API] Failed to update session: {session_e}")
+                    
                     debug_log("[API] ✅ Token refreshed successfully")
                     return True
                 else:
@@ -292,6 +308,47 @@ class APIClient:
         except Exception as e:
             debug_log(f"[API] Search users error: {e}")
             raise Exception(f"Search failed: {str(e)}")
+    
+    async def update_profile(self, name: Optional[str] = None, username: Optional[str] = None, 
+                          bio: Optional[str] = None, phone: Optional[str] = None) -> Dict[str, Any]:
+        """Update user profile"""
+        try:
+            # Prepare update data - only include non-None fields
+            update_data = {}
+            if name is not None:
+                update_data["name"] = name
+            if username is not None:
+                update_data["username"] = username
+            if bio is not None:
+                update_data["bio"] = bio
+            if phone is not None:
+                update_data["phone"] = phone
+            
+            if not update_data:
+                raise Exception("No fields to update")
+            
+            response = await self.client.put(
+                f"{self.base_url}/api/v1/users/profile",
+                json=update_data,
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and self.refresh_token:
+                # Try to refresh token and retry once
+                if await self.refresh_access_token():
+                    response = await self.client.put(
+                        f"{self.base_url}/api/v1/users/profile",
+                        json=update_data,
+                        headers=self._get_headers()
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            raise
+        except Exception as e:
+            debug_log(f"[API] Update profile error: {e}")
+            raise Exception(f"Failed to update profile: {str(e)}")
     
     # Chat endpoints
     async def list_chats(self) -> Dict[str, Any]:

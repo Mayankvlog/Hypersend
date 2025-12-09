@@ -362,14 +362,58 @@ class ProfileView(ft.View):
         )
         
         def save_changes(e):
-            # Here you would normally save to backend
-            self.current_user["name"] = name_field.value
-            self.current_user["username"] = username_field.value
-            self.current_user["bio"] = bio_field.value
+            # Create async save function
+            async def do_save():
+                try:
+                    # Show loading indicator
+                    save_btn = dialog.actions[1]  # Save button is second action
+                    save_btn.content = ft.ProgressRing(width=20, height=20, stroke_width=2)
+                    self.page.update()
+                    
+                    # Save to backend
+                    result = await self.api_client.update_profile(
+                        name=name_field.value,
+                        username=username_field.value,
+                        bio=bio_field.value
+                    )
+                    
+                    # Update local user data
+                    self.current_user["name"] = name_field.value
+                    self.current_user["username"] = username_field.value
+                    self.current_user["bio"] = bio_field.value
+                    
+                    # Close dialog and rebuild UI
+                    dialog.open = False
+                    self.build_ui()  # Rebuild UI with updated data
+                    self.page.update()
+                    
+                    # Show success message
+                    snack = ft.SnackBar(
+                        content=ft.Text("Profile updated successfully!"),
+                        bgcolor=ft.Colors.GREEN
+                    )
+                    self.page.overlay.append(snack)
+                    snack.open = True
+                    self.page.update()
+                    
+                except Exception as save_e:
+                    print(f"[PROFILE] Error saving profile: {save_e}")
+                    # Restore button and show error
+                    save_btn = dialog.actions[1]  # Save button is second action
+                    save_btn.content = ft.Text("Save")
+                    self.page.update()
+                    
+                    # Show error message
+                    error_snack = ft.SnackBar(
+                        content=ft.Text(f"Failed to save profile: {str(save_e)}"),
+                        bgcolor=ft.Colors.RED
+                    )
+                    self.page.overlay.append(error_snack)
+                    error_snack.open = True
+                    self.page.update()
             
-            dialog.open = False
-            self.build_ui()  # Rebuild UI with updated data
-            self.page.update()
+            # Run async save
+            self.page.run_task(do_save)
         
         dialog = ft.AlertDialog(
             title=ft.Text("Edit Profile"),
@@ -449,40 +493,84 @@ class ProfileView(ft.View):
         """Load user statistics from API"""
         try:
             if not self.api_client:
+                print("[PROFILE] API client nahi hai")
                 return
             
-            # Get user chats for message count
-            chats_response = await self.api_client.get("/api/v1/chats/")
-            if hasattr(chats_response, 'json'):
-                chats_data = chats_response.json()
+            print("[PROFILE] User statistics load kar rahe hain...")
+            
+            # Pehle current user data lo
+            try:
+                user_data = await self.api_client.get_current_user()
+                quota_used = user_data.get("quota_used", 0)
+                # Bytes ko MB mein convert karo
+                storage_mb = quota_used / (1024 * 1024)
+                self.storage_used = int(storage_mb)
+                print(f"[PROFILE] Storage use kiya gaya: {self.storage_used} MB")
+            except Exception as e:
+                print(f"[PROFILE] User data lene mein error: {e}")
+                self.storage_used = 0
+            
+            # Chats lo aur messages count karo
+            try:
+                chats_data = await self.api_client.list_chats()
                 chats = chats_data.get("chats", [])
                 
-                # Count total messages
+                # Total messages aur files count karo
                 total_messages = 0
                 total_files = 0
-                for chat in chats:
-                    total_messages += 1  # Count each chat as one interaction
                 
-                # Get current user data for storage
-                user_response = await self.api_client.get("/api/v1/users/me")
-                if hasattr(user_response, 'json'):
-                    user_data = user_response.json()
-                    quota_used = user_data.get("quota_used", 0)
-                    # Convert bytes to MB
-                    storage_mb = quota_used / (1024 * 1024)
-                    
-                    # Update stats
-                    self.messages_count = total_messages
-                    self.files_count = len([c for c in chats if c.get("type") == "file"])
-                    self.storage_used = int(storage_mb)
-                    
-                    # Update UI
-                    self.messages_text.value = str(self.messages_count)
-                    self.files_text.value = str(self.files_count)
-                    self.storage_text.value = f"{self.storage_used} MB"
-                    self.page.update()
+                for chat in chats:
+                    chat_id = chat.get("_id") or chat.get("id")
+                    if chat_id:
+                        try:
+                            # Is chat ki messages lo
+                            messages_data = await self.api_client.get_messages(chat_id, limit=1000)
+                            messages = messages_data.get("messages", [])
+                            total_messages += len(messages)
+                            
+                            # File messages count karo
+                            for msg in messages:
+                                if msg.get("file_id"):
+                                    total_files += 1
+                        except Exception as msg_e:
+                            print(f"[PROFILE] Chat {chat_id} ki messages lene mein error: {msg_e}")
+                            continue
+                
+                self.messages_count = total_messages
+                self.files_count = total_files
+                print(f"[PROFILE] Total Messages: {self.messages_count}, Files: {self.files_count}")
+                
+            except Exception as e:
+                print(f"[PROFILE] Chats lene mein error: {e}")
+                self.messages_count = 0
+                self.files_count = 0
+            
+            # UI update karo
+            if hasattr(self, 'messages_text'):
+                self.messages_text.value = str(self.messages_count)
+            if hasattr(self, 'files_text'):
+                self.files_text.value = str(self.files_count)
+            if hasattr(self, 'storage_text'):
+                self.storage_text.value = f"{self.storage_used} MB"
+            
+            self.page.update()
+            print("[PROFILE] Stats load ho gaye aur UI update ho gaya")
+            
         except Exception as e:
-            print(f"[PROFILE] Error loading stats: {e}")
+            print(f"[PROFILE] Stats load karne mein serious error: {e}")
+            # Error par default values set karo
+            self.messages_count = 0
+            self.files_count = 0
+            self.storage_used = 0
+            
+            if hasattr(self, 'messages_text'):
+                self.messages_text.value = "0"
+            if hasattr(self, 'files_text'):
+                self.files_text.value = "0"
+            if hasattr(self, 'storage_text'):
+                self.storage_text.value = "0 MB"
+            
+            self.page.update()
     
     def on_view_mount(self):
         """Called when view is mounted"""
