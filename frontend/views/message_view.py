@@ -1007,8 +1007,7 @@ class MessageView(ft.View):
             bgcolor=bubble_color,
             border_radius=radius,
             padding=ft.padding.symmetric(horizontal=12, vertical=6),
-            width=None,
-            constraints=ft.BoxConstraints(max_width=280),
+            width=280,
             ink=True,
             on_long_press=lambda e, mid=message_id, saved=is_saved: self.show_message_menu(mid, saved, msg_text)
         )
