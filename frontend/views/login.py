@@ -47,7 +47,7 @@ class LoginView(ft.Container):
         
         self.email_field = ft.TextField(
             label="Email",
-            border_radius=8,
+            border_radius=RADIUS["md"],
             keyboard_type=ft.KeyboardType.EMAIL,
             autofocus=True,
             text_size=FONT_SIZES["base"],
@@ -62,33 +62,13 @@ class LoginView(ft.Container):
             label="Password",
             password=True,
             can_reveal_password=True,
-            border_radius=8,
+            border_radius=RADIUS["md"],
             text_size=FONT_SIZES["base"],
             border_color=colors_palette["border"],
             focused_border_color=colors_palette["accent"],
             filled=True,
             bgcolor=colors_palette["bg_primary"],
             content_padding=ft.padding.symmetric(horizontal=16, vertical=12)
-        )
-        
-        self.email_field = ft.TextField(
-            label="Email",
-            border_radius=RADIUS["md"],
-            keyboard_type=ft.KeyboardType.EMAIL,
-            autofocus=True,
-            text_size=FONT_SIZES["base"],
-            border_color=colors_palette["border"],
-            focused_border_color="#0088CC"
-        )
-        
-        self.password_field = ft.TextField(
-            label="Password",
-            password=True,
-            can_reveal_password=True,
-            border_radius=RADIUS["md"],
-            text_size=FONT_SIZES["base"],
-            border_color=colors_palette["border"],
-            focused_border_color="#0088CC"
         )
         
         self.error_text = ft.Text(
