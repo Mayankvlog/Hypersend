@@ -247,7 +247,7 @@ class FileUploadView(ft.Container):
             self.page.update()
     
     async def upload_chunks(self):
-        """Upload file chunks with parallel processing"""
+        """Upload file chunks with parallel processing and real-time progress"""
         import time
         
         semaphore = asyncio.Semaphore(self.MAX_PARALLEL)

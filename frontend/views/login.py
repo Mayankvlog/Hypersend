@@ -189,7 +189,7 @@ class LoginView(ft.Container):
         return re.match(pattern, email) is not None
     
     async def handle_submit(self, e):
-        """Handle login/register submission"""
+        """Handle login/register submission with JWT token storage"""
         colors_palette = self.theme.colors
         
         self.error_text.visible = False
@@ -217,9 +217,23 @@ class LoginView(ft.Container):
         
         try:
             if self.is_login_mode:
-                # Login
-                await self.api_client.login(email, password)
+                # Login - JWT tokens are automatically set in api_client
+                result = await self.api_client.login(email, password)
+                
+                # Store tokens in session for persistence
+                try:
+                    from session_manager import SessionManager
+                    if self.api_client.access_token and self.api_client.refresh_token:
+                        SessionManager.save_session(
+                            email,
+                            self.api_client.access_token,
+                            self.api_client.refresh_token
+                        )
+                except ImportError:
+                    pass  # Session manager not available
+                
                 user = await self.api_client.get_current_user()
+                print(f"[LOGIN] ✅ Successfully logged in as {user.get('username', 'user')}")
                 self.on_success(user)
             else:
                 # Register
@@ -232,15 +246,41 @@ class LoginView(ft.Container):
                     self.page.update()
                     return
                 
+                # Register and auto-login
                 await self.api_client.register(name, email, password)
                 await self.api_client.login(email, password)
+                
+                # Store tokens in session
+                try:
+                    from session_manager import SessionManager
+                    if self.api_client.access_token and self.api_client.refresh_token:
+                        SessionManager.save_session(
+                            email,
+                            self.api_client.access_token,
+                            self.api_client.refresh_token
+                        )
+                except ImportError:
+                    pass
+                
                 user = await self.api_client.get_current_user()
+                print(f"[LOGIN] ✅ Successfully registered and logged in as {user.get('username', 'user')}")
                 self.on_success(user)
         except Exception as ex:
-            self.error_text.value = f"Error: {str(ex)}"
+            error_msg = str(ex)
+            # Provide user-friendly error messages
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                self.error_text.value = "Invalid email or password"
+            elif "already exists" in error_msg.lower():
+                self.error_text.value = "Email already registered. Please login instead."
+            elif "Connection" in error_msg:
+                self.error_text.value = "Connection error. Please check your internet and try again."
+            else:
+                self.error_text.value = f"Error: {error_msg[:50]}"
+            
             self.error_text.visible = True
             self.submit_button.text = original_text
             self.submit_button.disabled = False
+            print(f"[LOGIN] ❌ Error: {error_msg}")
             self.page.update()
 
 

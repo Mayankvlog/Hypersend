@@ -376,41 +376,113 @@ class ChatsView(ft.View):
 
     
     def build_ui(self):
-        """Build the chats interface"""
-        # AppBar with hamburger menu
-        self.page.appbar = ft.AppBar(
-            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK, size=22),
-            bgcolor=self.bg_color,
-            leading=ft.IconButton(
-                icon=ft.Icons.MENU,
-                icon_color=ft.Colors.BLACK,
-                tooltip="Menu",
-                on_click=lambda e: self.open_drawer()
-            ),
-
-            actions=[
-                ft.IconButton(
-                    icon=ft.Icons.SEARCH,
-                    tooltip="Search chats",
-                    on_click=lambda e: self.show_search_dialog()
+        """Build the chats interface with Telegram-style left sidebar"""
+        # Create Telegram-style left sidebar
+        def create_telegram_sidebar():
+            def on_theme_click(e):
+                self.dark_mode = not self.dark_mode
+                self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+                self.page.update()
+            
+            def on_menu_click(e):
+                self.open_drawer()
+            
+            def on_search_click(e):
+                self.show_search_dialog()
+            
+            # Search bar
+            search_bar = ft.Container(
+                content=ft.TextField(
+                    hint_text="Search...",
+                    border=ft.InputBorder.NONE,
+                    filled=True,
+                    text_size=14,
+                    content_padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                    bgcolor="#F0F2F5",
+                    on_click=on_search_click
                 ),
-                ft.PopupMenuButton(
-                    icon=ft.Icons.MORE_VERT,
-                    tooltip="More Options",
-                    items=[
-                        ft.PopupMenuItem(
-                            text="👤 Profile",
-                            icon=ft.Icons.PERSON,
-                            on_click=lambda e: self.page.go("/profile")
-                        ),
-                        ft.PopupMenuItem(
-                            text="⚙️ Settings",
-                            icon=ft.Icons.SETTINGS,
-                            on_click=lambda e: self.page.go("/settings")
-                        ),
-                    ]
-                )
-            ]
+                width=200,
+                height=40,
+                border_radius=20,
+                bgcolor="#F0F2F5"
+            )
+            
+            # Menu button
+            menu_button = ft.Container(
+                content=ft.IconButton(
+                    icon=icons.MENU,
+                    icon_size=18,
+                    icon_color=ft.Colors.BLACK,
+                    tooltip="Menu",
+                    style=ft.ButtonStyle(
+                        bgcolor="#F0F2F5",
+                        padding=8,
+                        shape=ft.CircleBorder(),
+                        overlay_color=self.primary_color
+                    ),
+                    on_click=on_menu_click
+                ),
+                width=36,
+                height=36,
+                bgcolor="#F0F2F5",
+                border_radius=18
+            )
+            
+            # Theme toggle button
+            theme_button = ft.Container(
+                content=ft.IconButton(
+                    icon=icons.BRIGHTNESS_6 if not self.dark_mode else icons.BRIGHTNESS_4,
+                    icon_size=18,
+                    icon_color=ft.Colors.BLACK,
+                    tooltip="Toggle Theme",
+                    style=ft.ButtonStyle(
+                        bgcolor="#F0F2F5",
+                        padding=8,
+                        shape=ft.CircleBorder(),
+                        overlay_color=self.primary_color
+                    ),
+                    on_click=on_theme_click
+                ),
+                width=36,
+                height=36,
+                bgcolor="#F0F2F5",
+                border_radius=18
+            )
+            
+            # Left sidebar container
+            sidebar = ft.Container(
+                content=ft.Column([
+                    # Search bar at top
+                    search_bar,
+                    ft.Container(height=10),
+                    # Menu button
+                    menu_button,
+                    ft.Container(height=8),
+                    # Theme toggle button
+                    theme_button,
+                    ft.Container(height=20),
+                    # Divider
+                    ft.Container(height=1, bgcolor="#E0E0E0"),
+                    ft.Container(height=20),
+                    # Additional options
+                    ft.Text("Options", size=12, color=ft.Colors.GREY),
+                ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                width=240,
+                padding=ft.padding.all(15),
+                bgcolor="#FFFFFF",
+                border=ft.border.only(right=ft.BorderSide(1, "#E0E0E0")),
+                alignment=ft.alignment.top_center
+            )
+            
+            return sidebar
+        
+        # AppBar - simplified for Telegram style
+        self.page.appbar = ft.AppBar(
+            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
+            center_title=False,
+            bgcolor="#FFFFFF",
+            elevation=0.5,
+            actions=[]  # No actions - all in sidebar
         )
         
         # Chat list
@@ -434,47 +506,19 @@ class ChatsView(ft.View):
             expand=True
         )
         
-        # Main content
-        self.main_content = ft.Container(
+        # Create main layout with left sidebar
+        sidebar = create_telegram_sidebar()
+        main_content = ft.Container(
             content=self.chat_list,
             bgcolor=self.bg_color,
             expand=True,
             padding=ft.padding.all(16)
         )
         
-        # Saved Messages item
-        saved_messages_item = ft.Container(
-            content=ft.Row(
-                [
-                    ft.CircleAvatar(
-                        content=ft.Icon(icons.BOOKMARK, size=24, color=ft.Colors.WHITE),
-                        bgcolor=self.primary_color,
-                        radius=20
-                    ),
-                    ft.Column(
-                        [
-                            ft.Text(
-                                "Saved Messages",
-                                size=16,
-                                weight=ft.FontWeight.W_500,
-                                color=ft.Colors.BLACK
-                            ),
-                            ft.Text(
-                                "Your personal collection",
-                                size=13,
-                                color=ft.Colors.BLACK54
-                            )
-                        ],
-                        spacing=5,
-                        expand=True
-                    )
-                ],
-                spacing=15
-            ),
-            padding=15,
-            on_click=lambda e: self.show_saved_messages(),
-            bgcolor=ft.Colors.WHITE
-        )
+        main_layout = ft.Row([
+            sidebar,  # Left sidebar
+            main_content,  # Chat list
+        ], spacing=0, expand=True)
         
         # Set initial content
         self.content = [
@@ -518,7 +562,7 @@ class ChatsView(ft.View):
             self.loading = False
     
     def update_chat_list(self):
-        """Update the chat list display"""
+        """Update the chat list display with unread counts and timestamps"""
         chat_items = []
         
         # Add regular chats
@@ -530,20 +574,49 @@ class ChatsView(ft.View):
             
             # Determine avatar based on chat type
             if chat.get("type") == "group":
-                avatar = ft.Icon(icons.GROUP, size=40)
+                avatar_content = ft.Icon(icons.GROUP, size=40, color=ft.Colors.WHITE)
+                avatar_bg = "#7C3AED"  # Purple for groups
             elif chat.get("type") == "channel":
-                avatar = ft.Icon(icons.CAMPAIGN, size=40)
+                avatar_content = ft.Icon(icons.CAMPAIGN, size=40, color=ft.Colors.WHITE)
+                avatar_bg = "#EC4899"  # Pink for channels
             else:
-                avatar = ft.CircleAvatar(
-                    content=ft.Text(
-                        (chat_name or "?")[0].upper(),
-                        size=20,
-                        weight=ft.FontWeight.BOLD
-                    ),
-                    bgcolor=self.primary_color
-                )
+                first_letter = (chat_name or "?")[0].upper()
+                avatar_content = ft.Text(first_letter, size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)
+                avatar_bg = self.primary_color
             
-            last_message_text = (chat.get("last_message") or {}).get("text", "No messages yet")
+            avatar = ft.Container(
+                content=avatar_content,
+                width=50,
+                height=50,
+                bgcolor=avatar_bg,
+                border_radius=25,
+                alignment=ft.alignment.center
+            )
+            
+            last_message_obj = chat.get("last_message") or {}
+            last_message_text = last_message_obj.get("text", "No messages yet")
+            last_message_time = last_message_obj.get("timestamp") or chat.get("updated_at", "")
+            
+            # Format timestamp to relative time (e.g., "2m ago", "Yesterday")
+            time_label = self.format_timestamp(last_message_time)
+            
+            # Get unread count
+            unread_count = chat.get("unread_count", 0)
+            
+            # Create unread badge if needed
+            unread_badge = ft.Container(
+                content=ft.Text(
+                    str(unread_count),
+                    size=12,
+                    weight=ft.FontWeight.BOLD,
+                    color=ft.Colors.WHITE
+                ),
+                width=24,
+                height=24,
+                bgcolor="#DC3545",  # Red for unread
+                border_radius=12,
+                alignment=ft.alignment.center
+            ) if unread_count > 0 else ft.Container()
             
             chat_item = ft.Container(
                 content=ft.Row(
@@ -551,29 +624,72 @@ class ChatsView(ft.View):
                         avatar,
                         ft.Column(
                             [
-                                ft.Text(
-                                    chat_name,
-                                    size=16,
-                                    weight=ft.FontWeight.W_500,
-                                    color=self.text_color
-                                ),
-                                ft.Text(
-                                    last_message_text[:50] + "..." if len(last_message_text) > 50 else last_message_text,
-                                    size=13,
-                                    color=self.text_secondary
-                                )
+                                ft.Row([
+                                    ft.Text(
+                                        chat_name,
+                                        size=16,
+                                        weight=ft.FontWeight.W_500,
+                                        color=self.text_color,
+                                        expand=True,
+                                        no_wrap=True
+                                    ),
+                                    ft.Text(
+                                        time_label,
+                                        size=12,
+                                        color=self.text_secondary
+                                    )
+                                ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                ft.Row([
+                                    ft.Text(
+                                        last_message_text[:40] + "..." if len(last_message_text) > 40 else last_message_text,
+                                        size=13,
+                                        color=self.text_secondary,
+                                        no_wrap=True,
+                                        expand=True,
+                                        weight=ft.FontWeight.W_500 if unread_count > 0 else ft.FontWeight.NORMAL
+                                    ),
+                                    unread_badge
+                                ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
                             ],
                             spacing=5,
                             expand=True
                         )
                     ],
-                    spacing=15
+                    spacing=15,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER
                 ),
                 padding=15,
-                on_click=lambda e, c=chat: self.open_chat(c)
+                bgcolor=self.card_color,
+                border_radius=10,
+                on_click=lambda e, c=chat: self.page.run_task(self.open_chat, c),
+                margin=ft.margin.symmetric(horizontal=10, vertical=5)
             )
             chat_items.append(chat_item)
-            chat_items.append(ft.Divider(height=1, color="#E0E0E0"))
+    
+    def format_timestamp(self, timestamp: str) -> str:
+        """Format timestamp to relative time"""
+        if not timestamp:
+            return ""
+        
+        try:
+            from datetime import datetime
+            msg_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            now = datetime.now(msg_time.tzinfo)
+            diff = now - msg_time
+            
+            seconds = diff.total_seconds()
+            if seconds < 60:
+                return "now"
+            elif seconds < 3600:
+                return f"{int(seconds // 60)}m"
+            elif seconds < 86400:
+                return f"{int(seconds // 3600)}h"
+            elif seconds < 604800:
+                return f"{int(seconds // 86400)}d"
+            else:
+                return msg_time.strftime("%b %d")
+        except:
+            return ""
         
         # Add Saved Messages at the end
         if chat_items:
@@ -628,7 +744,106 @@ class ChatsView(ft.View):
             )
         ]
         
-        # Update main content
+        # Create Telegram-style sidebar for updated content
+        def create_telegram_sidebar():
+            def on_theme_click(e):
+                self.dark_mode = not self.dark_mode
+                self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+                self.page.update()
+            
+            def on_menu_click(e):
+                self.open_drawer()
+            
+            def on_search_click(e):
+                self.show_search_dialog()
+            
+            # Search bar
+            search_bar = ft.Container(
+                content=ft.TextField(
+                    hint_text="Search...",
+                    border=ft.InputBorder.NONE,
+                    filled=True,
+                    text_size=14,
+                    content_padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                    bgcolor="#F0F2F5",
+                    on_click=on_search_click
+                ),
+                width=200,
+                height=40,
+                border_radius=20,
+                bgcolor="#F0F2F5"
+            )
+            
+            # Menu button
+            menu_button = ft.Container(
+                content=ft.IconButton(
+                    icon=icons.MENU,
+                    icon_size=18,
+                    icon_color=ft.Colors.BLACK,
+                    tooltip="Menu",
+                    style=ft.ButtonStyle(
+                        bgcolor="#F0F2F5",
+                        padding=8,
+                        shape=ft.CircleBorder(),
+                        overlay_color=self.primary_color
+                    ),
+                    on_click=on_menu_click
+                ),
+                width=36,
+                height=36,
+                bgcolor="#F0F2F5",
+                border_radius=18
+            )
+            
+            # Theme toggle button
+            theme_button = ft.Container(
+                content=ft.IconButton(
+                    icon=icons.BRIGHTNESS_6 if not self.dark_mode else icons.BRIGHTNESS_4,
+                    icon_size=18,
+                    icon_color=ft.Colors.BLACK,
+                    tooltip="Toggle Theme",
+                    style=ft.ButtonStyle(
+                        bgcolor="#F0F2F5",
+                        padding=8,
+                        shape=ft.CircleBorder(),
+                        overlay_color=self.primary_color
+                    ),
+                    on_click=on_theme_click
+                ),
+                width=36,
+                height=36,
+                bgcolor="#F0F2F5",
+                border_radius=18
+            )
+            
+            # Left sidebar container
+            sidebar = ft.Container(
+                content=ft.Column([
+                    # Search bar at top
+                    search_bar,
+                    ft.Container(height=10),
+                    # Menu button
+                    menu_button,
+                    ft.Container(height=8),
+                    # Theme toggle button
+                    theme_button,
+                    ft.Container(height=20),
+                    # Divider
+                    ft.Container(height=1, bgcolor="#E0E0E0"),
+                    ft.Container(height=20),
+                    # Additional options
+                    ft.Text("Options", size=12, color=ft.Colors.GREY),
+                ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                width=240,
+                padding=ft.padding.all(15),
+                bgcolor="#FFFFFF",
+                border=ft.border.only(right=ft.BorderSide(1, "#E0E0E0")),
+                alignment=ft.alignment.top_center
+            )
+            
+            return sidebar
+        
+        # Update main content with sidebar
         main_content = ft.Container(
             content=self.chat_list,
             bgcolor=self.bg_color,
@@ -636,7 +851,13 @@ class ChatsView(ft.View):
             padding=ft.padding.all(16)
         )
         
-        self.update_content(main_content)
+        sidebar = create_telegram_sidebar()
+        main_layout = ft.Row([
+            sidebar,  # Left sidebar
+            main_content,  # Chat list
+        ], spacing=0, expand=True)
+        
+        self.update_content(main_layout)
     
     def update_content(self, content):
         """Update the main content"""

@@ -491,50 +491,112 @@ class MessageView(ft.View):
             self.show_error(f"Failed to send: {str(e)[:50]}")
     
     async def load_messages(self):
-        """Load messages from chat"""
+        """Load messages from chat with auto-refresh for real-time updates"""
         colors_palette = self.theme.colors
         
         try:
             chat_id = self.chat.get("_id")
+            
+            # Mark chat as read
+            await self.api_client.mark_as_read(chat_id)
+            
+            # Load initial messages
             data = await self.api_client.get_messages(chat_id)
-            self.messages_list.controls.clear()
+            self.messages = data.get("messages", [])
+            self.update_message_display()
             
-            messages = data.get("messages", [])
+            # Start real-time updates using WebSocket or polling
+            await self.start_realtime_updates(chat_id)
             
-            if not messages:
-                # Empty state
-                empty = ft.Container(
-                    content=ft.Column([
-                        ft.Icon(ft.Icons.CHAT_BUBBLE_OUTLINE, size=48, color=colors_palette["text_tertiary"]),
-                        ft.Text("No messages yet", size=FONT_SIZES["lg"], color=colors_palette["text_secondary"]),
-                        ft.Text("Send a message to start the conversation!", size=FONT_SIZES["sm"], color=colors_palette["text_tertiary"])
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=SPACING["sm"]),
-                    alignment=ft.alignment.center,
-                    expand=True
-                )
-                self.messages_list.controls.append(empty)
-            else:
-                for msg in messages:
-                    msg_bubble = self.create_message_bubble(msg)
-                    self.messages_list.controls.append(msg_bubble)
-            
-            self.page.update()
         except Exception as e:
             error_text = str(e)
-            print(f"Error loading messages: {error_text}")
-            
-            error_container = ft.Container(
+            print(f"[MESSAGE] Error loading messages: {error_text}")
+            self.show_error_state(error_text)
+    
+    async def start_realtime_updates(self, chat_id: str):
+        """Start real-time message updates"""
+        try:
+            # Try to use subscribe_to_chat (WebSocket with polling fallback)
+            await self.api_client.subscribe_to_chat(
+                chat_id,
+                on_message_callback=lambda data: self.handle_new_message(data),
+                on_error_callback=lambda e: self.handle_realtime_error(e)
+            )
+        except Exception as e:
+            print(f"[MESSAGE] Real-time updates error: {e}")
+    
+    def handle_new_message(self, data: dict):
+        """Handle incoming real-time message"""
+        try:
+            messages = data.get("messages", [])
+            if messages:
+                # Add new messages
+                for msg in messages:
+                    # Check if message already exists
+                    if not any(m.get("_id") == msg.get("_id") for m in self.messages):
+                        self.messages.append(msg)
+                
+                # Update display
+                self.update_message_display()
+                
+                # Auto-scroll to bottom
+                if self.messages_list:
+                    self.page.run_task(self.auto_scroll_to_bottom)
+        except Exception as e:
+            print(f"[MESSAGE] Error handling new message: {e}")
+    
+    def handle_realtime_error(self, error):
+        """Handle real-time connection errors"""
+        print(f"[MESSAGE] Real-time error: {error}")
+    
+    async def auto_scroll_to_bottom(self):
+        """Auto-scroll to the latest message"""
+        try:
+            if self.messages_list and self.messages_list.controls:
+                await asyncio.sleep(0.1)
+                self.messages_list.scroll_to(offset=-1, duration=300)
+        except:
+            pass
+    
+    def update_message_display(self):
+        """Update the message list display"""
+        colors_palette = self.theme.colors
+        self.messages_list.controls.clear()
+        
+        if not self.messages:
+            # Empty state
+            empty = ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.ERROR_OUTLINE, size=48, color=colors_palette["error"]),
-                    ft.Text("Failed to load messages", color=colors_palette["error"]),
-                    ft.TextButton("Retry", on_click=lambda e: self.page.run_task(self.load_messages))
+                    ft.Icon(ft.Icons.CHAT_BUBBLE_OUTLINE, size=48, color=colors_palette["text_tertiary"]),
+                    ft.Text("No messages yet", size=FONT_SIZES["lg"], color=colors_palette["text_secondary"]),
+                    ft.Text("Send a message to start the conversation!", size=FONT_SIZES["sm"], color=colors_palette["text_tertiary"])
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=SPACING["sm"]),
                 alignment=ft.alignment.center,
                 expand=True
             )
-            self.messages_list.controls.clear()
-            self.messages_list.controls.append(error_container)
-            self.page.update()
+            self.messages_list.controls.append(empty)
+        else:
+            for msg in self.messages:
+                msg_bubble = self.create_message_bubble(msg)
+                self.messages_list.controls.append(msg_bubble)
+        
+        self.page.update()
+    
+    def show_error_state(self, error_text: str):
+        """Show error state with retry button"""
+        colors_palette = self.theme.colors
+        error_container = ft.Container(
+            content=ft.Column([
+                ft.Icon(ft.Icons.ERROR_OUTLINE, size=48, color=colors_palette["error"]),
+                ft.Text("Failed to load messages", color=colors_palette["error"]),
+                ft.TextButton("Retry", on_click=lambda e: self.page.run_task(self.load_messages))
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=SPACING["sm"]),
+            alignment=ft.alignment.center,
+            expand=True
+        )
+        self.messages_list.controls.clear()
+        self.messages_list.controls.append(error_container)
+        self.page.update()
     
     def create_message_bubble(self, message):
         """Create Telegram-style message bubble with tails"""
