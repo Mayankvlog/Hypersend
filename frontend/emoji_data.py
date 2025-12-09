@@ -203,6 +203,10 @@ def get_emoji_count():
     """Get total number of unique emojis"""
     return len(UNIQUE_EMOJIS)
 
+def get_emojis_by_category(category: str) -> list:
+    """Get emojis for a specific category"""
+    return EMOJI_CATEGORIES.get(category, POPULAR_EMOJIS)
+
 def search_emojis(query: str) -> list:
     """Search emojis by category name"""
     query = query.lower()

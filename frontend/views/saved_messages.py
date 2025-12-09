@@ -1397,7 +1397,7 @@ class SavedMessagesView(ft.View):
             bgcolor=bubble_color,
             border_radius=radius,
             padding=ft.padding.symmetric(horizontal=14, vertical=8),
-            constraints=ft.BoxConstraints(max_width=360),
+            width=360,
             shadow=ft.BoxShadow(
                 spread_radius=0,
                 blur_radius=3,
