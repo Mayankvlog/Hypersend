@@ -55,12 +55,15 @@ def debug_log(msg: str):
         print(msg)
 
 class ChatsView(ft.View):
-    def __init__(self, page: ft.Page, api_client: APIClient, current_user: dict, on_logout=None):
+    def __init__(self, page: ft.Page, api_client: APIClient, current_user: dict, on_logout=None, on_chat_click=None, on_saved_click=None, on_profile_click=None):
         super().__init__("/")
         self.page = page
         self.api_client = api_client
         self.current_user = current_user
         self.on_logout = on_logout
+        self.on_chat_click = on_chat_click
+        self.on_saved_click = on_saved_click
+        self.on_profile_click = on_profile_click
         
         # Theme colors
         self.primary_color = "#1F8EF1"
@@ -705,7 +708,7 @@ class ChatsView(ft.View):
     def show_search_dialog(self):
         """Show search dialog with filtering options"""
         search_field = ft.TextField(
-            label="Search chats...",
+            label="Search chats and users...",
             autofocus=True,
             on_change=self.filter_chats
         )
@@ -713,7 +716,7 @@ class ChatsView(ft.View):
         # Search results container
         search_results = ft.ListView(expand=True, spacing=1)
         
-        def update_search(e):
+        async def update_search(e):
             """Update search results as user types"""
             query = search_field.value.lower().strip()
             search_results.controls.clear()
@@ -722,7 +725,7 @@ class ChatsView(ft.View):
                 search_results.controls.append(
                     ft.Container(
                         content=ft.Text(
-                            "Type to search chats by name or member",
+                            "Type to search chats by name or find new users",
                             color=self.text_secondary,
                             text_align=ft.TextAlign.CENTER
                         ),
@@ -732,6 +735,8 @@ class ChatsView(ft.View):
                 )
             else:
                 found = False
+                
+                # Search existing chats
                 for chat in self.chats:
                     # Search by chat name
                     chat_name = chat.get("name") or ("Group Chat" if chat.get("type") == "group" else "Private Chat")
@@ -755,11 +760,67 @@ class ChatsView(ft.View):
                         search_results.controls.append(chat_item)
                         search_results.controls.append(ft.Divider(height=1, color="#E0E0E0"))
                 
+                # Search for new users
+                try:
+                    users_data = await self.api_client.search_users(query)
+                    users = users_data.get("users", [])
+                    
+                    if users:
+                        # Add section header for new users
+                        if found:  # Only add header if we already found chats
+                            search_results.controls.append(
+                                ft.Container(
+                                    content=ft.Text(
+                                        "New Users",
+                                        size=14,
+                                        weight=ft.FontWeight.W_600,
+                                        color=self.text_secondary
+                                    ),
+                                    padding=ft.padding.symmetric(horizontal=12, vertical=8)
+                                )
+                            )
+                        
+                        for user in users:
+                            found = True
+                            user_item = ft.Container(
+                                content=ft.Row([
+                                    ft.CircleAvatar(
+                                        content=ft.Text(
+                                            user["name"][0].upper(),
+                                            size=16,
+                                            weight=ft.FontWeight.BOLD,
+                                            color=ft.Colors.WHITE
+                                        ),
+                                        bgcolor=self.primary_color,
+                                        radius=20
+                                    ),
+                                    ft.Column([
+                                        ft.Text(user["name"], weight=ft.FontWeight.W_500),
+                                        ft.Text(user["email"], size=12, color=self.text_secondary)
+                                    ], expand=True, spacing=2),
+                                    ft.IconButton(
+                                        icon=ft.Icons.MESSAGE,
+                                        icon_color=self.primary_color,
+                                        tooltip="Start chat",
+                                        on_click=lambda e, u=user: self.start_new_chat(u)
+                                    )
+                                ], spacing=15),
+                                padding=12,
+                                bgcolor="#F8F9FA",
+                                border_radius=8
+                            )
+                            search_results.controls.append(user_item)
+                            search_results.controls.append(ft.Divider(height=1, color="#E0E0E0"))
+                
+                except Exception as search_e:
+                    print(f"[CHATS] User search error: {search_e}")
+                    # Continue without user search results
+                
                 if not found:
                     search_results.controls.append(
                         ft.Container(
                             content=ft.Text(
-                                "No chats found",
+                                "No chats or users found",
                                 color=self.text_secondary,
                                 text_align=ft.TextAlign.CENTER
                             ),
@@ -770,13 +831,13 @@ class ChatsView(ft.View):
             
             self.page.update()
         
-        search_field.on_change = update_search
+        search_field.on_change = lambda e: self.page.run_task(update_search, e)
         
         # Initial message
         search_results.controls.append(
             ft.Container(
                 content=ft.Text(
-                    "Type to search chats by name or member",
+                    "Type to search chats by name or find new users",
                     color=self.text_secondary,
                     text_align=ft.TextAlign.CENTER
                 ),
@@ -786,15 +847,15 @@ class ChatsView(ft.View):
         )
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Search Chats", weight=ft.FontWeight.BOLD),
+            title=ft.Text("Search", weight=ft.FontWeight.BOLD),
             content=ft.Container(
                 content=ft.Column([
                     search_field,
                     ft.Divider(),
                     search_results
                 ], spacing=10, expand=True),
-                width=400,
-                height=500
+                width=450,
+                height=600
             ),
             actions=[
                 ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))
@@ -807,6 +868,94 @@ class ChatsView(ft.View):
         """Filter chats based on search query"""
         # This is handled by the update_search callback in show_search_dialog
         pass
+    
+    async def start_new_chat(self, user: dict):
+        """Start a new chat with searched user"""
+        try:
+            # Current user ID lo
+            current_user_id = self.current_user.get("id") or self.current_user.get("_id")
+            if not current_user_id:
+                print("[CHATS] Error: Current user ID nahi mila")
+                return
+            
+            print(f"[CHATS] {user['name']} ke saath new chat start kar rahe hain...")
+            
+            # Loading indicator
+            self.page.dialog.open = False
+            loading_snack = ft.SnackBar(
+                content=ft.Row([
+                    ft.ProgressRing(width=16, height=16, stroke_width=2),
+                    ft.Text("Chat ban rahe hain...")
+                ], spacing=10),
+                duration=30000
+            )
+            self.page.overlay.append(loading_snack)
+            loading_snack.open = True
+            self.page.update()
+            
+            # Private chat create karo
+            result = await self.api_client.create_chat(
+                name=None,  # Private chats ko name nahi chahiye
+                user_ids=[current_user_id, user["id"]],
+                chat_type="private"
+            )
+            
+            # Loading hatao
+            loading_snack.open = False
+            self.page.update()
+            
+            # Success message
+            snack = ft.SnackBar(
+                content=ft.Text(f"✅ {user['name']} ke saath chat start ho gaya!"),
+                bgcolor=ft.Colors.GREEN
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
+            
+            print(f"[CHATS] Chat successfully create kiya")
+            
+            # Chats reload karo naye chat dikhane ke liye
+            await self.load_chats()
+            
+            # Naya chat open karo
+            chat_id = result.get("chat_id")
+            if chat_id:
+                # Chat list mein dhundo
+                for chat in self.chats:
+                    if chat.get("_id") == chat_id or chat.get("id") == chat_id:
+                        self.open_chat(chat)
+                        break
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[CHATS] New chat start karne mein error: {error_msg}")
+            
+            # Loading hatao
+            if 'loading_snack' in locals():
+                loading_snack.open = False
+                self.page.update()
+            
+            # Error message dikhao
+            if "401" in error_msg or "Session expired" in error_msg:
+                # Session expired - special handling
+                from session_manager import SessionManager
+                SessionManager.clear_session()
+                self.api_client.clear_tokens()
+                
+                error_snack = ft.SnackBar(
+                    content=ft.Text("Session expire ho gaya! Dubara login karo."),
+                    bgcolor=ft.Colors.ORANGE
+                )
+            else:
+                error_snack = ft.SnackBar(
+                    content=ft.Text(f"Chat start nahi hua: {error_msg[:50]}"),
+                    bgcolor=ft.Colors.RED
+                )
+            
+            self.page.overlay.append(error_snack)
+            error_snack.open = True
+            self.page.update()
 
     def go_back(self):
         """Go back to previous screen"""

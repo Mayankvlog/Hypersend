@@ -5,6 +5,7 @@ from bson import ObjectId
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from fastapi import APIRouter, HTTPException, status, Depends
 from models import ChatCreate, MessageCreate
 from database import chats_collection, messages_collection
 from auth.utils import get_current_user

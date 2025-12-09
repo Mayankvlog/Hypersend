@@ -124,6 +124,9 @@ class SavedMessagesView(ft.View):
         # Build drawer
         self.build_drawer()
         self.page.drawer = self.drawer
+        
+        # Initialize messages list and input area
+        self.init_messages_area()
 
     def build_drawer(self):
         """Build Telegram-style navigation drawer"""
@@ -237,7 +240,7 @@ class SavedMessagesView(ft.View):
                 api_client=self.api_client,
                 current_user={"id": self.current_user} if isinstance(self.current_user, str) else self.current_user,
                 on_logout=None,
-                on_back=lambda: page.run_task(lambda: self.return_to_saved(page))
+                on_back=lambda: page.run_task(self.return_to_saved, page)
             )
             self.page.views.clear()
             self.page.views.append(settings_view)
@@ -351,7 +354,7 @@ class SavedMessagesView(ft.View):
             error_msg = str(e)
             if "Backend route mismatch" in error_msg or "403" in error_msg: # Specific check
                  self.show_backend_error_dialog()
-            elif "401" in error_msg:
+            elif "401" in error_msg or "Session expired" in error_msg:
                  self.show_session_expired_dialog()
             else:
                  self.show_error(f"Could not create {char_type}: {error_msg}")
@@ -361,10 +364,15 @@ class SavedMessagesView(ft.View):
         def do_logout(e):
             from session_manager import SessionManager
             SessionManager.clear_session()
+            # Clear API client tokens
+            self.api_client.clear_tokens()
             # Navigate to login
             self.page.close(expired_dialog)
             if self.on_back:
                 self.on_back()
+            else:
+                # Fallback: try to go to root
+                self.page.go("/")
         
         expired_dialog = ft.AlertDialog(
             title=ft.Row([
@@ -375,7 +383,7 @@ class SavedMessagesView(ft.View):
                 ft.Text("Your session has expired and could not be refreshed."),
                 ft.Text("Please log out and log in again to continue.", size=13),
                 ft.Container(height=10),
-                ft.Text("This usually happens when your login session is old.", size=12, color=ft.Colors.GREY)
+                ft.Text("This usually happens when your login session is old or the backend was restarted.", size=12, color=ft.Colors.GREY)
             ], tight=True),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda e: self.page.close(expired_dialog)),
@@ -398,7 +406,9 @@ class SavedMessagesView(ft.View):
         dialog.open = True
         self.page.update()
 
-
+    def init_messages_area(self):
+        """Initialize the messages list and input area"""
+        colors_palette = self.theme.colors
         
         # Messages list
         self.messages_list = ft.ListView(
@@ -484,10 +494,7 @@ class SavedMessagesView(ft.View):
                 ft.Container(
                     content=self.messages_list,
                     expand=True,
-                    bgcolor=colors_palette["bg_secondary"] if self.dark_mode else "#E6EBEF",
-                    image_src="https://web.telegram.org/img/bg_0.png" if not self.dark_mode else None,
-                    image_fit=ft.ImageFit.COVER,
-                    image_opacity=0.5
+                    bgcolor=colors_palette["bg_secondary"] if self.dark_mode else "#E6EBEF"
                 ),
                 # Input area
                 input_container
@@ -732,10 +739,13 @@ class SavedMessagesView(ft.View):
         if not e.files:
             return
         
+        print(f"[SAVED] {len(e.files)} files upload karne hain")
+        
+        # Progress snackbar
         snack = ft.SnackBar(
             content=ft.Row([
                 ft.ProgressRing(width=16, height=16, stroke_width=2),
-                ft.Text("Preparing upload...")
+                ft.Text("Files prepare kar rahe hain...")
             ], spacing=10),
             duration=60000 
         )
@@ -744,89 +754,116 @@ class SavedMessagesView(ft.View):
         self.page.update()
         
         try:
-            # Get saved chat
+            # Saved chat lo
             saved_chat = await self.api_client.get_saved_chat()
             chat_id = saved_chat.get("chat_id") or saved_chat.get("_id")
             
             if not chat_id:
-                self.show_error("Could not find saved messages chat")
+                self.show_error("Saved messages chat nahi mila")
                 snack.open = False
                 self.page.update()
                 return
 
-            # Process files
+            # Files process karo
             count = 0
-            for file in e.files:
+            total_size = 0
+            for i, file in enumerate(e.files):
                 file_name = file.name
                 file_path = file.path
+                file_size = file.size if hasattr(file, 'size') else 0
+                total_size += file_size
                 
-                # Update snackbar text
-                snack.content.controls[1].value = f"Uploading {file_name}..."
+                # Progress update karo
+                progress_text = f"Uploading {i+1}/{len(e.files)}: {file_name}"
+                snack.content.controls[1].value = progress_text
                 snack.update()
                 
-                # Log
-                print(f"Uploading file: {file_name}")
+                print(f"[SAVED] Uploading file {i+1}/{len(e.files)}: {file_name}")
                 
-                # Process upload
-                file_id = await self.api_client.upload_large_file(file_path, chat_id)
-                
-                # Send message attached to file
-                await self.api_client.send_message(
-                    chat_id=chat_id,
-                    file_id=file_id
-                )
-                count += 1
+                try:
+                    # File upload karo
+                    file_id = await self.api_client.upload_large_file(file_path, chat_id)
+                    
+                    # File ke saath message send karo
+                    await self.api_client.send_message(
+                        chat_id=chat_id,
+                        file_id=file_id
+                    )
+                    count += 1
+                    print(f"[SAVED] File {file_name} successfully upload ho gaya")
+                    
+                except Exception as file_e:
+                    print(f"[SAVED] File {file_name} upload mein error: {file_e}")
+                    # Continue with next file
+                    continue
 
-            # Close
+            # Progress snackbar band karo
             snack.open = False
             self.page.update()
             
-            # Success
-            success_snack = ft.SnackBar(content=ft.Text(f"✅ {count} file(s) saved!"), bgcolor=ft.Colors.GREEN)
+            # Success message dikhao
+            size_mb = total_size / (1024 * 1024)
+            success_msg = f"✅ {count} file(s) save ho gaye! ({size_mb:.1f} MB)"
+            success_snack = ft.SnackBar(
+                content=ft.Text(success_msg), 
+                bgcolor=ft.Colors.GREEN
+            )
             self.page.overlay.append(success_snack)
             success_snack.open = True
             self.page.update()
             
-            # Reload messages
+            print(f"[SAVED] Upload complete: {count}/{len(e.files)} files, {size_mb:.1f} MB")
+            
+            # Messages reload karo
             await self.load_saved_messages()
             
         except Exception as e:
             snack.open = False
             self.page.update()
-            print(f"Error uploading: {e}")
-            if "403" in str(e) or "401" in str(e):
-                 self.show_backend_error_dialog()
+            error_str = str(e)
+            print(f"[SAVED] File upload mein serious error: {error_str}")
+            
+            if "403" in error_str:
+                self.show_backend_error_dialog()
+            elif "401" in error_str or "Session expired" in error_str:
+                self.show_session_expired_dialog()
             else:
-                 self.show_error(f"Upload failed: {str(e)[:50]}")
+                self.show_error(f"Upload fail ho gaya: {error_str[:50]}")
     
     async def load_saved_messages(self):
         """Load all saved messages"""
         colors_palette = self.theme.colors
         
         try:
-            # Try primary endpoint first
+            print("[SAVED] Saved messages load kar rahe hain...")
+            
+            # Pehle primary endpoint try karo
             try:
                 data = await self.api_client.get_saved_messages()
                 messages = data.get("messages", [])
+                print(f"[SAVED] Primary endpoint se {len(messages)} messages mile")
             except Exception as primary_error:
-                print(f"Primary endpoint failed: {primary_error}")
-                # Fallback: Get saved chat and then fetch its messages
+                print(f"[SAVED] Primary endpoint fail ho gaya: {primary_error}")
+                # Fallback: Saved chat lo aur phir messages lo
                 try:
                     saved_chat = await self.api_client.get_saved_chat()
                     chat_id = saved_chat.get("chat_id") or saved_chat.get("_id")
                     if chat_id:
                         msg_data = await self.api_client.get_messages(chat_id)
                         messages = msg_data.get("messages", [])
+                        print(f"[SAVED] Fallback se {len(messages)} messages mile")
                     else:
                         messages = []
+                        print("[SAVED] Koi saved chat nahi mila")
                 except Exception as fallback_error:
-                    print(f"Fallback also failed: {fallback_error}")
+                    print(f"[SAVED] Fallback bhi fail ho gaya: {fallback_error}")
                     messages = []
             
+            # Messages list clear karo
             self.messages_list.controls.clear()
             
             if not messages:
-                # Simple empty state
+                # Empty state dikhao
                 empty_state = ft.Container(
                     content=ft.Column([
                         ft.Icon(
@@ -835,14 +872,14 @@ class SavedMessagesView(ft.View):
                             color=colors_palette["text_tertiary"]
                         ),
                         ft.Text(
-                            "No saved messages yet",
+                            "Koi saved message nahi hai",
                             size=FONT_SIZES["lg"],
                             weight=ft.FontWeight.W_500,
                             color=colors_palette["text_secondary"],
                             text_align=ft.TextAlign.CENTER
                         ),
                         ft.Text(
-                            "Messages you save will appear here",
+                            "Jo messages aap save karenge woh yahan dikheinge",
                             size=FONT_SIZES["sm"],
                             color=colors_palette["text_tertiary"],
                             text_align=ft.TextAlign.CENTER
@@ -852,20 +889,30 @@ class SavedMessagesView(ft.View):
                     expand=True
                 )
                 self.messages_list.controls.append(empty_state)
+                print("[SAVED] Empty state dikhaya")
             else:
+                # Messages ko cards mein convert karo
                 for msg in messages:
                     msg_card = self.create_message_card(msg)
                     self.messages_list.controls.append(msg_card)
+                
+                print(f"[SAVED] {len(messages)} message cards banaye")
             
             self.page.update()
+            print("[SAVED] Saved messages successfully load ho gaye")
+            
         except Exception as e:
             error_str = str(e)
-            print(f"Error loading saved messages: {error_str}")
+            print(f"[SAVED] Saved messages load karne mein serious error: {error_str}")
             
-            if "403" in error_str or "401" in error_str:
+            if "403" in error_str:
                  self.show_backend_error_dialog()
+                 return
+            elif "401" in error_str or "Session expired" in error_str:
+                 self.show_session_expired_dialog()
+                 return
             
-            # Simple error state
+            # Error state dikhao
             error_state = ft.Container(
                 content=ft.Column([
                     ft.Icon(
@@ -874,7 +921,7 @@ class SavedMessagesView(ft.View):
                         color=colors_palette["error"]
                     ),
                     ft.Text(
-                        "Failed to load messages",
+                        "Messages load nahi ho paye",
                         size=FONT_SIZES["lg"],
                         weight=ft.FontWeight.W_500,
                         color=colors_palette["error"]
@@ -886,7 +933,7 @@ class SavedMessagesView(ft.View):
                         text_align=ft.TextAlign.CENTER
                     ),
                     ft.TextButton(
-                        "Try again",
+                        "Dubara try karo",
                         on_click=lambda e: self.page.run_task(self.load_saved_messages)
                     )
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=SPACING["md"]),
@@ -1036,41 +1083,68 @@ class SavedMessagesView(ft.View):
             return
         
         try:
-            message_text = self.message_input.value
+            message_text = self.message_input.value.strip()
             self.message_input.value = ""
             self.page.update()
             
-            # Get or create saved messages chat
+            print(f"[SAVED] Message send kar rahe hain: {message_text[:50]}...")
+            
+            # Loading indicator
+            self.send_btn.icon = ft.Icons.HOURGLASS_EMPTY
+            self.send_btn.disabled = True
+            self.page.update()
+            
+            # Get ya create saved messages chat
             saved_chat = await self.api_client.get_saved_chat()
             chat_id = saved_chat.get("chat_id") or saved_chat.get("_id")
             
             if not chat_id:
-                self.show_error("Could not find saved messages chat")
+                self.show_error("Saved messages chat nahi mila")
                 self.message_input.value = message_text
+                self.send_btn.icon = ft.Icons.SEND
+                self.send_btn.disabled = False
                 self.page.update()
                 return
             
-            # Send the message
-            await self.api_client.send_message(
+            # Message send karo
+            result = await self.api_client.send_message(
                 chat_id=chat_id,
                 text=message_text
             )
             
-            # Show success
+            print(f"[SAVED] Message successfully send kiya")
+            
+            # Success message dikhao
             snack = ft.SnackBar(
-                content=ft.Text("Message saved"),
+                content=ft.Text("Message save ho gaya!"),
+                bgcolor=ft.Colors.GREEN,
                 duration=2000
             )
             self.page.overlay.append(snack)
             snack.open = True
             
-            # Reload messages
+            # Messages reload karo
             await self.load_saved_messages()
             
         except Exception as e:
             error_msg = str(e)
-            print(f"Error sending message: {error_msg}")
-            self.show_error(f"Failed to save message: {error_msg[:50]}")
+            print(f"[SAVED] Message send karne mein error: {error_msg}")
+            
+            # Button restore karo
+            self.send_btn.icon = ft.Icons.SEND
+            self.send_btn.disabled = False
+            self.page.update()
+            
+            # Error dikhao
+            if "401" in error_msg or "Session expired" in error_msg:
+                self.show_session_expired_dialog()
+            else:
+                self.show_error(f"Message save nahi hua: {error_msg[:50]}")
+            
+        finally:
+            # Button hamesha restore karo
+            self.send_btn.icon = ft.Icons.SEND
+            self.send_btn.disabled = False
             self.page.update()
     
     async def unsave_message(self, message_id: str):

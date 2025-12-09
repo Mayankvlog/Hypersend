@@ -534,10 +534,51 @@ class SettingsView(ft.View):
     
     def toggle_dark_mode(self, e):
         """Toggle dark mode"""
-        self.dark_mode = e.control.value
-        # Implement dark mode logic
-        self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
-        self.page.update()
+        try:
+            self.dark_mode = e.control.value
+            self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+            self.page.update()
+            print(f"[SETTINGS] Dark mode {'on' if self.dark_mode else 'off'} kiya")
+        except Exception as ex:
+            print(f"[SETTINGS] Dark mode toggle mein error: {ex}")
+    
+    def toggle_notifications(self, e):
+        """Toggle notifications"""
+        try:
+            self.notifications_enabled = e.control.value
+            self.page.update()
+            print(f"[SETTINGS] Notifications {'on' if self.notifications_enabled else 'off'} kiye")
+        except Exception as ex:
+            print(f"[SETTINGS] Notifications toggle mein error: {ex}")
+    
+    def toggle_sound(self, e):
+        """Toggle sound"""
+        try:
+            sound_enabled = e.control.value
+            self.page.update()
+            print(f"[SETTINGS] Sound {'on' if sound_enabled else 'off'} kiya")
+            # TODO: Actual sound implementation
+        except Exception as ex:
+            print(f"[SETTINGS] Sound toggle mein error: {ex}")
+    
+    def toggle_vibration(self, e):
+        """Toggle vibration"""
+        try:
+            vibration_enabled = e.control.value
+            self.page.update()
+            print(f"[SETTINGS] Vibration {'on' if vibration_enabled else 'off'} kiya")
+            # TODO: Actual vibration implementation
+        except Exception as ex:
+            print(f"[SETTINGS] Vibration toggle mein error: {ex}")
+    
+    def toggle_online_status(self, e):
+        """Toggle online status"""
+        try:
+            self.online_status = e.control.value
+            self.page.update()
+            print(f"[SETTINGS] Online status {'visible' if self.online_status else 'hidden'} kiya")
+        except Exception as ex:
+            print(f"[SETTINGS] Online status toggle mein error: {ex}")
     
     def show_phone_settings(self):
         """Show phone number settings dialog"""
