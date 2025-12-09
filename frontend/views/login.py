@@ -24,20 +24,51 @@ class LoginView(ft.Container):
         self.dark_mode = dark_mode
         colors_palette = self.theme.colors
         
-        # Override accent color to light blue theme
+        # Use exact Telegram colors
         colors_palette["accent"] = "#0088CC"
         colors_palette["accent_light"] = "#E7F5FF"
         colors_palette["accent_hover"] = "#0077B5"
+        colors_palette["message_sent"] = "#E8F5E8"
+        colors_palette["chat_selected"] = "#F0F2F5"
         
-        # UI Elements - Minimal Clean Design
+        # Telegram-style input fields
         self.name_field = ft.TextField(
             label="Name",
-            border_radius=RADIUS["md"],
+            border_radius=8,
             visible=False,
             keyboard_type=ft.KeyboardType.NAME,
             text_size=FONT_SIZES["base"],
             border_color=colors_palette["border"],
-            focused_border_color="#0088CC"
+            focused_border_color=colors_palette["accent"],
+            filled=True,
+            bgcolor=colors_palette["bg_primary"],
+            content_padding=ft.padding.symmetric(horizontal=16, vertical=12)
+        )
+        
+        self.email_field = ft.TextField(
+            label="Email",
+            border_radius=8,
+            keyboard_type=ft.KeyboardType.EMAIL,
+            autofocus=True,
+            text_size=FONT_SIZES["base"],
+            border_color=colors_palette["border"],
+            focused_border_color=colors_palette["accent"],
+            filled=True,
+            bgcolor=colors_palette["bg_primary"],
+            content_padding=ft.padding.symmetric(horizontal=16, vertical=12)
+        )
+        
+        self.password_field = ft.TextField(
+            label="Password",
+            password=True,
+            can_reveal_password=True,
+            border_radius=8,
+            text_size=FONT_SIZES["base"],
+            border_color=colors_palette["border"],
+            focused_border_color=colors_palette["accent"],
+            filled=True,
+            bgcolor=colors_palette["bg_primary"],
+            content_padding=ft.padding.symmetric(horizontal=16, vertical=12)
         )
         
         self.email_field = ft.TextField(
@@ -71,12 +102,13 @@ class LoginView(ft.Container):
             "Login",
             on_click=lambda e: self.page.run_task(self.handle_submit, e),
             width=300,
-            height=48,
+            height=50,
             style=ft.ButtonStyle(
-                bgcolor="#0088CC",
+                bgcolor=colors_palette["accent"],
                 color=colors_palette["text_inverse"],
-                shape=ft.RoundedRectangleBorder(radius=RADIUS["md"]),
-                overlay_color="#0077B5"
+                shape=ft.RoundedRectangleBorder(radius=8),
+                elevation=0,
+                overlay_color=colors_palette["accent_hover"]
             )
         )
         
@@ -108,22 +140,37 @@ class LoginView(ft.Container):
             on_click=lambda e: self.toggle_theme()
         )
         
-        # Logo/Title with light-blue theme
+        # Telegram-style logo - use text instead of image to avoid path issues
+        logo_container = ft.Container(
+            content=ft.Text(
+                "Z",
+                size=48,
+                weight=ft.FontWeight.BOLD,
+                color=colors_palette["text_inverse"]
+            ),
+            width=120,
+            height=120,
+            bgcolor=colors_palette["accent"],
+            border_radius=60,
+            alignment=ft.alignment.center,
+            margin=ft.margin.only(bottom=20)
+        )
+        
         title_text = ft.Text(
             "Zaply",
-            size=FONT_SIZES["5xl"],
-            weight=ft.FontWeight.W_700,
-            color="#0088CC"
+            size=FONT_SIZES["4xl"],
+            weight=ft.FontWeight.W_600,
+            color=colors_palette["text_primary"]
         )
         
         subtitle_text = ft.Text(
             "Fast Chat & File Sharing",
-            size=FONT_SIZES["base"],
+            size=FONT_SIZES["sm"],
             color=colors_palette["text_secondary"],
             text_align=ft.TextAlign.CENTER
         )
         
-        # Layout - Centered, Minimal
+        # Telegram-style centered layout
         self.content = ft.Container(
             content=ft.Column([
                 # Theme toggle at top right
@@ -134,10 +181,11 @@ class LoginView(ft.Container):
                 # Centered login form
                 ft.Container(
                     content=ft.Column([
-                        # Logo/Title
+                        # Logo
+                        logo_container,
                         title_text,
                         subtitle_text,
-                        ft.Container(height=SPACING["3xl"]),
+                        ft.Container(height=40),
                         
                         # Form fields
                         self.name_field,
@@ -145,20 +193,21 @@ class LoginView(ft.Container):
                         self.password_field,
                         self.error_text,
                         
-                        ft.Container(height=SPACING["md"]),
+                        ft.Container(height=20),
                         
                         # Actions
                         self.submit_button,
+                        ft.Container(height=10),
                         self.forgot_password_button,
                         self.toggle_button,
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=SPACING["md"]),
+                    spacing=15),
                     alignment=ft.alignment.center,
                     expand=True
                 )
             ]),
-            padding=ft.padding.all(SPACING["2xl"]),
+            padding=ft.padding.symmetric(horizontal=40, vertical=20),
             bgcolor=colors_palette["bg_primary"],
             expand=True
         )

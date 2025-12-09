@@ -145,18 +145,23 @@ class ZaplyApp:
         # This ensures input field stays visible when keyboard appears
         self.page.view_insets = True
 
-        # Ensure a stable background color on launch to avoid black/white flashing
-        # while the first frame is being rendered on Android.
-        self.primary_color = "#0088cc"
-        self.bg_dark = "#FDFBFB"
-        self.bg_light = "#F6F5F5F6"
-        self.text_primary = "#ffffff"
-        self.text_secondary = "#8e8e93"
+        # Telegram-style colors
+        from theme import LIGHT_COLORS
+        self.primary_color = LIGHT_COLORS["accent"]  # #0088CC
+        self.bg_dark = LIGHT_COLORS["bg_primary"]  # #FFFFFF
+        self.bg_light = LIGHT_COLORS["bg_secondary"]  # #F8F9FA
+        self.text_primary = LIGHT_COLORS["text_primary"]  # #000000
+        self.text_secondary = LIGHT_COLORS["text_secondary"]  # #65686B
         self.page.bgcolor = self.bg_dark
         self.page.window_bgcolor = self.bg_dark
         
-        # Performance optimizations for mobile
-        self.page.scroll = None  # Disable page-level scroll for better performance
+        # Telegram-style window settings
+        self.page.window.width = 400  # Mobile width
+        self.page.window.height = 850  # Mobile height
+        self.page.window.min_width = 350
+        self.page.window.min_height = 600
+        self.page.window.max_width = 500  # Keep mobile-like
+        self.page.scroll = None  # Disable page-level scroll
         self.page.auto_scroll = False
         
         # State

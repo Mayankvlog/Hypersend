@@ -9,21 +9,28 @@ Supports Minimal Clean (Light) and Elegant Dark modes
 # COLOR PALETTE - Light Mode (Minimal Clean)
 # ============================================================================
 LIGHT_COLORS = {
-    # Background colors
+    # Background colors - Exact Telegram
     "bg_primary": "#FFFFFF",        # Pure white
-    "bg_secondary": "#F8F9FA",      # Light gray background
+    "bg_secondary": "#F8F9FA",      # Light gray background  
     "bg_tertiary": "#F1F3F5",       # Card background
+    "chat_list_bg": "#FFFFFF",        # Chat list background
+    "sidebar_bg": "#F7F8FA",        # Sidebar background
     
-    # Text colors
-    "text_primary": "#212529",      # Almost black
-    "text_secondary": "#6C757D",    # Gray
-    "text_tertiary": "#ADB5BD",     # Light gray
+    # Text colors - Exact Telegram
+    "text_primary": "#000000",      # Pure black
+    "text_secondary": "#65686B",    # Telegram gray
+    "text_tertiary": "#8E8E93",     # Light gray
     "text_inverse": "#FFFFFF",      # White text
+    "text_blue": "#0088CC",        # Telegram blue for links
     
-    # Accent colors
+    # Accent colors - Exact Telegram colors
     "accent": "#0088CC",            # Telegram blue
     "accent_light": "#E7F5FF",      # Light blue background
     "accent_hover": "#0077B5",      # Darker blue on hover
+    "message_sent": "#E8F5E8",      # Light green for sent messages
+    "message_received": "#FFFFFF",     # White for received messages
+    "chat_selected": "#F0F2F5",      # Selected chat background
+    "divider": "#E9EDEF",           # Telegram divider color
     
     # Status colors
     "success": "#28A745",
