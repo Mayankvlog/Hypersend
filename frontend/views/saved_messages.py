@@ -108,14 +108,24 @@ class SavedMessagesView(ft.View):
                     tooltip="Search",
                     on_click=lambda e: self.show_coming_soon("Search")
                 ),
+                ft.IconButton(
+                    icon=ft.Icons.BRIGHTNESS_6,
+                    icon_color=colors_palette["text_primary"],
+                    tooltip="Toggle Theme",
+                    on_click=lambda e: self.toggle_theme()
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.MENU,
+                    icon_color=colors_palette["text_primary"],
+                    tooltip="Menu",
+                    on_click=lambda e: self.open_drawer()
+                ),
                 ft.PopupMenuButton(
                     icon=ft.Icons.MORE_VERT,
                     icon_color=colors_palette["text_primary"],
                     tooltip="More",
                     items=[
                         ft.PopupMenuItem(text="Clear history", icon=ft.Icons.DELETE_OUTLINE, on_click=lambda e: self.show_coming_soon("Clear")),
-                        ft.PopupMenuItem(text="Toggle Theme", icon=ft.Icons.BRIGHTNESS_6, on_click=lambda e: self.toggle_theme()),
-                        ft.PopupMenuItem(text="Menu", icon=ft.Icons.MENU, on_click=lambda e: self.open_drawer()),
                     ]
                 )
             ]
@@ -827,8 +837,10 @@ class SavedMessagesView(ft.View):
                 self.show_backend_error_dialog()
             elif "401" in error_str or "Session expired" in error_str:
                 self.show_session_expired_dialog()
+            elif "Failed to load saved messages" in error_str:
+                self.show_error("Saved messages chat nahi mila. Pehle saved messages create karo.")
             else:
-                self.show_error(f"Upload fail ho gaya: {error_str[:50]}")
+                self.show_error(f"Upload fail ho gaya: {error_str[:100]}")
     
     async def load_saved_messages(self):
         """Load all saved messages"""
@@ -854,7 +866,13 @@ class SavedMessagesView(ft.View):
                         print(f"[SAVED] Fallback se {len(messages)} messages mile")
                     else:
                         messages = []
-                        print("[SAVED] Koi saved chat nahi mila")
+                        print("[SAVED] Koi saved chat nahi mila, creating new one...")
+                        # Try to create saved chat
+                        try:
+                            await self.api_client.get_saved_chat()  # This should create it
+                            print("[SAVED] Saved chat created successfully")
+                        except Exception as create_error:
+                            print(f"[SAVED] Failed to create saved chat: {create_error}")
                 except Exception as fallback_error:
                     print(f"[SAVED] Fallback bhi fail ho gaya: {fallback_error}")
                     messages = []
@@ -1095,11 +1113,20 @@ class SavedMessagesView(ft.View):
             self.page.update()
             
             # Get ya create saved messages chat
-            saved_chat = await self.api_client.get_saved_chat()
-            chat_id = saved_chat.get("chat_id") or saved_chat.get("_id")
-            
-            if not chat_id:
-                self.show_error("Saved messages chat nahi mila")
+            try:
+                saved_chat = await self.api_client.get_saved_chat()
+                chat_id = saved_chat.get("chat_id") or saved_chat.get("_id")
+                
+                if not chat_id:
+                    self.show_error("Saved messages chat nahi mila")
+                    self.message_input.value = message_text
+                    self.send_btn.icon = ft.Icons.SEND
+                    self.send_btn.disabled = False
+                    self.page.update()
+                    return
+            except Exception as chat_error:
+                print(f"[SAVED] Error getting saved chat: {chat_error}")
+                self.show_error("Saved messages chat create nahi ho paya")
                 self.message_input.value = message_text
                 self.send_btn.icon = ft.Icons.SEND
                 self.send_btn.disabled = False

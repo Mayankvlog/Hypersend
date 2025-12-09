@@ -21,10 +21,13 @@ router = APIRouter(prefix="/chats", tags=["Chats"])
 @router.get("/saved", response_model=dict)
 async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)):
     """Get or create the personal Saved Messages chat for the current user"""
+    logger.info(f"Looking for saved chat for user: {current_user}")
     existing = await chats_collection().find_one({"type": "saved", "members": current_user})
     if existing:
+        logger.info(f"Found existing saved chat: {existing['_id']}")
         return {"chat_id": existing["_id"], "chat": existing}
 
+    logger.info(f"Creating new saved chat for user: {current_user}")
     chat_doc = {
         "_id": str(ObjectId()),
         "type": "saved",
@@ -33,6 +36,7 @@ async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)
         "created_at": datetime.utcnow()
     }
     await chats_collection().insert_one(chat_doc)
+    logger.info(f"Created new saved chat: {chat_doc['_id']}")
     return {"chat_id": chat_doc["_id"], "chat": chat_doc}
 
 
@@ -45,10 +49,12 @@ async def get_saved_messages(
 ):
     """Get all messages saved by current user"""
     
+    logger.info(f"Getting saved messages for user: {current_user}")
     messages = []
     async for msg in messages_collection().find({"saved_by": current_user}).sort("created_at", -1).limit(limit):
         messages.append(msg)
     
+    logger.info(f"Found {len(messages)} saved messages for user: {current_user}")
     return {"messages": list(reversed(messages))}
 
 
@@ -222,7 +228,14 @@ async def send_message(
         "created_at": datetime.utcnow()
     }
     
+    # If this is a saved chat, automatically mark as saved by the user
+    chat = await chats_collection().find_one({"_id": chat_id})
+    if chat and chat.get("type") == "saved":
+        msg_doc["saved_by"] = [current_user]
+        logger.info(f"Message sent to saved chat, marking as saved for user: {current_user}")
+    
     await messages_collection().insert_one(msg_doc)
+    logger.info(f"Message inserted with ID: {msg_doc['_id']}")
     
     return {"message_id": msg_doc["_id"], "created_at": msg_doc["created_at"]}
 
