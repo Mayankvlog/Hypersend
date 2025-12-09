@@ -35,14 +35,18 @@ class APIClient:
             self.client = httpx.AsyncClient(
                 timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
-                http2=True  # Enable HTTP/2 for better performance
+                http2=True,  # Enable HTTP/2 for better performance
+                follow_redirects=True,  # Follow redirects automatically
+                max_redirects=5  # Limit redirect hops
             )
         except ImportError:
             # Fallback to HTTP/1.1 if h2 is not installed
             debug_log("[WARN] HTTP/2 not available (h2 package not installed), using HTTP/1.1")
             self.client = httpx.AsyncClient(
                 timeout=httpx.Timeout(60.0, connect=15.0, read=45.0, write=30.0),
-                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0)
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=30.0),
+                follow_redirects=True,  # Follow redirects automatically
+                max_redirects=5  # Limit redirect hops
             )
     
     def set_tokens(self, access_token: str, refresh_token: str):
@@ -355,7 +359,7 @@ class APIClient:
         """List all chats"""
         try:
             response = await self.client.get(
-                f"{self.base_url}/api/v1/chats",
+                f"{self.base_url}/api/v1/chats/",
                 headers=self._get_headers()
             )
             response.raise_for_status()
