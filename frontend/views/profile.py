@@ -18,6 +18,11 @@ class ProfileView(ft.View):
         self.text_color = "#000000"
         self.text_secondary = "#8e8e93"
         
+        # Stats state
+        self.messages_count = 0
+        self.files_count = 0
+        self.storage_used = 0
+        
         self.build_ui()
     
     def build_ui(self):
@@ -73,7 +78,31 @@ class ProfileView(ft.View):
             margin=ft.margin.only(bottom=20)
         )
         
-        # Stats section
+        # Stats section with live counters
+        self.messages_text = ft.Text(
+            str(self.messages_count),
+            size=20,
+            weight=ft.FontWeight.BOLD,
+            color=self.primary_color,
+            text_align=ft.TextAlign.CENTER
+        )
+        
+        self.files_text = ft.Text(
+            str(self.files_count),
+            size=20,
+            weight=ft.FontWeight.BOLD,
+            color=self.primary_color,
+            text_align=ft.TextAlign.CENTER
+        )
+        
+        self.storage_text = ft.Text(
+            f"{self.storage_used} MB",
+            size=20,
+            weight=ft.FontWeight.BOLD,
+            color=self.primary_color,
+            text_align=ft.TextAlign.CENTER
+        )
+        
         stats_section = ft.Container(
             content=ft.Row(
                 [
@@ -81,13 +110,7 @@ class ProfileView(ft.View):
                     ft.Container(
                         content=ft.Column(
                             [
-                                ft.Text(
-                                    "0",
-                                    size=20,
-                                    weight=ft.FontWeight.BOLD,
-                                    color=self.primary_color,
-                                    text_align=ft.TextAlign.CENTER
-                                ),
+                                self.messages_text,
                                 ft.Text(
                                     "Messages",
                                     size=12,
@@ -105,13 +128,7 @@ class ProfileView(ft.View):
                     ft.Container(
                         content=ft.Column(
                             [
-                                ft.Text(
-                                    "0",
-                                    size=20,
-                                    weight=ft.FontWeight.BOLD,
-                                    color=self.primary_color,
-                                    text_align=ft.TextAlign.CENTER
-                                ),
+                                self.files_text,
                                 ft.Text(
                                     "Files",
                                     size=12,
@@ -129,13 +146,7 @@ class ProfileView(ft.View):
                     ft.Container(
                         content=ft.Column(
                             [
-                                ft.Text(
-                                    "0 MB",
-                                    size=20,
-                                    weight=ft.FontWeight.BOLD,
-                                    color=self.primary_color,
-                                    text_align=ft.TextAlign.CENTER
-                                ),
+                                self.storage_text,
                                 ft.Text(
                                     "Storage",
                                     size=12,
@@ -433,6 +444,49 @@ class ProfileView(ft.View):
             ]
         )
         self.page.open(menu)
+    
+    async def load_stats(self):
+        """Load user statistics from API"""
+        try:
+            if not self.api_client:
+                return
+            
+            # Get user chats for message count
+            chats_response = await self.api_client.get("/api/v1/chats/")
+            if hasattr(chats_response, 'json'):
+                chats_data = chats_response.json()
+                chats = chats_data.get("chats", [])
+                
+                # Count total messages
+                total_messages = 0
+                total_files = 0
+                for chat in chats:
+                    total_messages += 1  # Count each chat as one interaction
+                
+                # Get current user data for storage
+                user_response = await self.api_client.get("/api/v1/users/me")
+                if hasattr(user_response, 'json'):
+                    user_data = user_response.json()
+                    quota_used = user_data.get("quota_used", 0)
+                    # Convert bytes to MB
+                    storage_mb = quota_used / (1024 * 1024)
+                    
+                    # Update stats
+                    self.messages_count = total_messages
+                    self.files_count = len([c for c in chats if c.get("type") == "file"])
+                    self.storage_used = int(storage_mb)
+                    
+                    # Update UI
+                    self.messages_text.value = str(self.messages_count)
+                    self.files_text.value = str(self.files_count)
+                    self.storage_text.value = f"{self.storage_used} MB"
+                    self.page.update()
+        except Exception as e:
+            print(f"[PROFILE] Error loading stats: {e}")
+    
+    def on_view_mount(self):
+        """Called when view is mounted"""
+        self.page.run_task(self.load_stats)
     
     def go_back(self):
         """Go back to previous screen"""

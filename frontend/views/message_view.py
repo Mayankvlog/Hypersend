@@ -126,7 +126,7 @@ class MessageView(ft.View):
                     icon_color=colors_palette["text_primary"],
                     tooltip="More",
                     items=[
-                        ft.PopupMenuItem(text="Search", icon=ft.Icons.SEARCH, on_click=lambda e: self.show_coming_soon("Search")),
+                        ft.PopupMenuItem(text="Search", icon=ft.Icons.SEARCH, on_click=lambda e: self.show_message_search()),
                         ft.PopupMenuItem(text="Mute", icon=ft.Icons.VOLUME_OFF, on_click=lambda e: self.show_coming_soon("Mute")),
                         ft.PopupMenuItem(text="Clear history", icon=ft.Icons.DELETE_OUTLINE, on_click=lambda e: self.show_coming_soon("Clear")),
                     ]
@@ -786,6 +786,101 @@ class MessageView(ft.View):
         self.page.overlay.append(snack)
         snack.open = True
         self.page.update()
+    
+    def show_message_search(self):
+        """Show message search dialog"""
+        search_field = ft.TextField(
+            label="Search messages...",
+            autofocus=True
+        )
+        
+        search_results = ft.ListView(expand=True, spacing=1)
+        
+        def update_search(e):
+            """Update search results as user types"""
+            query = search_field.value.lower().strip()
+            search_results.controls.clear()
+            
+            if not query:
+                search_results.controls.append(
+                    ft.Container(
+                        content=ft.Text(
+                            "Type to search messages",
+                            color=self.theme.colors["text_secondary"],
+                            text_align=ft.TextAlign.CENTER
+                        ),
+                        padding=20,
+                        alignment=ft.alignment.center
+                    )
+                )
+            else:
+                found = False
+                for msg in self.messages:
+                    msg_text = msg.get("text", "").lower()
+                    if query in msg_text:
+                        found = True
+                        # Format message preview
+                        sender = "You" if msg.get("sender_id") == self.current_user else "Them"
+                        preview = msg.get("text", "")[:100]
+                        timestamp = msg.get("created_at", "")
+                        
+                        msg_item = ft.Container(
+                            content=ft.Column([
+                                ft.Text(f"{sender}: {preview}", weight=ft.FontWeight.W_500, size=13),
+                                ft.Text(timestamp, size=11, color=self.theme.colors["text_secondary"])
+                            ], spacing=4),
+                            padding=12
+                        )
+                        search_results.controls.append(msg_item)
+                        search_results.controls.append(ft.Divider(height=1))
+                
+                if not found:
+                    search_results.controls.append(
+                        ft.Container(
+                            content=ft.Text(
+                                "No messages found",
+                                color=self.theme.colors["text_secondary"],
+                                text_align=ft.TextAlign.CENTER
+                            ),
+                            padding=20,
+                            alignment=ft.alignment.center
+                        )
+                    )
+            
+            self.page.update()
+        
+        search_field.on_change = update_search
+        
+        # Initial message
+        search_results.controls.append(
+            ft.Container(
+                content=ft.Text(
+                    "Type to search messages",
+                    color=self.theme.colors["text_secondary"],
+                    text_align=ft.TextAlign.CENTER
+                ),
+                padding=20,
+                alignment=ft.alignment.center
+            )
+        )
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Search Messages", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Column([
+                    search_field,
+                    ft.Divider(),
+                    search_results
+                ], spacing=10, expand=True),
+                width=400,
+                height=500
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))
+            ]
+        )
+        
+        self.page.open(dialog)
     
     def show_coming_soon(self, feature: str):
         snack = ft.SnackBar(content=ft.Text(f"🚧 {feature} coming soon!"), duration=2000)

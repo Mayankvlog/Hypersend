@@ -388,8 +388,8 @@ class ChatsView(ft.View):
             actions=[
                 ft.IconButton(
                     icon=ft.Icons.SEARCH,
-                    tooltip="Search",
-                    on_click=lambda e: print("Search coming soon")
+                    tooltip="Search chats",
+                    on_click=lambda e: self.show_search_dialog()
                 ),
                 ft.PopupMenuButton(
                     icon=ft.Icons.MORE_VERT,
@@ -702,6 +702,112 @@ class ChatsView(ft.View):
             debug_log(f"[CHATS] Logout error: {ex}")
             show_error("Error", "Could not logout")
     
+    def show_search_dialog(self):
+        """Show search dialog with filtering options"""
+        search_field = ft.TextField(
+            label="Search chats...",
+            autofocus=True,
+            on_change=self.filter_chats
+        )
+        
+        # Search results container
+        search_results = ft.ListView(expand=True, spacing=1)
+        
+        def update_search(e):
+            """Update search results as user types"""
+            query = search_field.value.lower().strip()
+            search_results.controls.clear()
+            
+            if not query:
+                search_results.controls.append(
+                    ft.Container(
+                        content=ft.Text(
+                            "Type to search chats by name or member",
+                            color=self.text_secondary,
+                            text_align=ft.TextAlign.CENTER
+                        ),
+                        padding=20,
+                        alignment=ft.alignment.center
+                    )
+                )
+            else:
+                found = False
+                for chat in self.chats:
+                    # Search by chat name
+                    chat_name = chat.get("name") or ("Group Chat" if chat.get("type") == "group" else "Private Chat")
+                    if query in chat_name.lower():
+                        found = True
+                        chat_item = ft.Container(
+                            content=ft.Row([
+                                ft.Icon(
+                                    ft.Icons.CAMPAIGN if chat.get("type") == "channel" else ft.Icons.GROUP if chat.get("type") == "group" else ft.Icons.PERSON,
+                                    size=24,
+                                    color=self.primary_color
+                                ),
+                                ft.Column([
+                                    ft.Text(chat_name, weight=ft.FontWeight.W_500),
+                                    ft.Text(f"{len(chat.get('members', []))} members", size=12, color=self.text_secondary)
+                                ], expand=True, spacing=2)
+                            ], spacing=15),
+                            padding=12,
+                            on_click=lambda e, c=chat: self.open_chat(c)
+                        )
+                        search_results.controls.append(chat_item)
+                        search_results.controls.append(ft.Divider(height=1, color="#E0E0E0"))
+                
+                if not found:
+                    search_results.controls.append(
+                        ft.Container(
+                            content=ft.Text(
+                                "No chats found",
+                                color=self.text_secondary,
+                                text_align=ft.TextAlign.CENTER
+                            ),
+                            padding=20,
+                            alignment=ft.alignment.center
+                        )
+                    )
+            
+            self.page.update()
+        
+        search_field.on_change = update_search
+        
+        # Initial message
+        search_results.controls.append(
+            ft.Container(
+                content=ft.Text(
+                    "Type to search chats by name or member",
+                    color=self.text_secondary,
+                    text_align=ft.TextAlign.CENTER
+                ),
+                padding=20,
+                alignment=ft.alignment.center
+            )
+        )
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Search Chats", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Column([
+                    search_field,
+                    ft.Divider(),
+                    search_results
+                ], spacing=10, expand=True),
+                width=400,
+                height=500
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))
+            ]
+        )
+        
+        self.page.open(dialog)
+    
+    def filter_chats(self, e):
+        """Filter chats based on search query"""
+        # This is handled by the update_search callback in show_search_dialog
+        pass
+
     def go_back(self):
         """Go back to previous screen"""
         self.page.go("/")
