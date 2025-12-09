@@ -19,10 +19,15 @@ class LoginView(ft.Container):
         self.on_forgot_password = on_forgot_password
         self.is_login_mode = True
         
-        # Theme
+        # Theme - Light blue themed
         self.theme = ZaplyTheme(dark_mode=dark_mode)
         self.dark_mode = dark_mode
         colors_palette = self.theme.colors
+        
+        # Override accent color to light blue theme
+        colors_palette["accent"] = "#0088CC"
+        colors_palette["accent_light"] = "#E7F5FF"
+        colors_palette["accent_hover"] = "#0077B5"
         
         # UI Elements - Minimal Clean Design
         self.name_field = ft.TextField(
@@ -32,7 +37,7 @@ class LoginView(ft.Container):
             keyboard_type=ft.KeyboardType.NAME,
             text_size=FONT_SIZES["base"],
             border_color=colors_palette["border"],
-            focused_border_color=colors_palette["accent"]
+            focused_border_color="#0088CC"
         )
         
         self.email_field = ft.TextField(
@@ -42,7 +47,7 @@ class LoginView(ft.Container):
             autofocus=True,
             text_size=FONT_SIZES["base"],
             border_color=colors_palette["border"],
-            focused_border_color=colors_palette["accent"]
+            focused_border_color="#0088CC"
         )
         
         self.password_field = ft.TextField(
@@ -52,7 +57,7 @@ class LoginView(ft.Container):
             border_radius=RADIUS["md"],
             text_size=FONT_SIZES["base"],
             border_color=colors_palette["border"],
-            focused_border_color=colors_palette["accent"]
+            focused_border_color="#0088CC"
         )
         
         self.error_text = ft.Text(
@@ -68,9 +73,10 @@ class LoginView(ft.Container):
             width=300,
             height=48,
             style=ft.ButtonStyle(
-                bgcolor=colors_palette["accent"],
+                bgcolor="#0088CC",
                 color=colors_palette["text_inverse"],
-                shape=ft.RoundedRectangleBorder(radius=RADIUS["md"])
+                shape=ft.RoundedRectangleBorder(radius=RADIUS["md"]),
+                overlay_color="#0077B5"
             )
         )
         
@@ -78,7 +84,7 @@ class LoginView(ft.Container):
             "Don't have an account? Register",
             on_click=self.toggle_mode,
             style=ft.ButtonStyle(
-                color=colors_palette["accent"]
+                color="#0088CC"
             )
         )
         
@@ -87,28 +93,31 @@ class LoginView(ft.Container):
             on_click=on_forgot_password,
             visible=True,
             style=ft.ButtonStyle(
-                color=colors_palette["text_secondary"]
+                color="#0088CC"
             )
         )
         
-        # Theme toggle button
+        # Theme toggle button with light-blue accent
         self.theme_toggle = ft.IconButton(
             icon=ft.Icons.DARK_MODE if not self.dark_mode else ft.Icons.LIGHT_MODE,
-            icon_color=colors_palette["text_primary"],
+            icon_color="#0088CC",
             tooltip="Toggle theme",
+            style=ft.ButtonStyle(
+                overlay_color="#E7F5FF"
+            ),
             on_click=lambda e: self.toggle_theme()
         )
         
-        # Logo/Title
+        # Logo/Title with light-blue theme
         title_text = ft.Text(
             "Zaply",
             size=FONT_SIZES["5xl"],
             weight=ft.FontWeight.W_700,
-            color=colors_palette["accent"]
+            color="#0088CC"
         )
         
         subtitle_text = ft.Text(
-            "Your personal messaging space",
+            "Fast Chat & File Sharing",
             size=FONT_SIZES["base"],
             color=colors_palette["text_secondary"],
             text_align=ft.TextAlign.CENTER

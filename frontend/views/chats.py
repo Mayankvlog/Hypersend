@@ -65,12 +65,14 @@ class ChatsView(ft.View):
         self.on_saved_click = on_saved_click
         self.on_profile_click = on_profile_click
         
-        # Theme colors
-        self.primary_color = "#1F8EF1"
+        # Theme colors - Light blue themed
+        self.primary_color = "#0088CC"
         self.bg_color = "#FDFBFB"
         self.card_color = "#FFFFFF"
         self.text_color = "#000000"
         self.text_secondary = "#8e8e93"
+        self.accent_light = "#E7F5FF"
+        self.accent_hover = "#0077B5"
         
         # State
         self.chats: List[Dict[str, Any]] = []
@@ -390,7 +392,7 @@ class ChatsView(ft.View):
             def on_search_click(e):
                 self.show_search_dialog()
             
-            # Search bar
+            # Search bar with light-blue theme
             search_bar = ft.Container(
                 content=ft.TextField(
                     hint_text="Search...",
@@ -398,54 +400,55 @@ class ChatsView(ft.View):
                     filled=True,
                     text_size=14,
                     content_padding=ft.padding.symmetric(horizontal=15, vertical=8),
-                    bgcolor="#F0F2F5",
+                    bgcolor=self.accent_light,
+                    focused_border_color=self.primary_color,
                     on_click=on_search_click
                 ),
                 width=200,
                 height=40,
                 border_radius=20,
-                bgcolor="#F0F2F5"
+                bgcolor=self.accent_light
             )
             
-            # Menu button
+            # Menu button with light-blue theme
             menu_button = ft.Container(
                 content=ft.IconButton(
                     icon=icons.MENU,
                     icon_size=18,
-                    icon_color=ft.Colors.BLACK,
+                    icon_color=self.primary_color,
                     tooltip="Menu",
                     style=ft.ButtonStyle(
-                        bgcolor="#F0F2F5",
+                        bgcolor=self.accent_light,
                         padding=8,
                         shape=ft.CircleBorder(),
-                        overlay_color=self.primary_color
+                        overlay_color=self.accent_hover
                     ),
                     on_click=on_menu_click
                 ),
                 width=36,
                 height=36,
-                bgcolor="#F0F2F5",
+                bgcolor=self.accent_light,
                 border_radius=18
             )
             
-            # Theme toggle button
+            # Theme toggle button with light-blue theme
             theme_button = ft.Container(
                 content=ft.IconButton(
                     icon=icons.BRIGHTNESS_6 if not self.dark_mode else icons.BRIGHTNESS_4,
                     icon_size=18,
-                    icon_color=ft.Colors.BLACK,
+                    icon_color=self.primary_color,
                     tooltip="Toggle Theme",
                     style=ft.ButtonStyle(
-                        bgcolor="#F0F2F5",
+                        bgcolor=self.accent_light,
                         padding=8,
                         shape=ft.CircleBorder(),
-                        overlay_color=self.primary_color
+                        overlay_color=self.accent_hover
                     ),
                     on_click=on_theme_click
                 ),
                 width=36,
                 height=36,
-                bgcolor="#F0F2F5",
+                bgcolor=self.accent_light,
                 border_radius=18
             )
             
@@ -476,9 +479,9 @@ class ChatsView(ft.View):
             
             return sidebar
         
-        # AppBar - simplified for Telegram style
+        # AppBar - Light blue themed
         self.page.appbar = ft.AppBar(
-            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
+            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color="#0088CC"),
             center_title=False,
             bgcolor="#FFFFFF",
             elevation=0.5,
@@ -492,12 +495,16 @@ class ChatsView(ft.View):
             padding=ft.padding.symmetric(vertical=8)
         )
         
-        # Loading indicator
+        # Loading indicator with light-blue theme
         self.loading_indicator = ft.Container(
             content=ft.Column(
                 [
                     ft.ProgressRing(width=30, height=30, color=self.primary_color),
-                    ft.Text("Loading chats...", color=self.text_secondary)
+                    ft.Text("Loading chats...", color=self.text_secondary),
+                    ft.Container(
+                        content=ft.Text("⚡ Fast & Secure Messaging", size=12, color=self.primary_color),
+                        margin=ft.margin.only(top=10)
+                    )
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=10
@@ -572,7 +579,7 @@ class ChatsView(ft.View):
                 
             chat_name = chat.get("name") or ("Group Chat" if chat.get("type") == "group" else "Private Chat")
             
-            # Determine avatar based on chat type
+            # Determine avatar based on chat type with light-blue theme
             if chat.get("type") == "group":
                 avatar_content = ft.Icon(icons.GROUP, size=40, color=ft.Colors.WHITE)
                 avatar_bg = "#7C3AED"  # Purple for groups
@@ -582,15 +589,21 @@ class ChatsView(ft.View):
             else:
                 first_letter = (chat_name or "?")[0].upper()
                 avatar_content = ft.Text(first_letter, size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)
-                avatar_bg = self.primary_color
+                avatar_bg = self.primary_color  # Light blue for private chats
             
             avatar = ft.Container(
                 content=avatar_content,
-                width=50,
-                height=50,
+                width=56,
+                height=56,
                 bgcolor=avatar_bg,
-                border_radius=25,
-                alignment=ft.alignment.center
+                border_radius=28,
+                alignment=ft.alignment.center,
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=2,
+                    color=ft.Colors.with_opacity(0.12, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 1),
+                )
             )
             
             last_message_obj = chat.get("last_message") or {}
@@ -603,7 +616,7 @@ class ChatsView(ft.View):
             # Get unread count
             unread_count = chat.get("unread_count", 0)
             
-            # Create unread badge if needed
+            # Create unread badge if needed with light-blue accent
             unread_badge = ft.Container(
                 content=ft.Text(
                     str(unread_count),
@@ -613,9 +626,15 @@ class ChatsView(ft.View):
                 ),
                 width=24,
                 height=24,
-                bgcolor="#DC3545",  # Red for unread
+                bgcolor=self.primary_color,  # Light blue for unread
                 border_radius=12,
-                alignment=ft.alignment.center
+                alignment=ft.alignment.center,
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=4,
+                    color=ft.Colors.with_opacity(0.3, self.primary_color),
+                    offset=ft.Offset(0, 1)
+                )
             ) if unread_count > 0 else ft.Container()
             
             chat_item = ft.Container(
@@ -628,7 +647,7 @@ class ChatsView(ft.View):
                                     ft.Text(
                                         chat_name,
                                         size=16,
-                                        weight=ft.FontWeight.W_500,
+                                        weight=ft.FontWeight.W_600 if unread_count > 0 else ft.FontWeight.W_500,
                                         color=self.text_color,
                                         expand=True,
                                         no_wrap=True
@@ -636,17 +655,18 @@ class ChatsView(ft.View):
                                     ft.Text(
                                         time_label,
                                         size=12,
-                                        color=self.text_secondary
+                                        color=self.primary_color if unread_count > 0 else self.text_secondary,
+                                        weight=ft.FontWeight.W_500 if unread_count > 0 else ft.FontWeight.NORMAL
                                     )
                                 ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                                 ft.Row([
                                     ft.Text(
                                         last_message_text[:40] + "..." if len(last_message_text) > 40 else last_message_text,
                                         size=13,
-                                        color=self.text_secondary,
+                                        color=self.text_color if unread_count > 0 else self.text_secondary,
                                         no_wrap=True,
                                         expand=True,
-                                        weight=ft.FontWeight.W_500 if unread_count > 0 else ft.FontWeight.NORMAL
+                                        weight=ft.FontWeight.W_600 if unread_count > 0 else ft.FontWeight.NORMAL
                                     ),
                                     unread_badge
                                 ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
@@ -658,11 +678,18 @@ class ChatsView(ft.View):
                     spacing=15,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER
                 ),
-                padding=15,
-                bgcolor=self.card_color,
-                border_radius=10,
+                padding=12,
+                bgcolor=self.accent_light if unread_count > 0 else self.card_color,
+                border_radius=12,
                 on_click=lambda e, c=chat: self.page.run_task(self.open_chat, c),
-                margin=ft.margin.symmetric(horizontal=10, vertical=5)
+                margin=ft.margin.symmetric(horizontal=8, vertical=4),
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=2 if unread_count > 0 else 0.5,
+                    color=ft.Colors.with_opacity(0.1 if unread_count > 0 else 0.05, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 1),
+                ),
+                animate=ft.animation.Animation(200, ft.AnimationCurve.EASE_OUT)
             )
             chat_items.append(chat_item)
     
@@ -710,13 +737,13 @@ class ChatsView(ft.View):
                             ft.Text(
                                 "Saved Messages",
                                 size=16,
-                                weight=ft.FontWeight.W_500,
-                                color=ft.Colors.BLACK
+                                weight=ft.FontWeight.W_600,
+                                color=self.text_color
                             ),
                             ft.Text(
                                 "Your personal collection",
                                 size=13,
-                                color=ft.Colors.BLACK54
+                                color=self.text_secondary
                             )
                         ],
                         spacing=5,
@@ -727,7 +754,16 @@ class ChatsView(ft.View):
             ),
             padding=15,
             on_click=lambda e: self.show_saved_messages(),
-            bgcolor=ft.Colors.WHITE
+            bgcolor=self.accent_light,
+            border_radius=12,
+            margin=ft.margin.symmetric(horizontal=8, vertical=4),
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=1,
+                color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
+                offset=ft.Offset(0, 1),
+            ),
+            animate=ft.animation.Animation(200, ft.AnimationCurve.EASE_OUT)
         )
         chat_items.append(saved_messages_item)
         
@@ -757,7 +793,7 @@ class ChatsView(ft.View):
             def on_search_click(e):
                 self.show_search_dialog()
             
-            # Search bar
+            # Search bar with light-blue theme
             search_bar = ft.Container(
                 content=ft.TextField(
                     hint_text="Search...",
@@ -765,54 +801,55 @@ class ChatsView(ft.View):
                     filled=True,
                     text_size=14,
                     content_padding=ft.padding.symmetric(horizontal=15, vertical=8),
-                    bgcolor="#F0F2F5",
+                    bgcolor=self.accent_light,
+                    focused_border_color=self.primary_color,
                     on_click=on_search_click
                 ),
                 width=200,
                 height=40,
                 border_radius=20,
-                bgcolor="#F0F2F5"
+                bgcolor=self.accent_light
             )
             
-            # Menu button
+            # Menu button with light-blue theme
             menu_button = ft.Container(
                 content=ft.IconButton(
                     icon=icons.MENU,
                     icon_size=18,
-                    icon_color=ft.Colors.BLACK,
+                    icon_color=self.primary_color,
                     tooltip="Menu",
                     style=ft.ButtonStyle(
-                        bgcolor="#F0F2F5",
+                        bgcolor=self.accent_light,
                         padding=8,
                         shape=ft.CircleBorder(),
-                        overlay_color=self.primary_color
+                        overlay_color=self.accent_hover
                     ),
                     on_click=on_menu_click
                 ),
                 width=36,
                 height=36,
-                bgcolor="#F0F2F5",
+                bgcolor=self.accent_light,
                 border_radius=18
             )
             
-            # Theme toggle button
+            # Theme toggle button with light-blue theme
             theme_button = ft.Container(
                 content=ft.IconButton(
                     icon=icons.BRIGHTNESS_6 if not self.dark_mode else icons.BRIGHTNESS_4,
                     icon_size=18,
-                    icon_color=ft.Colors.BLACK,
+                    icon_color=self.primary_color,
                     tooltip="Toggle Theme",
                     style=ft.ButtonStyle(
-                        bgcolor="#F0F2F5",
+                        bgcolor=self.accent_light,
                         padding=8,
                         shape=ft.CircleBorder(),
-                        overlay_color=self.primary_color
+                        overlay_color=self.accent_hover
                     ),
                     on_click=on_theme_click
                 ),
                 width=36,
                 height=36,
-                bgcolor="#F0F2F5",
+                bgcolor=self.accent_light,
                 border_radius=18
             )
             

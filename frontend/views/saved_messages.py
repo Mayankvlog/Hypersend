@@ -541,11 +541,11 @@ class SavedMessagesView(ft.View):
         """Initialize the messages list and input area"""
         colors_palette = self.theme.colors
         
-        # Messages list
+        # Messages list - Telegram style with better spacing
         self.messages_list = ft.ListView(
             expand=True,
-            spacing=4,
-            padding=ft.padding.symmetric(horizontal=10, vertical=10),
+            spacing=8,
+            padding=ft.padding.symmetric(horizontal=12, vertical=12),
             auto_scroll=True
         )
         
@@ -594,7 +594,7 @@ class SavedMessagesView(ft.View):
             on_click=lambda e: self.page.run_task(self.send_message)
         )
         
-        # Input area container - Telegram style
+        # Input area container - Telegram style with better aesthetics
         input_row = ft.Row([
             self.attach_btn,
             ft.Container(
@@ -603,9 +603,15 @@ class SavedMessagesView(ft.View):
                     self.message_input
                 ], spacing=0, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.END),
                 bgcolor=colors_palette["bg_primary"] if self.dark_mode else ft.Colors.WHITE,
-                border_radius=20, # Pill shape
-                padding=ft.padding.only(left=5, right=15, top=2, bottom=2),
+                border_radius=24,
+                padding=ft.padding.only(left=8, right=16, top=4, bottom=4),
                 expand=True,
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=1,
+                    color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 1),
+                ),
             ),
             self.send_btn
         ], spacing=10, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.END)
@@ -613,22 +619,23 @@ class SavedMessagesView(ft.View):
         # Bottom container wrapper
         input_container = ft.Container(
             content=input_row,
-            padding=ft.padding.all(10),
+            padding=ft.padding.only(left=12, right=12, top=12, bottom=12),
             bgcolor=colors_palette["bg_secondary"],
-            border=ft.border.only(top=ft.BorderSide(1, colors_palette["divider"] if self.dark_mode else ft.Colors.TRANSPARENT))
+            border=ft.border.only(top=ft.BorderSide(1, colors_palette["divider"] if self.dark_mode else ft.Colors.with_opacity(0.1, ft.Colors.BLACK)))
         )
         
         # Set view properties
         self.bgcolor = colors_palette["bg_primary"]
         
-        # Create main content area (saved messages only)
+        # Create main content area (saved messages only) - Telegram style
         main_content_area = ft.Container(
             content=ft.Column([
-                # Messages area
+                # Messages area - Telegram background
                 ft.Container(
                     content=self.messages_list,
                     expand=True,
-                    bgcolor=colors_palette["bg_secondary"] if self.dark_mode else "#E6EBEF"
+                    bgcolor=colors_palette["bg_secondary"] if self.dark_mode else "#DFEAEF",
+                    padding=ft.padding.symmetric(horizontal=0, vertical=8),
                 ),
                 # Input area
                 input_container
@@ -1204,8 +1211,35 @@ class SavedMessagesView(ft.View):
                 self.messages_list.controls.append(empty_state)
                 print("[SAVED] Empty state dikhaya")
             else:
-                # Messages ko cards mein convert karo
+                # Messages ko cards mein convert karo with date separators (Telegram style)
+                from datetime import datetime
+                last_date = None
+                
                 for msg in messages:
+                    # Add date separator if date changed
+                    try:
+                        msg_date_str = msg.get("created_at", "")
+                        if msg_date_str:
+                            msg_date = datetime.fromisoformat(msg_date_str.replace("Z", "+00:00"))
+                            current_date = msg_date.strftime("%B %d, %Y")
+                            
+                            if current_date != last_date:
+                                # Add date separator
+                                date_separator = ft.Container(
+                                    content=ft.Text(
+                                        current_date,
+                                        size=11,
+                                        color=colors_palette["text_tertiary"],
+                                        weight=ft.FontWeight.NORMAL
+                                    ),
+                                    padding=ft.padding.symmetric(vertical=12),
+                                    alignment=ft.alignment.center
+                                )
+                                self.messages_list.controls.append(date_separator)
+                                last_date = current_date
+                    except:
+                        pass
+                    
                     msg_card = self.create_message_card(msg)
                     self.messages_list.controls.append(msg_card)
                 
@@ -1261,7 +1295,7 @@ class SavedMessagesView(ft.View):
         """Create Telegram-style message bubble with tails (replaces card)"""
         colors_palette = self.theme.colors
         
-        msg_text = message.get("text", "")
+        msg_text = message.get("text") or ""
         # For saved messages, sender is effectively 'me' or it's a note
         is_mine = True
         
@@ -1290,7 +1324,7 @@ class SavedMessagesView(ft.View):
             text_color = ft.Colors.BLACK
             
         radius = ft.border_radius.only(
-            top_left=16, top_right=16, bottom_left=16, bottom_right=0
+            top_left=18, top_right=18, bottom_left=18, bottom_right=2
         )
         align = ft.MainAxisAlignment.END
 
@@ -1362,12 +1396,12 @@ class SavedMessagesView(ft.View):
             content=final_content,
             bgcolor=bubble_color,
             border_radius=radius,
-            padding=ft.padding.symmetric(horizontal=12, vertical=6),
-            constraints=ft.BoxConstraints(max_width=300),
+            padding=ft.padding.symmetric(horizontal=14, vertical=8),
+            constraints=ft.BoxConstraints(max_width=360),
             shadow=ft.BoxShadow(
-                spread_radius=1,
-                blur_radius=1,
-                color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK),
+                spread_radius=0,
+                blur_radius=3,
+                color=ft.Colors.with_opacity(0.15, ft.Colors.BLACK),
                 offset=ft.Offset(0, 1),
             ),
             on_long_press=show_menu

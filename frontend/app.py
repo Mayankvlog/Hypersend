@@ -169,6 +169,10 @@ class ZaplyApp:
         self.language: str = "en"
         # Dark mode state (default: light mode)
         self.dark_mode: bool = False
+        # Error handling state
+        self.connection_errors: int = 0
+        self.max_connection_errors: int = 3
+        self.last_error_time: Optional[float] = None
         
         # Setup route handler
         self.page.on_route_change = self.route_change
@@ -264,12 +268,18 @@ class ZaplyApp:
                 self._display_fatal_error(f"Backend API is unreachable or unhealthy. Status: {response.status_code}")
                 return
         except httpx.ConnectError as e:
+            self.connection_errors += 1
+            self.last_error_time = asyncio.get_event_loop().time()
             self._display_fatal_error(f"Cannot connect to backend API: {e}. Is the backend running at {self.client.base_url}?")
             return
         except httpx.TimeoutException as e:
+            self.connection_errors += 1
+            self.last_error_time = asyncio.get_event_loop().time()
             self._display_fatal_error(f"Backend API connection timed out: {e}. Is the backend running and responsive?")
             return
         except Exception as e:
+            self.connection_errors += 1
+            self.last_error_time = asyncio.get_event_loop().time()
             self._display_fatal_error(f"Failed to check backend health: {e}")
             return
         
@@ -1879,6 +1889,73 @@ class ZaplyApp:
         debug_log("[LOGOUT] ✅ Session cleared - user must login on next app launch")
         
         self.show_login()
+    
+    def handle_global_error(self, error: Exception, context: str = ""):
+        """Global error handler with retry logic"""
+        import time
+        
+        current_time = time.time()
+        
+        # Reset error counter if last error was more than 5 minutes ago
+        if self.last_error_time and (current_time - self.last_error_time) > 300:
+            self.connection_errors = 0
+        
+        self.connection_errors += 1
+        self.last_error_time = current_time
+        
+        debug_log(f"[ERROR] {context}: {type(error).__name__}: {error}")
+        debug_log(f"[ERROR] Connection errors: {self.connection_errors}/{self.max_connection_errors}")
+        
+        # Show user-friendly error message
+        if self.connection_errors >= self.max_connection_errors:
+            self.show_critical_error_dialog(error, context)
+        else:
+            self.show_transient_error(error, context)
+    
+    def show_transient_error(self, error: Exception, context: str):
+        """Show temporary error message"""
+        error_snack = ft.SnackBar(
+            content=ft.Text(f"⚠️ {context}: {str(error)[:50]}"),
+            bgcolor=ft.Colors.ORANGE,
+            duration=3000
+        )
+        self.page.overlay.append(error_snack)
+        error_snack.open = True
+        self.page.update()
+    
+    def show_critical_error_dialog(self, error: Exception, context: str):
+        """Show critical error dialog with options"""
+        def retry_connection():
+            self.connection_errors = 0
+            self.page.dialog.open = False
+            self.page.update()
+            self.page.run_task(self.initialize_app)
+        
+        def logout_and_retry():
+            self.handle_logout()
+        
+        critical_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Icon(ft.Icons.ERROR, color=ft.Colors.RED, size=24),
+                ft.Text("Connection Issues", weight=ft.FontWeight.BOLD, color=ft.Colors.RED)
+            ], spacing=10),
+            content=ft.Column([
+                ft.Text(f"Having trouble connecting to the server ({self.connection_errors} errors)."),
+                ft.Text(f"Last error: {str(error)[:100]}", size=12, color=ft.Colors.GREY),
+                ft.Container(height=10),
+                ft.Text("What would you like to do?", weight=ft.FontWeight.W_500)
+            ], spacing=8),
+            actions=[
+                ft.TextButton("Retry", on_click=lambda e: retry_connection()),
+                ft.TextButton("Logout & Login Again", on_click=lambda e: logout_and_retry()),
+                ft.ElevatedButton("Continue Offline", on_click=lambda e: self.page.close(critical_dialog))
+            ]
+        )
+        
+        self.page.dialog = critical_dialog
+        critical_dialog.open = True
+        self.page.update()
 
 
 async def main(page: ft.Page):
