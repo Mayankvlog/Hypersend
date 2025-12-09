@@ -478,7 +478,15 @@ class APIClient:
             raise
         except Exception as e:
             debug_log(f"[API] Get messages error: {e}")
-            raise Exception(f"Failed to load messages: {str(e)}")
+            error_msg = str(e)
+            if "401" in error_msg or "403" in error_msg:
+                raise Exception("Authentication failed. Please login again.")
+            elif "404" in error_msg:
+                raise Exception("Chat not found.")
+            elif "timeout" in error_msg.lower():
+                raise Exception("Connection timeout. Please check your internet.")
+            else:
+                raise Exception(f"Failed to load messages: {error_msg}")
     
     async def send_message(self, chat_id: str, text: Optional[str] = None, file_id: Optional[str] = None) -> Dict[str, Any]:
         """Send a message"""
@@ -504,7 +512,15 @@ class APIClient:
             raise
         except Exception as e:
             debug_log(f"[API] Send message error: {e}")
-            raise Exception(f"Failed to send message: {str(e)}")
+            error_msg = str(e)
+            if "401" in error_msg or "403" in error_msg:
+                raise Exception("Authentication failed. Please login again.")
+            elif "404" in error_msg:
+                raise Exception("Chat not found.")
+            elif "timeout" in error_msg.lower():
+                raise Exception("Connection timeout. Please check your internet.")
+            else:
+                raise Exception(f"Failed to send message: {error_msg}")
     
     async def get_saved_messages(self, limit: int = 50) -> Dict[str, Any]:
         """Get all saved messages"""
@@ -569,7 +585,15 @@ class APIClient:
             return response.json()
         except Exception as e:
             debug_log(f"[API] Init upload error: {e}")
-            raise Exception(f"Failed to initialize upload: {str(e)}")
+            error_msg = str(e)
+            if "401" in error_msg or "403" in error_msg:
+                raise Exception("Authentication failed. Please login again.")
+            elif "413" in error_msg:
+                raise Exception("File too large. Please choose a smaller file.")
+            elif "timeout" in error_msg.lower():
+                raise Exception("Connection timeout. Please check your internet.")
+            else:
+                raise Exception(f"Failed to initialize upload: {error_msg}")
     
     async def upload_chunk(self, upload_id: str, chunk_index: int, chunk_data: bytes, checksum: Optional[str] = None) -> Dict[str, Any]:
         """Upload a single chunk"""
@@ -588,41 +612,74 @@ class APIClient:
     
     async def complete_upload(self, upload_id: str) -> Dict[str, Any]:
         """Complete file upload"""
-        response = await self.client.post(
-            f"{self.base_url}/api/v1/files/{upload_id}/complete",
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/files/{upload_id}/complete",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            debug_log(f"[API] Complete upload error: {e}")
+            error_msg = str(e)
+            if "401" in error_msg or "403" in error_msg:
+                raise Exception("Authentication failed. Please login again.")
+            elif "404" in error_msg:
+                raise Exception("Upload session expired. Please try again.")
+            elif "timeout" in error_msg.lower():
+                raise Exception("Connection timeout. Please check your internet.")
+            else:
+                raise Exception(f"Failed to complete upload: {error_msg}")
     
     async def upload_large_file(self, file_path: str, chat_id: str, progress_callback=None) -> str:
         """Upload large file in chunks and return file_id"""
         import os
         import mimetypes
         
-        file_name = os.path.basename(file_path)
-        file_size = os.path.getsize(file_path)
-        mime_type, _ = mimetypes.guess_type(file_path)
-        mime_type = mime_type or "application/octet-stream"
-        
-        # Init upload
-        init_data = await self.init_upload(file_name, file_size, mime_type, chat_id)
-        upload_id = init_data.get("upload_id") or init_data.get("id")
-        
-        chunk_size = 1024 * 1024 # 1MB chunks
-        total_chunks = (file_size + chunk_size - 1) // chunk_size
-        
-        with open(file_path, "rb") as f:
-            for i in range(total_chunks):
-                chunk_data = f.read(chunk_size)
-                await self.upload_chunk(upload_id, i, chunk_data)
-                
-                if progress_callback:
-                    progress_callback((i + 1) / total_chunks)
+        try:
+            if not os.path.exists(file_path):
+                raise Exception(f"File not found: {file_path}")
+            
+            file_name = os.path.basename(file_path)
+            file_size = os.path.getsize(file_path)
+            mime_type, _ = mimetypes.guess_type(file_path)
+            mime_type = mime_type or "application/octet-stream"
+            
+            debug_log(f"[UPLOAD] Starting upload: {file_name} ({file_size} bytes)")
+            
+            # Init upload
+            init_data = await self.init_upload(file_name, file_size, mime_type, chat_id)
+            upload_id = init_data.get("upload_id") or init_data.get("id")
+            
+            if not upload_id:
+                raise Exception("Failed to initialize upload")
+            
+            debug_log(f"[UPLOAD] Upload initialized with ID: {upload_id}")
+            
+            chunk_size = 1024 * 1024 # 1MB chunks
+            total_chunks = (file_size + chunk_size - 1) // chunk_size
+            
+            with open(file_path, "rb") as f:
+                for i in range(total_chunks):
+                    chunk_data = f.read(chunk_size)
+                    await self.upload_chunk(upload_id, i, chunk_data)
                     
-        # Complete
-        complete_data = await self.complete_upload(upload_id)
-        return complete_data.get("file_id") or complete_data.get("id")
+                    if progress_callback:
+                        progress_callback((i + 1) / total_chunks)
+                        
+            # Complete
+            complete_data = await self.complete_upload(upload_id)
+            file_id = complete_data.get("file_id") or complete_data.get("id")
+            
+            if not file_id:
+                raise Exception("Failed to complete upload - no file ID returned")
+            
+            debug_log(f"[UPLOAD] Upload completed: {file_id}")
+            return file_id
+            
+        except Exception as e:
+            debug_log(f"[UPLOAD] Upload failed: {e}")
+            raise Exception(f"File upload failed: {str(e)}")
     
     async def get_file_info(self, file_id: str) -> Dict[str, Any]:
         """Get file information"""

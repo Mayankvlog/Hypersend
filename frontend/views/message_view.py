@@ -47,10 +47,13 @@ class MessageView(ft.View):
         self.dark_mode = dark_mode
         self.theme = ZaplyTheme(dark_mode=dark_mode)
         
-        # Override accent color to light blue theme
+        # Use exact Telegram colors
         self.theme.colors["accent"] = "#0088CC"
         self.theme.colors["accent_light"] = "#E7F5FF"
         self.theme.colors["accent_hover"] = "#0077B5"
+        self.theme.colors["message_sent"] = "#E8F5E8"
+        self.theme.colors["message_received"] = "#FFFFFF"
+        self.theme.colors["chat_selected"] = "#F0F2F5"
         
         # State
         self.messages = []
@@ -158,30 +161,31 @@ class MessageView(ft.View):
             ]
         )
         
-        # Messages list background
-        # Use a subtle pattern or color? For now solid color but distinct from input
-        
+        # Telegram-style messages list
         self.messages_list = ft.ListView(
             expand=True,
-            spacing=4, # Tighter spacing for bubbles
-            padding=ft.padding.symmetric(horizontal=10, vertical=10),
-            auto_scroll=True
+            spacing=8, # Telegram spacing
+            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            auto_scroll=True,
+            reverse=True  # New messages at bottom
         )
         
-        # Message input styling
+        # Telegram-style message input
         self.message_input = ft.TextField(
             hint_text="Message",
             border=ft.InputBorder.NONE,
-            filled=False,
+            filled=True,
             expand=True,
             multiline=True,
             min_lines=1,
-            max_lines=6,
+            max_lines=5,
             text_size=15,
-            content_padding=ft.padding.symmetric(vertical=10),
+            content_padding=ft.padding.symmetric(horizontal=12, vertical=8),
             on_submit=lambda e: self.page.run_task(self.send_message),
             color=colors_palette["text_primary"],
-            hint_style=ft.TextStyle(color=colors_palette["text_tertiary"])
+            hint_style=ft.TextStyle(color=colors_palette["text_tertiary"]),
+            bgcolor=colors_palette["bg_primary"],
+            border_radius=22
         )
         
         # Attach button with light-blue theme
@@ -224,35 +228,47 @@ class MessageView(ft.View):
             on_click=lambda e: self.page.run_task(self.send_message)
         )
         
-        # Input area container - Telegram style with better aesthetics
-        # Attach Icon -> [Emoji Icon | Input Field] -> Send Icon
+        # Telegram-style input area
         input_row = ft.Row([
-            self.attach_btn,
-            ft.Container(
-                content=ft.Row([
-                    self.emoji_btn,
-                    self.message_input
-                ], spacing=0, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.END),
-                bgcolor=colors_palette["bg_primary"] if self.dark_mode else ft.Colors.WHITE,
-                border_radius=24,
-                padding=ft.padding.only(left=8, right=16, top=4, bottom=4),
-                expand=True,
-                shadow=ft.BoxShadow(
-                    spread_radius=0,
-                    blur_radius=1,
-                    color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
-                    offset=ft.Offset(0, 1),
-                ),
+            ft.IconButton(
+                icon=icons.ATTACH_FILE,
+                icon_color=colors_palette["text_secondary"],
+                icon_size=24,
+                tooltip="Attach file",
+                on_click=lambda e: self.show_attachment_menu()
             ),
-            self.send_btn
-        ], spacing=10, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.END)
+            ft.Container(
+                content=self.message_input,
+                expand=True,
+                bgcolor=colors_palette["bg_primary"],
+                border_radius=22,
+                border=ft.border.all(1, colors_palette["border"])
+            ),
+            ft.IconButton(
+                icon=icons.EMOJI_EMOTIONS_OUTLINED,
+                icon_color=colors_palette["text_secondary"],
+                icon_size=24,
+                tooltip="Emoji",
+                on_click=lambda e: self.show_emoji_picker()
+            ),
+            ft.Container(width=8),
+            ft.IconButton(
+                icon=icons.SEND,
+                icon_color=ft.Colors.WHITE,
+                icon_size=24,
+                tooltip="Send",
+                bgcolor=colors_palette["accent"],
+                border_radius=20,
+                on_click=lambda e: self.page.run_task(self.send_message)
+            )
+        ], spacing=8, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.END)
 
-        # Bottom container wrapper
+        # Telegram-style input container
         input_container = ft.Container(
             content=input_row,
-            padding=ft.padding.only(left=12, right=12, top=12, bottom=12),
-            bgcolor=colors_palette["bg_secondary"],
-            border=ft.border.only(top=ft.BorderSide(1, colors_palette["divider"] if self.dark_mode else ft.Colors.with_opacity(0.1, ft.Colors.BLACK)))
+            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            bgcolor=colors_palette["bg_primary"],
+            border=ft.border.only(top=ft.BorderSide(1, colors_palette["divider"]))
         )
         
         # Main content
@@ -497,6 +513,11 @@ class MessageView(ft.View):
         
         try:
             chat_id = self.chat.get("_id")
+            if not chat_id:
+                self.show_error("Chat ID not found for file upload")
+                snack.open = False
+                self.page.update()
+                return
             
             count = 0
             total_files = len(e.files)
@@ -505,52 +526,83 @@ class MessageView(ft.View):
                 file_name = file.name
                 file_path = file.path
                 
+                if not file_path:
+                    progress_text.value = f"❌ Could not access {file_name}"
+                    snack.update()
+                    continue
+                
                 # Update progress
                 progress_text.value = f"Uploading {file_name} ({i+1}/{total_files})..."
                 progress_bar.visible = True
                 progress_bar.value = (i) / total_files
                 snack.update()
                 
+                print(f"[UPLOAD] Uploading {file_name} to chat {chat_id}")
+                
                 # Upload with progress callback
                 def update_progress(progress):
                     progress_bar.value = progress
                     snack.update()
                 
-                # Upload
-                file_id = await self.api_client.upload_large_file(
-                    file_path, 
-                    chat_id, 
-                    progress_callback=update_progress
-                )
-                
-                # Send message
-                await self.api_client.send_message(
-                    chat_id=chat_id,
-                    file_id=file_id
-                )
-                count += 1
+                try:
+                    # Upload
+                    file_id = await self.api_client.upload_large_file(
+                        file_path, 
+                        chat_id, 
+                        progress_callback=update_progress
+                    )
+                    
+                    print(f"[UPLOAD] File uploaded successfully: {file_id}")
+                    
+                    # Send message
+                    await self.api_client.send_message(
+                        chat_id=chat_id,
+                        file_id=file_id
+                    )
+                    
+                    print(f"[UPLOAD] Message sent with file: {file_id}")
+                    count += 1
+                    
+                except Exception as upload_e:
+                    print(f"[UPLOAD] Upload failed for {file_name}: {upload_e}")
+                    progress_text.value = f"❌ Failed to upload {file_name}"
+                    snack.update()
+                    continue
                 
                 # Update final progress
                 progress_bar.value = (i + 1) / total_files
                 snack.update()
             
             # Success
-            progress_text.value = f"✅ {count} file(s) sent successfully!"
-            progress_ring.visible = False
-            progress_bar.visible = False
-            snack.bgcolor = ft.Colors.GREEN_100
-            snack.update()
+            if count > 0:
+                progress_text.value = f"✅ {count} file(s) sent successfully!"
+                progress_ring.visible = False
+                progress_bar.visible = False
+                snack.bgcolor = ft.Colors.GREEN_100
+                snack.update()
+                
+                # Auto-hide after success
+                await asyncio.sleep(2)
+                
+                # Reload messages
+                await self.load_messages()
+            else:
+                progress_text.value = "❌ No files were uploaded"
+                progress_ring.visible = False
+                progress_bar.visible = False
+                snack.bgcolor = ft.Colors.RED_100
+                snack.update()
+                
+                # Auto-hide after error
+                await asyncio.sleep(3)
             
-            # Auto-hide after success
-            await asyncio.sleep(2)
             snack.open = False
             self.page.update()
             
-            # Reload messages
-            await self.load_messages()
-            
         except Exception as e:
-            progress_text.value = f"❌ Upload failed: {str(e)[:30]}"
+            error_msg = str(e)
+            print(f"[UPLOAD] Upload error: {error_msg}")
+            progress_text.value = f"❌ Upload failed: {error_msg[:30]}"
             progress_ring.visible = False
             progress_bar.visible = False
             snack.bgcolor = ft.Colors.RED_100
@@ -567,14 +619,30 @@ class MessageView(ft.View):
         
         try:
             chat_id = self.chat.get("_id")
+            if not chat_id:
+                self.show_error("Chat ID not found")
+                return
+            
+            print(f"[MESSAGE] Loading messages for chat {chat_id}")
             
             # Mark chat as read
-            await self.api_client.mark_as_read(chat_id)
+            try:
+                await self.api_client.mark_as_read(chat_id)
+                print(f"[MESSAGE] Chat {chat_id} marked as read")
+            except Exception as read_e:
+                print(f"[MESSAGE] Mark as read failed: {read_e}")
+                # Continue even if mark as read fails
             
             # Load initial messages
-            data = await self.api_client.get_messages(chat_id)
-            self.messages = data.get("messages", [])
-            self.update_message_display()
+            try:
+                data = await self.api_client.get_messages(chat_id)
+                self.messages = data.get("messages", [])
+                print(f"[MESSAGE] Loaded {len(self.messages)} messages")
+                self.update_message_display()
+            except Exception as msg_e:
+                print(f"[MESSAGE] Failed to load messages: {msg_e}")
+                self.messages = []
+                self.update_message_display()
             
             # Start real-time updates using WebSocket or polling
             await self.start_realtime_updates(chat_id)
@@ -848,25 +916,25 @@ class MessageView(ft.View):
             time_str = ""
         
         # Check if it's a file message
-        is_file = msg_text.startswith(("📎", "🖼️", "🎬", "🎵", "📕", "📘", "📗", "📙", "📦"))
+        is_file = msg_text.startswith(("📎", "🖼️", "🎬", "🎵", "📕", "📘", "📗", "📙", "📦")) or "file_id" in message
         
-        # Bubble Styling - Light blue themed
+        # Telegram-style bubble colors
         if self.dark_mode:
             bubble_color = "#2B5278" if is_mine else "#182533" # Dark mode bubble colors
             text_color = ft.Colors.WHITE
         else:
-            bubble_color = "#E7F5FF" if is_mine else ft.Colors.WHITE # Light blue for self, White for others
-            text_color = ft.Colors.BLACK
+            bubble_color = colors_palette["message_sent"] if is_mine else colors_palette["message_received"] # Telegram colors
+            text_color = colors_palette["text_primary"]
         
-        # Border Radius for Tail Effect
+        # Telegram-style bubble radius
         if is_mine:
             radius = ft.border_radius.only(
-                top_left=16, top_right=16, bottom_left=16, bottom_right=0
+                top_left=18, top_right=18, bottom_left=18, bottom_right=4
             )
             align = ft.MainAxisAlignment.END
         else:
             radius = ft.border_radius.only(
-                top_left=0, top_right=16, bottom_left=16, bottom_right=16
+                top_left=4, top_right=18, bottom_left=18, bottom_right=18
             )
             align = ft.MainAxisAlignment.START
 
@@ -938,15 +1006,10 @@ class MessageView(ft.View):
             content=final_content,
             bgcolor=bubble_color,
             border_radius=radius,
-            padding=ft.padding.symmetric(horizontal=14, vertical=8),
+            padding=ft.padding.symmetric(horizontal=12, vertical=6),
             width=None,
-            constraints=ft.BoxConstraints(max_width=360),
-            shadow=ft.BoxShadow(
-                spread_radius=0,
-                blur_radius=3,
-                color=ft.Colors.with_opacity(0.15, ft.Colors.BLACK),
-                offset=ft.Offset(0, 1),
-            ),
+            constraints=ft.BoxConstraints(max_width=280),
+            ink=True,
             on_long_press=lambda e, mid=message_id, saved=is_saved: self.show_message_menu(mid, saved, msg_text)
         )
         
@@ -1049,16 +1112,28 @@ class MessageView(ft.View):
             self.page.update()
             
             chat_id = self.chat.get("_id")
-            await self.api_client.send_message(
+            if not chat_id:
+                self.show_error("Chat ID not found")
+                self.message_input.value = message_text
+                self.page.update()
+                return
+            
+            print(f"[MESSAGE] Sending message to chat {chat_id}: {message_text}")
+            
+            result = await self.api_client.send_message(
                 chat_id=chat_id,
                 text=message_text
             )
+            
+            print(f"[MESSAGE] Message sent successfully: {result}")
             
             # Reload messages
             await self.load_messages()
             
         except Exception as e:
-            self.show_error(f"Failed to send: {str(e)[:50]}")
+            error_msg = str(e)
+            print(f"[MESSAGE] Send message error: {error_msg}")
+            self.show_error(f"Failed to send: {error_msg[:50]}")
             self.message_input.value = message_text
             self.page.update()
     

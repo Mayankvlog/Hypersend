@@ -65,14 +65,17 @@ class ChatsView(ft.View):
         self.on_saved_click = on_saved_click
         self.on_profile_click = on_profile_click
         
-        # Theme colors - Light blue themed
-        self.primary_color = "#0088CC"
-        self.bg_color = "#FDFBFB"
-        self.card_color = "#FFFFFF"
-        self.text_color = "#000000"
-        self.text_secondary = "#8e8e93"
-        self.accent_light = "#E7F5FF"
-        self.accent_hover = "#0077B5"
+        # Telegram exact colors
+        from theme import LIGHT_COLORS
+        self.primary_color = LIGHT_COLORS["accent"]  # #0088CC
+        self.bg_color = LIGHT_COLORS["bg_primary"]  # #FFFFFF
+        self.card_color = LIGHT_COLORS["bg_primary"]  # #FFFFFF
+        self.text_color = LIGHT_COLORS["text_primary"]  # #000000
+        self.text_secondary = LIGHT_COLORS["text_secondary"]  # #65686B
+        self.accent_light = LIGHT_COLORS["accent_light"]  # #E7F5FF
+        self.accent_hover = LIGHT_COLORS["accent_hover"]  # #0077B5
+        self.chat_selected = LIGHT_COLORS["chat_selected"]  # #F0F2F5
+        self.divider_color = LIGHT_COLORS["divider"]  # #E9EDEF
         
         # State
         self.chats: List[Dict[str, Any]] = []
@@ -479,20 +482,21 @@ class ChatsView(ft.View):
             
             return sidebar
         
-        # AppBar - Light blue themed
+        # Telegram-style AppBar
         self.page.appbar = ft.AppBar(
-            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color="#0088CC"),
+            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color=self.text_color, size=18),
             center_title=False,
-            bgcolor="#FFFFFF",
-            elevation=0.5,
+            bgcolor=self.bg_color,
+            elevation=0,
             actions=[]  # No actions - all in sidebar
         )
         
-        # Chat list
+        # Telegram-style chat list
         self.chat_list = ft.ListView(
             expand=True,
-            spacing=1,
-            padding=ft.padding.symmetric(vertical=8)
+            spacing=0,
+            padding=ft.padding.zero,
+            item_extent=72  # Fixed height for each chat item
         )
         
         # Loading indicator with light-blue theme
@@ -616,25 +620,19 @@ class ChatsView(ft.View):
             # Get unread count
             unread_count = chat.get("unread_count", 0)
             
-            # Create unread badge if needed with light-blue accent
+            # Telegram-style unread badge
             unread_badge = ft.Container(
                 content=ft.Text(
-                    str(unread_count),
-                    size=12,
-                    weight=ft.FontWeight.BOLD,
+                    str(unread_count) if unread_count <= 99 else "99+",
+                    size=11,
+                    weight=ft.FontWeight.W_600,
                     color=ft.Colors.WHITE
                 ),
-                width=24,
-                height=24,
-                bgcolor=self.primary_color,  # Light blue for unread
-                border_radius=12,
-                alignment=ft.alignment.center,
-                shadow=ft.BoxShadow(
-                    spread_radius=0,
-                    blur_radius=4,
-                    color=ft.Colors.with_opacity(0.3, self.primary_color),
-                    offset=ft.Offset(0, 1)
-                )
+                width=20 if unread_count < 10 else 28,
+                height=20,
+                bgcolor=self.primary_color,
+                border_radius=10,
+                alignment=ft.alignment.center
             ) if unread_count > 0 else ft.Container()
             
             chat_item = ft.Container(
@@ -661,35 +659,28 @@ class ChatsView(ft.View):
                                 ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                                 ft.Row([
                                     ft.Text(
-                                        last_message_text[:40] + "..." if len(last_message_text) > 40 else last_message_text,
-                                        size=13,
+                                        last_message_text[:45] + "..." if len(last_message_text) > 45 else last_message_text,
+                                        size=14,
                                         color=self.text_color if unread_count > 0 else self.text_secondary,
                                         no_wrap=True,
                                         expand=True,
-                                        weight=ft.FontWeight.W_600 if unread_count > 0 else ft.FontWeight.NORMAL
+                                        weight=ft.FontWeight.W_500 if unread_count > 0 else ft.FontWeight.NORMAL
                                     ),
                                     unread_badge
                                 ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
                             ],
-                            spacing=5,
+                            spacing=2,
                             expand=True
                         )
                     ],
-                    spacing=15,
+                    spacing=12,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER
                 ),
-                padding=12,
-                bgcolor=self.accent_light if unread_count > 0 else self.card_color,
-                border_radius=12,
+                padding=ft.padding.symmetric(horizontal=16, vertical=8),
+                bgcolor=self.chat_selected if unread_count > 0 else self.card_color,
                 on_click=lambda e, c=chat: self.page.run_task(self.open_chat, c),
-                margin=ft.margin.symmetric(horizontal=8, vertical=4),
-                shadow=ft.BoxShadow(
-                    spread_radius=0,
-                    blur_radius=2 if unread_count > 0 else 0.5,
-                    color=ft.Colors.with_opacity(0.1 if unread_count > 0 else 0.05, ft.Colors.BLACK),
-                    offset=ft.Offset(0, 1),
-                ),
-                animate=ft.animation.Animation(200, ft.AnimationCurve.EASE_OUT)
+                ink=True,
+                on_hover=lambda e: self.hover_chat_item(e, chat_item)
             )
             chat_items.append(chat_item)
     
@@ -737,7 +728,7 @@ class ChatsView(ft.View):
                             ft.Text(
                                 "Saved Messages",
                                 size=16,
-                                weight=ft.FontWeight.W_600,
+                                weight=ft.FontWeight.W_500,
                                 color=self.text_color
                             ),
                             ft.Text(
@@ -746,24 +737,16 @@ class ChatsView(ft.View):
                                 color=self.text_secondary
                             )
                         ],
-                        spacing=5,
+                        spacing=2,
                         expand=True
                     )
                 ],
-                spacing=15
+                spacing=12,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER
             ),
-            padding=15,
+            padding=ft.padding.symmetric(horizontal=16, vertical=8),
             on_click=lambda e: self.show_saved_messages(),
-            bgcolor=self.accent_light,
-            border_radius=12,
-            margin=ft.margin.symmetric(horizontal=8, vertical=4),
-            shadow=ft.BoxShadow(
-                spread_radius=0,
-                blur_radius=1,
-                color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
-                offset=ft.Offset(0, 1),
-            ),
-            animate=ft.animation.Animation(200, ft.AnimationCurve.EASE_OUT)
+            ink=True
         )
         chat_items.append(saved_messages_item)
         
@@ -1215,6 +1198,14 @@ class ChatsView(ft.View):
             error_snack.open = True
             self.page.update()
 
+    def hover_chat_item(self, e: ft.ControlEvent, chat_item):
+        """Handle chat item hover"""
+        if e.data == "true":
+            chat_item.bgcolor = self.chat_selected
+        else:
+            chat_item.bgcolor = self.card_color
+        self.page.update()
+    
     def go_back(self):
         """Go back to previous screen"""
         self.page.go("/")
