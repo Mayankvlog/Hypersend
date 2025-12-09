@@ -1380,41 +1380,114 @@ class ZaplyApp:
             for msg in self.messages:
                 is_mine = msg.get("sender_id") == self.current_user.get("id", self.current_user.get("_id"))
                 
-                # Message bubble
-                if msg.get("type") == "text":
+                # Message bubble content
+                msg_text = msg.get("text", "")
+                file_id = msg.get("file_id")
+                file_name = msg.get("file_name", "File")
+                file_mime = msg.get("file_mime", "")
+                
+                # Determine content type and create appropriate display
+                if msg_text and not file_id:
+                    # Text message
                     content = ft.Text(
-                        msg.get("text", ""),
+                        msg_text,
                         color=self.text_primary,
                         selectable=True
                     )
-                else:
-                    # File message (simplified)
-                    filename = msg.get("file_id", "File")
-                    content = ft.Column(
-                        [
-                            ft.Row(
-                                [
-                                    ft.Icon(icons.INSERT_DRIVE_FILE, size=40),
-                                    ft.Column(
-                                        [
-                                            ft.Text(
-                                                str(filename),
-                                                weight=ft.FontWeight.W_500
-                                            )
-                                        ],
-                                        spacing=2
-                                    )
-                                ],
-                                spacing=10
+                elif file_id:
+                    # File/Media message
+                    file_url = f"{self.client.base_url}/api/v1/files/{file_id}/download"
+                    
+                    # Determine file type from mime type
+                    if "image" in file_mime:
+                        # Image display
+                        content = ft.Column([
+                            ft.Image(
+                                src=file_url,
+                                width=250,
+                                height=200,
+                                fit=ft.ImageFit.COVER,
+                                border_radius=10,
+                            ),
+                            ft.Text(file_name, size=12, color=self.text_secondary),
+                            ft.ElevatedButton(
+                                "Download",
+                                icon=icons.DOWNLOAD,
+                                on_click=lambda e, fid=file_id: self.download_file(fid)
+                            )
+                        ], spacing=5)
+                    elif "video" in file_mime:
+                        # Video thumbnail with download button
+                        content = ft.Column([
+                            ft.Container(
+                                content=ft.Row([
+                                    ft.Icon(icons.VIDEOCAM, size=60, color=ft.Colors.BLUE_500),
+                                    ft.Column([
+                                        ft.Text("Video File", weight=ft.FontWeight.BOLD),
+                                        ft.Text(file_name, size=12, color=self.text_secondary),
+                                    ], spacing=3)
+                                ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                                padding=15,
+                                border_radius=10,
+                                width=250,
+                                height=120,
+                                bgcolor="#E3F2FD"
+                            ),
+                            ft.ElevatedButton(
+                                "Download Video",
+                                icon=icons.DOWNLOAD,
+                                on_click=lambda e, fid=file_id: self.download_file(fid)
+                            )
+                        ], spacing=5)
+                    elif "pdf" in file_mime or file_name.endswith(".pdf"):
+                        # PDF display
+                        content = ft.Column([
+                            ft.Container(
+                                content=ft.Row([
+                                    ft.Icon(icons.PICTURE_AS_PDF, size=60, color=ft.Colors.RED_500),
+                                    ft.Column([
+                                        ft.Text("PDF Document", weight=ft.FontWeight.BOLD),
+                                        ft.Text(file_name, size=12, color=self.text_secondary),
+                                    ], spacing=3)
+                                ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                                padding=15,
+                                border_radius=10,
+                                width=250,
+                                height=120,
+                                bgcolor="#FFEBEE"
+                            ),
+                            ft.ElevatedButton(
+                                "Download PDF",
+                                icon=icons.DOWNLOAD,
+                                on_click=lambda e, fid=file_id: self.download_file(fid)
+                            )
+                        ], spacing=5)
+                    else:
+                        # Generic file display
+                        content = ft.Column([
+                            ft.Container(
+                                content=ft.Row([
+                                    ft.Icon(icons.INSERT_DRIVE_FILE, size=60, color=ft.Colors.GREY_500),
+                                    ft.Column([
+                                        ft.Text("File", weight=ft.FontWeight.BOLD),
+                                        ft.Text(file_name, size=12, color=self.text_secondary),
+                                    ], spacing=3)
+                                ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                                padding=15,
+                                border_radius=10,
+                                width=250,
+                                height=120,
+                                bgcolor="#F5F5F5"
                             ),
                             ft.ElevatedButton(
                                 "Download",
                                 icon=icons.DOWNLOAD,
-                                on_click=lambda e, fid=msg.get("file_id"): self.download_file(fid)
+                                on_click=lambda e, fid=file_id: self.download_file(fid)
                             )
-                        ],
-                        spacing=10
-                    )
+                        ], spacing=5)
+                else:
+                    # Empty message fallback
+                    content = ft.Text("Empty message", color=self.text_secondary)
                 
                 # Create message actions row
                 def open_message_menu(msg_id, msg_text, sender_id):
