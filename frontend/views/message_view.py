@@ -159,43 +159,12 @@ class MessageView(ft.View):
             hint_style=ft.TextStyle(color=colors_palette["text_tertiary"])
         )
         
-        # Attach button with popup
-        self.attach_btn = ft.PopupMenuButton(
+        # Attach button - opens bottom sheet with options
+        self.attach_btn = ft.IconButton(
             icon=ft.Icons.ATTACH_FILE,
             icon_color=colors_palette["text_secondary"],
             tooltip="Attach",
-            items=[
-                ft.PopupMenuItem(
-                    icon=ft.Icons.IMAGE,
-                    text="📸 Photo",
-                    on_click=lambda e: self.pick_photo()
-                ),
-                ft.PopupMenuItem(
-                    icon=ft.Icons.VIDEOCAM,
-                    text="🎬 Video",
-                    on_click=lambda e: self.pick_video()
-                ),
-                ft.PopupMenuItem(
-                    icon=ft.Icons.DESCRIPTION,
-                    text="📄 Document",
-                    on_click=lambda e: self.pick_document()
-                ),
-                ft.PopupMenuItem(
-                    icon=ft.Icons.AUDIOTRACK,
-                    text="🎵 Audio",
-                    on_click=lambda e: self.pick_audio()
-                ),
-                ft.PopupMenuItem(
-                    icon=ft.Icons.LOCATION_ON,
-                    text="📍 Location",
-                    on_click=lambda e: self.share_location()
-                ),
-                ft.PopupMenuItem(
-                    icon=ft.Icons.CONTACT_PAGE,
-                    text="👤 Contact",
-                    on_click=lambda e: self.share_contact()
-                ),
-            ]
+            on_click=lambda e: self.show_attachment_menu()
         )
         
         # Emoji button
@@ -349,6 +318,66 @@ class MessageView(ft.View):
         emoji_dialog.open = True
         self.page.update()
     
+    def show_attachment_menu(self):
+        """Show beautiful attachment menu with colorful icons"""
+        colors_palette = self.theme.colors
+        
+        def create_attach_option(icon, label, color, on_click):
+            """Create a single attachment option button"""
+            return ft.Container(
+                content=ft.Column([
+                    ft.Container(
+                        content=ft.Icon(icon, size=28, color=ft.Colors.WHITE),
+                        width=56,
+                        height=56,
+                        bgcolor=color,
+                        border_radius=28,
+                        alignment=ft.alignment.center,
+                    ),
+                    ft.Text(label, size=12, color=colors_palette["text_primary"], text_align=ft.TextAlign.CENTER)
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                on_click=on_click,
+                padding=10,
+            )
+        
+        def close_and_pick(action):
+            self.page.close(attach_sheet)
+            action()
+        
+        # Attachment options with beautiful colored icons
+        options_row1 = ft.Row([
+            create_attach_option(ft.Icons.IMAGE, "Photo", "#4CAF50", lambda e: close_and_pick(self.pick_photo)),
+            create_attach_option(ft.Icons.VIDEOCAM, "Video", "#2196F3", lambda e: close_and_pick(self.pick_video)),
+            create_attach_option(ft.Icons.DESCRIPTION, "Document", "#FF9800", lambda e: close_and_pick(self.pick_document)),
+            create_attach_option(ft.Icons.FOLDER, "File", "#9C27B0", lambda e: close_and_pick(self.pick_document)),
+        ], alignment=ft.MainAxisAlignment.SPACE_EVENLY)
+        
+        options_row2 = ft.Row([
+            create_attach_option(ft.Icons.LOCATION_ON, "Location", "#F44336", lambda e: close_and_pick(self.share_location)),
+            create_attach_option(ft.Icons.MUSIC_NOTE, "Audio", "#E91E63", lambda e: close_and_pick(self.pick_audio)),
+            create_attach_option(ft.Icons.CONTACT_PAGE, "Contact", "#607D8B", lambda e: close_and_pick(self.share_contact)),
+            create_attach_option(ft.Icons.POLL, "Poll", "#00BCD4", lambda e: self.show_coming_soon("Poll")),
+        ], alignment=ft.MainAxisAlignment.SPACE_EVENLY)
+        
+        attach_sheet = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Text("Share", weight=ft.FontWeight.BOLD, size=18),
+                ft.Container(expand=True),
+                ft.IconButton(icon=ft.Icons.CLOSE, on_click=lambda e: self.page.close(attach_sheet))
+            ]),
+            content=ft.Container(
+                content=ft.Column([
+                    options_row1,
+                    options_row2,
+                ], spacing=16),
+                padding=ft.padding.symmetric(vertical=20),
+                width=350
+            ),
+        )
+        
+        self.page.open(attach_sheet)
+
     def pick_photo(self):
         try:
             self.file_picker.pick_files(

@@ -51,12 +51,6 @@ class SettingsView(ft.View):
                     icons.PERSON,
                     on_click=lambda e: self.page.go("/profile")
                 ),
-                self.setting_item(
-                    "Phone Number",
-                    "Add or change your phone number",
-                    icons.PHONE,
-                    on_click=lambda e: print("Phone settings coming soon")
-                ),
             ]
         )
         
@@ -298,18 +292,37 @@ class SettingsView(ft.View):
             expand=True
         )
         
-        # Set up view
+        # Back button header for visibility
+        back_header = ft.Container(
+            content=ft.Row([
+                ft.IconButton(
+                    icon=ft.Icons.ARROW_BACK,
+                    icon_color=ft.Colors.BLACK,
+                    icon_size=28,
+                    tooltip="Back",
+                    on_click=lambda e: self.go_back()
+                ),
+                ft.Text("Settings", size=20, weight=ft.FontWeight.BOLD, color=self.text_color),
+            ], alignment=ft.MainAxisAlignment.START),
+            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+            bgcolor=self.bg_color
+        )
+        
+        # Set up view with header included
         self.controls = [
             ft.Container(
-                content=main_content,
-                padding=ft.padding.all(20),
+                content=ft.Column([
+                    back_header,
+                    main_content
+                ], spacing=0),
+                padding=ft.padding.only(top=10, left=20, right=20, bottom=20),
                 bgcolor=self.bg_color,
                 expand=True
             )
         ]
         
-        # Set app bar
-        self.page.appbar = ft.AppBar(
+        # Also set view's appbar for proper Flet behavior
+        self.appbar = ft.AppBar(
             title=ft.Text("Settings", weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
             bgcolor=self.bg_color,
             leading=ft.IconButton(
@@ -525,6 +538,165 @@ class SettingsView(ft.View):
         # Implement dark mode logic
         self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
         self.page.update()
+    
+    def show_phone_settings(self):
+        """Show phone number settings dialog"""
+        # Get current phone from user data
+        current_phone = self.current_user.get("phone", "") if self.current_user else ""
+        
+        # Country codes
+        country_codes = [
+            ("+91", "🇮🇳 India"),
+            ("+1", "🇺🇸 USA"),
+            ("+44", "🇬🇧 UK"),
+            ("+86", "🇨🇳 China"),
+            ("+81", "🇯🇵 Japan"),
+            ("+49", "🇩🇪 Germany"),
+            ("+33", "🇫🇷 France"),
+            ("+7", "🇷🇺 Russia"),
+            ("+971", "🇦🇪 UAE"),
+            ("+65", "🇸🇬 Singapore"),
+        ]
+        
+        # Country dropdown
+        country_dropdown = ft.Dropdown(
+            label="Country Code",
+            value="+91",
+            options=[ft.dropdown.Option(key=code, text=f"{label} ({code})") for code, label in country_codes],
+            width=150,
+        )
+        
+        # Phone number input
+        phone_input = ft.TextField(
+            label="Phone Number",
+            hint_text="Enter phone number",
+            keyboard_type=ft.KeyboardType.PHONE,
+            prefix_icon=icons.PHONE,
+            value=current_phone.replace("+91", "").strip() if current_phone else "",
+            expand=True,
+            max_length=15,
+        )
+        
+        # Verification code input (hidden initially)
+        verification_input = ft.TextField(
+            label="Verification Code",
+            hint_text="Enter 6-digit code",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            prefix_icon=icons.LOCK,
+            max_length=6,
+            visible=False,
+        )
+        
+        # Status text
+        status_text = ft.Text("", size=12, color=ft.Colors.GREY)
+        
+        # Verification step indicator
+        step_indicator = ft.Row([
+            ft.Container(
+                content=ft.Text("1", color=ft.Colors.WHITE, size=12),
+                bgcolor=self.primary_color,
+                width=24,
+                height=24,
+                border_radius=12,
+                alignment=ft.alignment.center
+            ),
+            ft.Container(width=30, height=2, bgcolor=ft.Colors.GREY_300),
+            ft.Container(
+                content=ft.Text("2", color=ft.Colors.WHITE, size=12),
+                bgcolor=ft.Colors.GREY_400,
+                width=24,
+                height=24,
+                border_radius=12,
+                alignment=ft.alignment.center
+            ),
+        ], alignment=ft.MainAxisAlignment.CENTER)
+        
+        def send_verification(e):
+            phone = phone_input.value.strip()
+            if not phone or len(phone) < 10:
+                status_text.value = "Please enter a valid phone number"
+                status_text.color = ft.Colors.RED
+                self.page.update()
+                return
+            
+            full_phone = f"{country_dropdown.value}{phone}"
+            status_text.value = f"Verification code sent to {full_phone}"
+            status_text.color = ft.Colors.GREEN
+            verification_input.visible = True
+            
+            # Update step indicator
+            step_indicator.controls[2].bgcolor = self.primary_color
+            
+            self.page.update()
+        
+        def verify_code(e):
+            code = verification_input.value.strip()
+            if not code or len(code) != 6:
+                status_text.value = "Please enter 6-digit code"
+                status_text.color = ft.Colors.RED
+                self.page.update()
+                return
+            
+            # Simulate verification success
+            full_phone = f"{country_dropdown.value}{phone_input.value.strip()}"
+            status_text.value = f"✅ Phone verified: {full_phone}"
+            status_text.color = ft.Colors.GREEN
+            
+            # Update user data (would call API in production)
+            if self.current_user:
+                self.current_user["phone"] = full_phone
+            
+            # Show success snackbar
+            snack = ft.SnackBar(
+                content=ft.Text(f"Phone number updated to {full_phone}"),
+                bgcolor=ft.Colors.GREEN
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
+            
+            # Close dialog after delay
+            self.page.close(phone_dialog)
+            self.page.update()
+        
+        phone_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Icon(icons.PHONE, color=self.primary_color),
+                ft.Text("Phone Number", weight=ft.FontWeight.BOLD)
+            ], spacing=10),
+            content=ft.Container(
+                content=ft.Column([
+                    step_indicator,
+                    ft.Container(height=15),
+                    ft.Text("Enter your phone number", size=14, color=self.text_secondary),
+                    ft.Row([country_dropdown, phone_input], spacing=10),
+                    verification_input,
+                    status_text,
+                    ft.Container(height=10),
+                    ft.Text("We'll send a verification code via SMS", size=12, color=ft.Colors.GREY),
+                ], spacing=10, tight=True),
+                width=350,
+                padding=10
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(phone_dialog)),
+                ft.ElevatedButton(
+                    "Send Code",
+                    on_click=send_verification,
+                    bgcolor=self.primary_color,
+                    color=ft.Colors.WHITE
+                ),
+                ft.ElevatedButton(
+                    "Verify",
+                    on_click=verify_code,
+                    bgcolor=ft.Colors.GREEN,
+                    color=ft.Colors.WHITE,
+                    visible=True
+                ),
+            ]
+        )
+        
+        self.page.open(phone_dialog)
     
     def toggle_notifications(self, e):
         """Toggle notifications"""
