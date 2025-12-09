@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  zaply-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: zaply-frontend
+    environment:
+      - API_BASE_URL=http://139.59.82.105:8000
+      - DEBUG=False
+    ports:
+      - "5000:5000"
+    depends_on:
+      - backend
+    networks:
+      - zaply-network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zaply-backend
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - JWT_SECRET=your-secret-key-change-in-production
+      - JWT_ALGORITHM=HS256
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+    networks:
+      - zaply-network
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:latest
+    container_name: zaply-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - zaply-network
+    restart: unless-stopped
+
+networks:
+  zaply-network:
+    driver: bridge
+
+volumes:
+  mongo_data:
