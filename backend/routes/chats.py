@@ -53,12 +53,21 @@ async def get_saved_messages(
 
 @router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_user)):
-    """Create a new chat (private or group)"""
+    """Create a new chat (private, group, channel, or saved)"""
     
-    # Validate members
+    # Validate chat type
+    valid_types = ["private", "group", "channel", "saved"]
+    if chat.type not in valid_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid chat type. Must be one of: {', '.join(valid_types)}"
+        )
+    
+    # Ensure current user is in members
     if current_user not in chat.member_ids:
         chat.member_ids.append(current_user)
     
+    # Validate members based on type
     if chat.type == "private" and len(chat.member_ids) != 2:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -68,6 +77,13 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Saved chat must have exactly 1 member (yourself)"
+        )
+    
+    # For group and channel: name is required
+    if chat.type in ["group", "channel"] and not chat.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{chat.type.capitalize()} must have a name"
         )
     
     # Check if private or saved chat already exists
