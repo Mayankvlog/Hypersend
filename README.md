@@ -2,10 +2,11 @@
 
 A modern, cross-platform messaging application built with **Flet** (Flutter for Python) and **FastAPI**, featuring real-time chat, secure P2P file transfer, and advanced permissions management.
 
-![Status](https://img.shields.io/badge/status-production--ready-brightgreen)
-![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Status](https://img.shields.io/badge/status-testing--ready-brightgreen)
+![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![Flet](https://img.shields.io/badge/flet-0.28.3-orange)
-![FastAPI](https://img.shields.io/badge/fastapi-latest-green)
+![FastAPI](https://img.shields.io/badge/fastapi-0.115.5-green)
+![Tests](https://img.shields.io/badge/tests-3%2F3%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -77,6 +78,31 @@ A modern, cross-platform messaging application built with **Flet** (Flutter for 
 - **Nginx** - Reverse proxy
 - **Gradle** - Android build system
 - **Flutter** - Cross-platform compilation
+
+---
+
+## 📊 Current Status (December 9, 2025)
+
+### ✅ Completed
+- ✅ User authentication (register/login/refresh tokens)
+- ✅ Private chat creation and messaging
+- ✅ Group and channel creation
+- ✅ File upload with chunked transfer
+- ✅ Settings and profile management
+- ✅ Dark/Light theme switching
+- ✅ UI fully functional without errors
+- ✅ Backend tests (3/3 passing)
+- ✅ All critical bugs fixed
+
+### ⏳ In Progress / TODO
+- ⏳ WebSocket for real-time messaging
+- ⏳ Push notifications
+- ⏳ Voice messages
+- ⏳ Audio/Video calls
+- ⏳ Message search
+- ⏳ E2E encryption
+
+**See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed information**
 
 ---
 
