@@ -626,7 +626,7 @@ class ZaplyApp:
                             # Zaply Icon at top
                             ft.Container(
                                 content=ft.Image(
-                                    src="/assets/icon.png",
+                                    src="assets/icon-192.png",
                                     width=100,
                                     height=100,
                                     fit=ft.ImageFit.CONTAIN,
@@ -890,7 +890,7 @@ class ZaplyApp:
                             # Zaply Icon at top
                             ft.Container(
                                 content=ft.Image(
-                                    src="/assets/icon.png",
+                                    src="assets/icon-192.png",
                                     width=100,
                                     height=100,
                                     fit=ft.ImageFit.CONTAIN,
@@ -927,7 +927,7 @@ class ZaplyApp:
         self.page.update()
     
     def show_chat_list(self):
-        """Show list of chats"""
+        """Show list of chats with Telegram-style left sidebar"""
         async def load_chats():
             try:
                 debug_log(f"[CHATS] Loading chats from {self.client.base_url}/api/v1/chats/")
@@ -1063,51 +1063,210 @@ class ZaplyApp:
             expand=True
         )
         
-        # AppBar
-        appbar = ft.AppBar(
-            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD),
-            center_title=False,
-            bgcolor=self.bg_light,
-            actions=[
-                ft.IconButton(
-                    icon=icons.SEARCH,
-                    tooltip="Search",
-                    on_click=lambda e: print("Search coming soon")
-                ),
-                ft.IconButton(
-                    icon=icons.ADD,
-                    tooltip="New Chat",
-                    on_click=lambda e: self.show_new_chat_dialog()
-                ),
-                ft.PopupMenuButton(
-                    icon=icons.MORE_VERT,
-                    tooltip="More Options",
-                    items=[
-                        ft.PopupMenuItem(
-                            text="👤 Profile",
-                            icon=icons.PERSON,
-                            on_click=lambda e: self.page.go("/profile")
-                        ),
-                        ft.PopupMenuItem(
-                            text="⚙️ Settings",
-                            icon=icons.SETTINGS,
-                            on_click=lambda e: self.page.go("/settings")
-                        ),
+        # Create Telegram-style left sidebar
+        def create_telegram_sidebar():
+            def on_theme_click(e):
+                self.dark_mode = not self.dark_mode
+                self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+                self.page.update()
+            
+            def on_menu_click(e):
+                # Open drawer menu
+                if hasattr(self, 'drawer') and self.drawer:
+                    self.drawer.open = True
+                    self.page.update()
+            
+            def on_search_click(e):
+                # Show search dialog or implement search functionality
+                search_dialog = ft.AlertDialog(
+                    title=ft.Text("Search"),
+                    content=ft.TextField(
+                        hint_text="Search chats...",
+                        autofocus=True,
+                        border=ft.InputBorder.OUTLINE
+                    ),
+                    actions=[
+                        ft.TextButton("Cancel", on_click=lambda e: self.page.close(search_dialog)),
+                        ft.ElevatedButton("Search", on_click=lambda e: self.page.close(search_dialog))
                     ]
                 )
-            ]
+                self.page.open(search_dialog)
+            
+            # Search bar
+            search_bar = ft.Container(
+                content=ft.TextField(
+                    hint_text="Search...",
+                    border=ft.InputBorder.NONE,
+                    filled=True,
+                    text_size=14,
+                    content_padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                    bgcolor="#F0F2F5",
+                    on_click=on_search_click
+                ),
+                width=200,
+                height=40,
+                border_radius=20,
+                bgcolor="#F0F2F5"
+            )
+            
+            # Menu button
+            menu_button = ft.Container(
+                content=ft.IconButton(
+                    icon=icons.MENU,
+                    icon_size=18,
+                    icon_color=ft.Colors.BLACK,
+                    tooltip="Menu",
+                    style=ft.ButtonStyle(
+                        bgcolor="#F0F2F5",
+                        padding=8,
+                        shape=ft.CircleBorder(),
+                        overlay_color=self.primary_color
+                    ),
+                    on_click=on_menu_click
+                ),
+                width=36,
+                height=36,
+                bgcolor="#F0F2F5",
+                border_radius=18
+            )
+            
+            # Theme toggle button
+            theme_button = ft.Container(
+                content=ft.IconButton(
+                    icon=icons.BRIGHTNESS_6 if not self.dark_mode else icons.BRIGHTNESS_4,
+                    icon_size=18,
+                    icon_color=ft.Colors.BLACK,
+                    tooltip="Toggle Theme",
+                    style=ft.ButtonStyle(
+                        bgcolor="#F0F2F5",
+                        padding=8,
+                        shape=ft.CircleBorder(),
+                        overlay_color=self.primary_color
+                    ),
+                    on_click=on_theme_click
+                ),
+                width=36,
+                height=36,
+                bgcolor="#F0F2F5",
+                border_radius=18
+            )
+            
+            # Left sidebar container
+            sidebar = ft.Container(
+                content=ft.Column([
+                    # Search bar at top
+                    search_bar,
+                    ft.Container(height=10),
+                    # Menu button
+                    menu_button,
+                    ft.Container(height=8),
+                    # Theme toggle button
+                    theme_button,
+                    ft.Container(height=20),
+                    # Divider
+                    ft.Container(height=1, bgcolor="#E0E0E0"),
+                    ft.Container(height=20),
+                    # Additional options
+                    ft.Text("Options", size=12, color=ft.Colors.GREY),
+                ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                width=240,
+                padding=ft.padding.all(15),
+                bgcolor="#FFFFFF",
+                border=ft.border.only(right=ft.BorderSide(1, "#E0E0E0")),
+                alignment=ft.alignment.top_center
+            )
+            
+            return sidebar
+        
+        # Create simple drawer for menu
+        user_name = self.current_user.get("name", self.current_user.get("username", "User")) if self.current_user else "User"
+        user_initials = user_name[0].upper() if user_name else "U"
+        
+        drawer_header = ft.Container(
+            content=ft.Column([
+                ft.Container(
+                    content=ft.Text(user_initials, size=28, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                    width=60,
+                    height=60,
+                    bgcolor=self.primary_color,
+                    border_radius=30,
+                    alignment=ft.alignment.center,
+                ),
+                ft.Container(height=12),
+                ft.Row([
+                    ft.Text(user_name, size=18, weight=ft.FontWeight.W_600, color=ft.Colors.WHITE),
+                    ft.Icon(ft.Icons.EXPAND_MORE, color=ft.Colors.WHITE, size=20)
+                ], spacing=4),
+                ft.Text("Online", size=13, color=ft.Colors.WHITE70),
+            ], spacing=4),
+            padding=ft.padding.all(20),
+            bgcolor=self.primary_color,
+        )
+        
+        menu_items = [
+            ft.Container(
+                content=ft.Row([
+                    ft.Text("👤", size=20),
+                    ft.Container(width=12),
+                    ft.Text("Profile", size=16, color=ft.Colors.BLACK)
+                ], spacing=0),
+                padding=ft.padding.symmetric(horizontal=20, vertical=14),
+                on_click=lambda e: self.page.go("/profile")
+            ),
+            ft.Divider(height=1, color="#E0E0E0"),
+            ft.Container(
+                content=ft.Row([
+                    ft.Text("⚙️", size=20),
+                    ft.Container(width=12),
+                    ft.Text("Settings", size=16, color=ft.Colors.BLACK)
+                ], spacing=0),
+                padding=ft.padding.symmetric(horizontal=20, vertical=14),
+                on_click=lambda e: self.page.go("/settings")
+            ),
+        ]
+        
+        self.drawer = ft.NavigationDrawer(
+            controls=[
+                drawer_header,
+                ft.Container(
+                    content=ft.Column(menu_items, spacing=0),
+                    bgcolor=ft.Colors.WHITE,
+                    expand=True
+                )
+            ],
+            bgcolor=ft.Colors.WHITE,
+        )
+        
+        # AppBar - simplified for Telegram style
+        appbar = ft.AppBar(
+            title=ft.Text("Zaply", weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
+            center_title=False,
+            bgcolor="#FFFFFF",
+            elevation=0.5,
+            actions=[]  # No actions - all in sidebar
         )
         
         self.page.appbar = appbar
-        # Create a view for chat list
+        self.page.drawer = self.drawer
+        
+        # Create main layout with left sidebar
+        sidebar = create_telegram_sidebar()
+        main_content = ft.Container(
+            content=chat_list_view,
+            bgcolor=self.bg_dark,
+            expand=True
+        )
+        
+        main_layout = ft.Row([
+            sidebar,  # Left sidebar
+            main_content,  # Chat list
+        ], spacing=0, expand=True)
+        
+        # Create a view for chat list with Telegram layout
         chat_list_container = ft.View(
             "/",
             [
-                ft.Container(
-                    content=chat_list_view,
-                    bgcolor=self.bg_dark,
-                    expand=True
-                )
+                main_layout
             ]
         )
         self.page.views.append(chat_list_container)
@@ -1755,7 +1914,7 @@ async def main(page: ft.Page):
                 # Zaply Icon - Professional Splash Screen
                 ft.Container(
                     content=ft.Image(
-                        src="/assets/icon.png",
+                        src="assets/icon-192.png",
                         width=120,
                         height=120,
                         fit=ft.ImageFit.CONTAIN,

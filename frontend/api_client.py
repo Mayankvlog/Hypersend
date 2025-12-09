@@ -656,4 +656,83 @@ class APIClient:
         except Exception as e:
             debug_log(f"[API] Download file error: {e}")
             raise Exception(f"Failed to download file: {str(e)}")
+    
+    async def subscribe_to_chat(self, chat_id: str, on_message_callback=None, on_error_callback=None):
+        """
+        Subscribe to real-time chat updates via REST polling (fallback for WebSocket)
+        This provides real-time message updates when new messages arrive
+        """
+        try:
+            import websockets
+            import json
+            
+            ws_url = self.base_url.replace("http://", "ws://").replace("https://", "wss://")
+            ws_url = f"{ws_url}/api/v1/chats/{chat_id}/subscribe"
+            
+            # Add auth token to URL
+            if self.access_token:
+                ws_url += f"?token={self.access_token}"
+            
+            debug_log(f"[API] Connecting to WebSocket: {ws_url}")
+            
+            async with websockets.connect(ws_url) as websocket:
+                while True:
+                    try:
+                        message = await websocket.recv()
+                        data = json.loads(message)
+                        
+                        if on_message_callback:
+                            on_message_callback(data)
+                    except Exception as e:
+                        debug_log(f"[API] WebSocket message error: {e}")
+                        if on_error_callback:
+                            on_error_callback(e)
+                        break
+                        
+        except ImportError:
+            # Fallback to polling if websockets not available
+            debug_log("[API] WebSocket not available, using polling fallback")
+            while True:
+                try:
+                    response = await self.get_messages(chat_id, limit=10)
+                    if on_message_callback:
+                        on_message_callback(response)
+                    await asyncio.sleep(2)  # Poll every 2 seconds
+                except Exception as e:
+                    debug_log(f"[API] Polling error: {e}")
+                    if on_error_callback:
+                        on_error_callback(e)
+                    break
+        except Exception as e:
+            debug_log(f"[API] Subscribe error: {e}")
+            if on_error_callback:
+                on_error_callback(e)
+    
+    async def get_unread_count(self, chat_id: str) -> int:
+        """Get unread message count for a chat"""
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/api/v1/chats/{chat_id}/unread",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("count", 0)
+        except Exception as e:
+            debug_log(f"[API] Get unread count error: {e}")
+            return 0
+    
+    async def mark_as_read(self, chat_id: str) -> bool:
+        """Mark all messages in a chat as read"""
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/v1/chats/{chat_id}/read",
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            debug_log(f"[API] Mark as read error: {e}")
+            return False
+
 

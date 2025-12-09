@@ -59,18 +59,34 @@ class SavedMessagesView(ft.View):
     
     def build_ui(self):
         """Build the minimal clean saved messages interface"""
+        # Build appbar
+        self.build_appbar()
+        
+        # Build drawer
+        self.build_drawer()
+        self.page.drawer = self.drawer
+        
+        # Create Telegram-style right sidebar FIRST
+        self.create_telegram_right_sidebar()
+        
+        # Initialize messages list and input area
+        self.init_messages_area()
+    
+    def build_appbar(self):
+        """Build appbar with current theme - Telegram style"""
         colors_palette = self.theme.colors
         
-        # Theme toggle icon
-        theme_icon = ft.Icons.LIGHT_MODE if self.dark_mode else ft.Icons.DARK_MODE
+        # Define click handlers separately to avoid lambda issues
+        def on_back_click(e):
+            self.go_back()
         
-        # AppBar with chat info
+        # AppBar with chat info - Telegram style (back button only, other controls in left sidebar)
         avatar_color = colors_palette["accent"]
         self.appbar = ft.AppBar(
             leading=ft.IconButton(
                 icon=ft.Icons.ARROW_BACK,
                 icon_color=colors_palette["text_primary"],
-                on_click=lambda e: self.go_back(),
+                on_click=on_back_click,
                 tooltip="Back"
             ),
             leading_width=40,
@@ -101,42 +117,8 @@ class SavedMessagesView(ft.View):
             ], spacing=0),
             bgcolor=colors_palette["bg_primary"],
             elevation=0.5,
-            actions=[
-                ft.IconButton(
-                    icon=ft.Icons.SEARCH,
-                    icon_color=colors_palette["text_primary"],
-                    tooltip="Search",
-                    on_click=lambda e: self.show_coming_soon("Search")
-                ),
-                ft.IconButton(
-                    icon=ft.Icons.BRIGHTNESS_6,
-                    icon_color=colors_palette["text_primary"],
-                    tooltip="Toggle Theme",
-                    on_click=lambda e: self.toggle_theme()
-                ),
-                ft.IconButton(
-                    icon=ft.Icons.MENU,
-                    icon_color=colors_palette["text_primary"],
-                    tooltip="Menu",
-                    on_click=lambda e: self.open_drawer()
-                ),
-                ft.PopupMenuButton(
-                    icon=ft.Icons.MORE_VERT,
-                    icon_color=colors_palette["text_primary"],
-                    tooltip="More",
-                    items=[
-                        ft.PopupMenuItem(text="Clear history", icon=ft.Icons.DELETE_OUTLINE, on_click=lambda e: self.show_coming_soon("Clear")),
-                    ]
-                )
-            ]
+            actions=[]  # Empty actions - all controls now in left sidebar
         )
-        
-        # Build drawer
-        self.build_drawer()
-        self.page.drawer = self.drawer
-        
-        # Initialize messages list and input area
-        self.init_messages_area()
 
     def build_drawer(self):
         """Build Telegram-style navigation drawer"""
@@ -216,7 +198,113 @@ class SavedMessagesView(ft.View):
             ],
             bgcolor=self.theme.colors["bg_primary"]
         )
-
+        print("[DRAWER] Navigation drawer created successfully")
+    
+    def create_telegram_right_sidebar(self):
+        """Create Telegram-style LEFT sidebar with Menu, Theme, Search"""
+        colors_palette = self.theme.colors
+        
+        def on_theme_click(e):
+            print("[TELEGRAM] Toggle Theme clicked")
+            self.toggle_theme()
+        
+        def on_menu_click(e):
+            print("[TELEGRAM] Menu clicked")
+            self.open_drawer()
+        
+        def on_search_click(e):
+            print("[TELEGRAM] Search clicked")
+            self.show_coming_soon("Search")
+        
+        # Use consistent colors with other views
+        sidebar_bg = "#FFFFFF" if not self.dark_mode else colors_palette["bg_primary"]
+        button_bg = "#F0F2F5" if not self.dark_mode else colors_palette["bg_secondary"]
+        text_color = ft.Colors.BLACK if not self.dark_mode else colors_palette["text_primary"]
+        
+        # Search bar
+        self.search_bar = ft.Container(
+            content=ft.TextField(
+                hint_text="Search...",
+                border=ft.InputBorder.NONE,
+                filled=True,
+                text_size=14,
+                content_padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                bgcolor=button_bg,
+                on_click=on_search_click
+            ),
+            width=200,
+            height=40,
+            border_radius=20,
+            bgcolor=button_bg
+        )
+        
+        # Menu button
+        self.menu_button = ft.Container(
+            content=ft.IconButton(
+                icon=ft.Icons.MENU,
+                icon_size=18,
+                icon_color=text_color,
+                tooltip="Menu",
+                style=ft.ButtonStyle(
+                    bgcolor=button_bg,
+                    padding=8,
+                    shape=ft.CircleBorder(),
+                    overlay_color=colors_palette["accent"]
+                ),
+                on_click=on_menu_click
+            ),
+            width=36,
+            height=36,
+            bgcolor=button_bg,
+            border_radius=18
+        )
+        
+        # Theme toggle button
+        self.theme_button = ft.Container(
+            content=ft.IconButton(
+                icon=ft.Icons.BRIGHTNESS_6 if not self.dark_mode else ft.Icons.BRIGHTNESS_4,
+                icon_size=18,
+                icon_color=text_color,
+                tooltip="Toggle Theme",
+                style=ft.ButtonStyle(
+                    bgcolor=button_bg,
+                    padding=8,
+                    shape=ft.CircleBorder(),
+                    overlay_color=colors_palette["accent"]
+                ),
+                on_click=on_theme_click
+            ),
+            width=36,
+            height=36,
+            bgcolor=button_bg,
+            border_radius=18
+        )
+        
+        # Left sidebar container (Telegram style)
+        self.right_sidebar = ft.Container(
+            content=ft.Column([
+                # Search bar at top
+                self.search_bar,
+                ft.Container(height=10),
+                # Menu button
+                self.menu_button,
+                ft.Container(height=8),
+                # Theme toggle button
+                self.theme_button,
+                ft.Container(height=20),
+                # Divider
+                ft.Container(height=1, bgcolor="#E0E0E0"),
+                ft.Container(height=20),
+                # Additional options can be added here
+                ft.Text("Options", size=12, color=ft.Colors.GREY if not self.dark_mode else colors_palette["text_tertiary"]),
+            ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            width=240,
+            padding=ft.padding.all(15),
+            bgcolor=sidebar_bg,
+            border=ft.border.only(right=ft.BorderSide(1, "#E0E0E0")),
+            alignment=ft.alignment.top_center
+        )
+    
     def drawer_item(self, emoji: str, text: str, on_click):
         """Create a drawer menu item"""
         return ft.Container(
@@ -230,9 +318,42 @@ class SavedMessagesView(ft.View):
         )
 
     def open_drawer(self):
-        self.page.drawer = self.drawer
-        self.drawer.open = True
-        self.page.update()
+        """Open navigation drawer"""
+        try:
+            print("[DRAWER] Attempting to open drawer...")
+            
+            # Ensure drawer is attached to page
+            if not hasattr(self.page, 'drawer') or self.page.drawer != self.drawer:
+                print("[DRAWER] Re-attaching drawer to page")
+                self.page.drawer = self.drawer
+            
+            # Open drawer
+            self.drawer.open = True
+            self.page.update()
+            print("[DRAWER] Drawer opened successfully")
+            
+            # Show success message
+            snack = ft.SnackBar(
+                content=ft.Text("Menu opened!"),
+                bgcolor=ft.Colors.GREEN,
+                duration=1000
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
+            
+        except Exception as e:
+            print(f"[DRAWER] Error opening drawer: {e}")
+            import traceback
+            traceback.print_exc()
+            # Show error to user
+            snack = ft.SnackBar(
+                content=ft.Text("Could not open menu"),
+                bgcolor=ft.Colors.ERROR
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
     
     def close_drawer(self):
         self.drawer.open = False
@@ -497,8 +618,11 @@ class SavedMessagesView(ft.View):
             border=ft.border.only(top=ft.BorderSide(1, colors_palette["divider"] if self.dark_mode else ft.Colors.TRANSPARENT))
         )
         
-        # Main content
-        main_content = ft.Container(
+        # Set view properties
+        self.bgcolor = colors_palette["bg_primary"]
+        
+        # Create main content area (saved messages only)
+        main_content_area = ft.Container(
             content=ft.Column([
                 # Messages area
                 ft.Container(
@@ -513,34 +637,205 @@ class SavedMessagesView(ft.View):
             bgcolor=colors_palette["bg_primary"]
         )
         
-        # Set view properties
-        self.bgcolor = colors_palette["bg_primary"]
-        self.controls = [
-            self.appbar,
-            main_content
-        ]
+        # Create main layout with LEFT sidebar (Telegram style)
+        main_layout = ft.Row([
+            # Left sidebar (menu, theme, search)
+            self.right_sidebar,
+            # Main content (saved messages)
+            main_content_area,
+        ], spacing=0, expand=True)
+        
+        # Update controls if they exist, otherwise set them
+        if hasattr(self, 'controls') and self.controls:
+            # Update existing controls
+            self.controls[0] = self.appbar  # Update appbar
+            if len(self.controls) > 1:
+                self.controls[1] = main_layout  # Update main content
+            else:
+                self.controls.append(main_layout)
+        else:
+            # Set initial controls
+            self.controls = [
+                self.appbar,
+                main_layout
+            ]
     
     def toggle_theme(self):
         """Toggle between light and dark mode"""
-        self.dark_mode = not self.dark_mode
-        self.theme = ZaplyTheme(dark_mode=self.dark_mode)
-        self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
-        
-        # Rebuild UI with new theme
-        self.build_ui()
-        
-        # Force update
-        self.page.update()
-        
-        # Show confirmation
-        mode_name = "Dark" if self.dark_mode else "Light"
-        snack = ft.SnackBar(
-            content=ft.Text(f"{mode_name} mode enabled"),
-            duration=1500
+        try:
+            print("[THEME] Toggling theme...")
+            
+            # Toggle dark mode
+            self.dark_mode = not self.dark_mode
+            self.theme = ZaplyTheme(dark_mode=self.dark_mode)
+            self.page.theme_mode = ft.ThemeMode.DARK if self.dark_mode else ft.ThemeMode.LIGHT
+            
+            # Get colors palette for current theme
+            colors_palette = self.theme.colors
+            print(f"[THEME] Colors palette loaded successfully")
+            
+            # Update drawer theme
+            self.build_drawer()
+            self.page.drawer = self.drawer
+            
+            # Update appbar theme
+            self.build_appbar()
+            
+            # Update Telegram right sidebar theme
+            self.create_telegram_right_sidebar()
+            
+            # Update message input colors
+            if hasattr(self, 'message_input'):
+                self.message_input.color = colors_palette["text_primary"]
+                self.message_input.hint_style = ft.TextStyle(color=colors_palette["text_tertiary"])
+            
+            # Update button colors
+            if hasattr(self, 'attach_btn'):
+                self.attach_btn.icon_color = colors_palette["text_tertiary"]
+            if hasattr(self, 'emoji_btn'):
+                self.emoji_btn.icon_color = colors_palette["text_tertiary"]
+            if hasattr(self, 'send_btn'):
+                self.send_btn.icon_color = colors_palette["accent"]
+            
+            # Update view background
+            self.bgcolor = colors_palette["bg_primary"]
+            
+            # Update view controls
+            if len(self.controls) > 0:
+                self.controls[0] = self.appbar  # Update appbar
+            
+            # Recreate main content area with updated theme
+            main_content_area = ft.Container(
+                content=ft.Column([
+                    # Messages area
+                    ft.Container(
+                        content=self.messages_list,
+                        expand=True,
+                        bgcolor=colors_palette["bg_secondary"] if self.dark_mode else "#E6EBEF"
+                    ),
+                    # Input area (recreate)
+                    self.create_input_area(colors_palette)
+                ], spacing=0),
+                expand=True,
+                bgcolor=colors_palette["bg_primary"]
+            )
+            
+            # Create layout with updated sidebar
+            main_layout = ft.Row([
+                # Left sidebar (menu, theme, search)
+                self.right_sidebar,
+                # Main content (saved messages)
+                main_content_area,
+            ], spacing=0, expand=True)
+            
+            # Update main content
+            if len(self.controls) > 1:
+                self.controls[1] = main_layout
+            else:
+                self.controls.append(main_layout)
+            
+            # Force update
+            self.page.update()
+            
+            # Show confirmation
+            mode_name = "Dark" if self.dark_mode else "Light"
+            snack = ft.SnackBar(
+                content=ft.Text(f"{mode_name} mode enabled"),
+                bgcolor=ft.Colors.GREEN,
+                duration=1500
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
+            
+            print(f"[THEME] Successfully toggled to {mode_name} mode")
+            
+        except Exception as e:
+            print(f"[THEME] Error toggling theme: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Show error to user
+            snack = ft.SnackBar(
+                content=ft.Text("Could not toggle theme"),
+                bgcolor=ft.Colors.ERROR
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
+    
+    def create_input_area(self, colors_palette):
+        """Create input area with current theme colors"""
+        # Message input
+        message_input = ft.TextField(
+            hint_text="Message",
+            border=ft.InputBorder.NONE,
+            filled=False,
+            expand=True,
+            multiline=True,
+            min_lines=1,
+            max_lines=6,
+            text_size=15,
+            content_padding=ft.padding.symmetric(vertical=10),
+            on_submit=lambda e: self.page.run_task(self.send_message),
+            color=colors_palette["text_primary"],
+            hint_style=ft.TextStyle(color=colors_palette["text_tertiary"])
         )
-        self.page.overlay.append(snack)
-        snack.open = True
-        self.page.update()
+        
+        # Attach button
+        attach_btn = ft.IconButton(
+            icon=ft.Icons.ATTACH_FILE,
+            icon_color=colors_palette["text_tertiary"],
+            icon_size=26,
+            tooltip="Attach",
+            style=ft.ButtonStyle(padding=0),
+            on_click=lambda e: self.show_attachment_menu()
+        )
+        
+        # Emoji button
+        emoji_btn = ft.IconButton(
+            icon=ft.Icons.EMOJI_EMOTIONS_OUTLINED,
+            icon_color=colors_palette["text_tertiary"],
+            icon_size=26,
+            tooltip="Emoji",
+            style=ft.ButtonStyle(padding=0),
+            on_click=lambda e: self.show_emoji_picker()
+        )
+        
+        # Send button
+        send_btn = ft.IconButton(
+            icon=ft.Icons.SEND,
+            icon_color=colors_palette["accent"],
+            icon_size=28,
+            tooltip="Send",
+            on_click=lambda e: self.page.run_task(self.send_message)
+        )
+        
+        # Input row
+        input_row = ft.Row([
+            attach_btn,
+            ft.Container(
+                content=ft.Row([
+                    emoji_btn,
+                    message_input
+                ], spacing=0, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.END),
+                bgcolor=colors_palette["bg_primary"] if self.dark_mode else ft.Colors.WHITE,
+                border_radius=20,
+                padding=ft.padding.only(left=5, right=15, top=2, bottom=2),
+                expand=True,
+            ),
+            send_btn
+        ], spacing=10, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.END)
+
+        # Input container
+        input_container = ft.Container(
+            content=input_row,
+            padding=ft.padding.all(10),
+            bgcolor=colors_palette["bg_secondary"],
+            border=ft.border.only(top=ft.BorderSide(1, colors_palette["divider"] if self.dark_mode else ft.Colors.TRANSPARENT))
+        )
+        
+        return input_container
     
     def show_emoji_picker(self):
         """Show emoji picker dialog with 3000+ emojis"""

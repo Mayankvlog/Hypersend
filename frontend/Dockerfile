@@ -10,7 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY api_client.py .
 COPY theme.py .
-COPY update_manager.py .
+COPY error_handler.py .
+COPY session_manager.py .
+COPY emoji_data.py .
 COPY permissions_manager.py .
 COPY assets ./assets
 COPY views ./views
