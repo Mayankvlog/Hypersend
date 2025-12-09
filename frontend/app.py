@@ -1445,7 +1445,6 @@ class ZaplyApp:
             autofocus=True,  # Enable autofocus to show keyboard immediately
             read_only=False,  # Ensure it's writable
             disabled=False,  # Ensure it's enabled
-            text_vertical_align=ft.TextVerticalAlign.TOP
         )
         
         async def send_message(e):

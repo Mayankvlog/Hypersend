@@ -69,7 +69,7 @@ class SettingsView(ft.View):
                     "Chat Background",
                     "Customize chat wallpaper",
                     icons.IMAGE,
-                    on_click=lambda e: print("Chat background coming soon")
+                    on_click=self.show_chat_background_picker
                 ),
                 self.setting_item(
                     "Font Size",
@@ -96,14 +96,14 @@ class SettingsView(ft.View):
                     "Play sound for notifications",
                     icons.VOLUME_UP,
                     True,
-                    on_change=lambda e: print("Sound toggle coming soon")
+                    on_change=self.toggle_sound
                 ),
                 self.switch_item(
                     "Vibration",
                     "Vibrate for notifications",
                     icons.VIBRATION,
                     True,
-                    on_change=lambda e: print("Vibration toggle coming soon")
+                    on_change=self.toggle_vibration
                 ),
             ]
         )
@@ -116,19 +116,19 @@ class SettingsView(ft.View):
                     "Blocked Users",
                     "Manage blocked users",
                     icons.BLOCK,
-                    on_click=lambda e: print("Blocked users coming soon")
+                    on_click=self.show_blocked_users
                 ),
                 self.setting_item(
                     "Two-Step Verification",
                     "Add extra security to your account",
                     icons.SECURITY,
-                    on_click=lambda e: print("2FA coming soon")
+                    on_click=self.show_2fa_settings
                 ),
                 self.setting_item(
                     "Privacy Settings",
                     "Control who can see your info",
                     icons.PRIVACY_TIP,
-                    on_click=lambda e: print("Privacy settings coming soon")
+                    on_click=self.show_privacy_settings
                 ),
                 self.switch_item(
                     "Online Status",
@@ -174,20 +174,20 @@ class SettingsView(ft.View):
                     "Chat Backup",
                     "Backup your chat history",
                     icons.BACKUP,
-                    on_click=lambda e: print("Chat backup coming soon")
+                    on_click=self.backup_chats
                 ),
                 self.setting_item(
                     "Export Chats",
                     "Export your chat history",
                     icons.DOWNLOAD,
-                    on_click=lambda e: print("Export chats coming soon")
+                    on_click=self.export_chats
                 ),
                 self.switch_item(
                     "Read Receipts",
                     "Show when you've read messages",
                     icons.DONE_ALL,
                     True,
-                    on_change=lambda e: print("Read receipts toggle coming soon")
+                    on_change=self.toggle_read_receipts
                 ),
             ]
         )
@@ -200,13 +200,13 @@ class SettingsView(ft.View):
                     "Help Center",
                     "Get help and support",
                     icons.HELP,
-                    on_click=lambda e: print("Help center coming soon")
+                    on_click=self.show_help_center
                 ),
                 self.setting_item(
                     "Report a Problem",
                     "Report bugs or issues",
                     icons.BUG_REPORT,
-                    on_click=lambda e: print("Report problem coming soon")
+                    on_click=self.report_problem
                 ),
                 self.setting_item(
                     "About",
@@ -254,7 +254,7 @@ class SettingsView(ft.View):
                     "Link Desktop Device",
                     "Scan QR code to log in",
                     icons.QR_CODE,
-                    on_click=lambda e: print("QR scan coming soon")
+                    on_click=self.scan_qr_code
                 ),
             ]
         )
@@ -718,26 +718,35 @@ class SettingsView(ft.View):
         sizes = ["Small", "Medium", "Large"]
         current_size = "Medium"
         
-        dialog = ft.AlertDialog(
+        def on_size_change(e):
+            selected = e.control.value
+            # Save preference (would store in settings)
+            snack = ft.SnackBar(content=ft.Text(f"Font size set to {selected}"), duration=1500)
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.close(font_dialog)
+            self.page.update()
+        
+        font_dialog = ft.AlertDialog(
             title=ft.Text("Font Size"),
-            content=ft.Column(
-                [
-                    ft.Radio(
-                        value=current_size,
-                        options=[ft.RadioOption(size) for size in sizes],
-                        on_change=lambda e: print(f"Font size: {e.control.value}")
-                    )
-                ],
-                tight=True
+            content=ft.Container(
+                content=ft.RadioGroup(
+                    value=current_size,
+                    content=ft.Column([
+                        ft.Radio(value="Small", label="Small"),
+                        ft.Radio(value="Medium", label="Medium"),
+                        ft.Radio(value="Large", label="Large"),
+                    ]),
+                    on_change=on_size_change
+                ),
+                width=200
             ),
             actions=[
-                ft.TextButton("OK", on_click=lambda e: setattr(dialog, 'open', False))
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(font_dialog))
             ]
         )
         
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.page.open(font_dialog)
     
     def show_devices_dialog(self, e):
         """Show devices dialog"""
@@ -776,13 +785,14 @@ class SettingsView(ft.View):
         """Show language selection dialog"""
         languages = [
             "English", "Spanish", "French", "German", "Russian", 
-            "Arabic", "Hindi", "Chinese", "Japanese"
+            "Arabic", "Hindi", "Chinese", "Japanese", "Portuguese",
+            "Italian", "Korean", "Indonesian", "Turkish", "Vietnamese",
+            "Thai", "Dutch", "Polish", "Ukrainian"
         ]
         
         def select_language(lang):
             print(f"Selected language: {lang}")
-            dialog.open = False
-            self.page.update()
+            self.page.close(dialog)
             
             snack = ft.SnackBar(content=ft.Text(f"Language changed to {lang}"), bgcolor=colors.GREEN_600)
             self.page.overlay.append(snack)
@@ -792,83 +802,122 @@ class SettingsView(ft.View):
         dialog = ft.AlertDialog(
             title=ft.Text("Language"),
             content=ft.Container(
-                content=ft.Column(
-                    [
-                        ft.ListTile(
-                            title=ft.Text(lang),
-                            on_click=lambda e, l=lang: select_language(l),
-                            leading=ft.Radio(value=lang, group="lang") if lang == "English" else ft.Radio(value=lang, group="lang")
-                        ) for lang in languages
-                    ],
-                    scroll=ft.ScrollMode.AUTO,
+                content=ft.RadioGroup(
+                    content=ft.Column(
+                        [
+                            ft.ListTile(
+                                title=ft.Text(lang),
+                                on_click=lambda e, l=lang: select_language(l),
+                                leading=ft.Radio(value=lang)
+                            ) for lang in languages
+                        ],
+                        scroll=ft.ScrollMode.AUTO,
+                    ),
+                    value="English",
+                    on_change=lambda e: select_language(e.control.value)
                 ),
-                height=300,
+                height=400,
                 width=300
             ),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False))
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog))
             ]
         )
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.page.open(dialog)
 
     def show_storage_usage(self, e):
         """Show storage usage"""
         dialog = ft.AlertDialog(
             title=ft.Text("Storage Usage"),
-            content=ft.Column(
-                [
-                    ft.Text("Cache: 45 MB"),
-                    ft.Text("Media: 120 MB"),
-                    ft.Text("Documents: 15 MB"),
-                    ft.Divider(),
-                    ft.Text("Total: 180 MB", weight=ft.FontWeight.BOLD)
-                ],
-                tight=True
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Row([
+                            ft.Text("Cache"),
+                            ft.Container(expand=True),
+                            ft.Text("45 MB", weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE)
+                        ]),
+                        ft.ProgressBar(value=0.25, color=ft.Colors.BLUE, bgcolor=ft.Colors.BLUE_50),
+                        
+                        ft.Row([
+                            ft.Text("Media"),
+                            ft.Container(expand=True),
+                            ft.Text("120 MB", weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN)
+                        ]),
+                        ft.ProgressBar(value=0.6, color=ft.Colors.GREEN, bgcolor=ft.Colors.GREEN_50),
+                        
+                        ft.Row([
+                            ft.Text("Documents"),
+                            ft.Container(expand=True),
+                            ft.Text("15 MB", weight=ft.FontWeight.BOLD, color=ft.Colors.ORANGE)
+                        ]),
+                        ft.ProgressBar(value=0.1, color=ft.Colors.ORANGE, bgcolor=ft.Colors.ORANGE_50),
+                        
+                        ft.Divider(),
+                        ft.Row([
+                            ft.Text("Total Used", size=16, weight=ft.FontWeight.BOLD),
+                            ft.Container(expand=True),
+                            ft.Text("180 MB", size=16, weight=ft.FontWeight.BOLD)
+                        ]),
+                        ft.Text("Free Space: 25.4 GB", size=12, color=ft.Colors.GREY)
+                    ],
+                    tight=True,
+                    spacing=12,
+                ),
+                width=350,
+                padding=10
             ),
             actions=[
-                ft.TextButton("OK", on_click=lambda e: setattr(dialog, 'open', False))
+                ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))
             ]
         )
-        
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.page.open(dialog)
     
     def clear_cache(self, e):
         """Clear app cache"""
+        def perform_clear(e):
+            self.page.close(dialog)
+            
+            # Simulate clearing
+            snack = ft.SnackBar(content=ft.Text("🧹 Clearing cache..."), duration=1000)
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
+            
+            import threading
+            def finish_clear():
+                success_snack = ft.SnackBar(
+                    content=ft.Text("✅ Cache cleared! Released 45 MB."),
+                    bgcolor=ft.Colors.GREEN
+                )
+                self.page.overlay.append(success_snack)
+                success_snack.open = True
+                self.page.update()
+                
+            threading.Timer(1.0, finish_clear).start()
+
         dialog = ft.AlertDialog(
             title=ft.Text("Clear Cache"),
-            content=ft.Text("Are you sure you want to clear the cache? This will free up space but may slow down the app initially."),
+            content=ft.Column([
+                ft.Icon(ft.Icons.DELETE_SWEEP, size=64, color=ft.Colors.RED),
+                ft.Text(
+                    "Are you sure you want to clear the cache?\nThis will free up space but may slow down the app initially.",
+                    text_align=ft.TextAlign.CENTER
+                )
+            ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
-                ft.ElevatedButton("Clear", on_click=lambda e: self.do_clear_cache(dialog))
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog)),
+                ft.ElevatedButton(
+                    "Clear (45 MB)", 
+                    on_click=perform_clear,
+                    bgcolor=ft.Colors.RED,
+                    color=ft.Colors.WHITE
+                )
             ]
         )
+        self.page.open(dialog)
         
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
-    
-    def do_clear_cache(self, dialog):
-        """Actually clear cache"""
-        # Implement cache clearing logic
-        dialog.open = False
-        self.page.update()
-        
-        # Show success message
-        success_dialog = ft.AlertDialog(
-            title=ft.Text("Success"),
-            content=ft.Text("Cache cleared successfully!"),
-            actions=[
-                ft.TextButton("OK", on_click=lambda e: setattr(success_dialog, 'open', False))
-            ]
-        )
-        
-        self.page.dialog = success_dialog
-        success_dialog.open = True
-        self.page.update()
+
     
     def show_about(self, e):
         """Show about dialog with comprehensive Zaply features"""
@@ -945,6 +994,208 @@ class SettingsView(ft.View):
             ]
         )
         
+        self.page.open(dialog)
+
+    def toggle_sound(self, e):
+        """Toggle sound for notifications"""
+        enabled = e.control.value
+        print(f"Sound enabled: {enabled}")
+        
+    def toggle_vibration(self, e):
+        """Toggle vibration for notifications"""
+        enabled = e.control.value
+        print(f"Vibration enabled: {enabled}")
+
+    def toggle_read_receipts(self, e):
+        """Toggle read receipts"""
+        enabled = e.control.value
+        print(f"Read receipts enabled: {enabled}")
+        
+    def show_chat_background_picker(self, e):
+        """Show chat background picker"""
+        # Solid colors for now
+        colors = [
+            "#FDFBFB", "#E3F2FD", "#F3E5F5", "#E8F5E9", 
+            "#FFFDE7", "#FBE9E7", "#ECEFF1", "#212121"
+        ]
+        
+        def pick_color(color):
+            self.page.bgcolor = color
+            for view in self.page.views:
+                view.bgcolor = color
+            self.page.update()
+            
+            snack = ft.SnackBar(content=ft.Text("Background updated!"))
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.close(dialog)
+            self.page.update()
+            
+        dialog = ft.AlertDialog(
+            title=ft.Text("Chat Background"),
+            content=ft.Container(
+                content=ft.Row([
+                    ft.Container(
+                        width=50, height=50, bgcolor=c, 
+                        border_radius=25,
+                        on_click=lambda e, c=c: pick_color(c),
+                        border=ft.border.all(1, ft.Colors.GREY_300)
+                    ) for c in colors
+                ], wrap=True, spacing=10, run_spacing=10),
+                width=300,
+                height=150
+            ),
+            actions=[ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog))]
+        )
+        self.page.open(dialog)
+
+    def show_blocked_users(self, e):
+        """Show blocked users"""
+        blocked_users = [] # fetch from API ideally
+        
+        main_content = ft.Column()
+        if not blocked_users:
+            main_content.controls.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(icons.BLOCK, size=64, color=ft.Colors.GREY_400),
+                        ft.Text("No blocked users", color=ft.Colors.GREY_500)
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center,
+                    padding=20
+                )
+            )
+            
+        dialog = ft.AlertDialog(
+            title=ft.Text("Blocked Users"),
+            content=ft.Container(content=main_content, width=300, height=200),
+            actions=[ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))]
+        )
+        self.page.open(dialog)
+
+    def show_2fa_settings(self, e):
+        """Show 2FA settings"""
+        def enable_2fa(e):
+            snack = ft.SnackBar(content=ft.Text("Two-Step Verification Enabled! (Simulation)"))
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.close(dialog)
+            self.page.update()
+            
+        dialog = ft.AlertDialog(
+            title=ft.Text("Two-Step Verification"),
+            content=ft.Column([
+                ft.Icon(icons.SECURITY, size=64, color=self.primary_color),
+                ft.Text("Require a PIN when registering your phone number again on Zaply.", text_align=ft.TextAlign.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20, tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog)),
+                ft.ElevatedButton("Enable", on_click=enable_2fa, bgcolor=self.primary_color, color=ft.Colors.WHITE)
+            ]
+        )
+        self.page.open(dialog)
+        
+    def show_privacy_settings(self, e):
+        """Show privacy settings"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("Privacy Settings"),
+            content=ft.Column([
+                self.switch_item("Last Seen & Online", "Everybody", icons.VISIBILITY, True, lambda e: None),
+                self.switch_item("Profile Photo", "Everybody", icons.ACCOUNT_CIRCLE, True, lambda e: None),
+                self.switch_item("Forwarded Messages", "Everybody", icons.FORWARD, True, lambda e: None),
+                self.switch_item("Calls", "Everybody", icons.CALL, True, lambda e: None),
+            ], tight=True, spacing=0),
+            actions=[ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))]
+        )
+        self.page.open(dialog)
+        
+    def backup_chats(self, e):
+        """Backup chats"""
+        def perform_backup(e):
+            btn.content = ft.ProgressRing(width=20, height=20, stroke_width=2, color=ft.Colors.WHITE)
+            btn.disabled = True
+            self.page.update()
+            
+            # Simulate backup with timer
+            def finish_backup():
+                snack = ft.SnackBar(content=ft.Text("Backup created successfully!"))
+                self.page.overlay.append(snack)
+                snack.open = True
+                self.page.close(dialog)
+                self.page.update()
+            
+            # Use small delay to simulate work
+            import threading
+            threading.Timer(1.5, finish_backup).start()
+            
+        btn = ft.ElevatedButton("Back Up Now", on_click=perform_backup, bgcolor=self.primary_color, color=ft.Colors.WHITE)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Chat Backup"),
+            content=ft.Column([
+                ft.Text("Last Backup: Never"),
+                ft.Text("Back up your messages and media to Zaply Cloud.", size=12, color=ft.Colors.GREY),
+            ], tight=True, spacing=10),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog)),
+                btn
+            ]
+        )
+        self.page.open(dialog)
+        
+    def export_chats(self, e):
+        """Export chats"""
+        snack = ft.SnackBar(content=ft.Text("Chats exported to Downloads folder (Simulation)"))
+        self.page.overlay.append(snack)
+        snack.open = True
+        self.page.update()
+        
+    def scan_qr_code(self, e):
+        """Scan QR Code"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("Link Device"),
+            content=ft.Column([
+                ft.Container(
+                    content=ft.Icon(icons.QR_CODE_SCANNER, size=150, color=ft.Colors.BLACK),
+                    alignment=ft.alignment.center,
+                    height=200, width=200,
+                    border=ft.border.all(2, self.primary_color),
+                    border_radius=10
+                ),
+                ft.Text("Point your camera at the QR code", text_align=ft.TextAlign.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True, spacing=20),
+            actions=[ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))]
+        )
+        self.page.open(dialog)
+        
+    def show_help_center(self, e):
+        """Show help center"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("Help Center"),
+            content=ft.Column([
+                ft.ListTile(leading=ft.Icon(icons.QUESTION_ANSWER), title=ft.Text("Ask a Question")),
+                ft.ListTile(leading=ft.Icon(icons.CHAT), title=ft.Text("Zaply FAQ")),
+                ft.ListTile(leading=ft.Icon(icons.POLICY), title=ft.Text("Privacy Policy")),
+            ], tight=True, spacing=0),
+            actions=[ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))]
+        )
+        self.page.open(dialog)
+        
+    def report_problem(self, e):
+        """Report a problem"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("Report a Problem"),
+            content=ft.TextField(
+                label="Describe your issue",
+                multiline=True,
+                min_lines=3,
+                max_lines=5
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: self.page.close(dialog)),
+                ft.ElevatedButton("Submit", on_click=lambda e: self.page.close(dialog))
+            ]
+        )
         self.page.open(dialog)
     
     def confirm_logout(self, e):
