@@ -659,54 +659,176 @@ class APIClient:
     
     async def subscribe_to_chat(self, chat_id: str, on_message_callback=None, on_error_callback=None):
         """
-        Subscribe to real-time chat updates via REST polling (fallback for WebSocket)
-        This provides real-time message updates when new messages arrive
+        Subscribe to real-time chat updates via WebSocket with robust error handling
+        Falls back to polling if WebSocket fails
         """
-        try:
-            import websockets
-            import json
-            
-            ws_url = self.base_url.replace("http://", "ws://").replace("https://", "wss://")
-            ws_url = f"{ws_url}/api/v1/chats/{chat_id}/subscribe"
-            
-            # Add auth token to URL
-            if self.access_token:
-                ws_url += f"?token={self.access_token}"
-            
-            debug_log(f"[API] Connecting to WebSocket: {ws_url}")
-            
-            async with websockets.connect(ws_url) as websocket:
-                while True:
-                    try:
-                        message = await websocket.recv()
-                        data = json.loads(message)
-                        
-                        if on_message_callback:
-                            on_message_callback(data)
-                    except Exception as e:
-                        debug_log(f"[API] WebSocket message error: {e}")
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                import websockets
+                import json
+                
+                ws_url = self.base_url.replace("http://", "ws://").replace("https://", "wss://")
+                ws_url = f"{ws_url}/api/v1/chats/{chat_id}/subscribe"
+                
+                # Add auth token to URL
+                if self.access_token:
+                    ws_url += f"?token={self.access_token}"
+                
+                debug_log(f"[API] Connecting to WebSocket (attempt {attempt + 1}): {ws_url}")
+                
+                # Set connection timeout and ping interval
+                async with websockets.connect(
+                    ws_url,
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=10,
+                    max_queue=1024
+                ) as websocket:
+                    debug_log("[API] ✅ WebSocket connected successfully")
+                    
+                    # Reset retry counter on successful connection
+                    retry_count = 0
+                    
+                    while True:
+                        try:
+                            # Wait for message with timeout
+                            message = await asyncio.wait_for(websocket.recv(), timeout=30)
+                            data = json.loads(message)
+                            
+                            if on_message_callback:
+                                on_message_callback(data)
+                                
+                        except asyncio.TimeoutError:
+                            # Send ping to keep connection alive
+                            try:
+                                await websocket.ping()
+                                debug_log("[API] WebSocket ping sent")
+                            except Exception as ping_e:
+                                debug_log(f"[API] WebSocket ping failed: {ping_e}")
+                                break
+                                
+                        except json.JSONDecodeError as e:
+                            debug_log(f"[API] Invalid JSON received: {e}")
+                            continue
+                            
+                        except websockets.exceptions.ConnectionClosed as e:
+                            debug_log(f"[API] WebSocket connection closed: {e}")
+                            break
+                            
+                        except Exception as e:
+                            debug_log(f"[API] WebSocket message error: {e}")
+                            if on_error_callback:
+                                on_error_callback(e)
+                            break
+                            
+            except ImportError:
+                # Fallback to polling if websockets not available
+                debug_log("[API] WebSocket library not available, using polling fallback")
+                return self.start_polling_fallback(chat_id, on_message_callback, on_error_callback)
+                
+            except websockets.exceptions.InvalidURI as e:
+                debug_log(f"[API] Invalid WebSocket URL: {e}")
+                if on_error_callback:
+                    on_error_callback(e)
+                return self.start_polling_fallback(chat_id, on_message_callback, on_error_callback)
+                
+            except websockets.exceptions.ConnectionClosed as e:
+                debug_log(f"[API] WebSocket connection closed immediately: {e}")
+                if attempt < max_retries - 1:
+                    debug_log(f"[API] Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    debug_log("[API] Max retries reached, falling back to polling")
+                    return self.start_polling_fallback(chat_id, on_message_callback, on_error_callback)
+                    
+            except Exception as e:
+                debug_log(f"[API] WebSocket connection error (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    debug_log(f"[API] Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    debug_log("[API] Max retries reached, falling back to polling")
+                    if on_error_callback:
+                        on_error_callback(e)
+                    return self.start_polling_fallback(chat_id, on_message_callback, on_error_callback)
+        
+        # If we get here, all WebSocket attempts failed
+        debug_log("[API] All WebSocket attempts failed, using polling fallback")
+        return self.start_polling_fallback(chat_id, on_message_callback, on_error_callback)
+    
+    async def start_polling_fallback(self, chat_id: str, on_message_callback=None, on_error_callback=None):
+        """
+        Polling fallback for when WebSocket fails
+        """
+        debug_log("[API] Starting polling fallback for real-time updates")
+        poll_interval = 3  # seconds
+        consecutive_errors = 0
+        max_consecutive_errors = 5
+        
+        while True:
+            try:
+                response = await self.get_messages(chat_id, limit=10)
+                if on_message_callback:
+                    on_message_callback(response)
+                
+                # Reset error counter on success
+                consecutive_errors = 0
+                
+                await asyncio.sleep(poll_interval)
+                
+            except httpx.TimeoutException as e:
+                consecutive_errors += 1
+                debug_log(f"[API] Polling timeout {consecutive_errors}/{max_consecutive_errors}: {e}")
+                
+                if consecutive_errors >= max_consecutive_errors:
+                    debug_log("[API] Too many consecutive polling errors, stopping")
+                    if on_error_callback:
+                        on_error_callback(Exception("Polling failed after multiple attempts"))
+                    break
+                    
+                # Increase delay on errors
+                await asyncio.sleep(poll_interval * 2)
+                
+            except httpx.HTTPStatusError as e:
+                consecutive_errors += 1
+                debug_log(f"[API] Polling HTTP error {consecutive_errors}/{max_consecutive_errors}: {e.response.status_code}")
+                
+                if e.response.status_code == 401:
+                    # Token expired, try to refresh
+                    if await self.refresh_access_token():
+                        debug_log("[API] Token refreshed, continuing polling")
+                        consecutive_errors = 0
+                        continue
+                    else:
+                        debug_log("[API] Token refresh failed, stopping polling")
                         if on_error_callback:
-                            on_error_callback(e)
+                            on_error_callback(Exception("Authentication failed"))
                         break
                         
-        except ImportError:
-            # Fallback to polling if websockets not available
-            debug_log("[API] WebSocket not available, using polling fallback")
-            while True:
-                try:
-                    response = await self.get_messages(chat_id, limit=10)
-                    if on_message_callback:
-                        on_message_callback(response)
-                    await asyncio.sleep(2)  # Poll every 2 seconds
-                except Exception as e:
-                    debug_log(f"[API] Polling error: {e}")
+                elif e.response.status_code >= 500:
+                    # Server error, wait longer
+                    await asyncio.sleep(poll_interval * 3)
+                else:
+                    await asyncio.sleep(poll_interval)
+                    
+            except Exception as e:
+                consecutive_errors += 1
+                debug_log(f"[API] Polling error {consecutive_errors}/{max_consecutive_errors}: {e}")
+                
+                if consecutive_errors >= max_consecutive_errors:
+                    debug_log("[API] Too many consecutive polling errors, stopping")
                     if on_error_callback:
                         on_error_callback(e)
                     break
-        except Exception as e:
-            debug_log(f"[API] Subscribe error: {e}")
-            if on_error_callback:
-                on_error_callback(e)
+                    
+                await asyncio.sleep(poll_interval * 2)
     
     async def get_unread_count(self, chat_id: str) -> int:
         """Get unread message count for a chat"""
