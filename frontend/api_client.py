@@ -344,17 +344,25 @@ class APIClient:
                     print("[API] Attempting token refresh...")
                     if await self.refresh_access_token():
                         print("[API] Token refreshed successfully, retrying create_chat...")
-                        response = await self.client.post(
-                            f"{self.base_url}/api/v1/chats/",
-                            json={"name": name, "member_ids": user_ids, "type": chat_type},
-                            headers=self._get_headers()
-                        )
-                        response.raise_for_status()
-                        return response.json()
+                        try:
+                            response = await self.client.post(
+                                f"{self.base_url}/api/v1/chats/",
+                                json={"name": name, "member_ids": user_ids, "type": chat_type},
+                                headers=self._get_headers()
+                            )
+                            response.raise_for_status()
+                            return response.json()
+                        except Exception as retry_e:
+                            print(f"[API] Retry failed: {retry_e}")
+                            raise retry_e
                     else:
                         print("[API] Token refresh failed!")
                 else:
                     print("[API] No refresh_token available to refresh!")
+            
+            if e.response.status_code == 403:
+                raise Exception("403 Forbidden - Please check backend routes")
+
             debug_log(f"[API] Create chat error: {e}")
             raise Exception(f"Failed to create chat: {str(e)}")
         except Exception as e:
@@ -525,6 +533,35 @@ class APIClient:
         )
         response.raise_for_status()
         return response.json()
+    
+    async def upload_large_file(self, file_path: str, chat_id: str, progress_callback=None) -> str:
+        """Upload large file in chunks and return file_id"""
+        import os
+        import mimetypes
+        
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        mime_type, _ = mimetypes.guess_type(file_path)
+        mime_type = mime_type or "application/octet-stream"
+        
+        # Init upload
+        init_data = await self.init_upload(file_name, file_size, mime_type, chat_id)
+        upload_id = init_data.get("upload_id") or init_data.get("id")
+        
+        chunk_size = 1024 * 1024 # 1MB chunks
+        total_chunks = (file_size + chunk_size - 1) // chunk_size
+        
+        with open(file_path, "rb") as f:
+            for i in range(total_chunks):
+                chunk_data = f.read(chunk_size)
+                await self.upload_chunk(upload_id, i, chunk_data)
+                
+                if progress_callback:
+                    progress_callback((i + 1) / total_chunks)
+                    
+        # Complete
+        complete_data = await self.complete_upload(upload_id)
+        return complete_data.get("file_id") or complete_data.get("id")
     
     async def get_file_info(self, file_id: str) -> Dict[str, Any]:
         """Get file information"""

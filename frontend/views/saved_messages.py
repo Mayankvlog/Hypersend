@@ -64,7 +64,8 @@ class SavedMessagesView(ft.View):
         # Theme toggle icon
         theme_icon = ft.Icons.LIGHT_MODE if self.dark_mode else ft.Icons.DARK_MODE
         
-        # Simple AppBar
+        # AppBar with chat info
+        avatar_color = colors_palette["accent"]
         self.appbar = ft.AppBar(
             leading=ft.IconButton(
                 icon=ft.Icons.ARROW_BACK,
@@ -72,28 +73,50 @@ class SavedMessagesView(ft.View):
                 on_click=lambda e: self.go_back(),
                 tooltip="Back"
             ),
-            title=ft.Text(
-                "Saved Messages",
-                size=FONT_SIZES["xl"],
-                weight=ft.FontWeight.W_600,
-                color=colors_palette["text_primary"]
-            ),
-            bgcolor=colors_palette["bg_primary"],
-            elevation=0,
-            actions=[
-                # Theme toggle button
-                ft.IconButton(
-                    icon=theme_icon,
-                    icon_color=colors_palette["text_primary"],
-                    tooltip="Toggle theme",
-                    on_click=lambda e: self.toggle_theme()
+            leading_width=40,
+            title_spacing=0,
+            title=ft.Row([
+                ft.Container(
+                    content=ft.Icon(ft.Icons.BOOKMARK, color=ft.Colors.WHITE, size=24),
+                    width=42,
+                    height=42,
+                    bgcolor=avatar_color,
+                    border_radius=21,
+                    alignment=ft.alignment.center,
                 ),
-                # Hamburger menu
+                ft.Container(width=10),
+                ft.Column([
+                    ft.Text(
+                        "Saved Messages",
+                        size=16,
+                        weight=ft.FontWeight.W_600,
+                        color=colors_palette["text_primary"]
+                    ),
+                    ft.Text(
+                        "cloud storage",
+                        size=12,
+                        color=colors_palette["text_tertiary"]
+                    )
+                ], spacing=0, alignment=ft.MainAxisAlignment.CENTER)
+            ], spacing=0),
+            bgcolor=colors_palette["bg_primary"],
+            elevation=0.5,
+            actions=[
                 ft.IconButton(
-                     icon=ft.Icons.MENU,
-                     icon_color=colors_palette["text_primary"],
-                     tooltip="Menu",
-                     on_click=lambda e: self.open_drawer()
+                    icon=ft.Icons.SEARCH,
+                    icon_color=colors_palette["text_primary"],
+                    tooltip="Search",
+                    on_click=lambda e: self.show_coming_soon("Search")
+                ),
+                ft.PopupMenuButton(
+                    icon=ft.Icons.MORE_VERT,
+                    icon_color=colors_palette["text_primary"],
+                    tooltip="More",
+                    items=[
+                        ft.PopupMenuItem(text="Clear history", icon=ft.Icons.DELETE_OUTLINE, on_click=lambda e: self.show_coming_soon("Clear")),
+                        ft.PopupMenuItem(text="Toggle Theme", icon=ft.Icons.BRIGHTNESS_6, on_click=lambda e: self.toggle_theme()),
+                        ft.PopupMenuItem(text="Menu", icon=ft.Icons.MENU, on_click=lambda e: self.open_drawer()),
+                    ]
                 )
             ]
         )
@@ -207,12 +230,14 @@ class SavedMessagesView(ft.View):
         self.close_drawer()
         try:
             from views.settings import SettingsView
+            # Capture page reference to avoid NoneType error when view is detached
+            page = self.page
             settings_view = SettingsView(
-                page=self.page,
+                page=page,
                 api_client=self.api_client,
                 current_user={"id": self.current_user} if isinstance(self.current_user, str) else self.current_user,
                 on_logout=None,
-                on_back=lambda: self.page.run_task(self.return_to_saved)
+                on_back=lambda: page.run_task(lambda: self.return_to_saved(page))
             )
             self.page.views.clear()
             self.page.views.append(settings_view)
@@ -221,8 +246,15 @@ class SavedMessagesView(ft.View):
             print(f"Error opening settings: {e}")
             self.show_error(f"Could not open settings: {e}")
     
-    async def return_to_saved(self):
+    async def return_to_saved(self, page=None):
         """Return from settings to saved messages"""
+        if page:
+            self.page = page
+            # Ensure view is back in views list
+            if self not in self.page.views:
+                self.page.views.clear()
+                self.page.views.append(self)
+        
         self.build_ui()
         await self.load_saved_messages()
         self.page.update()
@@ -317,10 +349,12 @@ class SavedMessagesView(ft.View):
             print(f"Error creating {char_type}: {e}")
             self.page.close(dialog)
             error_msg = str(e)
-            if "401" in error_msg or "403" in error_msg:
-                self.show_session_expired_dialog()
+            if "Backend route mismatch" in error_msg or "403" in error_msg: # Specific check
+                 self.show_backend_error_dialog()
+            elif "401" in error_msg:
+                 self.show_session_expired_dialog()
             else:
-                self.show_error(f"Could not create {char_type}")
+                 self.show_error(f"Could not create {char_type}: {error_msg}")
     
     def show_session_expired_dialog(self):
         """Show session expired dialog prompting user to re-login"""
@@ -366,80 +400,100 @@ class SavedMessagesView(ft.View):
 
 
         
-        # Messages list with simple design
+        # Messages list
         self.messages_list = ft.ListView(
             expand=True,
-            spacing=SPACING["sm"],
-            padding=ft.padding.all(SPACING["md"])
+            spacing=4,
+            padding=ft.padding.symmetric(horizontal=10, vertical=10),
+            auto_scroll=True
         )
         
-        # Simple input field
+        # Message input
         self.message_input = ft.TextField(
-            hint_text="Message yourself...",
-            border=ft.InputBorder.OUTLINE,
-            border_radius=RADIUS["full"],
-            filled=True,
-            fill_color=colors_palette["bg_secondary"],
+            hint_text="Message",
+            border=ft.InputBorder.NONE,
+            filled=False,
             expand=True,
-            multiline=False,
-            max_lines=1,
-            text_size=FONT_SIZES["base"],
+            multiline=True,
+            min_lines=1,
+            max_lines=6,
+            text_size=15,
+            content_padding=ft.padding.symmetric(vertical=10),
             on_submit=lambda e: self.page.run_task(self.send_message),
-            border_color=colors_palette["border"],
-            focused_border_color=colors_palette["accent"],
             color=colors_palette["text_primary"],
             hint_style=ft.TextStyle(color=colors_palette["text_tertiary"])
         )
         
-        # Send button
-        self.send_btn = ft.IconButton(
-            icon=ft.Icons.SEND_ROUNDED,
-            icon_color=colors_palette["accent"],
-            on_click=lambda e: self.page.run_task(self.send_message),
-            tooltip="Send"
-        )
-        
-        # Attach button - opens bottom sheet with options
+        # Attach button
         self.attach_btn = ft.IconButton(
             icon=ft.Icons.ATTACH_FILE,
-            icon_color=colors_palette["text_secondary"],
+            icon_color=colors_palette["text_tertiary"],
+            icon_size=26,
             tooltip="Attach",
+            style=ft.ButtonStyle(padding=0),
             on_click=lambda e: self.show_attachment_menu()
         )
         
         # Emoji button
         self.emoji_btn = ft.IconButton(
-            icon=ft.Icons.EMOJI_EMOTIONS,
-            icon_color=colors_palette["text_secondary"],
+            icon=ft.Icons.EMOJI_EMOTIONS_OUTLINED,
+            icon_color=colors_palette["text_tertiary"],
+            icon_size=26,
             tooltip="Emoji",
+            style=ft.ButtonStyle(padding=0),
             on_click=lambda e: self.show_emoji_picker()
         )
         
-        # Main layout - Minimal and Clean
+        # Send button
+        self.send_btn = ft.IconButton(
+            icon=ft.Icons.SEND,
+            icon_color=colors_palette["accent"],
+            icon_size=28,
+            tooltip="Send",
+            on_click=lambda e: self.page.run_task(self.send_message)
+        )
+        
+        # Input area container - Telegram style
+        input_row = ft.Row([
+            self.attach_btn,
+            ft.Container(
+                content=ft.Row([
+                    self.emoji_btn,
+                    self.message_input
+                ], spacing=0, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.END),
+                bgcolor=colors_palette["bg_primary"] if self.dark_mode else ft.Colors.WHITE,
+                border_radius=20, # Pill shape
+                padding=ft.padding.only(left=5, right=15, top=2, bottom=2),
+                expand=True,
+            ),
+            self.send_btn
+        ], spacing=10, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.END)
+
+        # Bottom container wrapper
+        input_container = ft.Container(
+            content=input_row,
+            padding=ft.padding.all(10),
+            bgcolor=colors_palette["bg_secondary"],
+            border=ft.border.only(top=ft.BorderSide(1, colors_palette["divider"] if self.dark_mode else ft.Colors.TRANSPARENT))
+        )
+        
+        # Main content
         main_content = ft.Container(
             content=ft.Column([
                 # Messages area
                 ft.Container(
                     content=self.messages_list,
                     expand=True,
-                    bgcolor=colors_palette["bg_primary"],
+                    bgcolor=colors_palette["bg_secondary"] if self.dark_mode else "#E6EBEF",
+                    image_src="https://web.telegram.org/img/bg_0.png" if not self.dark_mode else None,
+                    image_fit=ft.ImageFit.COVER,
+                    image_opacity=0.5
                 ),
-                # Input area - Simple bottom bar with emoji, attach, input, send
-                ft.Container(
-                    content=ft.Row([
-                        self.attach_btn,
-                        self.emoji_btn,
-                        self.message_input,
-                        self.send_btn
-                    ], spacing=SPACING["sm"]),
-                    padding=ft.padding.all(SPACING["md"]),
-                    bgcolor=colors_palette["bg_primary"],
-                    border=ft.border.only(top=ft.BorderSide(1, colors_palette["divider"]))
-                )
-
+                # Input area
+                input_container
             ], spacing=0),
-            bgcolor=colors_palette["bg_primary"],
-            expand=True
+            expand=True,
+            bgcolor=colors_palette["bg_primary"]
         )
         
         # Set view properties
@@ -678,73 +732,72 @@ class SavedMessagesView(ft.View):
         if not e.files:
             return
         
+        snack = ft.SnackBar(
+            content=ft.Row([
+                ft.ProgressRing(width=16, height=16, stroke_width=2),
+                ft.Text("Preparing upload...")
+            ], spacing=10),
+            duration=60000 
+        )
+        self.page.overlay.append(snack)
+        snack.open = True
+        self.page.update()
+        
         try:
-            file = e.files[0]
-            file_name = file.name
-            file_path = file.path
-            
-            print(f"Selected file: {file_name}")
-            
-            # Show uploading message
-            snack = ft.SnackBar(
-                content=ft.Row([
-                    ft.ProgressRing(width=16, height=16, stroke_width=2),
-                    ft.Text(f"Uploading {file_name}...")
-                ], spacing=10),
-                duration=10000
-            )
-            self.page.overlay.append(snack)
-            snack.open = True
-            self.page.update()
-            
             # Get saved chat
             saved_chat = await self.api_client.get_saved_chat()
             chat_id = saved_chat.get("chat_id") or saved_chat.get("_id")
             
             if not chat_id:
                 self.show_error("Could not find saved messages chat")
+                snack.open = False
+                self.page.update()
                 return
-            
-            # For now, send as text message with file info
-            # Full file upload requires backend file storage
-            file_emoji = "📎"
-            if file_name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
-                file_emoji = "🖼️"
-            elif file_name.lower().endswith(('.pdf', '.doc', '.docx')):
-                file_emoji = "📄"
-            elif file_name.lower().endswith(('.mp4', '.avi', '.mov')):
-                file_emoji = "🎬"
-            
-            # Fallback for now: Send as text message with emoji prefix
-            # This is because the backend might not support file uploads yet or has routing issues
-            # Re-fetch chat_id in case it was not found initially or for robustness
-            saved_chat_for_fallback = await self.api_client.get_saved_chat()
-            chat_id_for_fallback = saved_chat_for_fallback.get("chat_id") or saved_chat_for_fallback.get("_id")
-            if not chat_id_for_fallback:
-                raise Exception("Could not access Saved Messages chat for fallback")
 
-            await self.api_client.send_message(
-                 chat_id=chat_id_for_fallback,
-                 text=f"{file_emoji} {file_name}" # Using file_emoji as defined earlier
-            )
-             
-            # Close snackbar
+            # Process files
+            count = 0
+            for file in e.files:
+                file_name = file.name
+                file_path = file.path
+                
+                # Update snackbar text
+                snack.content.controls[1].value = f"Uploading {file_name}..."
+                snack.update()
+                
+                # Log
+                print(f"Uploading file: {file_name}")
+                
+                # Process upload
+                file_id = await self.api_client.upload_large_file(file_path, chat_id)
+                
+                # Send message attached to file
+                await self.api_client.send_message(
+                    chat_id=chat_id,
+                    file_id=file_id
+                )
+                count += 1
+
+            # Close
             snack.open = False
             self.page.update()
-             
-            # Reload messages
-            await self.load_saved_messages()
-             
-        except Exception as e:
-            print(f"Error uploading file: {e}")
-            snack.open = False # Close snackbar on error too
+            
+            # Success
+            success_snack = ft.SnackBar(content=ft.Text(f"✅ {count} file(s) saved!"), bgcolor=ft.Colors.GREEN)
+            self.page.overlay.append(success_snack)
+            success_snack.open = True
             self.page.update()
             
-            error_msg = str(e)
-            if "403" in error_msg or "401" in error_msg:
+            # Reload messages
+            await self.load_saved_messages()
+            
+        except Exception as e:
+            snack.open = False
+            self.page.update()
+            print(f"Error uploading: {e}")
+            if "403" in str(e) or "401" in str(e):
                  self.show_backend_error_dialog()
             else:
-                 self.show_error(f"Upload failed: {error_msg[:50]}")
+                 self.show_error(f"Upload failed: {str(e)[:50]}")
     
     async def load_saved_messages(self):
         """Load all saved messages"""
@@ -845,65 +898,122 @@ class SavedMessagesView(ft.View):
             self.page.update()
     
     def create_message_card(self, message):
-        """Create a simple, clean message card"""
+        """Create Telegram-style message bubble with tails (replaces card)"""
         colors_palette = self.theme.colors
         
         msg_text = message.get("text", "")
+        # For saved messages, sender is effectively 'me' or it's a note
+        is_mine = True
+        
         created_at = message.get("created_at", "")
         message_id = message.get("_id", "")
         
-        # Format timestamp
+        # Format time
         if isinstance(created_at, str):
             try:
                 date_obj = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                timestamp = date_obj.strftime("%b %d, %I:%M %p")
+                time_str = date_obj.strftime("%I:%M %p")
             except:
-                timestamp = created_at
+                time_str = ""
         else:
-            timestamp = str(created_at)
+            time_str = ""
         
-        # Simple card design
-        card = ft.Container(
-            content=ft.Column([
-                # Message text
-                ft.Text(
-                    msg_text,
-                    size=FONT_SIZES["base"],
-                    color=colors_palette["text_primary"],
-                    selectable=True
-                ),
-                # Footer with timestamp and actions
-                ft.Row([
-                    ft.Text(
-                        timestamp,
-                        size=FONT_SIZES["xs"],
-                        color=colors_palette["text_tertiary"]
-                    ),
-                    ft.Container(expand=True),
-                    # Action buttons
-                    ft.IconButton(
-                        icon=ft.Icons.COPY,
-                        icon_size=16,
-                        icon_color=colors_palette["text_secondary"],
-                        tooltip="Copy",
-                        on_click=lambda e, t=msg_text: self.copy_message(t)
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.DELETE_OUTLINE,
-                        icon_size=16,
-                        icon_color=colors_palette["text_secondary"],
-                        tooltip="Delete",
-                        on_click=lambda e, mid=message_id: self.page.run_task(self.unsave_message, mid)
-                    )
-                ], spacing=SPACING["xs"])
-            ], spacing=SPACING["sm"]),
-            padding=ft.padding.all(SPACING["md"]),
-            bgcolor=colors_palette["bg_secondary"],
-            border_radius=RADIUS["lg"],
-            border=ft.border.all(1, colors_palette["border"])
+        # Check if it's a file message
+        is_file = msg_text.startswith(("📎", "🖼️", "🎬", "🎵", "📕", "📘", "📗", "📙", "📦"))
+        
+        # Bubble Styling
+        if self.dark_mode:
+            bubble_color = "#2B5278" 
+            text_color = ft.Colors.WHITE
+        else:
+            bubble_color = "#EEFFDE"
+            text_color = ft.Colors.BLACK
+            
+        radius = ft.border_radius.only(
+            top_left=16, top_right=16, bottom_left=16, bottom_right=0
+        )
+        align = ft.MainAxisAlignment.END
+
+        # Message content widgets
+        content_widgets = []
+        
+        # Main content (Text or File)
+        if is_file:
+            # File representation
+            parts = msg_text.split(" ", 1)
+            emoji_icon = parts[0]
+            filename = parts[1] if len(parts) > 1 else "File"
+            
+            content_widgets.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Container(
+                            content=ft.Text(emoji_icon, size=24),
+                            bgcolor=ft.Colors.with_opacity(0.1, text_color),
+                            width=40, height=40, border_radius=20,
+                            alignment=ft.alignment.center
+                        ),
+                        ft.Column([
+                            ft.Text(filename, color=text_color, weight=ft.FontWeight.W_500, size=14, overflow=ft.TextOverflow.ELLIPSIS),
+                            ft.Text("Download", color=colors_palette["accent"], size=12)
+                        ], spacing=2, alignment=ft.MainAxisAlignment.CENTER)
+                    ], spacing=10),
+                    padding=ft.padding.all(5)
+                )
+            )
+        else:
+            content_widgets.append(
+                ft.Text(msg_text, color=text_color, size=15, selectable=True)
+            )
+        
+        # Footer: Time + Status checks
+        status_row = ft.Row(
+            controls=[
+                ft.Text(time_str, size=11, color=ft.Colors.with_opacity(0.6, text_color)),
+                # Check marks (always done for saved)
+                ft.Icon(ft.Icons.DONE_ALL, size=14, color=ft.Colors.BLUE_400)
+            ],
+            spacing=4,
+            alignment=ft.MainAxisAlignment.END,
         )
         
-        return card
+        # Popover menu
+        def show_menu(e):
+            menu = ft.AlertDialog(
+                title=ft.Text("Options"),
+                actions=[
+                    ft.TextButton("Copy", on_click=lambda e: self.copy_message(msg_text)),
+                    ft.TextButton("Delete", on_click=lambda e: self.page.run_task(self.unsave_message, message_id), style=ft.ButtonStyle(color=ft.Colors.RED))
+                ]
+            )
+            self.page.dialog = menu
+            menu.open = True
+            self.page.update()
+
+        # Combine
+        final_content = ft.Column(
+            controls=content_widgets + [status_row],
+            spacing=2,
+            tight=True,
+            horizontal_alignment=ft.CrossAxisAlignment.END 
+        )
+        
+        bubble = ft.Container(
+            content=final_content,
+            bgcolor=bubble_color,
+            border_radius=radius,
+            padding=ft.padding.symmetric(horizontal=12, vertical=6),
+            constraints=ft.BoxConstraints(max_width=300),
+            shadow=ft.BoxShadow(
+                spread_radius=1,
+                blur_radius=1,
+                color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK),
+                offset=ft.Offset(0, 1),
+            ),
+            on_long_press=show_menu
+        )
+        
+        return ft.Row([bubble], alignment=align)
     
     def copy_message(self, text: str):
         """Copy message text to clipboard"""
