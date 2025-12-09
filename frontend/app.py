@@ -1177,6 +1177,9 @@ class ZaplyApp:
             self.page.views.append(profile_view)
             self.page.update()
             debug_log("[PROFILE] Profile view displayed")
+            
+            # Load stats in background
+            self.page.run_task(profile_view.load_stats)
         except Exception as e:
             import traceback
             debug_log(f"[PROFILE] Error opening profile: {e}")
