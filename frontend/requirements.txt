@@ -1,4 +1,7 @@
-flet==0.23.0
-httpx==0.25.2
-python-dotenv==1.0.0
-aiofiles==23.2.1
+flet>=0.28.3
+httpx[http2]>=0.27.0
+pydantic==2.11.5
+python-multipart==0.0.20
+python-dotenv==1.0.1
+h2>=4.1.0
+
