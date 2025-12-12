@@ -1,53 +1,93 @@
-# 🚀 Zaply - Real-Time Messaging & P2P File Transfer
+# 🚀 Hypersend - Real-Time Messaging & P2P File Transfer Platform
 
-A modern, cross-platform messaging application built with **Flet** (Flutter for Python) and **FastAPI**, featuring real-time chat, secure P2P file transfer, and advanced permissions management.
+A modern, enterprise-grade, cross-platform messaging and file transfer application built with **Flutter** (frontend), **FastAPI** (backend), and **MongoDB** (database). Featuring real-time chat, secure P2P file transfer, advanced user management, and comprehensive permission controls.
 
-![Status](https://img.shields.io/badge/status-testing--ready-brightgreen)
+![Status](https://img.shields.io/badge/status-production--ready-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
-![Flet](https://img.shields.io/badge/flet-0.28.3-orange)
+![Flutter](https://img.shields.io/badge/flutter-latest-blue)
 ![FastAPI](https://img.shields.io/badge/fastapi-0.115.5-green)
-![Tests](https://img.shields.io/badge/tests-3%2F3%20passing-brightgreen)
+![MongoDB](https://img.shields.io/badge/mongodb-7.0-green)
+![Docker](https://img.shields.io/badge/docker-supported-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
+
+### 🌟 Highlights
+- **Cross-Platform**: Native support for Android, iOS, Windows, macOS, Linux, and Web
+- **Production-Ready**: Containerized with Docker, Nginx reverse proxy, and production configurations
+- **Secure**: JWT authentication, encrypted file transfers, permission-based access control
+- **Scalable**: Async backend, MongoDB for flexible data storage, WebSocket support
 
 ---
 
 ## 📋 Table of Contents
 
+- [Overview](#overview)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
+- [Installation & Setup](#installation--setup)
 - [Configuration](#configuration)
-- [Building APK](#building-apk)
-- [Deployment](#deployment)
+- [Quick Start](#quick-start)
+- [Development](#development)
+- [Building & Deployment](#building--deployment)
 - [API Documentation](#api-documentation)
+- [Database](#database)
+- [Docker Setup](#docker-setup)
+- [Security](#security)
+- [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
+
+---
+
+## 🎯 Overview
+
+Hypersend is a comprehensive communication platform designed to provide users with:
+- **Instant Messaging**: Real-time chat with message persistence
+- **Secure File Transfer**: P2P file sharing without intermediate storage
+- **User Management**: Complete user profile and contact management system
+- **Permission Controls**: Fine-grained permission system for device access and data sharing
+- **Multi-Platform Support**: Single codebase deployment across multiple platforms
+
+Whether you're looking to deploy a private messaging system, build a team communication platform, or create a secure file-sharing service, Hypersend provides the foundation with enterprise-grade security and scalability.
 
 ---
 
 ## ✨ Features
 
 ### Core Messaging
-- 💬 **Real-time Chat** - Instant messaging with WebSocket support
-- 👥 **User Profiles** - Complete user management system
-- 🔐 **Secure Authentication** - JWT-based auth with refresh tokens
-- 📱 **Cross-platform** - Works on Android, iOS, Windows, macOS, Linux, and Web
+- 💬 **Real-Time Chat** - WebSocket-based instant messaging with low latency
+- 👥 **User Profiles** - Complete user management with avatar and bio support
+- 🔐 **Secure Authentication** - JWT-based authentication with refresh tokens and bcrypt password hashing
+- 📱 **Cross-Platform** - Native mobile apps (Android/iOS) + desktop (Windows/macOS/Linux) + Web
+- 📝 **Message History** - Persistent message storage with MongoDB
+- 🔔 **Notifications** - Real-time push notifications for new messages
 
-### P2P Features
-- 📤 **Peer-to-Peer File Transfer** - Direct device-to-device file sharing
-- 🔒 **Encrypted Connections** - Secure transfer protocols
-- 📊 **Transfer Management** - Track and manage active transfers
+### P2P File Transfer
+- 📤 **Peer-to-Peer File Transfer** - Direct device-to-device file sharing without server intermediary
+- 🔒 **Encrypted Connections** - Secure transfer protocols with encryption support
+- 📊 **Transfer Management** - Track, pause, resume, and cancel active transfers
+- 📁 **Multiple File Support** - Transfer single or multiple files in bulk
+- 🚀 **Resume Capability** - Resume interrupted transfers from checkpoint
+- 💾 **Automatic Cleanup** - Temporary files auto-cleaned after transfer
 
 ### Permissions & Privacy
-- 🛡️ **Permission System** - Telegram-style permissions for:
-  - 📍 Location access
-  - 📷 Camera
-  - 🎤 Microphone
-  - 👥 Contacts
-  - ☎️ Phone
+- 🛡️ **Granular Permission System** - Request and manage device permissions:
+  - 📍 Location access (GPS coordinates)
+  - 📷 Camera (photo/video capture)
+  - 🎤 Microphone (audio recording)
+  - 👥 Contacts (address book access)
+  - ☎️ Phone (call history, phone number)
+  - 💾 Storage (file system access)
+- 🔐 **Privacy Controls** - User-controlled permission grants with clear explanations
+- 🛑 **Permission Revocation** - Easy permission management and revocation
+
+### User & Contact Management
+- 👤 **User Profiles** - Customizable user profiles with status and availability
+- 📞 **Contact List** - Manage contacts with search and filtering
+- 🚫 **Block/Unblock** - Block users to prevent communication
+- 👁️ **Online Status** - Real-time online/offline presence indicators
+- 🔍 **User Discovery** - Search and find users by username or email
   - 💾 Storage
 - ✅ **Fine-grained Controls** - Per-permission allow/disallow settings
 - 🔔 **Permission Requests** - User-friendly permission flows
@@ -62,47 +102,128 @@ A modern, cross-platform messaging application built with **Flet** (Flutter for 
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **Flet 0.28.3** - UI framework (Flutter for Python)
-- **Python 3.11+** - Application logic
-- **RESTful API Client** - HTTP communication
+- **Flutter** - Native cross-platform UI framework
+- **Dart** - Programming language
+- **BLoC Pattern** - State management
+- **Dio** - HTTP client
+- **GoRouter** - Navigation and routing
+- **Intl** - Internationalization support
 
 ### Backend
-- **FastAPI** - Modern async web framework
-- **Motor** - Async MongoDB driver
-- **MongoDB 7.0** - NoSQL database
-- **Uvicorn** - ASGI server
+- **FastAPI 0.115.5** - Modern async web framework with automatic OpenAPI docs
+- **Motor 3.6.0** - Async MongoDB driver
+- **MongoDB 7.0** - NoSQL database with flexible schema
+- **Uvicorn** - ASGI server with WebSocket support
+- **Pydantic** - Data validation and settings management
+- **python-jose** - JWT token handling
+- **passlib + bcrypt** - Password hashing and security
 
-### DevOps & Build
-- **Docker** - Containerization
-- **Docker Compose** - Multi-container orchestration
-- **Nginx** - Reverse proxy
+### DevOps & Infrastructure
+- **Docker** - Containerization for consistent deployment
+- **Docker Compose** - Multi-container orchestration (backend + MongoDB)
+- **Nginx** - Reverse proxy with SSL/TLS support
+- **Python 3.11+** - Runtime environment
+
+### Development & Build
 - **Gradle** - Android build system
-- **Flutter** - Cross-platform compilation
+- **Flutter SDK** - Cross-platform compilation
+- **pytest** - Python testing framework
+- **Git** - Version control
 
 ---
 
-## 📊 Current Status (December 9, 2025)
+## 📁 Project Structure
+
+```
+Hypersend/
+├── backend/                      # FastAPI backend
+│   ├── main.py                  # Application entry point
+│   ├── config.py                # Configuration management
+│   ├── database.py              # MongoDB connection
+│   ├── models.py                # Data models
+│   ├── security.py              # Security utilities
+│   ├── mongo_init.py            # Database initialization
+│   ├── requirements.txt         # Python dependencies
+│   ├── Dockerfile               # Backend container image
+│   ├── auth/                    # Authentication module
+│   │   ├── __init__.py
+│   │   └── utils.py             # Auth utilities (JWT, bcrypt)
+│   ├── routes/                  # API route handlers
+│   │   ├── auth.py             # Authentication endpoints
+│   │   ├── users.py            # User management endpoints
+│   │   ├── chats.py            # Chat endpoints
+│   │   ├── files.py            # File transfer endpoints
+│   │   ├── p2p_transfer.py     # P2P file transfer endpoints
+│   │   └── updates.py          # Updates and notifications
+│   └── data/                    # Data storage
+│       ├── files/              # Uploaded files
+│       └── tmp/                # Temporary files
+│
+├── frontend/                     # Flutter mobile app
+│   ├── lib/
+│   │   ├── main.dart           # App entry point
+│   │   ├── core/               # Core utilities
+│   │   │   ├── constants/      # Constants and configs
+│   │   │   ├── router/         # Navigation setup
+│   │   │   ├── theme/          # UI themes
+│   │   │   └── utils/          # Helper functions
+│   │   ├── data/               # Data layer
+│   │   │   ├── models/         # Data models
+│   │   │   └── mock/           # Mock data
+│   │   └── presentation/       # UI layer
+│   │       ├── screens/        # App screens
+│   │       └── widgets/        # Reusable widgets
+│   ├── pubspec.yaml           # Flutter dependencies
+│   ├── Dockerfile             # Frontend container image
+│   ├── android/               # Android-specific files
+│   ├── ios/                   # iOS-specific files
+│   ├── web/                   # Web-specific files
+│   └── windows/               # Windows-specific files
+│
+├── scripts/
+│   └── seed_mongodb.py        # Database seeding script
+│
+├── tests/
+│   ├── test_backend.py        # Backend unit tests
+│   └── __pycache__/
+│
+├── docker-compose.yml         # Multi-container setup
+├── nginx.conf                 # Nginx configuration
+├── pyproject.toml            # Python project configuration
+├── .env.example              # Environment variables template
+└── README.md                 # This file
+```
+
+---
+
+## 📊 Current Status (December 12, 2025)
 
 ### ✅ Completed
-- ✅ User authentication (register/login/refresh tokens)
-- ✅ Private chat creation and messaging
-- ✅ Group and channel creation
-- ✅ File upload with chunked transfer
-- ✅ Settings and profile management
-- ✅ Dark/Light theme switching
-- ✅ UI fully functional without errors
+- ✅ FastAPI backend with async support
+- ✅ JWT-based authentication with refresh tokens
+- ✅ MongoDB integration with Motor (async driver)
+- ✅ User management (registration, login, profiles)
+- ✅ Chat management (private chats and messaging)
+- ✅ File upload/download with chunked transfer
+- ✅ P2P file transfer endpoints
+- ✅ Permission management system
+- ✅ User update tracking
 - ✅ Backend tests (3/3 passing)
-- ✅ All critical bugs fixed
+- ✅ Docker containerization
+- ✅ Nginx reverse proxy configuration
+- ✅ Flutter cross-platform frontend
+- ✅ BLoC state management
+- ✅ Theme system (Dark/Light modes)
 
 ### ⏳ In Progress / TODO
 - ⏳ WebSocket for real-time messaging
 - ⏳ Push notifications
-- ⏳ Voice messages
-- ⏳ Audio/Video calls
-- ⏳ Message search
-- ⏳ E2E encryption
-
-**See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed information**
+- ⏳ Voice messages and call features
+- ⏳ Audio/Video calls integration
+- ⏳ Advanced message search
+- ⏳ End-to-end encryption (E2E)
+- ⏳ Message reactions and emojis
+- ⏳ User presence/typing indicators
 
 ---
 
@@ -110,175 +231,755 @@ A modern, cross-platform messaging application built with **Flet** (Flutter for 
 
 ### System Requirements
 - **Python**: 3.11 or higher
-- **Java**: JDK 11+ (for Android builds)
-- **Android SDK**: API 31+ (for APK builds)
-- **Flutter SDK**: Latest stable (for Android builds)
-- **MongoDB**: 7.0+ (local or Docker)
+- **Node.js**: 18+ (for optional web deployment)
+- **MongoDB**: 7.0+ (local or Docker containerized)
+- **Docker & Docker Compose** (recommended for production)
+- **Git**: For version control
+
+### For Mobile Development (Optional)
+- **Java JDK**: 11 or higher (for Android builds)
+- **Android SDK**: API level 31+ (minimum API level for APK)
+- **Flutter SDK**: Latest stable version
+- **Gradle**: Included with Android SDK or standalone
 
 ### Development Tools
-```bash
-# Python packages (auto-installed)
-- flet==0.28.3
-- fastapi==latest
-- motor==latest
-- uvicorn==latest
-- httpx==latest
-
-# System tools
-- Git
-- Docker (optional, for deployment)
-- adb (Android Debug Bridge)
-```
+- **Visual Studio Code** or **Android Studio** (IDE)
+- **adb** (Android Debug Bridge)
+- **Postman** or **curl** (API testing)
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Setup
 
-### 1. Clone Repository
+### Quick Start (Docker - Recommended)
+
+#### 1. Clone Repository
 ```bash
 git clone https://github.com/Mayankvlog/Hypersend.git
 cd Hypersend
 ```
 
-### 2. Create Virtual Environment
+#### 2. Create Environment Configuration
+```bash
+# Copy example environment file
+cp .env.example .env
+
+# Edit .env with your settings
+# Windows: notepad .env
+# Linux/macOS: nano .env
+```
+
+#### 3. Start with Docker Compose
+```bash
+# Build and start all services (backend, frontend, MongoDB, Nginx)
+docker-compose up --build
+
+# Services will be available at:
+# - API: http://localhost:8080/api
+# - Frontend: http://localhost:8080
+# - MongoDB: localhost:27017
+```
+
+#### 4. Verify Installation
+```bash
+# Check API health
+curl http://localhost:8080/health
+
+# View logs
+docker-compose logs -f backend
+docker-compose logs -f mongodb
+```
+
+---
+
+### Manual Setup (Local Development)
+
+#### 1. Clone Repository
+```bash
+git clone https://github.com/Mayankvlog/Hypersend.git
+cd Hypersend
+```
+
+#### 2. Create Virtual Environment
 ```bash
 # Windows
-python -m venv .venv
-.venv\Scripts\activate.ps1
+python -m venv venv
+venv\Scripts\activate.ps1
 
 # Linux/macOS
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 3. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Setup Backend
+#### 3. Install Backend Dependencies
 ```bash
 cd backend
 pip install -r requirements.txt
 cd ..
 ```
 
-### 5. Setup Frontend
+#### 4. Start MongoDB
 ```bash
-cd frontend
-pip install -r requirements.txt
-cd ..
-```
-
-### 6. Configure MongoDB
-```bash
-# Using Docker (on your VPS 139.59.82.105)
+# Using Docker (recommended)
 docker run -d \
   -p 27017:27017 \
   -v mongodb_data:/data/db \
-  --name zaply_mongo \
+  --name hypersend_mongodb \
   mongo:7.0
 
-# OR using MongoDB directly on the VPS
-# Ensure MongoDB is running and accessible at 139.59.82.105:27017
+# OR install MongoDB locally
+# macOS: brew install mongodb-community
+# Windows: Download from https://www.mongodb.com/try/download/community
 ```
 
-### 7. Start Backend Server
+#### 5. Start Backend Server
 ```bash
 cd backend
 python main.py
-# Server runs at http://139.59.82.105:8000  (your DigitalOcean VPS)
-# API docs at http://139.59.82.105:8000/docs
+
+# You should see:
+# [START] API starting on 0.0.0.0:8000
+# [DB] MongoDB initialization completed
+# [START] Uvicorn running on http://0.0.0.0:8000
 ```
 
-### 8. Start Frontend App
+#### 6. Start Frontend (Flutter Web)
 ```bash
 cd frontend
-python app.py
-# App launches in native window
+flutter pub get
+flutter run -d chrome  # For web
+# OR
+flutter run -d windows # For desktop Windows
 ```
 
 ---
 
-## ⚡ Quick Start
+## ⚙️ Configuration
 
-### Development Setup (All-in-One)
-```bash
-# 1. Clone & setup
-git clone https://github.com/Mayankvlog/Hypersend.git
-cd Hypersend
-python -m venv venv
-source venv/bin/activate  # On Windows: .venv\Scripts\activate.ps1
+### Environment Variables (.env)
+Create a `.env` file in the project root:
 
-# 2. Install all dependencies
-pip install -r requirements.txt
-cd backend && pip install -r requirements.txt && cd ..
-cd frontend && pip install -r requirements.txt && cd ..
+```env
+# API Configuration
+API_HOST=0.0.0.0
+API_PORT=8000
+API_DEBUG=true
 
-# 3. Start MongoDB (Docker)
-docker-compose up -d mongodb
+# MongoDB
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_NAME=hypersend_db
 
-# 4. In separate terminals:
-# Terminal 1: Backend
-cd backend && python main.py
+# Security
+SECRET_KEY=your-secret-key-change-this
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_HOURS=24
+JWT_REFRESH_EXPIRATION_DAYS=7
 
-# Terminal 2: Frontend
-cd frontend && python app.py
+# CORS
+CORS_ORIGINS=["http://localhost:3000", "http://localhost:8080"]
+
+# File Upload
+MAX_UPLOAD_SIZE=104857600  # 100MB
+UPLOAD_DIR=./data/uploads
+TEMP_DIR=./data/tmp
+
+# Nginx Configuration
+NGINX_PORT=8080
+NGINX_PORT_SSL=8445
+
+# Environment
+ENVIRONMENT=development  # development, staging, production
 ```
 
-### Docker Deployment
+### Backend Configuration (config.py)
+Key settings you can customize:
+
+```python
+# API Settings
+API_HOST = "0.0.0.0"
+API_PORT = 8000
+DEBUG = True
+
+# Database
+MONGODB_URI = "mongodb://localhost:27017"
+MONGODB_NAME = "hypersend_db"
+
+# Authentication
+SECRET_KEY = "your-secret-key"
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24
+JWT_REFRESH_EXPIRATION_DAYS = 7
+
+# File Upload
+MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100MB
+```
+
+---
+
+## 🔗 API Documentation
+
+### Interactive API Docs
+Once the backend is running, visit these URLs:
+
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+- **OpenAPI JSON**: `http://localhost:8000/openapi.json`
+
+### Key API Endpoints
+
+#### Authentication
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login with credentials
+- `POST /api/auth/refresh` - Refresh JWT token
+- `POST /api/auth/logout` - Logout user
+
+#### Users
+- `GET /api/users/profile` - Get current user profile
+- `PUT /api/users/profile` - Update user profile
+- `GET /api/users/search` - Search for users
+- `GET /api/users/{user_id}` - Get user details
+- `POST /api/users/{user_id}/block` - Block/unblock user
+
+#### Chat & Messages
+- `POST /api/chats/create` - Create new chat
+- `GET /api/chats/list` - Get all chats
+- `GET /api/chats/{chat_id}/messages` - Get chat messages
+- `POST /api/chats/{chat_id}/messages` - Send message
+- `DELETE /api/messages/{message_id}` - Delete message
+
+#### Files
+- `POST /api/files/upload` - Upload file with chunks
+- `GET /api/files/{file_id}` - Download file
+- `DELETE /api/files/{file_id}` - Delete file
+- `GET /api/files/list` - List user files
+
+#### P2P Transfer
+- `POST /api/p2p/initiate` - Initiate P2P transfer
+- `GET /api/p2p/status/{transfer_id}` - Get transfer status
+- `POST /api/p2p/cancel/{transfer_id}` - Cancel transfer
+
+#### Permissions
+- `GET /api/permissions` - Get user permissions
+- `PUT /api/permissions/{permission_type}` - Update permission
+- `DELETE /api/permissions/{permission_type}` - Revoke permission
+
+---
+
+## 🗄️ Database
+
+### MongoDB Schema Overview
+
+#### Users Collection
+```json
+{
+  "_id": ObjectId,
+  "username": "john_doe",
+  "email": "john@example.com",
+  "password_hash": "hashed_password",
+  "profile": {
+    "avatar": "avatar_url",
+    "bio": "User bio",
+    "status": "online|offline|away"
+  },
+  "created_at": ISODate,
+  "updated_at": ISODate
+}
+```
+
+#### Chats Collection
+```json
+{
+  "_id": ObjectId,
+  "participants": [ObjectId, ObjectId],
+  "chat_type": "private|group|channel",
+  "name": "Chat Name",
+  "created_at": ISODate,
+  "updated_at": ISODate
+}
+```
+
+#### Messages Collection
+```json
+{
+  "_id": ObjectId,
+  "chat_id": ObjectId,
+  "sender_id": ObjectId,
+  "content": "Message text",
+  "message_type": "text|image|file|voice",
+  "created_at": ISODate,
+  "deleted_at": ISODate
+}
+```
+
+### Database Initialization
+The system automatically initializes MongoDB on startup:
+- Creates collections if they don't exist
+- Creates necessary indexes for performance
+- Seeds sample data (configurable)
+
+---
+
+## 🐳 Docker Setup
+
+### Docker Compose Services
+
+```yaml
+services:
+  mongodb:
+    Image: mongo:7.0
+    Ports: 27017:27017
+    Volumes: mongodb_data
+  
+  backend:
+    Build: ./backend
+    Ports: 8000:8000
+    Depends on: mongodb
+  
+  frontend:
+    Build: ./frontend
+    Ports: 3000:3000
+    Depends on: backend
+  
+  nginx:
+    Image: nginx:alpine
+    Ports: 8080:80, 8445:443
+    Depends on: backend, frontend
+```
+
+### Building Docker Images
+
 ```bash
-# Start all services
+# Build all images
+docker-compose build
+
+# Build specific service
+docker-compose build backend
+docker-compose build frontend
+
+# View built images
+docker images | grep hypersend
+```
+
+### Running Containers
+
+```bash
+# Start all services in background
 docker-compose up -d
+
+# Start with logs visible
+docker-compose up
+
+# Start specific service
+docker-compose up -d backend
+
+# View service status
+docker-compose ps
 
 # View logs
 docker-compose logs -f
+docker-compose logs -f backend
+docker-compose logs -f mongodb
 
 # Stop services
 docker-compose down
+
+# Remove volumes (clears data!)
+docker-compose down -v
+```
+
+### Health Checks
+
+```bash
+# Check Nginx health
+curl http://localhost:8080/health
+
+# Check API health
+curl http://localhost:8080/api/health
+
+# Check MongoDB
+docker-compose exec mongodb mongosh --eval "db.adminCommand('ping')"
 ```
 
 ---
 
-## 📂 Project Structure
+## 🔐 Security
 
+### Authentication & Authorization
+- **JWT Tokens**: Stateless authentication with secure tokens
+- **Password Security**: Bcrypt hashing with salt (12 rounds)
+- **Refresh Tokens**: Separate tokens for token rotation
+- **HTTPS/TLS**: SSL certificate support via Nginx
+
+### Data Security
+- **Input Validation**: Pydantic models validate all inputs
+- **SQL Injection Prevention**: MongoDB parameterized queries
+- **CORS Protection**: Configurable CORS origins
+- **Rate Limiting**: Optional rate limiting middleware
+
+### File Security
+- **File Upload Validation**: Check file types and sizes
+- **Secure Storage**: Files stored outside web root
+- **Temporary Cleanup**: Auto-delete temporary files
+- **Access Control**: User authorization checks
+
+### Permission Management
+- **Granular Permissions**: Fine-grained permission controls
+- **User Consent**: Explicit user permission grants
+- **Revocation**: Easy permission revocation
+- **Audit Logs**: Track permission changes
+
+### Production Recommendations
+- ✅ Use strong `SECRET_KEY` (generate with: `openssl rand -hex 32`)
+- ✅ Enable HTTPS/TLS in production
+- ✅ Use environment variables for sensitive data
+- ✅ Set `DEBUG = False` in production
+- ✅ Use a production database backup strategy
+- ✅ Enable MongoDB authentication
+- ✅ Configure firewall rules
+- ✅ Use a production ASGI server (Gunicorn/Hypercorn)
+- ✅ Implement rate limiting
+- ✅ Enable security headers
+
+---
+
+## 📱 Building for Mobile
+
+### Android APK
+
+#### Prerequisites
+- Android SDK (API 31+)
+- Java JDK 11+
+- Flutter SDK
+- Gradle
+
+#### Build APK
+```bash
+cd frontend
+
+# Debug APK
+flutter build apk --debug
+
+# Release APK
+flutter build apk --release
+
+# Output: build/app/outputs/flutter-apk/app-release.apk
 ```
-Zaply/
-├── backend/                    # FastAPI backend
-│   ├── main.py                # Server entry point
-│   ├── models.py              # Database models
-│   ├── database.py            # MongoDB connection
-│   ├── config.py              # Configuration
-│   ├── auth/                  # Authentication
-│   │   ├── utils.py           # JWT utilities
-│   │   └── __init__.py
-│   ├── routes/                # API endpoints
-│   │   ├── auth.py            # Authentication endpoints
-│   │   ├── users.py           # User management
-│   │   ├── chats.py           # Chat endpoints
-│   │   ├── files.py           # File management
-│   │   ├── p2p_transfer.py    # P2P transfer
-│   │   ├── updates.py         # Update checking
-│   │   └── __init__.py
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── __init__.py
-│
-├── frontend/                   # Flet frontend
-│   ├── app.py                 # Main application
-│   ├── api_client.py          # API communication
-│   ├── theme.py               # UI theming
-│   ├── update_manager.py      # Update handling
-│   ├── views/                 # UI screens
-│   │   ├── login.py           # Login screen
-│   │   ├── chats.py           # Chat list
-│   │   ├── message_view.py    # Chat messages
-│   │   ├── file_upload.py     # File upload
-│   │   ├── permissions.py     # Permissions UI (6 permissions)
-│   │   ├── settings.py        # Settings screen
-│   │   ├── saved_messages.py  # Saved messages
-│   │   └── __init__.py
-│   ├── assets/                # Images, icons
+
+#### Install on Device
+```bash
+# Via adb
+adb install build/app/outputs/flutter-apk/app-release.apk
+
+# Via Flutter
+flutter install -d <device_id>
+```
+
+### iOS Build
+
+```bash
+cd frontend
+
+# Debug
+flutter build ios --debug
+
+# Release
+flutter build ios --release
+```
+
+---
+
+## 🚀 Deployment
+
+### Deploying to Production
+
+#### DigitalOcean VPS Setup (Example)
+
+1. **SSH into VPS**
+```bash
+ssh root@your_vps_ip
+```
+
+2. **Install Dependencies**
+```bash
+apt update && apt upgrade -y
+apt install -y docker.io docker-compose git python3 python3-pip
+
+# Add current user to docker group
+usermod -aG docker $USER
+newgrp docker
+```
+
+3. **Clone Repository**
+```bash
+git clone https://github.com/Mayankvlog/Hypersend.git
+cd Hypersend
+```
+
+4. **Configure Environment**
+```bash
+cp .env.example .env
+# Edit .env with production settings
+nano .env
+```
+
+5. **Start Services**
+```bash
+docker-compose up -d
+```
+
+6. **Verify Deployment**
+```bash
+docker-compose ps
+curl https://your_domain/health
+```
+
+### Setting Up SSL/TLS
+
+Nginx automatically generates self-signed certificates. For production:
+
+```bash
+# Using Let's Encrypt with Certbot
+docker-compose down
+
+apt install -y certbot python3-certbot-nginx
+
+certbot certonly --standalone -d your_domain.com
+
+# Update nginx.conf with certificate paths
+# Then restart
+docker-compose up -d
+```
+
+---
+
+## 🧪 Testing
+
+### Running Backend Tests
+```bash
+cd backend
+pip install pytest pytest-asyncio
+
+# Run tests
+python -m pytest tests/
+
+# With coverage
+python -m pytest --cov=backend tests/
+
+# Verbose output
+python -m pytest -v tests/
+```
+
+### Test Files
+- `tests/test_backend.py` - Core backend tests
+  - Authentication tests
+  - User management tests
+  - Chat functionality tests
+  - File upload tests
+
+---
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### MongoDB Connection Error
+```
+Error: Cannot connect to MongoDB at localhost:27017
+```
+**Solution:**
+```bash
+# Check MongoDB status
+docker ps | grep mongodb
+
+# Start MongoDB if not running
+docker-compose up -d mongodb
+
+# Check MongoDB logs
+docker-compose logs mongodb
+```
+
+#### Port Already in Use
+```
+Error: Address already in use: ('::', 8000)
+```
+**Solution:**
+```bash
+# Find process using port 8000
+netstat -ano | findstr :8000  # Windows
+lsof -i :8000  # Mac/Linux
+
+# Kill process
+taskkill /PID <pid> /F  # Windows
+kill -9 <pid>  # Mac/Linux
+
+# Or change port in .env
+API_PORT=8001
+```
+
+#### Docker Build Failure
+```
+Error: Docker build failed
+```
+**Solution:**
+```bash
+# Clean build
+docker-compose build --no-cache
+
+# Check Docker logs
+docker logs <container_id>
+
+# Verify Docker installation
+docker --version
+docker-compose --version
+```
+
+#### JWT Token Invalid
+```
+Error: Invalid token or expired
+```
+**Solution:**
+- Clear app cache and re-login
+- Check `SECRET_KEY` in .env matches across restarts
+- Verify JWT_EXPIRATION_HOURS setting
+- Check server time is synchronized
+
+#### File Upload Fails
+```
+Error: File upload failed or timeout
+```
+**Solution:**
+- Check `MAX_UPLOAD_SIZE` in configuration
+- Verify disk space: `df -h`
+- Check file permissions: `chmod 755 ./data`
+- Review backend logs: `docker-compose logs backend`
+
+### Debug Mode
+```python
+# In backend/config.py
+DEBUG = True  # Enable debug output
+
+# In backend/main.py
+print(f"[DEBUG] {message}")  # Add debug logs
+
+# View all logs
+docker-compose logs -f --all
+```
+
+---
+
+## 📚 Additional Resources
+
+### Documentation
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
+- [MongoDB Documentation](https://docs.mongodb.com/)
+- [Flutter Documentation](https://flutter.dev/docs)
+- [Docker Documentation](https://docs.docker.com/)
+
+### Related Projects
+- [FastAPI Blog Tutorial](https://fastapi.tiangolo.com/tutorial/first-steps/)
+- [Motor AsyncIO MongoDB Driver](https://motor.readthedocs.io/)
+- [Flutter Best Practices](https://flutter.dev/docs/testing/best-practices)
+
+---
+
+## 👤 Author
+
+**Mayank Kumar**
+- GitHub: [@Mayankvlog](https://github.com/Mayankvlog)
+- Email: mayank.kr0311@gmail.com
+- LinkedIn: [Your LinkedIn](your-linkedin-profile)
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Here's how:
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
+4. **Push** to the branch (`git push origin feature/amazing-feature`)
+5. **Open** a Pull Request
+
+### Development Guidelines
+- Follow PEP 8 for Python code
+- Use type hints in Python files
+- Write tests for new features
+- Update documentation
+- Use meaningful commit messages
+
+### Reporting Issues
+- Use GitHub Issues to report bugs
+- Include steps to reproduce
+- Attach error logs
+- Specify your environment (OS, Python version, etc.)
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+### MIT License Summary
+- ✅ Personal use
+- ✅ Modification
+- ✅ Distribution
+- ❌ Warranty (use at your own risk)
+- ❌ Liability
+
+---
+
+## 🎯 Roadmap
+
+### v1.1.0 (Q1 2025)
+- [ ] WebSocket real-time messaging
+- [ ] Message reactions (emojis)
+- [ ] User typing indicators
+- [ ] Message threading/replies
+
+### v1.2.0 (Q2 2025)
+- [ ] Voice messages
+- [ ] Video calls
+- [ ] Group video calls
+- [ ] Call recording
+
+### v1.3.0 (Q3 2025)
+- [ ] End-to-end encryption (E2E)
+- [ ] Message search
+- [ ] Cloud backup
+- [ ] User analytics
+
+### v2.0.0 (Q4 2025)
+- [ ] AI-powered chatbot
+- [ ] Message translation
+- [ ] Advanced permission levels
+- [ ] OAuth 2.0 integration
+
+---
+
+## 📞 Support
+
+For support, email mayank.kr0311@gmail.com or open an issue on GitHub.
+
+### Getting Help
+1. Check [Troubleshooting](#troubleshooting) section
+2. Search [GitHub Issues](https://github.com/Mayankvlog/Hypersend/issues)
+3. Review API docs at `/docs`
+4. Contact maintainer
+
+---
+
+## 🙏 Acknowledgments
+
+- FastAPI team for the amazing framework
+- Flutter community for cross-platform development
+- MongoDB for flexible database solution
+- All contributors and users of this project
+
+---
+
+**Last Updated**: December 12, 2025
+**Status**: ✅ Production Ready
 │   ├── android/               # Android customization
 │   ├── Dockerfile
 │   ├── requirements.txt
