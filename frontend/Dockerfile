@@ -41,9 +41,6 @@ FROM nginx:alpine
 # Copy built web app
 COPY --from=build /app/build/web /usr/share/nginx/html
 
-# Copy custom nginx config if needed
-COPY nginx.conf /etc/nginx/conf.d/default.conf 2>/dev/null || true
-
 # Expose port
 EXPOSE 8550
 
