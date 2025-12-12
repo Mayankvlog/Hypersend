@@ -10,6 +10,7 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./data:/data:ro
       - nginx_cache:/var/cache/nginx
+      - nginx_ssl:/etc/nginx/ssl
     depends_on:
       - backend
       - frontend
@@ -21,6 +22,15 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    entrypoint: /bin/sh -c "apk add --no-cache openssl && 
+      mkdir -p /etc/nginx/ssl && 
+      if [ ! -f /etc/nginx/ssl/cert.pem ]; then 
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 
+        -keyout /etc/nginx/ssl/key.pem 
+        -out /etc/nginx/ssl/cert.pem 
+        -subj '/C=IN/ST=State/L=City/O=Hypersend/CN=139.59.82.105'; 
+      fi && 
+      nginx -g 'daemon off;'"
 
   mongodb:
     image: mongo:7.0
@@ -54,6 +64,7 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+      - "8443:8443"
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
@@ -116,4 +127,6 @@ volumes:
   mongodb_config:
     driver: local
   nginx_cache:
+    driver: local
+  nginx_ssl:
     driver: local
