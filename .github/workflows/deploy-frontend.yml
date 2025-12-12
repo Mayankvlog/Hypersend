@@ -1,0 +1,80 @@
+name: Build & Deploy Frontend
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      FRONTEND_IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/hypersend-frontend
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE_NAME }}:latest
+            ${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.FRONTEND_IMAGE_NAME }}:latest
+          cache-to: type=inline
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            set -e
+            cd /hypersend/Hypersend || { echo "❌ Directory not found"; exit 1; }
+
+            echo "📦 Starting frontend deployment..."
+
+            # Sync repo
+            echo "🔄 Syncing repository..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Pull latest frontend image
+            echo "📥 Pulling frontend image..."
+            docker compose pull frontend
+
+            # Stop and remove old frontend container
+            echo "⏹️  Stopping frontend service..."
+            docker compose stop frontend 2>/dev/null || true
+            docker compose rm -f frontend 2>/dev/null || true
+
+            # Start new frontend container
+            echo "🚀 Starting frontend service..."
+            docker compose up -d frontend
+
+            # Wait for container to be ready
+            echo "⏳ Waiting for frontend to start..."
+            sleep 10
+
+            # Check if frontend is running
+            if docker compose ps frontend | grep -q "Up"; then
+              echo "✅ Frontend deployed successfully!"
+              echo "🌐 Frontend is running at http://$(hostname -I | awk '{print $1}'):8550"
+            else
+              echo "⚠️ Frontend may not be running properly"
+              docker compose logs frontend --tail 20
+            fi

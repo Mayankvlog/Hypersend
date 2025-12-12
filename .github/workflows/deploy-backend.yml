@@ -13,7 +13,6 @@ jobs:
 
     env:
       IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/hypersend-backend
-      FRONTEND_IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/hypersend-frontend
 
     steps:
       - name: Checkout repo
@@ -29,19 +28,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./backend
+          file: ./backend/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
-      - name: Build & push frontend image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          push: true
-          tags: |
-            ${{ env.FRONTEND_IMAGE_NAME }}:latest
-            ${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:latest
+          cache-to: type=inline
 
       - name: Deploy to VPS (Docker Compose, password SSH)
         uses: appleboy/ssh-action@v1.2.0
@@ -61,11 +54,9 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            # Pull latest backend & frontend images
+            # Pull latest backend image
             echo "📥 Pulling backend image..."
             docker compose pull backend 2>/dev/null || { echo "⚠️  Backend image pull had issues, continuing..."; }
-            echo "📥 Pulling frontend image..."
-            docker compose pull frontend 2>/dev/null || { echo "⚠️  Frontend image pull had issues, continuing..."; }
 
             # Function to safely stop backend service
             stop_backend_safe() {
@@ -180,14 +171,6 @@ jobs:
               docker compose logs backend --tail 20
             else
               echo "✨ Backend deployment completed successfully!"
-            fi
-
-            echo "🌐 Starting frontend service..."
-            if docker compose up -d frontend 2>&1 | tee /tmp/frontend_start.log; then
-              echo "✅ Frontend container started successfully"
-            else
-              echo "⚠️ Frontend failed to start, showing recent logs..."
-              docker compose logs frontend --tail 20 2>/dev/null || true
             fi
 
 
