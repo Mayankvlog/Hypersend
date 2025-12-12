@@ -17,10 +17,10 @@ class Settings:
     # MongoDB runs in Docker container as part of docker-compose
     # Backend connects to MongoDB via Docker service name "mongodb" on internal network
     # Data persisted on VPS at /var/lib/mongodb
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:password@mongodb:27017/hypersend?authSource=admin&retryWrites=true")
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:CHANGE_THIS_PASSWORD@mongodb:27017/hypersend?authSource=admin&retryWrites=true")
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(64))
     
     def __init__(self):
         """Initialize settings and validate critical configuration"""
@@ -28,12 +28,15 @@ class Settings:
     
     def validate_config(self):
         """Validate critical configuration"""
+        # Generate secure SECRET_KEY if not set
         if not self.SECRET_KEY or self.SECRET_KEY in ["dev-secret-key-change-in-production-5y7L9x2K", "your-super-secret-production-key-change-this-2025"]:
-            if not os.getenv("DEBUG", "False").lower() in ("true", "1", "yes"):
-                raise ValueError("SECRET_KEY must be set to a secure, unique value in production!")
+            print("[WARN] SECRET_KEY not set or using default. Generating secure key...")
+            self.SECRET_KEY = secrets.token_urlsafe(64)
+            print("[WARN] Generated SECRET_KEY. For persistent tokens, set SECRET_KEY in .env file")
         
-        if self.SECRET_KEY and len(self.SECRET_KEY) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters long!")
+        if len(self.SECRET_KEY) < 32:
+            print("[WARN] SECRET_KEY too short. Generating new secure key...")
+            self.SECRET_KEY = secrets.token_urlsafe(64)
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -70,17 +73,19 @@ class Settings:
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     
     # CORS Configuration
-    # For development: allow all origins
-    # For production: restrict to specific domains (e.g., ["https://yourdomain.com", "https://app.yourdomain.com"])
-    CORS_ORIGINS: list = [
+    # Restrict CORS even without domain for better security
+    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
         "http://localhost",
         "http://localhost:8000",
         "http://localhost:8550",
-        "https://localhost",
-        "https://localhost:8000",
-        "http://0.0.0.0:8000",  # Docker internal
-        "http://backend:8000",   # Docker service discovery
-    ] if not DEBUG else ["*"]  # Allow all in development/DEBUG mode
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8550",
+        "http://0.0.0.0:8000",
+        "http://backend:8000",
+        # Add VPS IP only if needed
+        "http://139.59.82.105:8000",
+        "http://139.59.82.105:8550",
+    ]
     
     @classmethod
     def validate_production(cls):

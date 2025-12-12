@@ -89,10 +89,12 @@ app = FastAPI(
 )
 
 # TrustedHost middleware for additional security
-if not settings.DEBUG:
+# Only enable in production with proper domain
+if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "true":
+    allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=[os.getenv("VPS_IP", "localhost"), "localhost", "127.0.0.1"]  # Configure appropriately for your domain
+        allowed_hosts=allowed_hosts
     )
 
 # CORS middleware - configured from settings to respect DEBUG/PRODUCTION modes
@@ -111,8 +113,13 @@ app.add_middleware(
 async def add_security_headers(request, call_next):
     response = await call_next(request)
     
-    # Add security headers
+    # Add security headers (modified for HTTP-only deployment)
     security_headers = SecurityConfig.get_security_headers()
+    
+    # Remove HSTS if not using HTTPS
+    if not request.url.scheme == "https":
+        security_headers.pop("Strict-Transport-Security", None)
+    
     for header, value in security_headers.items():
         response.headers[header] = value
     

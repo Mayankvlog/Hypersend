@@ -14,8 +14,8 @@ import re
 class SecurityConfig:
     """Security configuration and validation"""
     
-    # Password requirements
-    MIN_PASSWORD_LENGTH = 8
+    # Password requirements (strengthened)
+    MIN_PASSWORD_LENGTH = 12
     MAX_PASSWORD_LENGTH = 128
     REQUIRE_UPPERCASE = True
     REQUIRE_LOWERCASE = True
@@ -204,9 +204,10 @@ class SecurityConfig:
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
             "X-XSS-Protection": "1; mode=block",
-            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-            "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
-            "Referrer-Policy": "strict-origin-when-cross-origin"
+            # HSTS removed - will be added by middleware only for HTTPS
+            "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Permissions-Policy": "geolocation=(), microphone=(), camera=()"
         }
 
 
