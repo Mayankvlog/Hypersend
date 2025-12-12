@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from models import (
     UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
     ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse
@@ -19,8 +19,14 @@ import asyncio
 import jwt
 import smtplib
 from email.message import EmailMessage
+from collections import defaultdict
+from typing import Dict, Tuple
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Simple in-memory rate limiting (for production, use Redis)
+login_attempts: Dict[str, list] = defaultdict(list)
+failed_login_attempts: Dict[str, Tuple[int, datetime]] = {}
 
 
 def auth_log(message: str) -> None:
@@ -33,6 +39,15 @@ def auth_log(message: str) -> None:
 async def register(user: UserCreate):
     """Register a new user"""
     try:
+        # Validate password strength
+        from security import SecurityConfig
+        password_validation = SecurityConfig.validate_password_strength(user.password)
+        if not password_validation["valid"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Password too weak: {', '.join(password_validation['issues'])}"
+            )
+        
         auth_log(f"[AUTH] Registration request for email: {user.email}")
         
         # Get users collection - this will raise RuntimeError if DB not connected
@@ -115,9 +130,42 @@ async def register(user: UserCreate):
 
 
 @router.post("/login", response_model=Token)
-async def login(credentials: UserLogin):
+async def login(credentials: UserLogin, request: Request):
     """Login and receive JWT tokens"""
     try:
+        # Rate limiting check
+        client_ip = request.client.host if request.client else "unknown"
+        current_time = datetime.utcnow()
+        
+        # Check failed login attempts (account lockout)
+        if credentials.email in failed_login_attempts:
+            attempts, lockout_until = failed_login_attempts[credentials.email]
+            if attempts >= 5 and current_time < lockout_until:
+                remaining = int((lockout_until - current_time).total_seconds() / 60)
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Account temporarily locked. Try again in {remaining} minutes."
+                )
+            elif current_time >= lockout_until:
+                # Reset after lockout period
+                del failed_login_attempts[credentials.email]
+        
+        # Simple rate limiting by IP (10 attempts per 5 minutes)
+        if client_ip in login_attempts:
+            # Remove attempts older than 5 minutes
+            login_attempts[client_ip] = [
+                t for t in login_attempts[client_ip] 
+                if (current_time - t).total_seconds() < 300
+            ]
+            # Check if too many attempts
+            if len(login_attempts[client_ip]) >= 10:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many login attempts. Please try again in 5 minutes."
+                )
+        
+        login_attempts[client_ip].append(current_time)
+        
         auth_log(f"[AUTH] Login attempt for email: {credentials.email}")
         
         # Get users collection
@@ -144,6 +192,13 @@ async def login(credentials: UserLogin):
             )
         
         if not user:
+            # Track failed attempt
+            if credentials.email in failed_login_attempts:
+                attempts, _ = failed_login_attempts[credentials.email]
+                failed_login_attempts[credentials.email] = (attempts + 1, current_time + timedelta(minutes=15))
+            else:
+                failed_login_attempts[credentials.email] = (1, current_time + timedelta(minutes=15))
+            
             auth_log(f"[AUTH] Login failed - User not found: {credentials.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -154,11 +209,22 @@ async def login(credentials: UserLogin):
         
         # Verify password
         if not verify_password(credentials.password, user["password_hash"]):
+            # Track failed attempt
+            if credentials.email in failed_login_attempts:
+                attempts, _ = failed_login_attempts[credentials.email]
+                failed_login_attempts[credentials.email] = (attempts + 1, current_time + timedelta(minutes=15))
+            else:
+                failed_login_attempts[credentials.email] = (1, current_time + timedelta(minutes=15))
+            
             auth_log(f"[AUTH] Login failed - Incorrect password for: {credentials.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
             )
+        
+        # Clear failed attempts on successful login
+        if credentials.email in failed_login_attempts:
+            del failed_login_attempts[credentials.email]
         
         auth_log(f"[AUTH] Password verified - Creating tokens for user: {user.get('_id')}")
         

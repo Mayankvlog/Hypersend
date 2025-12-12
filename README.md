@@ -607,22 +607,38 @@ Once backend is running on your VPS, visit:
 ## 🔐 Security Features
 
 ### Authentication
-- JWT-based authentication
-- Secure password hashing (bcrypt)
+- JWT-based authentication with auto-generated secure keys
+- Secure password hashing (bcrypt with SHA256 normalization)
 - Refresh token rotation
 - Session management
+- Rate limiting (10 attempts per 5 minutes per IP)
+- Account lockout (5 failed attempts = 15 min lockout)
+- Minimum 12-character passwords with complexity requirements
 
 ### Data Protection
-- Encrypted database connections
-- HTTPS/TLS support
-- File upload validation
-- Input sanitization
+- MongoDB authentication required
+- MongoDB port not exposed externally (internal Docker network only)
+- Security headers (CSP, X-Frame-Options, etc.)
+- File upload validation with checksums
+- Input sanitization and XSS protection
+- CORS restricted to specific origins
 
 ### Permissions
 - Granular permission controls
 - User-friendly permission requests
 - Audit logging
 - Permission revocation
+
+### Security Hardening Applied
+- Strong password requirements (12+ chars)
+- Password strength validation
+- Rate limiting on login endpoint
+- Account lockout mechanism
+- Auto-generated secure SECRET_KEY if not set
+- MongoDB port removed from external access
+- CORS restricted (no wildcard in production)
+- Security headers implemented
+- Input validation and sanitization
 
 ---
 

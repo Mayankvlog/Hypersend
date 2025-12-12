@@ -26,8 +26,11 @@ services:
     image: mongo:7.0
     container_name: hypersend_mongodb
     restart: unless-stopped
-    ports:
-      - "27018:27017"
+    # SECURITY: MongoDB port removed from external exposure
+    # Access MongoDB only through Docker internal network
+    # For admin access, use: docker exec -it hypersend_mongodb mongosh
+    # ports:
+    #   - "27018:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
