@@ -1,0 +1,35 @@
+# Build outputs
+build/
+.dart_tool/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+README.md
+
+# Test files
+test/
+integration_test/
+
+# Platform-specific (not needed for web)
+android/
+ios/
+linux/
+macos/
+windows/
+
+# Misc
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.metadata
