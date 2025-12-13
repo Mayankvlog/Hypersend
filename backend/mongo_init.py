@@ -47,61 +47,44 @@ async def init_mongodb():
                 # Try to create collection
                 await app_db.create_collection(collection_name)
                 print(f"[MONGO_INIT] Created collection: {collection_name}")
-            except (RuntimeError, OSError) as e:
-                if "already exists" in str(e):
+            except Exception as e:
+                # Collection might already exist - this is expected behavior
+                if "already exists" in str(e).lower():
                     print(f"[MONGO_INIT] Collection already exists: {collection_name}")
                 else:
-                    # Silently ignore - collection might already exist
+                    # Silently ignore - collection will be created on first use if needed
                     pass
         
-        # Create indexes
-        try:
-            await app_db.users.create_index([('email', 1)], unique=True)
-            print("[MONGO_INIT] Created index: users.email")
-        except Exception:
-            pass  # Index might already exist
+        # Create indexes - these may already exist on subsequent runs
+        indexes_to_create = [
+            ('users', [('email', 1)], {'unique': True}, "users.email"),
+            ('chats', [('members', 1)], {}, "chats.members"),
+            ('messages', [('chat_id', 1), ('created_at', -1)], {}, "messages.chat_id, created_at"),
+            ('files', [('chat_id', 1), ('owner_id', 1)], {}, "files.chat_id, owner_id"),
+            ('refresh_tokens', [('expires_at', 1)], {'expireAfterSeconds': 0}, "refresh_tokens.expires_at (TTL)"),
+            ('reset_tokens', [('expires_at', 1)], {'expireAfterSeconds': 0}, "reset_tokens.expires_at (TTL)"),
+        ]
         
-        try:
-            await app_db.chats.create_index([('members', 1)])
-            print("[MONGO_INIT] Created index: chats.members")
-        except Exception:
-            pass
-        
-        try:
-            await app_db.messages.create_index([('chat_id', 1), ('created_at', -1)])
-            print("[MONGO_INIT] Created index: messages.chat_id, created_at")
-        except Exception:
-            pass
-        
-        try:
-            await app_db.files.create_index([('chat_id', 1), ('owner_id', 1)])
-            print("[MONGO_INIT] Created index: files.chat_id, owner_id")
-        except Exception:
-            pass
-        
-        # Create TTL indexes for token cleanup
-        try:
-            await app_db.refresh_tokens.create_index([('expires_at', 1)], expireAfterSeconds=0)
-            print("[MONGO_INIT] Created TTL index: refresh_tokens.expires_at")
-        except Exception:
-            pass
-        
-        try:
-            await app_db.reset_tokens.create_index([('expires_at', 1)], expireAfterSeconds=0)
-            print("[MONGO_INIT] Created TTL index: reset_tokens.expires_at")
-        except Exception:
-            pass
+        for collection_name, keys, options, description in indexes_to_create:
+            try:
+                await app_db[collection_name].create_index(keys, **options)
+                print(f"[MONGO_INIT] Created index: {description}")
+            except Exception as e:
+                # Index might already exist - this is normal on subsequent runs
+                if "already exists" not in str(e).lower():
+                    print(f"[MONGO_INIT] Note: Could not create index {description}: {str(e)[:60]}")
         
         print("[MONGO_INIT] [OK] MongoDB initialization complete")
+        client.close()
         
     except Exception as e:
         print(f"[MONGO_INIT] Warning: Could not fully initialize MongoDB: {str(e)}")
         print("[MONGO_INIT] Continuing - collections will be created on first use")
-    finally:
-        try:
-            client.close()
-        except Exception:
-            pass
+        if 'client' in locals():
+            try:
+                client.close()
+            except Exception:
+                pass
 
 
 async def ensure_mongodb_ready():
