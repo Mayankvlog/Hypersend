@@ -166,7 +166,7 @@ POST   /chats/{chat_id}/message # Send message
 WS     /chats/{chat_id}/ws     # Real-time updates
 ```
 
-### P2P File Transfer (WhatsApp-style)
+### P2P File Transfer 
 ```
 POST   /p2p/send               # Initiate transfer
 WS     /p2p/sender/{session_id} # Sender stream
@@ -398,3 +398,4 @@ For issues, questions, or feature requests, please open an issue on [GitHub Issu
 
 **Last Updated**: December 14, 2025
 **Status**: ✅ Production Ready
+
