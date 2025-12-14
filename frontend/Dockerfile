@@ -11,15 +11,13 @@ ENV FLUTTER_SUPPRESS_ANALYTICS=true
 
 RUN /opt/flutter/bin/flutter precache --web && /opt/flutter/bin/flutter config --enable-web
 
-RUN useradd -m -u 1000 flutter && chown -R flutter:flutter $FLUTTER_HOME
-
 WORKDIR /app
 COPY . .
-RUN chown -R flutter:flutter /app
 
-USER flutter
-
-RUN /opt/flutter/bin/flutter pub get && /opt/flutter/bin/flutter build web --release
+# Build web app - web-only build doesn't need platform configs
+RUN /opt/flutter/bin/flutter clean && \
+    /opt/flutter/bin/flutter pub get && \
+    /opt/flutter/bin/flutter build web --release --no-tree-shake-icons
 
 # Serve with Nginx
 FROM nginx:alpine
