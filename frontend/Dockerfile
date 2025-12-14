@@ -34,14 +34,8 @@ WORKDIR /app
 # Using COPY . . to ensure all source files are included for the build
 COPY --chown=flutter_builder:flutter_builder . .
 
-# Debug: verify files are present
-RUN echo "=== Checking app directory ===" && \
-    ls -la /app && \
-    echo "=== Checking lib directory ===" && \
-    ls -la /app/lib && \
-    echo "=== Checking main.dart ===" && \
-    ls -la /app/lib/main.dart && \
-    echo "=== Files verified ===" || exit 1
+# Debug: list what was copied (non-fatal, just for logging)
+RUN echo "=== Build context contents ===" && ls -la /app || true
 
 # Get dependencies
 RUN flutter pub get
