@@ -12,10 +12,13 @@ ENV FLUTTER_SUPPRESS_ANALYTICS=true
 RUN /opt/flutter/bin/flutter precache --web && /opt/flutter/bin/flutter config --enable-web
 
 RUN useradd -m -u 1000 flutter && chown -R flutter:flutter $FLUTTER_HOME
-USER flutter
 
 WORKDIR /app
 COPY . .
+RUN chown -R flutter:flutter /app
+
+USER flutter
+
 RUN /opt/flutter/bin/flutter pub get && /opt/flutter/bin/flutter build web --release
 
 # Serve with Nginx
