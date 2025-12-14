@@ -100,7 +100,9 @@ services:
       start_period: 60s
 
   frontend:
-    image: mayank035/hypersend-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
