@@ -38,3 +38,7 @@ windows/build/
 # Docker-specific
 Dockerfile
 .dockerignore
+
+# Whitelist essential directories (fixes issue where they are mysteriously ignored)
+!lib/
+!assets/
