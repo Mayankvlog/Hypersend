@@ -3,17 +3,20 @@ FROM debian:bookworm-slim AS build
 
 RUN apt-get update && apt-get install -y curl git unzip xz-utils zip && rm -rf /var/lib/apt/lists/*
 
-ENV FLUTTER_HOME=/opt/flutter PATH="$FLUTTER_HOME/bin:$PATH" FLUTTER_SUPPRESS_ANALYTICS=true
+RUN git clone --depth 1 --branch 3.35.6 https://github.com/flutter/flutter.git /opt/flutter
 
-RUN git clone --depth 1 --branch 3.35.6 https://github.com/flutter/flutter.git $FLUTTER_HOME && \
-    flutter precache --web && flutter config --enable-web
+ENV FLUTTER_HOME=/opt/flutter
+ENV PATH="$FLUTTER_HOME/bin:$PATH"
+ENV FLUTTER_SUPPRESS_ANALYTICS=true
+
+RUN /opt/flutter/bin/flutter precache --web && /opt/flutter/bin/flutter config --enable-web
 
 RUN useradd -m -u 1000 flutter && chown -R flutter:flutter $FLUTTER_HOME
 USER flutter
 
 WORKDIR /app
 COPY . .
-RUN flutter pub get && flutter build web --release
+RUN /opt/flutter/bin/flutter pub get && /opt/flutter/bin/flutter build web --release
 
 # Serve with Nginx
 FROM nginx:alpine
