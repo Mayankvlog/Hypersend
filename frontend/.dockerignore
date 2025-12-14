@@ -1,37 +1,8 @@
-# Minimal .dockerignore - only exclude build artifacts and development files
-# IMPORTANT: Do NOT exclude lib/ or assets/!
-
-# Build outputs
+# Empty .dockerignore - do NOT exclude anything important for Flutter build
+# Keep only essential exclusions to allow lib/ and assets/ through
 build/
 .dart_tool/
-
-# IDE
-.idea/
-.vscode/
-.metadata
-.packages
-.flutter-plugins
-.flutter-plugins-dependencies
-
-# Git
 .git/
 .gitignore
-
-# Documentation
-*.md
-
-# Tests
 test/
 integration_test/
-
-# Misc
-*.swp
-*.swo
-*~
-
-# Docker-specific files
-Dockerfile
-.dockerignore
-docker-compose.yml
-.env
-.env.example
