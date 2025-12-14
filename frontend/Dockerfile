@@ -12,12 +12,18 @@ ENV FLUTTER_SUPPRESS_ANALYTICS=true
 RUN /opt/flutter/bin/flutter precache --web && /opt/flutter/bin/flutter config --enable-web
 
 WORKDIR /app
+# Copy dependency definitions first to utilize cache
+COPY pubspec.yaml pubspec.lock ./
+
+# Install dependencies
+RUN /opt/flutter/bin/flutter pub get
+
+# Copy the rest of the code
 COPY . .
 
 # Build web app - web-only build doesn't need platform configs
-RUN /opt/flutter/bin/flutter clean && \
-    /opt/flutter/bin/flutter pub get && \
-    /opt/flutter/bin/flutter build web --release --no-tree-shake-icons
+# Removed 'flutter clean' as it's a fresh container and causes issues if files aren't there yet/we want to keep the pub cache
+RUN /opt/flutter/bin/flutter build web --release --no-tree-shake-icons
 
 # Serve with Nginx
 FROM nginx:alpine
