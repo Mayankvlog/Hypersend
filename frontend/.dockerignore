@@ -21,15 +21,20 @@ README.md
 test/
 integration_test/
 
-# Platform-specific (not needed for web)
-android/
-ios/
-linux/
-macos/
-windows/
+# Platform-specific (not needed for web) - but keep source files!
+# Excluding only the build artifacts, not the source
+android/build/
+ios/build/
+linux/build/
+macos/build/
+windows/build/
 
 # Misc
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
 .metadata
+
+# Docker-specific
+Dockerfile
+.dockerignore
