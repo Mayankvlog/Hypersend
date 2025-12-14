@@ -30,8 +30,15 @@ USER flutter_builder
 # Set working directory
 WORKDIR /app
 
-# Copy all project files (including lib/)
+# Copy pubspec first and then important source folders to ensure build context
+# includes `lib/main.dart` when running `flutter pub get` and `flutter build`.
+COPY --chown=flutter_builder:flutter_builder pubspec.yaml pubspec.lock ./
+COPY --chown=flutter_builder:flutter_builder lib ./lib
+COPY --chown=flutter_builder:flutter_builder assets ./assets
 COPY --chown=flutter_builder:flutter_builder . .
+
+# List files for debugging (will show in build logs if missing)
+RUN echo "-- workspace listing --" && ls -la /app && echo "-- lib listing --" && ls -la /app/lib || true
 
 # Get dependencies
 RUN flutter pub get
