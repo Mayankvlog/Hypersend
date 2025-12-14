@@ -15,25 +15,32 @@ RUN apt-get update && apt-get install -y \
 ENV FLUTTER_VERSION=3.35.6
 ENV FLUTTER_HOME=/opt/flutter
 ENV PATH="$FLUTTER_HOME/bin:$PATH"
+ENV FLUTTER_SUPPRESS_ANALYTICS=true
 
 RUN git clone --depth 1 --branch ${FLUTTER_VERSION} https://github.com/flutter/flutter.git ${FLUTTER_HOME} \
     && flutter precache --web \
     && flutter config --enable-web
 
+# Create non-root user to run flutter
+RUN useradd -m -u 1000 flutter_builder && \
+    chown -R flutter_builder:flutter_builder ${FLUTTER_HOME}
+
+USER flutter_builder
+
 # Set working directory
 WORKDIR /app
 
-# Copy pubspec files
-COPY pubspec.yaml pubspec.lock ./
+# Copy pubspec files with proper permissions
+COPY --chown=flutter_builder:flutter_builder pubspec.yaml pubspec.lock ./
 
 # Get dependencies
 RUN flutter pub get
 
 # Copy the rest of the app
-COPY . .
+COPY --chown=flutter_builder:flutter_builder . .
 
-# Build web app
-RUN flutter build web --release --web-renderer canvaskit
+# Build web app (remove --web-renderer flag as it's not available in 3.35.6)
+RUN flutter build web --release
 
 # Production stage - serve with nginx
 FROM nginx:alpine
