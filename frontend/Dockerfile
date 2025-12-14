@@ -30,16 +30,13 @@ USER flutter_builder
 # Set working directory
 WORKDIR /app
 
-# Copy pubspec files with proper permissions
-COPY --chown=flutter_builder:flutter_builder pubspec.yaml pubspec.lock ./
+# Copy all project files (including lib/)
+COPY --chown=flutter_builder:flutter_builder . .
 
 # Get dependencies
 RUN flutter pub get
 
-# Copy the rest of the app
-COPY --chown=flutter_builder:flutter_builder . .
-
-# Build web app (remove --web-renderer flag as it's not available in 3.35.6)
+# Build web app
 RUN flutter build web --release
 
 # Production stage - serve with nginx
