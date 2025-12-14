@@ -1,8 +1,15 @@
-# Empty .dockerignore - do NOT exclude anything important for Flutter build
-# Keep only essential exclusions to allow lib/ and assets/ through
 build/
 .dart_tool/
 .git/
 .gitignore
 test/
 integration_test/
+.github/
+.dart_tool/
+android/
+ios/
+macos/
+windows/
+.vscode/
+.idea/
+*.iml
