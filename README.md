@@ -28,6 +28,7 @@ A modern, enterprise-grade, cross-platform messaging and file transfer applicati
 - [Installation & Setup](#installation--setup)
 - [Configuration](#configuration)
 - [Quick Start](#quick-start)
+- [Nginx Reverse Proxy Setup](#nginx-reverse-proxy-setup) ⭐ **NEW**
 - [Development](#development)
 - [Building & Deployment](#building--deployment)
 - [API Documentation](#api-documentation)
@@ -88,7 +89,6 @@ Whether you're looking to deploy a private messaging system, build a team commun
 - 🚫 **Block/Unblock** - Block users to prevent communication
 - 👁️ **Online Status** - Real-time online/offline presence indicators
 - 🔍 **User Discovery** - Search and find users by username or email
-  - 💾 Storage
 - ✅ **Fine-grained Controls** - Per-permission allow/disallow settings
 - 🔔 **Permission Requests** - User-friendly permission flows
 
@@ -187,8 +187,12 @@ Hypersend/
 │   ├── test_backend.py        # Backend unit tests
 │   └── __pycache__/
 │
+├── docs/                       # Documentation
+│   └── NGINX_SETUP.md         # Complete Nginx guide ⭐ **NEW**
+│
 ├── docker-compose.yml         # Multi-container setup
 ├── nginx.conf                 # Nginx configuration
+├── NGINX_QUICK_START.md       # Quick Nginx guide ⭐ **NEW**
 ├── pyproject.toml            # Python project configuration
 ├── .env.example              # Environment variables template
 └── README.md                 # This file
@@ -196,7 +200,7 @@ Hypersend/
 
 ---
 
-## 📊 Current Status (December 12, 2025)
+## 📊 Current Status (December 14, 2025)
 
 ### ✅ Completed
 - ✅ FastAPI backend with async support
@@ -211,6 +215,7 @@ Hypersend/
 - ✅ Backend tests (3/3 passing)
 - ✅ Docker containerization
 - ✅ Nginx reverse proxy configuration
+- ✅ Nginx setup documentation ⭐ **NEW**
 - ✅ Flutter cross-platform frontend
 - ✅ BLoC state management
 - ✅ Theme system (Dark/Light modes)
@@ -413,6 +418,58 @@ JWT_REFRESH_EXPIRATION_DAYS = 7
 # File Upload
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100MB
 ```
+
+---
+
+## ⚡ Nginx Reverse Proxy Setup
+
+### Quick Start (5 minutes)
+
+For a quick 5-minute setup guide:
+👉 **[NGINX_QUICK_START.md](NGINX_QUICK_START.md)**
+
+Includes:
+- ⚡ Basic HTTP proxy setup (2 min)
+- 🔒 HTTPS with Let's Encrypt (5 min)
+- 🛠️ Common configurations (rate limiting, caching, load balancing)
+- 🐛 Quick troubleshooting
+
+### Comprehensive Guide (Production)
+
+For detailed production-grade setup:
+👉 **[docs/NGINX_SETUP.md](docs/NGINX_SETUP.md)**
+
+Includes:
+- 📋 Step-by-step installation
+- 🔐 SSL/TLS configuration
+- 🚀 Advanced features (caching, load balancing, rate limiting)
+- 🔧 WebSocket support
+- 🧪 Testing & verification
+- 📊 Performance optimization
+- 🐛 Comprehensive troubleshooting
+- ✅ Production best practices
+
+### What Nginx Does For You
+
+```
+Client (Port 80/443)
+        ↓ (HTTPS)
+   Nginx Reverse Proxy
+        ↓
+    Backend API (Port 8000)
+    Frontend (Port 3000)
+    WebSocket Connections
+```
+
+**Benefits:**
+- ✅ SSL/TLS termination (handle HTTPS)
+- ✅ Load balancing across multiple backends
+- ✅ WebSocket support for real-time features
+- ✅ Static file serving
+- ✅ Gzip compression
+- ✅ Rate limiting and DDoS protection
+- ✅ Security headers
+- ✅ Request caching
 
 ---
 
@@ -639,6 +696,7 @@ docker-compose exec mongodb mongosh --eval "db.adminCommand('ping')"
 - ✅ Use a production ASGI server (Gunicorn/Hypercorn)
 - ✅ Implement rate limiting
 - ✅ Enable security headers
+- ✅ Use Nginx reverse proxy (see [NGINX_QUICK_START.md](NGINX_QUICK_START.md))
 
 ---
 
@@ -733,9 +791,9 @@ docker-compose ps
 curl https://your_domain/health
 ```
 
-### Setting Up SSL/TLS
+### Setting Up SSL/TLS with Nginx
 
-Nginx automatically generates self-signed certificates. For production:
+See the complete guide: **[NGINX_QUICK_START.md](NGINX_QUICK_START.md)** for SSL setup with Let's Encrypt
 
 ```bash
 # Using Let's Encrypt with Certbot
@@ -853,6 +911,10 @@ Error: File upload failed or timeout
 - Check file permissions: `chmod 755 ./data`
 - Review backend logs: `docker-compose logs backend`
 
+### Nginx Troubleshooting
+
+See comprehensive troubleshooting guide: **[docs/NGINX_SETUP.md#troubleshooting](docs/NGINX_SETUP.md#troubleshooting)**
+
 ### Debug Mode
 ```python
 # In backend/config.py
@@ -874,6 +936,8 @@ docker-compose logs -f --all
 - [MongoDB Documentation](https://docs.mongodb.com/)
 - [Flutter Documentation](https://flutter.dev/docs)
 - [Docker Documentation](https://docs.docker.com/)
+- **[Nginx Reverse Proxy Setup](NGINX_QUICK_START.md)** ⭐ **NEW**
+- **[Complete Nginx Guide](docs/NGINX_SETUP.md)** ⭐ **NEW**
 
 ### Related Projects
 - [FastAPI Blog Tutorial](https://fastapi.tiangolo.com/tutorial/first-steps/)
@@ -966,6 +1030,7 @@ For support, email mayank.kr0311@gmail.com or open an issue on GitHub.
 2. Search [GitHub Issues](https://github.com/Mayankvlog/Hypersend/issues)
 3. Review API docs at `/docs`
 4. Contact maintainer
+5. Check **[Nginx guides](NGINX_QUICK_START.md)** for deployment issues
 
 ---
 
@@ -974,557 +1039,11 @@ For support, email mayank.kr0311@gmail.com or open an issue on GitHub.
 - FastAPI team for the amazing framework
 - Flutter community for cross-platform development
 - MongoDB for flexible database solution
+- Nginx for reliable reverse proxy solution
 - All contributors and users of this project
 
 ---
 
-**Last Updated**: December 12, 2025
-**Status**: ✅ Production Ready
-│   ├── android/               # Android customization
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── __init__.py
-│
-├── scripts/                    # Utility scripts
-│   └── seed_mongodb.py         # Database seeding
-│
-├── data/                       # Data storage
-│   ├── files/                 # User files
-│   ├── uploads/               # Uploaded files
-│   └── tmp/                   # Temporary files
-│
-├── build_apk.py               # APK builder (Python)
-├── build_apk.bat              # APK builder (Windows)
-├── build_apk.sh               # APK builder (Linux/macOS)
-├── docker-compose.yml         # Docker services
-├── nginx.conf                 # Nginx configuration
-├── pyproject.toml             # Project metadata
-├── APK_BUILD_GUIDE.md         # Quick APK reference
-├── APK_BUILD_COMPLETE.md      # Complete APK guide
-├── PERMISSIONS_SYSTEM.md      # Permissions documentation
-└── README.md                  # This file
-```
-
----
-
-## ⚙️ Configuration
-
-### Backend Configuration (`backend/config.py`)
-```python
-# MongoDB (VPS)
-MONGODB_URL = "mongodb://139.59.82.105:27017"
-DATABASE_NAME = "zaply"
-
-# JWT
-SECRET_KEY = "your-secret-key-change-in-production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-# Server
-HOST = "0.0.0.0"
-PORT = 8000
-```
-
-### Frontend Configuration (`frontend/app.py`)
-```python
-# API Settings (VPS)
-API_BASE_URL = "http://139.59.82.105:8000"
-API_TIMEOUT = 30
-
-# App Settings
-APP_NAME = "Zaply"
-APP_VERSION = "1.0.0"
-```
-
-### Docker Environment (`.env`)
-```
-MONGODB_URL=mongodb://mongo:27017
-DATABASE_NAME=zaply
-SECRET_KEY=your-secret-key
-API_PORT=8000
-```
-
----
-
-## 📦 Building APK
-
-### Prerequisites for APK Build
-- Android SDK (API 31+)
-- Java Development Kit (JDK 11+)
-- Flutter SDK
-- ~10 GB disk space
-- 10-15 minutes build time
-
-### Build Commands
-
-#### Option 1: Standard Build (Recommended)
-```bash
-flet build apk --compile-app --cleanup-app --split-per-abi --verbose
-```
-- **Size**: 80-120 MB total (split across architectures)
-- **Time**: 10-15 minutes
-- **Best for**: Google Play Store distribution
-
-#### Option 2: Minimal Build (Smallest)
-```bash
-flet build apk --compile-app --cleanup-app --arch arm64-v8a --verbose
-```
-- **Size**: 60-80 MB (ARM64 only)
-- **Time**: 8-12 minutes
-- **Best for**: Testing and quick deployment
-
-#### Option 3: Using Build Script
-```bash
-# Windows
-.\build_apk.bat standard
-
-# Linux/macOS
-./build_apk.sh standard
-
-# Python
-python build_apk.py standard
-```
-
-### Build Output
-APK files are located at:
-```
-build/android/app/build/outputs/apk/release/
-```
-
-### Installing on Device
-```bash
-# Connect device via USB and enable USB debugging
-adb install -r build/android/app/build/outputs/apk/release/app-release.apk
-
-# Or install specific APK if split
-adb install-multiple build/android/app/build/outputs/apk/release/*.apk
-```
-
----
-
-## 🚀 Deployment
-
-### Docker Deployment (Recommended)
-
-#### Build Images
-```bash
-docker-compose build
-```
-
-#### Start Services
-```bash
-docker-compose up -d
-```
-
-#### Access Application (VPS)
-- **Frontend**: http://139.59.82.105:8550
-- **Backend API**: http://139.59.82.105:8000
-- **API Docs**: http://139.59.82.105:8000/docs
-- **MongoDB**: 139.59.82.105:27017
-
-#### View Logs
-```bash
-docker-compose logs -f backend
-docker-compose logs -f frontend
-docker-compose logs -f mongo
-```
-
-### Production Checklist
-- [ ] Change `SECRET_KEY` in environment
-- [ ] Enable HTTPS/SSL certificates
-- [ ] Configure firewall rules
-- [ ] Set up database backups
-- [ ] Configure logging and monitoring
-- [ ] Set up CI/CD pipeline
-- [ ] Enable CORS properly
-- [ ] Use environment variables for secrets
-
----
-
-## 🔧 Troubleshooting
-
-### ⚠️ MongoDB Connection Issues (Docker vs Local Service)
-
-**Problem:** Backend can't connect to MongoDB, or local mongod service keeps failing
-
-**Root Cause:** 
-- Docker containers use internal service names (mongodb:27017) for container-to-container communication
-- Local VPS mongod service (exit-code 14) is deprecated - use Docker MongoDB instead
-- Port 27017 conflicts between local service and Docker container
-
-**Complete Fix (Recommended):**
-```bash
-# On VPS
-cd /hypersend/Hypersend
-
-# 1. Stop and disable local MongoDB service (free port 27017)
-sudo systemctl stop mongod 2>/dev/null || true
-sudo systemctl disable mongod 2>/dev/null || true
-
-# 2. Kill any process using port 27017
-sudo lsof -ti :27017 | xargs -r sudo kill -9 2>/dev/null || true
-
-# 3. Pull latest fixes from GitHub
-git pull origin main
-
-# 4. Clean up Docker resources
-docker compose down -v
-docker volume rm hypersend_mongodb_data hypersend_mongodb_config 2>/dev/null || true
-
-# 5. Build and start services
-docker compose up -d --build
-
-# 6. Wait for services to initialize
-sleep 60
-
-# 7. Verify services are healthy
-docker compose ps
-
-# 8. Test connectivity
-curl http://localhost:8000/health
-```
-
-**Verify MongoDB is working inside Docker:**
-```bash
-# Test MongoDB connectivity from backend
-docker exec hypersend_backend curl -s http://localhost:8000/health
-
-# Check MongoDB logs
-docker compose logs mongodb --tail=20
-
-# Check backend logs for connection messages
-docker compose logs backend --tail=20
-```
-
-**Important Configuration Changes:**
-- ✅ `MONGODB_URI` in docker-compose.yml now uses `mongodb:27017` (Docker service name)
-- ✅ Backend config.py updated to use Docker service name as default
-- ✅ This allows container-to-container communication on internal Docker network (172.20.0.0/16)
-
-### Port 27017 Already in Use (MongoDB conflict)
-
-**Cause:** Old MongoDB container or process still using the port
-
-**Quick Fix:**
-```bash
-# On VPS
-docker compose down -v
-docker volume rm hypersend_mongodb_data hypersend_mongodb_config 2>/dev/null || true
-sudo systemctl stop mongod 2>/dev/null || true
-sudo lsof -ti :27017 | xargs -r kill -9 2>/dev/null || true
-docker compose up -d --build
-docker compose ps  # Verify all services running
-```
-
-### Backend Connection Error: "Unable to connect to 139.59.82.105:8000"
-
-**Cause:** Backend services not running on VPS
-
-**Quick Fix (Fastest):**
-```bash
-cd /hypersend/Hypersend && bash FIX_VPS.sh
-```
-
-**Manual Fix:**
-```bash
-ssh root@139.59.82.105
-cd /hypersend/Hypersend
-git pull origin main
-docker compose down -v
-docker compose up -d --build
-sleep 60
-docker compose ps
-curl http://localhost:8000/health
-```
-
-### Service Not Responding
-
-**Check service status:**
-```bash
-docker compose ps
-```
-
-**View logs:**
-```bash
-docker compose logs backend    # Backend API
-docker compose logs mongodb    # Database
-docker compose logs nginx      # Web server
-docker compose logs frontend   # Frontend
-```
-
-**Restart services:**
-```bash
-docker compose restart
-```
-
-**Verify MongoDB connection from backend:**
-```bash
-docker compose logs backend | grep -i "mongodb\|connected"
-```
-
----
-
-## 📚 API Documentation
-
-### Auto-Generated Docs
-Once backend is running on your VPS, visit:
-- **Swagger UI**: http://139.59.82.105:8000/docs
-- **ReDoc**: http://139.59.82.105:8000/redoc
-
-### Key Endpoints
-
-#### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
-- `POST /api/auth/refresh` - Refresh token
-- `POST /api/auth/logout` - Logout user
-
-#### Users
-- `GET /api/users/me` - Get current user
-- `GET /api/users/{id}` - Get user by ID
-- `GET /api/users/search` - Search users
-- `PUT /api/users/{id}` - Update user profile
-- `PUT /api/users/{id}/permissions` - Update permissions
-
-#### Messages
-- `GET /api/chats` - Get chat list
-- `GET /api/chats/{id}/messages` - Get messages
-- `POST /api/chats/{id}/messages` - Send message
-- `WS /api/ws/{user_id}` - WebSocket connection
-
-#### Files
-- `POST /api/files/upload` - Upload file
-- `GET /api/files/{id}` - Download file
-- `GET /api/files/list` - List user files
-- `DELETE /api/files/{id}` - Delete file
-
-#### Permissions
-- `GET /api/permissions/{user_id}` - Get user permissions
-- `POST /api/permissions/{user_id}/allow` - Allow permission
-- `POST /api/permissions/{user_id}/disallow` - Disallow permission
-
----
-
-## 🔐 Security Features
-
-### Authentication
-- JWT-based authentication with auto-generated secure keys
-- Secure password hashing (bcrypt with SHA256 normalization)
-- Refresh token rotation
-- Session management
-- Rate limiting (10 attempts per 5 minutes per IP)
-- Account lockout (5 failed attempts = 15 min lockout)
-- Minimum 12-character passwords with complexity requirements
-
-### Data Protection
-- MongoDB authentication required
-- MongoDB port not exposed externally (internal Docker network only)
-- Security headers (CSP, X-Frame-Options, etc.)
-- File upload validation with checksums
-- Input sanitization and XSS protection
-- CORS restricted to specific origins
-
-### Permissions
-- Granular permission controls
-- User-friendly permission requests
-- Audit logging
-- Permission revocation
-
-### Security Hardening Applied
-- Strong password requirements (12+ chars)
-- Password strength validation
-- Rate limiting on login endpoint
-- Account lockout mechanism
-- Auto-generated secure SECRET_KEY if not set
-- MongoDB port removed from external access
-- CORS restricted (no wildcard in production)
-- Security headers implemented
-- Input validation and sanitization
-
----
-
-## 🧪 Testing
-
-### Run Tests
-```bash
-# Backend tests
-cd backend
-pytest tests/
-
-# Frontend tests
-cd frontend
-pytest tests/
-```
-
-### Seed Database
-```bash
-python scripts/seed_mongodb.py
-```
-
-Creates 6,350+ test documents including:
-- 100 users with profiles
-- 50 active conversations
-- 1,000+ messages
-- 100+ shared files
-
----
-
-## 📱 Supported Platforms
-
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **Android** | ✅ Full | Flet build apk |
-| **iOS** | ✅ Full | Requires macOS, Xcode |
-| **Windows** | ✅ Full | Native Windows app |
-| **macOS** | ✅ Full | Intel & Apple Silicon |
-| **Linux** | ✅ Full | GTK/WebView |
-| **Web** | ✅ Full | Browser-based |
-
----
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### MongoDB Connection Error
-```bash
-# Check MongoDB is running
-docker ps | grep mongo
-
-# Or start MongoDB
-docker-compose up -d mongo
-```
-
-#### APK Build Fails
-```bash
-# Clear cache and rebuild
-rm -rf build .flet .gradle
-flet build apk --compile-app --cleanup-app --split-per-abi --verbose
-
-# Check Android SDK
-flutter doctor
-```
-
-#### Port Already in Use
-```bash
-# Windows
-netstat -ano | findstr :8000
-taskkill /PID <pid> /F
-
-# Linux/macOS
-lsof -i :8000
-kill -9 <pid>
-```
-
-#### Module Not Found
-```bash
-# Ensure virtual environment is activated
-pip install -r requirements.txt
-pip install -r backend/requirements.txt
-pip install -r frontend/requirements.txt
-```
-
----
-
-## 📖 Additional Documentation
-
-- [APK Build Guide](APK_BUILD_GUIDE.md) - Quick reference for building APKs
-- [APK Build Complete](APK_BUILD_COMPLETE.md) - Comprehensive build guide
-- [Permissions System](PERMISSIONS_SYSTEM.md) - Permission implementation details
-- [MongoDB Setup](scripts/seed_mongodb.py) - Database initialization
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
-
-### Code Style
-- Follow PEP 8 for Python
-- Use type hints
-- Write docstrings
-- Test your changes
-
----
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👥 Authors & Contributors
-
-- **Mayan** - Initial development & maintenance
-- **Contributors** - See [CONTRIBUTORS.md](CONTRIBUTORS.md)
-
----
-
-## 🙏 Acknowledgments
-
-- **Flet** - Flutter for Python UI framework
-- **FastAPI** - Modern Python web framework
-- **MongoDB** - NoSQL database
-- **Flutter** - Cross-platform development
-- **Community** - For feedback and contributions
-
----
-
-## 📞 Support & Contact
-
-### Get Help
-- 📧 **Email**: support@zaply.dev
-- 💬 **Discussions**: GitHub Discussions
-- 🐛 **Issues**: GitHub Issues
-- 📚 **Wiki**: GitHub Wiki
-
-### Social Media
-- Twitter: [@ZaplyApp](https://twitter.com/zaplyapp)
-- Discord: [Zaply Community](https://discord.gg/zaply)
-
----
-
-## 🗺️ Roadmap
-
-### Version 1.1 (Q1 2025)
-- [ ] Voice calls
-- [ ] Video calls
-- [ ] Message encryption
-- [ ] Cloud backup
-
-### Version 1.2 (Q2 2025)
-- [ ] Group chats
-- [ ] Channel support
-- [ ] Story feature
-- [ ] Media gallery
-
-### Version 2.0 (H2 2025)
-- [ ] AI-powered features
-- [ ] Plugin system
-- [ ] Advanced analytics
-- [ ] Enterprise features
-
----
-
-## 📊 Project Stats
-
-- **Lines of Code**: 15,000+
-- **Test Coverage**: 85%+
-- **Supported Languages**: 15+
-- **Devices Supported**: 6+ platforms
-- **API Endpoints**: 25+
-- **Database Documents**: 6,350+ (with seeding)
-
----
-
-**Last Updated**: December 2, 2025
-
-**Version**: 1.0.0
-
-Made with ❤️ by Mayan
+**Last Updated**: December 14, 2025  
+**Status**: ✅ Production Ready  
+**New**: ⭐ Nginx Reverse Proxy Setup Guides Added
