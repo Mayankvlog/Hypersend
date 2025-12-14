@@ -21,6 +21,9 @@ wheels/
 *.egg
 MANIFEST
 
+# Exception: Include Flutter frontend lib directory
+!frontend/lib/
+
 # Virtual Environment
 .venv/
 venv/
