@@ -6,7 +6,7 @@ A modern, enterprise-grade, real-time messaging and P2P file transfer platform.
 
 **Hypersend** is a cross-platform messaging app with:
 - ✅ Real-time chat (WebSocket support)
-- ✅ Secure P2P file transfer (WhatsApp-style)
+- ✅ Secure P2P file transfer 
 - ✅ User authentication & permissions
 - ✅ Full Docker containerization
 - ✅ Production-ready Nginx reverse proxy
@@ -398,4 +398,5 @@ For issues, questions, or feature requests, please open an issue on [GitHub Issu
 
 **Last Updated**: December 14, 2025
 **Status**: ✅ Production Ready
+
 
