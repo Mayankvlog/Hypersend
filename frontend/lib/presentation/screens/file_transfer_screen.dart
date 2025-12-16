@@ -21,15 +21,45 @@ class _FileTransferScreenState extends State<FileTransferScreen> {
   }
 
   Future<void> _uploadFile() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('File upload feature coming soon')),
+    final fileName = 'Document_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    await serviceProvider.fileTransferService.uploadFile(
+      filePath: '/storage/emulated/0/Documents/$fileName',
+      fileName: fileName,
+      chatId: '1',
+      onProgress: (progress) {
+        // Progress updated in service
+      },
     );
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('File uploaded successfully'),
+          backgroundColor: AppTheme.successGreen,
+        ),
+      );
+    }
   }
 
   Future<void> _downloadFile() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('File download feature coming soon')),
+    final fileId = 'file_${DateTime.now().millisecondsSinceEpoch}';
+    await serviceProvider.fileTransferService.downloadFile(
+      fileId: fileId,
+      fileName: 'Download_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      savePath: '/storage/emulated/0/Downloads/file.pdf',
+      onProgress: (progress) {
+        // Progress updated in service
+      },
     );
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('File downloaded successfully'),
+          backgroundColor: AppTheme.successGreen,
+        ),
+      );
+    }
   }
 
   String _formatFileSize(int bytes) {

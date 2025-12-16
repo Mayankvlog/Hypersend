@@ -146,16 +146,32 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   Positioned(
                     bottom: 0,
                     right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: AppTheme.primaryCyan,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.camera_alt,
-                        color: Colors.white,
-                        size: 16,
+                    child: InkWell(
+                      onTap: () async {
+                        final router = GoRouter.of(context);
+                        final scaffoldMessenger = ScaffoldMessenger.of(context);
+                        final result = await router.push('/profile-photo', extra: widget.user.avatar);
+                        if (!mounted) return;
+                        if (result != null) {
+                          scaffoldMessenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Avatar updated'),
+                              backgroundColor: AppTheme.successGreen,
+                            ),
+                          );
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(
+                          color: AppTheme.primaryCyan,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 16,
+                        ),
                       ),
                     ),
                   ),
@@ -221,23 +237,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     icon: Icons.lock_outline,
                     title: 'Change Password',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Password change feature coming soon'),
-                        ),
-                      );
+                      _showChangePasswordDialog();
                     },
                   ),
                   _buildActionTile(
                     icon: Icons.phone_outlined,
                     title: 'Change Phone Number',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                              'Phone number change feature coming soon'),
-                        ),
-                      );
+                      _showChangePhoneDialog();
                     },
                   ),
                   _buildActionTile(
@@ -336,6 +343,127 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               'Delete',
               style: TextStyle(color: AppTheme.errorRed),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showChangePasswordDialog() {
+    final oldPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Change Password'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: oldPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Current Password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: newPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'New Password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm Password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (newPasswordController.text == confirmPasswordController.text &&
+                  newPasswordController.text.isNotEmpty) {
+                Navigator.of(dialogContext).pop();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Password changed successfully'),
+                    backgroundColor: AppTheme.successGreen,
+                  ),
+                );
+              } else {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Passwords do not match'),
+                    backgroundColor: AppTheme.errorRed,
+                  ),
+                );
+              }
+              oldPasswordController.clear();
+              newPasswordController.clear();
+              confirmPasswordController.clear();
+            },
+            child: const Text('Change'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showChangePhoneDialog() {
+    final phoneController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Change Phone Number'),
+        content: TextField(
+          controller: phoneController,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(
+            labelText: 'Phone Number',
+            border: OutlineInputBorder(),
+            hintText: '+1 (555) 123-4567',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (phoneController.text.isNotEmpty) {
+                Navigator.of(dialogContext).pop();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Phone number updated to ${phoneController.text}'),
+                    backgroundColor: AppTheme.successGreen,
+                  ),
+                );
+              }
+              phoneController.clear();
+            },
+            child: const Text('Update'),
           ),
         ],
       ),

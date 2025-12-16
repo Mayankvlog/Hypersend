@@ -122,9 +122,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'Notification Sound',
               subtitle: 'Default',
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Sound settings coming soon')),
-                );
+                context.push('/notification-sound');
               },
             ),
             const SizedBox(height: 24),
@@ -134,9 +132,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.lock_outlined,
               title: 'Privacy Settings',
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Privacy settings coming soon')),
-                );
+                context.push('/privacy-settings');
               },
             ),
             _buildSettingsTile(
@@ -144,9 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'Blocked Users',
               subtitle: '3 users blocked',
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Blocked users list coming soon')),
-                );
+                context.push('/blocked-users');
               },
             ),
             const SizedBox(height: 24),
@@ -157,9 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'Storage Usage',
               subtitle: '256 MB used of 1 GB',
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Storage manager coming soon')),
-                );
+                context.push('/storage-manager');
               },
             ),
             _buildSettingsTile(
@@ -206,19 +198,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.help_outline,
               title: 'Help & Support',
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Help & Support coming soon')),
-                );
+                context.push('/help-support');
               },
             ),
             _buildSettingsTile(
               icon: Icons.description_outlined,
               title: 'Terms & Conditions',
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Terms & Conditions coming soon')),
+                showDialog(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Terms & Conditions'),
+                    content: const SingleChildScrollView(
+                      child: Text(
+                        'By using Hypersend, you agree to our Terms & Conditions.\n\n'
+                        '1. Privacy: We protect your data with end-to-end encryption.\n'
+                        '2. Usage: Hypersend is for personal use only.\n'
+                        '3. Content: You are responsible for content you share.\n'
+                        '4. Compliance: Follow all applicable laws and regulations.\n'
+                        '5. Disclaimer: We are not liable for service interruptions.\n\n'
+                        'For full terms, visit: terms.hypersend.com',
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
                 );
               },
             ),

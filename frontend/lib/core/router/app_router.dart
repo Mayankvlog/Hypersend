@@ -5,8 +5,14 @@ import '../../presentation/screens/chat_list_screen.dart';
 import '../../presentation/screens/chat_detail_screen.dart';
 import '../../presentation/screens/chat_settings_screen.dart';
 import '../../presentation/screens/profile_edit_screen.dart';
+import '../../presentation/screens/profile_photo_screen.dart';
 import '../../presentation/screens/settings_screen.dart';
 import '../../presentation/screens/file_transfer_screen.dart';
+import '../../presentation/screens/notification_sound_screen.dart';
+import '../../presentation/screens/privacy_settings_screen.dart';
+import '../../presentation/screens/blocked_users_screen.dart';
+import '../../presentation/screens/storage_manager_screen.dart';
+import '../../presentation/screens/help_support_screen.dart';
 import '../../data/mock/mock_data.dart';
 
 final appRouter = GoRouter(
@@ -42,12 +48,39 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(
+      path: '/profile-photo',
+      builder: (context, state) {
+        final currentAvatar = state.extra as String? ?? 'AM';
+        return ProfilePhotoScreen(currentAvatar: currentAvatar);
+      },
+    ),
+    GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
     ),
     GoRoute(
       path: '/file-transfer',
       builder: (context, state) => const FileTransferScreen(),
+    ),
+    GoRoute(
+      path: '/notification-sound',
+      builder: (context, state) => const NotificationSoundScreen(),
+    ),
+    GoRoute(
+      path: '/privacy-settings',
+      builder: (context, state) => const PrivacySettingsScreen(),
+    ),
+    GoRoute(
+      path: '/blocked-users',
+      builder: (context, state) => const BlockedUsersScreen(),
+    ),
+    GoRoute(
+      path: '/storage-manager',
+      builder: (context, state) => const StorageManagerScreen(),
+    ),
+    GoRoute(
+      path: '/help-support',
+      builder: (context, state) => const HelpSupportScreen(),
     ),
   ],
 );
