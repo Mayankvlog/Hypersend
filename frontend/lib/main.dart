@@ -4,11 +4,11 @@ import 'core/theme/app_theme.dart';
 import 'core/constants/app_strings.dart';
 
 void main() {
-  runApp(const ZaplyApp());
+  runApp(const HypersendApp());
 }
 
-class ZaplyApp extends StatelessWidget {
-  const ZaplyApp({super.key});
+class HypersendApp extends StatelessWidget {
+  const HypersendApp({super.key});
 
   @override
   Widget build(BuildContext context) {

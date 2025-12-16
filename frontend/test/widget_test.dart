@@ -10,12 +10,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/main.dart';
 
 void main() {
-  testWidgets('Zaply app smoke test', (WidgetTester tester) async {
+  testWidgets('Hypersend app smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const ZaplyApp());
+    await tester.pumpWidget(const HypersendApp());
 
     // Verify that the splash screen shows up
-    expect(find.text('Zaply'), findsOneWidget);
+    expect(find.text('Hypersend'), findsOneWidget);
     expect(find.text('Fast. Secure. Chat.'), findsOneWidget);
     
     // Pump and settle to let animations complete

@@ -272,7 +272,7 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
             const SizedBox(height: 32),
             // Footer
             Text(
-              'Zaply v4.2.0 • Chat ID: 893420',
+              'Hypersend v1.0.0 • Chat ID: 893420',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 32),

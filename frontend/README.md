@@ -1,4 +1,4 @@
-# Zaply - Flutter Chat Application
+# Hypersend - Flutter Chat Application
 
 A modern, dark-themed messaging application built with Flutter.
 
