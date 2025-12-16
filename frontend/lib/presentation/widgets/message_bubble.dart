@@ -28,8 +28,27 @@ class MessageBubble extends StatelessWidget {
           if (!message.isOwn && avatarUrl != null) ...[
             CircleAvatar(
               radius: 16,
-              backgroundImage: NetworkImage(avatarUrl!),
               backgroundColor: AppTheme.cardDark,
+              backgroundImage: avatarUrl!.startsWith('http')
+                  ? NetworkImage(avatarUrl!)
+                  : null,
+              onBackgroundImageError: (exception, stackTrace) {
+                // Fallback handled by child
+              },
+              child: avatarUrl!.startsWith('http')
+                  ? null
+                  : Center(
+                      child: Text(
+                        avatarUrl!.length > 2
+                            ? avatarUrl!.substring(0, 2).toUpperCase()
+                            : avatarUrl!.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
             ),
             const SizedBox(width: 8),
           ],

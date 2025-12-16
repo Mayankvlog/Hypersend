@@ -134,7 +134,11 @@ class ChatListItem extends StatelessWidget {
   }
 
   Widget _buildAvatar() {
-    if (chat.type == ChatType.group) {
+    // Check if avatar is a URL (starts with http)
+    final isUrl = chat.avatar.startsWith('http');
+    
+    if (chat.type == ChatType.group || !isUrl) {
+      // For groups or when avatar is not a URL, display initials
       return Container(
         width: 56,
         height: 56,
@@ -155,10 +159,17 @@ class ChatListItem extends StatelessWidget {
       );
     }
 
+    // For direct chats with URL avatars, use NetworkImage with error handling
     return CircleAvatar(
       radius: 28,
-      backgroundImage: NetworkImage(chat.avatar),
       backgroundColor: AppTheme.cardDark,
+      backgroundImage: NetworkImage(chat.avatar),
+      onBackgroundImageError: (exception, stackTrace) {
+        // Fallback to initials if image fails to load
+      },
+      child: chat.avatar.isEmpty
+          ? const Icon(Icons.person, color: AppTheme.textSecondary)
+          : null,
     );
   }
 }

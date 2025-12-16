@@ -44,8 +44,27 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
               children: [
                 CircleAvatar(
                   radius: 60,
-                  backgroundImage: NetworkImage(user.avatar),
                   backgroundColor: AppTheme.cardDark,
+                  backgroundImage: user.avatar.startsWith('http')
+                      ? NetworkImage(user.avatar)
+                      : null,
+                  onBackgroundImageError: (exception, stackTrace) {
+                    // Fallback handled by child
+                  },
+                  child: user.avatar.startsWith('http')
+                      ? null
+                      : Center(
+                          child: Text(
+                            user.avatar.length > 2
+                                ? user.avatar.substring(0, 2).toUpperCase()
+                                : user.avatar.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                 ),
                 if (user.isOnline)
                   Positioned(
