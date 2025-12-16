@@ -7,7 +7,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:frontend/main.dart';
+import 'package:hypersend/main.dart';
 
 void main() {
   testWidgets('Hypersend app smoke test', (WidgetTester tester) async {
