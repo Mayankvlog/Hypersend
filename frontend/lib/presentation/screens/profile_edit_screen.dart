@@ -1,0 +1,344 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/theme/app_theme.dart';
+import '../../data/models/user.dart';
+import '../../data/services/service_provider.dart';
+
+class ProfileEditScreen extends StatefulWidget {
+  final User user;
+
+  const ProfileEditScreen({
+    super.key,
+    required this.user,
+  });
+
+  @override
+  State<ProfileEditScreen> createState() => _ProfileEditScreenState();
+}
+
+class _ProfileEditScreenState extends State<ProfileEditScreen> {
+  late TextEditingController _nameController;
+  late TextEditingController _usernameController;
+  late TextEditingController _emailController;
+  late TextEditingController _statusController;
+  bool _isLoading = false;
+  bool _nameChanged = false;
+  bool _usernameChanged = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.user.name);
+    _usernameController = TextEditingController(text: widget.user.username);
+    _emailController = TextEditingController(text: 'user@hypersend.com');
+    _statusController = TextEditingController(text: 'Available');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _usernameController.dispose();
+    _emailController.dispose();
+    _statusController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Update profile
+      final updatedUser = await serviceProvider.profileService.updateProfile(
+        name: _nameController.text,
+        username: _usernameController.text,
+        avatar: widget.user.avatar,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile updated successfully!'),
+          backgroundColor: AppTheme.successGreen,
+        ),
+      );
+
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          context.pop(updatedUser);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppTheme.errorRed,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
+        title: const Text('Edit Profile'),
+        actions: [
+          TextButton(
+            onPressed: (_nameChanged || _usernameChanged) && !_isLoading
+                ? _saveProfile
+                : null,
+            child: _isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppTheme.primaryCyan,
+                      ),
+                    ),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(color: AppTheme.primaryCyan),
+                  ),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            const SizedBox(height: 24),
+            // Avatar section
+            Center(
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 60,
+                    backgroundColor: AppTheme.cardDark,
+                    child: Center(
+                      child: Text(
+                        widget.user.avatar.length > 2
+                            ? widget.user.avatar.substring(0, 2).toUpperCase()
+                            : widget.user.avatar.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: AppTheme.primaryCyan,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            // Name field
+            _buildProfileField(
+              label: 'Full Name',
+              controller: _nameController,
+              icon: Icons.person_outline,
+              onChanged: (value) {
+                setState(() {
+                  _nameChanged = value != widget.user.name;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            // Username field
+            _buildProfileField(
+              label: 'Username',
+              controller: _usernameController,
+              icon: Icons.alternate_email,
+              onChanged: (value) {
+                setState(() {
+                  _usernameChanged = value != widget.user.username;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            // Email field (read-only)
+            _buildProfileField(
+              label: 'Email',
+              controller: _emailController,
+              icon: Icons.email_outlined,
+              readOnly: true,
+            ),
+            const SizedBox(height: 16),
+            // Status field
+            _buildProfileField(
+              label: 'Status',
+              controller: _statusController,
+              icon: Icons.comment_outlined,
+              onChanged: (_) {},
+            ),
+            const SizedBox(height: 32),
+            // Account actions
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ACCOUNT',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildActionTile(
+                    icon: Icons.lock_outline,
+                    title: 'Change Password',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Password change feature coming soon'),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildActionTile(
+                    icon: Icons.phone_outlined,
+                    title: 'Change Phone Number',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Phone number change feature coming soon'),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildActionTile(
+                    icon: Icons.delete_outline,
+                    title: 'Delete Account',
+                    titleColor: AppTheme.errorRed,
+                    onTap: () {
+                      _showDeleteAccountDialog();
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileField({
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    bool readOnly = false,
+    Function(String)? onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: TextField(
+        controller: controller,
+        readOnly: readOnly,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: AppTheme.textSecondary),
+          suffixIcon: readOnly
+              ? const Icon(Icons.lock, color: AppTheme.textSecondary, size: 18)
+              : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required String title,
+    Color titleColor = AppTheme.textPrimary,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: titleColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(color: titleColor),
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteAccountDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text(
+          'Are you sure you want to delete your account? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Account deleted successfully'),
+                  backgroundColor: AppTheme.successGreen,
+                ),
+              );
+            },
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppTheme.errorRed),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

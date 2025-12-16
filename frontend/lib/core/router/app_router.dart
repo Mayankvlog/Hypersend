@@ -4,6 +4,10 @@ import '../../presentation/screens/permissions_screen.dart';
 import '../../presentation/screens/chat_list_screen.dart';
 import '../../presentation/screens/chat_detail_screen.dart';
 import '../../presentation/screens/chat_settings_screen.dart';
+import '../../presentation/screens/profile_edit_screen.dart';
+import '../../presentation/screens/settings_screen.dart';
+import '../../presentation/screens/file_transfer_screen.dart';
+import '../../data/mock/mock_data.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -30,6 +34,20 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/chat-settings',
       builder: (context, state) => const ChatSettingsScreen(),
+    ),
+    GoRoute(
+      path: '/profile-edit',
+      builder: (context, state) => ProfileEditScreen(
+        user: MockData.settingsUser,
+      ),
+    ),
+    GoRoute(
+      path: '/settings',
+      builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/file-transfer',
+      builder: (context, state) => const FileTransferScreen(),
     ),
   ],
 );

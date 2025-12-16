@@ -2,6 +2,7 @@ class AppStrings {
   // App
   static const String appName = 'Hypersend';
   static const String appTagline = 'Fast. Secure. Chat.';
+  static const String logout = 'Logout';
   
   // Splash
   static const String connecting = 'CONNECTING...';

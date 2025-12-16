@@ -1,0 +1,335 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/theme/app_theme.dart';
+import '../../data/services/service_provider.dart';
+import '../../data/services/settings_service.dart';
+
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  late AppLanguage _selectedLanguage;
+  late bool _darkMode;
+  late bool _notificationsEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = serviceProvider.settingsService;
+    _selectedLanguage = settings.currentLanguage;
+    _darkMode = settings.darkMode;
+    _notificationsEnabled = settings.notificationsEnabled;
+  }
+
+  Future<void> _changeLanguage(AppLanguage language) async {
+    try {
+      await serviceProvider.settingsService.changeLanguage(language);
+      setState(() {
+        _selectedLanguage = language;
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Language changed to ${language.label}'),
+          backgroundColor: AppTheme.successGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppTheme.errorRed,
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleDarkMode() async {
+    try {
+      await serviceProvider.settingsService.toggleDarkMode();
+      setState(() {
+        _darkMode = !_darkMode;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  Future<void> _toggleNotifications() async {
+    try {
+      await serviceProvider.settingsService.toggleNotifications();
+      setState(() {
+        _notificationsEnabled = !_notificationsEnabled;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
+        title: const Text('Settings'),
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Language section
+            _buildSectionHeader('LANGUAGE & REGION'),
+            _buildLanguageSelector(),
+            const SizedBox(height: 24),
+            // Display section
+            _buildSectionHeader('DISPLAY'),
+            _buildSettingsTile(
+              icon: Icons.dark_mode_outlined,
+              title: 'Dark Mode',
+              trailing: Switch(
+                value: _darkMode,
+                onChanged: (_) => _toggleDarkMode(),
+                activeTrackColor: AppTheme.primaryCyan,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Notifications section
+            _buildSectionHeader('NOTIFICATIONS'),
+            _buildSettingsTile(
+              icon: Icons.notifications_outlined,
+              title: 'Enable Notifications',
+              trailing: Switch(
+                value: _notificationsEnabled,
+                onChanged: (_) => _toggleNotifications(),
+                activeTrackColor: AppTheme.primaryCyan,
+              ),
+            ),
+            _buildSettingsTile(
+              icon: Icons.music_note_outlined,
+              title: 'Notification Sound',
+              subtitle: 'Default',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Sound settings coming soon')),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            // Privacy & Security section
+            _buildSectionHeader('PRIVACY & SECURITY'),
+            _buildSettingsTile(
+              icon: Icons.lock_outlined,
+              title: 'Privacy Settings',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Privacy settings coming soon')),
+                );
+              },
+            ),
+            _buildSettingsTile(
+              icon: Icons.block_outlined,
+              title: 'Blocked Users',
+              subtitle: '3 users blocked',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Blocked users list coming soon')),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            // Storage section
+            _buildSectionHeader('STORAGE'),
+            _buildSettingsTile(
+              icon: Icons.storage_outlined,
+              title: 'Storage Usage',
+              subtitle: '256 MB used of 1 GB',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Storage manager coming soon')),
+                );
+              },
+            ),
+            _buildSettingsTile(
+              icon: Icons.delete_sweep_outlined,
+              title: 'Clear Cache',
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Clear Cache'),
+                    content:
+                        const Text('Are you sure you want to clear the cache?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Cache cleared'),
+                              backgroundColor: AppTheme.successGreen,
+                            ),
+                          );
+                        },
+                        child: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            // About section
+            _buildSectionHeader('ABOUT'),
+            _buildSettingsTile(
+              icon: Icons.info_outlined,
+              title: 'App Version',
+              subtitle: '1.0.0',
+            ),
+            _buildSettingsTile(
+              icon: Icons.help_outline,
+              title: 'Help & Support',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Help & Support coming soon')),
+                );
+              },
+            ),
+            _buildSettingsTile(
+              icon: Icons.description_outlined,
+              title: 'Terms & Conditions',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Terms & Conditions coming soon')),
+                );
+              },
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLanguageSelector() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final language
+              in serviceProvider.settingsService.availableLanguages)
+            InkWell(
+              onTap: () => _changeLanguage(language),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.language,
+                      color: _selectedLanguage == language
+                          ? AppTheme.primaryCyan
+                          : AppTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        language.label,
+                        style: TextStyle(
+                          color: _selectedLanguage == language
+                              ? AppTheme.primaryCyan
+                              : AppTheme.textPrimary,
+                          fontWeight: _selectedLanguage == language
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                    if (_selectedLanguage == language)
+                      const Icon(
+                        Icons.check_circle,
+                        color: AppTheme.primaryCyan,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: AppTheme.primaryCyan),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (trailing != null)
+              trailing
+            else if (onTap != null)
+              const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+}

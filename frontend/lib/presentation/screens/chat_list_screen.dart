@@ -49,9 +49,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
       _selectedIndex = index;
     });
     
-    if (index == 2) {
-      // Navigate to settings (chat settings screen for demo)
-      context.push('/chat-settings');
+    if (index == 1) {
+      // Navigate to file transfer
+      context.push('/file-transfer');
+    } else if (index == 2) {
+      // Navigate to settings
+      context.push('/settings');
     }
   }
 
@@ -65,7 +68,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.menu),
-          onPressed: () {},
+          onPressed: _openMainMenu,
         ),
         title: const Text(AppStrings.appName),
         actions: [
@@ -161,8 +164,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
             label: AppStrings.chats,
           ),
           const BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            label: AppStrings.contacts,
+            icon: Icon(Icons.cloud_upload_outlined),
+            label: 'Files',
           ),
           const BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),
@@ -170,6 +173,72 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _openMainMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.backgroundDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.edit_outlined,
+                  color: AppTheme.primaryCyan,
+                ),
+                title: const Text('Edit Profile'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/profile-edit');
+                },
+              ),
+              const Divider(height: 0),
+              ListTile(
+                leading: const Icon(
+                  Icons.settings_outlined,
+                  color: AppTheme.primaryCyan,
+                ),
+                title: const Text(AppStrings.settings),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/settings');
+                },
+              ),
+              const Divider(height: 0),
+              ListTile(
+                leading: const Icon(
+                  Icons.cloud_upload_outlined,
+                  color: AppTheme.primaryCyan,
+                ),
+                title: const Text('File Transfer'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/file-transfer');
+                },
+              ),
+              const Divider(height: 0),
+              ListTile(
+                leading: const Icon(
+                  Icons.logout,
+                  color: AppTheme.errorRed,
+                ),
+                title: const Text(AppStrings.logout),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.go('/permissions');
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

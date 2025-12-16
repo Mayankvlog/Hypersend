@@ -14,6 +14,55 @@ class ChatSettingsScreen extends StatefulWidget {
 class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
   bool _isMuted = false;
 
+  void _showFeatureMessage(String featureName) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('You tapped $featureName'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _confirmDangerAction({
+    required String title,
+    required String message,
+    required String actionLabel,
+  }) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: Text(title),
+              content: Text(message),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: Text(
+                    actionLabel,
+                    style: const TextStyle(color: AppTheme.errorRed),
+                  ),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (confirmed) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$title action completed'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = MockData.settingsUser;
@@ -27,7 +76,7 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
         title: const Text(AppStrings.chatSettings),
         actions: [
           TextButton(
-            onPressed: () {},
+            onPressed: () => context.push('/profile-edit'),
             child: const Text(
               AppStrings.edit,
               style: TextStyle(color: AppTheme.primaryCyan),
@@ -115,22 +164,22 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
                   _ActionButton(
                     icon: Icons.search,
                     label: AppStrings.search,
-                    onTap: () {},
+                    onTap: () => _showFeatureMessage(AppStrings.search),
                   ),
                   _ActionButton(
                     icon: Icons.image_outlined,
                     label: AppStrings.media,
-                    onTap: () {},
+                    onTap: () => _showFeatureMessage(AppStrings.media),
                   ),
                   _ActionButton(
                     icon: Icons.share_outlined,
                     label: AppStrings.share,
-                    onTap: () {},
+                    onTap: () => _showFeatureMessage(AppStrings.share),
                   ),
                   _ActionButton(
                     icon: Icons.more_horiz,
                     label: AppStrings.more,
-                    onTap: () {},
+                    onTap: () => _showFeatureMessage(AppStrings.more),
                   ),
                 ],
               ),
@@ -159,7 +208,7 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
                 Icons.chevron_right,
                 color: AppTheme.textSecondary,
               ),
-              onTap: () {},
+              onTap: () => _showFeatureMessage(AppStrings.customSound),
             ),
             const SizedBox(height: 24),
             // Content & Privacy section
@@ -242,7 +291,8 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
                 Icons.chevron_right,
                 color: AppTheme.textSecondary,
               ),
-              onTap: () {},
+              onTap: () =>
+                  _showFeatureMessage(AppStrings.autoDeleteMessages),
             ),
             _SettingsTile(
               icon: Icons.fingerprint,
@@ -263,12 +313,18 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
                   ),
                 ],
               ),
-              onTap: () {},
+              onTap: () =>
+                  _showFeatureMessage(AppStrings.encryptionKeys),
             ),
             const SizedBox(height: 32),
             // Danger zone
             TextButton(
-              onPressed: () {},
+              onPressed: () => _confirmDangerAction(
+                title: AppStrings.blockUser,
+                message:
+                    'Are you sure you want to block this user? You will no longer receive messages from them.',
+                actionLabel: AppStrings.blockUser,
+              ),
               child: const Text(
                 AppStrings.blockUser,
                 style: TextStyle(
@@ -279,7 +335,12 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
             ),
             const SizedBox(height: 8),
             TextButton(
-              onPressed: () {},
+              onPressed: () => _confirmDangerAction(
+                title: AppStrings.deleteChat,
+                message:
+                    'Are you sure you want to delete this chat? This action cannot be undone.',
+                actionLabel: AppStrings.deleteChat,
+              ),
               child: const Text(
                 AppStrings.deleteChat,
                 style: TextStyle(
