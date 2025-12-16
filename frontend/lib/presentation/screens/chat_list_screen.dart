@@ -70,7 +70,32 @@ class _ChatListScreenState extends State<ChatListScreen> {
           icon: const Icon(Icons.menu),
           onPressed: _openMainMenu,
         ),
-        title: const Text(AppStrings.appName),
+        title: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [AppTheme.primaryCyan, AppTheme.primaryCyan.withValues(alpha: 0.7)],
+                ),
+              ),
+              child: const Center(
+                child: Text(
+                  'H',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text(AppStrings.appName),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit_outlined),

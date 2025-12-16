@@ -49,11 +49,25 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     });
 
     try {
+      // Validate name
+      if (_nameController.text.isEmpty) {
+        throw Exception('Name cannot be empty');
+      }
+      if (_nameController.text.length < 2) {
+        throw Exception('Name must be at least 2 characters');
+      }
+      
+      // Validate email
+      if (!_emailController.text.contains('@')) {
+        throw Exception('Please enter a valid email');
+      }
+
       // Update profile
       final updatedUser = await serviceProvider.profileService.updateProfile(
         name: _nameController.text,
         username: _usernameController.text,
         avatar: widget.user.avatar,
+        email: _emailController.text,
       );
 
       if (!mounted) return;
@@ -241,10 +255,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     },
                   ),
                   _buildActionTile(
-                    icon: Icons.phone_outlined,
-                    title: 'Change Phone Number',
+                    icon: Icons.email_outlined,
+                    title: 'Change Email',
                     onTap: () {
-                      _showChangePhoneDialog();
+                      _showChangeEmailDialog();
+                    },
+                  ),
+                  _buildActionTile(
+                    icon: Icons.vpn_key_outlined,
+                    title: 'Reset Password',
+                    onTap: () {
+                      _showResetPasswordDialog();
                     },
                   ),
                   _buildActionTile(
@@ -428,20 +449,37 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     );
   }
 
-  void _showChangePhoneDialog() {
-    final phoneController = TextEditingController();
+  // ignore: use_build_context_synchronously
+  void _showChangeEmailDialog() {
+    final emailController = TextEditingController(text: _emailController.text);
+    final passwordController = TextEditingController();
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Change Phone Number'),
-        content: TextField(
-          controller: phoneController,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(
-            labelText: 'Phone Number',
-            border: OutlineInputBorder(),
-            hintText: '+1 (555) 123-4567',
+        title: const Text('Change Email'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'New Email',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Password (for verification)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
           ),
         ),
         actions: [
@@ -450,20 +488,116 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              if (phoneController.text.isNotEmpty) {
-                Navigator.of(dialogContext).pop();
+            onPressed: () async {
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+              if (emailController.text.contains('@') && passwordController.text.isNotEmpty) {
+                try {
+                  await serviceProvider.profileService.changeEmail(
+                    newEmail: emailController.text,
+                    password: passwordController.text,
+                  );
+                  Navigator.of(dialogContext).pop();
+                  if (!mounted) return;
+                  _emailController.text = emailController.text;
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Email updated successfully'),
+                      backgroundColor: AppTheme.successGreen,
+                    ),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: AppTheme.errorRed,
+                    ),
+                  );
+                }
+              } else {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Phone number updated to ${phoneController.text}'),
-                    backgroundColor: AppTheme.successGreen,
+                scaffoldMessenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter valid email and password'),
+                    backgroundColor: AppTheme.errorRed,
                   ),
                 );
               }
-              phoneController.clear();
+              emailController.clear();
+              passwordController.clear();
             },
             child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: use_build_context_synchronously
+  void _showResetPasswordDialog() {
+    final emailController = TextEditingController(text: _emailController.text);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('We will send a password reset link to:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email Address',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+              if (emailController.text.contains('@')) {
+                try {
+                  await serviceProvider.profileService.resetPassword(
+                    email: emailController.text,
+                  );
+                  Navigator.of(dialogContext).pop();
+                  if (!mounted) return;
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Password reset link sent to your email'),
+                      backgroundColor: AppTheme.successGreen,
+                    ),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: AppTheme.errorRed,
+                    ),
+                  );
+                }
+              } else {
+                if (!mounted) return;
+                scaffoldMessenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid email address'),
+                    backgroundColor: AppTheme.errorRed,
+                  ),
+                );
+              }
+              emailController.clear();
+            },
+            child: const Text('Send'),
           ),
         ],
       ),
