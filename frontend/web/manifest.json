@@ -1,11 +1,11 @@
 {
-    "name": "frontend",
-    "short_name": "frontend",
+    "name": "Hypersend - Fast. Secure. Chat.",
+    "short_name": "Hypersend",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#1a2332",
+    "theme_color": "#00b4ff",
+    "description": "Hypersend - Secure P2P Chat and File Transfer Application",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
