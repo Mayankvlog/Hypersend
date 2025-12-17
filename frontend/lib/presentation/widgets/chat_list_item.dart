@@ -134,27 +134,50 @@ class ChatListItem extends StatelessWidget {
   }
 
   Widget _buildAvatar() {
-    // Check if avatar is a URL (starts with http)
-    final isUrl = chat.avatar.startsWith('http');
-    
-    if (chat.type == ChatType.group || !isUrl) {
-      // For groups or when avatar is not a URL, display initials
+    // Saved Messages special case
+    if (chat.type == ChatType.saved) {
       return Container(
         width: 56,
         height: 56,
         decoration: const BoxDecoration(
-          color: AppTheme.primaryCyan,
+          color: AppTheme.primaryPurple, // Distinct color
+          shape: BoxShape.circle,
+        ),
+        child: const Center(
+          child: Icon(Icons.bookmark, color: Colors.white, size: 28),
+        ),
+      );
+    }
+
+    final isUrl = chat.avatar.startsWith('http');
+    
+    // Group / Supergroup / Channel default avatar
+    if ((chat.type == ChatType.group || 
+         chat.type == ChatType.supergroup || 
+         chat.type == ChatType.channel) || !isUrl) {
+      
+      IconData? typeIcon;
+      if (chat.type == ChatType.channel) typeIcon = Icons.campaign;
+      if (chat.type == ChatType.supergroup) typeIcon = Icons.groups;
+      
+      return Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: chat.type == ChatType.channel ? AppTheme.accentGold : AppTheme.primaryCyan,
           shape: BoxShape.circle,
         ),
         child: Center(
-          child: Text(
-            chat.avatar,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          child: typeIcon != null && chat.avatar.length <= 2 
+              ? Icon(typeIcon, color: Colors.white, size: 28)
+              : Text(
+                  chat.avatar,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
         ),
       );
     }

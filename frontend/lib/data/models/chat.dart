@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-enum ChatType { direct, group }
+enum ChatType { direct, group, supergroup, channel, secret, saved }
 
 class Chat extends Equatable {
   final String id;
@@ -28,8 +28,27 @@ class Chat extends Equatable {
   });
 
   factory Chat.fromApi(Map<String, dynamic> json) {
-    final type = (json['type'] ?? 'private').toString();
-    final chatType = type == 'group' ? ChatType.group : ChatType.direct;
+    final typeStr = (json['type'] ?? 'private').toString();
+    ChatType chatType;
+    switch (typeStr) {
+      case 'group':
+        chatType = ChatType.group;
+        break;
+      case 'supergroup':
+        chatType = ChatType.supergroup;
+        break;
+      case 'channel':
+        chatType = ChatType.channel;
+        break;
+      case 'secret':
+        chatType = ChatType.secret;
+        break;
+      case 'saved':
+        chatType = ChatType.saved;
+        break;
+      default:
+        chatType = ChatType.direct;
+    }
 
     final last = json['last_message'] as Map<String, dynamic>?;
     final lastText = (last?['text'] ?? last?['content'] ?? '').toString();
@@ -40,11 +59,13 @@ class Chat extends Equatable {
     final senderName = json['last_message_sender_name']?.toString();
 
     String avatar;
-    if (chatType == ChatType.group) {
+    if (chatType == ChatType.group || chatType == ChatType.supergroup || chatType == ChatType.channel) {
       final parts = displayName.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
       avatar = parts.length >= 2
           ? (parts[0][0] + parts[1][0]).toUpperCase()
           : (displayName.isNotEmpty ? displayName.substring(0, displayName.length >= 2 ? 2 : 1).toUpperCase() : 'GR');
+    } else if (chatType == ChatType.saved) {
+       avatar = 'SM';
     } else {
       avatar = displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : 'U';
     }

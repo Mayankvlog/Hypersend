@@ -56,7 +56,8 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         email=user["email"],
         quota_used=user["quota_used"],
         quota_limit=user["quota_limit"],
-        created_at=user["created_at"]
+        created_at=user["created_at"],
+        pinned_chats=user.get("pinned_chats", []) or []
     )
 
 

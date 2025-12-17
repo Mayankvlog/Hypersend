@@ -21,7 +21,22 @@ class PyObjectId(ObjectId):
         field_schema.update(type="string")
 
 
-# User Models
+# Enums and Constants
+class ChatType:
+    PRIVATE = "private"
+    GROUP = "group"
+    SUPERGROUP = "supergroup"
+    CHANNEL = "channel"
+    SECRET = "secret"
+
+class Role:
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+    RESTRICTED = "restricted"
+    BANNED = "banned"
+
+# ... existing PyObjectId ...
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr
@@ -70,6 +85,7 @@ class UserInDB(BaseModel):
         "phone": False,
         "storage": False
     })
+    pinned_chats: List[str] = Field(default_factory=list)
 
 
 class UserResponse(BaseModel):
@@ -112,13 +128,53 @@ class PasswordResetResponse(BaseModel):
     success: bool
 
 
+class PasswordResetResponse(BaseModel):
+    message: str
+    success: bool
+
+
+# Permission Models
+class ChatPermissions(BaseModel):
+    can_send_messages: bool = True
+    can_send_media: bool = True
+    can_send_polls: bool = True
+    can_send_other_messages: bool = True
+    can_add_web_page_previews: bool = True
+    can_change_info: bool = False
+    can_invite_users: bool = True
+    can_pin_messages: bool = False
+
+class AdminPermissions(BaseModel):
+    can_change_info: bool = False
+    can_post_messages: bool = False # Channel only
+    can_edit_messages: bool = False # Channel only
+    can_delete_messages: bool = False
+    can_ban_users: bool = False
+    can_invite_users: bool = True
+    can_pin_messages: bool = False
+    can_promote_members: bool = False
+
+class ChatMember(BaseModel):
+    user_id: str
+    chat_id: str
+    role: str = Role.MEMBER
+    joined_at: datetime = Field(default_factory=datetime.utcnow)
+    invited_by: Optional[str] = None
+    permissions: Optional[AdminPermissions] = None # For admins
+    restricted_permissions: Optional[ChatPermissions] = None # For restricted users
+    custom_title: Optional[str] = None
+    until_date: Optional[datetime] = None # For bans/restrictions
+
 # Chat Models
 class ChatCreate(BaseModel):
-    type: str = "private"  # private or group
+    type: str = ChatType.PRIVATE
     name: Optional[str] = None
     description: Optional[str] = None
     avatar_url: Optional[str] = None
     member_ids: List[str]
+    # For channels/supergroups
+    username: Optional[str] = None  # public link
+
 
 
 class ChatInDB(BaseModel):
@@ -127,8 +183,26 @@ class ChatInDB(BaseModel):
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     type: str
     name: Optional[str] = None
+    description: Optional[str] = None
+    username: Optional[str] = None # For public access
+    avatar_url: Optional[str] = None
     members: List[str]
+    member_count: int = 0
+    admins: List[str] = []
+    owner_id: Optional[str] = None
+    
+    # Settings
+    permissions: ChatPermissions = Field(default_factory=ChatPermissions)
+    slow_mode_delay: int = 0 # Seconds
+    message_auto_delete_time: Optional[int] = None
+    has_protected_content: bool = False # No forwarding
+    
+    # Generic linkage
+    linked_chat_id: Optional[str] = None # e.g. Channel <-> Discussion Group
+    
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 
 # Message Models
@@ -137,6 +211,16 @@ class MessageCreate(BaseModel):
     file_id: Optional[str] = None
     # Optional language code for the message (e.g. "en", "hi")
     language: Optional[str] = None
+    
+    # Threading
+    reply_to_message_id: Optional[str] = None
+    
+    # Scheduling
+    scheduled_at: Optional[datetime] = None
+    
+    # Silent Check
+    disable_notification: bool = False
+
     
     @field_validator('text')
     @classmethod
@@ -171,27 +255,47 @@ class MessageInDB(BaseModel):
     
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     chat_id: str
-    sender_id: str
-    type: str = "text"  # text or file
+    sender_id: str # In channels, this might be the admin
+    author_signature: Optional[str] = None # For channels
+    
+    type: str = "text"  # text, file, service
     text: Optional[str] = None
     file_id: Optional[str] = None
     # Persist language code with the message for UI display / filtering
     language: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Channel specific
+    views: int = 0
+    
+    # Forwarding
+    forward_from_chat_id: Optional[str] = None
+    forward_from_message_id: Optional[str] = None
+    forward_sender_name: Optional[str] = None
+    forward_date: Optional[datetime] = None
+
+    # Reply / Threading
+    reply_to_message_id: Optional[str] = None
+    # For future: thread_id if we want top-level threads
+
     saved_by: List[str] = []  # List of user IDs who saved this message
     # Reactions: emoji -> [user_id]
     reactions: dict = Field(default_factory=dict)
     # Read receipts: list of {"user_id": str, "read_at": datetime}
     read_by: List[dict] = Field(default_factory=list)
+    
     is_pinned: bool = False
     pinned_at: Optional[datetime] = None
     pinned_by: Optional[str] = None
+    
     is_edited: bool = False
     edited_at: Optional[datetime] = None
     edit_history: List[dict] = Field(default_factory=list)
+    
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
     deleted_by: Optional[str] = None
+
 
 
 # Group / Group Chat Models

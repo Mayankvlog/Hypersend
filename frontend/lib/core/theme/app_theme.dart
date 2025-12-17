@@ -12,7 +12,10 @@ class AppTheme {
   static const Color accentLight = Color(0xFF5DD5FA);
   static const Color errorRed = Color(0xFFEF5350);
   static const Color successGreen = Color(0xFF4CAF50);
+
   static const Color dividerColor = Color(0xFF3A4A5C);
+  static const Color primaryPurple = Color(0xFF9C27B0);
+  static const Color accentGold = Color(0xFFFFA000); // Standard Amber/Gold
 
   // Border Radius
   static const double borderRadiusCard = 12.0;

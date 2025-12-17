@@ -10,7 +10,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/
 lib64/
 parts/
 sdist/
@@ -35,7 +35,7 @@ env/
 .env.local
 
 # Data & Storage
-data/
+/data/
 tmp/
 
 # IDE

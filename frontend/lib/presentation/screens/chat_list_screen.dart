@@ -130,13 +130,57 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ],
         ),
          actions: [
-           IconButton(
-             icon: const Icon(Icons.group_add),
-             onPressed: () async {
-               await context.push('/group-create');
-               if (!mounted) return;
-               await _loadChats();
+
+           PopupMenuButton<String>(
+             icon: const Icon(Icons.add),
+             onSelected: (value) async {
+               if (value == 'group') {
+                 await context.push('/group-create');
+               } else if (value == 'channel') {
+                 // TODO: Navigate to channel creation
+                 ScaffoldMessenger.of(context).showSnackBar(
+                   const SnackBar(content: Text('Channel creation coming soon!')),
+                 );
+               } else if (value == 'secret') {
+                 // TODO: Navigate to secret chat creation
+                 ScaffoldMessenger.of(context).showSnackBar(
+                   const SnackBar(content: Text('Secret chat coming soon!')),
+                 );
+               }
+               if (mounted) await _loadChats();
              },
+             itemBuilder: (context) => [
+               const PopupMenuItem(
+                 value: 'group',
+                 child: Row(
+                   children: [
+                     Icon(Icons.group_add, color: AppTheme.primaryCyan),
+                     SizedBox(width: 8),
+                     Text('New Group'),
+                   ],
+                 ),
+               ),
+               const PopupMenuItem(
+                 value: 'channel',
+                 child: Row(
+                   children: [
+                     Icon(Icons.campaign, color: AppTheme.accentGold),
+                     SizedBox(width: 8),
+                     Text('New Channel'),
+                   ],
+                 ),
+               ),
+               const PopupMenuItem(
+                 value: 'secret',
+                 child: Row(
+                   children: [
+                     Icon(Icons.lock, color: AppTheme.successGreen),
+                     SizedBox(width: 8),
+                     Text('New Secret Chat'),
+                   ],
+                 ),
+               ),
+             ],
            ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),

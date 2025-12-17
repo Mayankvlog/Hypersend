@@ -10,7 +10,7 @@ import asyncio
 
 from auth.utils import get_current_user
 from database import chats_collection, users_collection, messages_collection, get_db
-from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate
+from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
 
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
@@ -276,3 +276,57 @@ async def get_pinned_messages(group_id: str, limit: int = 20, current_user: str 
     return {"messages": msgs}
 
 
+
+@router.put("/{group_id}/permissions")
+async def update_group_permissions(
+    group_id: str, 
+    permissions: ChatPermissions, 
+    current_user: str = Depends(get_current_user)
+):
+    """Update global permissions for the group (what members can do)"""
+    group = await _require_group(group_id, current_user)
+    if not _is_admin(group, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can change permissions")
+        
+    await chats_collection().update_one(
+        {"_id": group_id},
+        {"$set": {"permissions": permissions.model_dump()}}
+    )
+    
+    await _log_activity(group_id, current_user, "permissions_updated", {})
+    return {"status": "updated", "permissions": permissions}
+
+
+@router.put("/{group_id}/members/{member_id}/restrict")
+async def restrict_member(
+    group_id: str,
+    member_id: str,
+    permissions: ChatPermissions,
+    until_date: Optional[datetime] = None,
+    current_user: str = Depends(get_current_user)
+):
+    """Restrict a user's permissions in the group"""
+    group = await _require_group(group_id, current_user)
+    if not _is_admin(group, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can restrict members")
+        
+    # Cannot restrict other admins
+    if member_id in group.get("admins", []):
+        raise HTTPException(status_code=403, detail="Cannot restrict an admin")
+
+    # Store restrictions in a separate connection or embedded field
+    # For now, we'll assume we store it in a 'restrictions' dict in the chat doc or separate collection
+    # A cleaner way is to use the ChatMember model logic, but for now we'll patch the chat document
+    # "restrictions": { "user_id": { permissions... } }
+    
+    restriction_data = permissions.model_dump()
+    if until_date:
+        restriction_data["until_date"] = until_date
+        
+    await chats_collection().update_one(
+        {"_id": group_id},
+        {"$set": {f"restrictions.{member_id}": restriction_data}}
+    )
+    
+    await _log_activity(group_id, current_user, "member_restricted", {"user_id": member_id})
+    return {"status": "restricted", "permissions": permissions}

@@ -9,7 +9,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from database import connect_db, close_db
-from routes import auth, files, chats, users, updates, p2p_transfer, groups, messages
+from routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels
 from config import settings
 from mongo_init import ensure_mongodb_ready
 from security import SecurityConfig
@@ -162,6 +162,7 @@ app.include_router(messages.router, prefix="/api/v1")
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
+app.include_router(channels.router, prefix="/api/v1")
 
 
 

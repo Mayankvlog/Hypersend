@@ -169,6 +169,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }();
   }
 
+  String _getChatSubtitle() {
+    switch (_chat?.type) {
+      case ChatType.group:
+        return 'Group';
+      case ChatType.supergroup:
+        return 'Supergroup';
+      case ChatType.channel:
+        return 'Channel';
+      case ChatType.secret:
+        return 'Secret Chat';
+      case ChatType.saved:
+        return 'Cloud Storage';
+      default:
+        return AppStrings.online;
+    }
+  }
+
   Future<void> _showReactionPicker(Message message) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -408,7 +425,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     style: const TextStyle(fontSize: 16),
                   ),
                   Text(
-                    (_chat?.type == ChatType.group) ? 'Group' : AppStrings.online,
+                    _getChatSubtitle(),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppTheme.primaryCyan,
                         ),
@@ -419,10 +436,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           ],
         ),
         actions: [
-          if (_chat?.type == ChatType.group)
+          if (_chat?.type == ChatType.group || _chat?.type == ChatType.supergroup)
             IconButton(
               icon: const Icon(Icons.info_outline),
               onPressed: () => context.push('/group/${widget.chatId}'),
+            ),
+          if (_chat?.type == ChatType.channel)
+            IconButton(
+              icon: const Icon(Icons.analytics_outlined),
+              onPressed: () {}, // Channel Info/Stats
             ),
           IconButton(
             icon: const Icon(Icons.more_vert),
@@ -433,6 +455,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       body: Column(
         children: [
           if (pinned.isNotEmpty)
+
             Container(
               width: double.infinity,
               margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),

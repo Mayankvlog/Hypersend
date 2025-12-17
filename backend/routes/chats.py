@@ -62,7 +62,8 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
     """Create a new chat (private, group, channel, or saved)"""
     
     # Validate chat type
-    valid_types = ["private", "group", "channel", "saved"]
+    # Validate chat type
+    valid_types = ["private", "group", "supergroup", "channel", "secret", "saved"]
     if chat.type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -174,9 +175,43 @@ async def list_chats(current_user: str = Depends(get_current_user)):
             # Don't break listing if enrichment fails
             pass
         
+
+        # Check if pinned by user
+        current_user_doc = await users_collection().find_one({"_id": current_user}, {"pinned_chats": 1})
+        pinned_chats = current_user_doc.get("pinned_chats", []) if current_user_doc else []
+        chat["is_pinned"] = chat["_id"] in pinned_chats
+        
         chats.append(chat)
     
+    # Sort: Pinned first, then by last/created date
+    chats.sort(key=lambda x: (x.get("is_pinned", False), x.get("last_message", {}).get("created_at") or x.get("created_at")), reverse=True)
+    
     return {"chats": chats}
+
+
+@router.post("/{chat_id}/pin_chat")
+async def pin_chat(chat_id: str, current_user: str = Depends(get_current_user)):
+    """Pin a chat to the top of the list for current user"""
+    # Verify chat existence and membership
+    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+        
+    await users_collection().update_one(
+        {"_id": current_user},
+        {"$addToSet": {"pinned_chats": chat_id}}
+    )
+    return {"status": "pinned", "chat_id": chat_id}
+
+
+@router.post("/{chat_id}/unpin_chat")
+async def unpin_chat(chat_id: str, current_user: str = Depends(get_current_user)):
+    """Unpin a chat"""
+    await users_collection().update_one(
+        {"_id": current_user},
+        {"$pull": {"pinned_chats": chat_id}}
+    )
+    return {"status": "unpinned", "chat_id": chat_id}
 
 
 @router.get("/{chat_id}")
@@ -259,6 +294,8 @@ async def send_message(
         "file_id": message.file_id,
         # Store language code if provided (frontend may send it)
         "language": message.language,
+        "reply_to_message_id": message.reply_to_message_id,
+        "scheduled_at": message.scheduled_at,
         "created_at": datetime.utcnow(),
         # Message features
         "reactions": {},

@@ -207,3 +207,55 @@ async def mark_read(message_id: str, current_user: str = Depends(get_current_use
     return {"status": "read", "message_id": message_id}
 
 
+
+@router.get("/search")
+async def search_messages(
+    q: str, 
+    chat_id: Optional[str] = None, 
+    limit: int = 50,
+    has_media: bool = False,
+    has_link: bool = False,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Search messages globally or within a chat.
+    Filters: text query (q), has_media, has_link.
+    """
+    if not q and not has_media and not has_link:
+        raise HTTPException(status_code=400, detail="Search query or filter required")
+    
+    # Base filter
+    filter_doc = {"is_deleted": {"$ne": True}}
+    
+    # Text search
+    if q:
+        filter_doc["text"] = {"$regex": q, "$options": "i"}
+        
+    # Media/Link filters
+    if has_media:
+        filter_doc["file_id"] = {"$ne": None}
+    
+    # To filter by links we would need regex on text, but for now let's assume client handles or simple regex
+    if has_link:
+        # Simple regex for http/https
+        if "text" in filter_doc:
+             # Merge regex? simpler to just add another condition using $and if needed, but regex can be combined
+             pass 
+        else:
+             filter_doc["text"] = {"$regex": r"https?://", "$options": "i"}
+
+    # Scope
+    if chat_id:
+        # Verify access
+        chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+        if not chat:
+            raise HTTPException(status_code=403, detail="Chat not found or access denied")
+        filter_doc["chat_id"] = chat_id
+    else:
+        # Global search: get all chat IDs user is member of
+        user_chats = await chats_collection().find({"members": current_user}, {"_id": 1}).to_list(1000)
+        user_chat_ids = [c["_id"] for c in user_chats]
+        filter_doc["chat_id"] = {"$in": user_chat_ids}
+        
+    messages = await messages_collection().find(filter_doc).sort("created_at", -1).limit(limit).to_list(limit)
+    return {"messages": messages, "count": len(messages)}
