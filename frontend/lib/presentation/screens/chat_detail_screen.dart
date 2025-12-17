@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/mock/mock_data.dart';
 import '../../data/models/message.dart';
 import '../../data/models/chat.dart';
-import '../../data/models/group.dart';
+import '../../data/services/service_provider.dart';
 import '../widgets/message_bubble.dart';
 
 class ChatDetailScreen extends StatefulWidget {
@@ -22,21 +21,18 @@ class ChatDetailScreen extends StatefulWidget {
 
 class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final TextEditingController _messageController = TextEditingController();
-  late List<Message> _messages;
-  late final Chat _chat;
-  Group? _group;
+  List<Message> _messages = [];
+  Chat? _chat;
+  bool _loading = true;
+  String? _error;
+  String _meId = '';
 
   static const List<String> _quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
   @override
   void initState() {
     super.initState();
-    _chat = MockData.chats.firstWhere((c) => c.id == widget.chatId);
-    _group = MockData.groups.where((g) => g.id == widget.chatId).isNotEmpty
-        ? MockData.groups.firstWhere((g) => g.id == widget.chatId)
-        : null;
-    _messages = MockData.messages.where((m) => m.chatId == widget.chatId).toList();
-    _markAllVisibleAsRead();
+    _load();
   }
 
   @override
@@ -47,62 +43,130 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   void _sendMessage() {
     if (_messageController.text.trim().isEmpty) return;
-
-    setState(() {
-      _messages.add(
-        Message(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          chatId: widget.chatId,
-          senderId: 'me',
-          content: _messageController.text.trim(),
-          timestamp: DateTime.now(),
-          status: MessageStatus.sent,
-          isOwn: true,
-          readBy: const ['me'],
-        ),
-      );
-    });
-
+    _sendMessageApi(_messageController.text.trim());
     _messageController.clear();
   }
 
-  void _markAllVisibleAsRead() {
-    final me = MockData.currentUser.id;
+  Future<void> _sendMessageApi(String text) async {
+    if (!serviceProvider.authService.isLoggedIn) {
+      if (!mounted) return;
+      context.go('/auth');
+      return;
+    }
+
+    // Optimistic append
+    final me = serviceProvider.authService.accessToken != null ? 'me' : 'me';
+    final optimistic = Message(
+      id: 'tmp_${DateTime.now().millisecondsSinceEpoch}',
+      chatId: widget.chatId,
+      senderId: me,
+      content: text,
+      timestamp: DateTime.now(),
+      status: MessageStatus.sent,
+      isOwn: true,
+      readBy: const [],
+    );
+    setState(() => _messages.add(optimistic));
+
+    try {
+      await serviceProvider.apiService.sendMessage(chatId: widget.chatId, content: text);
+      await _loadMessages();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send: $e')),
+      );
+    }
+  }
+
+  Future<void> _load() async {
+    if (!serviceProvider.authService.isLoggedIn) {
+      if (!mounted) return;
+      context.go('/auth');
+      return;
+    }
+    await _loadMessages();
+  }
+
+  Future<void> _loadMessages() async {
     setState(() {
-      _messages = _messages
-          .map((m) => m.readBy.contains(me) ? m : m.copyWith(readBy: [...m.readBy, me]))
-          .toList();
+      _loading = true;
+      _error = null;
     });
+    try {
+      final chatList = await serviceProvider.apiService.getChats();
+      final found = chatList.map(Chat.fromApi).where((c) => c.id == widget.chatId).toList();
+      final chat = found.isNotEmpty ? found.first : null;
+      final res = await serviceProvider.apiService.getChatMessages(widget.chatId);
+      final raw = List<Map<String, dynamic>>.from(res['messages'] ?? const []);
+      final meId = (await serviceProvider.apiService.getMe())['id']?.toString() ?? '';
+      final msgs = raw.map((m) => Message.fromApi(m, currentUserId: meId)).toList();
+      if (!mounted) return;
+      setState(() {
+        _chat = chat;
+        _messages = msgs;
+        _meId = meId;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
   }
 
   void _togglePin(Message message) {
+    if (message.id.startsWith('tmp_')) return;
+    final willPin = !message.isPinned;
     setState(() {
       _messages = _messages
-          .map((m) => m.id == message.id ? m.copyWith(isPinned: !m.isPinned) : m)
+          .map((m) => m.id == message.id ? m.copyWith(isPinned: willPin) : m)
           .toList();
     });
+    () async {
+      try {
+        if (willPin) {
+          await serviceProvider.apiService.pinMessage(message.id);
+        } else {
+          await serviceProvider.apiService.unpinMessage(message.id);
+        }
+        await _loadMessages();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Pin failed: $e')));
+      }
+    }();
   }
 
   void _toggleReaction(Message message, String emoji) {
-    final me = MockData.currentUser.id;
+    if (message.id.startsWith('tmp_')) return;
+    // optimistic toggle
     final current = Map<String, List<String>>.from(message.reactions);
     final users = List<String>.from(current[emoji] ?? const []);
-    if (users.contains(me)) {
-      users.remove(me);
+    if (users.contains(_meId)) {
+      users.remove(_meId);
     } else {
-      users.add(me);
+      users.add(_meId);
     }
     if (users.isEmpty) {
       current.remove(emoji);
     } else {
       current[emoji] = users;
     }
-
     setState(() {
-      _messages = _messages
-          .map((m) => m.id == message.id ? m.copyWith(reactions: current) : m)
-          .toList();
+      _messages = _messages.map((m) => m.id == message.id ? m.copyWith(reactions: current) : m).toList();
     });
+    () async {
+      try {
+        await serviceProvider.apiService.toggleReaction(message.id, emoji);
+        await _loadMessages();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reaction failed: $e')));
+      }
+    }();
   }
 
   Future<void> _showReactionPicker(Message message) async {
@@ -176,11 +240,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
 
     if (newText == null || newText.isEmpty) return;
+    if (message.id.startsWith('tmp_')) return;
     setState(() {
       _messages = _messages
           .map((m) => m.id == message.id ? m.copyWith(content: newText, isEdited: true, editedAt: DateTime.now()) : m)
           .toList();
     });
+    try {
+      await serviceProvider.apiService.editMessage(message.id, newText);
+      await _loadMessages();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Edit failed: $e')));
+    }
   }
 
   Future<void> _deleteMessage(Message message) async {
@@ -209,11 +281,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         false;
 
     if (!confirm) return;
+    if (message.id.startsWith('tmp_')) return;
     setState(() {
       _messages = _messages
-          .map((m) => m.id == message.id ? m.copyWith(isDeleted: true, deletedAt: DateTime.now(), content: '') : m)
+          .map((m) => m.id == message.id ? m.copyWith(isDeleted: true, deletedAt: DateTime.now(), content: null) : m)
           .toList();
     });
+    try {
+      await serviceProvider.apiService.deleteMessage(message.id, hardDelete: false);
+      await _loadMessages();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+    }
   }
 
   Future<void> _showMessageActions(Message message) async {
@@ -284,7 +364,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = MockData.chatUser;
     final pinned = _messages.where((m) => m.isPinned && !m.isDeleted).toList();
 
     return Scaffold(
@@ -300,44 +379,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 CircleAvatar(
                   radius: 20,
                   backgroundColor: AppTheme.cardDark,
-                  backgroundImage: user.avatar.startsWith('http')
-                      ? NetworkImage(user.avatar)
-                      : null,
-                  onBackgroundImageError: (exception, stackTrace) {
-                    // Fallback handled by child
-                  },
-                  child: user.avatar.startsWith('http')
-                      ? null
-                      : Center(
-                          child: Text(
-                            user.avatar.length > 2
-                                ? user.avatar.substring(0, 2).toUpperCase()
-                                : user.avatar.toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                ),
-                if (user.isOnline)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: AppTheme.successGreen,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppTheme.backgroundDark,
-                          width: 2,
-                        ),
+                  child: Center(
+                    child: Text(
+                      () {
+                        final name = (_chat?.name ?? 'Chat').trim();
+                        if (name.isEmpty) return 'C';
+                        return name.length >= 2
+                            ? name.substring(0, 2).toUpperCase()
+                            : name.substring(0, 1).toUpperCase();
+                      }(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
+                ),
               ],
             ),
             const SizedBox(width: 12),
@@ -346,11 +404,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _chat.type == ChatType.group ? _chat.name : user.name,
+                    _chat?.name ?? 'Chat',
                     style: const TextStyle(fontSize: 16),
                   ),
                   Text(
-                    _chat.type == ChatType.group ? '${(_group?.members.length ?? 0)} members' : AppStrings.online,
+                    (_chat?.type == ChatType.group) ? 'Group' : AppStrings.online,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppTheme.primaryCyan,
                         ),
@@ -361,10 +419,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           ],
         ),
         actions: [
-          if (_chat.type == ChatType.group)
+          if (_chat?.type == ChatType.group)
             IconButton(
               icon: const Icon(Icons.info_outline),
-              onPressed: () => context.push('/group/${_chat.id}'),
+              onPressed: () => context.push('/group/${widget.chatId}'),
             ),
           IconButton(
             icon: const Icon(Icons.more_vert),
@@ -403,40 +461,60 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
           // Messages list
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              itemCount: _messages.length + 1, // +1 for date divider
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Center(
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 16),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardDark,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        AppStrings.today,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  );
-                }
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.error_outline, color: AppTheme.errorRed, size: 48),
+                              const SizedBox(height: 12),
+                              Text('Failed to load messages', style: Theme.of(context).textTheme.titleMedium),
+                              const SizedBox(height: 8),
+                              Text(_error!, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+                              const SizedBox(height: 16),
+                              ElevatedButton(onPressed: _loadMessages, child: const Text('Retry')),
+                            ],
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        itemCount: _messages.length + 1, // +1 for date divider
+                        itemBuilder: (context, index) {
+                          if (index == 0) {
+                            return Center(
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.cardDark,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  AppStrings.today,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                            );
+                          }
 
-                final message = _messages[index - 1];
-                return MessageBubble(
-                  message: message,
-                  avatarUrl: message.isOwn ? null : user.avatar,
-                  onLongPress: () => _showMessageActions(message),
-                  onToggleReaction: (emoji) => _toggleReaction(message, emoji),
-                  onAddReaction: () => _showReactionPicker(message),
-                );
-              },
-            ),
+                          final message = _messages[index - 1];
+                          return MessageBubble(
+                            message: message,
+                            avatarUrl: null,
+                            onLongPress: () => _showMessageActions(message),
+                            onToggleReaction: (emoji) => _toggleReaction(message, emoji),
+                            onAddReaction: () => _showReactionPicker(message),
+                          );
+                        },
+                      ),
           ),
           // Input bar
           Container(

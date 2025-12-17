@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/mock/mock_data.dart';
 import '../../data/models/chat.dart';
+import '../../data/services/service_provider.dart';
 import '../widgets/chat_list_item.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -17,11 +17,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   List<Chat> _filteredChats = [];
+  List<Chat> _allChats = [];
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _filteredChats = MockData.chats;
+    _loadChats();
   }
 
   @override
@@ -33,9 +36,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   void _onSearchChanged(String query) {
     setState(() {
       if (query.isEmpty) {
-        _filteredChats = MockData.chats;
+        _filteredChats = _allChats;
       } else {
-        _filteredChats = MockData.chats
+        _filteredChats = _allChats
             .where((chat) =>
                 chat.name.toLowerCase().contains(query.toLowerCase()) ||
                 chat.lastMessage.toLowerCase().contains(query.toLowerCase()))
@@ -60,6 +63,36 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   void _onChatTap(Chat chat) {
     context.push('/chat/${chat.id}');
+  }
+
+  Future<void> _loadChats() async {
+    if (!serviceProvider.authService.isLoggedIn) {
+      if (!mounted) return;
+      context.go('/auth');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final raw = await serviceProvider.apiService.getChats();
+      final chats = raw.map(Chat.fromApi).toList();
+      if (!mounted) return;
+      setState(() {
+        _allChats = chats;
+        _filteredChats = chats;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -102,10 +135,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
              onPressed: () async {
                await context.push('/group-create');
                if (!mounted) return;
-               setState(() {
-                 // Refresh list after creating a group (MockData updated)
-                 _filteredChats = MockData.chats;
-               });
+               await _loadChats();
              },
            ),
           IconButton(
@@ -142,7 +172,37 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
           // Chat list
           Expanded(
-            child: _filteredChats.isEmpty
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.error_outline, color: AppTheme.errorRed, size: 48),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Failed to load chats',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _error!,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: _loadChats,
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _filteredChats.isEmpty
                 ? Center(
                     child: Text(
                       'No chats found',
@@ -268,7 +328,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 title: const Text(AppStrings.logout),
                 onTap: () {
                   Navigator.of(context).pop();
-                  context.go('/permissions');
+                  serviceProvider.authService.logout();
+                  context.go('/auth');
                 },
               ),
             ],

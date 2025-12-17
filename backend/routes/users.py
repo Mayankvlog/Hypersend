@@ -220,6 +220,39 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
         )
 
 
+@router.get("/contacts")
+async def list_contacts(current_user: str = Depends(get_current_user), limit: int = 50):
+    """List users for contact selection (used for group creation)."""
+    try:
+        cursor = users_collection().find(
+            {"_id": {"$ne": current_user}},
+            {"_id": 1, "name": 1, "email": 1}
+        ).sort("created_at", -1).limit(limit)
+
+        async def fetch_results():
+            results = []
+            async for user in cursor:
+                results.append({
+                    "id": user["_id"],
+                    "name": user.get("name", ""),
+                    "email": user.get("email", ""),
+                })
+            return results
+
+        users = await asyncio.wait_for(fetch_results(), timeout=5.0)
+        return {"users": users}
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch contacts: {str(e)}"
+        )
+
+
 @router.get("/permissions")
 async def get_permissions(current_user: str = Depends(get_current_user)):
     """Get current user's app permissions"""

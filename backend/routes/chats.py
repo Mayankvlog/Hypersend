@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from models import ChatCreate, MessageCreate
-from database import chats_collection, messages_collection
+from database import chats_collection, messages_collection, users_collection
 from auth.utils import get_current_user
 import logging
 
@@ -147,6 +147,33 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         )
         
         chat["last_message"] = last_message
+        
+        # Add display fields for UI
+        try:
+            if chat.get("type") == "private":
+                # Best-effort resolve other user's name
+                members = chat.get("members", [])
+                other_id = None
+                for mid in members:
+                    if mid != current_user:
+                        other_id = mid
+                        break
+                if other_id:
+                    other_user = await users_collection().find_one({"_id": other_id}, {"name": 1, "email": 1})
+                    chat["display_name"] = other_user.get("name") if other_user else "Private Chat"
+                else:
+                    chat["display_name"] = "Private Chat"
+            else:
+                chat["display_name"] = chat.get("name") or chat.get("type", "Chat").capitalize()
+
+            # For group chats, include sender name in last message
+            if chat.get("type") == "group" and last_message and last_message.get("sender_id"):
+                sender = await users_collection().find_one({"_id": last_message["sender_id"]}, {"name": 1})
+                chat["last_message_sender_name"] = sender.get("name") if sender else None
+        except Exception:
+            # Don't break listing if enrichment fails
+            pass
+        
         chats.append(chat)
     
     return {"chats": chats}

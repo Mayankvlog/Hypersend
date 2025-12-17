@@ -35,6 +35,45 @@ class Message extends Equatable {
     this.readBy = const [],
   });
 
+  factory Message.fromApi(Map<String, dynamic> json, {required String currentUserId}) {
+    final senderId = (json['sender_id'] ?? json['senderId'] ?? '').toString();
+    final createdAtRaw = json['created_at'] ?? json['createdAt'];
+    final createdAt = createdAtRaw is String ? DateTime.tryParse(createdAtRaw) : null;
+
+    final reactionsRaw = (json['reactions'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
+    final reactions = <String, List<String>>{};
+    for (final entry in reactionsRaw.entries) {
+      final users = (entry.value as List?)?.map((e) => e.toString()).toList() ?? <String>[];
+      reactions[entry.key] = users;
+    }
+
+    final readByRaw = (json['read_by'] as List?) ?? const [];
+    final readBy = readByRaw
+        .map((e) => (e is Map ? e['user_id'] : e)?.toString())
+        .whereType<String>()
+        .toList();
+
+    final isDeleted = json['is_deleted'] == true;
+    final text = (json['text'] ?? '').toString();
+
+    return Message(
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      chatId: (json['chat_id'] ?? json['chatId'] ?? '').toString(),
+      senderId: senderId,
+      content: isDeleted ? null : text,
+      timestamp: createdAt ?? DateTime.now(),
+      status: readBy.length > 1 ? MessageStatus.read : MessageStatus.sent,
+      isOwn: senderId == currentUserId,
+      isPinned: json['is_pinned'] == true,
+      isEdited: json['is_edited'] == true,
+      isDeleted: isDeleted,
+      editedAt: (json['edited_at'] is String) ? DateTime.tryParse(json['edited_at']) : null,
+      deletedAt: (json['deleted_at'] is String) ? DateTime.tryParse(json['deleted_at']) : null,
+      reactions: reactions,
+      readBy: readBy,
+    );
+  }
+
   Message copyWith({
     String? id,
     String? chatId,
