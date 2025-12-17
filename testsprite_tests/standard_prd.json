@@ -1,0 +1,113 @@
+{
+  "meta": {
+    "project": "ChatApp",
+    "date": "2025-12-10",
+    "prepared_by": "Software Development Manager"
+  },
+  "product_overview": "ChatApp is a modern messaging application supporting authenticated user accounts, one-to-one and group chats, rich messaging features including reactions and edits, robust file transfers with chunked and P2P capabilities, and comprehensive settings and navigation UI.",
+  "core_goals": [
+    "Provide secure and seamless user authentication and account management with JWT.",
+    "Enable real-time one-to-one and group chat messaging with management of groups and members.",
+    "Support rich messaging interactions including reactions, editing, deleting, pinning, and read receipts.",
+    "Implement reliable file transfer using chunked uploads and optional peer-to-peer WebSocket flows.",
+    "Deliver intuitive routing and settings UI for managing app behavior and permissions."
+  ],
+  "key_features": [
+    "JWT-based user registration, login, logout, refresh tokens, and password reset with quota tracking.",
+    "Creation, listing, and messaging in direct and group chats with group metadata and membership management.",
+    "Rich message model supporting emoji reactions, edit history, soft deletes, pinned messages, and read receipts.",
+    "WhatsApp-style resumable chunked file uploads with metadata storage and optional P2P transfer over WebSocket.",
+    "Flutter GoRouter based navigation with permissions, profile, and settings management screens."
+  ],
+  "user_flow_summary": [
+    "User registers and logs in using JWT authentication.",
+    "User browses chat list showing one-to-one and group chats.",
+    "User opens a chat detail screen to send and receive messages with interactions like reactions and edits.",
+    "User creates or manages groups with group membership control.",
+    "User initiates file upload with resumable chunked transfers or P2P transfer option.",
+    "User navigates through settings and permissions screens to customize app behavior."
+  ],
+  "validation_criteria": [
+    "Authentication flows must securely handle token refresh and password resets without data leaks.",
+    "Chats must display consistent and updated message states including reactions, edits, pins, and read receipts.",
+    "File transfers must support resumable uploads and complete without corruption using chunked or P2P mechanisms.",
+    "UI navigation must correctly route users through chat screens, group management, and settings with no dead ends.",
+    "Settings changes must persist and permission requests must be handled gracefully with appropriate user feedback."
+  ],
+  "code_summary": {
+    "tech_stack": [
+      "python",
+      "fastapi",
+      "mongodb",
+      "flutter",
+      "dart",
+      "nginx"
+    ],
+    "features": [
+      {
+        "name": "Authentication and Accounts",
+        "description": "JWT-based auth with registration, login, logout, refresh tokens, password reset, and quota tracking for each user.",
+        "files": [
+          "backend/routes/auth.py",
+          "backend/models.py",
+          "backend/auth/utils.py",
+          "backend/config.py",
+          "frontend/lib/presentation/screens/auth_screen.dart",
+          "frontend/lib/data/services/auth_service.dart",
+          "frontend/lib/data/services/api_service.dart"
+        ]
+      },
+      {
+        "name": "One-to-one and Group Chats",
+        "description": "Chat creation, listing, and messaging for direct and group chats, with group metadata, membership, and activity.",
+        "files": [
+          "backend/routes/chats.py",
+          "backend/routes/groups.py",
+          "backend/models.py",
+          "frontend/lib/presentation/screens/chat_list_screen.dart",
+          "frontend/lib/presentation/screens/chat_detail_screen.dart",
+          "frontend/lib/presentation/screens/group_creation_screen.dart",
+          "frontend/lib/presentation/screens/group_detail_screen.dart",
+          "frontend/lib/data/models/chat.dart",
+          "frontend/lib/data/models/group.dart",
+          "frontend/lib/data/models/group_member.dart"
+        ]
+      },
+      {
+        "name": "Messaging Features (reactions, edit, delete, pin)",
+        "description": "Rich message model with emoji reactions, pinned messages, soft delete, edit history, and read receipts.",
+        "files": [
+          "backend/routes/messages.py",
+          "backend/routes/message_reactions.py",
+          "backend/models.py",
+          "frontend/lib/data/models/message.dart",
+          "frontend/lib/presentation/widgets/message_bubble.dart",
+          "frontend/lib/presentation/widgets/message_reactions_bar.dart",
+          "frontend/lib/presentation/screens/chat_detail_screen.dart"
+        ]
+      },
+      {
+        "name": "File Transfer (Chunked and P2P)",
+        "description": "WhatsApp-style file transfer with resumable chunked uploads, metadata storage on server, and optional P2P WebSocket flows.",
+        "files": [
+          "backend/routes/files.py",
+          "backend/routes/p2p_transfer.py",
+          "backend/models.py",
+          "backend/config.py",
+          "frontend/lib/data/services/file_transfer_service.dart",
+          "frontend/lib/presentation/screens/file_transfer_screen.dart"
+        ]
+      },
+      {
+        "name": "Routing and Settings UI",
+        "description": "Flutter GoRouter navigation, settings, permissions, and profile screens for managing app behavior.",
+        "files": [
+          "frontend/lib/core/router/app_router.dart",
+          "frontend/lib/presentation/screens/permissions_screen.dart",
+          "frontend/lib/presentation/screens/settings_screen.dart",
+          "frontend/lib/core/constants/app_strings.dart"
+        ]
+      }
+    ]
+  }
+}

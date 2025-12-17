@@ -4,9 +4,9 @@ class ApiConstants {
   // For production, use HTTPS with your domain
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    // TODO: Replace with your HTTPS domain before production
-    // Example: defaultValue: 'https://api.yourdomain.com'
-    defaultValue: 'http://139.59.82.105:8000', // Development only
+    // Default to VPS Nginx HTTPS endpoint that fronts the FastAPI backend.
+    // FastAPI routers are mounted under /api/v1, and Nginx proxies /api/ to the backend.
+    defaultValue: 'https://139.59.82.105/api/v1',
   );
   
   // API Endpoints

@@ -53,8 +53,8 @@ class Settings:
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
-    # Default public API base URL for this deployment (VPS)
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://139.59.82.105:8000")
+    # Default public API base URL for this deployment (VPS behind Nginx HTTPS)
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://139.59.82.105")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -84,11 +84,11 @@ class Settings:
         "http://127.0.0.1:64216",
         "http://0.0.0.0:8000",
         "http://backend:8000",
-        # Add VPS IP only if needed
+        # Add VPS IP / domain (HTTP + HTTPS) and Netlify frontend
         "http://139.59.82.105",
         "http://139.59.82.105:8000",
         "http://139.59.82.105:8550",
-        # Deployed web app (Netlify)
+        "https://139.59.82.105",
         "https://hypersend.netlify.app",
     ]
     

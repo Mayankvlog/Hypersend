@@ -1,0 +1,534 @@
+[
+  {
+    "id": "TC001",
+    "title": "User Registration with Valid Data",
+    "description": "Verify that a new user can register successfully using valid information and that JWT token is issued.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the registration screen"
+      },
+      {
+        "type": "action",
+        "description": "Input valid user details (username, email, password)"
+      },
+      {
+        "type": "action",
+        "description": "Submit the registration form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify registration is successful and JWT access and refresh tokens are received"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "User Registration with Missing Required Fields",
+    "description": "Verify that registration fails with appropriate error when required fields are missing.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the registration screen"
+      },
+      {
+        "type": "action",
+        "description": "Submit registration with one or more required fields missing"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an error message is shown indicating missing fields and no tokens are issued"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Login with Correct Credentials",
+    "description": "Check login process succeeds using valid username/email and password, issuing JWT tokens.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login screen"
+      },
+      {
+        "type": "action",
+        "description": "Input valid username/email and password"
+      },
+      {
+        "type": "action",
+        "description": "Submit login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm login success and receipt of access and refresh tokens"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Login with Incorrect Credentials",
+    "description": "Ensure login fails appropriately when incorrect username/email or password is used.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login screen"
+      },
+      {
+        "type": "action",
+        "description": "Input invalid username/email or incorrect password"
+      },
+      {
+        "type": "action",
+        "description": "Submit login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify login failure message and no tokens issued"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Password Reset Flow Valid Email",
+    "description": "Verify password reset initiation and completion processes function correctly with valid email and reset token.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to password reset screen"
+      },
+      {
+        "type": "action",
+        "description": "Input registered email for password reset"
+      },
+      {
+        "type": "action",
+        "description": "Submit password reset request"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify reset token is sent to email (simulated) and user can set new password"
+      },
+      {
+        "type": "action",
+        "description": "Use reset token to set a new password"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm password is updated and user can login with new password"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Token Refresh Success",
+    "description": "Verify that access tokens can be refreshed using a valid refresh token without user re-login.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and obtain access and refresh tokens"
+      },
+      {
+        "type": "action",
+        "description": "Simulate access token expiry"
+      },
+      {
+        "type": "action",
+        "description": "Request new access token using refresh token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify new access token is issued and valid"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Token Refresh with Invalid Refresh Token",
+    "description": "Ensure token refresh request fails and returns an error when using an invalid or expired refresh token.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt to refresh access token with tampered or expired refresh token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify error response indicating invalid refresh token and no new access token issued"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Display Chat List with Mixed One-to-One and Group Chats",
+    "description": "Validate that chat list correctly displays all one-to-one and group chats with accurate metadata.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login to the application"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to chat list screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify display of all one-to-one and group chats including names, last message, and timestamps"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Send and Receive Message in One-to-One Chat",
+    "description": "Verify sending a message in a direct chat and receiving real-time update for both sender and receiver.",
+    "category": "integration",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Open existing one-to-one chat"
+      },
+      {
+        "type": "action",
+        "description": "Send text message"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify message appears in sender and receiver chat detail screen in real-time"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Create Group Chat and Add Members",
+    "description": "Test creation of a new group chat, adding multiple members, and verifying group metadata is accurate.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to group creation screen"
+      },
+      {
+        "type": "action",
+        "description": "Input group name and add members"
+      },
+      {
+        "type": "action",
+        "description": "Submit to create group chat"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify group chat is created with correct metadata and members are listed"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Send Message with Rich Features (Emoji Reaction, Edit, Delete, Pin)",
+    "description": "Validate the message supports reactions, allowing editing, soft deletion, and pinning functionality as specified.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send a message in group chat"
+      },
+      {
+        "type": "action",
+        "description": "Add emoji reactions to the message"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify reactions are displayed and counted accurately"
+      },
+      {
+        "type": "action",
+        "description": "Edit the previously sent message"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify message showing updated content and edit history is preserved"
+      },
+      {
+        "type": "action",
+        "description": "Soft delete the message"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm message is marked deleted but visible as per soft delete rules"
+      },
+      {
+        "type": "action",
+        "description": "Pin the message in the group chat"
+      },
+      {
+        "type": "assertion",
+        "description": "Check that the message appears in pinned messages list"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Read Receipt Updates",
+    "description": "Ensure that read receipts update properly and sync across all group and one-to-one chat participants.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send message from one participant"
+      },
+      {
+        "type": "action",
+        "description": "Other user opens and reads the message"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that the sender's UI shows the read receipt is updated in real-time"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Chunked File Upload - Complete Flow",
+    "description": "Test file upload using chunked mechanism ensuring resumability, metadata correctness, and successful finalization.",
+    "category": "integration",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Select a large file for upload"
+      },
+      {
+        "type": "action",
+        "description": "Upload file chunks in sequence"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify each chunk is successfully stored and acknowledged"
+      },
+      {
+        "type": "action",
+        "description": "Simulate interruption and resume upload"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm upload resumes from last confirmed chunk"
+      },
+      {
+        "type": "action",
+        "description": "Complete all chunks upload"
+      },
+      {
+        "type": "assertion",
+        "description": "Validate server stores complete metadata and file integrity is confirmed"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "P2P File Transfer via WebSocket",
+    "description": "Verify optional peer-to-peer file transfer over WebSocket is functional between two clients.",
+    "category": "integration",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Initiate P2P file transfer on sender client"
+      },
+      {
+        "type": "action",
+        "description": "Accept P2P file transfer on receiver client"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify file is transferred fully and integrity is maintained"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Navigation Routing Correctness",
+    "description": "Validate that app navigation via Flutter GoRouter routes users correctly between login, chat list, chat detail, group management, and settings screens with no dead ends.",
+    "category": "ui",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login into the app"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to chat list screen"
+      },
+      {
+        "type": "action",
+        "description": "Open a one-to-one chat detail screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify chat detail screen loads properly"
+      },
+      {
+        "type": "action",
+        "description": "Navigate back to chat list"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to group creation and group detail screens"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify group screens load and transitions occur smoothly"
+      },
+      {
+        "type": "action",
+        "description": "Open permissions, profile, and settings screens"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm all settings-related screens render correctly and navigation can return to main screens"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Settings Change Persistence and Permission Handling",
+    "description": "Test changes to settings persist after app restarts and permission requests display proper user feedback.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to settings screen"
+      },
+      {
+        "type": "action",
+        "description": "Modify various app settings (e.g., notifications, privacy)"
+      },
+      {
+        "type": "action",
+        "description": "Restart the app"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the changed settings persist correctly"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to permissions screen and trigger permission request (e.g., for file access)"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm user is prompted for permission and appropriate success or denial feedback is displayed"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Quota Tracking Enforcement on Registration and Usage",
+    "description": "Validate that user registration and file usage respect quota limits and errors are returned when exceeded.",
+    "category": "error handling",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Register new user and check initial quota assigned"
+      },
+      {
+        "type": "action",
+        "description": "Perform file uploads until quota exhausted"
+      },
+      {
+        "type": "action",
+        "description": "Attempt additional file upload beyond quota"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify error message returned preventing upload due to quota limits"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Group Membership Management Edge Cases",
+    "description": "Ensure group membership changes (adding/removing members) behave correctly including edge cases like removing last member or adding duplicates.",
+    "category": "error handling",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Create group and add initial members"
+      },
+      {
+        "type": "action",
+        "description": "Attempt adding existing member again"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify duplicate addition is prevented and appropriate error shown"
+      },
+      {
+        "type": "action",
+        "description": "Remove members one by one"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify group handles empty membership state robustly, preventing invalid state or crashes"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Message Edit History Consistency",
+    "description": "Verify that message edit history is stored and correctly displayed, including multiple edits on the same message.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send a new message"
+      },
+      {
+        "type": "action",
+        "description": "Edit message multiple times in different ways"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify complete edit history is accessible and displayed correctly"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Soft Delete Behavior in Message Display",
+    "description": "Validate that soft deleted messages are flagged but remain visible with proper UI cues and do not break message flow.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send a message and then soft delete it"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify message is marked as deleted, visually distinct, and conversation context remains intact"
+      }
+    ]
+  }
+]
