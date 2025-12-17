@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/service_provider.dart';
 import '../../data/services/settings_service.dart';
@@ -228,6 +229,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 );
+              },
+            ),
+            const SizedBox(height: 24),
+            // Account section
+            _buildSectionHeader('ACCOUNT'),
+            _buildSettingsTile(
+              icon: Icons.logout,
+              title: AppStrings.logout,
+              onTap: () {
+                // Demo logout: return to permissions screen
+                context.go('/permissions');
               },
             ),
             const SizedBox(height: 32),
