@@ -4,13 +4,17 @@ services:
     container_name: hypersend_nginx
     restart: unless-stopped
     ports:
-      - "${NGINX_PORT:-8080}:80"
-      - "${NGINX_PORT_SSL:-8445}:443"
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_PORT_SSL:-443}:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./data:/data:ro
       - nginx_cache:/var/cache/nginx
-      - nginx_ssl:/etc/nginx/ssl
+      # Mount real SSL certificates from Let's Encrypt
+      - /etc/letsencrypt/live/your-domain.com/fullchain.pem:/etc/nginx/ssl/cert.pem:ro
+      - /etc/letsencrypt/live/your-domain.com/privkey.pem:/etc/nginx/ssl/key.pem:ro
+      # Auto-renewal helper
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
       - frontend
@@ -22,15 +26,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-    entrypoint: /bin/sh -c "apk add --no-cache openssl && 
-      mkdir -p /etc/nginx/ssl && 
-      if [ ! -f /etc/nginx/ssl/cert.pem ]; then 
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 
-        -keyout /etc/nginx/ssl/key.pem 
-        -out /etc/nginx/ssl/cert.pem 
-        -subj '/C=IN/ST=State/L=City/O=Hypersend/CN=139.59.82.105'; 
-      fi && 
-      nginx -g 'daemon off;'"
 
   mongodb:
     image: mongo:7.0
@@ -83,7 +78,7 @@ services:
       FILE_RETENTION_HOURS: 0
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: ${API_BASE_URL:-http://139.59.82.105:8000}
+      API_BASE_URL: ${API_BASE_URL:-https://your-domain.com}
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       DEBUG: True
@@ -109,7 +104,7 @@ services:
       - "8550:8550"
     environment:
       API_BASE_URL: http://backend:8000
-      PRODUCTION_API_URL: ${PRODUCTION_API_URL:-http://139.59.82.105:8000}
+      PRODUCTION_API_URL: ${PRODUCTION_API_URL:-https://your-domain.com}
       DEBUG: True
     depends_on:
       backend:
@@ -134,6 +129,4 @@ volumes:
   mongodb_config:
     driver: local
   nginx_cache:
-    driver: local
-  nginx_ssl:
     driver: local
