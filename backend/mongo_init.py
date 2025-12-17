@@ -40,7 +40,7 @@ async def init_mongodb():
         print("[MONGO_INIT]   db.createUser({user: 'hypersend', pwd: 'your-secure-password', roles: [{role: 'readWrite', db: 'hypersend'}]})")
         
         # Create collections if they don't exist
-        collections = ['users', 'chats', 'messages', 'files', 'uploads', 'refresh_tokens', 'reset_tokens']
+        collections = ['users', 'chats', 'messages', 'files', 'uploads', 'refresh_tokens', 'reset_tokens', 'group_activity']
         
         for collection_name in collections:
             try:
@@ -59,10 +59,14 @@ async def init_mongodb():
         indexes_to_create = [
             ('users', [('email', 1)], {'unique': True}, "users.email"),
             ('chats', [('members', 1)], {}, "chats.members"),
+            ('chats', [('type', 1), ('created_at', -1)], {}, "chats.type, created_at"),
             ('messages', [('chat_id', 1), ('created_at', -1)], {}, "messages.chat_id, created_at"),
+            ('messages', [('chat_id', 1), ('is_pinned', 1), ('pinned_at', -1)], {}, "messages.chat_id, is_pinned, pinned_at"),
+            ('messages', [('chat_id', 1), ('is_deleted', 1)], {}, "messages.chat_id, is_deleted"),
             ('files', [('chat_id', 1), ('owner_id', 1)], {}, "files.chat_id, owner_id"),
             ('refresh_tokens', [('expires_at', 1)], {'expireAfterSeconds': 0}, "refresh_tokens.expires_at (TTL)"),
             ('reset_tokens', [('expires_at', 1)], {'expireAfterSeconds': 0}, "reset_tokens.expires_at (TTL)"),
+            ('group_activity', [('group_id', 1), ('created_at', -1)], {}, "group_activity.group_id, created_at"),
         ]
         
         for collection_name, keys, options, description in indexes_to_create:

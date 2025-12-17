@@ -1,0 +1,209 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
+
+from auth.utils import get_current_user
+from database import chats_collection, messages_collection
+from models import MessageEditRequest, MessageReactionRequest
+
+
+router = APIRouter(prefix="/messages", tags=["Messages"])
+
+
+def _utcnow() -> datetime:
+    return datetime.utcnow()
+
+
+async def _get_message_or_404(message_id: str) -> dict:
+    msg = await messages_collection().find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    return msg
+
+
+async def _get_chat_for_message_or_403(message: dict, current_user: str) -> dict:
+    chat_id = message.get("chat_id")
+    chat = await chats_collection().find_one({"_id": chat_id})
+    if not chat or current_user not in chat.get("members", []):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this message")
+    return chat
+
+
+def _is_group_admin(chat: dict, user_id: str) -> bool:
+    return user_id in chat.get("admins", [])
+
+
+@router.put("/{message_id}")
+async def edit_message(
+    message_id: str,
+    payload: MessageEditRequest,
+    current_user: str = Depends(get_current_user),
+):
+    """Edit a message (sender only, within 24 hours) + keep edit history."""
+    msg = await _get_message_or_404(message_id)
+    chat = await _get_chat_for_message_or_403(msg, current_user)
+
+    if msg.get("is_deleted"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot edit a deleted message")
+
+    if msg.get("sender_id") != current_user:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only edit your own messages")
+
+    created_at: datetime = msg.get("created_at") or _utcnow()
+    if _utcnow() - created_at > timedelta(hours=24):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot edit messages older than 24 hours")
+
+    new_text = (payload.text or "").strip()
+    if not new_text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message text cannot be empty")
+
+    history = msg.get("edit_history") or []
+    history.append({
+        "text": msg.get("text"),
+        "edited_at": _utcnow(),
+        "edited_by": current_user,
+    })
+
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$set": {
+            "text": new_text,
+            "is_edited": True,
+            "edited_at": _utcnow(),
+            "edit_history": history,
+        }},
+    )
+
+    return {"status": "edited", "message_id": message_id}
+
+
+@router.delete("/{message_id}")
+async def delete_message(
+    message_id: str,
+    hard_delete: bool = False,
+    current_user: str = Depends(get_current_user),
+):
+    """Delete a message. Default is soft-delete; sender only."""
+    msg = await _get_message_or_404(message_id)
+    await _get_chat_for_message_or_403(msg, current_user)
+
+    if msg.get("sender_id") != current_user:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only delete your own messages")
+
+    if hard_delete:
+        await messages_collection().delete_one({"_id": message_id})
+        return {"status": "deleted", "hard_delete": True}
+
+    if msg.get("is_deleted"):
+        return {"status": "deleted", "hard_delete": False}
+
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$set": {
+            "is_deleted": True,
+            "deleted_at": _utcnow(),
+            "deleted_by": current_user,
+            "text": None,
+            "file_id": None,
+        }},
+    )
+    return {"status": "deleted", "hard_delete": False}
+
+
+@router.get("/{message_id}/versions")
+async def get_message_versions(message_id: str, current_user: str = Depends(get_current_user)):
+    msg = await _get_message_or_404(message_id)
+    await _get_chat_for_message_or_403(msg, current_user)
+    return {"message_id": message_id, "versions": msg.get("edit_history") or []}
+
+
+@router.post("/{message_id}/reactions")
+async def toggle_reaction(
+    message_id: str,
+    payload: MessageReactionRequest,
+    current_user: str = Depends(get_current_user),
+):
+    """Toggle an emoji reaction for current user."""
+    emoji = (payload.emoji or "").strip()
+    if not emoji:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Emoji required")
+
+    msg = await _get_message_or_404(message_id)
+    await _get_chat_for_message_or_403(msg, current_user)
+
+    reactions: Dict[str, list] = msg.get("reactions") or {}
+    users = reactions.get(emoji) or []
+
+    action = "added"
+    if current_user in users:
+        users = [u for u in users if u != current_user]
+        action = "removed"
+    else:
+        users.append(current_user)
+
+    if users:
+        reactions[emoji] = users
+    else:
+        reactions.pop(emoji, None)
+
+    await messages_collection().update_one({"_id": message_id}, {"$set": {"reactions": reactions}})
+    return {"status": "success", "action": action, "message_id": message_id, "reactions": reactions}
+
+
+@router.get("/{message_id}/reactions")
+async def get_reactions(message_id: str, current_user: str = Depends(get_current_user)):
+    msg = await _get_message_or_404(message_id)
+    await _get_chat_for_message_or_403(msg, current_user)
+    return {"message_id": message_id, "reactions": msg.get("reactions") or {}}
+
+
+@router.post("/{message_id}/pin")
+async def pin_message(message_id: str, current_user: str = Depends(get_current_user)):
+    """Pin a message. For group chats, only admins can pin."""
+    msg = await _get_message_or_404(message_id)
+    chat = await _get_chat_for_message_or_403(msg, current_user)
+
+    if chat.get("type") == "group" and not _is_group_admin(chat, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can pin messages")
+
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$set": {"is_pinned": True, "pinned_at": _utcnow(), "pinned_by": current_user}},
+    )
+    return {"status": "pinned", "message_id": message_id}
+
+
+@router.post("/{message_id}/unpin")
+async def unpin_message(message_id: str, current_user: str = Depends(get_current_user)):
+    msg = await _get_message_or_404(message_id)
+    chat = await _get_chat_for_message_or_403(msg, current_user)
+
+    if chat.get("type") == "group" and not _is_group_admin(chat, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can unpin messages")
+
+    await messages_collection().update_one(
+        {"_id": message_id},
+        {"$set": {"is_pinned": False}, "$unset": {"pinned_at": "", "pinned_by": ""}},
+    )
+    return {"status": "unpinned", "message_id": message_id}
+
+
+@router.post("/{message_id}/read")
+async def mark_read(message_id: str, current_user: str = Depends(get_current_user)):
+    """Mark message read for current user (read receipts)."""
+    msg = await _get_message_or_404(message_id)
+    await _get_chat_for_message_or_403(msg, current_user)
+
+    read_by = msg.get("read_by") or []
+    if any(x.get("user_id") == current_user for x in read_by if isinstance(x, dict)):
+        return {"status": "read", "message_id": message_id}
+
+    read_by.append({"user_id": current_user, "read_at": _utcnow()})
+    await messages_collection().update_one({"_id": message_id}, {"$set": {"read_by": read_by}})
+    return {"status": "read", "message_id": message_id}
+
+

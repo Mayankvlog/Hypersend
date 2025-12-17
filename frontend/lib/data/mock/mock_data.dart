@@ -1,4 +1,7 @@
 import '../models/chat.dart';
+import '../models/group.dart';
+import '../models/group_activity.dart';
+import '../models/group_member.dart';
 import '../models/message.dart';
 import '../models/user.dart';
 
@@ -82,6 +85,8 @@ class MockData {
       timestamp: DateTime.now().subtract(const Duration(minutes: 35)),
       status: MessageStatus.read,
       isOwn: false,
+      readBy: const ['1', 'me'],
+      reactions: const {'👍': ['me']},
     ),
     Message(
       id: '2',
@@ -91,6 +96,7 @@ class MockData {
       timestamp: DateTime.now().subtract(const Duration(minutes: 33)),
       status: MessageStatus.read,
       isOwn: true,
+      readBy: const ['me', '1'],
     ),
     Message(
       id: '3',
@@ -100,6 +106,7 @@ class MockData {
       timestamp: DateTime.now().subtract(const Duration(minutes: 32)),
       status: MessageStatus.read,
       isOwn: true,
+      readBy: const ['me', '1'],
     ),
     Message(
       id: '4',
@@ -109,6 +116,8 @@ class MockData {
       timestamp: DateTime.now().subtract(const Duration(minutes: 31)),
       status: MessageStatus.read,
       isOwn: false,
+      readBy: const ['1', 'me'],
+      isPinned: true,
     ),
   ];
 
@@ -135,4 +144,68 @@ class MockData {
     avatar: 'https://i.pravatar.cc/150?u=jessica',
     isOnline: true,
   );
+
+  static final List<User> contacts = [
+    currentUser,
+    chatUser,
+    settingsUser,
+    const User(
+      id: 'bob',
+      name: 'Bob Stone',
+      username: '@bob',
+      avatar: 'https://i.pravatar.cc/150?u=bob',
+      isOnline: false,
+    ),
+    const User(
+      id: 'sarah',
+      name: 'Sarah Connor',
+      username: '@sarah',
+      avatar: 'https://i.pravatar.cc/150?u=sarah',
+      isOnline: true,
+    ),
+    const User(
+      id: 'david',
+      name: 'David Chen',
+      username: '@david',
+      avatar: 'https://i.pravatar.cc/150?u=david',
+      isOnline: false,
+    ),
+  ];
+
+  static final List<Group> groups = [
+    Group(
+      id: '2',
+      name: 'Design Team',
+      description: 'Design discussions and file handoffs.',
+      avatar: 'DT',
+      createdBy: 'bob',
+      members: [
+        GroupMember(userId: 'bob', role: GroupRole.admin, joinedAt: DateTime(2025, 1, 1)),
+        GroupMember(userId: 'me', role: GroupRole.member, joinedAt: DateTime(2025, 1, 2)),
+        GroupMember(userId: '1', role: GroupRole.member, joinedAt: DateTime(2025, 1, 2)),
+      ],
+      activity: [
+        GroupActivity(
+          id: 'ga1',
+          event: 'group_created',
+          actorId: 'bob',
+          timestamp: DateTime.now().subtract(const Duration(days: 10)),
+          meta: const {'name': 'Design Team'},
+        ),
+      ],
+    ),
+    Group(
+      id: '5',
+      name: 'Marketing Updates',
+      description: 'Announcements and weekly updates.',
+      avatar: 'MK',
+      createdBy: 'sarah',
+      notificationsMuted: true,
+      members: [
+        GroupMember(userId: 'sarah', role: GroupRole.admin, joinedAt: DateTime(2025, 1, 5)),
+        GroupMember(userId: 'me', role: GroupRole.member, joinedAt: DateTime(2025, 1, 6)),
+      ],
+      activity: const [],
+    ),
+  ];
 }

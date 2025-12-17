@@ -116,6 +116,8 @@ class PasswordResetResponse(BaseModel):
 class ChatCreate(BaseModel):
     type: str = "private"  # private or group
     name: Optional[str] = None
+    description: Optional[str] = None
+    avatar_url: Optional[str] = None
     member_ids: List[str]
 
 
@@ -177,6 +179,50 @@ class MessageInDB(BaseModel):
     language: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     saved_by: List[str] = []  # List of user IDs who saved this message
+    # Reactions: emoji -> [user_id]
+    reactions: dict = Field(default_factory=dict)
+    # Read receipts: list of {"user_id": str, "read_at": datetime}
+    read_by: List[dict] = Field(default_factory=list)
+    is_pinned: bool = False
+    pinned_at: Optional[datetime] = None
+    pinned_by: Optional[str] = None
+    is_edited: bool = False
+    edited_at: Optional[datetime] = None
+    edit_history: List[dict] = Field(default_factory=list)
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
+    deleted_by: Optional[str] = None
+
+
+# Group / Group Chat Models
+class GroupCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(default="", max_length=500)
+    avatar_url: Optional[str] = None
+    member_ids: List[str] = Field(default_factory=list)
+
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=500)
+    avatar_url: Optional[str] = None
+
+
+class GroupMembersUpdate(BaseModel):
+    user_ids: List[str] = Field(default_factory=list)
+
+
+class GroupMemberRoleUpdate(BaseModel):
+    role: str = Field(..., pattern=r"^(admin|member)$")
+
+
+# Message Ops Models
+class MessageEditRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=10000)
+
+
+class MessageReactionRequest(BaseModel):
+    emoji: str = Field(..., min_length=1, max_length=16)
 
 
 # File Models

@@ -96,7 +96,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
             const Text(AppStrings.appName),
           ],
         ),
-        actions: [
+         actions: [
+           IconButton(
+             icon: const Icon(Icons.group_add),
+             onPressed: () async {
+               await context.push('/group-create');
+               if (!mounted) return;
+               setState(() {
+                 // Refresh list after creating a group (MockData updated)
+                 _filteredChats = MockData.chats;
+               });
+             },
+           ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             onPressed: () {},

@@ -2,15 +2,22 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/time_formatter.dart';
 import '../../data/models/message.dart';
+import 'message_reactions_bar.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
   final String? avatarUrl;
+  final VoidCallback? onLongPress;
+  final void Function(String emoji)? onToggleReaction;
+  final VoidCallback? onAddReaction;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.avatarUrl,
+    this.onLongPress,
+    this.onToggleReaction,
+    this.onAddReaction,
   });
 
   @override
@@ -53,63 +60,124 @@ class MessageBubble extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-              decoration: BoxDecoration(
-                color: message.isOwn ? AppTheme.primaryCyan : AppTheme.cardDark,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(AppTheme.borderRadiusMessage),
-                  topRight: const Radius.circular(AppTheme.borderRadiusMessage),
-                  bottomLeft: Radius.circular(
-                    message.isOwn ? AppTheme.borderRadiusMessage : 4,
-                  ),
-                  bottomRight: Radius.circular(
-                    message.isOwn ? 4 : AppTheme.borderRadiusMessage,
-                  ),
-                ),
-              ),
+            child: GestureDetector(
+              onLongPress: onLongPress,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: message.isOwn
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    message.content,
-                    style: TextStyle(
-                      color: message.isOwn
-                          ? Colors.white
-                          : AppTheme.textPrimary,
-                      fontSize: 15,
+                  if (message.isPinned)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.push_pin, size: 14, color: Colors.amber),
+                          SizedBox(width: 6),
+                          Text(
+                            'Pinned',
+                            style: TextStyle(
+                              color: Colors.amber,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        TimeFormatter.formatMessageTime(message.timestamp),
-                        style: TextStyle(
-                          color: message.isOwn
-                              ? Colors.white.withValues(alpha: 0.8)
-                              : AppTheme.textTertiary,
-                          fontSize: 11,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: message.isOwn
+                          ? AppTheme.primaryCyan
+                          : AppTheme.cardDark,
+                      borderRadius: BorderRadius.only(
+                        topLeft:
+                            const Radius.circular(AppTheme.borderRadiusMessage),
+                        topRight:
+                            const Radius.circular(AppTheme.borderRadiusMessage),
+                        bottomLeft: Radius.circular(
+                          message.isOwn ? AppTheme.borderRadiusMessage : 4,
+                        ),
+                        bottomRight: Radius.circular(
+                          message.isOwn ? 4 : AppTheme.borderRadiusMessage,
                         ),
                       ),
-                      if (message.isOwn) ...[
-                        const SizedBox(width: 4),
-                        Icon(
-                          message.status == MessageStatus.read
-                              ? Icons.done_all
-                              : Icons.done,
-                          size: 14,
-                          color: message.status == MessageStatus.read
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.6),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          message.isDeleted
+                              ? 'Message deleted'
+                              : (message.content ?? ''),
+                          style: TextStyle(
+                            color: message.isOwn
+                                ? Colors.white
+                                : AppTheme.textPrimary,
+                            fontSize: 15,
+                            fontStyle: message.isDeleted
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              TimeFormatter.formatMessageTime(message.timestamp),
+                              style: TextStyle(
+                                color: message.isOwn
+                                    ? Colors.white.withValues(alpha: 0.8)
+                                    : AppTheme.textTertiary,
+                                fontSize: 11,
+                              ),
+                            ),
+                            if (message.isEdited && !message.isDeleted) ...[
+                              const SizedBox(width: 8),
+                              Text(
+                                'edited',
+                                style: TextStyle(
+                                  color: message.isOwn
+                                      ? Colors.white.withValues(alpha: 0.8)
+                                      : AppTheme.textTertiary,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                            if (message.isOwn) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                message.status == MessageStatus.read
+                                    ? Icons.done_all
+                                    : Icons.done,
+                                size: 14,
+                                color: message.status == MessageStatus.read
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.6),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
-                    ],
+                    ),
                   ),
+                  if (message.reactions.isNotEmpty &&
+                      onToggleReaction != null &&
+                      onAddReaction != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: MessageReactionsBar(
+                        reactions: message.reactions,
+                        onToggleReaction: onToggleReaction!,
+                        onAddReaction: onAddReaction!,
+                      ),
+                    ),
                 ],
               ),
             ),

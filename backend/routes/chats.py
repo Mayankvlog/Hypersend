@@ -113,9 +113,17 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
         "_id": str(ObjectId()),
         "type": chat.type,
         "name": chat.name,
+        "description": getattr(chat, "description", None),
+        "avatar_url": getattr(chat, "avatar_url", None),
         "members": chat.member_ids,
         "created_at": datetime.utcnow()
     }
+
+    # Group/channel metadata
+    if chat_doc["type"] in ["group", "channel"]:
+        chat_doc["created_by"] = current_user
+        chat_doc["admins"] = [current_user]
+        chat_doc["muted_by"] = []
 
     # Default name for saved chat
     if chat_doc["type"] == "saved" and not chat_doc["name"]:
@@ -224,7 +232,14 @@ async def send_message(
         "file_id": message.file_id,
         # Store language code if provided (frontend may send it)
         "language": message.language,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.utcnow(),
+        # Message features
+        "reactions": {},
+        "read_by": [{"user_id": current_user, "read_at": datetime.utcnow()}],
+        "is_pinned": False,
+        "is_edited": False,
+        "edit_history": [],
+        "is_deleted": False,
     }
     
     # If this is a saved chat, automatically mark as saved by the user
