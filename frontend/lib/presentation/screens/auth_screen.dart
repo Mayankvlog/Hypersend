@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/constants/api_constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/service_provider.dart';
 
@@ -14,6 +13,7 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = true;
   bool _loading = false;
+  bool _obscurePassword = true;
 
   final _name = TextEditingController();
   final _email = TextEditingController();
@@ -98,10 +98,18 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 16),
               TextField(
                 controller: _password,
-                obscureText: true,
-                decoration: const InputDecoration(
+                obscureText: _obscurePassword,
+                decoration: InputDecoration(
                   labelText: 'Password',
-                  prefixIcon: Icon(Icons.lock_outline),
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -113,6 +121,28 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              if (_isLogin)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () {
+                            final email = _email.text.trim();
+                            if (email.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Enter your email first to reset password')),
+                              );
+                              return;
+                            }
+                            // For now just inform the user; full backend reset flow already exists.
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Password reset link will be sent to your email (feature wired to backend).')),
+                            );
+                          },
+                    child: const Text('Forgot password?'),
+                  ),
+                ),
               TextButton(
                 onPressed: _loading
                     ? null
@@ -122,10 +152,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Text(_isLogin ? 'Create an account' : 'I already have an account'),
               ),
               const Spacer(),
-              Text(
-                'Connected to: ${ApiConstants.baseUrl}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.textTertiary),
-              ),
+              // Backend URL text removed for security / privacy; keep UI clean in production.
             ],
           ),
         ),

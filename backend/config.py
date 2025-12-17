@@ -88,6 +88,8 @@ class Settings:
         "http://139.59.82.105",
         "http://139.59.82.105:8000",
         "http://139.59.82.105:8550",
+        # Deployed web app (Netlify)
+        "https://hypersend.netlify.app",
     ]
     
     @classmethod
