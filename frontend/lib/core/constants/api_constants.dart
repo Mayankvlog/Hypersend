@@ -6,7 +6,7 @@ class ApiConstants {
     'API_BASE_URL',
     // Default to VPS Nginx HTTPS endpoint that fronts the FastAPI backend.
     // FastAPI routers are mounted under /api/v1, and Nginx proxies /api/ to the backend.
-    defaultValue: 'https://139.59.82.105/api/v1',
+    defaultValue: 'https://zaply.in.net/api/v1',
   );
   
   // API Endpoints

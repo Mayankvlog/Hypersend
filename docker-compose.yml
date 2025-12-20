@@ -11,8 +11,8 @@ services:
       - ./data:/data:ro
       - nginx_cache:/var/cache/nginx
       # Mount real SSL certificates from Let's Encrypt
-      - /etc/letsencrypt/live/your-domain.com/fullchain.pem:/etc/nginx/ssl/cert.pem:ro
-      - /etc/letsencrypt/live/your-domain.com/privkey.pem:/etc/nginx/ssl/key.pem:ro
+      - /etc/letsencrypt/live/zaply.in.net/fullchain.pem:/etc/nginx/ssl/cert.pem:ro
+      - /etc/letsencrypt/live/zaply.in.net/privkey.pem:/etc/nginx/ssl/key.pem:ro
       # Auto-renewal helper
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:

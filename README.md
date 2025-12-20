@@ -88,8 +88,8 @@ cat > .env << EOF
 MONGO_USER=hypersend
 MONGO_PASSWORD=your_secure_password_here
 SECRET_KEY=your_secret_key_here_min_32_chars
-API_BASE_URL=http://139.59.82.105:8000
-PRODUCTION_API_URL=http://139.59.82.105:8000
+API_BASE_URL=https://zaply.in.net/api/v1
+PRODUCTION_API_URL=https://zaply.in.net/api/v1
 NGINX_PORT=8080
 NGINX_PORT_SSL=8443
 EOF
