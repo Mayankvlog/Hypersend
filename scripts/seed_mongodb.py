@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MongoDB Seed Script - Zaply Database
+MongoDB Seed Script - Hypersend Database
 Populates MongoDB with realistic sample data for testing
 """
 
@@ -52,7 +52,7 @@ FILE_TYPES = {
     "zip": "application/zip"
 }
 
-class ZaplySeeder:
+class HypersendSeeder:
     def __init__(self, mongo_uri):
         self.client = None
         self.db = None
@@ -100,7 +100,7 @@ class ZaplySeeder:
         for i in range(1, count + 1):
             users.append({
                 "name": SAMPLE_NAMES[i % len(SAMPLE_NAMES)],
-                "email": f"user{i}@zaply.io",
+                "email": f"user{i}@hypersend.io",
                 "password_hash": self.hash_password(f"Password{i}@123"),
                 "quota_used": 0,
                 "quota_limit": 42949672960,  # 40GB
@@ -275,7 +275,7 @@ class ZaplySeeder:
             reset_tokens.append({
                 "user_id": user_ids[i % len(user_ids)],
                 "token": secrets.token_urlsafe(32),
-                "email": f"user{i % len(user_ids)}@zaply.io",
+                "email": f"user{i % len(user_ids)}@hypersend.io",
                 "expires_at": datetime.utcnow() + timedelta(hours=2),
                 "created_at": datetime.utcnow() - timedelta(minutes=i)
             })
@@ -327,7 +327,7 @@ class ZaplySeeder:
     def seed(self):
         """Execute complete seeding process"""
         print("\n" + "="*50)
-        print("🌱 ZAPLY DATABASE SEEDING")
+        print("🌱 HYPERSEND DATABASE SEEDING")
         print("="*50)
         
         if not self.connect():
@@ -353,7 +353,7 @@ class ZaplySeeder:
             print("   3. Username: hypersend")
             print("   4. Password: Mayank@#03")
             print("   5. Browse hypersend database")
-            print("   6. Start your Zaply application")
+            print("   6. Start your Hypersend application")
             
             return True
             
@@ -368,7 +368,7 @@ class ZaplySeeder:
 
 def main():
     """Main entry point"""
-    seeder = ZaplySeeder(MONGO_URI)
+    seeder = HypersendSeeder(MONGO_URI)
     success = seeder.seed()
     sys.exit(0 if success else 1)
 

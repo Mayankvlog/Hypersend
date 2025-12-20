@@ -89,7 +89,7 @@ class Settings:
         "http://139.59.82.105:8000",
         "http://139.59.82.105:8550",
         "https://139.59.82.105",
-        "https://zaply.netlify.app",
+        "https://hypersend.netlify.app",
     ]
     
     @classmethod

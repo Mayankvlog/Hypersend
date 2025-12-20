@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
     # SECURITY: MongoDB port removed from external exposure
     # Access MongoDB only through Docker internal network
-    # For admin access, use: docker exec -it zaply_mongodb mongosh
+    # For admin access, use: docker exec -it hypersend_mongodb mongosh
     # ports:
     #   - "27018:27017"
     environment:
@@ -44,7 +44,7 @@ services:
       - /var/lib/mongodb:/data/db
       - mongodb_config:/data/configdb
     networks:
-      - zaply_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s

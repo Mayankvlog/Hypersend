@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     try:
-        print(f"[START] Zaply API starting on {settings.API_HOST}:{settings.API_PORT}")
+        print(f"[START] Hypersend API starting on {settings.API_HOST}:{settings.API_PORT}")
         print(f"[START] Environment: {'DEBUG' if settings.DEBUG else 'PRODUCTION'}")
         print("[DB] Initializing MongoDB...")
         
@@ -58,10 +58,10 @@ async def lifespan(app: FastAPI):
             raise
         
         if settings.DEBUG:
-            print(f"[START] Zaply API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
+            print(f"[START] Hypersend API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
             print("[CORS] Allowing all origins (DEBUG mode)")
         else:
-            print("[START] Zaply API running in PRODUCTION mode")
+            print("[START] Hypersend API running in PRODUCTION mode")
             print("[CORS] Restricted to configured origins")
         
         print("[START] Lifespan startup complete, all services ready")
@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Zaply API",
+    title="Hypersend API",
     description="Secure peer-to-peer file transfer and messaging application",
     version="1.0.0",
     lifespan=lifespan
@@ -130,7 +130,7 @@ async def add_security_headers(request, call_next):
 async def root():
     """Health check endpoint"""
     return {
-        "app": "Zaply",
+        "app": "Hypersend",
         "version": "1.0.0",
         "status": "running",
         "environment": "debug" if settings.DEBUG else "production"

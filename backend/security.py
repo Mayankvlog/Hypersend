@@ -1,5 +1,5 @@
 """
-Security Configuration and Utilities for Zaply
+Security Configuration and Utilities for Hypersend
 Provides security best practices and validation functions
 """
 

@@ -161,7 +161,7 @@ async function run(mode) {
   await client.request("initialize", {
     protocolVersion: "2024-11-05",
     capabilities: {},
-    clientInfo: { name: "zaply-testsprite-runner", version: "1.0.0" },
+    clientInfo: { name: "hypersend-testsprite-runner", version: "1.0.0" },
   });
   client.notify("notifications/initialized", {});
   log("initialized");
