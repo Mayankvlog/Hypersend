@@ -218,7 +218,7 @@ docker compose logs -f frontend
 docker compose logs -f mongodb
 
 # Access MongoDB
-docker exec -it zaply_mongodb mongosh -u zaply -p <password>
+docker exec -it zaply_mongodb mongosh -u hypersend -p <password>
 
 # Rebuild a service
 docker compose up -d --build backend
@@ -303,10 +303,10 @@ db.files.find({})
 
 ### Create User Manually
 ```bash
-docker exec -it zaply_mongodb mongosh -u zaply -p <password>
+docker exec -it zaply_mongodb mongosh -u hypersend -p <password>
 
 // In MongoDB shell:
-use zaply
+use hypersend
 db.users.insertOne({
   _id: ObjectId(),
   email: "user@example.com",

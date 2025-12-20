@@ -87,57 +87,57 @@ class MessageBubble extends StatelessWidget {
                       ),
                     ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              decoration: BoxDecoration(
                       color: message.isOwn
                           ? AppTheme.primaryCyan
                           : AppTheme.cardDark,
-                      borderRadius: BorderRadius.only(
+                borderRadius: BorderRadius.only(
                         topLeft:
                             const Radius.circular(AppTheme.borderRadiusMessage),
                         topRight:
                             const Radius.circular(AppTheme.borderRadiusMessage),
-                        bottomLeft: Radius.circular(
-                          message.isOwn ? AppTheme.borderRadiusMessage : 4,
-                        ),
-                        bottomRight: Radius.circular(
-                          message.isOwn ? 4 : AppTheme.borderRadiusMessage,
-                        ),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+                  bottomLeft: Radius.circular(
+                    message.isOwn ? AppTheme.borderRadiusMessage : 4,
+                  ),
+                  bottomRight: Radius.circular(
+                    message.isOwn ? 4 : AppTheme.borderRadiusMessage,
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
                           message.isDeleted
                               ? 'Message deleted'
                               : (message.content ?? ''),
-                          style: TextStyle(
-                            color: message.isOwn
-                                ? Colors.white
-                                : AppTheme.textPrimary,
-                            fontSize: 15,
+                    style: TextStyle(
+                      color: message.isOwn
+                          ? Colors.white
+                          : AppTheme.textPrimary,
+                      fontSize: 15,
                             fontStyle: message.isDeleted
                                 ? FontStyle.italic
                                 : FontStyle.normal,
-                          ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        TimeFormatter.formatMessageTime(message.timestamp),
+                        style: TextStyle(
+                          color: message.isOwn
+                              ? Colors.white.withValues(alpha: 0.8)
+                              : AppTheme.textTertiary,
+                          fontSize: 11,
                         ),
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              TimeFormatter.formatMessageTime(message.timestamp),
-                              style: TextStyle(
-                                color: message.isOwn
-                                    ? Colors.white.withValues(alpha: 0.8)
-                                    : AppTheme.textTertiary,
-                                fontSize: 11,
-                              ),
-                            ),
+                      ),
                             if (message.isEdited && !message.isDeleted) ...[
                               const SizedBox(width: 8),
                               Text(
@@ -150,19 +150,19 @@ class MessageBubble extends StatelessWidget {
                                 ),
                               ),
                             ],
-                            if (message.isOwn) ...[
+                      if (message.isOwn) ...[
                               const SizedBox(width: 6),
-                              Icon(
-                                message.status == MessageStatus.read
-                                    ? Icons.done_all
-                                    : Icons.done,
-                                size: 14,
-                                color: message.status == MessageStatus.read
-                                    ? Colors.white
-                                    : Colors.white.withValues(alpha: 0.6),
-                              ),
-                            ],
-                          ],
+                        Icon(
+                          message.status == MessageStatus.read
+                              ? Icons.done_all
+                              : Icons.done,
+                          size: 14,
+                          color: message.status == MessageStatus.read
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.6),
+                        ),
+                      ],
+                    ],
                         ),
                       ],
                     ),
@@ -177,7 +177,7 @@ class MessageBubble extends StatelessWidget {
                         onToggleReaction: onToggleReaction!,
                         onAddReaction: onAddReaction!,
                       ),
-                    ),
+                  ),
                 ],
               ),
             ),
