@@ -86,7 +86,7 @@ services:
       mongodb:
         condition: service_healthy
     networks:
-      - hypersend_network_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
