@@ -7,11 +7,11 @@ import 'data/services/service_provider.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await serviceProvider.init();
-  runApp(const HypersendApp());
+  runApp(const ZaplyApp());
 }
 
-class HypersendApp extends StatelessWidget {
-  const HypersendApp({super.key});
+class ZaplyApp extends StatelessWidget {
+  const ZaplyApp({super.key});
 
   @override
   Widget build(BuildContext context) {

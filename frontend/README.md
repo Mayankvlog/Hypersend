@@ -1,4 +1,4 @@
-# Hypersend - Flutter Chat Application
+# Zaply - Flutter Chat Application
 
 A modern, dark-themed messaging application built with Flutter.
 
@@ -105,4 +105,4 @@ The app expects the following endpoints from the backend:
 
 ## License
 
-This project is part of the Hypersend application.
+This project is part of the Zaply application.

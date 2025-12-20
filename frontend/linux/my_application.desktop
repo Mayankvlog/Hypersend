@@ -1,13 +1,13 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Hypersend
+Name=Zaply
 Comment=Fast. Secure. Chat.
-Exec=hypersend
-Icon=hypersend
+Exec=zaply
+Icon=zaply
 Terminal=false
 Categories=Communication;Network;Chat;
 StartupNotify=true
 
-# Hypersend Lightning Bolt Icon - Displayed in application launcher
-# Place your icon at: ~/.local/share/pixmaps/hypersend.png or /usr/share/pixmaps/hypersend.png
+# Zaply Lightning Bolt Icon - Displayed in application launcher
+# Place your icon at: ~/.local/share/pixmaps/zaply.png or /usr/share/pixmaps/zaply.png

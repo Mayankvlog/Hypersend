@@ -1,7 +1,7 @@
 [project]
-name = "Hypersend"
+name = "Zaply"
 version = "1.0.0"
-description = "Hypersend - secure P2P chat and file transfer application"
+description = "Zaply - secure P2P chat and file transfer application"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -54,8 +54,8 @@ frontend = [
   "h2>=4.1.0",
 ]
 
-[tool.hypersend]
-app_name = "Hypersend"
+[tool.zaply]
+app_name = "Zaply"
 backend_url_dev = "http://localhost:8000"
 backend_url_prod = "${PRODUCTION_API_URL}"
 frontend_dir = "frontend"
@@ -71,11 +71,11 @@ build-backend = "setuptools.build_meta"
 # ========== FLET BUILD CONFIGURATION ==========
 [tool.flet]
 module_name = "frontend.app"
-product = "Hypersend"
-project = "hypersend"
-org = "com.hypersend"
+product = "Zaply"
+project = "zaply"
+org = "com.zaply"
 description = "Secure P2P File Transfer and Messaging"
-# Hypersend Lightning + H icon - Used for all platforms (APK, Web, Desktop)
+# Zaply Lightning + Z icon - Used for all platforms (APK, Web, Desktop)
 icon = "frontend/assets/favicon.ico"
 # Splash screen icon
 

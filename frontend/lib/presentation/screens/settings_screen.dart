@@ -212,13 +212,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: const Text('Terms & Conditions'),
                     content: const SingleChildScrollView(
                       child: Text(
-                        'By using Hypersend, you agree to our Terms & Conditions.\n\n'
+                        'By using Zaply, you agree to our Terms & Conditions.\n\n'
                         '1. Privacy: We protect your data with end-to-end encryption.\n'
-                        '2. Usage: Hypersend is for personal use only.\n'
+                        '2. Usage: Zaply is for personal use only.\n'
                         '3. Content: You are responsible for content you share.\n'
                         '4. Compliance: Follow all applicable laws and regulations.\n'
                         '5. Disclaimer: We are not liable for service interruptions.\n\n'
-                        'For full terms, visit: terms.hypersend.com',
+                        'For full terms, visit: terms.zaply.com',
                       ),
                     ),
                     actions: [

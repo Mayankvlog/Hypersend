@@ -30,7 +30,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     super.initState();
     _nameController = TextEditingController(text: widget.user.name);
     _usernameController = TextEditingController(text: widget.user.username);
-    _emailController = TextEditingController(text: 'user@hypersend.com');
+    _emailController = TextEditingController(text: 'user@zaply.com');
     _statusController = TextEditingController(text: 'Available');
   }
 

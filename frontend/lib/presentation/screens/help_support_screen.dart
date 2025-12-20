@@ -50,7 +50,7 @@ class HelpSupportScreen extends StatelessWidget {
             _buildContactTile(
               icon: Icons.email_outlined,
               title: 'Email',
-              subtitle: 'support@hypersend.com',
+              subtitle: 'support@zaply.com',
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -76,7 +76,7 @@ class HelpSupportScreen extends StatelessWidget {
             _buildContactTile(
               icon: Icons.help_outline,
               title: 'Community Forum',
-              subtitle: 'discuss.hypersend.com',
+              subtitle: 'discuss.zaply.com',
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(

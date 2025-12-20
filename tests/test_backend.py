@@ -10,7 +10,7 @@ def test_read_root():
     assert response.status_code == 200
     data = response.json()
     assert "app" in data
-    assert data["app"] == "Hypersend"
+    assert data["app"] == "Zaply"
     assert "version" in data
 
 def test_health_check():
