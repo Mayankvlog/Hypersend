@@ -1,7 +1,7 @@
 services:
   nginx:
     image: nginx:alpine
-    container_name: zaply_nginx
+    container_name: hypersend_nginx
     restart: unless-stopped
     ports:
       - "${NGINX_PORT:-80}:80"
@@ -19,7 +19,7 @@ services:
       - backend
       - frontend
     networks:
-      - zaply_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
@@ -29,7 +29,7 @@ services:
 
   mongodb:
     image: mongo:7.0
-    container_name: zaply_mongodb
+    container_name: hypersend_mongodb
     restart: unless-stopped
     # SECURITY: MongoDB port removed from external exposure
     # Access MongoDB only through Docker internal network
@@ -54,8 +54,8 @@ services:
     command: mongod --auth --bind_ip 0.0.0.0
 
   backend:
-    image: mayank035/zaply-backend:latest
-    container_name: zaply_backend
+    image: mayank035/hypersend-backend:latest
+    container_name: hypersend_backend
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -86,7 +86,7 @@ services:
       mongodb:
         condition: service_healthy
     networks:
-      - zaply_network
+      - hypersend_network_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
@@ -98,7 +98,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: zaply_frontend
+    container_name: hypersend_frontend
     restart: unless-stopped
     ports:
       - "8550:8550"
@@ -110,7 +110,7 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - zaply_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8550/health"]
       interval: 30s
@@ -119,7 +119,7 @@ services:
       start_period: 10s
 
 networks:
-  zaply_network:
+  hypersend_network:
     driver: bridge
     ipam:
       config:
