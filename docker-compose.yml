@@ -13,19 +13,18 @@ services:
       # SSL certificates (self-signed generated if Let's Encrypt not available)
       - nginx_ssl:/etc/nginx/ssl
     entrypoint: >
-      sh -c "mkdir -p /etc/nginx/ssl &&
+      sh -c "
+      mkdir -p /etc/nginx/ssl &&
       if [ ! -f /etc/nginx/ssl/cert.pem ] || [ ! -f /etc/nginx/ssl/key.pem ]; then
         echo 'Generating self-signed certificate...' &&
-        apk add --no-cache openssl > /dev/null 2>&1 &&
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048
-          -keyout /etc/nginx/ssl/key.pem
-          -out /etc/nginx/ssl/cert.pem
-          -subj '/CN=zaply.in.net' &&
+        apk add --no-cache openssl &&
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/key.pem -out /etc/nginx/ssl/cert.pem -subj '/CN=zaply.in.net' &&
         chmod 644 /etc/nginx/ssl/cert.pem &&
         chmod 600 /etc/nginx/ssl/key.pem &&
         echo 'Self-signed certificate created';
       fi &&
-      exec nginx -g 'daemon off;'"
+      exec nginx -g 'daemon off;'
+      "
     depends_on:
       - backend
       - frontend
