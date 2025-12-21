@@ -114,7 +114,7 @@ services:
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
-      - "8550:8550"
+      - "8550:80"
     environment:
       API_BASE_URL: http://backend:8000
       PRODUCTION_API_URL: ${PRODUCTION_API_URL:-https://zaply.in.net}
@@ -125,7 +125,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8550/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
