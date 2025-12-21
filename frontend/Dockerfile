@@ -29,8 +29,9 @@ RUN /opt/flutter/bin/flutter build web --release --no-tree-shake-icons
 FROM nginx:alpine
 COPY --from=build /app/build/web /usr/share/nginx/html
 
-# Create nginx config to listen on port 8550
-RUN echo 'server { listen 8550; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } location /health { return 200 "healthy\n"; add_header Content-Type text/plain; } }' > /etc/nginx/conf.d/default.conf
+# Remove default nginx config and create custom one to listen on port 8550
+RUN rm -f /etc/nginx/conf.d/default.conf && \
+    echo 'server { listen 8550; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } location /health { return 200 "healthy\n"; add_header Content-Type text/plain; } }' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 8550
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
