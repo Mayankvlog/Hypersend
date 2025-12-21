@@ -33,7 +33,6 @@ COPY --from=build /app/build/web /usr/share/nginx/html
 RUN echo 'server { listen 8550; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } location /health { return 200 "healthy\n"; add_header Content-Type text/plain; } }' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 8550
-RUN apk add --no-cache curl
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8550/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8550/health || exit 1
 CMD ["nginx", "-g", "daemon off;"]
