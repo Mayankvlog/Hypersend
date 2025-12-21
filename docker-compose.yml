@@ -23,6 +23,9 @@ services:
         chmod 600 /etc/nginx/ssl/key.pem &&
         echo 'Self-signed certificate created';
       fi &&
+      echo 'Testing nginx configuration...' &&
+      nginx -t &&
+      echo 'Starting nginx...' &&
       exec nginx -g 'daemon off;'
       "
     depends_on:
