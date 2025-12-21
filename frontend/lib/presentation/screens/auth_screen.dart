@@ -46,7 +46,7 @@ class _AuthScreenState extends State<AuthScreen> {
         await serviceProvider.authService.registerAndLogin(name: name, email: email, password: password);
       }
       if (!mounted) return;
-      context.go('/permissions');
+      context.go('/chats');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

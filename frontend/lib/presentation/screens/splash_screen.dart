@@ -30,7 +30,7 @@ class _SplashScreenState extends State<SplashScreen>
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
         final isLoggedIn = serviceProvider.authService.isLoggedIn;
-        context.go(isLoggedIn ? '/permissions' : '/auth');
+        context.go(isLoggedIn ? '/chats' : '/auth');
       }
     });
   }

@@ -238,8 +238,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.logout,
               title: AppStrings.logout,
               onTap: () {
-                // Demo logout: return to permissions screen
-                context.go('/permissions');
+                // Logout: return to auth screen
+                context.go('/auth');
               },
             ),
             const SizedBox(height: 32),

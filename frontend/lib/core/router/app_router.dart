@@ -1,7 +1,6 @@
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/splash_screen.dart';
 import '../../presentation/screens/auth_screen.dart';
-import '../../presentation/screens/permissions_screen.dart';
 import '../../presentation/screens/chat_list_screen.dart';
 import '../../presentation/screens/chat_detail_screen.dart';
 import '../../presentation/screens/chat_settings_screen.dart';
@@ -28,10 +27,6 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/auth',
       builder: (context, state) => const AuthScreen(),
-    ),
-    GoRoute(
-      path: '/permissions',
-      builder: (context, state) => const PermissionsScreen(),
     ),
     GoRoute(
       path: '/chats',
