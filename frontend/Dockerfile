@@ -30,10 +30,11 @@ FROM nginx:alpine
 COPY --from=build /app/build/web /usr/share/nginx/html
 
 # Remove default nginx config and create custom one to listen on port 80 (standard nginx port)
+# Listen on both IPv4 and IPv6
 RUN rm -f /etc/nginx/conf.d/default.conf && \
-    echo 'server { listen 80; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } location /health { return 200 "healthy\n"; add_header Content-Type text/plain; } }' > /etc/nginx/conf.d/default.conf
+    echo 'server { listen 80; listen [::]:80; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } location /health { return 200 "healthy\n"; add_header Content-Type text/plain; } }' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1/health || exit 1
 CMD ["nginx", "-g", "daemon off;"]
