@@ -196,7 +196,7 @@ class ApiService {
     String? username,
   }) async {
     final response = await _dio.post(
-      '/api/v1/channels',
+      'channels',
       data: {
         'name': name,
         'description': description,
@@ -213,17 +213,17 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> getChannel(String channelId) async {
-    final response = await _dio.get('/api/v1/channels/$channelId');
+    final response = await _dio.get('channels/$channelId');
     return response.data;
   }
 
   Future<void> subscribeChannel(String channelId) async {
-    await _dio.post('/api/v1/channels/$channelId/subscribe');
+    await _dio.post('channels/$channelId/subscribe');
   }
 
   Future<void> postToChannel(String channelId, String text) async {
     await _dio.post(
-      '/api/v1/channels/$channelId/posts',
+      'channels/$channelId/posts',
       data: {
         'text': text 
         // Note: Backend might expect MessageCreate format, keeping it simple for now
@@ -238,7 +238,7 @@ class ApiService {
     required List<String> memberIds,
   }) async {
     final response = await _dio.post(
-      '/api/v1/groups',
+      'groups',
       data: {
         'name': name,
         'description': description,
@@ -250,52 +250,52 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> getGroup(String groupId) async {
-    final response = await _dio.get('/api/v1/groups/$groupId');
+    final response = await _dio.get('groups/$groupId');
     return response.data;
   }
 
   Future<Map<String, dynamic>> updateGroup(String groupId, Map<String, dynamic> data) async {
-    final response = await _dio.put('/api/v1/groups/$groupId', data: data);
+    final response = await _dio.put('groups/$groupId', data: data);
     return response.data;
   }
 
   Future<Map<String, dynamic>> addGroupMembers(String groupId, List<String> userIds) async {
-    final response = await _dio.post('/api/v1/groups/$groupId/members', data: {'user_ids': userIds});
+    final response = await _dio.post('groups/$groupId/members', data: {'user_ids': userIds});
     return response.data;
   }
 
   Future<Map<String, dynamic>> removeGroupMember(String groupId, String memberId) async {
-    final response = await _dio.delete('/api/v1/groups/$groupId/members/$memberId');
+    final response = await _dio.delete('groups/$groupId/members/$memberId');
     return response.data;
   }
 
   Future<Map<String, dynamic>> updateGroupMemberRole(String groupId, String memberId, String role) async {
-    final response = await _dio.put('/api/v1/groups/$groupId/members/$memberId/role', data: {'role': role});
+    final response = await _dio.put('groups/$groupId/members/$memberId/role', data: {'role': role});
     return response.data;
   }
 
   Future<Map<String, dynamic>> leaveGroup(String groupId) async {
-    final response = await _dio.post('/api/v1/groups/$groupId/leave');
+    final response = await _dio.post('groups/$groupId/leave');
     return response.data;
   }
 
   Future<Map<String, dynamic>> deleteGroup(String groupId) async {
-    final response = await _dio.delete('/api/v1/groups/$groupId');
+    final response = await _dio.delete('groups/$groupId');
     return response.data;
   }
 
   Future<Map<String, dynamic>> muteGroup(String groupId, {required bool mute}) async {
-    final response = await _dio.post('/api/v1/groups/$groupId/mute', queryParameters: {'mute': mute});
+    final response = await _dio.post('groups/$groupId/mute', queryParameters: {'mute': mute});
     return response.data;
   }
 
   Future<Map<String, dynamic>> getGroupActivity(String groupId, {int limit = 50}) async {
-    final response = await _dio.get('/api/v1/groups/$groupId/activity', queryParameters: {'limit': limit});
+    final response = await _dio.get('groups/$groupId/activity', queryParameters: {'limit': limit});
     return response.data;
   }
 
   Future<Map<String, dynamic>> getPinnedMessages(String groupId, {int limit = 20}) async {
-    final response = await _dio.get('/api/v1/groups/$groupId/pinned', queryParameters: {'limit': limit});
+    final response = await _dio.get('groups/$groupId/pinned', queryParameters: {'limit': limit});
     return response.data;
   }
 

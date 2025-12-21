@@ -6,15 +6,15 @@ class ApiConstants {
     'API_BASE_URL',
     // Default to VPS Nginx HTTPS endpoint that fronts the FastAPI backend.
     // FastAPI routers are mounted under /api/v1, and Nginx proxies /api/ to the backend.
-    defaultValue: 'https://zaply.in.net/api/v1',
+    defaultValue: 'https://zaply.in.net/api/v1/',
   );
   
   // API Endpoints
-  static const String authEndpoint = '/api/v1/auth';
-  static const String chatsEndpoint = '/api/v1/chats';
-  static const String messagesEndpoint = '/api/v1/messages';
-  static const String usersEndpoint = '/api/v1/users';
-  static const String filesEndpoint = '/api/v1/files';
+  static const String authEndpoint = 'auth';
+  static const String chatsEndpoint = 'chats';
+  static const String messagesEndpoint = 'messages';
+  static const String usersEndpoint = 'users';
+  static const String filesEndpoint = 'files';
   
   // Timeouts
   static const Duration connectTimeout = Duration(seconds: 30);
