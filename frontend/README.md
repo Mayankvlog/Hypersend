@@ -24,7 +24,7 @@ A modern, dark-themed messaging application built with Flutter.
 The app is configured to connect to the backend server at:
 
 ```dart
-Base URL: http://139.59.82.105
+Base URL: https://zaply.in.net/api/v1
 ```
 
 This is configured in `lib/core/constants/api_constants.dart`.

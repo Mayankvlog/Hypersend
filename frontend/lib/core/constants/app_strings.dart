@@ -1,6 +1,6 @@
 class AppStrings {
   // App
-  static const String appName = 'Zaply';
+  static const String appName = 'Hypersend';
   static const String appTagline = 'Fast. Secure. Chat.';
   static const String logout = 'Logout';
   
@@ -30,7 +30,7 @@ class AppStrings {
   static const String notifications = 'NOTIFICATIONS';
   static const String muteNotifications = 'Mute Notifications';
   static const String customSound = 'Custom Sound';
-  static const String zaplyNote = 'Zaply Note';
+  static const String zaplyNote = 'Hypersend Note';
   static const String contentPrivacy = 'CONTENT & PRIVACY';
   static const String sharedMedia = 'Shared Media';
   static const String seeAll = 'See All';
