@@ -3,7 +3,7 @@ MongoDB initialization - Creates admin and application users on first startup
 """
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
-from backend.config import settings
+from config import settings
 
 
 async def init_mongodb():
@@ -13,31 +13,77 @@ async def init_mongodb():
     """
     try:
         # Parse the MongoDB URI to extract connection details
-        from urllib.parse import urlparse
+        from urllib.parse import urlparse, quote_plus
         
         parsed = urlparse(settings.MONGODB_URI)
-        # For initialization, connect to admin database
-        admin_uri = f"{parsed.scheme}://{parsed.netloc}/admin"
         
-        # Create client for admin database
-        client = AsyncIOMotorClient(
-            admin_uri,
-            serverSelectionTimeoutMS=5000,
-        )
+        # Extract username and password from URI
+        username = parsed.username or 'hypersend'
+        password = parsed.password or 'hypersend_secure_password'
         
-        admin_db = client.admin
+        # Try to connect with authentication first
+        try:
+            client = AsyncIOMotorClient(
+                settings.MONGODB_URI,
+                serverSelectionTimeoutMS=5000,
+            )
+            await client.admin.command('ping')
+            print("[MONGO_INIT] Connected with existing credentials")
+        except Exception as auth_error:
+            print(f"[MONGO_INIT] Authentication failed, attempting to create user: {str(auth_error)}")
+            
+            # Connect without authentication to create user
+            # Get root credentials from environment
+            import os
+            root_user = os.getenv('MONGO_USER', 'hypersend')
+            root_password = os.getenv('MONGO_PASSWORD', 'hypersend_secure_password')
+            
+            # Connect as root user
+            root_uri = f"mongodb://{quote_plus(root_user)}:{quote_plus(root_password)}@{parsed.hostname}:{parsed.port or 27017}/admin?authSource=admin"
+            
+            try:
+                root_client = AsyncIOMotorClient(root_uri, serverSelectionTimeoutMS=5000)
+                await root_client.admin.command('ping')
+                print("[MONGO_INIT] Connected as root user")
+                
+                # Create application user
+                admin_db = root_client.admin
+                try:
+                    await admin_db.command(
+                        "createUser",
+                        username,
+                        pwd=password,
+                        roles=[
+                            {"role": "readWrite", "db": "hypersend"},
+                            {"role": "dbOwner", "db": "hypersend"}
+                        ]
+                    )
+                    print(f"[MONGO_INIT] Created user '{username}' successfully")
+                except Exception as create_error:
+                    if "already exists" in str(create_error).lower():
+                        print(f"[MONGO_INIT] User '{username}' already exists")
+                    else:
+                        print(f"[MONGO_INIT] Could not create user: {create_error}")
+                
+                root_client.close()
+                
+                # Now connect with the application user
+                client = AsyncIOMotorClient(
+                    settings.MONGODB_URI,
+                    serverSelectionTimeoutMS=5000,
+                )
+                await client.admin.command('ping')
+                print("[MONGO_INIT] Connected with application user")
+                
+            except Exception as root_error:
+                print(f"[MONGO_INIT] Could not connect as root: {root_error}")
+                print("[MONGO_INIT] Trying to continue without authentication...")
+                # Last resort: connect without auth
+                no_auth_uri = f"mongodb://{parsed.hostname}:{parsed.port or 27017}/hypersend"
+                client = AsyncIOMotorClient(no_auth_uri, serverSelectionTimeoutMS=5000)
+                await client.admin.command('ping')
+        
         app_db = client.hypersend
-        
-        # Test connection
-        await admin_db.command('ping')
-        print("[MONGO_INIT] Connected to MongoDB")
-        
-        # Skip user creation in production - users should be created manually
-        print("[MONGO_INIT] Skipping automatic user creation - users should be created manually")
-        print("[MONGO_INIT] To create users manually, connect to MongoDB and run:")
-        print("[MONGO_INIT]   use admin")
-        print("[MONGO_INIT]   db.createUser({user: 'admin', pwd: 'your-secure-password', roles: ['root']})")
-        print("[MONGO_INIT]   db.createUser({user: 'hypersend', pwd: 'your-secure-password', roles: [{role: 'readWrite', db: 'hypersend'}]})")
         
         # Create collections if they don't exist
         collections = ['users', 'chats', 'messages', 'files', 'uploads', 'refresh_tokens', 'reset_tokens', 'group_activity']
