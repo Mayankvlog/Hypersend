@@ -137,15 +137,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                if (value == 'group') {
                  await context.push('/group-create');
                } else if (value == 'channel') {
-                 // TODO: Navigate to channel creation
-                 ScaffoldMessenger.of(context).showSnackBar(
-                   const SnackBar(content: Text('Channel creation coming soon!')),
-                 );
+                 await context.push('/channel-create');
                } else if (value == 'secret') {
-                 // TODO: Navigate to secret chat creation
-                 ScaffoldMessenger.of(context).showSnackBar(
-                   const SnackBar(content: Text('Secret chat coming soon!')),
-                 );
+                 await context.push('/secret-chat');
                }
                if (mounted) await _loadChats();
              },

@@ -14,6 +14,8 @@ import '../../presentation/screens/blocked_users_screen.dart';
 import '../../presentation/screens/storage_manager_screen.dart';
 import '../../presentation/screens/help_support_screen.dart';
 import '../../presentation/screens/group_creation_screen.dart';
+import '../../presentation/screens/channel_creation_screen.dart';
+import '../../presentation/screens/secret_chat_screen.dart';
 import '../../presentation/screens/group_detail_screen.dart';
 import '../../data/mock/mock_data.dart';
 
@@ -87,6 +89,14 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/group-create',
       builder: (context, state) => const GroupCreationScreen(),
+    ),
+    GoRoute(
+      path: '/channel-create',
+      builder: (context, state) => const ChannelCreationScreen(),
+    ),
+    GoRoute(
+      path: '/secret-chat',
+      builder: (context, state) => const SecretChatScreen(),
     ),
     GoRoute(
       path: '/group/:id',
