@@ -22,8 +22,9 @@ RUN /opt/flutter/bin/flutter pub get
 COPY . .
 
 # Build web app - web-only build doesn't need platform configs
+# Set API_BASE_URL to production backend URL
 # Removed 'flutter clean' as it's a fresh container and causes issues if files aren't there yet/we want to keep the pub cache
-RUN /opt/flutter/bin/flutter build web --release --no-tree-shake-icons
+RUN /opt/flutter/bin/flutter build web --release --no-tree-shake-icons --dart-define=API_BASE_URL=https://zaply.in.net/api/v1
 
 # Serve with Nginx
 FROM nginx:alpine

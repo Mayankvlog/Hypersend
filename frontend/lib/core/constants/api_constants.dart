@@ -2,11 +2,13 @@ class ApiConstants {
   // Backend API Base URL
   // SECURITY: Use environment variable or build flavor
   // For production, use HTTPS with your domain
+  // IMPORTANT: This should be the FULL API base URL including /api/v1
+  // Examples: 'https://zaply.in.net/api/v1' or 'http://localhost:8000/api/v1'
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    // Default to relative API path so the frontend works behind nginx proxy in most setups.
-    // Use environment variable `API_BASE_URL` to override for specific deployments.
-    defaultValue: '/api/v1/',
+    // Default to production URL with /api/v1 path
+    // Override with build flag: --dart-define=API_BASE_URL=https://your-domain.com/api/v1
+    defaultValue: 'https://zaply.in.net/api/v1',
   );
   
   // API Endpoints
