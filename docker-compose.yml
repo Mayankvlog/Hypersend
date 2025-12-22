@@ -36,8 +36,8 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
     volumes:
-      - mongodb_data:/data/db
-      - mongodb_config:/data/configdb
+      - mongodb_data_v2:/data/db
+      - mongodb_config_v2:/data/configdb
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     networks:
       - hypersend_network
@@ -135,9 +135,9 @@ networks:
         - subnet: 172.20.0.0/16
 
 volumes:
-  mongodb_data:
+  mongodb_data_v2:
     driver: local
-  mongodb_config:
+  mongodb_config_v2:
     driver: local
   nginx_cache:
     driver: local
