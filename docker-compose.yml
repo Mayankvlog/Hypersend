@@ -32,7 +32,7 @@ services:
       - backend
       - frontend
     networks:
-      - hypersend_network
+      - zaply_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]
       interval: 30s
@@ -57,7 +57,7 @@ services:
       - /var/lib/mongodb:/data/db
       - mongodb_config:/data/configdb
     networks:
-      - hypersend_network
+      - zaply_network
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -99,7 +99,7 @@ services:
       mongodb:
         condition: service_healthy
     networks:
-      - hypersend_network
+      - zaply_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
@@ -123,7 +123,7 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - hypersend_network
+      - zaply_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]
       interval: 30s
@@ -145,4 +145,16 @@ volumes:
     driver: local
   nginx_ssl:
     driver: local
+
+
+
+
+
+
+
+
+
+
+
+
 
