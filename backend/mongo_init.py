@@ -6,8 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from backend.config import settings
 
 
-
-async def ensure_mongodb_ready():
+async def init_mongodb():
     """
     Initialize MongoDB with required users and collections
     This runs once when the backend starts
