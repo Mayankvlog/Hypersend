@@ -21,23 +21,6 @@ class Settings:
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(64))
-    
-    def __init__(self):
-        """Initialize settings and validate critical configuration"""
-        self.validate_config()
-    
-    def validate_config(self):
-        """Validate critical configuration"""
-        # Generate secure SECRET_KEY if not set
-        if not self.SECRET_KEY or self.SECRET_KEY in ["dev-secret-key-change-in-production-5y7L9x2K", "your-super-secret-production-key-change-this-2025"]:
-            print("[WARN] SECRET_KEY not set or using default. Generating secure key...")
-            self.SECRET_KEY = secrets.token_urlsafe(64)
-            print("[WARN] Generated SECRET_KEY. For persistent tokens, set SECRET_KEY in .env file")
-        
-        if len(self.SECRET_KEY) < 32:
-            print("[WARN] SECRET_KEY too short. Generating new secure key...")
-            self.SECRET_KEY = secrets.token_urlsafe(64)
-    
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -94,6 +77,22 @@ class Settings:
         "http://zaply.in.net",
         "https://zaply.in.net",
     ]
+    
+    def __init__(self):
+        """Initialize settings and validate critical configuration"""
+        self.validate_config()
+    
+    def validate_config(self):
+        """Validate critical configuration"""
+        # Generate secure SECRET_KEY if not set
+        if not self.SECRET_KEY or self.SECRET_KEY in ["dev-secret-key-change-in-production-5y7L9x2K", "your-super-secret-production-key-change-this-2025"]:
+            print("[WARN] SECRET_KEY not set or using default. Generating secure key...")
+            self.SECRET_KEY = secrets.token_urlsafe(64)
+            print("[WARN] Generated SECRET_KEY. For persistent tokens, set SECRET_KEY in .env file")
+        
+        if len(self.SECRET_KEY) < 32:
+            print("[WARN] SECRET_KEY too short. Generating new secure key...")
+            self.SECRET_KEY = secrets.token_urlsafe(64)
     
     def validate_production(self):
         """Validate production-safe settings.
