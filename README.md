@@ -1,10 +1,10 @@
-# 🚀 Hypersend - Setup & Deployment Guide
+# 🚀 Zaply - Setup & Deployment Guide
 
 A modern, enterprise-grade, real-time messaging and P2P file transfer platform.
 
 ## 🎯 Quick Overview
 
-**Hypersend** is a cross-platform messaging app with:
+**Zaply** is a cross-platform messaging app with:
 - ✅ Real-time chat (WebSocket support)
 - ✅ Secure P2P file transfer 
 - ✅ User authentication & permissions
@@ -29,7 +29,7 @@ A modern, enterprise-grade, real-time messaging and P2P file transfer platform.
 ## 📁 Project Structure
 
 ```
-hypersend/
+zaply/
 ├── backend/                    # FastAPI backend
 │   ├── main.py               # Application entry
 │   ├── database.py           # MongoDB connection
@@ -77,15 +77,15 @@ hypersend/
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/Mayankvlog/Hypersend.git
-cd Hypersend
+git clone https://github.com/Mayankvlog/Zaply.git
+cd Zaply
 ```
 
 ### Step 2: Create `.env` File
 
 ```bash
 cat > .env << EOF
-MONGO_USER=hypersend
+MONGO_USER=zaply
 MONGO_PASSWORD=your_secure_password_here
 SECRET_KEY=your_secret_key_here_min_32_chars
 API_BASE_URL=https://zaply.in.net/api/v1
@@ -120,14 +120,14 @@ docker compose logs -f
 ## 🔧 Key Fixes Applied (December 2025)
 
 ### Issue: Frontend Container Crashing
-**Problem**: Docker-compose was referencing a pre-built image `mayank035/hypersend-frontend:latest` which had incorrect startup command (`python app.py`), causing the container to crash.
+**Problem**: Docker-compose was referencing a pre-built image `mayank035/zaply-frontend:latest` which had incorrect startup command (`python app.py`), causing the container to crash.
 
 **Solution**: Updated `docker-compose.yml` to **build the frontend locally** from the Dockerfile:
 
 ```yaml
 # OLD (BROKEN)
 frontend:
-  image: mayank035/hypersend-frontend:latest
+  image: mayank035/zaply-frontend:latest
   # This image had wrong command and was restarting
 
 # NEW (FIXED)
@@ -189,7 +189,7 @@ DELETE /users/{user_id}        # Delete account
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MONGO_USER` | `hypersend` | MongoDB username |
+| `MONGO_USER` | `zaply` | MongoDB username |
 | `MONGO_PASSWORD` | - | MongoDB password (required) |
 | `SECRET_KEY` | Generated | JWT secret (min 32 chars) |
 | `API_BASE_URL` | `http://localhost:8000` | Backend URL |
@@ -303,10 +303,10 @@ db.files.find({})
 
 ### Create User Manually
 ```bash
-docker exec -it hypersend_mongodb mongosh -u hypersend -p <password>
+docker exec -it zaply_mongodb mongosh -u zaply -p <password>
 
 // In MongoDB shell:
-use hypersend
+use zaply
 db.users.insertOne({
   _id: ObjectId(),
   email: "user@example.com",
@@ -346,7 +346,7 @@ docker compose logs mongodb
 # For production, use proper certificates with proper Certificate Authority
 
 # To manually regenerate:
-docker exec hypersend_nginx openssl req -x509 -nodes -days 365 \
+docker exec zaply_nginx openssl req -x509 -nodes -days 365 \
   -newkey rsa:2048 -keyout /etc/nginx/ssl/key.pem \
   -out /etc/nginx/ssl/cert.pem -subj '/CN=zaply.in.net'
 ```
@@ -392,7 +392,7 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 
 ## 🆘 Support
 
-For issues, questions, or feature requests, please open an issue on [GitHub Issues](https://github.com/Mayankvlog/Hypersend/issues).
+For issues, questions, or feature requests, please open an issue on [GitHub Issues](https://github.com/Mayankvlog/Zaply/issues).
 
 ---
 
