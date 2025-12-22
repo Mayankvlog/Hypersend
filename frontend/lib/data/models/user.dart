@@ -6,11 +6,14 @@ class User extends Equatable {
   final String username;
   final String avatar;
   final bool isOnline;
-
   const User({
     required this.id,
     required this.name,
     required this.username,
+    required this.avatar,
+    this.isOnline = false,
+  });
+
   /// Create a User from API response map
   factory User.fromApi(Map<String, dynamic> json) {
     return User(
@@ -21,9 +24,6 @@ class User extends Equatable {
       isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
     );
   }
-    required this.avatar,
-    this.isOnline = false,
-  });
 
   @override
   List<Object?> get props => [id, name, username, avatar, isOnline];
