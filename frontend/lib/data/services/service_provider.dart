@@ -24,7 +24,7 @@ class ServiceProvider {
   void _initialize() {
     apiService = ApiService();
     authService = AuthService(apiService);
-    profileService = ProfileService();
+    profileService = ProfileService(apiService);
     settingsService = SettingsService();
     fileTransferService = FileTransferService(apiService);
     // Services initialized successfully
@@ -34,7 +34,6 @@ class ServiceProvider {
   Future<void> init() async {
     try {
       await authService.init();
-      await settingsService.loadSettings();
       // Initialization complete
     } catch (e) {
       // Handle initialization error silently
