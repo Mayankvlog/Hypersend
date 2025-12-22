@@ -23,18 +23,21 @@ COPY . /app/backend/
 RUN touch /app/__init__.py
 
 # Runtime environment
+
+# Runtime environment - Optimize memory allocator
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    DATA_ROOT=/data
+    DATA_ROOT=/data \
+    PYTHONMALLOC=malloc
 
 # Create data directory
 RUN mkdir -p /data/tmp /data/files
 
 EXPOSE 8000
 
-# Health check (inside container)
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+# Health check (inside container) - Less aggressive
+HEALTHCHECK --interval=30s --timeout=30s --start-period=30s --retries=3 \
   CMD curl -f http://127.0.0.1:8000/health || exit 1
 
-# Start FastAPI
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start FastAPI with optimized workers
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "uvloop", "--http", "httptools"]
