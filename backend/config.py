@@ -126,10 +126,14 @@ class Settings:
     
     def init_directories(self):
         """Create necessary directories"""
-        self.DATA_ROOT.mkdir(exist_ok=True, parents=True)
-        (self.DATA_ROOT / "tmp").mkdir(exist_ok=True, parents=True)
-        (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True)
+        try:
+            self.DATA_ROOT.mkdir(exist_ok=True, parents=True)
+            (self.DATA_ROOT / "tmp").mkdir(exist_ok=True, parents=True)
+            (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True)
+            print(f"[OK] Data directories initialized at {self.DATA_ROOT}")
+        except Exception as e:
+            print(f"[WARN] Failed to initialize directories: {str(e)}")
+            print("[WARN] Continuing with startup - check file permissions if this is critical")
 
 
 settings = Settings()
-settings.init_directories()

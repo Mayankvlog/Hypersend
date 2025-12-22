@@ -22,6 +22,13 @@ async def lifespan(app: FastAPI):
     try:
         print(f"[START] Zaply API starting on {settings.API_HOST}:{settings.API_PORT}")
         print(f"[START] Environment: {'DEBUG' if settings.DEBUG else 'PRODUCTION'}")
+        
+        # Initialize directories first
+        try:
+            settings.init_directories()
+        except Exception as e:
+            print(f"[WARN] Directory initialization warning: {str(e)}")
+        
         print("[DB] Initializing MongoDB...")
         
         # Initialize MongoDB (create users, collections, indexes)
