@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 import secrets
 
 # Load environment variables from .env file
@@ -8,7 +9,7 @@ env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 # Also check current directory
-if not os.getenv("MONGODB_URI"):
+if not os.getenv("MONGODB_URI") and not os.getenv("MONGO_USER"):
     load_dotenv()
 
 
@@ -17,7 +18,17 @@ class Settings:
     # MongoDB runs in Docker container as part of docker-compose
     # Backend connects to MongoDB via Docker service name "mongodb" on internal network
     # Data persisted on VPS at /var/lib/mongodb
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://hypersend:CHANGE_THIS_PASSWORD@mongodb:27017/hypersend?authSource=admin&retryWrites=true")
+    
+    # Read MongoDB credentials from environment
+    _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
+    _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
+    _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb")
+    _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
+    _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
+    
+    # Construct MONGODB_URI with proper URL encoding for special characters in password
+    # quote_plus handles special chars like @#$% → %40%23%24%25
+    MONGODB_URI: str = f"mongodb://{quote_plus(_MONGO_USER)}:{quote_plus(_MONGO_PASSWORD)}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&retryWrites=true"
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(64))
