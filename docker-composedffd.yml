@@ -1,0 +1,164 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: hypersend_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8080}:80"
+      - "${NGINX_PORT_SSL:-443}:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./data:/data:ro
+      - nginx_cache:/var/cache/nginx
+      # SSL certificates (self-signed generated if Let's Encrypt not available)
+      - nginx_ssl:/etc/nginx/ssl
+    entrypoint: |-
+      sh -c "
+      set -e
+      mkdir -p /etc/nginx/ssl
+      if [ ! -f /etc/nginx/ssl/cert.pem ] || [ ! -f /etc/nginx/ssl/key.pem ]; then
+        echo 'Generating self-signed certificate...'
+        apk add --no-cache openssl
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/key.pem -out /etc/nginx/ssl/cert.pem -subj '/CN=zaply.in.net'
+        chmod 644 /etc/nginx/ssl/cert.pem
+        chmod 600 /etc/nginx/ssl/key.pem
+        echo 'Self-signed certificate created'
+      fi
+      mkdir -p /etc/letsencrypt/live/zaply.in.net
+      cp -f /etc/nginx/ssl/cert.pem /etc/letsencrypt/live/zaply.in.net/fullchain.pem
+      cp -f /etc/nginx/ssl/key.pem /etc/letsencrypt/live/zaply.in.net/privkey.pem
+      echo 'Testing nginx configuration...'
+      nginx -t
+      echo 'Starting nginx...'
+      exec nginx -g 'daemon off;'
+      "
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  mongodb:
+    image: mongo:7.0
+    container_name: hypersend_mongodb
+    restart: unless-stopped
+    # SECURITY: MongoDB port removed from external exposure
+    # Access MongoDB only through Docker internal network
+    # For admin access, use: docker exec -it hypersend_mongodb mongosh
+    # ports:
+    #   - "27018:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: hypersend
+    volumes:
+      - /var/lib/mongodb:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    command: mongod --auth --bind_ip 0.0.0.0
+
+  backend:
+    image: mayank035/hypersend-backend:latest
+    container_name: hypersend_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+      - ./backend/uploads:/app/uploads
+    environment:
+      # IMPORTANT: Password MUST be URL-encoded (@ = %40, # = %23)
+      MONGODB_URI: "mongodb://${MONGO_USER:-hypersend}:${MONGO_PASSWORD}@mongodb:27017/hypersend?authSource=admin&retryWrites=true"
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      REFRESH_TOKEN_EXPIRE_DAYS: 30
+      DATA_ROOT: /data
+      UPLOADS_PATH: /app/uploads
+      MAX_FILE_SIZE_BYTES: 42949672960
+      CHUNK_SIZE: 4194304
+      MAX_PARALLEL_CHUNKS: 4
+      UPLOAD_EXPIRE_HOURS: 24
+      FILE_RETENTION_HOURS: 0
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+      RATE_LIMIT_PER_USER: 100
+      RATE_LIMIT_WINDOW_SECONDS: 60
+      DEBUG: True
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hypersend_frontend
+    restart: unless-stopped
+    ports:
+      - "8550:80"
+    environment:
+      API_BASE_URL: http://backend:8000
+      PRODUCTION_API_URL: ${PRODUCTION_API_URL:-https://zaply.in.net}
+      DEBUG: True
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  hypersend_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  mongodb_config:
+    driver: local
+  nginx_cache:
+    driver: local
+  nginx_ssl:
+    driver: local
+
+
+
+
+
+
+
+
+
+
+
+
+
