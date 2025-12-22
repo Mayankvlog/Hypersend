@@ -317,6 +317,21 @@ class ApiService {
     return response.data;
   }
 
+  // Secret chat endpoint - create a 1-on-1 secret chat with a user
+  Future<Map<String, dynamic>> createSecretChat({
+    required String targetUserId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.chatsEndpoint}/secret',
+        data: {'target_user_id': targetUserId},
+      );
+      return response.data;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> deleteGroup(String groupId) async {
     final response = await _dio.delete('groups/$groupId');
     return response.data;
