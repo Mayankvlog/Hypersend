@@ -12,6 +12,8 @@ class ApiService {
         connectTimeout: ApiConstants.connectTimeout,
         receiveTimeout: ApiConstants.receiveTimeout,
         contentType: 'application/json',
+        // For web builds, ensure absolute URLs
+        validateStatus: (status) => status != null && status < 500,
       ),
     );
 
@@ -21,6 +23,20 @@ class ApiService {
       responseBody: false,
       logPrint: (obj) {},
     ));
+    
+    // Add response interceptor for error handling
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onError: (error, handler) {
+          // Log network errors
+          if (error.response?.statusCode == null) {
+            print('[API_ERROR] Network error: ${error.message}');
+            print('[API_ERROR] URL: ${error.requestOptions.uri}');
+          }
+          return handler.next(error);
+        },
+      ),
+    );
   }
 
   // Auth endpoints
