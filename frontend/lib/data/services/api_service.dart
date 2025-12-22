@@ -316,9 +316,6 @@ class ApiService {
     final response = await _dio.post('groups/$groupId/leave');
     return response.data;
   }
-      rethrow;
-    }
-  }
 
   Future<Map<String, dynamic>> deleteGroup(String groupId) async {
     final response = await _dio.delete('groups/$groupId');
