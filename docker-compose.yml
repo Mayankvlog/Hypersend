@@ -23,6 +23,10 @@ services:
         chmod 600 /etc/nginx/ssl/key.pem &&
         echo 'Self-signed certificate created';
       fi &&
+      # Ensure legacy Let's Encrypt paths exist (some configs reference /etc/letsencrypt/live/<domain>)
+      mkdir -p /etc/letsencrypt/live/zaply.in.net &&
+      cp -f /etc/nginx/ssl/cert.pem /etc/letsencrypt/live/zaply.in.net/fullchain.pem &&
+      cp -f /etc/nginx/ssl/key.pem /etc/letsencrypt/live/zaply.in.net/privkey.pem &&
       echo 'Testing nginx configuration...' &&
       nginx -t &&
       echo 'Starting nginx...' &&
