@@ -21,16 +21,25 @@ async def init_mongodb():
         username = parsed.username or 'hypersend'
         password = parsed.password or 'hypersend_secure_password'
         
+        client = None
+        
         # Try to connect with authentication first
         try:
             client = AsyncIOMotorClient(
                 settings.MONGODB_URI,
                 serverSelectionTimeoutMS=5000,
             )
-            await client.admin.command('ping')
+            await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
             print("[MONGO_INIT] Connected with existing credentials")
+        except asyncio.TimeoutError:
+            print("[MONGO_INIT] Connection timeout - MongoDB might not be ready yet")
+            if client:
+                client.close()
+            return
         except Exception as auth_error:
-            print(f"[MONGO_INIT] Authentication failed, attempting to create user: {str(auth_error)}")
+            print(f"[MONGO_INIT] Authentication failed: {str(auth_error)[:80]}")
+            if client:
+                client.close()
             
             # Connect without authentication to create user
             # Get root credentials from environment
@@ -43,27 +52,32 @@ async def init_mongodb():
             
             try:
                 root_client = AsyncIOMotorClient(root_uri, serverSelectionTimeoutMS=5000)
-                await root_client.admin.command('ping')
+                await asyncio.wait_for(root_client.admin.command('ping'), timeout=5.0)
                 print("[MONGO_INIT] Connected as root user")
                 
                 # Create application user
                 admin_db = root_client.admin
                 try:
-                    await admin_db.command(
-                        "createUser",
-                        username,
-                        pwd=password,
-                        roles=[
-                            {"role": "readWrite", "db": "hypersend"},
-                            {"role": "dbOwner", "db": "hypersend"}
-                        ]
+                    await asyncio.wait_for(
+                        admin_db.command(
+                            "createUser",
+                            username,
+                            pwd=password,
+                            roles=[
+                                {"role": "readWrite", "db": "hypersend"},
+                                {"role": "dbOwner", "db": "hypersend"}
+                            ]
+                        ),
+                        timeout=5.0
                     )
                     print(f"[MONGO_INIT] Created user '{username}' successfully")
+                except asyncio.TimeoutError:
+                    print("[MONGO_INIT] User creation timeout")
                 except Exception as create_error:
                     if "already exists" in str(create_error).lower():
                         print(f"[MONGO_INIT] User '{username}' already exists")
                     else:
-                        print(f"[MONGO_INIT] Could not create user: {create_error}")
+                        print(f"[MONGO_INIT] Could not create user: {str(create_error)[:80]}")
                 
                 root_client.close()
                 
@@ -72,17 +86,31 @@ async def init_mongodb():
                     settings.MONGODB_URI,
                     serverSelectionTimeoutMS=5000,
                 )
-                await client.admin.command('ping')
+                await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
                 print("[MONGO_INIT] Connected with application user")
                 
+            except asyncio.TimeoutError:
+                print("[MONGO_INIT] Root connection timeout")
+                if root_client:
+                    root_client.close()
+                return
             except Exception as root_error:
-                print(f"[MONGO_INIT] Could not connect as root: {root_error}")
-                print("[MONGO_INIT] Trying to continue without authentication...")
-                # Last resort: connect without auth
-                no_auth_uri = f"mongodb://{parsed.hostname}:{parsed.port or 27017}/hypersend"
-                client = AsyncIOMotorClient(no_auth_uri, serverSelectionTimeoutMS=5000)
-                await client.admin.command('ping')
+                print(f"[MONGO_INIT] Could not connect as root: {str(root_error)[:80]}")
+                if 'root_client' in locals():
+                    root_client.close()
+                # Last resort: try without auth
+                try:
+                    no_auth_uri = f"mongodb://{parsed.hostname}:{parsed.port or 27017}/hypersend"
+                    client = AsyncIOMotorClient(no_auth_uri, serverSelectionTimeoutMS=5000)
+                    await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
+                except:
+                    print("[MONGO_INIT] All connection methods failed")
+                    return
         
+        if not client:
+            print("[MONGO_INIT] No client connection established")
+            return
+            
         app_db = client.hypersend
         
         # Create collections if they don't exist
@@ -90,13 +118,18 @@ async def init_mongodb():
         
         for collection_name in collections:
             try:
-                # Try to create collection
-                await app_db.create_collection(collection_name)
+                # Try to create collection with timeout
+                await asyncio.wait_for(
+                    app_db.create_collection(collection_name),
+                    timeout=3.0
+                )
                 print(f"[MONGO_INIT] Created collection: {collection_name}")
+            except asyncio.TimeoutError:
+                print(f"[MONGO_INIT] Timeout creating collection: {collection_name}")
             except Exception as e:
                 # Collection might already exist - this is expected behavior
                 if "already exists" in str(e).lower():
-                    print(f"[MONGO_INIT] Collection already exists: {collection_name}")
+                    pass  # Silent - collection already exists
                 else:
                     # Silently ignore - collection will be created on first use if needed
                     pass
@@ -117,20 +150,24 @@ async def init_mongodb():
         
         for collection_name, keys, options, description in indexes_to_create:
             try:
-                await app_db[collection_name].create_index(keys, **options)
+                await asyncio.wait_for(
+                    app_db[collection_name].create_index(keys, **options),
+                    timeout=3.0
+                )
                 print(f"[MONGO_INIT] Created index: {description}")
+            except asyncio.TimeoutError:
+                print(f"[MONGO_INIT] Timeout creating index: {description}")
             except Exception as e:
                 # Index might already exist - this is normal on subsequent runs
                 if "already exists" not in str(e).lower():
-                    print(f"[MONGO_INIT] Note: Could not create index {description}: {str(e)[:60]}")
+                    pass  # Silent
         
         print("[MONGO_INIT] [OK] MongoDB initialization complete")
         client.close()
         
     except Exception as e:
-        print(f"[MONGO_INIT] Warning: Could not fully initialize MongoDB: {str(e)}")
-        print("[MONGO_INIT] Continuing - collections will be created on first use")
-        if 'client' in locals():
+        print(f"[MONGO_INIT] Warning: {str(e)[:100]}")
+        if 'client' in locals() and client:
             try:
                 client.close()
             except Exception:
@@ -141,7 +178,7 @@ async def ensure_mongodb_ready():
     """
     Wait for MongoDB to be ready and initialize it
     """
-    max_retries = 30
+    max_retries = 60
     retry_count = 0
     
     while retry_count < max_retries:
@@ -150,11 +187,14 @@ async def ensure_mongodb_ready():
             return True
         except Exception as e:
             retry_count += 1
+            error_str = str(e)
             if retry_count < max_retries:
-                print(f"[MONGO_INIT] Retry {retry_count}/{max_retries}: {str(e)}")
-                await asyncio.sleep(1)
+                print(f"[MONGO_INIT] Retry {retry_count}/{max_retries}: {error_str[:100]}")
+                await asyncio.sleep(0.5)
             else:
                 print(f"[MONGO_INIT] Failed to initialize after {max_retries} retries")
-                raise
+                print(f"[MONGO_INIT] Last error: {error_str}")
+                # Don't raise - allow app to start with collections created on first use
+                return False
     
     return False

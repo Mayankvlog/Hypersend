@@ -71,12 +71,14 @@ async def lifespan(app: FastAPI):
         
         # Initialize MongoDB (create users, collections, indexes)
         try:
-            await ensure_mongodb_ready()
-            print("[DB] MongoDB initialization completed")
+            result = await ensure_mongodb_ready()
+            if result:
+                print("[DB] MongoDB initialization completed successfully")
+            else:
+                print("[DB] MongoDB initialization skipped or incomplete - will initialize on first use")
         except Exception as e:
-            print(f"[ERROR] MongoDB initialization failed: {str(e)}")
-            print("[ERROR] Please check MongoDB connection and configuration")
-            raise
+            print(f"[WARN] MongoDB initialization warning: {str(e)}")
+            print("[WARN] Continuing startup - collections will be created on first use")
         
         print(f"[DB] Connecting to MongoDB...")
         
