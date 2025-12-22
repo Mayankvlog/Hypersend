@@ -37,6 +37,7 @@ class Settings:
         if len(self.SECRET_KEY) < 32:
             print("[WARN] SECRET_KEY too short. Generating new secure key...")
             self.SECRET_KEY = secrets.token_urlsafe(64)
+    
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -94,8 +95,7 @@ class Settings:
         "https://zaply.in.net",
     ]
     
-    @classmethod
-    def validate_production(cls):
+    def validate_production(self):
         """Validate production-safe settings.
 
         In production (DEBUG=False) we no longer crash the app when SECRET_KEY
@@ -103,7 +103,7 @@ class Settings:
         ephemeral key and log clear warnings so the app continues to run
         without leaking any real secret in the codebase or repo.
         """
-        if cls.DEBUG:
+        if self.DEBUG:
             print("[INFO] Development mode enabled - production validations skipped")
             print("[INFO] WARNING: Remember to set DEBUG=False for production deployment")
             return
@@ -114,23 +114,22 @@ class Settings:
             "your-secret-key-change-in-production",
             "your-secret-key",
         }
-        if "dev-secret-key" in cls.SECRET_KEY.lower() or cls.SECRET_KEY in placeholder_keys:
+        if "dev-secret-key" in self.SECRET_KEY.lower() or self.SECRET_KEY in placeholder_keys:
             print("[WARN] WARNING: PRODUCTION MODE but SECRET_KEY is still a placeholder.")
             print("[WARN] Generating a temporary SECRET_KEY for this process.")
             print("[WARN] For stable JWT tokens across restarts, set SECRET_KEY in .env or environment.")
-            cls.SECRET_KEY = secrets.token_urlsafe(32)
+            self.SECRET_KEY = secrets.token_urlsafe(32)
 
-        if cls.CORS_ORIGINS == ["*"]:
+        if self.CORS_ORIGINS == ["*"]:
             print("[WARN] WARNING: CORS_ORIGINS set to wildcard in production. Consider restricting it.")
 
         print("[INFO] Production validations completed")
     
-    @classmethod
-    def init_directories(cls):
+    def init_directories(self):
         """Create necessary directories"""
-        cls.DATA_ROOT.mkdir(exist_ok=True)
-        (cls.DATA_ROOT / "tmp").mkdir(exist_ok=True)
-        (cls.DATA_ROOT / "files").mkdir(exist_ok=True)
+        self.DATA_ROOT.mkdir(exist_ok=True, parents=True)
+        (self.DATA_ROOT / "tmp").mkdir(exist_ok=True, parents=True)
+        (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True)
 
 
 settings = Settings()
