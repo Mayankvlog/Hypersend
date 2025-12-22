@@ -35,6 +35,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
+    volumes:
       - mongodb_data_v3:/data/db
       - mongodb_config_v3:/data/configdb
     networks:
