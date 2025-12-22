@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -107,6 +107,16 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "X-Total-Count"],
     max_age=600,  # Cache preflight requests for 10 minutes
 )
+
+# ✅ CRITICAL FIX: Handle CORS preflight requests (OPTIONS) without requiring authentication
+# Browser CORS preflight requests don't have auth headers, so they would fail 401 without this
+@app.options("/{full_path:path}")
+async def handle_options_request(full_path: str):
+    """
+    Handle CORS preflight OPTIONS requests.
+    These must succeed without authentication for CORS to work in browsers.
+    """
+    return Response(status_code=204)
 
 # Security headers middleware
 @app.middleware("http")
