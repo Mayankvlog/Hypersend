@@ -231,6 +231,19 @@ class ApiService {
     );
   }
 
+  Future<Map<String, dynamic>> createSecretChat({
+    required String targetUserId,
+  }) async {
+    final response = await _dio.post(
+      ApiConstants.chatsEndpoint,
+      data: {
+        'type': 'secret',
+        'member_ids': [targetUserId],
+      },
+    );
+    return response.data;
+  }
+
   Future<Map<String, dynamic>> createGroup({
     required String name,
     String description = '',

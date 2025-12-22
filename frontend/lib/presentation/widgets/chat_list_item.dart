@@ -159,12 +159,17 @@ class ChatListItem extends StatelessWidget {
       IconData? typeIcon;
       if (chat.type == ChatType.channel) typeIcon = Icons.campaign;
       if (chat.type == ChatType.supergroup) typeIcon = Icons.groups;
+      if (chat.type == ChatType.secret) typeIcon = Icons.lock;
       
       return Container(
         width: 56,
         height: 56,
         decoration: BoxDecoration(
-          color: chat.type == ChatType.channel ? AppTheme.accentGold : AppTheme.primaryCyan,
+          color: chat.type == ChatType.channel 
+              ? AppTheme.accentGold 
+              : chat.type == ChatType.secret 
+                  ? AppTheme.successGreen 
+                  : AppTheme.primaryCyan,
           shape: BoxShape.circle,
         ),
         child: Center(

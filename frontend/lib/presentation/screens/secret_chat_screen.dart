@@ -45,13 +45,10 @@ class _SecretChatScreenState extends State<SecretChatScreen> {
 
     setState(() => _loading = true);
     try {
-      final resp = await serviceProvider.apiService.createGroup(
-        name: 'Secret chat',
-        description: 'Secret chat',
-        memberIds: [userId],
-        avatarUrl: null,
+      final resp = await serviceProvider.apiService.createSecretChat(
+        targetUserId: userId,
       );
-      final chatId = (resp['_id'] ?? resp['group_id'] ?? resp['id'] ?? '').toString();
+      final chatId = (resp['_id'] ?? resp['chat_id'] ?? resp['id'] ?? '').toString();
       if (chatId.isEmpty) throw Exception('Invalid response');
       if (!mounted) return;
       context.go('/chat/$chatId');
