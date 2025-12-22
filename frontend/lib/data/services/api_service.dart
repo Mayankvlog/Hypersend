@@ -363,6 +363,55 @@ class ApiService {
     return {};
   }
 
+  // Additional user endpoints
+  Future<bool> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.usersEndpoint}/change-password',
+        data: {
+          'old_password': oldPassword,
+          'new_password': newPassword,
+        },
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<bool> resetPassword({required String email}) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/reset-password',
+        data: {'email': email},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<bool> changeEmail({
+    required String newEmail,
+    required String password,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.usersEndpoint}/change-email',
+        data: {
+          'email': newEmail,
+          'password': password,
+        },
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   void setAuthToken(String token) {
     _dio.options.headers['Authorization'] = 'Bearer $token';
   }

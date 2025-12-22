@@ -30,6 +30,10 @@ class SettingsService {
 
   List<AppLanguage> get availableLanguages => AppLanguage.values.toList();
 
+  SettingsService() {
+    _loadSettings();
+  }
+
   // Change language
   Future<void> changeLanguage(AppLanguage language) async {
     try {
@@ -44,6 +48,16 @@ class SettingsService {
   Future<void> toggleDarkMode() async {
     try {
       _darkMode = !_darkMode;
+      await _saveSettings();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Set dark mode explicitly
+  Future<void> setDarkMode(bool value) async {
+    try {
+      _darkMode = value;
       await _saveSettings();
     } catch (e) {
       rethrow;
@@ -81,12 +95,16 @@ class SettingsService {
   }
 
   // Load settings from storage
-  Future<void> loadSettings() async {
+  Future<void> _loadSettings() async {
     try {
       // In a real app, load from SharedPreferences or local storage
-      // For now, use defaults
+      // For now, use defaults - but keep the in-memory values
+      _currentLanguage = AppLanguage.english;
+      _darkMode = true;
+      _notificationsEnabled = true;
+      _selectedThemeColor = '#00B4FF';
     } catch (e) {
-      rethrow;
+      // Use defaults on error
     }
   }
 
@@ -94,7 +112,7 @@ class SettingsService {
   Future<void> _saveSettings() async {
     try {
       // In a real app, save to SharedPreferences or local storage
-      // For now, just store in memory
+      // For now, just store in memory (persists during app session)
     } catch (e) {
       rethrow;
     }

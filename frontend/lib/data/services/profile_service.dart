@@ -1,7 +1,11 @@
 import '../models/user.dart';
+import 'api_service.dart';
 
 class ProfileService {
+  final ApiService _apiService;
   User? _currentUser;
+
+  ProfileService(this._apiService);
 
   User? get currentUser => _currentUser;
 
@@ -22,6 +26,23 @@ class ProfileService {
     }
 
     try {
+      // Validate name
+      if ((name ?? '').isEmpty && _currentUser!.name.isEmpty) {
+        throw Exception('Name cannot be empty');
+      }
+      if ((name ?? '').isNotEmpty && name!.length < 2) {
+        throw Exception('Name must be at least 2 characters');
+      }
+
+      // Call API to update profile
+      final response = await _apiService.updateProfile({
+        if (name != null) 'name': name,
+        if (username != null) 'username': username,
+        if (avatar != null) 'avatar': avatar,
+        if (email != null) 'email': email,
+      });
+
+      // Update local user object
       _currentUser = _currentUser!.copyWith(
         name: name ?? _currentUser!.name,
         username: username ?? _currentUser!.username,
@@ -46,7 +67,11 @@ class ProfileService {
       if (newPassword.length < 6) {
         throw Exception('Password must be at least 6 characters');
       }
-      // Simulate password change - in real app, validate old password against hash
+      // Call API to change password
+      await _apiService.changePassword(
+        oldPassword: oldPassword,
+        newPassword: newPassword,
+      );
       return true;
     } catch (e) {
       rethrow;
@@ -59,7 +84,8 @@ class ProfileService {
       if (email.isEmpty || !email.contains('@')) {
         throw Exception('Please provide a valid email address');
       }
-      // Simulate sending reset email
+      // Call API to send reset email
+      await _apiService.resetPassword(email: email);
       return true;
     } catch (e) {
       rethrow;
@@ -78,11 +104,15 @@ class ProfileService {
       if (password.isEmpty) {
         throw Exception('Password is required to change email');
       }
-      // Simulate email change - in real app, verify password and update
+      // Call API to change email
+      await _apiService.changeEmail(
+        newEmail: newEmail,
+        password: password,
+      );
+      // Update user email in memory
       if (_currentUser != null) {
-        // Update user email in memory (in real app, send to backend)
         _currentUser = _currentUser!.copyWith(
-          username: newEmail.split('@')[0], // Use email prefix as username update reference
+          username: newEmail.split('@')[0],
         );
       }
       return true;
@@ -100,6 +130,8 @@ class ProfileService {
       if (newUsername.length < 3) {
         throw Exception('Username must be at least 3 characters');
       }
+      // Call API to change username
+      await _apiService.updateProfile({'username': newUsername});
       _currentUser = _currentUser!.copyWith(username: newUsername);
       return true;
     } catch (e) {
@@ -113,6 +145,8 @@ class ProfileService {
       if (avatarPath.isEmpty) {
         throw Exception('Avatar path cannot be empty');
       }
+      // Call API to update avatar
+      await _apiService.updateProfile({'avatar': avatarPath});
       _currentUser = _currentUser!.copyWith(avatar: avatarPath);
       return avatarPath;
     } catch (e) {
