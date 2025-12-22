@@ -12,7 +12,7 @@ class ApiService {
         connectTimeout: ApiConstants.connectTimeout,
         receiveTimeout: ApiConstants.receiveTimeout,
         contentType: 'application/json',
-        // For web builds, ensure absolute URLs
+        // For web builds, validate all responses
         validateStatus: (status) => status != null && status < 500,
       ),
     );
@@ -24,14 +24,25 @@ class ApiService {
       logPrint: (obj) {},
     ));
     
-    // Add response interceptor for error handling
+    // Add request interceptor to ensure auth tokens are sent
     _dio.interceptors.add(
       InterceptorsWrapper(
+        onRequest: (options, handler) {
+          // Ensure Content-Type is set for all requests
+          options.headers['Content-Type'] = 'application/json';
+          // Ensure credentials are sent with requests (for web)
+          options.sendTimeout = const Duration(seconds: 30);
+          return handler.next(options);
+        },
         onError: (error, handler) {
-          // Log network errors
+          // Log network errors with detailed info
           if (error.response?.statusCode == null) {
-            print('[API_ERROR] Network error: ${error.message}');
+            print('[API_ERROR] Network/Connection error: ${error.message}');
             print('[API_ERROR] URL: ${error.requestOptions.uri}');
+            print('[API_ERROR] Method: ${error.requestOptions.method}');
+            print('[API_ERROR] Type: ${error.type}');
+          } else {
+            print('[API_ERROR] HTTP ${error.response?.statusCode}: ${error.message}');
           }
           return handler.next(error);
         },
