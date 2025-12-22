@@ -14,7 +14,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late AppLanguage _selectedLanguage;
-  late bool _darkMode;
   late bool _notificationsEnabled;
 
   @override
@@ -22,7 +21,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     final settings = serviceProvider.settingsService;
     _selectedLanguage = settings.currentLanguage;
-    _darkMode = settings.darkMode;
     _notificationsEnabled = settings.notificationsEnabled;
   }
 
@@ -46,20 +44,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           content: Text('Error: $e'),
           backgroundColor: AppTheme.errorRed,
         ),
-      );
-    }
-  }
-
-  Future<void> _toggleDarkMode() async {
-    try {
-      await serviceProvider.settingsService.toggleDarkMode();
-      setState(() {
-        _darkMode = !_darkMode;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
       );
     }
   }
@@ -94,18 +78,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Language section
             _buildSectionHeader('LANGUAGE & REGION'),
             _buildLanguageSelector(),
-            const SizedBox(height: 24),
-            // Display section
-            _buildSectionHeader('DISPLAY'),
-            _buildSettingsTile(
-              icon: Icons.dark_mode_outlined,
-              title: 'Dark Mode',
-              trailing: Switch(
-                value: _darkMode,
-                onChanged: (_) => _toggleDarkMode(),
-                activeTrackColor: AppTheme.primaryCyan,
-              ),
-            ),
             const SizedBox(height: 24),
             // Notifications section
             _buildSectionHeader('NOTIFICATIONS'),
