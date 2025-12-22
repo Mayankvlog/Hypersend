@@ -95,10 +95,6 @@ services:
     restart: unless-stopped
     ports:
       - "8550:80"
-    environment:
-      API_BASE_URL: http://backend:8000
-      PRODUCTION_API_URL: ${PRODUCTION_API_URL:-https://zaply.in.net}
-      DEBUG: "True"
     depends_on:
       backend:
         condition: service_healthy
