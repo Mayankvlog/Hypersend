@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/service_provider.dart';
+import '../../data/models/user.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -45,6 +46,15 @@ class _AuthScreenState extends State<AuthScreen> {
       } else {
         await serviceProvider.authService.registerAndLogin(name: name, email: email, password: password);
       }
+
+      // After successful auth, fetch current user and populate profile service
+      try {
+        final me = await serviceProvider.apiService.getMe();
+        serviceProvider.profileService.setUser(User.fromApi(me));
+      } catch (e) {
+        // ignore - navigation will continue but profile-dependent features may request login again
+      }
+
       if (!mounted) return;
       context.go('/chats');
     } catch (e) {

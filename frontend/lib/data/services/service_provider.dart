@@ -3,6 +3,7 @@ import 'auth_service.dart';
 import 'profile_service.dart';
 import 'settings_service.dart';
 import 'file_transfer_service.dart';
+import '../models/user.dart';
 
 class ServiceProvider {
   static final ServiceProvider _instance = ServiceProvider._internal();
@@ -34,6 +35,15 @@ class ServiceProvider {
   Future<void> init() async {
     try {
       await authService.init();
+      // If logged in, fetch current user and populate profile service
+      if (authService.isLoggedIn) {
+        try {
+          final me = await apiService.getMe();
+          profileService.setUser(User.fromApi(me));
+        } catch (e) {
+          // Ignore errors fetching profile; user will be prompted to log in again
+        }
+      }
       // Initialization complete
     } catch (e) {
       // Handle initialization error silently

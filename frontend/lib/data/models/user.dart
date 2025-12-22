@@ -11,6 +11,16 @@ class User extends Equatable {
     required this.id,
     required this.name,
     required this.username,
+  /// Create a User from API response map
+  factory User.fromApi(Map<String, dynamic> json) {
+    return User(
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      name: (json['name'] ?? json['full_name'] ?? '').toString(),
+      username: (json['username'] ?? json['email'] ?? '').toString(),
+      avatar: (json['avatar_url'] ?? json['avatar'] ?? '').toString(),
+      isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
+    );
+  }
     required this.avatar,
     this.isOnline = false,
   });

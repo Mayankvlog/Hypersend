@@ -4,9 +4,9 @@ class ApiConstants {
   // For production, use HTTPS with your domain
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    // Default to VPS Nginx HTTPS endpoint that fronts the FastAPI backend.
-    // FastAPI routers are mounted under /api/v1, and Nginx proxies /api/ to the backend.
-    defaultValue: 'https://zaply.in.net/api/v1/',
+    // Default to relative API path so the frontend works behind nginx proxy in most setups.
+    // Use environment variable `API_BASE_URL` to override for specific deployments.
+    defaultValue: '/api/',
   );
   
   // API Endpoints
