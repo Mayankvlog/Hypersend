@@ -31,7 +31,9 @@ class Settings:
     MONGODB_URI: str = f"mongodb://{quote_plus(_MONGO_USER)}:{quote_plus(_MONGO_PASSWORD)}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&retryWrites=true"
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(64))
+    # Use a constant fallback if env is missing to prevent session invalidation on restart
+    _env_secret = os.getenv("SECRET_KEY")
+    SECRET_KEY: str = _env_secret if _env_secret else "fallback-insecure-dev-key-do-not-use-in-prod-hypersend"
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
