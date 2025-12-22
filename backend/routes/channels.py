@@ -21,7 +21,7 @@ async def _get_channel(channel_id: str) -> dict:
 async def _check_admin(channel: dict, user_id: str) -> bool:
     return user_id in channel.get("admins", []) or user_id == channel.get("owner_id")
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_channel(payload: ChatCreate, current_user: str = Depends(get_current_user)):
     """Create a new broadcast channel"""
     if not payload.name:
