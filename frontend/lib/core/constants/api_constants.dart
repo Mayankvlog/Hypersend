@@ -6,7 +6,7 @@ class ApiConstants {
     'API_BASE_URL',
     // Default to relative API path so the frontend works behind nginx proxy in most setups.
     // Use environment variable `API_BASE_URL` to override for specific deployments.
-    defaultValue: '/api/',
+    defaultValue: '/api/v1/',
   );
   
   // API Endpoints
