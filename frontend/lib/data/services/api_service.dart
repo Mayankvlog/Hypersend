@@ -12,8 +12,6 @@ class ApiService {
         connectTimeout: ApiConstants.connectTimeout,
         receiveTimeout: ApiConstants.receiveTimeout,
         contentType: 'application/json',
-        // For web builds, validate all responses
-        validateStatus: (status) => status != null && status < 500,
       ),
     );
 
@@ -28,10 +26,10 @@ class ApiService {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
-          // Ensure Content-Type is set for all requests
-          options.headers['Content-Type'] = 'application/json';
-          // Ensure credentials are sent with requests (for web)
-          options.sendTimeout = const Duration(seconds: 30);
+          // Ensure Content-Type is set for all requests if not already set
+          if (!options.headers.containsKey('Content-Type')) {
+            options.headers['Content-Type'] = 'application/json';
+          }
           return handler.next(options);
         },
         onError: (error, handler) {
