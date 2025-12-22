@@ -4,15 +4,53 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pathlib import Path
-import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
+import sys
 
-from database import connect_db, close_db
-from routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels
-from config import settings
-from mongo_init import ensure_mongodb_ready
-from security import SecurityConfig
+# Early diagnostic logging
+print("[STARTUP] Python version:", sys.version)
+print("[STARTUP] Python path:", sys.path)
+print("[STARTUP] Current working directory:", os.getcwd())
+print("[STARTUP] Starting backend imports...")
+
+try:
+    from backend.database import connect_db, close_db
+    print("[STARTUP] ✓ database module imported")
+except Exception as e:
+    print(f"[STARTUP] ✗ Failed to import database: {e}")
+    raise
+
+try:
+    from backend.routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels
+    print("[STARTUP] ✓ routes modules imported")
+except Exception as e:
+    print(f"[STARTUP] ✗ Failed to import routes: {e}")
+    raise
+
+try:
+    from backend.config import settings
+    print("[STARTUP] ✓ config module imported")
+    print(f"[STARTUP] MongoDB URI (sanitized): {settings.MONGODB_URI.split('@')[-1] if '@' in settings.MONGODB_URI else 'invalid'}")
+    print(f"[STARTUP] DEBUG mode: {settings.DEBUG}")
+except Exception as e:
+    print(f"[STARTUP] ✗ Failed to import config: {e}")
+    raise
+
+try:
+    from backend.mongo_init import ensure_mongodb_ready
+    print("[STARTUP] ✓ mongo_init module imported")
+except Exception as e:
+    print(f"[STARTUP] ✗ Failed to import mongo_init: {e}")
+    raise
+
+try:
+    from backend.security import SecurityConfig
+    print("[STARTUP] ✓ security module imported")
+except Exception as e:
+    print(f"[STARTUP] ✗ Failed to import security: {e}")
+    raise
+
+print("[STARTUP] All imports successful!")
 
 
 @asynccontextmanager
