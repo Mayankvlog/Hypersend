@@ -55,7 +55,7 @@ class ApiService {
     required String name,
   }) async {
     try {
-      final response = await _dio.post('${ApiConstants.authEndpoint}/register', data: {
+      final response = await _dio.post('${ApiConstants.authEndpoint}/register/', data: {
         'email': email,
         'password': password,
         'name': name,
@@ -71,7 +71,7 @@ class ApiService {
     required String password,
   }) async {
     try {
-      final response = await _dio.post('${ApiConstants.authEndpoint}/login', data: {
+      final response = await _dio.post('${ApiConstants.authEndpoint}/login/', data: {
         'email': email,
         'password': password,
       });
@@ -83,7 +83,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> logout({required String refreshToken}) async {
     final response = await _dio.post(
-      '${ApiConstants.authEndpoint}/logout',
+      '${ApiConstants.authEndpoint}/logout/',
       data: {'refresh_token': refreshToken},
     );
     return response.data;
@@ -92,7 +92,7 @@ class ApiService {
   // User endpoints
   Future<Map<String, dynamic>> getMe() async {
     try {
-      final response = await _dio.get('${ApiConstants.usersEndpoint}/me');
+      final response = await _dio.get('${ApiConstants.usersEndpoint}/me/');
       return response.data;
     } catch (e) {
       rethrow;
@@ -101,7 +101,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
     try {
-      final response = await _dio.put('${ApiConstants.usersEndpoint}/profile', data: data);
+      final response = await _dio.put('${ApiConstants.usersEndpoint}/profile/', data: data);
       return response.data;
     } catch (e) {
       rethrow;
@@ -109,14 +109,14 @@ class ApiService {
   }
 
   Future<List<Map<String, dynamic>>> getContacts({int limit = 50}) async {
-    final response = await _dio.get('${ApiConstants.usersEndpoint}/contacts', queryParameters: {'limit': limit});
+    final response = await _dio.get('${ApiConstants.usersEndpoint}/contacts/', queryParameters: {'limit': limit});
     return List<Map<String, dynamic>>.from(response.data['users'] ?? const []);
   }
 
   // Chat endpoints
   Future<List<Map<String, dynamic>>> getChats() async {
     try {
-      final response = await _dio.get(ApiConstants.chatsEndpoint);
+      final response = await _dio.get('${ApiConstants.chatsEndpoint}/');
       return List<Map<String, dynamic>>.from(response.data['chats'] ?? const []);
     } catch (e) {
       rethrow;
@@ -125,7 +125,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> getChatMessages(String chatId) async {
     try {
-      final response = await _dio.get('${ApiConstants.chatsEndpoint}/$chatId/messages');
+      final response = await _dio.get('${ApiConstants.chatsEndpoint}/$chatId/messages/');
       return response.data;
     } catch (e) {
       rethrow;
@@ -134,7 +134,7 @@ class ApiService {
 
   Future<List<Map<String, dynamic>>> searchMessages(String query, {String? chatId}) async {
     final response = await _dio.get(
-      '${ApiConstants.messagesEndpoint}/search', 
+      '${ApiConstants.messagesEndpoint}/search/', 
       queryParameters: {
         'q': query,
         if (chatId != null) 'chat_id': chatId,
@@ -145,7 +145,7 @@ class ApiService {
 
   Future<List<Map<String, dynamic>>> searchUsers(String query) async {
     final response = await _dio.get(
-        '${ApiConstants.usersEndpoint}/search',
+        '${ApiConstants.usersEndpoint}/search/',
         queryParameters: {'q': query},
     );
     return List<Map<String, dynamic>>.from(response.data['users'] ?? []);
@@ -156,7 +156,7 @@ class ApiService {
     required String content,
   }) async {
     try {
-      final response = await _dio.post('${ApiConstants.chatsEndpoint}/$chatId/messages', data: {
+      final response = await _dio.post('${ApiConstants.chatsEndpoint}/$chatId/messages/', data: {
         'text': content,
       });
       return response.data;
@@ -168,7 +168,7 @@ class ApiService {
   // Message actions
   Future<Map<String, dynamic>> editMessage(String messageId, String text) async {
     final response = await _dio.put(
-      '${ApiConstants.messagesEndpoint}/$messageId',
+      '${ApiConstants.messagesEndpoint}/$messageId/',
       data: {'text': text},
     );
     return response.data;
@@ -176,7 +176,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> deleteMessage(String messageId, {bool hardDelete = false}) async {
     final response = await _dio.delete(
-      '${ApiConstants.messagesEndpoint}/$messageId',
+      '${ApiConstants.messagesEndpoint}/$messageId/',
       queryParameters: {'hard_delete': hardDelete},
     );
     return response.data;
@@ -184,33 +184,33 @@ class ApiService {
 
   Future<Map<String, dynamic>> toggleReaction(String messageId, String emoji) async {
     final response = await _dio.post(
-      '${ApiConstants.messagesEndpoint}/$messageId/reactions',
+      '${ApiConstants.messagesEndpoint}/$messageId/reactions/',
       data: {'emoji': emoji},
     );
     return response.data;
   }
 
   Future<Map<String, dynamic>> pinMessage(String messageId) async {
-    final response = await _dio.post('${ApiConstants.messagesEndpoint}/$messageId/pin');
+    final response = await _dio.post('${ApiConstants.messagesEndpoint}/$messageId/pin/');
     return response.data;
   }
 
   Future<Map<String, dynamic>> unpinMessage(String messageId) async {
-    final response = await _dio.post('${ApiConstants.messagesEndpoint}/$messageId/unpin');
+    final response = await _dio.post('${ApiConstants.messagesEndpoint}/$messageId/unpin/');
     return response.data;
   }
 
   Future<Map<String, dynamic>> markRead(String messageId) async {
-    final response = await _dio.post('${ApiConstants.messagesEndpoint}/$messageId/read');
+    final response = await _dio.post('${ApiConstants.messagesEndpoint}/$messageId/read/');
     return response.data;
   }
 
   Future<void> pinChat(String chatId) async {
-    await _dio.post('${ApiConstants.chatsEndpoint}/$chatId/pin_chat');
+    await _dio.post('${ApiConstants.chatsEndpoint}/$chatId/pin_chat/');
   }
 
   Future<void> unpinChat(String chatId) async {
-    await _dio.post('${ApiConstants.chatsEndpoint}/$chatId/unpin_chat');
+    await _dio.post('${ApiConstants.chatsEndpoint}/$chatId/unpin_chat/');
   }
 
   // Channel endpoints
@@ -221,7 +221,7 @@ class ApiService {
     String? username,
   }) async {
     final response = await _dio.post(
-      'channels',
+      'channels/',
       data: {
         'name': name,
         'description': description,
@@ -238,17 +238,17 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> getChannel(String channelId) async {
-    final response = await _dio.get('channels/$channelId');
+    final response = await _dio.get('channels/$channelId/');
     return response.data;
   }
 
   Future<void> subscribeChannel(String channelId) async {
-    await _dio.post('channels/$channelId/subscribe');
+    await _dio.post('channels/$channelId/subscribe/');
   }
 
   Future<void> postToChannel(String channelId, String text) async {
     await _dio.post(
-      'channels/$channelId/posts',
+      'channels/$channelId/posts/',
       data: {
         'text': text 
         // Note: Backend might expect MessageCreate format, keeping it simple for now
@@ -260,7 +260,7 @@ class ApiService {
     required String targetUserId,
   }) async {
     final response = await _dio.post(
-      ApiConstants.chatsEndpoint,
+      '${ApiConstants.chatsEndpoint}/',
       data: {
         'type': 'secret',
         'member_ids': [targetUserId],
@@ -276,7 +276,7 @@ class ApiService {
     required List<String> memberIds,
   }) async {
     final response = await _dio.post(
-      'groups',
+      'groups/',
       data: {
         'name': name,
         'description': description,
@@ -288,52 +288,52 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> getGroup(String groupId) async {
-    final response = await _dio.get('groups/$groupId');
+    final response = await _dio.get('groups/$groupId/');
     return response.data;
   }
 
   Future<Map<String, dynamic>> updateGroup(String groupId, Map<String, dynamic> data) async {
-    final response = await _dio.put('groups/$groupId', data: data);
+    final response = await _dio.put('groups/$groupId/', data: data);
     return response.data;
   }
 
   Future<Map<String, dynamic>> addGroupMembers(String groupId, List<String> userIds) async {
-    final response = await _dio.post('groups/$groupId/members', data: {'user_ids': userIds});
+    final response = await _dio.post('groups/$groupId/members/', data: {'user_ids': userIds});
     return response.data;
   }
 
   Future<Map<String, dynamic>> removeGroupMember(String groupId, String memberId) async {
-    final response = await _dio.delete('groups/$groupId/members/$memberId');
+    final response = await _dio.delete('groups/$groupId/members/$memberId/');
     return response.data;
   }
 
   Future<Map<String, dynamic>> updateGroupMemberRole(String groupId, String memberId, String role) async {
-    final response = await _dio.put('groups/$groupId/members/$memberId/role', data: {'role': role});
+    final response = await _dio.put('groups/$groupId/members/$memberId/role/', data: {'role': role});
     return response.data;
   }
 
   Future<Map<String, dynamic>> leaveGroup(String groupId) async {
-    final response = await _dio.post('groups/$groupId/leave');
+    final response = await _dio.post('groups/$groupId/leave/');
     return response.data;
   }
 
   Future<Map<String, dynamic>> deleteGroup(String groupId) async {
-    final response = await _dio.delete('groups/$groupId');
+    final response = await _dio.delete('groups/$groupId/');
     return response.data;
   }
 
   Future<Map<String, dynamic>> muteGroup(String groupId, {required bool mute}) async {
-    final response = await _dio.post('groups/$groupId/mute', queryParameters: {'mute': mute});
+    final response = await _dio.post('groups/$groupId/mute/', queryParameters: {'mute': mute});
     return response.data;
   }
 
   Future<Map<String, dynamic>> getGroupActivity(String groupId, {int limit = 50}) async {
-    final response = await _dio.get('groups/$groupId/activity', queryParameters: {'limit': limit});
+    final response = await _dio.get('groups/$groupId/activity/', queryParameters: {'limit': limit});
     return response.data;
   }
 
   Future<Map<String, dynamic>> getPinnedMessages(String groupId, {int limit = 20}) async {
-    final response = await _dio.get('groups/$groupId/pinned', queryParameters: {'limit': limit});
+    final response = await _dio.get('groups/$groupId/pinned/', queryParameters: {'limit': limit});
     return response.data;
   }
 
@@ -346,7 +346,7 @@ class ApiService {
     String? checksum,
   }) async {
     final response = await _dio.post(
-      '${ApiConstants.filesEndpoint}/init',
+      '${ApiConstants.filesEndpoint}/init/',
       data: {
         'filename': filename,
         'size': size,
@@ -365,7 +365,7 @@ class ApiService {
     String? chunkChecksum,
   }) async {
     await _dio.put(
-      '${ApiConstants.filesEndpoint}/$uploadId/chunk',
+      '${ApiConstants.filesEndpoint}/$uploadId/chunk/',
       data: Stream.value(bytes),
       options: Options(
         contentType: 'application/octet-stream',
@@ -379,7 +379,7 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> completeUpload({required String uploadId}) async {
-    final response = await _dio.post('${ApiConstants.filesEndpoint}/$uploadId/complete');
+    final response = await _dio.post('${ApiConstants.filesEndpoint}/$uploadId/complete/');
     return response.data;
   }
 
@@ -387,7 +387,7 @@ class ApiService {
     required String fileId,
     required String savePath,
   }) async {
-    await _dio.download('${ApiConstants.filesEndpoint}/$fileId/download', savePath);
+    await _dio.download('${ApiConstants.filesEndpoint}/$fileId/download/', savePath);
   }
 
   // Settings endpoints
@@ -408,7 +408,7 @@ class ApiService {
   }) async {
     try {
       final response = await _dio.post(
-        '${ApiConstants.usersEndpoint}/change-password',
+        '${ApiConstants.usersEndpoint}/change-password/',
         data: {
           'old_password': oldPassword,
           'new_password': newPassword,
@@ -423,7 +423,7 @@ class ApiService {
   Future<bool> resetPassword({required String email}) async {
     try {
       final response = await _dio.post(
-        '${ApiConstants.authEndpoint}/reset-password',
+        '${ApiConstants.authEndpoint}/reset-password/',
         data: {'email': email},
       );
       return response.statusCode == 200;
@@ -438,7 +438,7 @@ class ApiService {
   }) async {
     try {
       final response = await _dio.post(
-        '${ApiConstants.usersEndpoint}/change-email',
+        '${ApiConstants.usersEndpoint}/change-email/',
         data: {
           'email': newEmail,
           'password': password,
