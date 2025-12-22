@@ -146,7 +146,7 @@ async def login(credentials: UserLogin, request: Request):
                 # Reset after lockout period
                 del failed_login_attempts[credentials.email]
         
-        # Simple rate limiting by IP (10 attempts per 5 minutes)
+        # Simple rate limiting by IP (50 attempts per 5 minutes for dev/testing)
         if client_ip in login_attempts:
             # Remove attempts older than 5 minutes
             login_attempts[client_ip] = [
@@ -154,7 +154,7 @@ async def login(credentials: UserLogin, request: Request):
                 if (current_time - t).total_seconds() < 300
             ]
             # Check if too many attempts
-            if len(login_attempts[client_ip]) >= 10:
+            if len(login_attempts[client_ip]) >= 50:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail="Too many login attempts. Please try again in 5 minutes."
