@@ -1,18 +1,14 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from fastapi import APIRouter, HTTPException, status, Depends, Request
-from models import (
+from backend.models import (
     UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
     ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse
 )
-from database import users_collection, refresh_tokens_collection, reset_tokens_collection
-from auth.utils import (
+from backend.database import users_collection, refresh_tokens_collection, reset_tokens_collection
+from backend.auth.utils import (
     hash_password, verify_password, create_access_token, 
     create_refresh_token, decode_token, get_current_user
 )
-from config import settings
+from backend.config import settings
 from datetime import datetime, timedelta
 from bson import ObjectId
 import asyncio

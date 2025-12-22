@@ -1,9 +1,8 @@
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from config import settings
+from backend.config import settings
 
 client = None
 db = None

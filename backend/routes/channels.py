@@ -1,16 +1,12 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from bson import ObjectId
 import logging
 
-from auth.utils import get_current_user
-from database import chats_collection, messages_collection, users_collection
-from models import ChatCreate, MessageCreate, ChatType, ChatPermissions
+from backend.auth.utils import get_current_user
+from backend.database import chats_collection, messages_collection, users_collection
+from backend.models import ChatCreate, MessageCreate, ChatType, ChatPermissions
 
 logger = logging.getLogger(__name__)
 

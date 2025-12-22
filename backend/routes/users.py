@@ -1,11 +1,7 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from fastapi import APIRouter, HTTPException, status, Depends
-from models import UserResponse
-from database import users_collection
-from auth.utils import get_current_user
+from backend.models import UserResponse
+from backend.database import users_collection
+from backend.auth.utils import get_current_user
 import asyncio
 from pydantic import BaseModel
 from datetime import datetime

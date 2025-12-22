@@ -1,14 +1,10 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
-from auth.utils import get_current_user
-from database import chats_collection, messages_collection
-from models import MessageEditRequest, MessageReactionRequest
+from backend.auth.utils import get_current_user
+from backend.database import chats_collection, messages_collection
+from backend.models import MessageEditRequest, MessageReactionRequest
 
 
 router = APIRouter(prefix="/messages", tags=["Messages"])

@@ -1,16 +1,12 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional, Literal, Any, Dict
 from datetime import datetime
 from bson import ObjectId
 import asyncio
 
-from auth.utils import get_current_user
-from database import chats_collection, users_collection, messages_collection, get_db
-from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
+from backend.auth.utils import get_current_user
+from backend.database import chats_collection, users_collection, messages_collection, get_db
+from backend.models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
 
 
 router = APIRouter(prefix="/groups", tags=["Groups"])

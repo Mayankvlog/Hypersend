@@ -2,12 +2,9 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from typing import Optional
 from datetime import datetime
 from bson import ObjectId
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from models import ChatCreate, MessageCreate
-from database import chats_collection, messages_collection, users_collection
-from auth.utils import get_current_user
+from backend.models import ChatCreate, MessageCreate
+from backend.database import chats_collection, messages_collection, users_collection
+from backend.auth.utils import get_current_user
 import logging
 
 # Setup logging

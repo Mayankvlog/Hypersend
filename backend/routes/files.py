@@ -9,15 +9,12 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request, Header
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional
 import aiofiles
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from models import (
+from backend.models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
-from database import files_collection, uploads_collection, users_collection
-from auth.utils import get_current_user
-from config import settings
+from backend.database import files_collection, uploads_collection, users_collection
+from backend.auth.utils import get_current_user
+from backend.config import settings
 
 # Setup logging
 logger = logging.getLogger(__name__)

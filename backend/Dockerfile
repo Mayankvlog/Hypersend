@@ -24,7 +24,7 @@ RUN touch /app/__init__.py
 
 # Runtime environment
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/backend \
+    PYTHONPATH=/app \
     DATA_ROOT=/data
 
 # Create data directory

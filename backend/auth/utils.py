@@ -1,7 +1,3 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import uuid
@@ -11,8 +7,8 @@ import hashlib
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from config import settings
-from models import TokenData
+from backend.config import settings
+from backend.models import TokenData
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
