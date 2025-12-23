@@ -87,6 +87,7 @@ class Settings:
         "http://139.59.82.105:8000",
         "http://139.59.82.105:8550",
         "https://139.59.82.105",
+        "https://139.59.82.105:8000",
         "http://zaply.in.net",
         "https://zaply.in.net",
         "https://www.zaply.in.net",

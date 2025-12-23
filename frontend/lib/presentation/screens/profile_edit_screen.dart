@@ -216,18 +216,25 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   CircleAvatar(
                     radius: 60,
                     backgroundColor: AppTheme.cardDark,
-                    child: Center(
-                      child: Text(
-                        widget.user.avatar.length > 2
-                            ? widget.user.avatar.substring(0, 2).toUpperCase()
-                            : widget.user.avatar.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                    backgroundImage: widget.user.avatar.startsWith('http') || widget.user.avatar.startsWith('/')
+                        ? NetworkImage(widget.user.avatar.startsWith('/') 
+                            ? '${serviceProvider.apiService.baseUrl.replaceAll('/api/v1', '')}${widget.user.avatar}' 
+                            : widget.user.avatar)
+                        : null,
+                    child: !(widget.user.avatar.startsWith('http') || widget.user.avatar.startsWith('/'))
+                        ? Center(
+                            child: Text(
+                              widget.user.avatar.length > 2
+                                  ? widget.user.avatar.substring(0, 2).toUpperCase()
+                                  : widget.user.avatar.toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        : null,
                   ),
                   Positioned(
                     bottom: 0,

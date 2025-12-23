@@ -153,6 +153,20 @@ class ProfileService {
   }
 
   // Update avatar
+  Future<String> uploadAvatar(Uint8List bytes, String filename) async {
+    try {
+      final response = await _apiService.uploadAvatar(bytes, filename);
+      final avatarUrl = response['avatar_url'];
+      if (_currentUser != null) {
+        _currentUser = _currentUser!.copyWith(avatar: avatarUrl);
+      }
+      return avatarUrl;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Update avatar (legacy path for default avatars)
   Future<String> updateAvatar(String avatarPath) async {
     try {
       if (avatarPath.isEmpty) {

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/services/service_provider.dart';
 
 class ProfilePhotoScreen extends StatefulWidget {
   final String currentAvatar;
@@ -20,6 +23,9 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
     'AM', 'BN', 'CD', 'DT', 'ES', 'FG', 'HI', 'JK',
     'LM', 'NO', 'PQ', 'RS', 'TU', 'VW', 'XY', 'ZZ'
   ];
+  bool _isUploading = false;
+  Uint8List? _pickedFileBytes;
+  String? _pickedFileName;
 
   @override
   void initState() {
@@ -37,22 +43,19 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
         ),
         title: const Text('Change Profile Photo'),
         actions: [
-          TextButton(
-            onPressed: _selectedPhoto != widget.currentAvatar
-                ? () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Profile photo updated'),
-                        backgroundColor: AppTheme.successGreen,
-                      ),
-                    );
-                    context.pop(_selectedPhoto);
-                  }
+            onPressed: (_selectedPhoto != widget.currentAvatar || _pickedFileBytes != null) && !_isUploading
+                ? _handleSave
                 : null,
-            child: const Text(
-              'Save',
-              style: TextStyle(color: AppTheme.primaryCyan),
-            ),
+            child: _isUploading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(color: AppTheme.primaryCyan),
+                  ),
           ),
         ],
       ),
@@ -75,14 +78,19 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   CircleAvatar(
                     radius: 60,
                     backgroundColor: AppTheme.primaryCyan,
-                    child: Text(
-                      _selectedPhoto,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    backgroundImage: _pickedFileBytes != null
+                        ? MemoryImage(_pickedFileBytes!)
+                        : null,
+                    child: _pickedFileBytes == null
+                        ? Text(
+                            _selectedPhoto,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        : null,
                   ),
                 ],
               ),
@@ -94,14 +102,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
               child: Column(
                 children: [
                   ElevatedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Photo library access granted'),
-                          backgroundColor: AppTheme.successGreen,
-                        ),
-                      );
-                    },
+                    onPressed: _pickImage,
                     icon: const Icon(Icons.photo_library),
                     label: const Text('Choose from Gallery'),
                     style: ElevatedButton.styleFrom(
@@ -208,5 +209,60 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+
+      if (result != null && result.files.single.bytes != null) {
+        setState(() {
+          _pickedFileBytes = result.files.single.bytes;
+          _pickedFileName = result.files.single.name;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    }
+  }
+
+  Future<void> _handleSave() async {
+    setState(() => _isUploading = true);
+    try {
+      String resultValue;
+      if (_pickedFileBytes != null && _pickedFileName != null) {
+        // Upload file
+        resultValue = await serviceProvider.profileService.uploadAvatar(
+          _pickedFileBytes!,
+          _pickedFileName!,
+        );
+      } else {
+        // Just update initials
+        await serviceProvider.profileService.updateAvatar(_selectedPhoto);
+        resultValue = _selectedPhoto;
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile photo updated'),
+          backgroundColor: AppTheme.successGreen,
+        ),
+      );
+      context.pop(resultValue);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update photo: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
   }
 }

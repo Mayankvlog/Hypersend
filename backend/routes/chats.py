@@ -165,8 +165,12 @@ async def list_chats(current_user: str = Depends(get_current_user)):
                             other_id = mid
                             break
                     if other_id:
-                        other_user = await users_collection().find_one({"_id": other_id}, {"name": 1, "email": 1})
-                        chat["display_name"] = other_user.get("name") if other_user else "Private Chat"
+                        other_user = await users_collection().find_one({"_id": other_id}, {"name": 1, "avatar_url": 1})
+                        if other_user:
+                            chat["display_name"] = other_user.get("name") or "Private Chat"
+                            chat["avatar_url"] = other_user.get("avatar_url")
+                        else:
+                            chat["display_name"] = "Private Chat"
                     else:
                         chat["display_name"] = "Private Chat"
                 else:

@@ -182,9 +182,30 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) async {
+    try {
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: filename),
+      });
+      final response = await _dio.post('${ApiConstants.usersEndpoint}/avatar', data: formData);
+      return response.data;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getContacts({int limit = 50}) async {
     final response = await _dio.get('${ApiConstants.usersEndpoint}/contacts', queryParameters: {'limit': limit});
     return List<Map<String, dynamic>>.from(response.data['users'] ?? const []);
+  }
+
+  Future<Map<String, dynamic>> getSavedChat() async {
+    try {
+      final response = await _dio.get('${ApiConstants.chatsEndpoint}/saved');
+      return response.data;
+    } catch (e) {
+      rethrow;
+    }
   }
 
   // Chat endpoints

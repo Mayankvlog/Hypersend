@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from backend.models import UserResponse, UserInDB
 from backend.database import users_collection
 from backend.auth.utils import get_current_user
@@ -64,6 +64,7 @@ class ProfileUpdate(BaseModel):
     username: Optional[str] = None
     bio: Optional[str] = None
     phone: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 @router.put("/profile", response_model=UserResponse)
@@ -113,6 +114,8 @@ async def update_profile(
             update_data["bio"] = profile_data.bio
         if profile_data.phone is not None:
             update_data["phone"] = profile_data.phone
+        if profile_data.avatar_url is not None:
+            update_data["avatar_url"] = profile_data.avatar_url
         # Handle email separately to enforce uniqueness
         if profile_data.email is not None and profile_data.email.strip():
             # Validate email format
@@ -186,6 +189,8 @@ async def update_profile(
             quota_used=updated_user["quota_used"],
             quota_limit=updated_user["quota_limit"],
             created_at=updated_user["created_at"],
+            avatar_url=updated_user.get("avatar_url"),
+            pinned_chats=updated_user.get("pinned_chats", []) or []
         )
     except asyncio.TimeoutError:
         raise HTTPException(
@@ -498,9 +503,148 @@ async def change_password(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database operation timed out. Please try again."
         )
-    except (ValueError, TypeError, KeyError, OSError) as e:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to change password: {str(e)}"
         )
+
+
+class EmailChangeRequest(BaseModel):
+    """Email change request model"""
+    email: EmailStr
+    password: str
+
+
+@router.post("/change-email")
+async def change_email(
+    request: EmailChangeRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Change user's email"""
+    try:
+        print(f"[EMAIL_CHANGE] Request for user: {current_user}")
+        
+        # Get user from database
+        user = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Verify password
+        from backend.security import verify_password
+        if not verify_password(request.password, user.get("password_hash", "")):
+            print(f"[EMAIL_CHANGE] Password verification failed for {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password"
+            )
+        
+        new_email = request.email.lower().strip()
+        
+        # Ensure no other user already uses this email
+        existing = await asyncio.wait_for(
+            users_collection().find_one({"email": new_email}),
+            timeout=5.0
+        )
+        if existing and existing.get("_id") != current_user:
+            print(f"[EMAIL_CHANGE] Email already in use by {existing.get('_id')}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already in use"
+            )
+        
+        # Update email in database
+        result = await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {"$set": {"email": new_email, "updated_at": datetime.utcnow()}}
+            ),
+            timeout=5.0
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        print(f"[EMAIL_CHANGE] Successfully updated email for {current_user} to {new_email}")
+        return {"message": "Email changed successfully", "email": new_email}
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to change email: {str(e)}"
+        )
+
+
+@router.post("/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user)
+):
+    """Upload user avatar"""
+    try:
+        from backend.config import settings
+        import shutil
+        import os
+        
+        # Validate file type
+        if not file.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be an image"
+            )
+        
+        # Create directory
+        avatar_dir = settings.DATA_ROOT / "avatars"
+        avatar_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save file
+        file_ext = os.path.splitext(file.filename)[1]
+        file_name = f"{current_user}{file_ext}"
+        file_path = avatar_dir / file_name
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Generate URL
+        avatar_url = f"/api/v1/users/avatar/{file_name}"
+        
+        # Update user in DB
+        await users_collection().update_one(
+            {"_id": current_user},
+            {"$set": {"avatar_url": avatar_url, "updated_at": datetime.utcnow()}}
+        )
+        
+        return {"avatar_url": avatar_url}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload avatar: {str(e)}"
+        )
+
+
+@router.get("/avatar/{filename}")
+async def get_avatar(filename: str):
+    """Get user avatar"""
+    from backend.config import settings
+    from fastapi.responses import FileResponse
+    
+    file_path = settings.DATA_ROOT / "avatars" / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    
+    return FileResponse(file_path)
 

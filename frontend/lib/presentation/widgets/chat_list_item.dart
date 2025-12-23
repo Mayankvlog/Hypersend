@@ -140,7 +140,7 @@ class ChatListItem extends StatelessWidget {
         width: 56,
         height: 56,
         decoration: const BoxDecoration(
-          color: AppTheme.primaryPurple, // Distinct color
+          color: AppTheme.primaryPurple,
           shape: BoxShape.circle,
         ),
         child: const Center(
@@ -149,13 +149,9 @@ class ChatListItem extends StatelessWidget {
       );
     }
 
-    final isUrl = chat.avatar.startsWith('http');
+    final isUrl = chat.avatar.startsWith('http') || chat.avatar.startsWith('/');
     
-    // Group / Supergroup / Channel default avatar
-    if ((chat.type == ChatType.group || 
-         chat.type == ChatType.supergroup || 
-         chat.type == ChatType.channel) || !isUrl) {
-      
+    if (!isUrl || chat.avatar.isEmpty) {
       IconData? typeIcon;
       if (chat.type == ChatType.channel) typeIcon = Icons.campaign;
       if (chat.type == ChatType.supergroup) typeIcon = Icons.groups;
@@ -176,7 +172,7 @@ class ChatListItem extends StatelessWidget {
           child: typeIcon != null && chat.avatar.length <= 2 
               ? Icon(typeIcon, color: Colors.white, size: 28)
               : Text(
-                  chat.avatar,
+                  chat.avatar.isNotEmpty ? chat.avatar : (chat.name.isNotEmpty ? chat.name[0].toUpperCase() : '?'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -187,17 +183,17 @@ class ChatListItem extends StatelessWidget {
       );
     }
 
-    // For direct chats with URL avatars, use NetworkImage with error handling
+    final fullUrl = chat.avatar.startsWith('/') 
+        ? '${serviceProvider.apiService.baseUrl.replaceAll('/api/v1', '')}${chat.avatar}'
+        : chat.avatar;
+
     return CircleAvatar(
       radius: 28,
       backgroundColor: AppTheme.cardDark,
-      backgroundImage: NetworkImage(chat.avatar),
+      backgroundImage: NetworkImage(fullUrl),
       onBackgroundImageError: (exception, stackTrace) {
-        // Fallback to initials if image fails to load
+        debugPrint('Error loading avatar: $exception');
       },
-      child: chat.avatar.isEmpty
-          ? const Icon(Icons.person, color: AppTheme.textSecondary)
-          : null,
     );
   }
 }

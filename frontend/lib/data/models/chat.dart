@@ -59,7 +59,9 @@ class Chat extends Equatable {
     final senderName = json['last_message_sender_name']?.toString();
 
     String avatar;
-    if (chatType == ChatType.group || chatType == ChatType.supergroup || chatType == ChatType.channel) {
+    if (json['avatar_url'] != null && json['avatar_url'].toString().isNotEmpty) {
+      avatar = json['avatar_url'].toString();
+    } else if (chatType == ChatType.group || chatType == ChatType.supergroup || chatType == ChatType.channel) {
       final parts = displayName.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
       avatar = parts.length >= 2
           ? (parts[0][0] + parts[1][0]).toUpperCase()
