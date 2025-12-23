@@ -4,6 +4,7 @@ class User extends Equatable {
   final String id;
   final String name;
   final String username;
+  final String? email;
   final String avatar;
   final bool isOnline;
   const User({
@@ -11,6 +12,7 @@ class User extends Equatable {
     required this.name,
     required this.username,
     required this.avatar,
+    this.email,
     this.isOnline = false,
   });
 
@@ -20,18 +22,20 @@ class User extends Equatable {
       id: (json['_id'] ?? json['id'] ?? '').toString(),
       name: (json['name'] ?? json['full_name'] ?? '').toString(),
       username: (json['username'] ?? json['email'] ?? '').toString(),
+      email: (json['email']).toString(),
       avatar: (json['avatar_url'] ?? json['avatar'] ?? '').toString(),
       isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
     );
   }
 
   @override
-  List<Object?> get props => [id, name, username, avatar, isOnline];
+  List<Object?> get props => [id, name, username, email, avatar, isOnline];
 
   User copyWith({
     String? id,
     String? name,
     String? username,
+    String? email,
     String? avatar,
     bool? isOnline,
   }) {
@@ -39,6 +43,7 @@ class User extends Equatable {
       id: id ?? this.id,
       name: name ?? this.name,
       username: username ?? this.username,
+      email: email ?? this.email,
       avatar: avatar ?? this.avatar,
       isOnline: isOnline ?? this.isOnline,
     );

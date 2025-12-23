@@ -50,18 +50,14 @@ class ProfileService {
       // Update local user object
       _currentUser = _currentUser!.copyWith(
         name: name ?? _currentUser!.name,
-        username: username ?? (email ?? _currentUser!.username),
+        username: username ?? _currentUser!.username,
+        email: email ?? _currentUser!.email,
         avatar: avatar ?? _currentUser!.avatar,
       );
       print('[PROFILE_UPDATE] Local user updated successfully');
       return _currentUser!;
     } catch (e) {
       print('[PROFILE_UPDATE_ERROR] Failed: $e');
-      rethrow;
-    }
-  }
-      return _currentUser!;
-    } catch (e) {
       rethrow;
     }
   }

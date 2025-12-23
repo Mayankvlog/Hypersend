@@ -31,7 +31,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     super.initState();
     _nameController = TextEditingController(text: widget.user.name);
     _usernameController = TextEditingController(text: widget.user.username);
-    _emailController = TextEditingController(text: widget.user.username);
+    // Initialize email from user email field if available, otherwise empty
+    _emailController = TextEditingController(text: widget.user.email ?? '');
     _statusController = TextEditingController(text: 'Available');
   }
 
@@ -58,9 +59,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         throw Exception('Name must be at least 2 characters');
       }
       
-      // Validate email
-      if (!_emailController.text.contains('@')) {
-        throw Exception('Please enter a valid email');
+      // Validate email format if email field is not empty
+      String? emailToSend;
+      if (_emailController.text.isNotEmpty) {
+        // Check for valid email format: must have @ and a dot after @
+        if (!_emailController.text.contains('@') || 
+            !_emailController.text.contains('.') ||
+            !_emailController.text.contains(RegExp(r'@[\w\.-]+\.\w+'))) {
+          throw Exception('Please enter a valid email address (e.g., user@example.com)');
+        }
+        emailToSend = _emailController.text;
       }
 
       // Update profile
@@ -68,7 +76,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         name: _nameController.text,
         username: _usernameController.text,
         avatar: widget.user.avatar,
-        email: _emailController.text,
+        email: emailToSend,
       );
 
       if (!mounted) return;
