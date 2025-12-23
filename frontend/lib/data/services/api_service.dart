@@ -1,9 +1,18 @@
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/constants/api_constants.dart';
 
 class ApiService {
   late final Dio _dio;
+  
+  // Debug flag - set to false in production
+  static const bool _debug = kDebugMode;
+  
+  void _log(String message) {
+    if (_debug) {
+      debugPrint(message);
+    }
+  }
 
   ApiService() {
     String url = ApiConstants.baseUrl;
@@ -38,25 +47,25 @@ class ApiService {
           // Log auth header for debugging
           final authHeader = options.headers['Authorization'];
           if (authHeader != null) {
-            print('[API_REQ] ${options.method} ${options.uri.path} - Auth: present');
+            _log('[API_REQ] ${options.method} ${options.uri.path} - Auth: present');
           } else {
-            print('[API_REQ_WARN] ${options.method} ${options.uri.path} - Auth: MISSING!');
+            _log('[API_REQ_WARN] ${options.method} ${options.uri.path} - Auth: MISSING!');
           }
           return handler.next(options);
         },
         onError: (error, handler) {
           // Log network errors with detailed info
           if (error.response?.statusCode == null) {
-            print('[API_ERROR] Network/Connection error: ${error.message}');
-            print('[API_ERROR] URL: ${error.requestOptions.uri}');
-            print('[API_ERROR] Method: ${error.requestOptions.method}');
-            print('[API_ERROR] Type: ${error.type}');
+            _log('[API_ERROR] Network/Connection error: ${error.message}');
+            _log('[API_ERROR] URL: ${error.requestOptions.uri}');
+            _log('[API_ERROR] Method: ${error.requestOptions.method}');
+            _log('[API_ERROR] Type: ${error.type}');
           } else {
-            print('[API_ERROR] HTTP ${error.response?.statusCode}: ${error.message}');
+            _log('[API_ERROR] HTTP ${error.response?.statusCode}: ${error.message}');
             // Log 401 specifically with headers info for debugging
             if (error.response?.statusCode == 401) {
-              print('[API_ERROR] 401 Unauthorized on ${error.requestOptions.uri}');
-              print('[API_ERROR] Auth header present: ${error.requestOptions.headers.containsKey("Authorization")}');
+              _log('[API_ERROR] 401 Unauthorized on ${error.requestOptions.uri}');
+              _log('[API_ERROR] Auth header present: ${error.requestOptions.headers.containsKey("Authorization")}');
             }
           }
           return handler.next(error);
@@ -109,27 +118,27 @@ class ApiService {
   // User endpoints
   Future<Map<String, dynamic>> getMe() async {
     try {
-      print('[API_ME] Fetching current user profile');
+      _log('[API_ME] Fetching current user profile');
       final response = await _dio.get('${ApiConstants.usersEndpoint}/me');
-      print('[API_ME] Success: ${response.data}');
+      _log('[API_ME] Success: ${response.data}');
       return response.data;
     } catch (e) {
-      print('[API_ME_ERROR] Failed: $e');
+      _log('[API_ME_ERROR] Failed: $e');
       rethrow;
     }
   }
 
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
     try {
-      print('[API_PROFILE] Updating profile with fields: ${data.keys.toList()}');
-      print('[API_PROFILE] Payload: $data');
-      print('[API_PROFILE] Endpoint: ${ApiConstants.usersEndpoint}/profile');
+      _log('[API_PROFILE] Updating profile with fields: ${data.keys.toList()}');
+      _log('[API_PROFILE] Payload: $data');
+      _log('[API_PROFILE] Endpoint: ${ApiConstants.usersEndpoint}/profile');
       final response = await _dio.put('${ApiConstants.usersEndpoint}/profile', data: data);
-      print('[API_PROFILE] Response status: ${response.statusCode}');
-      print('[API_PROFILE] Response data: ${response.data}');
+      _log('[API_PROFILE] Response status: ${response.statusCode}');
+      _log('[API_PROFILE] Response data: ${response.data}');
       return response.data;
     } catch (e) {
-      print('[API_PROFILE_ERROR] Failed to update profile: $e');
+      _log('[API_PROFILE_ERROR] Failed to update profile: $e');
       rethrow;
     }
   }
@@ -142,16 +151,12 @@ class ApiService {
   // Chat endpoints
   Future<List<Map<String, dynamic>>> getChats() async {
     try {
-      print('[API_CHATS] Fetching chats from ${ApiConstants.chatsEndpoint}');
-      final response = await _dio.get('${ApiConstants.chatsEndpoint}');
-      print('[API_CHATS] Success: received ${response.data['chats']?.length ?? 0} chats');
+      _log('[API_CHATS] Fetching chats from ${ApiConstants.chatsEndpoint}');
+      final response = await _dio.get(ApiConstants.chatsEndpoint);
+      _log('[API_CHATS] Success: received ${response.data['chats']?.length ?? 0} chats');
       return List<Map<String, dynamic>>.from(response.data['chats'] ?? const []);
     } catch (e) {
-      print('[API_CHATS_ERROR] Failed to fetch chats: $e');
-      rethrow;
-    }
-  }
-    } catch (e) {
+      _log('[API_CHATS_ERROR] Failed to fetch chats: $e');
       rethrow;
     }
   }
@@ -293,7 +298,7 @@ class ApiService {
     required String targetUserId,
   }) async {
     final response = await _dio.post(
-      '${ApiConstants.chatsEndpoint}',
+      ApiConstants.chatsEndpoint,
       data: {
         'type': 'secret',
         'member_ids': [targetUserId],
@@ -486,11 +491,11 @@ class ApiService {
   void setAuthToken(String token) {
     final authHeader = 'Bearer $token';
     _dio.options.headers['Authorization'] = authHeader;
-    print('[API_AUTH] Token set (Bearer token), length: ${token.length}');
+    _log('[API_AUTH] Token set (Bearer token), length: ${token.length}');
   }
 
   void clearAuthToken() {
     _dio.options.headers.remove('Authorization');
-    print('[API_AUTH] Token cleared from headers');
+    _log('[API_AUTH] Token cleared from headers');
   }
 }

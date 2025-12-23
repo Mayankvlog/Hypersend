@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../models/user.dart';
 import 'api_service.dart';
 
@@ -34,8 +36,8 @@ class ProfileService {
         throw Exception('Name must be at least 2 characters');
       }
 
-      print('[PROFILE_UPDATE] Starting profile update');
-      print('[PROFILE_UPDATE] Fields: name=$name, email=$email, username=$username, avatar=$avatar');
+      debugPrint('[PROFILE_UPDATE] Starting profile update');
+      debugPrint('[PROFILE_UPDATE] Fields: name=$name, email=$email, username=$username, avatar=$avatar');
       
       // Build update map - only include fields that are not null
       final updateMap = <String, dynamic>{};
@@ -43,12 +45,12 @@ class ProfileService {
       if (username != null) updateMap['username'] = username;
       if (email != null) updateMap['email'] = email;
       
-      print('[PROFILE_UPDATE] Sending to API: $updateMap');
+      debugPrint('[PROFILE_UPDATE] Sending to API: $updateMap');
       
       // Call API to update profile (avatar is handled separately)
       final response = await _apiService.updateProfile(updateMap);
       
-      print('[PROFILE_UPDATE] API response: $response');
+      debugPrint('[PROFILE_UPDATE] API response: $response');
 
       // Update local user object
       _currentUser = _currentUser!.copyWith(
@@ -57,10 +59,10 @@ class ProfileService {
         email: email ?? _currentUser!.email,
         avatar: avatar ?? _currentUser!.avatar,
       );
-      print('[PROFILE_UPDATE] Local user updated successfully');
+      debugPrint('[PROFILE_UPDATE] Local user updated successfully');
       return _currentUser!;
     } catch (e) {
-      print('[PROFILE_UPDATE_ERROR] Failed: $e');
+      debugPrint('[PROFILE_UPDATE_ERROR] Failed: $e');
       rethrow;
     }
   }

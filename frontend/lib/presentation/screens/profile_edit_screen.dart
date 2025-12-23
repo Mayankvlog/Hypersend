@@ -88,7 +88,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         nameToSend = _nameController.text.trim();
       }
 
-      print('[PROFILE_EDIT] Sending: name=$nameToSend, username=$usernameToSend, email=$emailToSend');
+      debugPrint('[PROFILE_EDIT] Sending: name=$nameToSend, username=$usernameToSend, email=$emailToSend');
 
       // Check if at least one field is being updated
       if (nameToSend == null && usernameToSend == null && emailToSend == null) {
