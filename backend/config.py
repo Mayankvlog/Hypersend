@@ -52,7 +52,7 @@ class Settings:
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
     # Default public API base URL for this deployment (VPS behind Nginx HTTPS)
     # Note: Nginx proxies /api/ to backend, so full URL includes /api/v1
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1/")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -89,6 +89,7 @@ class Settings:
         "https://139.59.82.105",
         "http://zaply.in.net",
         "https://zaply.in.net",
+        "https://www.zaply.in.net",
     ]
     
     def __init__(self):

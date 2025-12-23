@@ -70,7 +70,7 @@ services:
       MONGO_HOST: ${MONGO_HOST:-mongodb}         # yahi rehne do
       MONGO_PORT: ${MONGO_PORT:-27017}          # container ke andar ka port
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
-      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production-32-chars-minimum-value}
+      SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Zaply_Hypersend_2025_Secure_Fixed}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30
@@ -83,11 +83,11 @@ services:
       FILE_RETENTION_HOURS: 0
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1/}
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       DEBUG: "False"
-      CORS_ORIGINS: "https://zaply.in.net,http://zaply.in.net"
+      CORS_ORIGINS: "https://zaply.in.net,http://zaply.in.net,https://www.zaply.in.net"
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
@@ -113,7 +113,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        API_BASE_URL: "https://zaply.in.net/api/v1"
+        API_BASE_URL: "https://zaply.in.net/api/v1/"
     container_name: hypersend_frontend
     restart: unless-stopped
     depends_on:
