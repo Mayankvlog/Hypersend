@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, JSONResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+import logging
 from pathlib import Path
 import os
 import sys
@@ -128,12 +130,26 @@ async def lifespan(app: FastAPI):
         print("[SHUTDOWN] All cleanup complete")
 
 
+# Setup logger
+logger = logging.getLogger("hypersend")
+logger.setLevel(logging.INFO)
+
 app = FastAPI(
     title="Zaply API",
     description="Secure peer-to-peer file transfer and messaging application",
     version="1.0.0",
     lifespan=lifespan
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Log detailed validation errors"""
+    errors = exc.errors()
+    logger.error(f"[VALIDATION_ERROR] Path: {request.url.path} - Errors: {errors}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": errors},
+    )
 
 # TrustedHost middleware for additional security
 # Only enable in production with proper domain
