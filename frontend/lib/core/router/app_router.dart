@@ -18,6 +18,7 @@ import '../../presentation/screens/channel_creation_screen.dart';
 import '../../presentation/screens/secret_chat_screen.dart';
 import '../../presentation/screens/group_detail_screen.dart';
 import '../../data/mock/mock_data.dart';
+import '../../data/services/service_provider.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -47,9 +48,11 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/profile-edit',
-      builder: (context, state) => ProfileEditScreen(
-        user: MockData.settingsUser,
-      ),
+      builder: (context, state) {
+        // Get current user from ProfileService, fallback to mock if not available
+        final user = serviceProvider.profileService.currentUser ?? MockData.settingsUser;
+        return ProfileEditScreen(user: user);
+      },
     ),
     GoRoute(
       path: '/profile-photo',
