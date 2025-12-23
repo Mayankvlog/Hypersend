@@ -46,6 +46,11 @@ class ApiService {
             print('[API_ERROR] Type: ${error.type}');
           } else {
             print('[API_ERROR] HTTP ${error.response?.statusCode}: ${error.message}');
+            // Log 401 specifically with headers info for debugging
+            if (error.response?.statusCode == 401) {
+              print('[API_ERROR] 401 Unauthorized on ${error.requestOptions.uri}');
+              print('[API_ERROR] Auth header present: ${error.requestOptions.headers.containsKey("Authorization")}');
+            }
           }
           return handler.next(error);
         },
@@ -456,10 +461,13 @@ class ApiService {
   }
 
   void setAuthToken(String token) {
-    _dio.options.headers['Authorization'] = 'Bearer $token';
+    final authHeader = 'Bearer $token';
+    _dio.options.headers['Authorization'] = authHeader;
+    print('[API_AUTH] Token set (Bearer token), length: ${token.length}');
   }
 
   void clearAuthToken() {
     _dio.options.headers.remove('Authorization');
+    print('[API_AUTH] Token cleared from headers');
   }
 }

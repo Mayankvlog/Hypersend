@@ -22,6 +22,9 @@ class AuthService {
     _refreshToken = prefs.getString(_kRefreshTokenKey);
     if ((_accessToken ?? '').isNotEmpty) {
       _api.setAuthToken(_accessToken!);
+      print('[AUTH] Token loaded and set for API calls');
+    } else {
+      print('[AUTH] No stored token found, user not logged in');
     }
   }
 

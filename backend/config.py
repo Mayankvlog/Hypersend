@@ -99,12 +99,11 @@ class Settings:
         """Validate critical configuration"""
         # Generate secure SECRET_KEY if not set
         if not self.SECRET_KEY or self.SECRET_KEY in ["dev-secret-key-change-in-production-5y7L9x2K", "your-super-secret-production-key-change-this-2025"]:
-            print("[WARN] SECRET_KEY not set or using default. Generating secure key...")
             self.SECRET_KEY = secrets.token_urlsafe(64)
-            print("[WARN] Generated SECRET_KEY. For persistent tokens, set SECRET_KEY in .env file")
+            if not os.getenv("SECRET_KEY"):
+                print("[WARN] SECRET_KEY not set in environment. For persistent tokens across restarts, set SECRET_KEY in .env")
         
         if len(self.SECRET_KEY) < 32:
-            print("[WARN] SECRET_KEY too short. Generating new secure key...")
             self.SECRET_KEY = secrets.token_urlsafe(64)
     
     def validate_production(self):
