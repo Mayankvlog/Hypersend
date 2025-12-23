@@ -34,13 +34,18 @@ class ProfileService {
         throw Exception('Name must be at least 2 characters');
       }
 
+      print('[PROFILE_UPDATE] Starting profile update');
+      print('[PROFILE_UPDATE] Fields: name=$name, email=$email, username=$username');
+      
       // Call API to update profile
-      await _apiService.updateProfile({
+      final response = await _apiService.updateProfile({
         if (name != null) 'name': name,
         if (username != null) 'username': username,
         if (avatar != null) 'avatar': avatar,
         if (email != null) 'email': email,
       });
+      
+      print('[PROFILE_UPDATE] API response: $response');
 
       // Update local user object
       _currentUser = _currentUser!.copyWith(
@@ -48,6 +53,13 @@ class ProfileService {
         username: username ?? (email ?? _currentUser!.username),
         avatar: avatar ?? _currentUser!.avatar,
       );
+      print('[PROFILE_UPDATE] Local user updated successfully');
+      return _currentUser!;
+    } catch (e) {
+      print('[PROFILE_UPDATE_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
       return _currentUser!;
     } catch (e) {
       rethrow;

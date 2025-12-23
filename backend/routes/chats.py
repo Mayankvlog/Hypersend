@@ -135,55 +135,67 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
 @router.get("")
 async def list_chats(current_user: str = Depends(get_current_user)):
     """List all chats for current user"""
+    print(f"[CHATS_LIST] Request from user: {current_user}")
     
-    chats = []
-    async for chat in chats_collection().find({"members": current_user}).sort("created_at", -1):
-        # Get last message
-        last_message = await messages_collection().find_one(
-            {"chat_id": chat["_id"]},
-            sort=[("created_at", -1)]
-        )
+    try:
+        chats = []
+        cursor = chats_collection().find({"members": current_user}).sort("created_at", -1)
+        chat_count = 0
         
-        chat["last_message"] = last_message
-        
-        # Add display fields for UI
-        try:
-            if chat.get("type") == "private":
-                # Best-effort resolve other user's name
-                members = chat.get("members", [])
-                other_id = None
-                for mid in members:
-                    if mid != current_user:
-                        other_id = mid
-                        break
-                if other_id:
-                    other_user = await users_collection().find_one({"_id": other_id}, {"name": 1, "email": 1})
-                    chat["display_name"] = other_user.get("name") if other_user else "Private Chat"
+        async for chat in cursor:
+            chat_count += 1
+            print(f"[CHATS_LIST] Processing chat {chat_count}: {chat.get('_id')}")
+            
+            # Get last message
+            last_message = await messages_collection().find_one(
+                {"chat_id": chat["_id"]},
+                sort=[("created_at", -1)]
+            )
+            
+            chat["last_message"] = last_message
+            
+            # Add display fields for UI
+            try:
+                if chat.get("type") == "private":
+                    # Best-effort resolve other user's name
+                    members = chat.get("members", [])
+                    other_id = None
+                    for mid in members:
+                        if mid != current_user:
+                            other_id = mid
+                            break
+                    if other_id:
+                        other_user = await users_collection().find_one({"_id": other_id}, {"name": 1, "email": 1})
+                        chat["display_name"] = other_user.get("name") if other_user else "Private Chat"
+                    else:
+                        chat["display_name"] = "Private Chat"
                 else:
-                    chat["display_name"] = "Private Chat"
-            else:
-                chat["display_name"] = chat.get("name") or chat.get("type", "Chat").capitalize()
+                    chat["display_name"] = chat.get("name") or chat.get("type", "Chat").capitalize()
 
-            # For group chats, include sender name in last message
-            if chat.get("type") == "group" and last_message and last_message.get("sender_id"):
-                sender = await users_collection().find_one({"_id": last_message["sender_id"]}, {"name": 1})
-                chat["last_message_sender_name"] = sender.get("name") if sender else None
-        except Exception:
-            # Don't break listing if enrichment fails
-            pass
+                # For group chats, include sender name in last message
+                if chat.get("type") == "group" and last_message and last_message.get("sender_id"):
+                    sender = await users_collection().find_one({"_id": last_message["sender_id"]}, {"name": 1})
+                    chat["last_message_sender_name"] = sender.get("name") if sender else None
+            except Exception as e:
+                # Don't break listing if enrichment fails
+                print(f"[CHATS_LIST] Warning enriching chat: {str(e)}")
+                pass
+            
+            # Check if pinned by user
+            current_user_doc = await users_collection().find_one({"_id": current_user}, {"pinned_chats": 1})
+            pinned_chats = current_user_doc.get("pinned_chats", []) if current_user_doc else []
+            chat["is_pinned"] = chat["_id"] in pinned_chats
+            
+            chats.append(chat)
         
-
-        # Check if pinned by user
-        current_user_doc = await users_collection().find_one({"_id": current_user}, {"pinned_chats": 1})
-        pinned_chats = current_user_doc.get("pinned_chats", []) if current_user_doc else []
-        chat["is_pinned"] = chat["_id"] in pinned_chats
+        # Sort: Pinned first, then by last/created date
+        chats.sort(key=lambda x: (x.get("is_pinned", False), x.get("last_message", {}).get("created_at") or x.get("created_at")), reverse=True)
         
-        chats.append(chat)
-    
-    # Sort: Pinned first, then by last/created date
-    chats.sort(key=lambda x: (x.get("is_pinned", False), x.get("last_message", {}).get("created_at") or x.get("created_at")), reverse=True)
-    
-    return {"chats": chats}
+        print(f"[CHATS_LIST] SUCCESS: Retrieved {len(chats)} chats for user {current_user}")
+        return {"chats": chats}
+    except Exception as e:
+        print(f"[CHATS_LIST] ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving chats: {str(e)}")
 
 
 @router.post("/{chat_id}/pin_chat")

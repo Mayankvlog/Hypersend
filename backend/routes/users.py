@@ -73,12 +73,17 @@ async def update_profile(
 ):
     """Update current user's profile"""
     try:
+        print(f"[PROFILE_UPDATE] Request for user: {current_user}")
+        print(f"[PROFILE_UPDATE] Data received: name={profile_data.name}, email={profile_data.email}, username={profile_data.username}")
+        
         # Prepare update data
         update_data = {}
         if profile_data.name is not None:
             update_data["name"] = profile_data.name
+            print(f"[PROFILE_UPDATE] Name set to: {profile_data.name}")
         if profile_data.username is not None:
             update_data["username"] = profile_data.username
+            print(f"[PROFILE_UPDATE] Username set to: {profile_data.username}")
         if profile_data.bio is not None:
             update_data["bio"] = profile_data.bio
         if profile_data.phone is not None:
@@ -87,20 +92,25 @@ async def update_profile(
         if getattr(profile_data, "email", None) is not None:
             # Normalize email
             new_email = profile_data.email.lower()
+            print(f"[PROFILE_UPDATE] Email update requested: {new_email}")
             # Ensure no other user already uses this email
             existing = await asyncio.wait_for(
                 users_collection().find_one({"email": new_email}),
                 timeout=5.0
             )
             if existing and existing.get("_id") != current_user:
+                print(f"[PROFILE_UPDATE] Email already in use by {existing.get('_id')}")
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Email already in use"
                 )
             update_data["email"] = new_email
+            print(f"[PROFILE_UPDATE] Email validated and set to: {new_email}")
         
         # Add updated timestamp
         update_data["updated_at"] = datetime.utcnow()
+        
+        print(f"[PROFILE_UPDATE] Update data: {list(update_data.keys())}")
         
         # Update user profile in database
         result = await asyncio.wait_for(
@@ -111,12 +121,15 @@ async def update_profile(
             timeout=5.0
         )
         
+        print(f"[PROFILE_UPDATE] DB result - matched: {result.matched_count}, modified: {result.modified_count}")
+        
         if result.matched_count == 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
         
+        print(f"[PROFILE_UPDATE] Success - updated {result.modified_count} documents")
         return {
             "message": "Profile updated successfully",
             "updated_fields": list(update_data.keys())

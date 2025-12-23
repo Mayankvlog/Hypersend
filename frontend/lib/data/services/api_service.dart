@@ -109,18 +109,26 @@ class ApiService {
   // User endpoints
   Future<Map<String, dynamic>> getMe() async {
     try {
+      print('[API_ME] Fetching current user profile');
       final response = await _dio.get('${ApiConstants.usersEndpoint}/me');
+      print('[API_ME] Success: ${response.data}');
       return response.data;
     } catch (e) {
+      print('[API_ME_ERROR] Failed: $e');
       rethrow;
     }
   }
 
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
     try {
+      print('[API_PROFILE] Updating profile with fields: ${data.keys.toList()}');
+      print('[API_PROFILE] Endpoint: ${ApiConstants.usersEndpoint}/profile');
       final response = await _dio.put('${ApiConstants.usersEndpoint}/profile', data: data);
+      print('[API_PROFILE] Response status: ${response.statusCode}');
+      print('[API_PROFILE] Response data: ${response.data}');
       return response.data;
     } catch (e) {
+      print('[API_PROFILE_ERROR] Failed to update profile: $e');
       rethrow;
     }
   }
