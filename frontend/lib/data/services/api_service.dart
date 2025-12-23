@@ -35,6 +35,13 @@ class ApiService {
           if (!options.headers.containsKey('Content-Type')) {
             options.headers['Content-Type'] = 'application/json';
           }
+          // Log auth header for debugging
+          final authHeader = options.headers['Authorization'];
+          if (authHeader != null) {
+            print('[API_REQ] ${options.method} ${options.uri.path} - Auth: present');
+          } else {
+            print('[API_REQ_WARN] ${options.method} ${options.uri.path} - Auth: MISSING!');
+          }
           return handler.next(options);
         },
         onError: (error, handler) {
@@ -126,8 +133,15 @@ class ApiService {
   // Chat endpoints
   Future<List<Map<String, dynamic>>> getChats() async {
     try {
+      print('[API_CHATS] Fetching chats from ${ApiConstants.chatsEndpoint}');
       final response = await _dio.get('${ApiConstants.chatsEndpoint}');
+      print('[API_CHATS] Success: received ${response.data['chats']?.length ?? 0} chats');
       return List<Map<String, dynamic>>.from(response.data['chats'] ?? const []);
+    } catch (e) {
+      print('[API_CHATS_ERROR] Failed to fetch chats: $e');
+      rethrow;
+    }
+  }
     } catch (e) {
       rethrow;
     }
