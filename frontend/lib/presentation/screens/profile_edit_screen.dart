@@ -55,10 +55,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
     try {
       // Validate name
-      if (_nameController.text.isEmpty) {
+      if (_nameController.text.trim().isEmpty) {
         throw Exception('Name cannot be empty');
       }
-      if (_nameController.text.length < 2) {
+      if (_nameController.text.trim().length < 2) {
         throw Exception('Name must be at least 2 characters');
       }
       
@@ -75,17 +75,32 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       // Only pass username if changed from initial value
       String? usernameToSend;
-      if (_usernameController.text != widget.user.username) {
-        usernameToSend = _usernameController.text;
+      if (_usernameController.text.trim() != widget.user.username) {
+        if (_usernameController.text.trim().isEmpty) {
+          throw Exception('Username cannot be empty');
+        }
+        usernameToSend = _usernameController.text.trim();
       }
 
       // Only pass name if changed from initial value  
       String? nameToSend;
-      if (_nameController.text != widget.user.name) {
-        nameToSend = _nameController.text;
+      if (_nameController.text.trim() != widget.user.name) {
+        nameToSend = _nameController.text.trim();
       }
 
       print('[PROFILE_EDIT] Sending: name=$nameToSend, username=$usernameToSend, email=$emailToSend');
+
+      // Check if at least one field is being updated
+      if (nameToSend == null && usernameToSend == null && emailToSend == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No changes to save'),
+            backgroundColor: AppTheme.textSecondary,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
 
       // Update profile
       final updatedUser = await serviceProvider.profileService.updateProfile(
@@ -97,10 +112,21 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       if (!mounted) return;
 
+      // Build success message with updated fields
+      List<String> updatedFields = [];
+      if (nameToSend != null) updatedFields.add('Name');
+      if (usernameToSend != null) updatedFields.add('Username');
+      if (emailToSend != null) updatedFields.add('Email');
+      
+      final successMessage = updatedFields.isNotEmpty 
+          ? 'Saved! ${updatedFields.join(', ')} updated'
+          : 'Profile saved successfully!';
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profile updated successfully!'),
+        SnackBar(
+          content: Text(successMessage),
           backgroundColor: AppTheme.successGreen,
+          duration: const Duration(seconds: 2),
         ),
       );
 

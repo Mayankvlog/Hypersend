@@ -74,16 +74,41 @@ async def update_profile(
     """Update current user's profile"""
     try:
         print(f"[PROFILE_UPDATE] Request for user: {current_user}")
-        print(f"[PROFILE_UPDATE] Data received: name={profile_data.name}, email={profile_data.email}, username={profile_data.username}")
+        print(f"[PROFILE_UPDATE] Data received: {profile_data}")
+        print(f"[PROFILE_UPDATE] Details - name={profile_data.name}, email={profile_data.email}, username={profile_data.username}")
+        
+        # Check if at least one field is being updated
+        if all(v is None for v in [profile_data.name, profile_data.email, profile_data.username, profile_data.bio, profile_data.phone]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one field must be provided to update"
+            )
         
         # Prepare update data
         update_data = {}
         if profile_data.name is not None:
-            update_data["name"] = profile_data.name
-            print(f"[PROFILE_UPDATE] Name set to: {profile_data.name}")
+            name = profile_data.name.strip()
+            if not name:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Name cannot be empty"
+                )
+            if len(name) < 2:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Name must be at least 2 characters"
+                )
+            update_data["name"] = name
+            print(f"[PROFILE_UPDATE] Name set to: {name}")
         if profile_data.username is not None:
-            update_data["username"] = profile_data.username
-            print(f"[PROFILE_UPDATE] Username set to: {profile_data.username}")
+            username = profile_data.username.strip()
+            if not username:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username cannot be empty"
+                )
+            update_data["username"] = username
+            print(f"[PROFILE_UPDATE] Username set to: {username}")
         if profile_data.bio is not None:
             update_data["bio"] = profile_data.bio
         if profile_data.phone is not None:

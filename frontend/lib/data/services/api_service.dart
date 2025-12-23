@@ -122,6 +122,7 @@ class ApiService {
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
     try {
       print('[API_PROFILE] Updating profile with fields: ${data.keys.toList()}');
+      print('[API_PROFILE] Payload: $data');
       print('[API_PROFILE] Endpoint: ${ApiConstants.usersEndpoint}/profile');
       final response = await _dio.put('${ApiConstants.usersEndpoint}/profile', data: data);
       print('[API_PROFILE] Response status: ${response.statusCode}');
