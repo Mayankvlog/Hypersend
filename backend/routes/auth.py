@@ -36,7 +36,7 @@ async def register(user: UserCreate):
     """Register a new user"""
     try:
         # Validate password strength
-        from security import SecurityConfig
+        from backend.security import SecurityConfig
         password_validation = SecurityConfig.validate_password_strength(user.password)
         if not password_validation["valid"]:
             raise HTTPException(
