@@ -31,8 +31,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     super.initState();
     _nameController = TextEditingController(text: widget.user.name);
     _usernameController = TextEditingController(text: widget.user.username);
-    // Initialize email from user email field if available, otherwise empty
-    _emailController = TextEditingController(text: widget.user.email ?? '');
+    // Initialize email from user email field ONLY if it's a valid email
+    // Otherwise leave empty
+    final userEmail = widget.user.email ?? '';
+    final isValidEmail = userEmail.contains('@') && userEmail.contains('.');
+    _emailController = TextEditingController(text: isValidEmail ? userEmail : '');
     _statusController = TextEditingController(text: 'Available');
   }
 
@@ -59,22 +62,35 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         throw Exception('Name must be at least 2 characters');
       }
       
-      // Validate email format if email field is not empty
+      // Email is optional - only validate and send if not empty
       String? emailToSend;
-      if (_emailController.text.isNotEmpty) {
-        // Check for valid email format: must have @ and a dot after @
-        if (!_emailController.text.contains('@') || 
-            !_emailController.text.contains('.') ||
-            !_emailController.text.contains(RegExp(r'@[\w\.-]+\.\w+'))) {
-          throw Exception('Please enter a valid email address (e.g., user@example.com)');
+      if (_emailController.text.trim().isNotEmpty) {
+        final email = _emailController.text.trim();
+        // Strict email validation: user@domain.extension format
+        if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(email)) {
+          throw Exception('Invalid email format. Example: user@example.com');
         }
-        emailToSend = _emailController.text;
+        emailToSend = email;
       }
+
+      // Only pass username if changed from initial value
+      String? usernameToSend;
+      if (_usernameController.text != widget.user.username) {
+        usernameToSend = _usernameController.text;
+      }
+
+      // Only pass name if changed from initial value  
+      String? nameToSend;
+      if (_nameController.text != widget.user.name) {
+        nameToSend = _nameController.text;
+      }
+
+      print('[PROFILE_EDIT] Sending: name=$nameToSend, username=$usernameToSend, email=$emailToSend');
 
       // Update profile
       final updatedUser = await serviceProvider.profileService.updateProfile(
-        name: _nameController.text,
-        username: _usernameController.text,
+        name: nameToSend,
+        username: usernameToSend,
         avatar: widget.user.avatar,
         email: emailToSend,
       );
@@ -234,7 +250,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               readOnly: false,
               onChanged: (value) {
                 setState(() {
-                  _emailChanged = value != widget.user.username;
+                  _emailChanged = value != (widget.user.email ?? '');
                 });
               },
             ),

@@ -60,7 +60,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
 class ProfileUpdate(BaseModel):
     """Profile update model"""
     name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None  # Use str instead of EmailStr to allow custom validation
     username: Optional[str] = None
     bio: Optional[str] = None
     phone: Optional[str] = None
@@ -89,9 +89,19 @@ async def update_profile(
         if profile_data.phone is not None:
             update_data["phone"] = profile_data.phone
         # Handle email separately to enforce uniqueness
-        if getattr(profile_data, "email", None) is not None:
+        if profile_data.email is not None and profile_data.email.strip():
+            # Validate email format
+            import re
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, profile_data.email):
+                print(f"[PROFILE_UPDATE] Invalid email format: {profile_data.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid email format. Use format: user@example.com"
+                )
+            
             # Normalize email
-            new_email = profile_data.email.lower()
+            new_email = profile_data.email.lower().strip()
             print(f"[PROFILE_UPDATE] Email update requested: {new_email}")
             # Ensure no other user already uses this email
             existing = await asyncio.wait_for(
