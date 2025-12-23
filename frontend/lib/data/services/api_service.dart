@@ -6,9 +6,14 @@ class ApiService {
   late final Dio _dio;
 
   ApiService() {
+    String url = ApiConstants.baseUrl;
+    if (!url.endsWith('/')) {
+      url += '/';
+    }
+
     _dio = Dio(
       BaseOptions(
-        baseUrl: ApiConstants.baseUrl,
+        baseUrl: url,
         connectTimeout: ApiConstants.connectTimeout,
         receiveTimeout: ApiConstants.receiveTimeout,
         contentType: 'application/json',
