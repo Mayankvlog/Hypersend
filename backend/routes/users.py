@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from backend.models import UserResponse
+from backend.models import UserResponse, UserInDB
 from backend.database import users_collection
 from backend.auth.utils import get_current_user
 import asyncio
@@ -66,7 +66,7 @@ class ProfileUpdate(BaseModel):
     phone: Optional[str] = None
 
 
-@router.put("/profile")
+@router.put("/profile", response_model=UserResponse)
 async def update_profile(
     profile_data: ProfileUpdate,
     current_user: str = Depends(get_current_user)
@@ -165,10 +165,28 @@ async def update_profile(
             )
         
         print(f"[PROFILE_UPDATE] Success - updated {result.modified_count} documents")
-        return {
-            "message": "Profile updated successfully",
-            "updated_fields": list(update_data.keys())
-        }
+        
+        # Fetch and return updated user profile
+        updated_user = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not updated_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found after update"
+            )
+        
+        print(f"[PROFILE_UPDATE] Returning updated user: {updated_user['_id']}")
+        return UserResponse(
+            id=updated_user["_id"],
+            name=updated_user["name"],
+            email=updated_user["email"],
+            quota_used=updated_user["quota_used"],
+            quota_limit=updated_user["quota_limit"],
+            created_at=updated_user["created_at"],
+        )
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -398,3 +416,91 @@ async def update_permissions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update permissions: {str(e)}"
         )
+
+
+class PasswordChangeRequest(BaseModel):
+    """Password change request model"""
+    old_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+async def change_password(
+    request: PasswordChangeRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Change user's password"""
+    try:
+        print(f"[PASSWORD_CHANGE] Request for user: {current_user}")
+        
+        if not request.old_password or not request.new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Old password and new password are required"
+            )
+        
+        if request.new_password.strip() == "":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password cannot be empty"
+            )
+        
+        if len(request.new_password) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be at least 8 characters"
+            )
+        
+        # Get user from database
+        user = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Verify old password
+        from backend.security import verify_password, hash_password
+        
+        if not verify_password(request.old_password, user.get("password_hash", "")):
+            print(f"[PASSWORD_CHANGE] Old password verification failed for {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Old password is incorrect"
+            )
+        
+        # Hash new password
+        new_password_hash = hash_password(request.new_password)
+        
+        # Update password in database
+        result = await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {"$set": {"password_hash": new_password_hash, "updated_at": datetime.utcnow()}}
+            ),
+            timeout=5.0
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        print(f"[PASSWORD_CHANGE] Successfully updated password for {current_user}")
+        return {"message": "Password changed successfully"}
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to change password: {str(e)}"
+        )
+

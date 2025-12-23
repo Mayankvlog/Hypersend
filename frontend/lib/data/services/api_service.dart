@@ -137,6 +137,11 @@ class ApiService {
       _log('[API_PROFILE] Response status: ${response.statusCode}');
       _log('[API_PROFILE] Response data: ${response.data}');
       return response.data;
+    } on DioException catch (e) {
+      _log('[API_PROFILE_ERROR] Dio error: ${e.message}');
+      _log('[API_PROFILE_ERROR] Status code: ${e.response?.statusCode}');
+      _log('[API_PROFILE_ERROR] Response data: ${e.response?.data}');
+      rethrow;
     } catch (e) {
       _log('[API_PROFILE_ERROR] Failed to update profile: $e');
       rethrow;
@@ -445,6 +450,7 @@ class ApiService {
     required String newPassword,
   }) async {
     try {
+      _log('[API_CHANGE_PASSWORD] Sending password change request');
       final response = await _dio.post(
         '${ApiConstants.usersEndpoint}/change-password',
         data: {
@@ -452,20 +458,34 @@ class ApiService {
           'new_password': newPassword,
         },
       );
+      _log('[API_CHANGE_PASSWORD] Success: ${response.statusCode}');
       return response.statusCode == 200;
+    } on DioException catch (e) {
+      _log('[API_CHANGE_PASSWORD_ERROR] Dio error: ${e.message}');
+      _log('[API_CHANGE_PASSWORD_ERROR] Status code: ${e.response?.statusCode}');
+      _log('[API_CHANGE_PASSWORD_ERROR] Response data: ${e.response?.data}');
+      rethrow;
     } catch (e) {
+      _log('[API_CHANGE_PASSWORD_ERROR] Failed: $e');
       rethrow;
     }
   }
 
   Future<bool> resetPassword({required String email}) async {
     try {
+      _log('[API_RESET_PASSWORD] Sending reset request for: $email');
       final response = await _dio.post(
         '${ApiConstants.authEndpoint}/reset-password',
         data: {'email': email},
       );
+      _log('[API_RESET_PASSWORD] Success: ${response.statusCode}');
       return response.statusCode == 200;
+    } on DioException catch (e) {
+      _log('[API_RESET_PASSWORD_ERROR] Dio error: ${e.message}');
+      _log('[API_RESET_PASSWORD_ERROR] Status code: ${e.response?.statusCode}');
+      rethrow;
     } catch (e) {
+      _log('[API_RESET_PASSWORD_ERROR] Failed: $e');
       rethrow;
     }
   }
@@ -475,6 +495,7 @@ class ApiService {
     required String password,
   }) async {
     try {
+      _log('[API_CHANGE_EMAIL] Sending change email request for: $newEmail');
       final response = await _dio.post(
         '${ApiConstants.usersEndpoint}/change-email',
         data: {
@@ -482,8 +503,14 @@ class ApiService {
           'password': password,
         },
       );
+      _log('[API_CHANGE_EMAIL] Success: ${response.statusCode}');
       return response.statusCode == 200;
+    } on DioException catch (e) {
+      _log('[API_CHANGE_EMAIL_ERROR] Dio error: ${e.message}');
+      _log('[API_CHANGE_EMAIL_ERROR] Status code: ${e.response?.statusCode}');
+      rethrow;
     } catch (e) {
+      _log('[API_CHANGE_EMAIL_ERROR] Failed: $e');
       rethrow;
     }
   }

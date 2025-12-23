@@ -137,10 +137,31 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      
+      // Extract meaningful error message
+      String errorMessage = 'Error: ${e.toString()}';
+      if (e.toString().contains('422')) {
+        errorMessage = 'Invalid data. Please check your inputs.';
+      } else if (e.toString().contains('409')) {
+        errorMessage = 'Email already in use. Please try another email.';
+      } else if (e.toString().contains('401')) {
+        errorMessage = 'Unauthorized. Please login again.';
+      } else if (e.toString().contains('404')) {
+        errorMessage = 'User not found. Please try again.';
+      } else if (e.toString().contains('Email already')) {
+        errorMessage = 'Email already in use. Please try another email.';
+      } else if (e.toString().contains('Invalid email')) {
+        errorMessage = 'Invalid email format. Use: user@example.com';
+      } else if (e.toString().contains('at least')) {
+        errorMessage = e.toString();
+      }
+      
+      debugPrint('[PROFILE_EDIT_ERROR] Error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          content: Text(errorMessage),
           backgroundColor: AppTheme.errorRed,
+          duration: const Duration(seconds: 3),
         ),
       );
     } finally {
