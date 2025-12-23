@@ -3,7 +3,7 @@ from backend.models import UserResponse
 from backend.database import users_collection
 from backend.auth.utils import get_current_user
 import asyncio
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from typing import Optional
 
@@ -60,6 +60,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
 class ProfileUpdate(BaseModel):
     """Profile update model"""
     name: Optional[str] = None
+    email: Optional[EmailStr] = None
     username: Optional[str] = None
     bio: Optional[str] = None
     phone: Optional[str] = None
@@ -82,6 +83,21 @@ async def update_profile(
             update_data["bio"] = profile_data.bio
         if profile_data.phone is not None:
             update_data["phone"] = profile_data.phone
+        # Handle email separately to enforce uniqueness
+        if getattr(profile_data, "email", None) is not None:
+            # Normalize email
+            new_email = profile_data.email.lower()
+            # Ensure no other user already uses this email
+            existing = await asyncio.wait_for(
+                users_collection().find_one({"email": new_email}),
+                timeout=5.0
+            )
+            if existing and existing.get("_id") != current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already in use"
+                )
+            update_data["email"] = new_email
         
         # Add updated timestamp
         update_data["updated_at"] = datetime.utcnow()

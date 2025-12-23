@@ -187,7 +187,7 @@ async def add_security_headers(request, call_next):
 async def root():
     """Health check endpoint"""
     return {
-        "app": "Zaply",
+        "app": "Hypersend",
         "version": "1.0.0",
         "status": "running",
         "environment": "debug" if settings.DEBUG else "production"
