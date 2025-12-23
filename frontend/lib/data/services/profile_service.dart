@@ -35,15 +35,18 @@ class ProfileService {
       }
 
       print('[PROFILE_UPDATE] Starting profile update');
-      print('[PROFILE_UPDATE] Fields: name=$name, email=$email, username=$username');
+      print('[PROFILE_UPDATE] Fields: name=$name, email=$email, username=$username, avatar=$avatar');
       
-      // Call API to update profile
-      final response = await _apiService.updateProfile({
-        if (name != null) 'name': name,
-        if (username != null) 'username': username,
-        if (avatar != null) 'avatar': avatar,
-        if (email != null) 'email': email,
-      });
+      // Build update map - only include fields that are not null
+      final updateMap = <String, dynamic>{};
+      if (name != null) updateMap['name'] = name;
+      if (username != null) updateMap['username'] = username;
+      if (email != null) updateMap['email'] = email;
+      
+      print('[PROFILE_UPDATE] Sending to API: $updateMap');
+      
+      // Call API to update profile (avatar is handled separately)
+      final response = await _apiService.updateProfile(updateMap);
       
       print('[PROFILE_UPDATE] API response: $response');
 

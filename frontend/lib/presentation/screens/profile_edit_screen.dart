@@ -91,7 +91,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final updatedUser = await serviceProvider.profileService.updateProfile(
         name: nameToSend,
         username: usernameToSend,
-        avatar: widget.user.avatar,
+        avatar: null,
         email: emailToSend,
       );
 
