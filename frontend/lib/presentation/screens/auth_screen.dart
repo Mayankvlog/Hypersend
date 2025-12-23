@@ -59,8 +59,33 @@ class _AuthScreenState extends State<AuthScreen> {
       context.go('/chats');
     } catch (e) {
       if (!mounted) return;
+      
+      String errorMessage = 'Authentication failed';
+      
+      // Extract meaningful error message
+      final errorStr = e.toString();
+      if (errorStr.contains('Connection') || errorStr.contains('connection error')) {
+        errorMessage = '🌐 Cannot connect to server.\n\n'
+            'Please check:\n'
+            '• Internet connection is active\n'
+            '• Server is running\n'
+            '• Try again in a moment';
+      } else if (errorStr.contains('Invalid credentials') || errorStr.contains('unauthorized')) {
+        errorMessage = 'Invalid email or password';
+      } else if (errorStr.contains('already in use') || errorStr.contains('409')) {
+        errorMessage = 'Email already registered. Please login instead.';
+      } else if (errorStr.contains('422') || errorStr.contains('Invalid')) {
+        errorMessage = 'Invalid input. Please check your information.';
+      } else if (errorStr.contains('timeout')) {
+        errorMessage = 'Request timeout. Please check internet and try again.';
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auth failed: $e')),
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: AppTheme.errorRed,
+          duration: const Duration(seconds: 4),
+        ),
       );
     } finally {
       if (mounted) setState(() => _loading = false);

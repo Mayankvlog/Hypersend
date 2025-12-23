@@ -60,6 +60,7 @@ class ApiService {
             _log('[API_ERROR] URL: ${error.requestOptions.uri}');
             _log('[API_ERROR] Method: ${error.requestOptions.method}');
             _log('[API_ERROR] Type: ${error.type}');
+            _log('[API_ERROR] Backend unreachable - ensure server is running');
           } else {
             _log('[API_ERROR] HTTP ${error.response?.statusCode}: ${error.message}');
             // Log 401 specifically with headers info for debugging
@@ -72,6 +73,39 @@ class ApiService {
         },
       ),
     );
+  }
+
+  // Helper method to get user-friendly error message
+  static String getErrorMessage(DioException error) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+        return 'Connection timeout. Please check if the server is running.';
+      case DioExceptionType.receiveTimeout:
+        return 'Server took too long to respond. Please try again.';
+      case DioExceptionType.badResponse:
+        if (error.response?.statusCode == 422) {
+          return 'Invalid data format. Please check your inputs.';
+        } else if (error.response?.statusCode == 409) {
+          return 'Email already in use.';
+        } else if (error.response?.statusCode == 401) {
+          return 'Unauthorized. Please login again.';
+        } else if (error.response?.statusCode == 404) {
+          return 'Resource not found.';
+        }
+        return 'Server error: ${error.response?.statusCode}';
+      case DioExceptionType.connectionError:
+        return 'Cannot connect to server. Please check:\n'
+            '1. Internet connection is active\n'
+            '2. Server is running (check: https://zaply.in.net)\n'
+            '3. API endpoint is reachable';
+      case DioExceptionType.unknown:
+        if (error.message?.contains('SocketException') == true) {
+          return 'Network error. Please check internet connection.';
+        }
+        return 'Connection error. Please try again.';
+      default:
+        return 'An error occurred: ${error.message}';
+    }
   }
 
   // Auth endpoints
