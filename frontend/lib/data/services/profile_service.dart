@@ -35,7 +35,7 @@ class ProfileService {
       }
 
       // Call API to update profile
-      final response = await _apiService.updateProfile({
+      await _apiService.updateProfile({
         if (name != null) 'name': name,
         if (username != null) 'username': username,
         if (avatar != null) 'avatar': avatar,
@@ -45,7 +45,7 @@ class ProfileService {
       // Update local user object
       _currentUser = _currentUser!.copyWith(
         name: name ?? _currentUser!.name,
-        username: username ?? _currentUser!.username,
+        username: username ?? (email ?? _currentUser!.username),
         avatar: avatar ?? _currentUser!.avatar,
       );
       return _currentUser!;

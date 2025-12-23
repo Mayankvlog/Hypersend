@@ -24,13 +24,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   bool _isLoading = false;
   bool _nameChanged = false;
   bool _usernameChanged = false;
+  bool _emailChanged = false;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.user.name);
     _usernameController = TextEditingController(text: widget.user.username);
-    _emailController = TextEditingController(text: 'user@zaply.com');
+    _emailController = TextEditingController(text: widget.user.username);
     _statusController = TextEditingController(text: 'Available');
   }
 
@@ -112,7 +113,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         title: const Text('Edit Profile'),
         actions: [
           TextButton(
-            onPressed: (_nameChanged || _usernameChanged) && !_isLoading
+            onPressed: (_nameChanged || _usernameChanged || _emailChanged) && !_isLoading
                 ? _saveProfile
                 : null,
             child: _isLoading
@@ -217,12 +218,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               },
             ),
             const SizedBox(height: 16),
-            // Email field (read-only)
+            // Email field (editable)
             _buildProfileField(
               label: 'Email',
               controller: _emailController,
               icon: Icons.email_outlined,
-              readOnly: true,
+              readOnly: false,
+              onChanged: (value) {
+                setState(() {
+                  _emailChanged = value != widget.user.username;
+                });
+              },
             ),
             const SizedBox(height: 16),
             // Status field
