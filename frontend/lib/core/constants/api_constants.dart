@@ -8,7 +8,7 @@ class ApiConstants {
     'API_BASE_URL',
     // Default to production URL with /api/v1 path
     // Override with build flag: --dart-define=API_BASE_URL=https://your-domain.com/api/v1
-    defaultValue: 'https://zaply.in.net/api/v1',
+    defaultValue: 'https://zaply.in.net/api/v1/',
   );
   
   // API Endpoints
