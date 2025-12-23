@@ -92,9 +92,24 @@ class UserResponse(BaseModel):
     id: str
     name: str
     email: str
+    username: Optional[str] = None
     quota_used: int
     quota_limit: int
     created_at: datetime
+    avatar_url: Optional[str] = None
+    pinned_chats: List[str] = []
+
+
+class PasswordChangeRequest(BaseModel):
+    """Password change request model"""
+    old_password: str
+    new_password: str
+
+
+class EmailChangeRequest(BaseModel):
+    """Email change request model"""
+    email: EmailStr
+    password: str
 
 
 # Auth Models

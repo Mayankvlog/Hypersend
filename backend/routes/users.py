@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
-from backend.models import UserResponse, UserInDB
+from backend.models import UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest
 from backend.database import users_collection
 from backend.auth.utils import get_current_user
 import asyncio
@@ -50,10 +50,12 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         id=user["_id"],
         name=user["name"],
         email=user["email"],
-        quota_used=user["quota_used"],
-        quota_limit=user["quota_limit"],
+        username=user.get("username"),
+        quota_used=user.get("quota_used", 0),
+        quota_limit=user.get("quota_limit", 42949672960),
         created_at=user["created_at"],
-        pinned_chats=user.get("pinned_chats", []) or []
+        avatar_url=user.get("avatar_url"),
+        pinned_chats=user.get("pinned_chats", [])
     )
 
 
@@ -79,7 +81,7 @@ async def update_profile(
         print(f"[PROFILE_UPDATE] Details - name={profile_data.name}, email={profile_data.email}, username={profile_data.username}")
         
         # Check if at least one field is being updated
-        if all(v is None for v in [profile_data.name, profile_data.email, profile_data.username, profile_data.bio, profile_data.phone]):
+        if all(v is None for v in [profile_data.name, profile_data.email, profile_data.username, profile_data.bio, profile_data.phone, profile_data.avatar_url]):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one field must be provided to update"
@@ -186,8 +188,9 @@ async def update_profile(
             id=updated_user["_id"],
             name=updated_user["name"],
             email=updated_user["email"],
-            quota_used=updated_user["quota_used"],
-            quota_limit=updated_user["quota_limit"],
+            username=updated_user.get("username"),
+            quota_used=updated_user.get("quota_used", 0),
+            quota_limit=updated_user.get("quota_limit", 42949672960),
             created_at=updated_user["created_at"],
             avatar_url=updated_user.get("avatar_url"),
             pinned_chats=updated_user.get("pinned_chats", []) or []
@@ -423,10 +426,7 @@ async def update_permissions(
         )
 
 
-class PasswordChangeRequest(BaseModel):
-    """Password change request model"""
-    old_password: str
-    new_password: str
+# PasswordChangeRequest moved to backend.models
 
 
 @router.post("/change-password")
@@ -510,10 +510,7 @@ async def change_password(
         )
 
 
-class EmailChangeRequest(BaseModel):
-    """Email change request model"""
-    email: EmailStr
-    password: str
+# EmailChangeRequest moved to backend.models
 
 
 @router.post("/change-email")
