@@ -3,9 +3,10 @@ from backend.models import UserResponse, UserInDB, PasswordChangeRequest, EmailC
 from backend.database import users_collection
 from backend.auth.utils import get_current_user
 import asyncio
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Optional
+import re
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -61,12 +62,36 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
 
 class ProfileUpdate(BaseModel):
     """Profile update model"""
-    name: Optional[str] = None
-    email: Optional[str] = None  # Use str instead of EmailStr to allow custom validation
-    username: Optional[str] = None
-    bio: Optional[str] = None
-    phone: Optional[str] = None
-    avatar_url: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=2, max_length=100)
+    email: Optional[str] = Field(default=None, min_length=5, max_length=255)  # Use str instead of EmailStr to allow custom validation
+    username: Optional[str] = Field(default=None, min_length=3, max_length=50)
+    bio: Optional[str] = Field(default=None, max_length=500)
+    phone: Optional[str] = Field(default=None, max_length=20)
+    avatar_url: Optional[str] = Field(default=None, max_length=500)
+    avatar: Optional[str] = Field(default=None, max_length=10)  # For initials like 'AM', 'JD'
+    
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v):
+        if v is not None and (not v or not v.strip()):
+            raise ValueError('Name cannot be empty')
+        return v.strip() if v else v
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if v is not None and v.strip():
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, v):
+                raise ValueError('Invalid email format')
+        return v.lower() if v else v
+    
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v):
+        if v is not None and (not v or not v.strip()):
+            raise ValueError('Username cannot be empty')
+        return v.strip() if v else v
 
 
 @router.put("/profile", response_model=UserResponse)
@@ -130,6 +155,8 @@ async def update_profile(
             update_data["phone"] = profile_data.phone
         if profile_data.avatar_url is not None:
             update_data["avatar_url"] = profile_data.avatar_url
+        if profile_data.avatar is not None:
+            update_data["avatar_url"] = profile_data.avatar  # Store avatar initials in avatar_url
         # Handle email separately to enforce uniqueness
         if profile_data.email is not None and profile_data.email.strip():
             # Validate email format

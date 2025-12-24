@@ -44,6 +44,7 @@ class ProfileService {
       if (name != null) updateMap['name'] = name;
       if (username != null) updateMap['username'] = username;
       if (email != null) updateMap['email'] = email;
+      if (avatar != null) updateMap['avatar'] = avatar;  // Add avatar field for initials
       
       debugPrint('[PROFILE_UPDATE] Sending to API: $updateMap');
       
