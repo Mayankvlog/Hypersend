@@ -184,7 +184,7 @@ class ChatListItem extends StatelessWidget {
     }
 
     final fullUrl = chat.avatar.startsWith('/') 
-        ? '${serviceProvider.apiService.baseUrl.replaceAll('/api/v1', '')}${chat.avatar}'
+        ? 'http://zaply.in.net${chat.avatar}'
         : chat.avatar;
 
     return CircleAvatar(

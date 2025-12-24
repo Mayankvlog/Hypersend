@@ -226,7 +226,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     backgroundColor: AppTheme.cardDark,
                     backgroundImage: widget.user.avatar.startsWith('http') || widget.user.avatar.startsWith('/')
                         ? NetworkImage(widget.user.avatar.startsWith('/') 
-                            ? '${serviceProvider.apiService.baseUrl.replaceAll('/api/v1', '')}${widget.user.avatar}' 
+                            ? 'http://zaply.in.net${widget.user.avatar}' 
                             : widget.user.avatar)
                         : null,
                     child: !(widget.user.avatar.startsWith('http') || widget.user.avatar.startsWith('/'))

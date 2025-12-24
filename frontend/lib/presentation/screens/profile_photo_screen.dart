@@ -43,6 +43,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
         ),
         title: const Text('Change Profile Photo'),
         actions: [
+          TextButton(
             onPressed: (_selectedPhoto != widget.currentAvatar || _pickedFileBytes != null) && !_isUploading
                 ? _handleSave
                 : null,
