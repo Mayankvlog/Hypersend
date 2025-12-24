@@ -110,6 +110,18 @@ async def update_profile(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Username cannot be empty"
                 )
+            # Check if username is already taken
+            if username != "":
+                existing_username = await asyncio.wait_for(
+                    users_collection().find_one({"username": username}),
+                    timeout=5.0
+                )
+                if existing_username and existing_username.get("_id") != current_user:
+                    print(f"[PROFILE_UPDATE] Username already in use: {username}")
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Username already taken"
+                    )
             update_data["username"] = username
             print(f"[PROFILE_UPDATE] Username set to: {username}")
         if profile_data.bio is not None:
@@ -184,14 +196,15 @@ async def update_profile(
             )
         
         print(f"[PROFILE_UPDATE] Returning updated user: {updated_user['_id']}")
+        # Set defaults if missing to avoid UserResponse validation errors
         return UserResponse(
-            id=updated_user["_id"],
-            name=updated_user["name"],
-            email=updated_user["email"],
+            id=str(updated_user.get("_id", current_user)),
+            name=str(updated_user.get("name", "User")),
+            email=str(updated_user.get("email", "")),
             username=updated_user.get("username"),
-            quota_used=updated_user.get("quota_used", 0),
-            quota_limit=updated_user.get("quota_limit", 42949672960),
-            created_at=updated_user["created_at"],
+            quota_used=int(updated_user.get("quota_used", 0)),
+            quota_limit=int(updated_user.get("quota_limit", 42949672960)),
+            created_at=updated_user.get("created_at", datetime.utcnow()),
             avatar_url=updated_user.get("avatar_url"),
             pinned_chats=updated_user.get("pinned_chats", []) or []
         )

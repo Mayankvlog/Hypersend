@@ -62,15 +62,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         throw Exception('Name must be at least 2 characters');
       }
       
-      // Email is optional - only validate and send if not empty
+      // Email is optional - only validate and send if changed and not empty
       String? emailToSend;
-      if (_emailController.text.trim().isNotEmpty) {
+      if (_emailController.text.trim().isNotEmpty && _emailController.text.trim() != (widget.user.email ?? '')) {
         final email = _emailController.text.trim();
         // Strict email validation: user@domain.extension format
         if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(email)) {
           throw Exception('Invalid email format. Example: user@example.com');
         }
         emailToSend = email;
+      }
+      
+      // If email didn't change but was empty/invalid before, don't send it
+      if (_emailController.text.trim() == (widget.user.email ?? '')) {
+        emailToSend = null;
       }
 
       // Only pass username if changed from initial value
@@ -85,6 +90,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       // Only pass name if changed from initial value  
       String? nameToSend;
       if (_nameController.text.trim() != widget.user.name) {
+        if (_nameController.text.trim().isEmpty) {
+          throw Exception('Name cannot be empty');
+        }
         nameToSend = _nameController.text.trim();
       }
 

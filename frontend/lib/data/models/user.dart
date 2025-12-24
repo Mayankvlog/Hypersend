@@ -21,8 +21,8 @@ class User extends Equatable {
     return User(
       id: (json['_id'] ?? json['id'] ?? '').toString(),
       name: (json['name'] ?? json['full_name'] ?? '').toString(),
-      username: (json['username'] ?? json['email'] ?? '').toString(),
-      email: (json['email']).toString(),
+      username: (json['username'] ?? json['username_alias'] ?? json['email']?.toString()?.split('@')?.first ?? 'user').toString(),
+      email: json['email']?.toString(),
       avatar: (json['avatar_url'] ?? json['avatar'] ?? '').toString(),
       isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
     );
