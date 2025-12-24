@@ -106,12 +106,10 @@ async def lifespan(app: FastAPI):
             await connect_db()
             print("[DB] Database connection established")
         except Exception as e:
-            print(f"[ERROR] Database connection failed: {str(e)}")
-            print("[ERROR] Please check:")
-            print("  - MongoDB is running")
-            print("  - Connection string is correct")
-            print("  - Network connectivity")
-            raise
+            print(f"[WARN] Database connection failed (continuing in offline mode): {str(e)}")
+            print("[WARN] WARNING: Database operations will fail - used for development/testing only!")
+            # Don't raise - allow app to start for testing
+            pass
         
         if settings.DEBUG:
             print(f"[START] Zaply API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")

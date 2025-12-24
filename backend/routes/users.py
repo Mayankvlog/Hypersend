@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
-from backend.models import UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest
+from backend.models import UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate
 from backend.database import users_collection
 from backend.auth.utils import get_current_user
 import asyncio
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional
 import re
@@ -75,53 +75,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
     )
 
 
-class ProfileUpdate(BaseModel):
-    """Profile update model"""
-    name: Optional[str] = Field(default=None, min_length=2, max_length=100)
-    email: Optional[str] = Field(default=None, min_length=5, max_length=255)  # Use str instead of EmailStr to allow custom validation
-    username: Optional[str] = Field(default=None, min_length=3, max_length=50)
-    bio: Optional[str] = Field(default=None, max_length=500)
-    phone: Optional[str] = Field(default=None, max_length=20)
-    avatar_url: Optional[str] = Field(default=None, max_length=500)
-    avatar: Optional[str] = Field(default=None, max_length=10)  # For initials like 'AM', 'JD'
-    
-    @field_validator('name', mode='before')
-    @classmethod
-    def validate_name(cls, v):
-        if v is None:
-            return v
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                raise ValueError('Name cannot be empty')
-        return v
-    
-    @field_validator('email', mode='before')
-    @classmethod
-    def validate_email(cls, v):
-        if v is None or v == '':
-            return None
-        if isinstance(v, str):
-            v_stripped = v.lower().strip()
-            if not v_stripped:  # If empty after stripping
-                return None
-            # Only validate pattern if not empty
-            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            if not re.match(email_pattern, v_stripped):
-                raise ValueError('Invalid email format')
-            return v_stripped
-        return v
-    
-    @field_validator('username', mode='before')
-    @classmethod
-    def validate_username(cls, v):
-        if v is None:
-            return v
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                raise ValueError('Username cannot be empty')
-        return v
+# ProfileUpdate model is imported from backend.models
 
 
 @router.put("/profile", response_model=UserResponse)

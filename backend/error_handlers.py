@@ -8,8 +8,8 @@ import json
 from typing import Any, Dict, List, Union
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
-from pydantic_core import PydanticErrorMixin
 
 # Configure logger
 logger = logging.getLogger(__name__)

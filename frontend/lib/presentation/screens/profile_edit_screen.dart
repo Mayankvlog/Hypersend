@@ -110,12 +110,19 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         return;
       }
 
+      // Status field is treated as bio
+      String? bioToSend;
+      if (_statusController.text.trim() != 'Available') {
+        bioToSend = _statusController.text.trim();
+      }
+
       // Update profile
       final updatedUser = await serviceProvider.profileService.updateProfile(
         name: nameToSend,
         username: usernameToSend,
         avatar: null,
         email: emailToSend,
+        bio: bioToSend,
       );
 
       if (!mounted) return;
@@ -125,6 +132,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (nameToSend != null) updatedFields.add('Name');
       if (usernameToSend != null) updatedFields.add('Username');
       if (emailToSend != null) updatedFields.add('Email');
+      if (bioToSend != null) updatedFields.add('Status');
       
       final successMessage = updatedFields.isNotEmpty 
           ? 'Saved! ${updatedFields.join(', ')} updated'

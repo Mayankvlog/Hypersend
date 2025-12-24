@@ -292,7 +292,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           ),
                         ),
                       )
-                    : _filteredChats.isEmpty
+                    : _filteredListWithSaved().isEmpty
                 ? Center(
                     child: Text(
                       'No chats found',

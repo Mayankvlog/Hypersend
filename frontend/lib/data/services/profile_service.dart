@@ -22,6 +22,8 @@ class ProfileService {
     String? username,
     String? avatar,
     String? email,
+    String? bio,
+    String? phone,
   }) async {
     if (_currentUser == null) {
       throw Exception('No user logged in');
@@ -45,6 +47,8 @@ class ProfileService {
       if (username != null) updateMap['username'] = username;
       if (email != null) updateMap['email'] = email;
       if (avatar != null) updateMap['avatar'] = avatar;  // Add avatar field for initials
+      if (bio != null) updateMap['bio'] = bio;
+      if (phone != null) updateMap['phone'] = phone;
       
       debugPrint('[PROFILE_UPDATE] Sending to API: $updateMap');
       
@@ -78,8 +82,8 @@ class ProfileService {
       if (oldPassword.isEmpty || newPassword.isEmpty) {
         throw Exception('Password cannot be empty');
       }
-      if (newPassword.length < 6) {
-        throw Exception('Password must be at least 6 characters');
+      if (newPassword.length < 8) {
+        throw Exception('Password must be at least 8 characters');
       }
       // Call API to change password
       await _apiService.changePassword(
@@ -126,7 +130,7 @@ class ProfileService {
       // Update user email in memory
       if (_currentUser != null) {
         _currentUser = _currentUser!.copyWith(
-          username: newEmail.split('@')[0],
+          email: newEmail,
         );
       }
       return true;

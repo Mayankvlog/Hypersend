@@ -100,10 +100,88 @@ class UserResponse(BaseModel):
     pinned_chats: List[str] = []
 
 
+class ProfileUpdate(BaseModel):
+    """Profile update request model"""
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    username: Optional[str] = Field(None, min_length=3, max_length=50) # Re-allowing @ for user convenience
+    email: Optional[str] = Field(None, min_length=3, max_length=255)
+    avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
+    bio: Optional[str] = Field(None, max_length=500)
+    phone: Optional[str] = Field(None, max_length=20)
+    avatar_url: Optional[str] = Field(None, max_length=500)
+    
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v):
+        if v is None:
+            return v
+        if not v or not v.strip():
+            raise ValueError('Name cannot be empty')
+        v = re.sub(r'<[^>]*>', '', v)
+        v = re.sub(r'[<>"\']', '', v)
+        return v.strip()
+    
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v):
+        if v is None:
+            return v
+        if not v or not v.strip():
+            raise ValueError('Username cannot be empty')
+        if not re.match(r'^[a-zA-Z0-9_.-@]+$', v):
+            raise ValueError('Username can only contain letters, numbers, underscores, dots, hyphens and @')
+        return v.strip()
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if v is None:
+            return v
+        if not v or '@' not in v:
+            raise ValueError('Invalid email format')
+        return v.lower().strip()
+    
+    @field_validator('avatar')
+    @classmethod
+    def validate_avatar(cls, v):
+        if v is None:
+            return v
+        if len(v) > 10:
+            raise ValueError('Avatar initials must be 10 characters or less')
+        return v
+    
+    @field_validator('bio')
+    @classmethod
+    def validate_bio(cls, v):
+        if v is None:
+            return v
+        if len(v) > 500:
+            raise ValueError('Bio must be 500 characters or less')
+        return v
+    
+    @field_validator('phone')
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None:
+            return v
+        if not re.match(r'^[\d\s\-\+\(\)]+$', v):
+            raise ValueError('Invalid phone number format')
+        return v
+    
+    @field_validator('avatar_url')
+    @classmethod
+    def validate_avatar_url(cls, v):
+        if v is None:
+            return v
+        if len(v) > 500:
+            raise ValueError('Avatar URL must be 500 characters or less')
+        return v
+
+
 class PasswordChangeRequest(BaseModel):
     """Password change request model"""
-    old_password: str = Field(..., min_length=6, max_length=128)
-    new_password: str = Field(..., min_length=6, max_length=128)
+    old_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
 
 
 class EmailChangeRequest(BaseModel):
