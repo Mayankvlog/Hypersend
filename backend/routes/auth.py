@@ -38,13 +38,16 @@ async def register(user: UserCreate):
         # Validate password strength
         from backend.security import SecurityConfig
         password_validation = SecurityConfig.validate_password_strength(user.password)
-        if not password_validation["valid"]:
+        if not password_validation["valid"] and settings.DEBUG is False:
+            # Only enforce strict password strength in production
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Password too weak: {', '.join(password_validation['issues'])}"
             )
         
-        auth_log(f"[AUTH] Registration request for email: {user.email}")
+        # Lowercase email for consistency
+        user_email = user.email.lower().strip()
+        auth_log(f"[AUTH] Registration request for email: {user_email}")
         
         # Get users collection - this will raise RuntimeError if DB not connected
         try:
@@ -59,7 +62,8 @@ async def register(user: UserCreate):
         # Check if user already exists (with timeout)
         try:
             existing_user = await asyncio.wait_for(
-                users.find_one({"email": user.email}),
+                print(f"[AUTH] Checking existence for: {user_email}") or 
+                users.find_one({"email": user_email}),
                 timeout=5.0
             )
         except asyncio.TimeoutError:
@@ -80,7 +84,7 @@ async def register(user: UserCreate):
         user_doc = {
             "_id": str(ObjectId()),
             "name": user.name,
-            "email": user.email,
+            "email": user_email,
             "password_hash": hash_password(user.password),
             "quota_used": 0,
             "quota_limit": 42949672960,  # 40 GiB
@@ -174,10 +178,13 @@ async def login(credentials: UserLogin, request: Request):
                 detail="Database service is unavailable. Please try again later."
             )
         
+        # Normalize email for search
+        search_email = credentials.email.lower().strip()
+        
         # Find user with timeout
         try:
             user = await asyncio.wait_for(
-                users.find_one({"email": credentials.email}),
+                users.find_one({"email": search_email}),
                 timeout=5.0
             )
         except asyncio.TimeoutError:

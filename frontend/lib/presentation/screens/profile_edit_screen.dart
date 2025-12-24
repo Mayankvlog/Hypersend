@@ -64,36 +64,39 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       
       // Email is optional - only validate and send if changed and not empty
       String? emailToSend;
-      if (_emailController.text.trim().isNotEmpty && _emailController.text.trim() != (widget.user.email ?? '')) {
-        final email = _emailController.text.trim();
+      final currentEmail = (widget.user.email ?? '').trim();
+      final newEmail = _emailController.text.trim();
+      
+      if (newEmail.isNotEmpty && newEmail != currentEmail) {
         // Strict email validation: user@domain.extension format
-        if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(email)) {
+        if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(newEmail)) {
           throw Exception('Invalid email format. Example: user@example.com');
         }
-        emailToSend = email;
+        emailToSend = newEmail;
       }
       
-      // If email didn't change but was empty/invalid before, don't send it
-      if (_emailController.text.trim() == (widget.user.email ?? '')) {
-        emailToSend = null;
-      }
-
       // Only pass username if changed from initial value
       String? usernameToSend;
-      if (_usernameController.text.trim() != widget.user.username) {
-        if (_usernameController.text.trim().isEmpty) {
-          throw Exception('Username cannot be empty');
+      final currentUsername = (widget.user.username ?? '').trim();
+      final newUsername = _usernameController.text.trim();
+      
+      if (newUsername != currentUsername) {
+        // Only send if not empty, otherwise it fails backend min_length validation
+        if (newUsername.isNotEmpty) {
+          usernameToSend = newUsername;
         }
-        usernameToSend = _usernameController.text.trim();
       }
 
       // Only pass name if changed from initial value  
       String? nameToSend;
-      if (_nameController.text.trim() != widget.user.name) {
-        if (_nameController.text.trim().isEmpty) {
+      final currentName = (widget.user.name).trim();
+      final newName = _nameController.text.trim();
+      
+      if (newName != currentName) {
+        if (newName.isEmpty) {
           throw Exception('Name cannot be empty');
         }
-        nameToSend = _nameController.text.trim();
+        nameToSend = newName;
       }
 
       debugPrint('[PROFILE_EDIT] Sending: name=$nameToSend, username=$usernameToSend, email=$emailToSend');

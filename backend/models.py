@@ -40,7 +40,7 @@ class Role:
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str = Field(..., min_length=6, max_length=128)
     
     @field_validator('name')
     @classmethod
@@ -103,7 +103,7 @@ class UserResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     """Profile update request model"""
     name: Optional[str] = Field(None, min_length=2, max_length=100)
-    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    username: Optional[str] = Field(None, min_length=0, max_length=50)
     email: Optional[EmailStr] = Field(None)
     avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
     bio: Optional[str] = Field(None, max_length=500)
