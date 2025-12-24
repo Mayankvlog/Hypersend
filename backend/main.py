@@ -23,7 +23,7 @@ except Exception as e:
     raise
 
 try:
-    from backend.routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels
+    from backend.routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels, debug
     print("[STARTUP] ✓ routes modules imported")
 except Exception as e:
     print(f"[STARTUP] ✗ Failed to import routes: {e}")
@@ -50,6 +50,13 @@ try:
     print("[STARTUP] ✓ security module imported")
 except Exception as e:
     print(f"[STARTUP] ✗ Failed to import security: {e}")
+    raise
+
+try:
+    from backend.error_handlers import register_exception_handlers
+    print("[STARTUP] ✓ error_handlers module imported")
+except Exception as e:
+    print(f"[STARTUP] ✗ Failed to import error_handlers: {e}")
     raise
 
 print("[STARTUP] All imports successful!")
@@ -140,6 +147,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Register custom exception handlers
+register_exception_handlers(app)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -236,6 +246,11 @@ app.include_router(files.router, prefix="/api/v1")
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
+
+# Include debug routes (only in DEBUG mode, but router checks internally)
+if settings.DEBUG:
+    app.include_router(debug.router, prefix="/api/v1")
+    print("[STARTUP] ✓ Debug routes registered")
 
 
 

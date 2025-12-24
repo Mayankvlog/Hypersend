@@ -7,6 +7,21 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Optional
 import re
+import logging
+import json
+
+# Setup detailed logging for profile operations
+logger = logging.getLogger("profile_endpoint")
+logger.setLevel(logging.DEBUG)
+
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '[%(asctime)s] [PROFILE] [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -114,38 +129,76 @@ async def update_profile(
     profile_data: ProfileUpdate,
     current_user: str = Depends(get_current_user)
 ):
-    """Update current user's profile"""
+    """Update current user's profile with detailed logging"""
     try:
-        print(f"[PROFILE_UPDATE] Request for user: {current_user}")
-        print(f"[PROFILE_UPDATE] Data received: {profile_data}")
-        print(f"[PROFILE_UPDATE] Details - name={profile_data.name}, email={profile_data.email}, username={profile_data.username}")
+        logger.info(f"{'='*80}")
+        logger.info(f"PROFILE UPDATE REQUEST STARTED")
+        logger.info(f"{'='*80}")
+        logger.info(f"User ID: {current_user}")
+        
+        # Log received data
+        logger.info(f"Received ProfileUpdate model:")
+        logger.info(f"  - name: {profile_data.name} (type: {type(profile_data.name).__name__})")
+        logger.info(f"  - username: {profile_data.username} (type: {type(profile_data.username).__name__})")
+        logger.info(f"  - email: {profile_data.email} (type: {type(profile_data.email).__name__})")
+        logger.info(f"  - avatar: {profile_data.avatar} (type: {type(profile_data.avatar).__name__})")
+        logger.info(f"  - bio: {profile_data.bio} (type: {type(profile_data.bio).__name__})")
+        logger.info(f"  - phone: {profile_data.phone} (type: {type(profile_data.phone).__name__})")
+        logger.info(f"  - avatar_url: {profile_data.avatar_url} (type: {type(profile_data.avatar_url).__name__})")
         
         # Check if at least one field is being updated
         if all(v is None for v in [profile_data.name, profile_data.email, profile_data.username, profile_data.bio, profile_data.phone, profile_data.avatar_url, profile_data.avatar]):
+            logger.warning(f"No fields provided for update - all are None")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one field must be provided to update"
             )
         
+        # Get current user data from database
+        logger.info(f"Fetching current user data from database...")
+        current_user_data = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not current_user_data:
+            logger.error(f"Current user not found in database: {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Current user not found"
+            )
+        
+        logger.info(f"Current user data retrieved:")
+        logger.info(f"  - name: {current_user_data.get('name')}")
+        logger.info(f"  - username: {current_user_data.get('username')}")
+        logger.info(f"  - email: {current_user_data.get('email')}")
+        
         # Prepare update data
         update_data = {}
+        
+        # Process name
         if profile_data.name is not None:
             name = profile_data.name.strip()
             if not name:
+                logger.warning(f"Name validation failed: empty string after strip")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Name cannot be empty"
                 )
             if len(name) < 2:
+                logger.warning(f"Name validation failed: length {len(name)} < 2")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Name must be at least 2 characters"
                 )
+            logger.info(f"✓ Name validation passed: {name}")
             update_data["name"] = name
-            print(f"[PROFILE_UPDATE] Name set to: {name}")
+        
+        # Process username
         if profile_data.username is not None:
             username = profile_data.username.strip()
             if not username:
+                logger.warning(f"Username validation failed: empty string after strip")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Username cannot be empty"
@@ -157,28 +210,39 @@ async def update_profile(
                     timeout=5.0
                 )
                 if existing_username and existing_username.get("_id") != current_user:
-                    print(f"[PROFILE_UPDATE] Username already in use: {username}")
+                    logger.warning(f"Username already taken: {username} by {existing_username.get('_id')}")
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
                         detail="Username already taken"
                     )
+            logger.info(f"✓ Username validation passed: {username}")
             update_data["username"] = username
-            print(f"[PROFILE_UPDATE] Username set to: {username}")
+        
+        # Process bio and phone
         if profile_data.bio is not None:
+            logger.info(f"✓ Bio set: {profile_data.bio[:50]}..." if len(profile_data.bio) > 50 else f"✓ Bio set: {profile_data.bio}")
             update_data["bio"] = profile_data.bio
+        
         if profile_data.phone is not None:
+            logger.info(f"✓ Phone set: {profile_data.phone}")
             update_data["phone"] = profile_data.phone
+        
+        # Process avatar
         if profile_data.avatar_url is not None:
+            logger.info(f"✓ Avatar URL set: {profile_data.avatar_url}")
             update_data["avatar_url"] = profile_data.avatar_url
+        
         if profile_data.avatar is not None:
+            logger.info(f"✓ Avatar initials set: {profile_data.avatar}")
             update_data["avatar_url"] = profile_data.avatar  # Store avatar initials in avatar_url
-        # Handle email separately to enforce uniqueness
+        
+        # Process email (enforce uniqueness)
         if profile_data.email is not None and profile_data.email.strip():
+            logger.info(f"Processing email update: {profile_data.email}")
             # Validate email format
-            import re
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, profile_data.email):
-                print(f"[PROFILE_UPDATE] Invalid email format: {profile_data.email}")
+                logger.warning(f"Email validation failed: invalid format for {profile_data.email}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid email format. Use format: user@example.com"
@@ -186,27 +250,30 @@ async def update_profile(
             
             # Normalize email
             new_email = profile_data.email.lower().strip()
-            print(f"[PROFILE_UPDATE] Email update requested: {new_email}")
+            logger.info(f"Email normalized: {new_email}")
+            
             # Ensure no other user already uses this email
             existing = await asyncio.wait_for(
                 users_collection().find_one({"email": new_email}),
                 timeout=5.0
             )
             if existing and existing.get("_id") != current_user:
-                print(f"[PROFILE_UPDATE] Email already in use by {existing.get('_id')}")
+                logger.warning(f"Email already in use: {new_email} by {existing.get('_id')}")
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Email already in use"
                 )
+            logger.info(f"✓ Email validation passed: {new_email}")
             update_data["email"] = new_email
-            print(f"[PROFILE_UPDATE] Email validated and set to: {new_email}")
         
         # Add updated timestamp
         update_data["updated_at"] = datetime.utcnow()
         
-        print(f"[PROFILE_UPDATE] Update data: {list(update_data.keys())}")
+        logger.info(f"Update data prepared with fields: {list(update_data.keys())}")
+        logger.info(f"Update data values: {json.dumps({k: str(v)[:100] if isinstance(v, str) else str(v) for k, v in update_data.items()}, default=str)}")
         
         # Update user profile in database
+        logger.info(f"Executing database update...")
         result = await asyncio.wait_for(
             users_collection().update_one(
                 {"_id": current_user},
@@ -215,29 +282,42 @@ async def update_profile(
             timeout=5.0
         )
         
-        print(f"[PROFILE_UPDATE] DB result - matched: {result.matched_count}, modified: {result.modified_count}")
+        logger.info(f"Database update result:")
+        logger.info(f"  - Matched documents: {result.matched_count}")
+        logger.info(f"  - Modified documents: {result.modified_count}")
         
         if result.matched_count == 0:
+            logger.error(f"User not found during update: {current_user}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
         
-        print(f"[PROFILE_UPDATE] Success - updated {result.modified_count} documents")
+        if result.modified_count == 0:
+            logger.warning(f"No documents were modified (may be identical data)")
         
         # Fetch and return updated user profile
+        logger.info(f"Fetching updated user profile...")
         updated_user = await asyncio.wait_for(
             users_collection().find_one({"_id": current_user}),
             timeout=5.0
         )
         
         if not updated_user:
+            logger.error(f"User not found after update: {current_user}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found after update"
             )
         
-        print(f"[PROFILE_UPDATE] Returning updated user: {updated_user['_id']}")
+        logger.info(f"✓ Profile update successful!")
+        logger.info(f"Updated user profile:")
+        logger.info(f"  - ID: {updated_user.get('_id')}")
+        logger.info(f"  - Name: {updated_user.get('name')}")
+        logger.info(f"  - Username: {updated_user.get('username')}")
+        logger.info(f"  - Email: {updated_user.get('email')}")
+        logger.info(f"  - Updated at: {updated_user.get('updated_at')}")
+        logger.info(f"{'='*80}")
         
         # Ensure all required fields for UserResponse are present with defaults if necessary
         return UserResponse(
@@ -252,14 +332,24 @@ async def update_profile(
             pinned_chats=updated_user.get("pinned_chats", []) or []
         )
     except asyncio.TimeoutError:
+        logger.error(f"Database operation timed out")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database operation timed out. Please try again."
         )
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except (ValueError, TypeError, KeyError, OSError) as e:
+        logger.error(f"Error during profile update: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update profile: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during profile update: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}"
         )
 
 
