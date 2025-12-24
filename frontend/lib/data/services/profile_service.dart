@@ -82,8 +82,8 @@ class ProfileService {
       if (oldPassword.isEmpty || newPassword.isEmpty) {
         throw Exception('Password cannot be empty');
       }
-      if (newPassword.length < 8) {
-        throw Exception('Password must be at least 8 characters');
+      if (newPassword.length < 6) {
+        throw Exception('Password must be at least 6 characters');
       }
       // Call API to change password
       await _apiService.changePassword(

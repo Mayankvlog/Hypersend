@@ -103,8 +103,8 @@ class UserResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     """Profile update request model"""
     name: Optional[str] = Field(None, min_length=2, max_length=100)
-    username: Optional[str] = Field(None, min_length=3, max_length=50) # Re-allowing @ for user convenience
-    email: Optional[str] = Field(None, min_length=3, max_length=255)
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    email: Optional[EmailStr] = Field(None)
     avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
     bio: Optional[str] = Field(None, max_length=500)
     phone: Optional[str] = Field(None, max_length=20)
@@ -128,18 +128,9 @@ class ProfileUpdate(BaseModel):
             return v
         if not v or not v.strip():
             raise ValueError('Username cannot be empty')
-        if not re.match(r'^[a-zA-Z0-9_.-@]+$', v):
-            raise ValueError('Username can only contain letters, numbers, underscores, dots, hyphens and @')
+        if not re.match(r'^[a-zA-Z0-9_.\-]+$', v):
+            raise ValueError('Username can only contain letters, numbers, underscores, dots and hyphens')
         return v.strip()
-    
-    @field_validator('email')
-    @classmethod
-    def validate_email(cls, v):
-        if v is None:
-            return v
-        if not v or '@' not in v:
-            raise ValueError('Invalid email format')
-        return v.lower().strip()
     
     @field_validator('avatar')
     @classmethod
@@ -180,13 +171,13 @@ class ProfileUpdate(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     """Password change request model"""
-    old_password: str = Field(..., min_length=8, max_length=128)
-    new_password: str = Field(..., min_length=8, max_length=128)
+    old_password: str = Field(..., min_length=6, max_length=128)
+    new_password: str = Field(..., min_length=6, max_length=128)
 
 
 class EmailChangeRequest(BaseModel):
     """Email change request model"""
-    email: str = Field(..., min_length=5, max_length=255)  # Changed from EmailStr to str for custom validation
+    email: EmailStr = Field(...)
     password: str = Field(..., min_length=6, max_length=128)
 
 

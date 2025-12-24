@@ -14,13 +14,13 @@ import re
 class SecurityConfig:
     """Security configuration and validation"""
     
-    # Password requirements (strengthened)
-    MIN_PASSWORD_LENGTH = 8
+    # Password requirements (balanced security and usability)
+    MIN_PASSWORD_LENGTH = 6
     MAX_PASSWORD_LENGTH = 128
-    REQUIRE_UPPERCASE = True
-    REQUIRE_LOWERCASE = True
-    REQUIRE_DIGIT = True
-    REQUIRE_SPECIAL = True
+    REQUIRE_UPPERCASE = False
+    REQUIRE_LOWERCASE = False
+    REQUIRE_DIGIT = False
+    REQUIRE_SPECIAL = False
     
     # Rate limiting
     MAX_LOGIN_ATTEMPTS = 5
