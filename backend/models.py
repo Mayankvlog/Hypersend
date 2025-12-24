@@ -102,14 +102,14 @@ class UserResponse(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     """Password change request model"""
-    old_password: str = Field(..., min_length=1)
+    old_password: str = Field(..., min_length=6, max_length=128)
     new_password: str = Field(..., min_length=6, max_length=128)
 
 
 class EmailChangeRequest(BaseModel):
     """Email change request model"""
     email: str = Field(..., min_length=5, max_length=255)  # Changed from EmailStr to str for custom validation
-    password: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=6, max_length=128)
 
 
 # Auth Models

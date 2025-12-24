@@ -70,28 +70,43 @@ class ProfileUpdate(BaseModel):
     avatar_url: Optional[str] = Field(default=None, max_length=500)
     avatar: Optional[str] = Field(default=None, max_length=10)  # For initials like 'AM', 'JD'
     
-    @field_validator('name')
+    @field_validator('name', mode='before')
     @classmethod
     def validate_name(cls, v):
-        if v is not None and (not v or not v.strip()):
-            raise ValueError('Name cannot be empty')
-        return v.strip() if v else v
+        if v is None:
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError('Name cannot be empty')
+        return v
     
-    @field_validator('email')
+    @field_validator('email', mode='before')
     @classmethod
     def validate_email(cls, v):
-        if v is not None and v.strip():
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            v_stripped = v.lower().strip()
+            if not v_stripped:  # If empty after stripping
+                return None
+            # Only validate pattern if not empty
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            if not re.match(email_pattern, v):
+            if not re.match(email_pattern, v_stripped):
                 raise ValueError('Invalid email format')
-        return v.lower() if v else v
+            return v_stripped
+        return v
     
-    @field_validator('username')
+    @field_validator('username', mode='before')
     @classmethod
     def validate_username(cls, v):
-        if v is not None and (not v or not v.strip()):
-            raise ValueError('Username cannot be empty')
-        return v.strip() if v else v
+        if v is None:
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError('Username cannot be empty')
+        return v
 
 
 @router.put("/profile", response_model=UserResponse)
@@ -106,7 +121,7 @@ async def update_profile(
         print(f"[PROFILE_UPDATE] Details - name={profile_data.name}, email={profile_data.email}, username={profile_data.username}")
         
         # Check if at least one field is being updated
-        if all(v is None for v in [profile_data.name, profile_data.email, profile_data.username, profile_data.bio, profile_data.phone, profile_data.avatar_url]):
+        if all(v is None for v in [profile_data.name, profile_data.email, profile_data.username, profile_data.bio, profile_data.phone, profile_data.avatar_url, profile_data.avatar]):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one field must be provided to update"
