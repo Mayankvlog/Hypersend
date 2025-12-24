@@ -103,8 +103,8 @@ class UserResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     """Profile update request model"""
     name: Optional[str] = Field(None, min_length=2, max_length=100)
-    username: Optional[str] = Field(None, min_length=0, max_length=50)
-    email: Optional[EmailStr] = Field(None)
+    username: Optional[str] = Field(None, min_length=3, max_length=50)  # Fixed: min_length must be at least 3
+    email: Optional[str] = Field(None)  # Changed from EmailStr to str to handle validation manually
     avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
     bio: Optional[str] = Field(None, max_length=500)
     phone: Optional[str] = Field(None, max_length=20)
@@ -166,6 +166,19 @@ class ProfileUpdate(BaseModel):
             return v
         if len(v) > 500:
             raise ValueError('Avatar URL must be 500 characters or less')
+        return v
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if v is None:
+            return v
+        v = v.strip().lower()
+        if not v:
+            return None  # Empty email is allowed (treat as not updating)
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v):
+            raise ValueError('Invalid email format. Use format: user@example.com')
         return v
 
 
