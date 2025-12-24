@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from bson import ObjectId
 import re
 
@@ -39,7 +39,7 @@ class Role:
 # ... existing PyObjectId ...
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    email: EmailStr
+    email: str = Field(..., max_length=254)
     password: str = Field(..., min_length=6, max_length=128)
     
     @field_validator('name')
@@ -54,6 +54,17 @@ class UserCreate(BaseModel):
         v = re.sub(r'[<>"\']', '', v)
         return v.strip()
     
+    @field_validator('email')
+    @classmethod
+    def validate_email_field(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Email cannot be empty')
+        v = v.lower().strip()
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v):
+            raise ValueError('Invalid email format. Use format: user@example.com')
+        return v
+    
     @field_validator('password')
     @classmethod
     def validate_password(cls, v):
@@ -63,8 +74,26 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., min_length=1)
+    
+    @field_validator('email')
+    @classmethod
+    def validate_login_email(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Email cannot be empty')
+        v = v.lower().strip()
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v):
+            raise ValueError('Invalid email format')
+        return v
+    
+    @field_validator('password')
+    @classmethod
+    def validate_login_password(cls, v):
+        if not v:
+            raise ValueError('Password cannot be empty')
+        return v
 
 
 class UserInDB(BaseModel):
@@ -72,7 +101,7 @@ class UserInDB(BaseModel):
     
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     name: str
-    email: EmailStr
+    email: str
     password_hash: str
     quota_used: int = 0
     quota_limit: int = 42949672960  # 40 GiB default
@@ -190,8 +219,19 @@ class PasswordChangeRequest(BaseModel):
 
 class EmailChangeRequest(BaseModel):
     """Email change request model"""
-    email: EmailStr = Field(...)
+    email: str = Field(..., max_length=254)
     password: str = Field(..., min_length=6, max_length=128)
+    
+    @field_validator('email')
+    @classmethod
+    def validate_change_email(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Email cannot be empty')
+        v = v.lower().strip()
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v):
+            raise ValueError('Invalid email format. Use format: user@example.com')
+        return v
 
 
 # Auth Models
@@ -212,7 +252,18 @@ class RefreshTokenRequest(BaseModel):
 
 # Password Reset Models
 class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(..., max_length=254)
+    
+    @field_validator('email')
+    @classmethod
+    def validate_forgot_email(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Email cannot be empty')
+        v = v.lower().strip()
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v):
+            raise ValueError('Invalid email format')
+        return v
 
 
 class PasswordResetRequest(BaseModel):
