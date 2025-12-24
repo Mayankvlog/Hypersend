@@ -181,13 +181,18 @@ app.add_middleware(
 
 # ✅ CRITICAL FIX: Handle CORS preflight requests (OPTIONS) without requiring authentication
 # Browser CORS preflight requests don't have auth headers, so they would fail 401 without this
+# NOTE: FastAPI automatically handles OPTIONS for registered routes, this is fallback only
 @app.options("/{full_path:path}")
 async def handle_options_request(full_path: str):
     """
     Handle CORS preflight OPTIONS requests.
     These must succeed without authentication for CORS to work in browsers.
     """
-    return Response(status_code=204)
+    return Response(status_code=200, headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    })
 
 # Security headers middleware
 @app.middleware("http")
