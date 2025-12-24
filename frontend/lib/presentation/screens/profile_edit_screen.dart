@@ -128,7 +128,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       
       final successMessage = updatedFields.isNotEmpty 
           ? 'Saved! ${updatedFields.join(', ')} updated'
-          : 'Profile saved successfully!';
+          : 'Profile updated successfully!';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -510,22 +510,51 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               if (newPasswordController.text == confirmPasswordController.text &&
                   newPasswordController.text.isNotEmpty) {
+                if (newPasswordController.text.length < 8) {
+                   ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Password must be at least 8 characters'),
+                      backgroundColor: AppTheme.errorRed,
+                    ),
+                  );
+                  return;
+                }
+
                 Navigator.of(dialogContext).pop();
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Password changed successfully'),
-                    backgroundColor: AppTheme.successGreen,
-                  ),
-                );
+                
+                setState(() => _isLoading = true);
+                try {
+                  await serviceProvider.profileService.changePassword(
+                    oldPassword: oldPasswordController.text,
+                    newPassword: newPasswordController.text,
+                  );
+                  
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Password changed successfully'),
+                      backgroundColor: AppTheme.successGreen,
+                    ),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to change password: ${e.toString()}'),
+                      backgroundColor: AppTheme.errorRed,
+                    ),
+                  );
+                } finally {
+                  if (mounted) setState(() => _isLoading = false);
+                }
               } else {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Passwords do not match'),
+                    content: Text('Passwords do not match or are empty'),
                     backgroundColor: AppTheme.errorRed,
                   ),
                 );

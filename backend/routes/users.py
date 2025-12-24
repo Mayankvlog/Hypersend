@@ -196,7 +196,8 @@ async def update_profile(
             )
         
         print(f"[PROFILE_UPDATE] Returning updated user: {updated_user['_id']}")
-        # Set defaults if missing to avoid UserResponse validation errors
+        
+        # Ensure all required fields for UserResponse are present with defaults if necessary
         return UserResponse(
             id=str(updated_user.get("_id", current_user)),
             name=str(updated_user.get("name", "User")),

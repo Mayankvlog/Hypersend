@@ -47,6 +47,58 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
   }
 
+  List<dynamic> _filtered_list_with_saved() {
+    final list = <dynamic>[];
+    // Always add Saved Messages entry if no search or if it matches search
+    if (_searchController.text.isEmpty) {
+      list.add('header_saved');
+    } else if ('saved messages'.contains(_searchController.text.toLowerCase())) {
+      list.add('header_saved');
+    }
+    list.addAll(_filteredChats);
+    return list;
+  }
+
+  Widget _buildSavedMessagesEntry() {
+    return ListTile(
+      leading: Container(
+        width: 56,
+        height: 56,
+        decoration: const BoxDecoration(
+          color: AppTheme.primaryPurple,
+          shape: BoxShape.circle,
+        ),
+        child: const Center(
+          child: Icon(Icons.bookmark, color: Colors.white, size: 28),
+        ),
+      ),
+      title: const Text(
+        'Saved Messages',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+      subtitle: const Text(
+        'Your personal cloud storage',
+        style: TextStyle(color: AppTheme.textSecondary),
+      ),
+      onTap: () async {
+        try {
+          final savedChatData = await serviceProvider.apiService.getSavedChat();
+          if (!mounted) return;
+          final chatId = savedChatData['chat_id'];
+          context.push('/chat/$chatId');
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      },
+    );
+  }
+
   void _onBottomNavTap(int index) {
     setState(() {
       _selectedIndex = index;
@@ -248,11 +300,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     ),
                   )
                 : ListView.builder(
-                    itemCount: _filteredChats.length,
+                    itemCount: _filtered_list_with_saved().length,
                     itemBuilder: (context, index) {
+                      final item = _filtered_list_with_saved()[index];
+                      if (item is String && item == 'header_saved') {
+                        return _buildSavedMessagesEntry();
+                      }
+                      final chat = item as Chat;
                       return ChatListItem(
-                        chat: _filteredChats[index],
-                        onTap: () => _onChatTap(_filteredChats[index]),
+                        chat: chat,
+                        onTap: () => _onChatTap(chat),
                       );
                     },
                   ),
