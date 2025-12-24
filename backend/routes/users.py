@@ -569,7 +569,7 @@ async def change_password(
             )
         
         # Verify old password
-        from backend.security import verify_password, hash_password
+        from backend.auth.utils import verify_password, hash_password
         
         if not verify_password(request.old_password, user.get("password_hash", "")):
             print(f"[PASSWORD_CHANGE] Old password verification failed for {current_user}")
@@ -635,7 +635,7 @@ async def change_email(
             )
         
         # Verify password
-        from backend.security import verify_password
+        from backend.auth.utils import verify_password
         if not verify_password(request.password, user.get("password_hash", "")):
             print(f"[EMAIL_CHANGE] Password verification failed for {current_user}")
             raise HTTPException(

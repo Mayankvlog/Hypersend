@@ -4,38 +4,42 @@ import uuid
 import jwt
 from jwt import PyJWTError
 import hashlib
-from passlib.context import CryptContext
+import hmac
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from backend.config import settings
 from backend.models import TokenData
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 
-def _normalize_password(password: str) -> str:
-    """
-    Normalize password to handle bcrypt's 72-byte limit.
-    Uses SHA256 hash of the password if it exceeds 72 bytes.
-    """
-    password_bytes = password.encode('utf-8')
-    if len(password_bytes) > 72:
-        # Hash the password with SHA256 to reduce it to 64 bytes
-        return hashlib.sha256(password_bytes).hexdigest()
-    return password
-
-
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt"""
-    normalized_password = _normalize_password(password)
-    return pwd_context.hash(normalized_password)
+    """Hash a password using PBKDF2 with SHA-256"""
+    salt = hashlib.sha256(str(uuid.uuid4()).encode()).hexdigest()[:32]
+    password_bytes = password.encode('utf-8')
+    password_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        password_bytes,
+        salt.encode('utf-8'),
+        100000
+    )
+    return f"{salt}${password_hash.hex()}"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash"""
-    normalized_password = _normalize_password(plain_password)
-    return pwd_context.verify(normalized_password, hashed_password)
+    """Verify a password against its PBKDF2 hash"""
+    try:
+        salt, stored_hash = hashed_password.split('$')
+        password_bytes = plain_password.encode('utf-8')
+        password_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password_bytes,
+            salt.encode('utf-8'),
+            100000
+        )
+        return hmac.compare_digest(password_hash.hex(), stored_hash)
+    except (ValueError, AttributeError):
+        return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
