@@ -47,7 +47,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
   }
 
-  List<dynamic> _filtered_list_with_saved() {
+  List<dynamic> _filteredListWithSaved() {
     final list = <dynamic>[];
     // Always add Saved Messages entry if no search or if it matches search
     if (_searchController.text.isEmpty) {
@@ -300,9 +300,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     ),
                   )
                 : ListView.builder(
-                    itemCount: _filtered_list_with_saved().length,
+                    itemCount: _filteredListWithSaved().length,
                     itemBuilder: (context, index) {
-                      final item = _filtered_list_with_saved()[index];
+                      final item = _filteredListWithSaved()[index];
                       if (item is String && item == 'header_saved') {
                         return _buildSavedMessagesEntry();
                       }
