@@ -15,7 +15,12 @@ security = HTTPBearer()
 
 def hash_password(password: str) -> str:
     """Hash a password using PBKDF2 with SHA-256"""
+    # Generate a random salt (32 hex characters = 16 bytes)
     salt = hashlib.sha256(str(uuid.uuid4()).encode()).hexdigest()[:32]
+    
+    if not salt or len(salt) != 32:
+        raise ValueError("Invalid salt generation")
+    
     password_bytes = password.encode('utf-8')
     password_hash = hashlib.pbkdf2_hmac(
         'sha256',
@@ -23,22 +28,37 @@ def hash_password(password: str) -> str:
         salt.encode('utf-8'),
         100000
     )
-    return f"{salt}${password_hash.hex()}"
+    
+    hash_hex = password_hash.hex()
+    if not hash_hex:
+        raise ValueError("Invalid hash generation")
+    
+    return f"{salt}${hash_hex}"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its PBKDF2 hash"""
     try:
-        salt, stored_hash = hashed_password.split('$')
-        password_bytes = plain_password.encode('utf-8')
-        password_hash = hashlib.pbkdf2_hmac(
-            'sha256',
-            password_bytes,
-            salt.encode('utf-8'),
-            100000
-        )
-        return hmac.compare_digest(password_hash.hex(), stored_hash)
-    except (ValueError, AttributeError):
+        # Check if hash is in new format (salt$hash)
+        if '$' in hashed_password and len(hashed_password.split('$')) == 2:
+            salt, stored_hash = hashed_password.split('$')
+            if not salt or not stored_hash:
+                return False
+            
+            password_bytes = plain_password.encode('utf-8')
+            password_hash = hashlib.pbkdf2_hmac(
+                'sha256',
+                password_bytes,
+                salt.encode('utf-8'),
+                100000
+            )
+            computed_hex = password_hash.hex()
+            return hmac.compare_digest(computed_hex, stored_hash)
+        else:
+            # Invalid hash format
+            return False
+            
+    except (ValueError, AttributeError, UnicodeDecodeError):
         return False
 
 

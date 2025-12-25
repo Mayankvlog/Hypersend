@@ -81,11 +81,23 @@ async def register(user: UserCreate):
             )
         
         # Create user document
+        try:
+            password_hash = hash_password(user.password)
+            if not password_hash or '$' not in password_hash:
+                raise ValueError("Password hash generation failed")
+            auth_log(f"[AUTH] Password hash generated successfully for registration")
+        except (ValueError, Exception) as e:
+            auth_log(f"[AUTH] Password hashing failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Password processing failed. Please try again."
+            )
+        
         user_doc = {
             "_id": str(ObjectId()),
             "name": user.name,
             "email": user_email,
-            "password_hash": hash_password(user.password),
+            "password_hash": password_hash,
             "quota_used": 0,
             "quota_limit": 42949672960,  # 40 GiB
             "created_at": datetime.utcnow()
@@ -209,6 +221,10 @@ async def login(credentials: UserLogin, request: Request):
             )
         
         auth_log(f"[AUTH] User found: {user.get('_id')} - Verifying password")
+        
+        # Debug: Check hash format
+        stored_hash = user.get("password_hash", "")
+        auth_log(f"[AUTH] Hash format check: contains '$': {'$' in stored_hash}, length: {len(stored_hash)}")
         
         # Verify password
         password_valid = verify_password(credentials.password, user["password_hash"])
