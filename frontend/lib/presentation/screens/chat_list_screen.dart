@@ -409,28 +409,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
             children: [
               ListTile(
                 leading: const Icon(
-                  Icons.bookmark_outline,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text('Saved Messages'),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  try {
-                    final savedChatData = await serviceProvider.apiService.getSavedChat();
-                    if (!mounted) return;
-                    final chatId = savedChatData['chat_id'];
-                    context.push('/chat/$chatId');
-                  } catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error opening Saved Messages: $e')),
-                    );
-                  }
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
                   Icons.person_add_outlined,
                   color: AppTheme.primaryCyan,
                 ),
@@ -462,18 +440,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 onTap: () {
                   Navigator.of(context).pop();
                   context.push('/channel-create');
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
-                  Icons.edit_outlined,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text('Edit Profile'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  context.push('/profile-edit');
                 },
               ),
               const Divider(height: 0),
