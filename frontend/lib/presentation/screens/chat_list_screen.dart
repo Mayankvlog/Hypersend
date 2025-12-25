@@ -33,6 +33,71 @@ class _ChatListScreenState extends State<ChatListScreen> {
     super.dispose();
   }
 
+  Future<void> _showAddContactDialog() async {
+    final emailController = TextEditingController();
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Contact'),
+        content: TextField(
+          controller: emailController,
+          decoration: const InputDecoration(
+            hintText: 'Enter email address',
+            prefixIcon: Icon(Icons.email_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailController.text.trim();
+              if (email.isEmpty) return;
+              try {
+                final users = await serviceProvider.apiService.searchUsers(email);
+                if (users.isEmpty) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('User not found')),
+                    );
+                  }
+                  return;
+                }
+                Navigator.pop(context, users.first);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Search'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && mounted) {
+      try {
+        final chat = await serviceProvider.apiService.createSecretChat(targetUserId: result['id']);
+        if (mounted) {
+          context.push('/chat/${chat['_id'] ?? chat['id']}');
+          _loadChats();
+        }
+      } catch (e) {
+        if (mounted) {
+          // If already exists, backend might return 409 or existing chat
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not start chat: $e')),
+          );
+        }
+      }
+    }
+  }
+
   void _onSearchChanged(String query) {
     setState(() {
       if (query.isEmpty) {
@@ -132,10 +197,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
     try {
       final raw = await serviceProvider.apiService.getChats();
       final chats = raw.map(Chat.fromApi).toList();
+      final filtered = chats.where((chat) => chat.type != 'saved').toList();
       if (!mounted) return;
       setState(() {
-        _allChats = chats;
-        _filteredChats = chats;
+        _allChats = filtered;
+        _filteredChats = filtered;
         _loading = false;
       });
     } catch (e) {
@@ -183,51 +249,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
          actions: [
 
-           PopupMenuButton<String>(
-             icon: const Icon(Icons.add),
-             onSelected: (value) async {
-               if (value == 'group') {
-                 await context.push('/group-create');
-               } else if (value == 'channel') {
-                 await context.push('/channel-create');
-               } else if (value == 'secret') {
-                 await context.push('/secret-chat');
-               }
-               if (mounted) await _loadChats();
-             },
-             itemBuilder: (context) => [
-               const PopupMenuItem(
-                 value: 'group',
-                 child: Row(
-                   children: [
-                     Icon(Icons.group_add, color: AppTheme.primaryCyan),
-                     SizedBox(width: 8),
-                     Text('New Group'),
-                   ],
-                 ),
-               ),
-               const PopupMenuItem(
-                 value: 'channel',
-                 child: Row(
-                   children: [
-                     Icon(Icons.campaign, color: AppTheme.accentGold),
-                     SizedBox(width: 8),
-                     Text('New Channel'),
-                   ],
-                 ),
-               ),
-               const PopupMenuItem(
-                 value: 'secret',
-                 child: Row(
-                   children: [
-                     Icon(Icons.lock, color: AppTheme.successGreen),
-                     SizedBox(width: 8),
-                     Text('New Secret Chat'),
-                   ],
-                 ),
-               ),
-             ],
-           ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             onPressed: () {},
@@ -316,6 +337,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddContactDialog,
+        backgroundColor: AppTheme.primaryCyan,
+        child: const Icon(Icons.person_add, color: Colors.white),
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onBottomNavTap,
@@ -398,6 +424,30 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       SnackBar(content: Text('Error opening Saved Messages: $e')),
                     );
                   }
+                },
+              ),
+              const Divider(height: 0),
+              ListTile(
+                leading: const Icon(
+                  Icons.group_add_outlined,
+                  color: AppTheme.primaryCyan,
+                ),
+                title: const Text('New Group'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/group-create');
+                },
+              ),
+              const Divider(height: 0),
+              ListTile(
+                leading: const Icon(
+                  Icons.campaign_outlined,
+                  color: AppTheme.primaryCyan,
+                ),
+                title: const Text('New Channel'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/channel-create');
                 },
               ),
               const Divider(height: 0),

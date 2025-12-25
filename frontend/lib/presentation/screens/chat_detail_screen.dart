@@ -41,6 +41,93 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     super.dispose();
   }
 
+  void _showEmojiPicker() {
+    const emojis = ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '👻', '💀', '☠️', '👽', '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾'];
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.backgroundDark,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        height: 250,
+        child: GridView.builder(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 8,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+          ),
+          itemCount: emojis.length,
+          itemBuilder: (context, index) => InkWell(
+            onTap: () {
+              final text = _messageController.text;
+              final selection = _messageController.selection;
+              final newText = text.replaceRange(
+                selection.start >= 0 ? selection.start : text.length,
+                selection.end >= 0 ? selection.end : text.length,
+                emojis[index],
+              );
+              _messageController.text = newText;
+              _messageController.selection = TextSelection.collapsed(
+                offset: (selection.start >= 0 ? selection.start : text.length) + emojis[index].length,
+              );
+              Navigator.pop(context);
+            },
+            child: Center(child: Text(emojis[index], style: const TextStyle(fontSize: 24))),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadFile() async {
+    try {
+      final result = await serviceProvider.apiService.pickFile();
+      if (result == null) return;
+
+      final bytes = result.files.first.bytes;
+      final name = result.files.first.name;
+      final size = result.files.first.size;
+      final mime = 'application/octet-stream'; // Default or lookup
+
+      if (bytes == null) {
+        // Handle path-based pick for non-web if needed
+        return;
+      }
+
+      // Show progress
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Uploading $name...'), duration: const Duration(seconds: 1)),
+      );
+
+      // Resumable upload logic
+      final init = await serviceProvider.apiService.initUpload(
+        filename: name,
+        size: size,
+        mime: mime,
+        chatId: widget.chatId,
+      );
+
+      final uploadId = init['upload_id'];
+      
+      // Upload in 1MB chunks (simplified for now as one chunk if small, or full bytes)
+      await serviceProvider.apiService.uploadChunk(
+        uploadId: uploadId,
+        chunkIndex: 0,
+        bytes: bytes,
+      );
+
+      await serviceProvider.apiService.completeUpload(uploadId: uploadId);
+
+      _loadMessages();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: $e')),
+      );
+    }
+  }
+
   void _sendMessage() {
     if (_messageController.text.trim().isEmpty) return;
     _sendMessageApi(_messageController.text.trim());
@@ -555,7 +642,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.attach_file),
-                  onPressed: () {},
+                  onPressed: _pickAndUploadFile,
                   color: AppTheme.textSecondary,
                 ),
                 Expanded(
@@ -565,7 +652,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       hintText: AppStrings.typeMessage,
                       suffixIcon: IconButton(
                         icon: const Icon(Icons.emoji_emotions_outlined),
-                        onPressed: () {},
+                        onPressed: () => _showEmojiPicker(),
                         color: AppTheme.textSecondary,
                       ),
                     ),

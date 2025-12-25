@@ -46,46 +46,6 @@ class HelpSupportScreen extends StatelessWidget {
               'Yes, all messages are end-to-end encrypted for your privacy.',
             ),
             const SizedBox(height: 24),
-            _buildSectionHeader(context, 'CONTACT US'),
-            _buildContactTile(
-              icon: Icons.email_outlined,
-              title: 'Email',
-              subtitle: 'support@zaply.com',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Email support ready'),
-                    backgroundColor: AppTheme.successGreen,
-                  ),
-                );
-              },
-            ),
-            _buildContactTile(
-              icon: Icons.phone_outlined,
-              title: 'Phone',
-              subtitle: '+1 (555) 123-4567',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Phone support available'),
-                    backgroundColor: AppTheme.successGreen,
-                  ),
-                );
-              },
-            ),
-            _buildContactTile(
-              icon: Icons.help_outline,
-              title: 'Community Forum',
-              subtitle: 'discuss.zaply.com',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Community forum available'),
-                    backgroundColor: AppTheme.successGreen,
-                  ),
-                );
-              },
-            ),
             const SizedBox(height: 24),
             _buildSectionHeader(context, 'FEEDBACK'),
             Padding(

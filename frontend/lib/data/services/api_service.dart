@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../core/constants/api_constants.dart';
 
 class ApiService {
@@ -580,5 +581,12 @@ class ApiService {
   void clearAuthToken() {
     _dio.options.headers.remove('Authorization');
     _log('[API_AUTH] Token cleared from headers');
+  }
+
+  Future<FilePickerResult?> pickFile() async {
+    return await FilePicker.platform.pickFiles(
+      withData: true,
+      allowMultiple: false,
+    );
   }
 }
