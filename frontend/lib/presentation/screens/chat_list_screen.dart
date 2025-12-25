@@ -197,7 +197,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     try {
       final raw = await serviceProvider.apiService.getChats();
       final chats = raw.map(Chat.fromApi).toList();
-      final filtered = chats.where((chat) => chat.type != 'saved').toList();
+      final filtered = chats.where((chat) => chat.type != ChatType.saved).toList();
       if (!mounted) return;
       setState(() {
         _allChats = filtered;
@@ -249,10 +249,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
          actions: [
 
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () {},
-          ),
         ],
       ),
       body: Column(

@@ -465,7 +465,7 @@ class ApiService {
   }) async {
     await _dio.put(
       '${ApiConstants.filesEndpoint}/$uploadId/chunk',
-      data: Stream.value(bytes),
+      data: bytes,
       options: Options(
         contentType: 'application/octet-stream',
         sendTimeout: const Duration(minutes: 10),

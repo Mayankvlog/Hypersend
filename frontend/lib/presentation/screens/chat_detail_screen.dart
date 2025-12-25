@@ -110,12 +110,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
       final uploadId = init['upload_id'];
       
-      // Upload in 1MB chunks (simplified for now as one chunk if small, or full bytes)
-      await serviceProvider.apiService.uploadChunk(
-        uploadId: uploadId,
-        chunkIndex: 0,
-        bytes: bytes,
-      );
+      // Upload in 1MB chunks
+      const chunkSize = 1024 * 1024; // 1MB
+      int offset = 0;
+      int chunkIndex = 0;
+      
+      while (offset < bytes.length) {
+        final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
+        final chunk = bytes.sublist(offset, end);
+        
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Uploading ${name}: chunk ${chunkIndex + 1}/${(bytes.length / chunkSize).ceil()}'),
+            duration: const Duration(milliseconds: 500),
+          ),
+        );
+
+        await serviceProvider.apiService.uploadChunk(
+          uploadId: uploadId,
+          chunkIndex: chunkIndex,
+          bytes: chunk,
+        );
+        
+        offset = end;
+        chunkIndex++;
+      }
 
       await serviceProvider.apiService.completeUpload(uploadId: uploadId);
 
