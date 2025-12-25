@@ -252,11 +252,13 @@ class ApiService {
 
   Future<Map<String, dynamic>> sendMessage({
     required String chatId,
-    required String content,
+    String? content,
+    String? fileId,
   }) async {
     try {
       final response = await _dio.post('${ApiConstants.chatsEndpoint}/$chatId/messages', data: {
         'text': content,
+        'file_id': fileId,
       });
       return response.data;
     } catch (e) {

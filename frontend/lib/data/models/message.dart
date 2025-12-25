@@ -17,6 +17,7 @@ class Message extends Equatable {
   final DateTime? deletedAt;
   final Map<String, List<String>> reactions; // emoji -> userIds
   final List<String> readBy; // userIds
+  final String? fileId;
 
   const Message({
     required this.id,
@@ -33,6 +34,7 @@ class Message extends Equatable {
     this.deletedAt,
     this.reactions = const {},
     this.readBy = const [],
+    this.fileId,
   });
 
   factory Message.fromApi(Map<String, dynamic> json, {required String currentUserId}) {
@@ -71,6 +73,7 @@ class Message extends Equatable {
       deletedAt: (json['deleted_at'] is String) ? DateTime.tryParse(json['deleted_at']) : null,
       reactions: reactions,
       readBy: readBy,
+      fileId: (json['file_id'] ?? json['fileId'])?.toString(),
     );
   }
 
@@ -105,6 +108,7 @@ class Message extends Equatable {
       deletedAt: deletedAt ?? this.deletedAt,
       reactions: reactions ?? this.reactions,
       readBy: readBy ?? this.readBy,
+      fileId: fileId ?? this.fileId,
     );
   }
 
@@ -124,5 +128,6 @@ class Message extends Equatable {
         deletedAt,
         reactions,
         readBy,
+        fileId,
       ];
 }

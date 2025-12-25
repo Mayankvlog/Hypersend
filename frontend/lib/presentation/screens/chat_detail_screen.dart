@@ -47,34 +47,52 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.backgroundDark,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        height: 250,
-        child: GridView.builder(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 8,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
+      builder: (context) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(left: 16),
+                  child: Text('Emojis', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done', style: TextStyle(color: AppTheme.primaryCyan)),
+                ),
+              ],
+            ),
           ),
-          itemCount: emojis.length,
-          itemBuilder: (context, index) => InkWell(
-            onTap: () {
-              final text = _messageController.text;
-              final selection = _messageController.selection;
-              final newText = text.replaceRange(
-                selection.start >= 0 ? selection.start : text.length,
-                selection.end >= 0 ? selection.end : text.length,
-                emojis[index],
-              );
-              _messageController.text = newText;
-              _messageController.selection = TextSelection.collapsed(
-                offset: (selection.start >= 0 ? selection.start : text.length) + emojis[index].length,
-              );
-              Navigator.pop(context);
-            },
-            child: Center(child: Text(emojis[index], style: const TextStyle(fontSize: 24))),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 8,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                ),
+                itemCount: emojis.length,
+                itemBuilder: (context, index) => InkWell(
+                  onTap: () {
+                    final text = _messageController.text;
+                    final selection = _messageController.selection;
+                    final start = selection.start >= 0 ? selection.start : text.length;
+                    final end = selection.end >= 0 ? selection.end : text.length;
+                    final newText = text.replaceRange(start, end, emojis[index]);
+                    _messageController.value = TextEditingValue(
+                      text: newText,
+                      selection: TextSelection.collapsed(offset: start + emojis[index].length),
+                    );
+                  },
+                  child: Center(child: Text(emojis[index], style: const TextStyle(fontSize: 24))),
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -137,9 +155,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         chunkIndex++;
       }
 
-      await serviceProvider.apiService.completeUpload(uploadId: uploadId);
+      final completed = await serviceProvider.apiService.completeUpload(uploadId: uploadId);
+      final remoteFileId = completed['file_id'];
 
-      _loadMessages();
+      // Send the file message
+      if (!mounted) return;
+      await serviceProvider.apiService.sendMessage(
+        chatId: widget.chatId,
+        content: name, // Use filename as fallback text
+        fileId: remoteFileId,
+      );
+
+      await _loadMessages();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -206,13 +233,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final chat = found.isNotEmpty ? found.first : null;
       final res = await serviceProvider.apiService.getChatMessages(widget.chatId);
       final raw = List<Map<String, dynamic>>.from(res['messages'] ?? const []);
-      final meId = (await serviceProvider.apiService.getMe())['id']?.toString() ?? '';
-      final msgs = raw.map((m) => Message.fromApi(m, currentUserId: meId)).toList();
+      if (_meId.isEmpty) {
+        final me = await serviceProvider.apiService.getMe();
+        _meId = me['id']?.toString() ?? me['_id']?.toString() ?? '';
+      }
+      final currentUserId = _meId;
+      final msgs = raw.map((m) => Message.fromApi(m, currentUserId: currentUserId)).toList();
       if (!mounted) return;
       setState(() {
         _chat = chat;
         _messages = msgs;
-        _meId = meId;
         _loading = false;
       });
     } catch (e) {

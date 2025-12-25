@@ -197,7 +197,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
     try {
       final raw = await serviceProvider.apiService.getChats();
       final chats = raw.map(Chat.fromApi).toList();
-      final filtered = chats.where((chat) => chat.type != ChatType.saved).toList();
+      final filtered = chats.where((chat) {
+        // Filter out official saved type
+        if (chat.type == ChatType.saved) return false;
+        // Also filter out any private chat named 'Saved Messages' (user talking to themselves)
+        if (chat.name == 'Saved Messages') return false;
+        return true;
+      }).toList();
       if (!mounted) return;
       setState(() {
         _allChats = filtered;
@@ -420,6 +426,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       SnackBar(content: Text('Error opening Saved Messages: $e')),
                     );
                   }
+                },
+              ),
+              const Divider(height: 0),
+              ListTile(
+                leading: const Icon(
+                  Icons.person_add_outlined,
+                  color: AppTheme.primaryCyan,
+                ),
+                title: const Text('Add Contact'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showAddContactDialog();
                 },
               ),
               const Divider(height: 0),
