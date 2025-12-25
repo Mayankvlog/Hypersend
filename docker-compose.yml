@@ -88,6 +88,13 @@ services:
       RATE_LIMIT_WINDOW_SECONDS: 60
       DEBUG: "False"
       CORS_ORIGINS: "https://zaply.in.net,http://zaply.in.net,https://www.zaply.in.net"
+      # SMTP Configuration for Password Reset Emails
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
