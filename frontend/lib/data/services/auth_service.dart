@@ -71,6 +71,10 @@ class AuthService {
     await login(email: email, password: password);
   }
 
+  Future<void> resetPassword({required String email}) async {
+    await _api.resetPassword(email: email);
+  }
+
   Future<void> logout() async {
     try {
       final refresh = _refreshToken;
