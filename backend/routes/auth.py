@@ -492,16 +492,16 @@ async def forgot_password(request: ForgotPasswordRequest):
         
         # Try to send email with reset token if SMTP is configured
         email_sent = False
+        smtp_error = None
         if settings.SMTP_HOST and settings.EMAIL_FROM:
             auth_log(f"[AUTH] SMTP configured - attempting to send email to: {email}")
-            auth_log(f"[AUTH] SMTP_HOST: {settings.SMTP_HOST}, SMTP_PORT: {settings.SMTP_PORT}")
             try:
                 msg = EmailMessage()
                 msg["Subject"] = "Zaply - Password Reset"
                 msg["From"] = settings.EMAIL_FROM
                 msg["To"] = email
                 
-                reset_link = f"https://zaply.in.net/#/reset-password?token={reset_token}"
+                reset_link = f"{settings.API_BASE_URL.replace('/api/v1/', '')}/#/reset-password?token={reset_token}"
                 
                 msg.set_content(
                     f"Hi {user.get('name', 'User')},\n\n"
@@ -516,35 +516,33 @@ async def forgot_password(request: ForgotPasswordRequest):
                 with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
                     if settings.SMTP_USE_TLS:
                         server.starttls()
-                        auth_log("[AUTH] TLS enabled for SMTP")
                     if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
                         server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-                        auth_log("[AUTH] SMTP login successful")
                     server.send_message(msg)
 
                 email_sent = True
                 auth_log(f"[AUTH] Password reset email sent to: {email}")
-            except smtplib.SMTPAuthenticationError as e:
-                auth_log(f"[AUTH] SMTP authentication failed - check credentials. Error: {e}")
-                email_sent = False
-            except smtplib.SMTPException as e:
-                auth_log(f"[AUTH] SMTP error: {type(e).__name__}: {e}")
-                email_sent = False
             except Exception as e:
+                smtp_error = str(e)
                 auth_log(f"[AUTH] Failed to send reset email: {type(e).__name__}: {e}")
-                email_sent = False
         else:
-            auth_log(f"[AUTH] SMTP not configured - SMTP_HOST: '{settings.SMTP_HOST}', EMAIL_FROM: '{settings.EMAIL_FROM}'")
+            auth_log(f"[AUTH] SMTP not configured")
 
-        auth_log(f"[AUTH] Password reset token generated for: {email}")
-
-        # Security: Never include reset token in API response
-        # Token should only be sent via email to prevent account takeover
+        # Security: Never include reset token in API response in production
+        # But in DEBUG mode, return it if email fails to allow dev testing
         response = {
             "message": "If an account exists with this email, a password reset link has been sent.",
             "success": True,
             "email_sent": email_sent,
         }
+        
+        if settings.DEBUG:
+            if not email_sent:
+                response["debug_info"] = {
+                    "token": reset_token,
+                    "smtp_error": smtp_error or "SMTP not configured"
+                }
+                response["message"] = "DEBUG: Email not sent, token included in response."
 
         return response
     

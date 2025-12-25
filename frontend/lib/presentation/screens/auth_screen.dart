@@ -62,22 +62,15 @@ class _AuthScreenState extends State<AuthScreen> {
       
       String errorMessage = 'Authentication failed';
       
-      // Extract meaningful error message
-      final errorStr = e.toString();
-      if (errorStr.contains('Connection') || errorStr.contains('connection error')) {
-        errorMessage = '🌐 Cannot connect to server.\n\n'
-            'Please check:\n'
-            '• Internet connection is active\n'
-            '• Server is running\n'
-            '• Try again in a moment';
-      } else if (errorStr.contains('Invalid credentials') || errorStr.contains('unauthorized')) {
-        errorMessage = 'Invalid email or password';
-      } else if (errorStr.contains('already in use') || errorStr.contains('409')) {
-        errorMessage = 'Email already registered. Please login instead.';
-      } else if (errorStr.contains('422') || errorStr.contains('Invalid')) {
-        errorMessage = 'Invalid input. Please check your information.';
-      } else if (errorStr.contains('timeout')) {
-        errorMessage = 'Request timeout. Please check internet and try again.';
+      if (e is DioException) {
+        errorMessage = ApiService.getErrorMessage(e);
+      } else {
+        final errorStr = e.toString().toLowerCase();
+        if (errorStr.contains('connection') || errorStr.contains('network')) {
+          errorMessage = '🌐 Cannot connect to server. Please check your internet.';
+        } else if (errorStr.contains('invalid') || errorStr.contains('unauthorized')) {
+          errorMessage = 'Invalid email or password';
+        }
       }
       
       ScaffoldMessenger.of(context).showSnackBar(
@@ -162,7 +155,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   child: TextButton(
                     onPressed: _loading
                         ? null
-                        : () {
+                        : () async {
                             final email = _email.text.trim();
                             if (email.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -170,10 +163,32 @@ class _AuthScreenState extends State<AuthScreen> {
                               );
                               return;
                             }
-                            // For now just inform the user; full backend reset flow already exists.
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Password reset link will be sent to your email (feature wired to backend).')),
-                            );
+                            
+                            setState(() => _loading = true);
+                            try {
+                              await serviceProvider.authService.resetPassword(email: email);
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Password reset link has been sent to your email.'),
+                                  backgroundColor: AppTheme.successGreen,
+                                ),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              String error = 'Failed to send reset link';
+                              if (e is DioException) {
+                                error = ApiService.getErrorMessage(e);
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(error),
+                                  backgroundColor: AppTheme.errorRed,
+                                ),
+                              );
+                            } finally {
+                              if (mounted) setState(() => _loading = false);
+                            }
                           },
                     child: const Text('Forgot password?'),
                   ),

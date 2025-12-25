@@ -528,16 +528,17 @@ class ApiService {
 
   Future<bool> resetPassword({required String email}) async {
     try {
-      _log('[API_RESET_PASSWORD] Sending reset request for: $email');
+      _log('[API_RESET_PASSWORD] Sending forgot-password request for: $email');
       final response = await _dio.post(
-        '${ApiConstants.authEndpoint}/reset-password',
+        '${ApiConstants.authEndpoint}/forgot-password',
         data: {'email': email},
       );
       _log('[API_RESET_PASSWORD] Success: ${response.statusCode}');
-      return response.statusCode == 200;
+      return response.statusCode == 200 || response.statusCode == 201;
     } on DioException catch (e) {
       _log('[API_RESET_PASSWORD_ERROR] Dio error: ${e.message}');
       _log('[API_RESET_PASSWORD_ERROR] Status code: ${e.response?.statusCode}');
+      _log('[API_RESET_PASSWORD_ERROR] Response: ${e.response?.data}');
       rethrow;
     } catch (e) {
       _log('[API_RESET_PASSWORD_ERROR] Failed: $e');
