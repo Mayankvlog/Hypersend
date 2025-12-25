@@ -8,6 +8,7 @@ import requests
 import json
 from datetime import datetime
 from typing import Dict, Tuple
+import time
 
 # Configuration
 BASE_URLs = {
@@ -129,6 +130,24 @@ class ErrorTester:
             self.failed += 1
             return False, {"error": str(e)}
     
+    def validate_401_response(self, data: Dict) -> bool:
+        """Validate 401 response structure"""
+        required_fields = ["status_code", "error", "detail", "timestamp", "path", "method", "hints"]
+        for field in required_fields:
+            if field not in data:
+                print(f"  ⚠ Missing field in response: {field}")
+                return False
+        return True
+    
+    def validate_409_response(self, data: Dict) -> bool:
+        """Validate 409 response structure"""
+        required_fields = ["status_code", "error", "detail", "timestamp", "path", "method", "hints"]
+        for field in required_fields:
+            if field not in data:
+                print(f"  ⚠ Missing field in response: {field}")
+                return False
+        return True
+    
     def print_summary(self):
         """Print test summary"""
         print("\n" + "="*80)
@@ -147,8 +166,34 @@ class ErrorTester:
                     print(f"       Status: {data.get('status_code')}")
                     print(f"       Error: {data.get('error')}")
                     if "hints" in data:
-                        print(f"       Hints: {', '.join(data.get('hints', []))}")
+                        hints_text = ", ".join(data.get('hints', []))[:60]
+                        print(f"       Hints: {hints_text}...")
         print("="*80)
+    
+    def save_results(self, filename: str = "test_results.json"):
+        """Save test results to JSON file"""
+        results_data = {
+            "test_name": self.test_name,
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_tests": self.passed + self.failed,
+            "passed": self.passed,
+            "failed": self.failed,
+            "results": [
+                {
+                    "test": name,
+                    "passed": passed,
+                    "response": data
+                }
+                for name, passed, data in self.results
+            ]
+        }
+        
+        try:
+            with open(filename, 'w') as f:
+                json.dump(results_data, f, indent=2, default=str)
+            print(f"✅ Results saved to {filename}")
+        except Exception as e:
+            print(f"❌ Failed to save results: {e}")
 
 
 def main():
@@ -156,6 +201,24 @@ def main():
     print("401 UNAUTHORIZED & 409 CONFLICT ERROR TESTING")
     print("Testing comprehensive error handling implementation")
     print(f"{'='*80}")
+    
+    # Check if server is running
+    print("\n🔍 Checking server availability...")
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(f"{BASE_URLs['local']}/health", timeout=2)
+            if response.status_code in [200, 404]:  # 404 is ok if endpoint doesn't exist
+                print("✅ Server is running at http://localhost:8000")
+                break
+        except requests.exceptions.ConnectionError:
+            if attempt < max_retries - 1:
+                print(f"⏳ Waiting for server... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(2)
+            else:
+                print("❌ Server is not running. Please start it with:")
+                print("   python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000")
+                return
     
     # Test local backend first
     print(f"\n\n🔵 TESTING LOCAL BACKEND")
@@ -165,6 +228,7 @@ def main():
     local_tester.test_409_duplicate_email()
     local_tester.test_409_duplicate_chat()
     local_tester.print_summary()
+    local_tester.save_results()
     
     # Test GitHub backend (after deployment)
     print(f"\n\n🟢 TESTING GITHUB DEPLOYMENT")
@@ -176,6 +240,7 @@ def main():
     # github_tester.test_409_duplicate_email()
     # github_tester.test_409_duplicate_chat()
     # github_tester.print_summary()
+    # github_tester.save_results("github_test_results.json")
     
     print(f"\n✅ Testing complete!")
     print(f"📊 Results saved to test_results.json")
