@@ -276,11 +276,6 @@ class PasswordResetResponse(BaseModel):
     success: bool
 
 
-class PasswordResetResponse(BaseModel):
-    message: str
-    success: bool
-
-
 # Permission Models
 class ChatPermissions(BaseModel):
     can_send_messages: bool = True

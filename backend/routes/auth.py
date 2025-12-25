@@ -398,26 +398,41 @@ async def forgot_password(request: ForgotPasswordRequest):
     """Request password reset token"""
     
     try:
-        auth_log(f"[AUTH] Password reset request for email: {request.email}")
+        # Normalize email
+        email = request.email.lower().strip()
+        auth_log(f"[AUTH] Password reset request for email: {email}")
+        
+        # Validate email format
+        if not email or '@' not in email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
         
         users = users_collection()
         
         # Check if user exists (with timeout)
         try:
             user = await asyncio.wait_for(
-                users.find_one({"email": request.email}),
+                users.find_one({"email": email}),
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            auth_log(f"[AUTH] Database query timeout for {request.email}")
+            auth_log(f"[AUTH] Database query timeout for {email}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
             )
+        except Exception as e:
+            auth_log(f"[AUTH] Database error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Service temporarily unavailable. Please try again."
+            )
         
         if not user:
             # Return success anyway (security: don't reveal if email exists)
-            auth_log(f"[AUTH] Password reset requested for non-existent email: {request.email}")
+            auth_log(f"[AUTH] Password reset requested for non-existent email: {email}")
             return {
                 "message": "If an account exists with this email, a password reset link has been sent.",
                 "success": True
@@ -436,7 +451,7 @@ async def forgot_password(request: ForgotPasswordRequest):
                 reset_tokens.insert_one({
                     "token": reset_token,
                     "user_id": str(user["_id"]),
-                    "email": request.email,
+                    "email": email,
                     "created_at": datetime.utcnow(),
                     "expires_at": datetime.utcnow() + timedelta(hours=1),
                     "used": False
@@ -444,8 +459,15 @@ async def forgot_password(request: ForgotPasswordRequest):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
+            auth_log(f"[AUTH] Timeout storing reset token for {email}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to generate reset token. Please try again."
+            )
+        except Exception as e:
+            auth_log(f"[AUTH] Error storing reset token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to generate reset token. Please try again."
             )
         
@@ -454,13 +476,20 @@ async def forgot_password(request: ForgotPasswordRequest):
         if settings.SMTP_HOST and settings.EMAIL_FROM:
             try:
                 msg = EmailMessage()
-                msg["Subject"] = "Hypersend password reset"
+                msg["Subject"] = "Zaply - Password Reset"
                 msg["From"] = settings.EMAIL_FROM
-                msg["To"] = request.email
+                msg["To"] = email
+                
+                reset_link = f"https://zaply.in.net/#/reset-password?token={reset_token}"
+                
                 msg.set_content(
-                    "You requested a password reset for your Hypersend account.\n\n"
-                    f"Your reset token is:\n\n{reset_token}\n\n"
-                    "This token is valid for 1 hour. If you did not request this, you can ignore this email."
+                    f"Hi {user.get('name', 'User')},\n\n"
+                    "You requested a password reset for your Zaply account.\n\n"
+                    f"Reset Link:\n{reset_link}\n\n"
+                    f"Or use this reset token:\n{reset_token}\n\n"
+                    "This link is valid for 1 hour.\n"
+                    "If you did not request this, you can safely ignore this email.\n\n"
+                    "Best regards,\nZaply Team"
                 )
 
                 with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
@@ -471,11 +500,18 @@ async def forgot_password(request: ForgotPasswordRequest):
                     server.send_message(msg)
 
                 email_sent = True
-                auth_log(f"[AUTH] Password reset email sent to: {request.email}")
+                auth_log(f"[AUTH] Password reset email sent to: {email}")
+            except smtplib.SMTPAuthenticationError:
+                auth_log(f"[AUTH] SMTP authentication failed - check credentials")
+                email_sent = False
+            except smtplib.SMTPException as e:
+                auth_log(f"[AUTH] SMTP error: {type(e).__name__}: {e}")
+                email_sent = False
             except Exception as e:
                 auth_log(f"[AUTH] Failed to send reset email: {type(e).__name__}: {e}")
+                email_sent = False
 
-        auth_log(f"[AUTH] Password reset token generated for: {request.email}")
+        auth_log(f"[AUTH] Password reset token generated for: {email}")
 
         # Security: Never include reset token in API response
         # Token should only be sent via email to prevent account takeover
