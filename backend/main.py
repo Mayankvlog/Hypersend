@@ -62,6 +62,103 @@ except Exception as e:
 print("[STARTUP] All imports successful!")
 
 
+# ===== VALIDATION MIDDLEWARE FOR 4XX ERROR HANDLING =====
+from starlette.middleware.base import BaseHTTPMiddleware
+from datetime import datetime
+
+class RequestValidationMiddleware(BaseHTTPMiddleware):
+    """Middleware to validate requests and prevent common 4xx errors"""
+    
+    async def dispatch(self, request, call_next):
+        """Validate request before processing"""
+        try:
+            # Check Content-Length for POST/PUT/PATCH (411)
+            if request.method in ["POST", "PUT", "PATCH"]:
+                content_length_header = request.headers.get("content-length")
+                
+                if not content_length_header and request.method != "GET":
+                    # Try to check if there's a body without Content-Length
+                    try:
+                        body = await request.body()
+                        if body and not content_length_header:
+                            # Log but allow (fastapi might handle)
+                            logger.warning(f"[411] Missing Content-Length for {request.method} {request.url.path}")
+                    except:
+                        pass
+                
+                # Check payload size (413)
+                if content_length_header:
+                    try:
+                        content_length = int(content_length_header)
+                        max_size = 5 * 1024 * 1024 * 1024  # 5GB limit
+                        if content_length > max_size:
+                            return JSONResponse(
+                                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                content={
+                                    "status_code": 413,
+                                    "error": "Payload Too Large - Request body is too big",
+                                    "detail": f"Request size {content_length} bytes exceeds maximum {max_size} bytes",
+                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "path": str(request.url.path),
+                                    "method": request.method,
+                                    "hints": ["Reduce file size", "Use chunked uploads", "Check server limits"]
+                                }
+                            )
+                    except ValueError:
+                        return JSONResponse(
+                            status_code=status.HTTP_411_LENGTH_REQUIRED,
+                            content={
+                                "status_code": 411,
+                                "error": "Length Required - Content-Length header is invalid",
+                                "detail": "Content-Length header must be a valid integer",
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "path": str(request.url.path),
+                                "method": request.method,
+                                "hints": ["Provide valid Content-Length", "Ensure header is a number"]
+                            }
+                        )
+            
+            # Check URL length (414)
+            url_length = len(str(request.url))
+            if url_length > 8000:  # RFC 7230 recommendation
+                return JSONResponse(
+                    status_code=status.HTTP_414_URI_TOO_LONG,
+                    content={
+                        "status_code": 414,
+                        "error": "URI Too Long - The requested URL is too long",
+                        "detail": f"URL length {url_length} exceeds maximum 8000 characters",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "path": str(request.url.path),
+                        "method": request.method,
+                        "hints": ["Shorten the URL", "Use POST for complex queries"]
+                    }
+                )
+            
+            # Check Content-Type for POST/PUT (415 - though Pydantic usually catches)
+            if request.method in ["POST", "PUT", "PATCH"]:
+                content_type = request.headers.get("content-type", "")
+                if not content_type:
+                    # Some requests can work without explicit Content-Type
+                    logger.debug(f"[415] No Content-Type for {request.method} {request.url.path}")
+            
+            response = await call_next(request)
+            return response
+            
+        except Exception as e:
+            logger.error(f"[MIDDLEWARE_ERROR] {request.method} {request.url.path}: {str(e)}", exc_info=True)
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={
+                    "status_code": 500,
+                    "error": "Internal Server Error",
+                    "detail": "Server error processing request",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "path": str(request.url.path),
+                    "method": request.method,
+                }
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
@@ -148,6 +245,9 @@ app = FastAPI(
 
 # Register custom exception handlers
 register_exception_handlers(app)
+
+# Add validation middleware for 4xx error handling (411, 413, 414, 415)
+app.add_middleware(RequestValidationMiddleware)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):

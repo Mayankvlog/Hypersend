@@ -97,14 +97,20 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
             "members": {"$all": chat.member_ids}
         })
         if existing:
-            return {"chat_id": existing["_id"], "message": "Chat already exists"}
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Private chat with these members already exists"
+            )
     if chat.type == "saved":
         existing = await chats_collection().find_one({
             "type": "saved",
             "members": current_user
         })
         if existing:
-            return {"chat_id": existing["_id"], "message": "Chat already exists"}
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Saved messages chat already exists for this user"
+            )
     
     # Create chat document
     chat_doc = {
