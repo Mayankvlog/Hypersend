@@ -168,13 +168,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: '1.0.0',
             ),
             _buildSettingsTile(
-              icon: Icons.help_outline,
-              title: 'Help & Support',
-              onTap: () {
-                context.push('/help-support');
-              },
-            ),
-            _buildSettingsTile(
               icon: Icons.description_outlined,
               title: 'Terms & Conditions',
               onTap: () {
