@@ -61,8 +61,8 @@ async def register(user: UserCreate):
         
         # Check if user already exists (with timeout)
         try:
+            auth_log(f"[AUTH] Checking existence for: {user_email}")
             existing_user = await asyncio.wait_for(
-                print(f"[AUTH] Checking existence for: {user_email}") or 
                 users.find_one({"email": user_email}),
                 timeout=5.0
             )
@@ -211,7 +211,10 @@ async def login(credentials: UserLogin, request: Request):
         auth_log(f"[AUTH] User found: {user.get('_id')} - Verifying password")
         
         # Verify password
-        if not verify_password(credentials.password, user["password_hash"]):
+        password_valid = verify_password(credentials.password, user["password_hash"])
+        auth_log(f"[AUTH] Password verification result: {password_valid}")
+        
+        if not password_valid:
             # Track failed attempt
             if credentials.email in failed_login_attempts:
                 attempts, _ = failed_login_attempts[credentials.email]
@@ -474,6 +477,8 @@ async def forgot_password(request: ForgotPasswordRequest):
         # Try to send email with reset token if SMTP is configured
         email_sent = False
         if settings.SMTP_HOST and settings.EMAIL_FROM:
+            auth_log(f"[AUTH] SMTP configured - attempting to send email to: {email}")
+            auth_log(f"[AUTH] SMTP_HOST: {settings.SMTP_HOST}, SMTP_PORT: {settings.SMTP_PORT}")
             try:
                 msg = EmailMessage()
                 msg["Subject"] = "Zaply - Password Reset"
@@ -495,14 +500,16 @@ async def forgot_password(request: ForgotPasswordRequest):
                 with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
                     if settings.SMTP_USE_TLS:
                         server.starttls()
+                        auth_log("[AUTH] TLS enabled for SMTP")
                     if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
                         server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+                        auth_log("[AUTH] SMTP login successful")
                     server.send_message(msg)
 
                 email_sent = True
                 auth_log(f"[AUTH] Password reset email sent to: {email}")
-            except smtplib.SMTPAuthenticationError:
-                auth_log(f"[AUTH] SMTP authentication failed - check credentials")
+            except smtplib.SMTPAuthenticationError as e:
+                auth_log(f"[AUTH] SMTP authentication failed - check credentials. Error: {e}")
                 email_sent = False
             except smtplib.SMTPException as e:
                 auth_log(f"[AUTH] SMTP error: {type(e).__name__}: {e}")
@@ -510,6 +517,8 @@ async def forgot_password(request: ForgotPasswordRequest):
             except Exception as e:
                 auth_log(f"[AUTH] Failed to send reset email: {type(e).__name__}: {e}")
                 email_sent = False
+        else:
+            auth_log(f"[AUTH] SMTP not configured - SMTP_HOST: '{settings.SMTP_HOST}', EMAIL_FROM: '{settings.EMAIL_FROM}'")
 
         auth_log(f"[AUTH] Password reset token generated for: {email}")
 
