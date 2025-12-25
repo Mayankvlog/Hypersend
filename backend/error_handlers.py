@@ -40,6 +40,25 @@ EXCEPTION HANDLERS (error_handlers.py):
 - Both include helpful hints and structured error responses
 """
 
+"""
+Custom error handlers for FastAPI application
+Provides detailed logging and user-friendly error messages for all HTTP errors (4xx, 5xx)
+
+IMPLEMENTED 4xx ERROR CODES:
+============================
+400 Bad Request: Invalid request syntax or parameters
+401 Unauthorized: Missing/invalid authentication credentials
+403 Forbidden: Access denied (permission checks in routes)
+404 Not Found: Resource doesn't exist
+405 Method Not Allowed: Automatic via FastAPI routing
+409 Conflict: Duplicate resources - email already registered, chat exists
+413 Payload Too Large: Request exceeds size limit
+414 URI Too Long: URL exceeds max length
+415 Unsupported Media Type: Invalid Content-Type
+422 Unprocessable Entity: Semantic validation errors
+429 Too Many Requests: Rate limiting
+"""
+
 import logging
 import json
 from typing import Any, Dict, List, Union
