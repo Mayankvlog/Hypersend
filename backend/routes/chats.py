@@ -144,14 +144,14 @@ async def list_chats(current_user: str = Depends(get_current_user)):
     print(f"[CHATS_LIST] Request from user: {current_user}")
     
     try:
+        # Get user's pinned chats once
+        user_doc = await users_collection().find_one({"_id": current_user}, {"pinned_chats": 1})
+        pinned_chats = user_doc.get("pinned_chats", []) if user_doc else []
+        
         chats = []
         cursor = chats_collection().find({"members": current_user}).sort("created_at", -1)
-        chat_count = 0
         
         async for chat in cursor:
-            chat_count += 1
-            print(f"[CHATS_LIST] Processing chat {chat_count}: {chat.get('_id')}")
-            
             # Get last message
             last_message = await messages_collection().find_one(
                 {"chat_id": chat["_id"]},
@@ -192,18 +192,30 @@ async def list_chats(current_user: str = Depends(get_current_user)):
                 pass
             
             # Check if pinned by user
-            current_user_doc = await users_collection().find_one({"_id": current_user}, {"pinned_chats": 1})
-            pinned_chats = current_user_doc.get("pinned_chats", []) if current_user_doc else []
             chat["is_pinned"] = chat["_id"] in pinned_chats
-            
             chats.append(chat)
         
         # Sort: Pinned first, then by last/created date
-        chats.sort(key=lambda x: (x.get("is_pinned", False), x.get("last_message", {}).get("created_at") or x.get("created_at")), reverse=True)
+        def get_sort_key(x):
+            is_pinned = x.get("is_pinned", False)
+            # Use last message time if available, otherwise chat creation time
+            last_msg = x.get("last_message")
+            msg_time = last_msg.get("created_at") if last_msg else None
+            chat_time = x.get("created_at")
+            
+            # Ensure we have a valid datetime for sorting
+            # If msg_time is None (no messages), fall back to chat_time
+            sort_time = msg_time if msg_time else chat_time
+            # Return tuple for sorting (pinned first, then by time)
+            return (is_pinned, sort_time)
+
+        chats.sort(key=get_sort_key, reverse=True)
         
         print(f"[CHATS_LIST] SUCCESS: Retrieved {len(chats)} chats for user {current_user}")
         return {"chats": chats}
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"[CHATS_LIST] ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving chats: {str(e)}")
 
