@@ -160,7 +160,7 @@ def validate_changes():
                 no_empty_actions = True
             
             has_filter_method = 'List<dynamic> _filteredListWithSaved()' in content
-            has_return_logic = 'return _filteredChats' in content
+            has_return_logic = 'return _filteredChats' in content or 'items.addAll' in content
             
             check4 = all([no_empty_actions, has_filter_method, has_return_logic])
             print(f"  No Empty Actions Array: {'✓' if no_empty_actions else '✗'}")

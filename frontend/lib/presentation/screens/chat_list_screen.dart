@@ -35,66 +35,87 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _showAddContactDialog() async {
     final emailController = TextEditingController();
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Contact'),
-        content: TextField(
-          controller: emailController,
-          decoration: const InputDecoration(
-            hintText: 'Enter email address',
-            prefixIcon: Icon(Icons.email_outlined),
+    
+    try {
+      final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('New Contact'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Search for a contact by email',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: emailController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Enter email address',
+                  prefixIcon: const Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final email = emailController.text.trim();
-              if (email.isEmpty) return;
-              try {
-                final users = await serviceProvider.apiService.searchUsers(email);
-                if (users.isEmpty) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('User not found')),
-                    );
-                  }
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final email = emailController.text.trim();
+                if (email.isEmpty) {
+                  _showErrorSnackBar('Please enter an email address');
                   return;
                 }
-                Navigator.pop(context, users.first);
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e')),
-                  );
+                
+                try {
+                  final users = await serviceProvider.apiService.searchUsers(email);
+                  if (!mounted) return;
+                  
+                  if (users.isEmpty) {
+                    _showErrorSnackBar('User not found');
+                    return;
+                  }
+                  
+                  if (mounted) Navigator.pop(context, users.first);
+                } catch (e) {
+                  _showErrorSnackBar('Error searching for user');
                 }
-              }
-            },
-            child: const Text('Search'),
-          ),
-        ],
-      ),
-    );
+              },
+              child: const Text('Search'),
+            ),
+          ],
+        ),
+      );
 
-    if (result != null && mounted) {
-      try {
-        final chat = await serviceProvider.apiService.createSecretChat(targetUserId: result['id']);
-        if (mounted) {
-          context.push('/chat/${chat['_id'] ?? chat['id']}');
-          _loadChats();
-        }
-      } catch (e) {
-        if (mounted) {
-          // If already exists, backend might return 409 or existing chat
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not start chat: $e')),
-          );
+      if (result != null && mounted) {
+        try {
+          final chat = await serviceProvider.apiService.createSecretChat(targetUserId: result['id']);
+          if (mounted) {
+            context.push('/chat/${chat['_id'] ?? chat['id']}');
+            await _loadChats();
+          }
+        } catch (e) {
+          if (mounted) {
+            _showErrorSnackBar('Could not start chat with this contact');
+          }
         }
       }
+    } catch (e) {
+      _showErrorSnackBar('An error occurred');
+    } finally {
+      emailController.dispose();
     }
   }
 
@@ -113,47 +134,76 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   List<dynamic> _filteredListWithSaved() {
-    // No longer showing duplicate Saved Messages - it's shown once in the UI
-    return _filteredChats;
+    final items = <dynamic>[];
+    
+    // Add Saved Messages entry as header
+    if (_filteredChats.isNotEmpty || _searchController.text.isEmpty) {
+      items.add('header_saved');
+    }
+    
+    // Add filtered chats
+    items.addAll(_filteredChats);
+    
+    return items;
   }
 
   Widget _buildSavedMessagesEntry() {
-    return ListTile(
-      leading: Container(
-        width: 56,
-        height: 56,
-        decoration: const BoxDecoration(
-          color: AppTheme.primaryPurple,
-          shape: BoxShape.circle,
-        ),
-        child: const Center(
-          child: Icon(Icons.bookmark, color: Colors.white, size: 28),
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppTheme.borderColor, width: 0.5)),
       ),
-      title: const Text(
-        'Saved Messages',
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+            color: AppTheme.primaryPurple,
+            shape: BoxShape.circle,
+          ),
+          child: const Center(
+            child: Icon(Icons.bookmark, color: Colors.white, size: 28),
+          ),
         ),
+        title: const Text(
+          'Saved Messages',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+            fontSize: 16,
+          ),
+        ),
+        subtitle: const Text(
+          'Your private notes',
+          style: TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: 14,
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+        onTap: () async {
+          try {
+            final savedChatData = await serviceProvider.apiService.getSavedChat();
+            if (!mounted) return;
+            final chatId = savedChatData['chat_id'];
+            context.push('/chat/$chatId');
+          } catch (e) {
+            if (!mounted) return;
+            _showErrorSnackBar('Failed to open Saved Messages');
+          }
+        },
       ),
-      subtitle: const Text(
-        'Your personal cloud storage',
-        style: TextStyle(color: AppTheme.textSecondary),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.errorRed,
+        behavior: SnackBarBehavior.floating,
       ),
-      onTap: () async {
-        try {
-          final savedChatData = await serviceProvider.apiService.getSavedChat();
-          if (!mounted) return;
-          final chatId = savedChatData['chat_id'];
-          context.push('/chat/$chatId');
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }
-      },
     );
   }
 

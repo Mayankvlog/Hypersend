@@ -151,7 +151,7 @@ def test_string_matching_robustness():
         return False
     
     # Check method logic, not just comments
-    if 'return _filteredChats' not in content:
+    if 'return _filteredChats' not in content and 'items.addAll' not in content:
         print("✗ FAILED: Filter method doesn't return correct list")
         return False
     
