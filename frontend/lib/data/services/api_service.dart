@@ -121,7 +121,7 @@ class ApiService {
         'password': password,
         'name': name,
       });
-      return response.data;
+      return response.data ?? {};
     } catch (e) {
       rethrow;
     }
@@ -136,7 +136,7 @@ class ApiService {
         'email': email,
         'password': password,
       });
-      return response.data;
+      return response.data ?? {};
     } catch (e) {
       rethrow;
     }
@@ -156,7 +156,7 @@ class ApiService {
       _log('[API_ME] Fetching current user profile');
       final response = await _dio.get('${ApiConstants.usersEndpoint}/me');
       _log('[API_ME] Success: ${response.data}');
-      return response.data;
+      return response.data ?? {};
     } catch (e) {
       _log('[API_ME_ERROR] Failed: $e');
       rethrow;
@@ -171,7 +171,7 @@ class ApiService {
       final response = await _dio.put('${ApiConstants.usersEndpoint}/profile', data: data);
       _log('[API_PROFILE] Response status: ${response.statusCode}');
       _log('[API_PROFILE] Response data: ${response.data}');
-      return response.data;
+      return response.data ?? {};
     } on DioException catch (e) {
       _log('[API_PROFILE_ERROR] Dio error: ${e.message}');
       _log('[API_PROFILE_ERROR] Status code: ${e.response?.statusCode}');
@@ -206,7 +206,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
         throw Exception('Empty response from server');
       }
       
-      return response.data;
+      return response.data ?? {};
     } on DioException catch (e) {
       debugPrint('[API_SERVICE] DioException during avatar upload: ${e.type} - ${e.message}');
       debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
@@ -242,13 +242,13 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
 
   Future<List<Map<String, dynamic>>> getContacts({int limit = 50}) async {
     final response = await _dio.get('${ApiConstants.usersEndpoint}/contacts', queryParameters: {'limit': limit});
-    return List<Map<String, dynamic>>.from(response.data['users'] ?? const []);
+    return List<Map<String, dynamic>>.from(response.data?['users'] ?? const []);
   }
 
   Future<Map<String, dynamic>> getSavedChat() async {
     try {
       final response = await _dio.get('${ApiConstants.chatsEndpoint}/saved');
-      return response.data;
+      return response.data ?? {};
     } catch (e) {
       rethrow;
     }
@@ -259,8 +259,8 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
     try {
       _log('[API_CHATS] Fetching chats from ${ApiConstants.chatsEndpoint}');
       final response = await _dio.get(ApiConstants.chatsEndpoint);
-      _log('[API_CHATS] Success: received ${response.data['chats']?.length ?? 0} chats');
-      return List<Map<String, dynamic>>.from(response.data['chats'] ?? const []);
+      _log('[API_CHATS] Success: received ${response.data?['chats']?.length ?? 0} chats');
+      return List<Map<String, dynamic>>.from(response.data?['chats'] ?? const []);
     } catch (e) {
       _log('[API_CHATS_ERROR] Failed to fetch chats: $e');
       rethrow;
@@ -270,7 +270,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
   Future<Map<String, dynamic>> getChatMessages(String chatId) async {
     try {
       final response = await _dio.get('${ApiConstants.chatsEndpoint}/$chatId/messages');
-      return response.data;
+      return response.data ?? {};
     } catch (e) {
       rethrow;
     }
@@ -284,7 +284,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
         if (chatId != null) 'chat_id': chatId,
       },
     );
-    return List<Map<String, dynamic>>.from(response.data['messages'] ?? []);
+    return List<Map<String, dynamic>>.from(response.data?['messages'] ?? []);
   }
 
   Future<List<Map<String, dynamic>>> searchUsers(String query) async {
@@ -292,7 +292,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
         '${ApiConstants.usersEndpoint}/search',
         queryParameters: {'q': query},
     );
-    return List<Map<String, dynamic>>.from(response.data['users'] ?? []);
+    return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
   }
 
   Future<Map<String, dynamic>> sendMessage({
@@ -305,7 +305,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
         'text': content,
         'file_id': fileId,
       });
-      return response.data;
+      return response.data ?? {};
     } catch (e) {
       rethrow;
     }
@@ -359,29 +359,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
     await _dio.post('${ApiConstants.chatsEndpoint}/$chatId/unpin_chat');
   }
 
-  // Channel endpoints
-  Future<Map<String, dynamic>> createChannel({
-    required String name,
-    String description = '',
-    String? avatarUrl,
-    String? username,
-  }) async {
-    final response = await _dio.post(
-      'channels',
-      data: {
-        'name': name,
-        'description': description,
-        'avatar_url': avatarUrl,
-        'username': username,
-      },
-    );
-    // Return compatible chat object (backend returns {channel_id, channel})
-    return {
-      ...response.data['channel'],
-      '_id': response.data['channel_id'],
-      'type': 'channel'
-    };
-  }
+
 
   Future<Map<String, dynamic>> getChannel(String channelId) async {
     final response = await _dio.get('channels/$channelId');

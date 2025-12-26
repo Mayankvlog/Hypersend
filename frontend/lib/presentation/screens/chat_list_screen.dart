@@ -528,18 +528,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   context.push('/group-create');
                 },
               ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
-                  Icons.campaign_outlined,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text('New Channel'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  context.push('/channel-create');
-                },
-              ),
+
               const Divider(height: 0),
               ListTile(
                 leading: const Icon(

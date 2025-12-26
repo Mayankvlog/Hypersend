@@ -163,7 +163,7 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       debugPrint('[PROFILE_SERVICE] Uploading avatar: $filename');
       final response = await _apiService.uploadAvatar(bytes, filename);
       
-      if (response == null || response['avatar_url'] == null) {
+      if (response['avatar_url'] == null) {
         throw Exception('Invalid response from server: missing avatar_url');
       }
       

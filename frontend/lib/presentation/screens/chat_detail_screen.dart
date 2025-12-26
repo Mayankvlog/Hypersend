@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -164,7 +163,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       final newText = text.replaceRange(start, end, emojis[index]);
                       _messageController.value = TextEditingValue(
                         text: newText,
-                        selection: TextSelection.collapsed(offset: start + (emojis[index].length as int)),
+                        selection: TextSelection.collapsed(offset: start + emojis[index].length),
                       );
                     },
                     child: Center(child: Text(emojis[index], style: const TextStyle(fontSize: 24))),
@@ -483,7 +482,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<Map<String, dynamic>> _getFileInfo(String fileId) async {
     try {
       final response = await serviceProvider.apiService.getFileInfo(fileId);
-      return response ?? {};
+      return response;
     } catch (e) {
       debugPrint('[FILE_INFO_ERROR] Failed to get file info: $e');
       return {};
@@ -493,9 +492,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {
     try {
       final response = await serviceProvider.apiService.downloadFileBytes(fileId);
-      final bytes = response.data;
+      final bytes = response.data ?? [];
       
-      if (bytes == null || bytes.isEmpty) {
+      if (bytes.isEmpty) {
         throw Exception('No data received or file is empty');
       }
       
@@ -504,7 +503,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final url = html.Url.createObjectUrlFromBlob(blob);
       
       // Create download link
-      final anchor = html.AnchorElement(href: url)
+      html.AnchorElement(href: url)
         ..setAttribute('download', fileName)
         ..click();
       
