@@ -105,9 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : null,
                         child: !displayUser.isAvatarPath
                             ? Text(
-                                displayUser.avatar.length >= 2 
-                                  ? displayUser.avatar.substring(0, 2).toUpperCase()
-                                  : (displayUser.avatar.isNotEmpty ? displayUser.avatar.toUpperCase() : '??'),
+                                displayUser.initials,
                                 style: const TextStyle(color: Colors.white, fontSize: 18),
                               )
                             : null,

@@ -185,8 +185,13 @@ class ChatListItem extends StatelessWidget {
     }
 
     final fullUrl = chat.avatar.startsWith('/') 
-        ? 'http://zaply.in.net${chat.avatar}'
+        ? 'https://zaply.in.net${chat.avatar}'
         : chat.avatar;
+
+    // Use a temporary user object (or simple logic) to get initials
+    final initials = chat.name.length >= 2 
+        ? chat.name.substring(0, 2).toUpperCase() 
+        : chat.name.toUpperCase();
 
     return CircleAvatar(
       radius: 28,
@@ -195,6 +200,16 @@ class ChatListItem extends StatelessWidget {
       onBackgroundImageError: (exception, stackTrace) {
         debugPrint('Error loading avatar: $exception');
       },
+      child: Center(
+        child: Text(
+          initials,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -115,7 +115,7 @@ def decode_token(token: str) -> TokenData:
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """Dependency to get current user from token"""
+    """Dependency to get current user from token in Authorization header"""
     token = credentials.credentials
     token_data = decode_token(token)
     

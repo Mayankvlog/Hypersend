@@ -250,7 +250,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                    Builder(
                     builder: (context) {
                       // Create a temporary user object to utilize the isPath/URL logic
-                      final tempUser = _initialUser.copyWith(avatar: _currentAvatar);
+                      final tempUser = _initialUser.copyWith(avatar: _currentAvatar.trim());
                                          
                       return CircleAvatar(
                         radius: 60,
@@ -258,20 +258,19 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         backgroundImage: tempUser.isAvatarPath
                             ? NetworkImage(tempUser.fullAvatarUrl)
                             : null,
-                        child: !tempUser.isAvatarPath
-                            ? Center(
-                                child: Text(
-                                  _currentAvatar.length >= 2
-                                      ? _currentAvatar.substring(0, 2).toUpperCase()
-                                      : (_currentAvatar.isNotEmpty ? _currentAvatar.toUpperCase() : '??'),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              )
+                        onBackgroundImageError: tempUser.isAvatarPath 
+                            ? (e, s) => debugPrint('Avatar image load failed: $e') 
                             : null,
+                        child: Center(
+                          child: Text(
+                            tempUser.initials,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       );
                     }
                   ),
@@ -286,8 +285,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         if (!mounted) return;
                         if (result != null && result is String) {
                           setState(() {
-                            _currentAvatar = result;
-                            _avatarChanged = true;
+                            _currentAvatar = result.trim();
+                            // Compare with initial avatar to determine change
+                            _avatarChanged = _currentAvatar != _initialUser.avatar;
                           });
                           scaffoldMessenger.showSnackBar(
                             const SnackBar(

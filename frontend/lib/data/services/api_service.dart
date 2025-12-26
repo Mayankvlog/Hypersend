@@ -488,8 +488,23 @@ class ApiService {
   Future<void> downloadFileToPath({
     required String fileId,
     required String savePath,
+    void Function(int, int)? onReceiveProgress,
   }) async {
-    await _dio.download('${ApiConstants.filesEndpoint}/$fileId/download', savePath);
+    await _dio.download(
+      '${ApiConstants.filesEndpoint}/$fileId/download',
+      savePath,
+      onReceiveProgress: onReceiveProgress,
+    );
+  }
+
+  Future<Response<Uint8List>> downloadFileBytes(String fileId) async {
+    return await _dio.get<Uint8List>(
+      '${ApiConstants.filesEndpoint}/$fileId/download',
+      options: Options(
+        responseType: ResponseType.bytes,
+        followRedirects: false,
+      ),
+    );
   }
 
   // Settings endpoints

@@ -9,7 +9,7 @@ class MessageBubble extends StatelessWidget {
   final String? avatarUrl;
   final VoidCallback? onLongPress;
   final void Function(String emoji)? onToggleReaction;
-  final VoidCallback? onAddReaction;
+  final void Function(Message message)? onFileTap;
 
   const MessageBubble({
     super.key,
@@ -18,6 +18,7 @@ class MessageBubble extends StatelessWidget {
     this.onLongPress,
     this.onToggleReaction,
     this.onAddReaction,
+    this.onFileTap,
   });
 
   @override
@@ -112,29 +113,35 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (message.fileId != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.insert_drive_file, color: Colors.white70, size: 20),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              message.content ?? 'File',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
+                    GestureDetector(
+                      onTap: () => onFileTap?.call(message),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.insert_drive_file, color: Colors.white70, size: 20),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                message.content ?? 'File',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  decoration: TextDecoration.underline,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 4),
+                            const Icon(Icons.download, color: Colors.white70, size: 16),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),

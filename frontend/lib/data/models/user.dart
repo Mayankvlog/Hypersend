@@ -19,11 +19,11 @@ class User extends Equatable {
   /// Create a User from API response map
   factory User.fromApi(Map<String, dynamic> json) {
     return User(
-      id: (json['_id'] ?? json['id'] ?? '').toString(),
-      name: (json['name'] ?? json['full_name'] ?? '').toString(),
-      username: (json['username'] ?? json['username_alias'] ?? (json['email'] as String?)?.split('@').first ?? 'user').toString(),
-      email: json['email']?.toString(),
-      avatar: (json['avatar_url'] ?? json['avatar'] ?? '').toString(),
+      id: (json['_id'] ?? json['id'] ?? '').toString().trim(),
+      name: (json['name'] ?? json['full_name'] ?? '').toString().trim(),
+      username: (json['username'] ?? json['username_alias'] ?? (json['email'] as String?)?.split('@').first ?? 'user').toString().trim(),
+      email: json['email']?.toString().trim(),
+      avatar: (json['avatar_url'] ?? json['avatar'] ?? '').toString().trim(),
       isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
     );
   }
@@ -51,17 +51,17 @@ class User extends Equatable {
 
   /// Helper to determine if the avatar string is a file path/URL or just initials
   bool get isAvatarPath {
-    if (avatar.isEmpty) return false;
+    final trimmed = avatar.trim();
+    if (trimmed.isEmpty) return false;
     
     // Explicit URL prefixes
-    if (avatar.startsWith('http://') || avatar.startsWith('https://')) return true;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return true;
     
     // Absolute paths from backend
-    if (avatar.startsWith('/')) return true;
+    if (trimmed.startsWith('/')) return true;
     
     // Check for common image extensions if it contains a dot
-    // Initials (e.g., "AM") won't match these extensions
-    final lower = avatar.toLowerCase();
+    final lower = trimmed.toLowerCase();
     if (lower.contains('.')) {
       final extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
       for (final ext in extensions) {
@@ -70,22 +70,36 @@ class User extends Equatable {
     }
     
     // If it's very short (1-2 chars), it's definitely initials
-    if (avatar.length <= 2) return false;
+    if (trimmed.length <= 2) return false;
 
     // Fallback: If it contains a slash and is long enough, likely a path
-    if (avatar.contains('/') && avatar.length > 5) return true;
+    if (trimmed.contains('/') && trimmed.length > 5) return true;
 
     return false;
   }
 
   /// Resolves the full avatar URL for display
   String get fullAvatarUrl {
+    final trimmed = avatar.trim();
     if (!isAvatarPath) return '';
-    if (avatar.startsWith('http')) return avatar;
-    if (avatar.startsWith('/')) {
-      return 'https://zaply.in.net$avatar';
+    if (trimmed.startsWith('http')) return trimmed;
+    if (trimmed.startsWith('/')) {
+      return 'https://zaply.in.net$trimmed';
     }
     // Relative path fallback
-    return 'https://zaply.in.net/$avatar';
+    return 'https://zaply.in.net/$trimmed';
+  }
+
+  /// Helper to get initials from name or avatar field
+  String get initials {
+    if (!isAvatarPath && avatar.isNotEmpty && avatar.length <= 3) {
+      return avatar.toUpperCase();
+    }
+    if (name.trim().isEmpty) return '??';
+    final parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
   }
 }

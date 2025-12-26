@@ -56,11 +56,13 @@ class Message extends Equatable {
         .toList();
 
     final isDeleted = json['is_deleted'] == true;
-    final text = (json['text'] ?? '').toString();
+    final senderId = (json['sender_id'] ?? json['senderId'] ?? '').toString().trim();
+    final text = (json['text'] ?? '').toString().trim();
+    final fileId = (json['file_id'] ?? json['fileId'])?.toString().trim();
 
     return Message(
-      id: (json['_id'] ?? json['id'] ?? '').toString(),
-      chatId: (json['chat_id'] ?? json['chatId'] ?? '').toString(),
+      id: (json['_id'] ?? json['id'] ?? '').toString().trim(),
+      chatId: (json['chat_id'] ?? json['chatId'] ?? '').toString().trim(),
       senderId: senderId,
       content: isDeleted ? null : text,
       timestamp: createdAt ?? DateTime.now(),
@@ -73,7 +75,7 @@ class Message extends Equatable {
       deletedAt: (json['deleted_at'] is String) ? DateTime.tryParse(json['deleted_at']) : null,
       reactions: reactions,
       readBy: readBy,
-      fileId: (json['file_id'] ?? json['fileId'])?.toString(),
+      fileId: fileId,
     );
   }
 
