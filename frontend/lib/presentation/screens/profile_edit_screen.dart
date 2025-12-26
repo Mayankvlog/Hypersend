@@ -21,20 +21,26 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   late TextEditingController _usernameController;
   late TextEditingController _emailController;
   late TextEditingController _statusController;
+  late String _currentAvatar;
+  late User _initialUser;  // Store the actual source for change comparison
   bool _isLoading = false;
   bool _nameChanged = false;
   bool _usernameChanged = false;
   bool _emailChanged = false;
+  bool _avatarChanged = false;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.user.name);
-    _usernameController = TextEditingController(text: widget.user.username);
-    // Initialize email from user email field ONLY if it's a valid email
-    // Otherwise leave empty
-    final userEmail = widget.user.email ?? '';
-    final isValidEmail = userEmail.contains('@') && userEmail.contains('.');
+    // Prefer service data if available, fallback to widget prop
+    _initialUser = serviceProvider.profileService.currentUser ?? widget.user;
+    
+    _nameController = TextEditingController(text: _initialUser.name);
+    _usernameController = TextEditingController(text: _initialUser.username);
+    _currentAvatar = _initialUser.avatar;
+    
+    final userEmail = _initialUser.email ?? '';
+    final isValidEmail = (userEmail.contains('@') && userEmail.contains('.'));
     _emailController = TextEditingController(text: isValidEmail ? userEmail : '');
     _statusController = TextEditingController(text: 'Available');
   }
@@ -89,7 +95,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       // Only pass name if changed from initial value  
       String? nameToSend;
-      final currentName = (widget.user.name).trim();
+      final currentName = _initialUser.name.trim();
       final newName = _nameController.text.trim();
       
       if (newName != currentName) {
@@ -123,7 +129,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final updatedUser = await serviceProvider.profileService.updateProfile(
         name: nameToSend,
         username: usernameToSend,
-        avatar: null,
+        avatar: _avatarChanged ? _currentAvatar : null,
         email: emailToSend,
         bio: bioToSend,
       );
@@ -136,6 +142,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (usernameToSend != null) updatedFields.add('Username');
       if (emailToSend != null) updatedFields.add('Email');
       if (bioToSend != null) updatedFields.add('Status');
+      if (_avatarChanged) updatedFields.add('Profile Photo');
       
       final successMessage = updatedFields.isNotEmpty 
           ? 'Saved! ${updatedFields.join(', ')} updated'
@@ -148,6 +155,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
+
+      // Re-initialize state with updated user
+      setState(() {
+        _nameChanged = false;
+        _usernameChanged = false;
+        _emailChanged = false;
+        _avatarChanged = false;
+      });
 
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
@@ -203,7 +218,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         title: const Text('Edit Profile'),
         actions: [
           TextButton(
-            onPressed: (_nameChanged || _usernameChanged || _emailChanged) && !_isLoading
+            onPressed: (_nameChanged || _usernameChanged || _emailChanged || _avatarChanged) && !_isLoading
                 ? _saveProfile
                 : null,
             child: _isLoading
@@ -232,28 +247,33 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             Center(
               child: Stack(
                 children: [
-                  CircleAvatar(
-                    radius: 60,
-                    backgroundColor: AppTheme.cardDark,
-                    backgroundImage: widget.user.avatar.startsWith('http') || widget.user.avatar.startsWith('/')
-                        ? NetworkImage(widget.user.avatar.startsWith('/') 
-                            ? 'http://zaply.in.net${widget.user.avatar}' 
-                            : widget.user.avatar)
-                        : null,
-                    child: !(widget.user.avatar.startsWith('http') || widget.user.avatar.startsWith('/'))
-                        ? Center(
-                            child: Text(
-                              widget.user.avatar.length > 2
-                                  ? widget.user.avatar.substring(0, 2).toUpperCase()
-                                  : widget.user.avatar.toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          )
-                        : null,
+                   Builder(
+                    builder: (context) {
+                      // Create a temporary user object to utilize the isPath/URL logic
+                      final tempUser = _initialUser.copyWith(avatar: _currentAvatar);
+                                         
+                      return CircleAvatar(
+                        radius: 60,
+                        backgroundColor: AppTheme.cardDark,
+                        backgroundImage: tempUser.isAvatarPath
+                            ? NetworkImage(tempUser.fullAvatarUrl)
+                            : null,
+                        child: !tempUser.isAvatarPath
+                            ? Center(
+                                child: Text(
+                                  _currentAvatar.length >= 2
+                                      ? _currentAvatar.substring(0, 2).toUpperCase()
+                                      : (_currentAvatar.isNotEmpty ? _currentAvatar.toUpperCase() : '??'),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                            : null,
+                      );
+                    }
                   ),
                   Positioned(
                     bottom: 0,
@@ -262,12 +282,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       onTap: () async {
                         final router = GoRouter.of(context);
                         final scaffoldMessenger = ScaffoldMessenger.of(context);
-                        final result = await router.push('/profile-photo', extra: widget.user.avatar);
+                        final result = await router.push('/profile-photo', extra: _currentAvatar);
                         if (!mounted) return;
-                        if (result != null) {
+                        if (result != null && result is String) {
+                          setState(() {
+                            _currentAvatar = result;
+                            _avatarChanged = true;
+                          });
                           scaffoldMessenger.showSnackBar(
                             const SnackBar(
-                              content: Text('Avatar updated'),
+                              content: Text('Profile photo updated'),
                               backgroundColor: AppTheme.successGreen,
                             ),
                           );
@@ -298,7 +322,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               icon: Icons.person_outline,
               onChanged: (value) {
                 setState(() {
-                  _nameChanged = value != widget.user.name;
+                  _nameChanged = value.trim() != _initialUser.name.trim();
                 });
               },
             ),
@@ -310,7 +334,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               icon: Icons.alternate_email,
               onChanged: (value) {
                 setState(() {
-                  _usernameChanged = value != widget.user.username;
+                  _usernameChanged = value.trim() != _initialUser.username.trim();
                 });
               },
             ),
@@ -323,7 +347,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               readOnly: false,
               onChanged: (value) {
                 setState(() {
-                  _emailChanged = value != (widget.user.email ?? '');
+                  _emailChanged = value.trim() != (_initialUser.email ?? '').trim();
                 });
               },
             ),

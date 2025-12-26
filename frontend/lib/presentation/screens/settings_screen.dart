@@ -100,16 +100,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       CircleAvatar(
                         radius: 32,
                         backgroundColor: AppTheme.backgroundDark,
-                        backgroundImage: displayUser.avatar.startsWith('http') || displayUser.avatar.startsWith('/')
-                            ? NetworkImage(displayUser.avatar.startsWith('/') 
-                                ? 'http://zaply.in.net${displayUser.avatar}' 
-                                : displayUser.avatar)
+                        backgroundImage: displayUser.isAvatarPath
+                            ? NetworkImage(displayUser.fullAvatarUrl)
                             : null,
-                        child: !(displayUser.avatar.startsWith('http') || displayUser.avatar.startsWith('/'))
+                        child: !displayUser.isAvatarPath
                             ? Text(
-                                displayUser.avatar.length > 2 
+                                displayUser.avatar.length >= 2 
                                   ? displayUser.avatar.substring(0, 2).toUpperCase()
-                                  : displayUser.avatar.toUpperCase(),
+                                  : (displayUser.avatar.isNotEmpty ? displayUser.avatar.toUpperCase() : '??'),
                                 style: const TextStyle(color: Colors.white, fontSize: 18),
                               )
                             : null,

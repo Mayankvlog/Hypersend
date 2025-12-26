@@ -48,4 +48,44 @@ class User extends Equatable {
       isOnline: isOnline ?? this.isOnline,
     );
   }
+
+  /// Helper to determine if the avatar string is a file path/URL or just initials
+  bool get isAvatarPath {
+    if (avatar.isEmpty) return false;
+    
+    // Explicit URL prefixes
+    if (avatar.startsWith('http://') || avatar.startsWith('https://')) return true;
+    
+    // Absolute paths from backend
+    if (avatar.startsWith('/')) return true;
+    
+    // Check for common image extensions if it contains a dot
+    // Initials (e.g., "AM") won't match these extensions
+    final lower = avatar.toLowerCase();
+    if (lower.contains('.')) {
+      final extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+      for (final ext in extensions) {
+        if (lower.endsWith(ext)) return true;
+      }
+    }
+    
+    // If it's very short (1-2 chars), it's definitely initials
+    if (avatar.length <= 2) return false;
+
+    // Fallback: If it contains a slash and is long enough, likely a path
+    if (avatar.contains('/') && avatar.length > 5) return true;
+
+    return false;
+  }
+
+  /// Resolves the full avatar URL for display
+  String get fullAvatarUrl {
+    if (!isAvatarPath) return '';
+    if (avatar.startsWith('http')) return avatar;
+    if (avatar.startsWith('/')) {
+      return 'https://zaply.in.net$avatar';
+    }
+    // Relative path fallback
+    return 'https://zaply.in.net/$avatar';
+  }
 }
