@@ -34,7 +34,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _showAddContactDialog() async {
-    final emailController = TextEditingController();
     final phoneController = TextEditingController();
     final nameController = TextEditingController();
     
@@ -68,19 +67,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: emailController,
-                  decoration: InputDecoration(
-                    hintText: 'Email address',
-                    prefixIcon: const Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 12),
-                TextField(
                   controller: phoneController,
                   decoration: InputDecoration(
                     hintText: '+1 (555) 123-4567',
@@ -102,36 +88,34 @@ class _ChatListScreenState extends State<ChatListScreen> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final email = emailController.text.trim();
                 final phone = phoneController.text.trim();
+                final name = nameController.text.trim();
                 
-                if (email.isEmpty && phone.isEmpty) {
-                  _showErrorSnackBar('Please enter email or phone number');
+                if (phone.isEmpty) {
+                  _showErrorSnackBar('Please enter phone number');
                   return;
                 }
                 
-                if (email.isNotEmpty) {
-                  try {
-                    final users = await serviceProvider.apiService.searchUsers(email);
-                    if (!mounted) return;
-                    
-                    if (users.isEmpty) {
-                      _showErrorSnackBar('User not found');
-                      return;
-                    }
-                    
-                    if (mounted) Navigator.pop(context, users.first);
-                  } catch (e) {
-                    _showErrorSnackBar('Error searching for user');
+                try {
+                  // Search for the user by phone number
+                  final users = await serviceProvider.apiService.searchUsers(phone);
+                  if (!mounted) return;
+                  
+                  if (users.isEmpty) {
+                    _showErrorSnackBar('User with this phone number not found');
+                    return;
                   }
-                } else if (phone.isNotEmpty) {
-                  // WhatsApp-style phone number contact creation
+                  
+                  final user = users.first;
+                  // Pop with the user object and the name the user wants to assign
                   if (mounted) {
                     Navigator.pop(context, {
-                      'phone': phone,
-                      'name': nameController.text.trim(),
+                      ...user,
+                      'display_name': name.isNotEmpty ? name : (user['name'] ?? user['username']),
                     });
                   }
+                } catch (e) {
+                  _showErrorSnackBar('Error searching for user');
                 }
               },
               child: const Text('Add'),
@@ -142,10 +126,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
       if (result != null && mounted) {
         try {
-          final chat = await serviceProvider.apiService.createSecretChat(targetUserId: result['id']);
-          if (mounted) {
-            context.push('/chat/${chat['_id'] ?? chat['id']}');
-            await _loadChats();
+          final targetId = result['id']?.toString() ?? result['_id']?.toString();
+          if (targetId != null) {
+            final chat = await serviceProvider.apiService.createSecretChat(targetUserId: targetId);
+            if (mounted) {
+              context.push('/chat/${chat['_id'] ?? chat['id']}');
+              await _loadChats();
+            }
+          } else {
+            _showErrorSnackBar('User ID missing from search results');
           }
         } catch (e) {
           if (mounted) {
@@ -156,7 +145,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     } catch (e) {
       _showErrorSnackBar('An error occurred');
     } finally {
-      emailController.dispose();
+      phoneController.dispose();
+      nameController.dispose();
     }
   }
 
