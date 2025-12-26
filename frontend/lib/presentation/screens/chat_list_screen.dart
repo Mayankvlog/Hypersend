@@ -238,6 +238,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
+  /// Get the app logo letter based on app state
+  /// Logic: Show 'Z' by default (Zaply)
+  /// Could be extended to show different letters based on app state/features
+  String _getAppLogo() {
+    // Default: Show 'Z' for Zaply
+    // You can extend this logic to show different letters based on:
+    // - Current tab/page
+    // - User status
+    // - Unread messages count
+    // - Other app states
+    return 'Z'; // Changed from 'H' to 'Z'
+  }
+
   void _onBottomNavTap(int index) {
     setState(() {
       _selectedIndex = index;
@@ -312,10 +325,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   colors: [AppTheme.primaryCyan, AppTheme.primaryCyan.withValues(alpha: 0.7)],
                 ),
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  'H',
-                  style: TextStyle(
+                  _getAppLogo(),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
