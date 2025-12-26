@@ -366,18 +366,23 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
 
 @router.get("/search")
 async def search_users(q: str, current_user: str = Depends(get_current_user)):
-    """Search users by name or email"""
+    """Search users by name, email, or phone number"""
     
     if len(q) < 2:
         return {"users": []}
     
     try:
-        # Case-insensitive regex search
+        # Sanitize regex input to prevent regex injection attacks
+        # Escape special regex characters
+        sanitized_q = re.escape(q)
+        
+        # Case-insensitive regex search - includes phone number
         users = []
         cursor = users_collection().find({
             "$or": [
-                {"name": {"$regex": q, "$options": "i"}},
-                {"email": {"$regex": q, "$options": "i"}}
+                {"name": {"$regex": sanitized_q, "$options": "i"}},
+                {"email": {"$regex": sanitized_q, "$options": "i"}},
+                {"phone": {"$regex": sanitized_q, "$options": "i"}}
             ],
             "_id": {"$ne": current_user}  # Exclude current user
         }).limit(20)
@@ -387,9 +392,11 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
             results = []
             async for user in cursor:
                 results.append({
-                    "id": user["_id"],
-                    "name": user["name"],
-                    "email": user["email"]
+                    "id": user.get("_id", ""),
+                    "name": user.get("name", ""),
+                    "email": user.get("email", ""),
+                    "phone": user.get("phone", ""),
+                    "username": user.get("username", "")
                 })
             return results
         
@@ -420,7 +427,7 @@ async def list_contacts(current_user: str = Depends(get_current_user), limit: in
             results = []
             async for user in cursor:
                 results.append({
-                    "id": user["_id"],
+                    "id": user.get("_id", ""),
                     "name": user.get("name", ""),
                     "email": user.get("email", ""),
                 })
@@ -744,4 +751,3 @@ async def get_avatar(filename: str):
         raise HTTPException(status_code=404, detail="Avatar not found")
     
     return FileResponse(file_path)
-
