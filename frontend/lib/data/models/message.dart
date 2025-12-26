@@ -108,7 +108,9 @@ class Message extends Equatable {
       editedAt: editedAt ?? this.editedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       reactions: reactions ?? this.reactions,
+      // ignore: unnecessary_this (false positive - this.readBy is needed for null coalescing)
       readBy: readBy ?? this.readBy,
+      // ignore: unnecessary_this (false positive - this.fileId is needed for null coalescing)
       fileId: fileId ?? this.fileId,
     );
   }

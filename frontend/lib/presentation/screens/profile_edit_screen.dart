@@ -83,14 +83,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       
       // Only pass username if changed from initial value
       String? usernameToSend;
-      final currentUsername = (widget.user.username ?? '').trim();
+      final currentUsername = widget.user.username.trim();
       final newUsername = _usernameController.text.trim();
       
-      if (newUsername != currentUsername) {
-        // Only send if not empty, otherwise it fails backend min_length validation
-        if (newUsername.isNotEmpty) {
-          usernameToSend = newUsername;
-        }
+      if (newUsername != currentUsername && newUsername.isNotEmpty) {
+        usernameToSend = newUsername;
       }
 
       // Only pass name if changed from initial value  

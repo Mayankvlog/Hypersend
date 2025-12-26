@@ -1,9 +1,6 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../core/constants/api_constants.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/chat.dart';
@@ -30,7 +27,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   List<Message> _messages = [];
   Chat? _chat;
   bool _loading = true;
-  bool _isLoading = false;
   String? _error;
   String _meId = '';
 
@@ -56,7 +52,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       context: context,
       backgroundColor: AppTheme.backgroundDark,
       isScrollControlled: true,
-      builder: (context) => Container(
+      builder: (context) => SizedBox(
         height: MediaQuery.of(context).size.height * 0.6,
         child: Column(
           children: [
@@ -95,7 +91,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       final newText = text.replaceRange(start, end, emojis[index]);
                       _messageController.value = TextEditingValue(
                         text: newText,
-                        selection: TextSelection.collapsed(offset: start + (emojis[index].length as int)),
+                        selection: TextSelection.collapsed(offset: start + emojis[index].length),
                       );
                     },
                     child: Center(child: Text(emojis[index], style: const TextStyle(fontSize: 24))),
@@ -152,7 +148,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Uploading ${name}: chunk ${chunkIndex + 1}/${(bytes.length / chunkSize).ceil()}'),
+            content: Text('Uploading $name: chunk ${chunkIndex + 1}/${(bytes.length / chunkSize).ceil()}'),
             duration: const Duration(milliseconds: 500),
           ),
         );
@@ -338,7 +334,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (message.fileId == null) return;
     
     final fileId = message.fileId!.trim();
-    setState(() => _isLoading = true);
     debugPrint('[FILE_DOWNLOAD] Securely fetching file $fileId with Authorization header...');
     
     try {
@@ -376,7 +371,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           ),
         );
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      // Upload/download complete
     }
   }
 

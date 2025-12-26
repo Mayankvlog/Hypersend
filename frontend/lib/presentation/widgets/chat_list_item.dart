@@ -166,7 +166,7 @@ class ChatListItem extends StatelessWidget {
         width: 56,
         height: 56,
         decoration: BoxDecoration(
-          color: AppTheme.primaryCyan.withOpacity(0.2),
+          color: AppTheme.primaryCyan.withValues(alpha: 0.2),
           shape: BoxShape.circle,
         ),
         child: Center(
