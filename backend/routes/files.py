@@ -418,11 +418,12 @@ async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
         stored_filename = url_parts[-1]
         return stored_filename == file_id and len(stored_filename) > 0
         
-except Exception:
+    except asyncio.TimeoutError:
+        _log("warning", f"Avatar ownership check timeout", {"user_id": current_user, "operation": "avatar_check"})
+        return False
+    except Exception:
         # Log error for debugging but don't expose details
         _log("warning", f"Avatar ownership check failed", {"user_id": current_user, "operation": "avatar_check"})
-        return False
-    except:
         return False
 
 
