@@ -5,7 +5,7 @@ import jwt
 from jwt import PyJWTError
 import hashlib
 import hmac
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from backend.config import settings
 from backend.models import TokenData
@@ -117,6 +117,36 @@ def decode_token(token: str) -> TokenData:
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     """Dependency to get current user from token in Authorization header"""
     token = credentials.credentials
+    token_data = decode_token(token)
+    
+    if token_data.token_type != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+        )
+    
+    return token_data.user_id
+
+
+async def get_current_user_from_query(token: Optional[str] = Query(None)) -> str:
+    """Dependency to get current user from token in query parameter.
+    
+    Args:
+        token: The JWT token passed as a query parameter (?token=...)
+        
+    Returns:
+        The user_id from the token
+        
+    Raises:
+        HTTPException: If token is missing, invalid, or of wrong type
+    """
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is required in query parameters",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token_data = decode_token(token)
     
     if token_data.token_type != "access":

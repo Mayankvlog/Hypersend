@@ -6,7 +6,7 @@ from backend.models import (
 from backend.database import users_collection, refresh_tokens_collection, reset_tokens_collection
 from backend.auth.utils import (
     hash_password, verify_password, create_access_token, 
-    create_refresh_token, decode_token, get_current_user
+    create_refresh_token, decode_token, get_current_user, get_current_user_from_query
 )
 from backend.config import settings
 from datetime import datetime, timedelta
