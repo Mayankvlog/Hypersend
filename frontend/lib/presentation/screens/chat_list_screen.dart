@@ -150,7 +150,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget _buildSavedMessagesEntry() {
     return Container(
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppTheme.borderColor, width: 0.5)),
+        border: Border(bottom: BorderSide(color: AppTheme.dividerColor, width: 0.5)),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
