@@ -102,7 +102,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         nameToSend = newName;
       }
 
-      debugPrint('[PROFILE_EDIT] Sending: name=$nameToSend, username=$usernameToSend, email=$emailToSend');
+      debugPrint('[PROFILE_EDIT] Sending profile update: fields=${[nameToSend != null, usernameToSend != null, emailToSend != null]}');
 
       // Check if at least one field is being updated
       if (nameToSend == null && usernameToSend == null && emailToSend == null) {
@@ -122,6 +122,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         bioToSend = _statusController.text.trim();
       }
 
+// Disable save button to prevent race condition
+      if (mounted) {
+        setState(() => _isLoading = true);
+      }
+
       // Update profile
       final updatedUser = await serviceProvider.profileService.updateProfile(
         name: nameToSend,
@@ -139,7 +144,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (usernameToSend != null) updatedFields.add('Username');
       if (emailToSend != null) updatedFields.add('Email');
       if (bioToSend != null) updatedFields.add('Status');
-      if (_avatarChanged) updatedFields.add('Profile Photo');
+      if (_avatarChanged && _currentAvatar != _initialUser.avatar) updatedFields.add('Profile Photo');
       
       final successMessage = updatedFields.isNotEmpty 
           ? 'Saved! ${updatedFields.join(', ')} updated'
@@ -153,19 +158,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         ),
       );
 
-      // Re-initialize state with updated user
+      // Update state and navigation atomically
       setState(() {
         _nameChanged = false;
         _usernameChanged = false;
         _emailChanged = false;
         _avatarChanged = false;
+        _isLoading = false;
       });
 
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          context.pop(updatedUser);
-        }
-      });
+      // Navigate after ensuring state is updated
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (mounted) {
+        context.pop(updatedUser);
+      }
     } catch (e) {
       if (!mounted) return;
       
@@ -278,20 +284,26 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       onTap: () async {
                         final router = GoRouter.of(context);
                         final scaffoldMessenger = ScaffoldMessenger.of(context);
-                        final result = await router.push('/profile-photo', extra: _currentAvatar);
+final result = await router.push('/profile-photo', extra: _currentAvatar);
                         if (!mounted) return;
                         if (result != null && result is String) {
+                          debugPrint('[PROFILE_EDIT] Avatar updated successfully');
                           setState(() {
                             _currentAvatar = result.trim();
                             // Compare with initial avatar to determine change
                             _avatarChanged = _currentAvatar != _initialUser.avatar;
                           });
+                          
+                          // Show success message
                           scaffoldMessenger.showSnackBar(
                             const SnackBar(
-                              content: Text('Profile photo updated'),
+                              content: Text('Profile photo updated. Click "Save" to apply changes.'),
                               backgroundColor: AppTheme.successGreen,
+                              duration: Duration(seconds: 3),
                             ),
                           );
+                        } else {
+                          debugPrint('[PROFILE_EDIT] Avatar update cancelled or failed');
                         }
                       },
                       child: Container(

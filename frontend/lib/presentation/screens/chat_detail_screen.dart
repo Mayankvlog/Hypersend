@@ -1,13 +1,16 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
-import '../../core/utils/emoji_utils.dart';
 import '../widgets/message_bubble.dart';
+// Web-specific imports
+import 'dart:html' as html show Blob, Url, AnchorElement;
 
 
 class ChatDetailScreen extends StatefulWidget {
@@ -44,6 +47,73 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     super.dispose();
   }
 
+
+  void _showChannelOptions() {
+    if (_chat?.type != ChatType.channel) return;
+    
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('Channel Info'),
+            onTap: () {
+              Navigator.pop(context);
+              // TODO: Navigate to channel info
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_forever, color: Colors.red),
+            title: const Text('Remove Permanently', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context);
+              _showRemoveChannelConfirmation();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRemoveChannelConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Channel Permanently'),
+        content: const Text('Are you sure you want to remove this channel? This action cannot be undone and all messages will be deleted.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await serviceProvider.apiService.removeChannel(widget.chatId);
+                if (mounted) {
+                  context.pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Channel removed successfully')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to remove channel: $e')),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _showEmojiPicker() {
     final emojis = EmojiUtils.getEmojiList();
@@ -334,44 +404,136 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (message.fileId == null) return;
     
     final fileId = message.fileId!.trim();
-    debugPrint('[FILE_DOWNLOAD] Securely fetching file $fileId with Authorization header...');
+    final fileName = message.content ?? 'file';
+    debugPrint('[FILE_DOWNLOAD] Processing file download: $fileName (ID: $fileId)');
     
+    // Show loading dialog
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Text('Downloading $fileName...'),
+          ],
+        ),
+      ),
+    );
+    
+    try {
+      // Get file metadata first to determine file type
+      final fileInfo = await _getFileInfo(fileId);
+      final contentType = fileInfo['content_type'] ?? 'application/octet-stream';
+      final isPDF = contentType.toLowerCase().contains('pdf');
+      
+      debugPrint('[FILE_DOWNLOAD] File type: $contentType, isPDF: $isPDF');
+      
+      if (kIsWeb) {
+        // For web, create blob URL and open in new tab
+        await _openFileInWeb(fileId, fileName, isPDF);
+      } else {
+        // For native platforms, download and open file
+        await _downloadAndOpenFile(fileId, fileName, contentType);
+      }
+      
+      // Show success message
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isPDF 
+              ? 'PDF opened successfully' 
+              : 'File downloaded: $fileName'),
+          backgroundColor: AppTheme.successGreen,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      
+    } catch (e) {
+      debugPrint('[FILE_DOWNLOAD_ERROR] $e');
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+      
+      String errorMessage = e.toString();
+      if (errorMessage.contains('not found')) {
+        errorMessage = 'File not found or has been deleted';
+      } else if (errorMessage.contains('permission')) {
+        errorMessage = 'You do not have permission to access this file';
+      } else if (errorMessage.contains('timeout')) {
+        errorMessage = 'Download timeout. Please try again';
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to open file: $errorMessage'),
+          backgroundColor: AppTheme.errorRed,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> _getFileInfo(String fileId) async {
+    try {
+      final response = await serviceProvider.apiService.getFileInfo(fileId);
+      return response ?? {};
+    } catch (e) {
+      debugPrint('[FILE_INFO_ERROR] Failed to get file info: $e');
+      return {};
+    }
+  }
+
+  Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {
     try {
       final response = await serviceProvider.apiService.downloadFileBytes(fileId);
       final bytes = response.data;
       
-      if (bytes == null || bytes.isEmpty) throw Exception('No data received or file is empty');
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('No data received or file is empty');
+      }
+      
+      // Create blob URL and trigger download for all files
+      final blob = html.Blob([bytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      
+      // Create download link
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..click();
+      
+      // Clean up blob URL
+      html.Url.revokeObjectUrl(url);
+      
+      debugPrint('[FILE_WEB] Downloaded ${bytes.length} bytes as $fileName');
+    } catch (e) {
+      debugPrint('[FILE_WEB_ERROR] $e');
+      rethrow;
+    }
+  }
 
-      if (kIsWeb) {
-        // Securely trigger a browser download for Web
-        // This avoids tokens in URL and uses the bytes already fetched with headers
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('File received! (Securely fetched with headers)'),
-            backgroundColor: AppTheme.successGreen,
-          ),
+  Future<void> _downloadAndOpenFile(String fileId, String fileName, String contentType) async {
+    try {
+      final fileUrl = '${serviceProvider.apiService.options.baseUrl}/files/$fileId/download';
+      debugPrint('[FILE_NATIVE] Opening file: $fileUrl');
+      
+      final uri = Uri.parse(fileUrl);
+      
+      // Launch file with system default application
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
         );
       } else {
-        // On Native, we notify that it's fetched. 
-        // In a full implementation, you'd save it to a local path using path_provider.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Securely downloaded ${bytes.length} bytes.'),
-            backgroundColor: AppTheme.successGreen,
-          ),
-        );
+        throw Exception('Could not open file with system application');
       }
     } catch (e) {
-       if (!mounted) return;
-        debugPrint('[FILE_DOWNLOAD_ERROR] $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download failed: ${e.toString().split(':').last.trim()}'),
-            backgroundColor: AppTheme.errorRed,
-          ),
-        );
-    } finally {
-      // Upload/download complete
+      debugPrint('[FILE_NATIVE_ERROR] $e');
+      rethrow;
     }
   }
 
@@ -654,7 +816,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.more_vert),
-            onPressed: () {},
+            onPressed: _chat?.type == ChatType.channel ? _showChannelOptions : null,
           ),
         ],
       ),

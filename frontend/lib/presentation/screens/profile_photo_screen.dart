@@ -212,55 +212,112 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
     );
   }
 
-  Future<void> _pickImage() async {
+Future<void> _pickImage() async {
     try {
+      debugPrint('[PROFILE_PHOTO] Picking image...');
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         withData: true,
+        allowMultiple: false,
       );
 
       if (result != null && result.files.single.bytes != null) {
+        final file = result.files.single;
+        debugPrint('[PROFILE_PHOTO] Image picked: ${file.name} (${file.bytes?.length} bytes)');
+        
+        // Validate file size (max 5MB)
+        if (file.bytes != null && file.bytes!.length > 5 * 1024 * 1024) {
+          throw Exception('Image size must be less than 5MB');
+        }
+        
         setState(() {
-          _pickedFileBytes = result.files.single.bytes;
-          _pickedFileName = result.files.single.name;
+          _pickedFileBytes = file.bytes;
+          _pickedFileName = file.name;
         });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image selected successfully'),
+              backgroundColor: AppTheme.successGreen,
+            ),
+          );
+        }
+      } else {
+        debugPrint('[PROFILE_PHOTO] No image selected');
       }
     } catch (e) {
+      debugPrint('[PROFILE_PHOTO] Error picking image: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
+        SnackBar(
+          content: Text('Error selecting image: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
-  Future<void> _handleSave() async {
+Future<void> _handleSave() async {
     setState(() => _isUploading = true);
     try {
       String resultValue;
+      
       if (_pickedFileBytes != null && _pickedFileName != null) {
+        debugPrint('[PROFILE_PHOTO] Uploading new avatar image...');
         // Upload file
         resultValue = await serviceProvider.profileService.uploadAvatar(
           _pickedFileBytes!,
           _pickedFileName!,
         );
+        debugPrint('[PROFILE_PHOTO] Avatar uploaded successfully: $resultValue');
       } else {
+        debugPrint('[PROFILE_PHOTO] Updating avatar to: $_selectedPhoto');
         // Just update initials
         await serviceProvider.profileService.updateAvatar(_selectedPhoto);
         resultValue = _selectedPhoto;
+        debugPrint('[PROFILE_PHOTO] Avatar initials updated successfully');
       }
 
       if (!mounted) return;
+      
+      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Profile photo updated'),
+          content: Text('Profile photo updated successfully'),
           backgroundColor: AppTheme.successGreen,
+          duration: Duration(seconds: 2),
         ),
       );
-      context.pop(resultValue);
+      
+      // Navigate back with result
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          context.pop(resultValue);
+        }
+      });
+      
     } catch (e) {
+      debugPrint('[PROFILE_PHOTO] Failed to update photo: $e');
       if (!mounted) return;
+      
+      String errorMessage = 'Failed to update profile photo';
+      if (e.toString().contains('File must be an image')) {
+        errorMessage = 'Please select a valid image file';
+      } else if (e.toString().contains('size must be less than')) {
+        errorMessage = 'Image size must be less than 5MB';
+      } else if (e.toString().contains('timeout')) {
+        errorMessage = 'Upload timeout. Please check your connection and try again';
+      } else if (e.toString().isNotEmpty) {
+        errorMessage = e.toString();
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update photo: $e')),
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
       );
     } finally {
       if (mounted) setState(() => _isUploading = false);

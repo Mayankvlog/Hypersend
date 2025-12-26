@@ -183,14 +183,59 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) async {
+Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) async {
     try {
+      debugPrint('[API_SERVICE] Uploading avatar: $filename (${bytes.length} bytes)');
+      
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(bytes, filename: filename),
       });
-      final response = await _dio.post('${ApiConstants.usersEndpoint}/avatar', data: formData);
+      
+      final response = await _dio.post(
+        '${ApiConstants.usersEndpoint}/avatar', 
+        data: formData,
+        options: Options(
+          sendTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+      );
+      
+      debugPrint('[API_SERVICE] Avatar upload response: ${response.data}');
+      
+      if (response.data == null) {
+        throw Exception('Empty response from server');
+      }
+      
       return response.data;
+    } on DioException catch (e) {
+      debugPrint('[API_SERVICE] DioException during avatar upload: ${e.type} - ${e.message}');
+      debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
+      
+      String errorMessage = 'Failed to upload avatar';
+      if (e.response?.data is Map) {
+        final data = e.response!.data as Map;
+        errorMessage = data['detail'] ?? errorMessage;
+      } else if (e.type == DioExceptionType.sendTimeout) {
+        errorMessage = 'Upload timeout - please check your connection and try again';
+      } else if (e.type == DioExceptionType.receiveTimeout) {
+        errorMessage = 'Server timeout - please try again';
+      }
+      
+      throw Exception(errorMessage);
     } catch (e) {
+      debugPrint('[API_SERVICE] Error during avatar upload: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getFileInfo(String fileId) async {
+    try {
+      debugPrint('[API_SERVICE] Getting file info for: $fileId');
+      final response = await _dio.get('${ApiConstants.filesEndpoint}/$fileId/info');
+      debugPrint('[API_SERVICE] File info response: ${response.data}');
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error getting file info: $e');
       rethrow;
     }
   }
@@ -347,7 +392,7 @@ class ApiService {
     await _dio.post('channels/$channelId/subscribe');
   }
 
-  Future<void> postToChannel(String channelId, String text) async {
+Future<void> postToChannel(String channelId, String text) async {
     await _dio.post(
       'channels/$channelId/posts',
       data: {
@@ -355,6 +400,10 @@ class ApiService {
         // Note: Backend might expect MessageCreate format, keeping it simple for now
       },
     );
+  }
+
+  Future<void> removeChannel(String channelId) async {
+    await _dio.post('channels/$channelId/remove');
   }
 
   Future<Map<String, dynamic>> createChat({

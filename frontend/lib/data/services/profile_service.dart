@@ -158,15 +158,27 @@ class ProfileService {
   }
 
   // Update avatar
-  Future<String> uploadAvatar(Uint8List bytes, String filename) async {
+Future<String> uploadAvatar(Uint8List bytes, String filename) async {
     try {
+      debugPrint('[PROFILE_SERVICE] Uploading avatar: $filename');
       final response = await _apiService.uploadAvatar(bytes, filename);
-      final avatarUrl = response['avatar_url'];
+      
+      if (response == null || response['avatar_url'] == null) {
+        throw Exception('Invalid response from server: missing avatar_url');
+      }
+      
+      final avatarUrl = response['avatar_url'] as String;
+      debugPrint('[PROFILE_SERVICE] Avatar uploaded successfully: $avatarUrl');
+      
+      // Update current user with new avatar URL
       if (_currentUser != null) {
         _currentUser = _currentUser!.copyWith(avatar: avatarUrl);
+        debugPrint('[PROFILE_SERVICE] Current user avatar updated in memory');
       }
+      
       return avatarUrl;
     } catch (e) {
+      debugPrint('[PROFILE_SERVICE] Failed to upload avatar: $e');
       rethrow;
     }
   }

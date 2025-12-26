@@ -23,6 +23,29 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
+def _log(level: str, message: str, user_data: dict = None):
+    """Helper method for consistent logging with PII protection"""
+    if user_data:
+        # Remove PII from logs in production
+        safe_data = {
+            "user_id": user_data.get("user_id", "unknown"),
+            "operation": user_data.get("operation", "unknown"),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        safe_message = f"{message} (user: {safe_data['user_id']})"
+    else:
+        safe_message = message
+    
+    if level.lower() == "error":
+        logger.error(safe_message)
+    elif level.lower() == "warning":
+        logger.warning(safe_message)
+    elif level.lower() == "info":
+        logger.info(safe_message)
+    else:
+        logger.debug(safe_message)
+
+
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
@@ -372,20 +395,28 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
         return {"users": []}
     
     try:
-        # Sanitize regex input to prevent regex injection attacks
-        # Escape special regex characters
+        # Sanitize input for regex search to prevent injection
         sanitized_q = re.escape(q)
+        clean_phone = re.sub(r'[^\d+]', '', q)  # Extract only digits and plus for phone search
         
-        # Case-insensitive regex search - includes phone number
+        # Build search query with different strategies for different field types
         users = []
-        cursor = users_collection().find({
+        search_query = {
             "$or": [
                 {"name": {"$regex": sanitized_q, "$options": "i"}},
-                {"email": {"$regex": sanitized_q, "$options": "i"}},
-                {"phone": {"$regex": sanitized_q, "$options": "i"}}
+                {"email": {"$regex": sanitized_q, "$options": "i"}}
             ],
-            "_id": {"$ne": current_user}  # Exclude current user
-        }).limit(20)
+            "_id": {"$ne": current_user}  # Exclude current user from results
+        }
+        
+        # Add phone number search using extracted numeric part
+        # Only search phone numbers if input has at least 3 digits after cleaning
+        if clean_phone and len(clean_phone) >= 3 and any(c.isdigit() for c in clean_phone):
+            search_query["$or"].append({
+                "phone": {"$regex": re.escape(clean_phone), "$options": "i"}
+            })
+        
+        cursor = users_collection().find(search_query).limit(20)
         
         # Fetch results with timeout
         async def fetch_results():
@@ -703,9 +734,13 @@ async def upload_avatar(
         from backend.config import settings
         import shutil
         import os
+        import uuid
+        
+        _log("info", f"Avatar upload request - Filename: {file.filename}", {"user_id": current_user, "operation": "avatar_upload"})
         
         # Validate file type
-        if not file.content_type.startswith("image/"):
+        if not file.content_type or not file.content_type.startswith("image/"):
+            _log("warning", f"Invalid avatar file type", {"user_id": current_user, "operation": "avatar_validation"})
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="File must be an image"
@@ -715,28 +750,97 @@ async def upload_avatar(
         avatar_dir = settings.DATA_ROOT / "avatars"
         avatar_dir.mkdir(parents=True, exist_ok=True)
         
-        # Save file
-        file_ext = os.path.splitext(file.filename)[1]
-        file_name = f"{current_user}{file_ext}"
-        file_path = avatar_dir / file_name
+        # Generate unique filename to avoid conflicts
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if not file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported image format"
+            )
         
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        unique_id = str(uuid.uuid4())[:8]
+        new_file_name = f"{current_user}_{unique_id}{file_ext}"
+        new_file_path = avatar_dir / new_file_name
+        
+        # Clean up old avatar files to prevent storage leaks
+        try:
+            # Find current user's old avatar files
+            user = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
+            if user and "avatar_url" in user:
+                old_avatar_url = user["avatar_url"]
+                if old_avatar_url and old_avatar_url.startswith("/api/v1/users/avatar/"):
+                    old_filename = old_avatar_url.split("/")[-1]
+                    old_file_path = avatar_dir / old_filename
+                    if old_file_path.exists():
+                        old_file_path.unlink()
+                        _log("info", f"Cleaned up old avatar: {old_filename}")
+        except Exception as cleanup_error:
+            _log("warning", f"Failed to cleanup old avatar", {"user_id": current_user, "operation": "avatar_cleanup"})
+            # Continue with upload even if cleanup fails
+        
+        # Save new file with proper error handling
+        try:
+            with open(new_file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        except Exception as save_error:
+            _log("error", f"Failed to save avatar file", {"user_id": current_user, "operation": "avatar_save"})
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save file"
+            )
         
         # Generate URL
-        avatar_url = f"/api/v1/users/avatar/{file_name}"
+        avatar_url = f"/api/v1/users/avatar/{new_file_name}"
         
-        # Update user in DB
-        await users_collection().update_one(
-            {"_id": current_user},
-            {"$set": {"avatar_url": avatar_url, "updated_at": datetime.utcnow()}}
-        )
+        # Update user in DB with timeout
+        try:
+            result = await asyncio.wait_for(
+                users_collection().update_one(
+                    {"_id": current_user},
+                    {"$set": {"avatar_url": avatar_url, "updated_at": datetime.utcnow()}}
+                ),
+                timeout=5.0
+            )
+            
+            # Check for actual failure vs idempotent update
+            user_exists = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
+            if not user_exists:
+                raise Exception("User not found")
+                
+            _log("info", f"Avatar updated successfully", {"user_id": current_user, "operation": "avatar_update"})
+        except asyncio.TimeoutError:
+            # Clean up uploaded file if DB update times out
+            if new_file_path.exists():
+                new_file_path.unlink()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out"
+            )
+        except Exception as db_error:
+            # Clean up uploaded file if DB update fails
+            if new_file_path.exists():
+                new_file_path.unlink()
+            _log("error", f"Failed to update database: {db_error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update avatar in database"
+            )
         
-        return {"avatar_url": avatar_url}
+        return {"avatar_url": avatar_url, "success": True}
+        
+    except HTTPException:
+        raise
     except Exception as e:
+        _log("error", f"Unexpected avatar upload error", {"user_id": current_user, "operation": "avatar_upload"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload avatar: {str(e)}"
+            detail="Failed to upload avatar"
         )
 
 

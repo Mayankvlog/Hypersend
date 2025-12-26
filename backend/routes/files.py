@@ -20,6 +20,30 @@ from backend.config import settings
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
+def _log(level: str, message: str, user_data: dict = None):
+    """Helper method for consistent logging with PII protection"""
+    if user_data:
+        # Remove PII from logs in production
+        safe_data = {
+            "user_id": user_data.get("user_id", "unknown"),
+            "operation": user_data.get("operation", "unknown"),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        safe_message = f"{message} (user: {safe_data['user_id']})"
+    else:
+        safe_message = message
+    
+    if level.lower() == "error":
+        logger.error(safe_message)
+    elif level.lower() == "warning":
+        logger.warning(safe_message)
+    elif level.lower() == "info":
+        logger.info(safe_message)
+    else:
+        logger.debug(safe_message)
+
+
 router = APIRouter(prefix="/files", tags=["Files"])
 
 
@@ -268,6 +292,139 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
         checksum=final_checksum,
         storage_path=str(final_path)
     )
+
+
+@router.get("/{file_id}/info")
+async def get_file_info(
+    file_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get file metadata information"""
+    
+    try:
+        _log("info", f"Getting file info", {"user_id": current_user, "operation": "file_info"})
+        
+        # First try to find file in files_collection (regular chat files)
+        import asyncio
+        file_doc = await asyncio.wait_for(
+            files_collection().find_one({"_id": file_id}),
+            timeout=5.0
+        )
+        
+        if file_doc:
+            # Regular file from files_collection
+            # Authorization check: only allow access if user owns the file
+            owner_id = file_doc.get("owner_id")
+            if owner_id != current_user:
+                _log("warning", f"Unauthorized file access attempt", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: you don't have permission to access this file"
+                )
+            
+            # Check file exists on disk
+            file_path = Path(file_doc.get("storage_path", ""))
+            if not file_path.exists():
+                _log("error", f"File exists in DB but not on disk", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found on disk"
+                )
+            
+            # Return file metadata matching FileInDB schema
+            return {
+                "file_id": str(file_doc["_id"]),
+                "filename": file_doc.get("filename", "unknown"),
+                "content_type": file_doc.get("mime", "application/octet-stream"),
+                "size": file_doc.get("size", file_path.stat().st_size),
+                "uploaded_by": file_doc.get("owner_id"),
+                "created_at": file_doc.get("created_at") or datetime.utcnow(),
+                "checksum": file_doc.get("checksum")
+            }
+        
+# If not found in files_collection, check if it's an avatar file
+        # Only check avatar ownership, don't rely on potentially vulnerable prefix check
+        if await _is_avatar_owner(file_id, current_user):
+            avatar_path = settings.DATA_ROOT / "avatars" / file_id
+            if avatar_path.exists():
+# Avatar file - get user info for metadata
+            user_doc = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
+            
+            file_stat = avatar_path.stat()
+            # Detect MIME type from file extension
+            import mimetypes
+            content_type, _ = mimetypes.guess_type(str(avatar_path))
+            
+            return {
+                "file_id": file_id,
+                "filename": f"avatar_{current_user}",
+                "content_type": content_type or "image/jpeg",
+                "size": file_stat.st_size,
+                "uploaded_by": current_user,
+                "created_at": user_doc.get("created_at") if user_doc else datetime.utcnow(),
+                "checksum": None  # Avatars don't have checksums
+            }
+        
+        # File not found in either collection
+        _log("warning", f"File not found", {"user_id": current_user, "operation": "file_info"})
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+        
+    except asyncio.TimeoutError:
+        _log("error", f"Timeout getting file info", {"user_id": current_user, "operation": "file_info"})
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Failed to get file info", {"user_id": current_user, "operation": "file_info"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get file information"
+        )
+
+
+async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
+    """Check if current user owns this avatar file by checking their avatar_url"""
+    try:
+        import asyncio
+        user_doc = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        # Handle None user_doc to prevent AttributeError
+        if not user_doc:
+            return False
+            
+        avatar_url = user_doc.get("avatar_url")
+        if not avatar_url or not isinstance(avatar_url, str):
+            return False
+            
+        # Strict URL validation and filename extraction
+        if not avatar_url.startswith("/api/v1/users/avatar/"):
+            return False
+            
+        url_parts = avatar_url.split("/")
+        if len(url_parts) < 5:  # Should be: ["", "api", "v1", "users", "avatar", "filename"]
+            return False
+            
+        stored_filename = url_parts[-1]
+        return stored_filename == file_id and len(stored_filename) > 0
+        
+except Exception:
+        # Log error for debugging but don't expose details
+        _log("warning", f"Avatar ownership check failed", {"user_id": current_user, "operation": "avatar_check"})
+        return False
+    except:
+        return False
 
 
 @router.get("/{file_id}/download")
