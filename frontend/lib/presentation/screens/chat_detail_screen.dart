@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/api_constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
 import '../widgets/message_bubble.dart';
+import '../../core/utils/emoji_utils.dart';
 // Web-specific imports
 import 'dart:html' as html show Blob, Url, AnchorElement;
 
@@ -116,7 +119,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   void _showEmojiPicker() {
-    final emojis = EmojiUtils.getEmojiList();
+    final List<String> emojis = EmojiUtils.getEmojiList();
     
     showModalBottomSheet(
       context: context,
@@ -161,7 +164,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       final newText = text.replaceRange(start, end, emojis[index]);
                       _messageController.value = TextEditingValue(
                         text: newText,
-                        selection: TextSelection.collapsed(offset: start + emojis[index].length),
+                        selection: TextSelection.collapsed(offset: start + (emojis[index].length as int)),
                       );
                     },
                     child: Center(child: Text(emojis[index], style: const TextStyle(fontSize: 24))),
@@ -517,7 +520,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _downloadAndOpenFile(String fileId, String fileName, String contentType) async {
     try {
-      final fileUrl = '${serviceProvider.apiService.options.baseUrl}/files/$fileId/download';
+      final fileUrl = '${ApiConstants.filesEndpoint}/$fileId/download';
       debugPrint('[FILE_NATIVE] Opening file: $fileUrl');
       
       final uri = Uri.parse(fileUrl);
