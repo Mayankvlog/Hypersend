@@ -35,6 +35,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _showAddContactDialog() async {
     final emailController = TextEditingController();
+    final phoneController = TextEditingController();
+    final nameController = TextEditingController();
     
     try {
       final result = await showDialog<Map<String, dynamic>>(
@@ -42,29 +44,56 @@ class _ChatListScreenState extends State<ChatListScreen> {
         barrierDismissible: false,
         builder: (context) => AlertDialog(
           title: const Text('New Contact'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Search for a contact by email',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: emailController,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Enter email address',
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add a new contact',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-            ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Contact name',
+                    prefixIcon: const Icon(Icons.person_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailController,
+                  decoration: InputDecoration(
+                    hintText: 'Email address',
+                    prefixIcon: const Icon(Icons.email_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneController,
+                  decoration: InputDecoration(
+                    hintText: '+1 (555) 123-4567',
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  keyboardType: TextInputType.phone,
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -74,26 +103,38 @@ class _ChatListScreenState extends State<ChatListScreen> {
             ElevatedButton(
               onPressed: () async {
                 final email = emailController.text.trim();
-                if (email.isEmpty) {
-                  _showErrorSnackBar('Please enter an email address');
+                final phone = phoneController.text.trim();
+                
+                if (email.isEmpty && phone.isEmpty) {
+                  _showErrorSnackBar('Please enter email or phone number');
                   return;
                 }
                 
-                try {
-                  final users = await serviceProvider.apiService.searchUsers(email);
-                  if (!mounted) return;
-                  
-                  if (users.isEmpty) {
-                    _showErrorSnackBar('User not found');
-                    return;
+                if (email.isNotEmpty) {
+                  try {
+                    final users = await serviceProvider.apiService.searchUsers(email);
+                    if (!mounted) return;
+                    
+                    if (users.isEmpty) {
+                      _showErrorSnackBar('User not found');
+                      return;
+                    }
+                    
+                    if (mounted) Navigator.pop(context, users.first);
+                  } catch (e) {
+                    _showErrorSnackBar('Error searching for user');
                   }
-                  
-                  if (mounted) Navigator.pop(context, users.first);
-                } catch (e) {
-                  _showErrorSnackBar('Error searching for user');
+                } else if (phone.isNotEmpty) {
+                  // WhatsApp-style phone number contact creation
+                  if (mounted) {
+                    Navigator.pop(context, {
+                      'phone': phone,
+                      'name': nameController.text.trim(),
+                    });
+                  }
                 }
               },
-              child: const Text('Search'),
+              child: const Text('Add'),
             ),
           ],
         ),

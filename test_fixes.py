@@ -204,7 +204,37 @@ def test_implementation_logic():
     print("✓ PASSED: Implementation logic properly tested")
     return True
 
+def test_phone_number_support():
+    """Test that phone number support is implemented like WhatsApp"""
+    content = safe_read_file('frontend/lib/presentation/screens/chat_list_screen.dart')
+    if content is None:
+        return False
+    
+    # Check for phone controller
+    if 'phoneController' not in content:
+        print("✗ FAILED: Phone number input field not implemented")
+        return False
+    
+    # Check for phone keyboard type
+    if 'TextInputType.phone' not in content:
+        print("✗ FAILED: Phone keyboard type not set")
+        return False
+    
+    # Check for phone validation
+    if 'phone.isEmpty' not in content:
+        print("✗ FAILED: Phone number validation not implemented")
+        return False
+    
+    # Check that dialog accepts phone input
+    if "hintText: '+1 (555)" not in content:
+        print("✗ FAILED: Phone number hint not present")
+        return False
+    
+    print("✓ PASSED: Phone number support (WhatsApp-style) implemented")
+    return True
+
 def main():
+    """Run all tests"""
     print("=" * 70)
     print("HYPERSEND FIXES - COMPREHENSIVE IMPLEMENTATION TEST")
     print("=" * 70)
@@ -216,6 +246,7 @@ def main():
         test_exception_handling,
         test_string_matching_robustness,
         test_implementation_logic,
+        test_phone_number_support,
     ]
     
     results = []

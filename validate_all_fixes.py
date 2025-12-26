@@ -187,6 +187,25 @@ def validate_changes():
         print(f"\n✗ ERROR during validation: An error occurred.")
         return False
     
+    # Check 6: Phone number support
+    print("\nCheck 6: Phone number support (WhatsApp-style)")
+    content = safe_read_file('frontend/lib/presentation/screens/chat_list_screen.dart')
+    if content is None:
+        print("  Status: ✗ FAIL - Could not read file")
+        check6 = False
+    else:
+        has_phone_controller = 'phoneController' in content
+        has_phone_input = "hintText: '+1 (555)" in content
+        has_phone_validation = 'phone.isEmpty' in content
+        has_phone_keyboard = 'TextInputType.phone' in content
+        
+        check6 = all([has_phone_controller, has_phone_input, has_phone_validation, has_phone_keyboard])
+        print(f"  Phone Controller: {'✓' if has_phone_controller else '✗'}")
+        print(f"  Phone Input Field: {'✓' if has_phone_input else '✗'}")
+        print(f"  Phone Validation: {'✓' if has_phone_validation else '✗'}")
+        print(f"  Phone Keyboard Type: {'✓' if has_phone_keyboard else '✗'}")
+        print(f"  Status: {'✓ PASS' if check6 else '✗ FAIL'}")
+    
     print("\n[3] CODE QUALITY CHECKS")
     print("-" * 70)
     
@@ -196,6 +215,7 @@ def validate_changes():
         ("Actual implementation (not placeholders)", check2),
         ("Real URL launching (not snackbars)", check1),
         ("Proper emoji encoding", check5),
+        ("Phone number support (WhatsApp-style)", check6),
     ]
     
     for check_name, result in quality_checks:
@@ -204,7 +224,7 @@ def validate_changes():
     
     print("\n[4] SUMMARY")
     print("-" * 70)
-    all_checks = [check1, check2, check3, check4, check5]
+    all_checks = [check1, check2, check3, check4, check5, check6]
     passed = sum(all_checks)
     total = len(all_checks)
     

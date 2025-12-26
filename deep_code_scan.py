@@ -221,6 +221,7 @@ def run_deep_scan():
     saved_proper_ui = False
     has_contact_dialog = False
     has_email_search = False
+    has_phone_number = False
     has_error_handling = False
     
     # Check for Saved Messages feature
@@ -238,14 +239,16 @@ def run_deep_scan():
     except Exception:
         print("✗ Error checking Saved Messages feature")
     
-    # Check for New Contact feature
+    # Check for New Contact feature with Phone Number
     if chat_list_content:
         has_contact_dialog = '_showAddContactDialog' in chat_list_content
         has_email_search = 'searchUsers' in chat_list_content
+        has_phone_number = 'phoneController' in chat_list_content and 'TextInputType.phone' in chat_list_content
         has_error_handling = '_showErrorSnackBar' in chat_list_content
         
         print(f"{'✓' if has_contact_dialog else '✗'} New Contact dialog implemented")
         print(f"{'✓' if has_email_search else '✗'} Email search functionality present")
+        print(f"{'✓' if has_phone_number else '✗'} Phone number support (WhatsApp-style)")
         print(f"{'✓' if has_error_handling else '✗'} Proper error handling for user feedback")
     else:
         print("✗ Error checking New Contact feature")
