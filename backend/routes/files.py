@@ -347,16 +347,15 @@ async def get_file_info(
         if await _is_avatar_owner(file_id, current_user):
             avatar_path = settings.DATA_ROOT / "avatars" / file_id
             if avatar_path.exists():
-# Avatar file - get user info for metadata
-            user_doc = await asyncio.wait_for(
-                users_collection().find_one({"_id": current_user}),
-                timeout=5.0
-            )
-            
-            file_stat = avatar_path.stat()
-            # Detect MIME type from file extension
-            import mimetypes
-            content_type, _ = mimetypes.guess_type(str(avatar_path))
+                # Avatar file - get user info for metadata
+                user_doc = await asyncio.wait_for(
+                    users_collection().find_one({"_id": current_user}),
+                    timeout=5.0
+                )
+                file_stat = avatar_path.stat()
+                # Detect MIME type from file extension
+                import mimetypes
+                content_type, _ = mimetypes.guess_type(str(avatar_path))
             
             return {
                 "file_id": file_id,
