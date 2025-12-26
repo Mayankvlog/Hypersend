@@ -337,8 +337,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         return 'Supergroup';
       case ChatType.channel:
         return 'Channel';
-      case ChatType.secret:
-        return 'Secret Chat';
+
       case ChatType.saved:
         return 'Cloud Storage';
       default:

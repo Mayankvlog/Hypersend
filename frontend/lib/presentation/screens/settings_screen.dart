@@ -75,6 +75,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
+            const SizedBox(height: 16),
+            // User profile summary section
+            FutureBuilder<Map<String, dynamic>>(
+              future: serviceProvider.apiService.getMe(),
+              builder: (context, snapshot) {
+                final user = serviceProvider.profileService.currentUser;
+                if (user == null && snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                
+                final displayUser = user;
+                if (displayUser == null) return const SizedBox();
+
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardDark,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 32,
+                        backgroundColor: AppTheme.backgroundDark,
+                        backgroundImage: displayUser.avatar.startsWith('http') || displayUser.avatar.startsWith('/')
+                            ? NetworkImage(displayUser.avatar.startsWith('/') 
+                                ? 'http://zaply.in.net${displayUser.avatar}' 
+                                : displayUser.avatar)
+                            : null,
+                        child: !(displayUser.avatar.startsWith('http') || displayUser.avatar.startsWith('/'))
+                            ? Text(
+                                displayUser.avatar.length > 2 
+                                  ? displayUser.avatar.substring(0, 2).toUpperCase()
+                                  : displayUser.avatar.toUpperCase(),
+                                style: const TextStyle(color: Colors.white, fontSize: 18),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayUser.name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              '@${displayUser.username}',
+                              style: const TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, color: AppTheme.primaryCyan),
+                        onPressed: () async {
+                          final result = await context.push('/profile-edit');
+                          if (result != null && mounted) {
+                            setState(() {}); // Refresh if updated
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
             // Language section
             _buildSectionHeader('LANGUAGE & REGION'),
             _buildLanguageSelector(),

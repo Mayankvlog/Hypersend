@@ -128,7 +128,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         try {
           final targetId = result['id']?.toString() ?? result['_id']?.toString();
           if (targetId != null) {
-            final chat = await serviceProvider.apiService.createSecretChat(targetUserId: targetId);
+            final chat = await serviceProvider.apiService.createChat(targetUserId: targetId);
             if (mounted) {
               context.push('/chat/${chat['_id'] ?? chat['id']}');
               await _loadChats();
@@ -488,6 +488,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 onTap: () {
                   Navigator.of(context).pop();
                   _showAddContactDialog();
+                },
+              ),
+              const Divider(height: 0),
+              ListTile(
+                leading: const Icon(
+                  Icons.edit_outlined,
+                  color: AppTheme.primaryCyan,
+                ),
+                title: const Text('Edit Profile'),
+                subtitle: const Text('Change your name, bio and photo'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/profile-edit');
                 },
               ),
               const Divider(height: 0),
