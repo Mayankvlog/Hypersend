@@ -295,17 +295,4 @@ class HelpSupportScreen extends StatelessWidget {
       _showErrorSnackBar(context, 'Error launching URL: ${e.toString()}');
     }
   }
-
-  void _showErrorSnackBar(BuildContext context, String message) {
-    // Get context from somewhere - use a global approach
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppTheme.errorRed,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
 }
