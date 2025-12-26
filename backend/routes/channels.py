@@ -148,6 +148,27 @@ async def post_to_channel(
     
     return {"message_id": msg_doc["_id"], "post": msg_doc}
 
+
+# New channel option: remove
+from backend.database import db
+
+@router.post("/{channel_id}/remove", status_code=200)
+async def remove_channel(channel_id: str, current_user: str = Depends(get_current_user)):
+    """Remove a channel (admin/owner only). Deletes channel and all its messages atomically."""
+    channel = await _get_channel(channel_id)
+    if not await _check_admin(channel, current_user):
+        raise HTTPException(status_code=403, detail="Only admins/owner can remove the channel")
+    if current_user != channel.get("owner_id"):
+        raise HTTPException(status_code=403, detail="Only the owner can remove the channel")
+
+    # Use MongoDB transaction for atomicity
+    async with await db.client.start_session() as s:
+        async with s.start_transaction():
+            await messages_collection().delete_many({"chat_id": channel_id}, session=s)
+            await chats_collection().delete_one({"_id": channel_id}, session=s)
+    logger.info(f"Channel removed: {channel_id} by {current_user}")
+    return {"status": "removed", "channel_id": channel_id}
+
 @router.post("/{channel_id}/posts/{message_id}/view")
 async def view_post(channel_id: str, message_id: str):
     """Increment view counter (can be called by any unauthenticated user if public)"""
