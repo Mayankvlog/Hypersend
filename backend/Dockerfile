@@ -33,11 +33,9 @@ ENV PYTHONUNBUFFERED=1 \
 # Create data directory
 RUN mkdir -p /data/tmp /data/files
 
-EXPOSE 8000
-
-# Health check (inside container) - Use Python instead of curl
-HEALTHCHECK --interval=30s --timeout=30s --start-period=30s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1
+# Health check (inside container) - More robust health check
+HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
+  CMD python -c "import sys; import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5); sys.exit(0)" || exit 1
 
 # Start FastAPI with optimized workers
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "uvloop", "--http", "httptools"]
