@@ -9,6 +9,7 @@ import '../../core/theme/app_theme.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
+import '../../core/utils/emoji_utils.dart';
 import '../widgets/message_bubble.dart';
 
 
@@ -29,6 +30,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   List<Message> _messages = [];
   Chat? _chat;
   bool _loading = true;
+  bool _isLoading = false;
   String? _error;
   String _meId = '';
 
@@ -93,7 +95,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       final newText = text.replaceRange(start, end, emojis[index]);
                       _messageController.value = TextEditingValue(
                         text: newText,
-                        selection: TextSelection.collapsed(offset: start + emojis[index].length),
+                        selection: TextSelection.collapsed(offset: start + (emojis[index].length as int)),
                       );
                     },
                     child: Center(child: Text(emojis[index], style: const TextStyle(fontSize: 24))),

@@ -38,7 +38,7 @@ class Message extends Equatable {
   });
 
   factory Message.fromApi(Map<String, dynamic> json, {required String currentUserId}) {
-    final senderId = (json['sender_id'] ?? json['senderId'] ?? '').toString();
+    final senderId = (json['sender_id'] ?? json['senderId'] ?? '').toString().trim();
     final createdAtRaw = json['created_at'] ?? json['createdAt'];
     final createdAt = createdAtRaw is String ? DateTime.tryParse(createdAtRaw) : null;
 
@@ -56,7 +56,6 @@ class Message extends Equatable {
         .toList();
 
     final isDeleted = json['is_deleted'] == true;
-    final senderId = (json['sender_id'] ?? json['senderId'] ?? '').toString().trim();
     final text = (json['text'] ?? '').toString().trim();
     final fileId = (json['file_id'] ?? json['fileId'])?.toString().trim();
 

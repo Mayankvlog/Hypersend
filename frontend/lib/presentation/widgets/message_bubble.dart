@@ -9,6 +9,7 @@ class MessageBubble extends StatelessWidget {
   final String? avatarUrl;
   final VoidCallback? onLongPress;
   final void Function(String emoji)? onToggleReaction;
+  final VoidCallback? onAddReaction;
   final void Function(Message message)? onFileTap;
 
   const MessageBubble({
