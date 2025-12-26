@@ -751,4 +751,3 @@ async def get_avatar(filename: str):
         raise HTTPException(status_code=404, detail="Avatar not found")
     
     return FileResponse(file_path)
-
