@@ -113,15 +113,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   List<dynamic> _filteredListWithSaved() {
-    final list = <dynamic>[];
-    // Always add Saved Messages entry if no search or if it matches search
-    if (_searchController.text.isEmpty) {
-      list.add('header_saved');
-    } else if ('saved messages'.contains(_searchController.text.toLowerCase())) {
-      list.add('header_saved');
-    }
-    list.addAll(_filteredChats);
-    return list;
+    // No longer showing duplicate Saved Messages - it's shown once in the UI
+    return _filteredChats;
   }
 
   Widget _buildSavedMessagesEntry() {
@@ -253,9 +246,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
             const Text(AppStrings.appName),
           ],
         ),
-         actions: [
-
-        ],
       ),
       body: Column(
         children: [
@@ -413,6 +403,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   color: AppTheme.primaryCyan,
                 ),
                 title: const Text('Add Contact'),
+                subtitle: const Text('Search and add new contacts'),
                 onTap: () {
                   Navigator.of(context).pop();
                   _showAddContactDialog();

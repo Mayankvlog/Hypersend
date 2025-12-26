@@ -1,9 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 
 class HelpSupportScreen extends StatelessWidget {
   const HelpSupportScreen({super.key});
+
+  void _showErrorSnackBar(BuildContext context, String message) {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: AppTheme.errorRed,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      // Silently fail if context is not available
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +61,34 @@ class HelpSupportScreen extends StatelessWidget {
               'Yes, all messages are end-to-end encrypted for your privacy.',
             ),
             const SizedBox(height: 24),
+            _buildSectionHeader(context, 'CONTACT US'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  _buildContactTile(
+                    icon: Icons.email_outlined,
+                    title: 'Email',
+                    subtitle: 'support@hypersend.com',
+                    onTap: () => _launchEmail(context, 'support@hypersend.com'),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildContactTile(
+                    icon: Icons.phone_outlined,
+                    title: 'Phone',
+                    subtitle: '+1 (555) 123-4567',
+                    onTap: () => _launchPhone(context, '+15551234567'),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildContactTile(
+                    icon: Icons.language_outlined,
+                    title: 'Community Forum',
+                    subtitle: 'discuss.hypersend.com',
+                    onTap: () => _launchUrl(context, 'https://discuss.hypersend.com'),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
             _buildSectionHeader(context, 'FEEDBACK'),
             Padding(
@@ -147,6 +190,121 @@ class HelpSupportScreen extends StatelessWidget {
             child: const Text('Send'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildContactTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: AppTheme.cardDark,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(icon, color: AppTheme.primaryCyan, size: 28),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showContactMessage(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _launchEmail(BuildContext context, String email) async {
+    final Uri emailUri = Uri(
+      scheme: 'mailto',
+      path: email,
+    );
+    try {
+      if (await canLaunchUrl(emailUri)) {
+        await launchUrl(emailUri);
+      } else {
+        _showErrorSnackBar(context, 'Could not open email client');
+      }
+    } catch (e) {
+      _showErrorSnackBar(context, 'Error launching email: ${e.toString()}');
+    }
+  }
+
+  Future<void> _launchPhone(BuildContext context, String phoneNumber) async {
+    final Uri phoneUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber,
+    );
+    try {
+      if (await canLaunchUrl(phoneUri)) {
+        await launchUrl(phoneUri);
+      } else {
+        _showErrorSnackBar(context, 'Could not open phone dialer');
+      }
+    } catch (e) {
+      _showErrorSnackBar(context, 'Error launching phone: ${e.toString()}');
+    }
+  }
+
+  Future<void> _launchUrl(BuildContext context, String urlString) async {
+    try {
+      final Uri url = Uri.parse(urlString);
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        _showErrorSnackBar(context, 'Could not open browser');
+      }
+    } catch (e) {
+      _showErrorSnackBar(context, 'Error launching URL: ${e.toString()}');
+    }
+  }
+
+  void _showErrorSnackBar(BuildContext context, String message) {
+    // Get context from somewhere - use a global approach
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.errorRed,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
