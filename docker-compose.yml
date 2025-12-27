@@ -49,7 +49,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     command: mongod --auth --bind_ip 0.0.0.0
     logging:
       driver: "json-file"
@@ -88,7 +88,7 @@ services:
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       DEBUG: "False"
-      CORS_ORIGINS: "https://zaply.in.net,http://zaply.in.net,https://www.zaply.in.net"
+      CORS_ORIGINS: "*,http://localhost,http://localhost:8000,http://localhost:3000,http://127.0.0.1,http://127.0.0.1:8000,http://127.0.0.1:3000,http://0.0.0.0:8000,http://backend:8000,http://frontend,https://zaply.in.net,http://zaply.in.net,https://www.zaply.in.net,http://zaply.in.net:8000"
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -108,7 +108,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 5
-      start_period: 240s
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
