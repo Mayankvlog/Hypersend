@@ -106,6 +106,7 @@ class UserInDB(BaseModel):
     username: Optional[str] = None
     phone: Optional[str] = None
     bio: Optional[str] = None
+    avatar: Optional[str] = None  # Avatar initials like 'JD'
     avatar_url: Optional[str] = None
     quota_used: int = 0
     quota_limit: int = 42949672960  # 40 GiB default
@@ -135,6 +136,7 @@ class UserResponse(BaseModel):
     username: Optional[str] = None
     phone: Optional[str] = None
     bio: Optional[str] = None
+    avatar: Optional[str] = None  # Avatar initials like 'JD'
     avatar_url: Optional[str] = None
     quota_used: int
     quota_limit: int

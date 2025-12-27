@@ -86,6 +86,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             username=user.get("username"),
             phone=user.get("phone"),
             bio=user.get("bio"),
+            avatar=user.get("avatar"),
             avatar_url=user.get("avatar_url"),
             quota_used=user.get("quota_used", 0),
             quota_limit=user.get("quota_limit", 42949672960),
@@ -223,7 +224,7 @@ async def update_profile(
         
         if profile_data.avatar is not None:
             logger.info(f"✓ Avatar initials set: {profile_data.avatar}")
-            update_data["avatar_url"] = profile_data.avatar  # Store avatar initials in the avatar_url field
+            update_data["avatar"] = profile_data.avatar  # Store avatar initials in the avatar field
         
         # Process email (enforce uniqueness)
         if profile_data.email is not None and profile_data.email.strip():
@@ -316,6 +317,7 @@ async def update_profile(
             username=updated_user.get("username"),
             phone=updated_user.get("phone"),
             bio=updated_user.get("bio"),
+            avatar=updated_user.get("avatar"),
             avatar_url=updated_user.get("avatar_url"),
             quota_used=int(updated_user.get("quota_used", 0)),
             quota_limit=int(updated_user.get("quota_limit", 42949672960)),

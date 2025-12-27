@@ -121,6 +121,8 @@ async def register(user: UserCreate):
             id=user_doc["_id"],
             name=user_doc["name"],
             email=user_doc["email"],
+            avatar=user_doc.get("avatar"),
+            avatar_url=user_doc.get("avatar_url"),
             quota_used=user_doc["quota_used"],
             quota_limit=user_doc["quota_limit"],
             created_at=user_doc["created_at"]
