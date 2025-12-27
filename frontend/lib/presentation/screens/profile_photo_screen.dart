@@ -205,6 +205,16 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
 Future<void> _pickImage() async {
     try {
       debugPrint('[PROFILE_PHOTO] Picking image...');
+      
+      // Show loading feedback
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecting image...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         withData: true,
@@ -286,10 +296,11 @@ Future<void> _handleSave() async {
 
       if (!mounted) return;
       
-      // Show success message
+      // Clear any existing messages and show success
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Profile photo updated successfully'),
+          content: Text('Profile photo updated successfully ✅'),
           backgroundColor: AppTheme.successGreen,
           duration: Duration(seconds: 2),
         ),
@@ -307,13 +318,26 @@ Future<void> _handleSave() async {
       if (!mounted) return;
       
       String errorMessage = 'Failed to update profile photo';
-      if (e.toString().contains('File must be an image')) {
+      final errorString = e.toString().toLowerCase();
+      
+      // Most specific conditions first
+      if (errorString.contains('file must be an image')) {
         errorMessage = 'Please select a valid image file';
-      } else if (e.toString().contains('size must be less than')) {
+      } else if (errorString.contains('size must be less than') || errorString.contains('file too large')) {
         errorMessage = 'Image size must be less than 5MB';
-      } else if (e.toString().contains('timeout')) {
-        errorMessage = 'Upload timeout. Please check your connection and try again';
-      } else if (e.toString().isNotEmpty) {
+      } else if (errorString.contains('timeout')) {
+        errorMessage = 'Upload timeout. Please check your internet connection and try again';
+      } else if (errorString.contains('connection refused')) {
+        errorMessage = 'Cannot connect to server. Please check if server is running';
+      } else if (errorString.contains('network') || errorString.contains('connection error')) {
+        errorMessage = 'Network error. Please check your internet connection';
+      } else if (errorString.contains('server error') || errorString.contains('500')) {
+        errorMessage = 'Server error. Please try again later';
+      } else if (errorString.contains('string should have at most 10 characters')) {
+        errorMessage = 'Avatar initials too long. Please use 1-10 characters only.';
+      } else if (errorString.contains('validation') || errorString.contains('invalid')) {
+        errorMessage = 'Invalid data provided. Please check your inputs and try again.';
+      } else if (errorString.isNotEmpty) {
         errorMessage = e.toString();
       }
       

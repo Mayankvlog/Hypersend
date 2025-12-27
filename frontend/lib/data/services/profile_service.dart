@@ -175,9 +175,11 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       final avatarUrl = response['avatar_url'] as String;
       debugPrint('[PROFILE_SERVICE] Avatar uploaded successfully: $avatarUrl');
       
-      // Update profile on server with new avatar URL
-      await updateProfile(avatarUrl: avatarUrl);
-      debugPrint('[PROFILE_SERVICE] Profile updated with new avatar URL');
+      // Update local user with new avatar URL (server already updated during upload)
+      if (_currentUser != null) {
+        _currentUser = _currentUser!.copyWith(avatarUrl: avatarUrl);
+        debugPrint('[PROFILE_SERVICE] Local user updated with new avatar URL');
+      }
       
       return avatarUrl;
     } catch (e) {

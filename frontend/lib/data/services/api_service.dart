@@ -102,6 +102,10 @@ class ApiService {
       case DioExceptionType.unknown:
         if (error.message?.contains('SocketException') == true) {
           return 'Network error. Please check internet connection.';
+        } else if (error.message?.contains('Connection refused') == true) {
+          return 'Cannot connect to server. Server might be down.';
+        } else if (error.message?.contains('Connection timeout') == true) {
+          return 'Connection timeout. Please try again.';
         }
         return 'Connection error. Please try again.';
       default:
