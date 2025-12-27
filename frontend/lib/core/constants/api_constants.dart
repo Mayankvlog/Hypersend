@@ -36,6 +36,13 @@ class ApiConstants {
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
   
+  // File size limits
+  static const int maxFileSizeBytes = 5 * 1024 * 1024; // 5MB in bytes
+  static const int maxFileSizeMB = 5;
+  static const Duration uploadTimeout = Duration(seconds: 60); // 1 minute for large files
+  static const String allowedImageTypes = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg';
+  static const List<String> restrictedImageTypes = ['.exe', '.bat', '.cmd', '.scr', '.msi', '.dll', '.php', '.asp', '.jsp', '.js', '.zip', '.rar', '.tar', '.7z'];
+  
   // Security: Validate SSL certificates in production
   static const bool validateCertificates = bool.fromEnvironment(
     'VALIDATE_CERTIFICATES',

@@ -179,7 +179,7 @@ class ProfileService {
       if (newUsername.length < 3) {
         throw Exception('Username must be at least 3 characters');
       }
-      // Call API to change username
+      // Call API to change username (correct method signature)
       await _apiService.updateProfile({'username': newUsername});
       _currentUser = _currentUser!.copyWith(username: newUsername);
       return true;

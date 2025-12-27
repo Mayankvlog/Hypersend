@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/constants/api_constants.dart';
+import 'dart:convert';
 
 class ApiService {
   late final Dio _dio;
