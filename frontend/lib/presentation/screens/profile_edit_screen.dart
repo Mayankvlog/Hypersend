@@ -102,10 +102,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         nameToSend = newName;
       }
 
-      debugPrint('[PROFILE_EDIT] Sending profile update: fields=${[nameToSend != null, usernameToSend != null, emailToSend != null]}');
+      // Status field is treated as bio
+      String? bioToSend;
+      if (_statusController.text.trim() != 'Available') {
+        bioToSend = _statusController.text.trim();
+      }
 
-      // Check if at least one field is being updated
-      if (nameToSend == null && usernameToSend == null && emailToSend == null) {
+      debugPrint('[PROFILE_EDIT] Sending profile update: fields=${[nameToSend != null, usernameToSend != null, emailToSend != null, _avatarChanged, bioToSend != null]}');
+
+      // Check if at least one field is being updated (including avatar)
+      if (nameToSend == null && usernameToSend == null && emailToSend == null && !_avatarChanged && bioToSend == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('No changes to save'),
@@ -114,12 +120,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         );
         setState(() => _isLoading = false);
         return;
-      }
-
-      // Status field is treated as bio
-      String? bioToSend;
-      if (_statusController.text.trim() != 'Available') {
-        bioToSend = _statusController.text.trim();
       }
 
 // Disable save button to prevent race condition
