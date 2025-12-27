@@ -351,7 +351,12 @@ async def favicon():
 @app.get("/health")
 async def health():
     """Health check"""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "service": "zaply-api",
+        "version": "1.0.0",
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 
 # Include routers
