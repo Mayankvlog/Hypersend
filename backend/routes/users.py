@@ -71,23 +71,13 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             users_collection().find_one({"_id": current_user}),
             timeout=5.0
         )
-    except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
-        )
-    except (ValueError, TypeError, KeyError, OSError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch user: {str(e)}"
-        )
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
         return UserResponse(
             id=user["_id"],
             name=user["name"],
@@ -104,7 +94,18 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             is_online=user.get("is_online", False),
             status=user.get("status"),
             pinned_chats=user.get("pinned_chats", []),
-            contacts_count=len(user.get("contacts", []))
+            contacts_count=len(user.get("contacts", [])),
+            is_contact=False  # Current user can't be a contact of themselves
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch user: {str(e)}"
         )
 
 
@@ -528,7 +529,7 @@ def _calculate_search_score(user: dict, query: str, clean_phone: str, search_typ
         # Exact matches get highest scores
         if search_type == "email" and email == query_lower:
             score += 100
-        elif search_type == "phone" and clean_phone in re.sub(r'[^\d+]', '', phone):
+        elif search_type == "phone" and clean_phone in re.sub(r'[^\d]', '', phone):
             score += 90
         elif search_type == "username" and username == query_lower.lstrip('@'):
             score += 85
