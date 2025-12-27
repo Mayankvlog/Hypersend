@@ -585,6 +585,7 @@ class UploadInDB(BaseModel):
 class ContactAddRequest(BaseModel):
     """Add contact request model"""
     user_id: str = Field(..., description="User ID to add as contact")
+    display_name: Optional[str] = Field(None, description="Custom display name for contact")
     
     @field_validator('user_id')
     @classmethod

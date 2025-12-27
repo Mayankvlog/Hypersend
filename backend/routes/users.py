@@ -1113,14 +1113,22 @@ async def add_contact(
             )
         
         contacts = current_user_data.get("contacts", [])
-        if request.user_id in contacts:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="User is already in your contacts"
-            )
         
-        # Add to contacts
-        contacts.append(request.user_id)
+        # Check if already in contacts (support both old format and new format)
+        if isinstance(contacts, list):
+            if any(isinstance(c, dict) and c.get("user_id") == request.user_id for c in contacts) or (request.user_id in contacts):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="User is already in your contacts"
+                )
+        
+        # Add to contacts in new format: {user_id, display_name}
+        contact_entry = {
+            "user_id": request.user_id,
+            "display_name": request.display_name or target_user.get("name", target_user.get("username", ""))
+        }
+        contacts.append(contact_entry)
+        
         await asyncio.wait_for(
             users_collection().update_one(
                 {"_id": current_user},
@@ -1132,7 +1140,7 @@ async def add_contact(
         return {
             "message": "Contact added successfully",
             "contact_id": request.user_id,
-            "contact_name": target_user.get("name", "")
+            "contact_name": contact_entry["display_name"]
         }
         
     except asyncio.TimeoutError:

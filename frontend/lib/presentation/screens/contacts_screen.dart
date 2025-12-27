@@ -229,7 +229,10 @@ class _ContactsScreenState extends State<ContactsScreen>
 
   Future<void> _addToContacts(User user) async {
     try {
-      await serviceProvider.apiService.addContact(user.id);
+      await serviceProvider.apiService.addContact(
+        userId: user.id,
+        displayName: user.name ?? user.username ?? 'Contact',
+      );
       _showSuccessSnackBar('Contact added successfully');
       _loadContacts(); // Refresh contacts
     } catch (e) {
@@ -566,7 +569,10 @@ class _ContactsScreenState extends State<ContactsScreen>
     if (userId == null) return;
     
     try {
-      await serviceProvider.apiService.addContact(userId);
+      await serviceProvider.apiService.addContact(
+        userId: userId,
+        displayName: 'Contact',
+      );
       _showSuccessSnackBar('Contact added successfully');
       _loadContacts(); // Refresh contacts
     } catch (e) {

@@ -117,6 +117,137 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
+  String? _extractPeerIdFromChatId(String chatId) {
+    // Chat ID for direct messages is typically "user1_user2" format
+    // Extract the peer ID by splitting and finding the one that's not our ID
+    final parts = chatId.split('_');
+    if (parts.length == 2) {
+      if (parts[0] == _meId) {
+        return parts[1];
+      } else if (parts[1] == _meId) {
+        return parts[0];
+      }
+    }
+    return null;
+  }
+
+  void _showP2pChatOptions() {
+    if (_chat?.type != ChatType.direct) return;
+    
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.person_add),
+            title: const Text('Add to Contacts'),
+            onTap: () {
+              Navigator.pop(context);
+              _showAddToContactsDialog();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddToContactsDialog() {
+    final nameController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Add to Contacts'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Save this contact as:',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameController,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: _chat?.name ?? 'Contact Name',
+                  prefixIcon: const Icon(Icons.person),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  errorText: nameController.text.isEmpty 
+                    ? 'Contact name is required' 
+                    : null,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                nameController.dispose();
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: nameController.text.trim().isEmpty
+                ? null
+                : () async {
+                  final displayName = nameController.text.trim();
+                  
+                  try {
+                    // For direct chats, the peer ID is embedded in the chat ID or we need to fetch chat details
+                    // The chat ID format for direct chats is typically "user1_user2"
+                    final chatId = widget.chatId;
+                    final peerId = _extractPeerIdFromChatId(chatId);
+                    
+                    if (peerId == null || peerId.isEmpty) {
+                      if (mounted) {
+                        nameController.dispose();
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Unable to add contact - invalid chat')),
+                        );
+                      }
+                      return;
+                    }
+                    
+                    // Add to contacts in the backend
+                    await serviceProvider.apiService.addContact(
+                      userId: peerId,
+                      displayName: displayName,
+                    );
+                    
+                    if (mounted) {
+                      nameController.dispose();
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('$displayName added to contacts')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      nameController.dispose();
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to add contact: $e')),
+                      );
+                    }
+                  }
+                },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showEmojiPicker() {
     final List<String> emojis = EmojiUtils.getEmojiList();
     
@@ -818,7 +949,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.more_vert),
-            onPressed: _chat?.type == ChatType.channel ? _showChannelOptions : null,
+            onPressed: _chat?.type == ChatType.channel 
+              ? _showChannelOptions 
+              : (_chat?.type == ChatType.direct ? _showP2pChatOptions : null),
           ),
         ],
       ),

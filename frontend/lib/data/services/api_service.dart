@@ -668,11 +668,17 @@ Future<void> postToChannel(String channelId, String text) async {
     }
   }
 
-  Future<Map<String, dynamic>> addContact(String userId) async {
+  Future<Map<String, dynamic>> addContact({
+    required String userId,
+    required String displayName,
+  }) async {
     try {
       final response = await _dio.post(
         '${ApiConstants.usersEndpoint}/contacts/add',
-        data: {'user_id': userId}
+        data: {
+          'user_id': userId,
+          'display_name': displayName,
+        }
       );
       return response.data ?? {};
     } catch (e) {
