@@ -1103,34 +1103,70 @@ async def upload_avatar(
         )
 
 
+@router.get("/health")
+async def users_health():
+    """Health check for users module"""
+    return {"status": "healthy", "module": "users", "timestamp": datetime.utcnow().isoformat()}
+
+@router.get("/avatar-test")
+async def test_avatar_route():
+    """Test route to verify API routing"""
+    return {"message": "Avatar API is working", "status": "ok"}
+
 @router.get("/avatar/{filename}")
 async def get_avatar(filename: str):
-    """Get user avatar"""
+    """Get user avatar - publicly accessible"""
     from backend.config import settings
     from fastapi.responses import FileResponse
+    from datetime import datetime
     import os
     
+    logger.info(f"[AVATAR] Avatar requested: {filename}")
+    
+    # Validate filename to prevent directory traversal
+    if not filename or '..' in filename or '/' in filename:
+        logger.warning(f"[AVATAR] Invalid filename: {filename}")
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
     file_path = settings.DATA_ROOT / "avatars" / filename
-    print(f"[AVATAR] Requested file: {file_path}")
-    print(f"[AVATAR] File exists: {file_path.exists()}")
+    logger.debug(f"[AVATAR] File path: {file_path}")
     
     if not file_path.exists():
-        print(f"[AVATAR] File not found: {file_path}")
+        logger.warning(f"[AVATAR] File not found: {filename}")
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    
+    # Check if it's actually a file
+    if not file_path.is_file():
+        logger.warning(f"[AVATAR] Path is not a file: {file_path}")
         raise HTTPException(status_code=404, detail="Avatar not found")
     
     # Determine media type based on file extension
     media_type = None
-    if filename.lower().endswith(('.jpg', '.jpeg')):
+    filename_lower = filename.lower()
+    if filename_lower.endswith(('.jpg', '.jpeg')):
         media_type = 'image/jpeg'
-    elif filename.lower().endswith('.png'):
+    elif filename_lower.endswith('.png'):
         media_type = 'image/png'
-    elif filename.lower().endswith('.gif'):
+    elif filename_lower.endswith('.gif'):
         media_type = 'image/gif'
-    elif filename.lower().endswith('.webp'):
+    elif filename_lower.endswith('.webp'):
         media_type = 'image/webp'
+    else:
+        logger.warning(f"[AVATAR] Unsupported file type: {filename}")
+        raise HTTPException(status_code=400, detail="Unsupported file type")
     
-    print(f"[AVATAR] Serving file with media_type: {media_type}")
-    return FileResponse(file_path, media_type=media_type)
+    try:
+        file_size = os.path.getsize(file_path)
+        logger.info(f"[AVATAR] Serving avatar: {filename} ({file_size} bytes, {media_type})")
+        return FileResponse(
+            file_path, 
+            media_type=media_type, 
+            filename=filename,
+            headers={"Cache-Control": "public, max-age=3600"}
+        )
+    except Exception as e:
+        logger.error(f"[AVATAR] Error serving avatar {filename}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to serve avatar")
 
 
 @router.post("/location/update")
