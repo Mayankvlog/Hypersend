@@ -254,19 +254,22 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     builder: (context) {
                       // Create a temporary user object to utilize the isPath/URL logic
                       final tempUser = _initialUser.copyWith(avatar: _currentAvatar.trim());
+                      // FIX: Get initials from _currentAvatar if it's not a URL
+                      final isUrl = _currentAvatar.startsWith('http') || _currentAvatar.startsWith('/');
+                      final displayInitials = isUrl ? tempUser.initials : _currentAvatar.toUpperCase();
                                          
                       return CircleAvatar(
                         radius: 60,
-                        backgroundColor: AppTheme.cardDark,
-                        backgroundImage: tempUser.isAvatarPath
+                        backgroundColor: AppTheme.primaryCyan,
+                        backgroundImage: isUrl
                             ? NetworkImage(tempUser.fullAvatarUrl)
                             : null,
-                        onBackgroundImageError: tempUser.isAvatarPath 
+                        onBackgroundImageError: isUrl 
                             ? (e, s) => debugPrint('Avatar image load failed: $e') 
                             : null,
                         child: Center(
                           child: Text(
-                            tempUser.initials,
+                            displayInitials,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 28,

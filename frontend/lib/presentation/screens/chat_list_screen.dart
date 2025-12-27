@@ -102,7 +102,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   if (!mounted) return;
                   
                   if (users.isEmpty) {
-                    _showErrorSnackBar('User with this phone number not found');
+                    // FIX: Dismiss dialog before showing error
+                    Navigator.pop(context);
+                    _showErrorSnackBar('User with this phone number not found. Please check the number and try again.');
                     return;
                   }
                   
@@ -115,7 +117,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     });
                   }
                 } catch (e) {
-                  _showErrorSnackBar('Error searching for user');
+                  if (!mounted) return;
+                  Navigator.pop(context);
+                  _showErrorSnackBar('Error searching for user: ${e.toString()}');
                 }
               },
               child: const Text('Add'),
@@ -211,7 +215,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             fontSize: 14,
           ),
         ),
-        trailing: const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+        trailing: null,
         onTap: () async {
           try {
             final savedChatData = await serviceProvider.apiService.getSavedChat();
