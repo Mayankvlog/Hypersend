@@ -187,6 +187,11 @@ class ProfileUpdate(BaseModel):
     def validate_avatar(cls, v):
         if v is None:
             return v
+        # Strip whitespace
+        v = v.strip() if isinstance(v, str) else v
+        # Return None if empty after stripping
+        if not v:
+            return None
         if len(v) > 10:
             raise ValueError('Avatar initials must be 10 characters or less')
         return v

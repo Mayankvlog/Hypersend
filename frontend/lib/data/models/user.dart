@@ -35,6 +35,11 @@ class User extends Equatable {
 
   /// Create a User from API response map
   factory User.fromApi(Map<String, dynamic> json) {
+    // Prioritize avatar over avatar_url - use avatar_url as fallback
+    final avatar = json['avatar']?.toString().trim() ?? '';
+    final avatarUrl = json['avatar_url']?.toString().trim() ?? '';
+    final finalAvatar = (avatar.isNotEmpty ? avatar : avatarUrl).isEmpty ? '' : (avatar.isNotEmpty ? avatar : avatarUrl);
+    
     return User(
       id: (json['_id'] ?? json['id'] ?? '').toString().trim(),
       name: (json['name'] ?? json['full_name'] ?? '').toString().trim(),
@@ -42,7 +47,7 @@ class User extends Equatable {
       email: json['email']?.toString().trim(),
       phone: json['phone']?.toString().trim(),
       bio: json['bio']?.toString().trim(),
-      avatar: (json['avatar_url'] ?? json['avatar'] ?? '').toString().trim(),
+      avatar: finalAvatar,
       isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
       lastSeen: json['last_seen'] != null ? DateTime.tryParse(json['last_seen']) : null,
       status: json['status']?.toString().trim(),
