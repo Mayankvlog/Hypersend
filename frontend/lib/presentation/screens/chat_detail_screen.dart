@@ -948,12 +948,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               icon: const Icon(Icons.analytics_outlined),
               onPressed: () {}, // Channel Info/Stats
             ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: _chat?.type == ChatType.channel 
-              ? _showChannelOptions 
-              : (_chat?.type == ChatType.direct ? _showP2pChatOptions : null),
-          ),
+          if (_chat?.type != ChatType.saved)
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: _chat?.type == ChatType.channel 
+                ? _showChannelOptions 
+                : (_chat?.type == ChatType.direct ? _showP2pChatOptions : null),
+            ),
         ],
       ),
       body: Column(
