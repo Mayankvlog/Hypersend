@@ -97,7 +97,7 @@ class ApiService {
       case DioExceptionType.connectionError:
         return 'Cannot connect to server. Please check:\n'
             '1. Internet connection is active\n'
-            '2. Server is running (check: https://zaply.in.net)\n'
+            '2. Server is running (check: ${ApiConstants.serverBaseUrl})\n'
             '3. API endpoint is reachable';
       case DioExceptionType.unknown:
         if (error.message?.contains('SocketException') == true) {

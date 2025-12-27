@@ -21,6 +21,7 @@ class ProfileService {
     String? name,
     String? username,
     String? avatar,
+    String? avatarUrl,
     String? email,
     String? bio,
     String? phone,
@@ -47,6 +48,7 @@ class ProfileService {
       if (username != null) updateMap['username'] = username;
       if (email != null) updateMap['email'] = email;
       if (avatar != null) updateMap['avatar'] = avatar;  // Add avatar field for initials
+      if (avatarUrl != null) updateMap['avatar_url'] = avatarUrl;  // Add avatar_url field for image URL
       if (bio != null) updateMap['bio'] = bio;
       if (phone != null) updateMap['phone'] = phone;
       
@@ -62,7 +64,10 @@ class ProfileService {
         name: name ?? _currentUser!.name,
         username: username ?? _currentUser!.username,
         email: email ?? _currentUser!.email,
+        bio: bio ?? _currentUser!.bio,
+        phone: phone ?? _currentUser!.phone,
         avatar: avatar ?? _currentUser!.avatar,
+        avatarUrl: avatarUrl ?? _currentUser!.avatarUrl,
       );
       debugPrint('[PROFILE_UPDATE] Local user updated successfully');
       return _currentUser!;
@@ -170,11 +175,9 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       final avatarUrl = response['avatar_url'] as String;
       debugPrint('[PROFILE_SERVICE] Avatar uploaded successfully: $avatarUrl');
       
-      // Update current user with new avatar URL
-      if (_currentUser != null) {
-        _currentUser = _currentUser!.copyWith(avatar: avatarUrl);
-        debugPrint('[PROFILE_SERVICE] Current user avatar updated in memory');
-      }
+      // Update profile on server with new avatar URL
+      await updateProfile(avatarUrl: avatarUrl);
+      debugPrint('[PROFILE_SERVICE] Profile updated with new avatar URL');
       
       return avatarUrl;
     } catch (e) {

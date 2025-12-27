@@ -94,13 +94,13 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
                 CircleAvatar(
                   radius: 60,
                   backgroundColor: AppTheme.cardDark,
-                  backgroundImage: user.avatar.startsWith('http')
-                      ? NetworkImage(user.avatar)
+                  backgroundImage: user.avatarUrl != null
+                      ? NetworkImage(user.avatarUrl!)
                       : null,
                   onBackgroundImageError: (exception, stackTrace) {
                     // Fallback handled by child
                   },
-                  child: user.avatar.startsWith('http')
+                  child: user.avatarUrl != null
                       ? null
                       : Center(
                           child: Text(

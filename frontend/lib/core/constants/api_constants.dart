@@ -11,6 +11,20 @@ class ApiConstants {
     defaultValue: 'https://zaply.in.net/api/v1/',
   );
   
+  // Server base URL (without /api/v1) - for avatar images and static files
+  static String get serverBaseUrl {
+    final uri = Uri.tryParse(baseUrl);
+    if (uri == null) return 'https://zaply.in.net';
+    
+    // Reconstruct URL without the path
+    final port = uri.hasPort ? uri.port : null;
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: port,
+    ).toString();
+  }
+  
   // API Endpoints
   static const String authEndpoint = 'auth';
   static const String chatsEndpoint = 'chats';

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
 
 class ProfilePhotoScreen extends StatefulWidget {
@@ -89,8 +90,12 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                     backgroundColor: AppTheme.primaryCyan,
                     backgroundImage: _pickedFileBytes != null
                         ? MemoryImage(_pickedFileBytes!)
-                        : null,
-                    child: _pickedFileBytes == null
+                        : widget.currentAvatar.startsWith('http')
+                            ? NetworkImage(widget.currentAvatar)
+                            : widget.currentAvatar.startsWith('/')
+                                ? NetworkImage('${ApiConstants.serverBaseUrl}${widget.currentAvatar}')
+                                : null,
+                    child: _pickedFileBytes == null && !(widget.currentAvatar.startsWith('http') || widget.currentAvatar.startsWith('/'))
                         ? Text(
                             _selectedPhoto,
                             style: const TextStyle(

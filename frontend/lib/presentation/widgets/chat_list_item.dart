@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/time_formatter.dart';
+import '../../core/constants/api_constants.dart';
 import '../../data/models/chat.dart';
 
 class ChatListItem extends StatelessWidget {
@@ -185,7 +186,7 @@ class ChatListItem extends StatelessWidget {
     }
 
     final fullUrl = chat.avatar.startsWith('/') 
-        ? 'https://zaply.in.net${chat.avatar}'
+        ? '${ApiConstants.serverBaseUrl}${chat.avatar}'
         : chat.avatar;
 
     // Use a temporary user object (or simple logic) to get initials

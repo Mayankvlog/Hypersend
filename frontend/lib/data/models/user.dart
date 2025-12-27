@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../core/constants/api_constants.dart';
 
 class User extends Equatable {
   final String id;
@@ -8,6 +9,7 @@ class User extends Equatable {
   final String? phone;
   final String? bio;
   final String avatar;
+  final String? avatarUrl;
   final bool isOnline;
   final DateTime? lastSeen;
   final String? status;
@@ -21,6 +23,7 @@ class User extends Equatable {
     required this.name,
     required this.username,
     required this.avatar,
+    this.avatarUrl,
     this.email,
     this.phone,
     this.bio,
@@ -35,11 +38,6 @@ class User extends Equatable {
 
   /// Create a User from API response map
   factory User.fromApi(Map<String, dynamic> json) {
-    // Prioritize avatar over avatar_url - use avatar_url as fallback
-    final avatar = json['avatar']?.toString().trim() ?? '';
-    final avatarUrl = json['avatar_url']?.toString().trim() ?? '';
-    final finalAvatar = (avatar.isNotEmpty ? avatar : avatarUrl).isEmpty ? '' : (avatar.isNotEmpty ? avatar : avatarUrl);
-    
     return User(
       id: (json['_id'] ?? json['id'] ?? '').toString().trim(),
       name: (json['name'] ?? json['full_name'] ?? '').toString().trim(),
@@ -47,7 +45,8 @@ class User extends Equatable {
       email: json['email']?.toString().trim(),
       phone: json['phone']?.toString().trim(),
       bio: json['bio']?.toString().trim(),
-      avatar: finalAvatar,
+      avatar: json['avatar']?.toString().trim() ?? '',
+      avatarUrl: json['avatar_url']?.toString().trim(),
       isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
       lastSeen: json['last_seen'] != null ? DateTime.tryParse(json['last_seen']) : null,
       status: json['status']?.toString().trim(),
@@ -60,7 +59,7 @@ class User extends Equatable {
 
   @override
   List<Object?> get props => [
-        id, name, username, email, phone, bio, avatar, isOnline, 
+        id, name, username, email, phone, bio, avatar, avatarUrl, isOnline, 
         lastSeen, status, updatedAt, contactsCount, isContact, isBlocked
       ];
 
@@ -72,6 +71,7 @@ class User extends Equatable {
     String? phone,
     String? bio,
     String? avatar,
+    String? avatarUrl,
     bool? isOnline,
     DateTime? lastSeen,
     String? status,
@@ -88,6 +88,7 @@ class User extends Equatable {
       phone: phone ?? this.phone,
       bio: bio ?? this.bio,
       avatar: avatar ?? this.avatar,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       isOnline: isOnline ?? this.isOnline,
       lastSeen: lastSeen ?? this.lastSeen,
       status: status ?? this.status,
@@ -100,6 +101,36 @@ class User extends Equatable {
 
   /// Helper to determine if the avatar string is a file path/URL or just initials
   bool get isAvatarPath {
+    // Check avatarUrl first (for uploaded images)
+    if (avatarUrl != null && avatarUrl!.isNotEmpty) {
+      final trimmed = avatarUrl!.trim();
+      if (trimmed.isEmpty) return false;
+      
+      // Explicit URL prefixes
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return true;
+      
+      // Absolute paths from backend
+      if (trimmed.startsWith('/')) return true;
+      
+      // Check for common image extensions if it contains a dot
+      final lower = trimmed.toLowerCase();
+      if (lower.contains('.')) {
+        final extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+        for (final ext in extensions) {
+          if (lower.endsWith(ext)) return true;
+        }
+      }
+      
+      // If it's very short (1-2 chars), it's definitely initials
+      if (trimmed.length <= 2) return false;
+
+      // Fallback: If it contains a slash and is long enough, likely a path
+      if (trimmed.contains('/') && trimmed.length > 5) return true;
+
+      return false;
+    }
+    
+    // Fallback to avatar field (for initials)
     final trimmed = avatar.trim();
     if (trimmed.isEmpty) return false;
     
@@ -129,14 +160,26 @@ class User extends Equatable {
 
   /// Resolves the full avatar URL for display
   String get fullAvatarUrl {
+    // Use avatarUrl if available (for uploaded images)
+    if (avatarUrl != null && avatarUrl!.isNotEmpty) {
+      final trimmed = avatarUrl!.trim();
+      if (trimmed.startsWith('http')) return trimmed;
+      if (trimmed.startsWith('/')) {
+        return '${ApiConstants.serverBaseUrl}$trimmed';
+      }
+      // Relative path fallback
+      return trimmed;
+    }
+    
+    // Fallback to avatar field (for initials)
     final trimmed = avatar.trim();
     if (!isAvatarPath) return '';
     if (trimmed.startsWith('http')) return trimmed;
     if (trimmed.startsWith('/')) {
-      return 'https://zaply.in.net$trimmed';
+      return '${ApiConstants.serverBaseUrl}$trimmed';
     }
     // Relative path fallback
-    return 'https://zaply.in.net/$trimmed';
+    return trimmed;
   }
 
   /// Helper to get initials from name or avatar field
