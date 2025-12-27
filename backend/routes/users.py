@@ -406,8 +406,14 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
 
 
 @router.get("/search")
-async def search_users(q: str, current_user: str = Depends(get_current_user)):
-    """Search users by name, email, username, or phone number with intelligent prioritization"""
+async def search_users(q: str, search_type: str = None, current_user: str = Depends(get_current_user)):
+    """Search users by name, email, username, or phone number with intelligent prioritization
+    
+    Args:
+        q: Search query string
+        search_type: Optional - 'phone', 'email', 'username', or None for auto-detection
+        current_user: Current authenticated user ID
+    """
     
     if len(q) < 2:
         return {"users": []}
@@ -418,13 +424,16 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
         # Extract only digits and plus for phone search - fix digits_only bug
         clean_phone = '+' + re.sub(r'[^\d]', '', q[1:]) if q.startswith('+') else re.sub(r'[^\d]', '', q)
         
-        # Determine search type and prioritize accordingly
-        search_type = _determine_search_type(q, clean_phone)
+        # Determine search type - use provided search_type or auto-detect
+        if search_type and search_type in ["phone", "email", "username"]:
+            actual_search_type = search_type
+        else:
+            actual_search_type = _determine_search_type(q, clean_phone)
         
         users = []
         
         # Build prioritized search query based on detected search type
-        if search_type == "phone":
+        if actual_search_type == "phone":
             # Phone number search - highest priority for exact phone matches
             search_query = {
                 "$or": [
@@ -433,7 +442,7 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
                 ],
                 "_id": {"$ne": current_user}
             }
-        elif search_type == "email":
+        elif actual_search_type == "email":
             # Email search - exact email matches first, then username/name
             search_query = {
                 "$or": [
@@ -443,7 +452,7 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
                 ],
                 "_id": {"$ne": current_user}
             }
-        elif search_type == "username":
+        elif actual_search_type == "username":
             # Username search - prioritized exact username match
             search_query = {
                 "$or": [
@@ -463,7 +472,7 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
             }
         
         # Add phone search as fallback for general searches if numeric
-        if search_type == "general" and clean_phone and len(clean_phone) >= 3 and any(c.isdigit() for c in clean_phone):
+        if actual_search_type == "general" and clean_phone and len(clean_phone) >= 3 and any(c.isdigit() for c in clean_phone):
             search_query["$or"].append({
                 "phone": {"$regex": re.escape(clean_phone), "$options": "i"}
             })
@@ -474,7 +483,7 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
         async def fetch_results():
             results = []
             async for user in cursor:
-                score = _calculate_search_score(user, q, clean_phone, search_type)
+                score = _calculate_search_score(user, q, clean_phone, actual_search_type)
                 results.append({
                     "id": user.get("_id", ""),
                     "name": user.get("name", ""),

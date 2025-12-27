@@ -295,6 +295,14 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
     return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
   }
 
+  Future<List<Map<String, dynamic>>> searchUsersByEmail(String email) async {
+    final response = await _dio.get(
+        '${ApiConstants.usersEndpoint}/search',
+        queryParameters: {'q': email, 'search_type': 'email'},
+    );
+    return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
+  }
+
   Future<Map<String, dynamic>> sendMessage({
     required String chatId,
     String? content,

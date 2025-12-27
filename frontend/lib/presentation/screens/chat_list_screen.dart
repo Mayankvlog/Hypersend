@@ -35,96 +35,219 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _showAddContactDialog() async {
     final phoneController = TextEditingController();
+    final emailController = TextEditingController();
     final nameController = TextEditingController();
+    int selectedTab = 0; // 0 = Phone, 1 = Gmail
     
     try {
       final result = await showDialog<Map<String, dynamic>>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('New Contact'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add a new contact',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: nameController,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: 'Contact name',
-                    prefixIcon: const Icon(Icons.person_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: const Text('New Contact'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Add a new contact',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: phoneController,
-                  decoration: InputDecoration(
-                    hintText: '+1 (555) 123-4567',
-                    prefixIcon: const Icon(Icons.phone_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 16),
+                  // Contact name field
+                  TextField(
+                    controller: nameController,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Contact name (optional)',
+                      prefixIcon: const Icon(Icons.person_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
-                  keyboardType: TextInputType.phone,
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  // Tab selection buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => selectedTab = 0),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: selectedTab == 0 
+                                    ? AppTheme.primaryCyan 
+                                    : AppTheme.dividerColor,
+                                  width: selectedTab == 0 ? 2 : 1,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.phone_outlined, size: 18),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Phone',
+                                  style: TextStyle(
+                                    fontWeight: selectedTab == 0 
+                                      ? FontWeight.w600 
+                                      : FontWeight.w400,
+                                    color: selectedTab == 0 
+                                      ? AppTheme.primaryCyan 
+                                      : AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => selectedTab = 1),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: selectedTab == 1 
+                                    ? AppTheme.primaryCyan 
+                                    : AppTheme.dividerColor,
+                                  width: selectedTab == 1 ? 2 : 1,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.mail_outlined, size: 18),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Gmail',
+                                  style: TextStyle(
+                                    fontWeight: selectedTab == 1 
+                                      ? FontWeight.w600 
+                                      : FontWeight.w400,
+                                    color: selectedTab == 1 
+                                      ? AppTheme.primaryCyan 
+                                      : AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Phone input
+                  if (selectedTab == 0)
+                    TextField(
+                      controller: phoneController,
+                      decoration: InputDecoration(
+                        hintText: '+1 (555) 123-4567',
+                        prefixIcon: const Icon(Icons.phone_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      keyboardType: TextInputType.phone,
+                    ),
+                  // Gmail input
+                  if (selectedTab == 1)
+                    TextField(
+                      controller: emailController,
+                      decoration: InputDecoration(
+                        hintText: 'user@gmail.com',
+                        prefixIcon: const Icon(Icons.mail_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final phone = phoneController.text.trim();
-                final name = nameController.text.trim();
-                
-                if (phone.isEmpty) {
-                  _showErrorSnackBar('Please enter phone number');
-                  return;
-                }
-                
-                try {
-                  // Search for the user by phone number
-                  final users = await serviceProvider.apiService.searchUsers(phone);
-                  if (!mounted) return;
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  final phone = phoneController.text.trim();
+                  final email = emailController.text.trim();
                   
-                  if (users.isEmpty) {
-                    // FIX: Dismiss dialog before showing error
-                    Navigator.pop(context);
-                    _showErrorSnackBar('User with this phone number not found. Please check the number and try again.');
+                  // Validation
+                  if (selectedTab == 0 && phone.isEmpty) {
+                    _showErrorSnackBar('Please enter phone number');
                     return;
                   }
                   
-                  final user = users.first;
-                  // Pop with the user object and the name the user wants to assign
-                  if (mounted) {
-                    Navigator.pop(context, {
-                      ...user,
-                      'display_name': name.isNotEmpty ? name : (user['name'] ?? user['username']),
-                    });
+                  if (selectedTab == 1 && email.isEmpty) {
+                    _showErrorSnackBar('Please enter email address');
+                    return;
                   }
-                } catch (e) {
-                  if (!mounted) return;
-                  Navigator.pop(context);
-                  _showErrorSnackBar('Error searching for user: ${e.toString()}');
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
+                  
+                  // Email validation for Gmail tab
+                  if (selectedTab == 1) {
+                    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+                    if (!emailRegex.hasMatch(email)) {
+                      _showErrorSnackBar('Please enter a valid email address');
+                      return;
+                    }
+                  }
+                  
+                  try {
+                    // Search for user
+                    List<dynamic> users;
+                    if (selectedTab == 0) {
+                      users = await serviceProvider.apiService.searchUsers(phone);
+                    } else {
+                      // Search by email
+                      users = await serviceProvider.apiService.searchUsersByEmail(email);
+                    }
+                    
+                    if (!mounted) return;
+                    
+                    if (users.isEmpty) {
+                      Navigator.pop(context);
+                      final searchType = selectedTab == 0 ? 'phone number' : 'email';
+                      _showErrorSnackBar('User with this $searchType not found. Please check and try again.');
+                      return;
+                    }
+                    
+                    final user = users.first;
+                    // Pop with the user object and the name the user wants to assign
+                    if (mounted) {
+                      Navigator.pop(context, {
+                        ...user,
+                        'display_name': name.isNotEmpty ? name : (user['name'] ?? user['username']),
+                      });
+                    }
+                  } catch (e) {
+                    if (!mounted) return;
+                    Navigator.pop(context);
+                    final searchType = selectedTab == 0 ? 'phone' : 'email';
+                    _showErrorSnackBar('Error searching by $searchType: ${e.toString()}');
+                  }
+                },
+                child: const Text('Add'),
+              ),
+            ],
+          ),
         ),
       );
 
@@ -150,6 +273,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       _showErrorSnackBar('An error occurred');
     } finally {
       phoneController.dispose();
+      emailController.dispose();
       nameController.dispose();
     }
   }
