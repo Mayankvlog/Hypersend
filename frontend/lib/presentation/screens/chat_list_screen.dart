@@ -36,8 +36,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Future<void> _showAddContactDialog() async {
     final phoneController = TextEditingController();
     final emailController = TextEditingController();
+    final usernameController = TextEditingController();
     final nameController = TextEditingController();
-    int selectedTab = 0; // 0 = Phone, 1 = Gmail
+    int selectedTab = 0; // 0 = Phone, 1 = Gmail, 2 = Username
     
     try {
       final result = await showDialog<Map<String, dynamic>>(
@@ -71,81 +72,120 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   ),
                   const SizedBox(height: 16),
                   // Tab selection buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(() => selectedTab = 0),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: selectedTab == 0 
-                                    ? AppTheme.primaryCyan 
-                                    : AppTheme.dividerColor,
-                                  width: selectedTab == 0 ? 2 : 1,
-                                ),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.phone_outlined, size: 18),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Phone',
-                                  style: TextStyle(
-                                    fontWeight: selectedTab == 0 
-                                      ? FontWeight.w600 
-                                      : FontWeight.w400,
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => selectedTab = 0),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
                                     color: selectedTab == 0 
                                       ? AppTheme.primaryCyan 
-                                      : AppTheme.textSecondary,
+                                      : AppTheme.dividerColor,
+                                    width: selectedTab == 0 ? 2 : 1,
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(() => selectedTab = 1),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: selectedTab == 1 
-                                    ? AppTheme.primaryCyan 
-                                    : AppTheme.dividerColor,
-                                  width: selectedTab == 1 ? 2 : 1,
                                 ),
                               ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.mail_outlined, size: 18),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Gmail',
-                                  style: TextStyle(
-                                    fontWeight: selectedTab == 1 
-                                      ? FontWeight.w600 
-                                      : FontWeight.w400,
-                                    color: selectedTab == 1 
-                                      ? AppTheme.primaryCyan 
-                                      : AppTheme.textSecondary,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.phone_outlined, size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Phone',
+                                    style: TextStyle(
+                                      fontWeight: selectedTab == 0 
+                                        ? FontWeight.w600 
+                                        : FontWeight.w400,
+                                      color: selectedTab == 0 
+                                        ? AppTheme.primaryCyan 
+                                        : AppTheme.textSecondary,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => selectedTab = 1),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: selectedTab == 1 
+                                      ? AppTheme.primaryCyan 
+                                      : AppTheme.dividerColor,
+                                    width: selectedTab == 1 ? 2 : 1,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.mail_outlined, size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Gmail',
+                                    style: TextStyle(
+                                      fontWeight: selectedTab == 1 
+                                        ? FontWeight.w600 
+                                        : FontWeight.w400,
+                                      color: selectedTab == 1 
+                                        ? AppTheme.primaryCyan 
+                                        : AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => selectedTab = 2),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: selectedTab == 2 
+                                      ? AppTheme.primaryCyan 
+                                      : AppTheme.dividerColor,
+                                    width: selectedTab == 2 ? 2 : 1,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.alternate_email, size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '@Username',
+                                    style: TextStyle(
+                                      fontWeight: selectedTab == 2 
+                                        ? FontWeight.w600 
+                                        : FontWeight.w400,
+                                      color: selectedTab == 2 
+                                        ? AppTheme.primaryCyan 
+                                        : AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                   // Phone input
@@ -176,6 +216,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       ),
                       keyboardType: TextInputType.emailAddress,
                     ),
+                  // Username input
+                  if (selectedTab == 2)
+                    TextField(
+                      controller: usernameController,
+                      decoration: InputDecoration(
+                        hintText: '@username',
+                        prefixIcon: const Icon(Icons.alternate_email),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      keyboardType: TextInputType.text,
+                    ),
                 ],
               ),
             ),
@@ -189,6 +243,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   final name = nameController.text.trim();
                   final phone = phoneController.text.trim();
                   final email = emailController.text.trim();
+                  final username = usernameController.text.trim();
                   
                   // Validation
                   if (selectedTab == 0 && phone.isEmpty) {
@@ -201,6 +256,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     return;
                   }
                   
+                  if (selectedTab == 2 && username.isEmpty) {
+                    _showErrorSnackBar('Please enter username');
+                    return;
+                  }
+                  
                   // Email validation for Gmail tab
                   if (selectedTab == 1) {
                     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
@@ -210,21 +270,38 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     }
                   }
                   
+                  // Username validation
+                  if (selectedTab == 2) {
+                    // Remove @ if user added it
+                    final cleanUsername = username.startsWith('@') ? username.substring(1) : username;
+                    
+                    // Validate: 3+ characters, alphanumeric + underscore only
+                    final usernameRegex = RegExp(r'^[a-zA-Z0-9_]{3,}$');
+                    if (!usernameRegex.hasMatch(cleanUsername)) {
+                      _showErrorSnackBar('Username must be 3+ characters with only letters, numbers, and underscore');
+                      return;
+                    }
+                    usernameController.text = cleanUsername;
+                  }
+                  
                   try {
                     // Search for user
                     List<dynamic> users;
                     if (selectedTab == 0) {
                       users = await serviceProvider.apiService.searchUsers(phone);
-                    } else {
+                    } else if (selectedTab == 1) {
                       // Search by email
                       users = await serviceProvider.apiService.searchUsersByEmail(email);
+                    } else {
+                      // Search by username
+                      users = await serviceProvider.apiService.searchUsersByUsername(username);
                     }
                     
                     if (!mounted) return;
                     
                     if (users.isEmpty) {
                       Navigator.pop(context);
-                      final searchType = selectedTab == 0 ? 'phone number' : 'email';
+                      final searchType = selectedTab == 0 ? 'phone number' : (selectedTab == 1 ? 'email' : 'username');
                       _showErrorSnackBar('User with this $searchType not found. Please check and try again.');
                       return;
                     }
@@ -240,7 +317,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   } catch (e) {
                     if (!mounted) return;
                     Navigator.pop(context);
-                    final searchType = selectedTab == 0 ? 'phone' : 'email';
+                    final searchType = selectedTab == 0 ? 'phone' : (selectedTab == 1 ? 'email' : 'username');
                     _showErrorSnackBar('Error searching by $searchType: ${e.toString()}');
                   }
                 },

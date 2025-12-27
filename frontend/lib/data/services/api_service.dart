@@ -303,6 +303,16 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
     return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
   }
 
+  Future<List<Map<String, dynamic>>> searchUsersByUsername(String username) async {
+    // Remove @ if user included it
+    final cleanUsername = username.startsWith('@') ? username.substring(1) : username;
+    final response = await _dio.get(
+        '${ApiConstants.usersEndpoint}/search',
+        queryParameters: {'q': cleanUsername, 'search_type': 'username'},
+    );
+    return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
+  }
+
   Future<Map<String, dynamic>> sendMessage({
     required String chatId,
     String? content,
