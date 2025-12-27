@@ -516,44 +516,45 @@ def _determine_search_type(query: str, clean_phone: str) -> str:
 
 def _calculate_search_score(user: dict, query: str, clean_phone: str, search_type: str) -> int:
     """Calculate relevance score for search results (higher = more relevant)"""
-    score = 0
-    
-    query_lower = query.lower()
-    name = str(user.get("name", "")).lower()
-    email = str(user.get("email", "")).lower()
-    username = str(user.get("username", "")).lower()
-    phone = str(user.get("phone", "")).lower()
-    
-    # Exact matches get highest scores
-    if search_type == "email" and email == query_lower:
-        score += 100
-    elif search_type == "phone" and clean_phone in re.sub(r'[^\d+]', '', phone):
-        score += 90
-    elif search_type == "username" and username == query_lower.lstrip('@'):
-        score += 85
-    
-    # Prefix matches
-    if name.startswith(query_lower):
-        score += 50
-    elif username.startswith(query_lower.lstrip('@')):
-        score += 45
-    
-    # Contains matches
-    if query_lower in name:
-        score += 30
-    if query_lower in username:
-        score += 25
-    if query_lower in email:
-        score += 20
-    
-    # Phone partial matches
-    if clean_phone and len(clean_phone) >= 3:
-        # Normalize phone for comparison
-        normalized_phone = '+' + re.sub(r'[^\d]', '', phone[1:]) if phone.startswith('+') else re.sub(r'[^\d]', '', phone)
-        if clean_phone in normalized_phone:
-            score += 15
-    
-    return score
+    try:
+        score = 0
+        
+        query_lower = query.lower()
+        name = str(user.get("name", "")).lower()
+        email = str(user.get("email", "")).lower()
+        username = str(user.get("username", "")).lower()
+        phone = str(user.get("phone", "")).lower()
+        
+        # Exact matches get highest scores
+        if search_type == "email" and email == query_lower:
+            score += 100
+        elif search_type == "phone" and clean_phone in re.sub(r'[^\d+]', '', phone):
+            score += 90
+        elif search_type == "username" and username == query_lower.lstrip('@'):
+            score += 85
+        
+        # Prefix matches
+        if name.startswith(query_lower):
+            score += 50
+        elif username.startswith(query_lower.lstrip('@')):
+            score += 45
+        
+        # Contains matches
+        if query_lower in name:
+            score += 30
+        if query_lower in username:
+            score += 25
+        if query_lower in email:
+            score += 20
+        
+        # Phone partial matches
+        if clean_phone and len(clean_phone) >= 3:
+            # Normalize phone for comparison
+            normalized_phone = '+' + re.sub(r'[^\d]', '', phone[1:]) if phone.startswith('+') else re.sub(r'[^\d]', '', phone)
+            if clean_phone in normalized_phone:
+                score += 15
+        
+        return score
     except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

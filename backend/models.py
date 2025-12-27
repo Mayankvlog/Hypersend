@@ -203,7 +203,7 @@ class ProfileUpdate(BaseModel):
         if v is None:
             return v
         
-        # Remove ALL non-digit characters for validation (excluding +)
+        # Remove ALL non-digit characters for validation (including +)
         digits_only = re.sub(r'[^\d]', '', v)
         
         # Check for valid characters
