@@ -327,7 +327,8 @@ async def update_profile(
             is_online=updated_user.get("is_online", False),
             status=updated_user.get("status"),
             pinned_chats=updated_user.get("pinned_chats", []) or [],
-            contacts_count=len(updated_user.get("contacts", []))
+            contacts_count=len(updated_user.get("contacts", [])),
+            is_contact=False  # Current user can't be a contact of themselves
         )
     except asyncio.TimeoutError:
         logger.error(f"Database operation timed out")

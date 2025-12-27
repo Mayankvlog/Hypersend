@@ -121,11 +121,21 @@ async def register(user: UserCreate):
             id=user_doc["_id"],
             name=user_doc["name"],
             email=user_doc["email"],
+            username=user_doc.get("username"),
+            phone=user_doc.get("phone"),
+            bio=user_doc.get("bio"),
             avatar=user_doc.get("avatar"),
             avatar_url=user_doc.get("avatar_url"),
             quota_used=user_doc["quota_used"],
             quota_limit=user_doc["quota_limit"],
-            created_at=user_doc["created_at"]
+            created_at=user_doc["created_at"],
+            updated_at=user_doc.get("updated_at"),
+            last_seen=user_doc.get("last_seen"),
+            is_online=user_doc.get("is_online", False),
+            status=user_doc.get("status"),
+            pinned_chats=user_doc.get("pinned_chats", []) or [],
+            contacts_count=len(user_doc.get("contacts", [])),
+            is_contact=False
         )
     
     except HTTPException:
