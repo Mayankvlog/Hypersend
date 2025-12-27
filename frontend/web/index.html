@@ -19,7 +19,7 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Zaply - Secure P2P Chat and File Transfer Application">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://www.gstatic.com https://fonts.gstatic.com; connect-src 'self' https://www.gstatic.com https://fonts.gstatic.com; font-src 'self' https://fonts.gstatic.com data:; object-src 'none'; media-src 'self'; frame-src 'none';">
+
   <title>Zaply - Fast. Secure. Chat.</title>
 
   <!-- iOS meta tags & icons -->
@@ -35,6 +35,31 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script>
+    // Force HTML renderer to avoid CanvasKit loading issues
+    window.flutterConfiguration = {
+      canvasKitBaseUrl: "",
+      renderer: "html"
+    };
+    
+    // Override CSP at runtime
+    if (typeof MutationObserver !== 'undefined') {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.tagName === 'META' && node.httpEquiv === 'Content-Security-Policy') {
+              node.remove();
+            }
+          });
+        });
+      });
+      
+      observer.observe(document.head, {
+        childList: true,
+        subtree: true
+      });
+    }
+  </script>
   <script src="flutter_bootstrap.js" async defer></script>
 </body>
 </html>
