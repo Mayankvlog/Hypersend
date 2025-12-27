@@ -12,6 +12,7 @@ from typing import Optional
 import re
 import logging
 import json
+import math
 
 # Set up detailed logging for profile operations
 logger = logging.getLogger("profile_endpoint")
@@ -572,6 +573,120 @@ def _calculate_search_score(user: dict, query: str, clean_phone: str, search_typ
         )
 
 
+@router.get("/nearby")
+async def get_nearby_users(
+    lat: float,
+    lng: float,
+    radius: float = 1000,  # Default 1km in meters
+    current_user: str = Depends(get_current_user)
+):
+    """Find nearby users within specified radius (in meters).
+    
+    Args:
+        lat: Latitude of current location
+        lng: Longitude of current location
+        radius: Search radius in meters (default 1000m = 1km)
+    
+    Returns:
+        List of nearby users with distance information
+    """
+    try:
+        # Earth's radius in meters
+        EARTH_RADIUS = 6371000
+        
+        # Convert radius to radians
+        radius_radians = radius / EARTH_RADIUS
+        
+        # Validate coordinates
+        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid coordinates. Latitude must be -90 to 90, Longitude must be -180 to 180"
+            )
+        
+        # MongoDB geospatial query using $geoWithin with $centerSphere
+        # First, ensure location field exists and has index
+        nearby_users = await asyncio.wait_for(
+            users_collection().find(
+                {
+                    "location": {"$exists": True, "$ne": None},
+                    "_id": {"$ne": current_user},  # Exclude self
+                    "location.lat": {
+                        "$gte": lat - (radius / 111320),  # Approximate: 1 degree ≈ 111.32 km
+                        "$lte": lat + (radius / 111320)
+                    },
+                    "location.lng": {
+                        "$gte": lng - (radius / (111320 * abs(math.cos(math.radians(lat))))),
+                        "$lte": lng + (radius / (111320 * abs(math.cos(math.radians(lat)))))
+                    }
+                },
+                {
+                    "_id": 1,
+                    "name": 1,
+                    "username": 1,
+                    "avatar_url": 1,
+                    "is_online": 1,
+                    "location": 1
+                }
+            ).limit(50),
+            timeout=5.0
+        )
+        
+        # Calculate distances for each user
+        import math
+        users_with_distance = []
+        
+        async for user in nearby_users:
+            user_lat = user.get("location", {}).get("lat")
+            user_lng = user.get("location", {}).get("lng")
+            
+            if user_lat is None or user_lng is None:
+                continue
+            
+            # Haversine formula to calculate distance
+            dlat = math.radians(user_lat - lat)
+            dlng = math.radians(user_lng - lng)
+            a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat)) * math.cos(math.radians(user_lat)) * math.sin(dlng / 2) ** 2
+            c = 2 * math.asin(math.sqrt(a))
+            distance = EARTH_RADIUS * c
+            
+            if distance <= radius:  # Double-check distance
+                users_with_distance.append({
+                    "id": str(user.get("_id", "")),
+                    "name": user.get("name", ""),
+                    "username": user.get("username", ""),
+                    "avatar_url": user.get("avatar_url"),
+                    "is_online": user.get("is_online", False),
+                    "distance_meters": round(distance, 2)
+                })
+        
+        # Sort by distance (closest first)
+        users_with_distance.sort(key=lambda u: u["distance_meters"])
+        
+        return {
+            "nearby_users": users_with_distance,
+            "count": len(users_with_distance),
+            "search_radius_meters": radius,
+            "center": {"lat": lat, "lng": lng}
+        }
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except (ValueError, TypeError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid parameters: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to find nearby users: {str(e)}"
+        )
+
+
 @router.get("/contacts")
 async def list_contacts(current_user: str = Depends(get_current_user), limit: int = 50):
     """List users for contact selection (used for group creation)."""
@@ -982,6 +1097,115 @@ async def get_avatar(filename: str):
         raise HTTPException(status_code=404, detail="Avatar not found")
     
     return FileResponse(file_path)
+
+
+@router.post("/location/update")
+async def update_location(
+    lat: float,
+    lng: float,
+    current_user: str = Depends(get_current_user)
+):
+    """Update user's current location for 'People Nearby' feature.
+    
+    Args:
+        lat: Latitude of current location
+        lng: Longitude of current location
+    
+    Returns:
+        Success message with updated location
+    """
+    try:
+        # Validate coordinates
+        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid coordinates. Latitude must be -90 to 90, Longitude must be -180 to 180"
+            )
+        
+        # Update user location
+        result = await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {
+                    "$set": {
+                        "location": {
+                            "lat": lat,
+                            "lng": lng,
+                            "updated_at": datetime.utcnow()
+                        },
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            ),
+            timeout=5.0
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        return {
+            "message": "Location updated successfully",
+            "location": {"lat": lat, "lng": lng},
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except (ValueError, TypeError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid parameters: {str(e)}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update location: {str(e)}"
+        )
+
+
+@router.post("/location/clear")
+async def clear_location(current_user: str = Depends(get_current_user)):
+    """Clear user's location data (opt-out of People Nearby feature)."""
+    try:
+        result = await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {
+                    "$unset": {"location": ""},
+                    "$set": {"updated_at": datetime.utcnow()}
+                }
+            ),
+            timeout=5.0
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        return {"message": "Location cleared successfully"}
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear location: {str(e)}"
+        )
 
 
 # Contact Management Endpoints

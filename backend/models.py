@@ -125,6 +125,7 @@ class UserInDB(BaseModel):
     pinned_chats: List[str] = Field(default_factory=list)
     contacts: List[str] = Field(default_factory=list)  # List of contact user IDs
     blocked_users: List[str] = Field(default_factory=list)  # List of blocked user IDs
+    location: Optional[dict] = None  # {'lat': float, 'lng': float, 'updated_at': datetime}
 
 
 class UserResponse(BaseModel):

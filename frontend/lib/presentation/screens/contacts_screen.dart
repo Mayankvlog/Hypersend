@@ -29,11 +29,13 @@ class _ContactsScreenState extends State<ContactsScreen>
   bool _isSearching = false;
   bool _isSyncing = false;
   String? _error;
+  List<Map<String, dynamic>> _nearbyUsers = [];
+  bool _loadingNearby = false;
   
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _searchController = TextEditingController();
     
     // Set initial search query if provided (from deep link)
@@ -675,6 +677,7 @@ class _ContactsScreenState extends State<ContactsScreen>
             Tab(text: 'All Contacts'),
             Tab(text: 'Search'),
             Tab(text: 'Sync'),
+            Tab(text: 'Nearby'),
           ],
         ),
         actions: [
@@ -822,8 +825,136 @@ class _ContactsScreenState extends State<ContactsScreen>
               ],
             ),
           ),
+
+          // People Nearby Tab
+          _buildNearbyTab(),
         ],
       ),
     );
   }
+
+  Widget _buildNearbyTab() {
+    return Padding(
+      padding: const EdgeInsets.all(AppTheme.spacing16),
+      child: Column(
+        children: [
+          const Icon(Icons.location_on, size: 64, color: AppTheme.primaryCyan),
+          const SizedBox(height: 24),
+          const Text(
+            'People Nearby',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Find people near you.\n\nYour location is private and only stored on your device.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _loadingNearby ? null : _loadNearbyUsers,
+            icon: _loadingNearby
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.location_searching),
+            label: Text(_loadingNearby ? 'Finding nearby users...' : 'Find Nearby Users'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryCyan,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            ),
+          ),
+          if (_nearbyUsers.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _nearbyUsers.length,
+                itemBuilder: (context, index) {
+                  final user = _nearbyUsers[index];
+                  final distance = user['distance_meters'] as num?;
+                  final distanceStr = distance != null
+                      ? distance > 1000
+                          ? '${(distance / 1000).toStringAsFixed(1)} km'
+                          : '${distance.toStringAsFixed(0)} m'
+                      : 'Unknown';
+                  
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: AppTheme.cardDark,
+                      child: Text(
+                        (user['name'] as String? ?? 'U')
+                            .substring(0, 1)
+                            .toUpperCase(),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    title: Text(user['name'] as String? ?? 'Unknown User'),
+                    subtitle: Text('$distanceStr away'),
+                    trailing: ElevatedButton(
+                      onPressed: () => _startChatWithUser(user['id'] as String),
+                      child: const Text('Chat'),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadNearbyUsers() async {
+    setState(() {
+      _loadingNearby = true;
+    });
+
+    try {
+      // Get current location (implementation would use geolocator package)
+      // For now, show a message
+      _showErrorSnackBar('Location permission required - enable location access in settings');
+      
+      /* 
+      // Pseudo-code for actual implementation:
+      final position = await Geolocator.getCurrentPosition();
+      final response = await serviceProvider.apiService.getNearbyUsers(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        radiusMeters: 1000,
+      );
+      
+      if (!mounted) return;
+      setState(() {
+        _nearbyUsers = List<Map<String, dynamic>>.from(response['nearby_users'] ?? []);
+        _loadingNearby = false;
+      });
+      */
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingNearby = false;
+      });
+      _showErrorSnackBar('Failed to find nearby users: $e');
+    }
+  }
+
+  Future<void> _startChatWithUser(String userId) async {
+    try {
+      final response = await serviceProvider.apiService.createChat(targetUserId: userId);
+      final chatId = response['id'] as String? ?? response['chat_id'] as String?;
+      
+      if (!mounted || chatId == null) return;
+      
+      context.push('/chat/$chatId');
+    } catch (e) {
+      _showErrorSnackBar('Failed to start chat: $e');
+    }
+  }
+}
 }

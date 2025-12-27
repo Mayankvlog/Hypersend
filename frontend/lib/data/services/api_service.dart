@@ -742,4 +742,56 @@ Future<void> postToChannel(String channelId, String text) async {
       rethrow;
     }
   }
+
+  // Location and People Nearby endpoints
+  Future<Map<String, dynamic>> updateLocation({
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.usersEndpoint}/location/update',
+        queryParameters: {
+          'lat': latitude,
+          'lng': longitude,
+        },
+      );
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error updating location: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> clearLocation() async {
+    try {
+      await _dio.post('${ApiConstants.usersEndpoint}/location/clear');
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error clearing location: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getNearbyUsers({
+    required double latitude,
+    required double longitude,
+    double radiusMeters = 1000,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '${ApiConstants.usersEndpoint}/nearby',
+        queryParameters: {
+          'lat': latitude,
+          'lng': longitude,
+          'radius': radiusMeters,
+        },
+      );
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error fetching nearby users: $e');
+      rethrow;
+    }
+  }
 }
+
+
