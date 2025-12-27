@@ -194,6 +194,12 @@ Future<void> _pickImage() async {
   }
 
 Future<void> _handleSave() async {
+    // Prevent duplicate save calls
+    if (_isUploading) {
+      debugPrint('[PROFILE_PHOTO] Save already in progress, ignoring duplicate call');
+      return;
+    }
+    
     debugPrint('[PROFILE_PHOTO] _handleSave called');
     debugPrint('[PROFILE_PHOTO] _pickedFileBytes: ${_pickedFileBytes != null ? "not null (${_pickedFileBytes!.length} bytes)" : "null"}');
     debugPrint('[PROFILE_PHOTO] _pickedFileName: $_pickedFileName');
