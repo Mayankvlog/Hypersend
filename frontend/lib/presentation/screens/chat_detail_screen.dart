@@ -951,7 +951,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               icon: const Icon(Icons.analytics_outlined),
               onPressed: () {}, // Channel Info/Stats
             ),
-          if (_chat?.type != ChatType.saved)
+          if (_chat != null && _chat?.type != ChatType.saved)
             IconButton(
               icon: const Icon(Icons.more_vert),
               onPressed: _chat?.type == ChatType.channel 

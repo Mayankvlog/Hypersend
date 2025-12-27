@@ -44,9 +44,17 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
         title: const Text('Change Profile Photo'),
         actions: [
           TextButton(
-            onPressed: (_selectedPhoto != widget.currentAvatar || _pickedFileBytes != null) && !_isUploading
-                ? _handleSave
-                : null,
+            onPressed: () {
+              debugPrint('[PROFILE_PHOTO] Save button pressed');
+              debugPrint('[PROFILE_PHOTO] _selectedPhoto=$_selectedPhoto, currentAvatar=${widget.currentAvatar}');
+              debugPrint('[PROFILE_PHOTO] _pickedFileBytes=${_pickedFileBytes != null ? "not null" : "null"}');
+              debugPrint('[PROFILE_PHOTO] _isUploading=$_isUploading');
+              debugPrint('[PROFILE_PHOTO] Button enabled: ${(_selectedPhoto != widget.currentAvatar || _pickedFileBytes != null) && !_isUploading}');
+              
+              if ((_selectedPhoto != widget.currentAvatar || _pickedFileBytes != null) && !_isUploading) {
+                _handleSave();
+              }
+            },
             child: _isUploading
                 ? const SizedBox(
                     width: 20,
@@ -198,6 +206,13 @@ Future<void> _pickImage() async {
         allowMultiple: false,
       );
 
+      debugPrint('[PROFILE_PHOTO] FilePicker result: ${result != null ? "has files" : "null"}');
+      if (result != null) {
+        debugPrint('[PROFILE_PHOTO] Files count: ${result.files.length}');
+        final file = result.files.single;
+        debugPrint('[PROFILE_PHOTO] File details: name=${file.name}, bytes=${file.bytes != null ? file.bytes!.length : "null"}');
+      }
+
       if (result != null && result.files.single.bytes != null) {
         final file = result.files.single;
         debugPrint('[PROFILE_PHOTO] Image picked: ${file.name} (${file.bytes?.length} bytes)');
@@ -207,10 +222,12 @@ Future<void> _pickImage() async {
           throw Exception('Image size must be less than 5MB');
         }
         
+        debugPrint('[PROFILE_PHOTO] Setting state with picked image...');
         setState(() {
           _pickedFileBytes = file.bytes;
           _pickedFileName = file.name;
         });
+        debugPrint('[PROFILE_PHOTO] State updated');
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -236,6 +253,12 @@ Future<void> _pickImage() async {
   }
 
 Future<void> _handleSave() async {
+    debugPrint('[PROFILE_PHOTO] _handleSave called');
+    debugPrint('[PROFILE_PHOTO] _pickedFileBytes: ${_pickedFileBytes != null ? "not null (${_pickedFileBytes!.length} bytes)" : "null"}');
+    debugPrint('[PROFILE_PHOTO] _pickedFileName: $_pickedFileName');
+    debugPrint('[PROFILE_PHOTO] _selectedPhoto: $_selectedPhoto');
+    debugPrint('[PROFILE_PHOTO] currentAvatar: ${widget.currentAvatar}');
+    
     setState(() => _isUploading = true);
     try {
       String resultValue;
