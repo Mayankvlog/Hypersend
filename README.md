@@ -1,6 +1,6 @@
 # 🚀 Hypersend - Fast & Secure Messaging Platform
 
-![Hypersend Logo](assets/icon.png)
+#![Hypersend Logo](assets/icon.png)
 
 A modern, feature-rich messaging application built with Flutter and FastAPI, inspired by Telegram's functionality and design philosophy.
 
