@@ -6,7 +6,9 @@ import '../../data/services/service_provider.dart';
 import '../../core/theme/app_theme.dart';
 
 class ContactsScreen extends StatefulWidget {
-  const ContactsScreen({super.key});
+  final String? initialSearchQuery;
+  
+  const ContactsScreen({super.key, this.initialSearchQuery});
 
   @override
   State<ContactsScreen> createState() => _ContactsScreenState();
@@ -33,6 +35,12 @@ class _ContactsScreenState extends State<ContactsScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _searchController = TextEditingController();
+    
+    // Set initial search query if provided (from deep link)
+    if (widget.initialSearchQuery != null && widget.initialSearchQuery!.isNotEmpty) {
+      _searchController?.text = widget.initialSearchQuery!;
+    }
+    
     _loadContacts();
     
     // Add listener for search with debouncing

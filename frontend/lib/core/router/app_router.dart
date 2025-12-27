@@ -105,5 +105,14 @@ final appRouter = GoRouter(
         return GroupDetailScreen(groupId: groupId);
       },
     ),
+    GoRoute(
+      path: '/user/:query',
+      builder: (context, state) {
+        final query = state.pathParameters['query']!;
+        // Route to user profile screen that handles search and display
+        // Supports @username and +phonenumber formats
+        return ContactsScreen(initialSearchQuery: query);
+      },
+    ),
   ],
 );
