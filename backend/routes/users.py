@@ -993,7 +993,16 @@ async def upload_avatar(
         
         # Create directory
         avatar_dir = settings.DATA_ROOT / "avatars"
-        avatar_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            avatar_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[AVATAR] Avatar directory ensured at: {avatar_dir}")
+            print(f"[AVATAR] Directory exists: {avatar_dir.exists()}")
+        except Exception as dir_error:
+            print(f"[AVATAR] Failed to create avatar directory: {dir_error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create avatar storage directory"
+            )
         
         # Generate unique filename to avoid conflicts
         file_ext = os.path.splitext(file.filename)[1].lower()
@@ -1030,8 +1039,13 @@ async def upload_avatar(
         try:
             with open(new_file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
+            print(f"[AVATAR] File saved successfully: {new_file_path}")
+            print(f"[AVATAR] File exists after save: {new_file_path.exists()}")
+            if new_file_path.exists():
+                file_size = os.path.getsize(new_file_path)
+                print(f"[AVATAR] File size: {file_size} bytes")
         except Exception as save_error:
-            _log("error", f"Failed to save avatar file", {"user_id": current_user, "operation": "avatar_save"})
+            _log("error", f"Failed to save avatar file: {save_error}", {"user_id": current_user, "operation": "avatar_save"})
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to save file"
@@ -1094,12 +1108,29 @@ async def get_avatar(filename: str):
     """Get user avatar"""
     from backend.config import settings
     from fastapi.responses import FileResponse
+    import os
     
     file_path = settings.DATA_ROOT / "avatars" / filename
+    print(f"[AVATAR] Requested file: {file_path}")
+    print(f"[AVATAR] File exists: {file_path.exists()}")
+    
     if not file_path.exists():
+        print(f"[AVATAR] File not found: {file_path}")
         raise HTTPException(status_code=404, detail="Avatar not found")
     
-    return FileResponse(file_path)
+    # Determine media type based on file extension
+    media_type = None
+    if filename.lower().endswith(('.jpg', '.jpeg')):
+        media_type = 'image/jpeg'
+    elif filename.lower().endswith('.png'):
+        media_type = 'image/png'
+    elif filename.lower().endswith('.gif'):
+        media_type = 'image/gif'
+    elif filename.lower().endswith('.webp'):
+        media_type = 'image/webp'
+    
+    print(f"[AVATAR] Serving file with media_type: {media_type}")
+    return FileResponse(file_path, media_type=media_type)
 
 
 @router.post("/location/update")

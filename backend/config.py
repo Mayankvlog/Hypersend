@@ -148,6 +148,7 @@ class Settings:
             self.DATA_ROOT.mkdir(exist_ok=True, parents=True)
             (self.DATA_ROOT / "tmp").mkdir(exist_ok=True, parents=True)
             (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True)
+            (self.DATA_ROOT / "avatars").mkdir(exist_ok=True, parents=True)
             print(f"[OK] Data directories initialized at {self.DATA_ROOT}")
         except Exception as e:
             print(f"[WARN] Failed to initialize directories: {str(e)}")
