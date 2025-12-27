@@ -634,4 +634,88 @@ Future<void> postToChannel(String channelId, String text) async {
       allowMultiple: false,
     );
   }
+
+  // Contact Management Methods
+  
+  Future<Map<String, dynamic>> getContactsList({int limit = 100, int offset = 0}) async {
+    try {
+      final response = await _dio.get(
+        '${ApiConstants.usersEndpoint}/contacts/list',
+        queryParameters: {'limit': limit, 'offset': offset}
+      );
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error getting contacts list: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> addContact(String userId) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.usersEndpoint}/contacts/add',
+        data: {'user_id': userId}
+      );
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error adding contact: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteContact(String userId) async {
+    try {
+      final response = await _dio.delete('${ApiConstants.usersEndpoint}/contacts/$userId');
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error deleting contact: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> syncContacts(List<Map<String, String>> contacts) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.usersEndpoint}/contacts/sync',
+        data: {'contacts': contacts}
+      );
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error syncing contacts: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> searchContacts(String query, {int limit = 20}) async {
+    try {
+      final response = await _dio.get(
+        '${ApiConstants.usersEndpoint}/contacts/search',
+        queryParameters: {'q': query, 'limit': limit}
+      );
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error searching contacts: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> blockUser(String userId) async {
+    try {
+      final response = await _dio.post('${ApiConstants.usersEndpoint}/contacts/block/$userId');
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error blocking user: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> unblockUser(String userId) async {
+    try {
+      final response = await _dio.delete('${ApiConstants.usersEndpoint}/contacts/block/$userId');
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error unblocking user: $e');
+      rethrow;
+    }
+  }
 }

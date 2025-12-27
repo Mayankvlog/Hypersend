@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
-from backend.models import UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate
+from backend.models import (
+    UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
+    ContactAddRequest, ContactDeleteRequest, ContactSyncRequest, UserSearchResponse
+)
 from backend.database import users_collection
 from backend.auth.utils import get_current_user
 import asyncio
@@ -10,7 +13,7 @@ import re
 import logging
 import json
 
-# Setup detailed logging for profile operations
+# Set up detailed logging for profile operations
 logger = logging.getLogger("profile_endpoint")
 logger.setLevel(logging.DEBUG)
 
@@ -63,7 +66,7 @@ class PermissionsUpdate(BaseModel):
 async def get_current_user_profile(current_user: str = Depends(get_current_user)):
     """Get current user profile"""
     try:
-        # Add 5-second timeout to prevent hanging
+        # Add a 5-second timeout to prevent hanging
         user = await asyncio.wait_for(
             users_collection().find_one({"_id": current_user}),
             timeout=5.0
@@ -85,17 +88,24 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             detail="User not found"
         )
     
-    return UserResponse(
-        id=user["_id"],
-        name=user["name"],
-        email=user["email"],
-        username=user.get("username"),
-        quota_used=user.get("quota_used", 0),
-        quota_limit=user.get("quota_limit", 42949672960),
-        created_at=user["created_at"],
-        avatar_url=user.get("avatar_url"),
-        pinned_chats=user.get("pinned_chats", [])
-    )
+        return UserResponse(
+            id=user["_id"],
+            name=user["name"],
+            email=user["email"],
+            username=user.get("username"),
+            phone=user.get("phone"),
+            bio=user.get("bio"),
+            avatar_url=user.get("avatar_url"),
+            quota_used=user.get("quota_used", 0),
+            quota_limit=user.get("quota_limit", 42949672960),
+            created_at=user["created_at"],
+            updated_at=user.get("updated_at"),
+            last_seen=user.get("last_seen"),
+            is_online=user.get("is_online", False),
+            status=user.get("status"),
+            pinned_chats=user.get("pinned_chats", []),
+            contacts_count=len(user.get("contacts", []))
+        )
 
 
 # ProfileUpdate model is imported from backend.models
@@ -113,7 +123,7 @@ async def update_profile(
         logger.info(f"{'='*80}")
         logger.info(f"User ID: {current_user}")
         
-        # Log received data
+        # Log the received data
         logger.info(f"Received ProfileUpdate model:")
         logger.info(f"  - name: {profile_data.name} (type: {type(profile_data.name).__name__})")
         logger.info(f"  - username: {profile_data.username} (type: {type(profile_data.username).__name__})")
@@ -131,7 +141,7 @@ async def update_profile(
                 detail="At least one field must be provided to update"
             )
         
-        # Get current user data from database
+        # Get current user data from the database
         logger.info(f"Fetching current user data from database...")
         current_user_data = await asyncio.wait_for(
             users_collection().find_one({"_id": current_user}),
@@ -150,10 +160,10 @@ async def update_profile(
         logger.info(f"  - username: {current_user_data.get('username')}")
         logger.info(f"  - email: {current_user_data.get('email')}")
         
-        # Prepare update data
+        # Prepare the update data
         update_data = {}
         
-        # Process name
+        # Process the name
         if profile_data.name is not None:
             name = profile_data.name.strip()
             if not name:
@@ -180,7 +190,7 @@ async def update_profile(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Username cannot be empty"
                 )
-            # Check if username is already taken
+            # Check if the username is already taken
             if username != "":
                 existing_username = await asyncio.wait_for(
                     users_collection().find_one({"username": username}),
@@ -195,7 +205,7 @@ async def update_profile(
             logger.info(f"✓ Username validation passed: {username}")
             update_data["username"] = username
         
-        # Process bio and phone
+        # Process the bio and phone
         if profile_data.bio is not None:
             logger.info(f"✓ Bio set: {profile_data.bio[:50]}..." if len(profile_data.bio) > 50 else f"✓ Bio set: {profile_data.bio}")
             update_data["bio"] = profile_data.bio
@@ -204,19 +214,19 @@ async def update_profile(
             logger.info(f"✓ Phone set: {profile_data.phone}")
             update_data["phone"] = profile_data.phone
         
-        # Process avatar
+        # Process the avatar
         if profile_data.avatar_url is not None:
             logger.info(f"✓ Avatar URL set: {profile_data.avatar_url}")
             update_data["avatar_url"] = profile_data.avatar_url
         
         if profile_data.avatar is not None:
             logger.info(f"✓ Avatar initials set: {profile_data.avatar}")
-            update_data["avatar_url"] = profile_data.avatar  # Store avatar initials in avatar_url
+            update_data["avatar_url"] = profile_data.avatar  # Store avatar initials in the avatar_url field
         
         # Process email (enforce uniqueness)
         if profile_data.email is not None and profile_data.email.strip():
             logger.info(f"Processing email update: {profile_data.email}")
-            # Validate email format
+            # Validate the email format
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, profile_data.email):
                 logger.warning(f"Email validation failed: invalid format for {profile_data.email}")
@@ -225,7 +235,7 @@ async def update_profile(
                     detail="Invalid email format. Use format: user@example.com"
                 )
             
-            # Normalize email
+            # Normalize the email
             new_email = profile_data.email.lower().strip()
             logger.info(f"Email normalized: {new_email}")
             
@@ -302,11 +312,18 @@ async def update_profile(
             name=str(updated_user.get("name", "User")),
             email=str(updated_user.get("email", "")),
             username=updated_user.get("username"),
+            phone=updated_user.get("phone"),
+            bio=updated_user.get("bio"),
+            avatar_url=updated_user.get("avatar_url"),
             quota_used=int(updated_user.get("quota_used", 0)),
             quota_limit=int(updated_user.get("quota_limit", 42949672960)),
             created_at=updated_user.get("created_at", datetime.utcnow()),
-            avatar_url=updated_user.get("avatar_url"),
-            pinned_chats=updated_user.get("pinned_chats", []) or []
+            updated_at=updated_user.get("updated_at"),
+            last_seen=updated_user.get("last_seen"),
+            is_online=updated_user.get("is_online", False),
+            status=updated_user.get("status"),
+            pinned_chats=updated_user.get("pinned_chats", []) or [],
+            contacts_count=len(updated_user.get("contacts", []))
         )
     except asyncio.TimeoutError:
         logger.error(f"Database operation timed out")
@@ -389,7 +406,7 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
 
 @router.get("/search")
 async def search_users(q: str, current_user: str = Depends(get_current_user)):
-    """Search users by name, email, or phone number"""
+    """Search users by name, email, username, or phone number with intelligent prioritization"""
     
     if len(q) < 2:
         return {"users": []}
@@ -397,38 +414,77 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
     try:
         # Sanitize input for regex search to prevent injection
         sanitized_q = re.escape(q)
-        clean_phone = re.sub(r'[^\d+]', '', q)  # Extract only digits and plus for phone search
+        # Extract only digits and plus for phone search - fix digits_only bug
+        clean_phone = '+' + re.sub(r'[^\d]', '', q[1:]) if q.startswith('+') else re.sub(r'[^\d]', '', q)
         
-        # Build search query with different strategies for different field types
+        # Determine search type and prioritize accordingly
+        search_type = _determine_search_type(q, clean_phone)
+        
         users = []
-        search_query = {
-            "$or": [
-                {"name": {"$regex": sanitized_q, "$options": "i"}},
-                {"email": {"$regex": sanitized_q, "$options": "i"}}
-            ],
-            "_id": {"$ne": current_user}  # Exclude current user from results
-        }
         
-        # Add phone number search using extracted numeric part
-        # Only search phone numbers if input has at least 3 digits after cleaning
-        if clean_phone and len(clean_phone) >= 3 and any(c.isdigit() for c in clean_phone):
+        # Build prioritized search query based on detected search type
+        if search_type == "phone":
+            # Phone number search - highest priority for exact phone matches
+            search_query = {
+                "$or": [
+                    {"phone": {"$regex": re.escape(clean_phone), "$options": "i"}},  # Exact phone match
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Fallback to name
+                ],
+                "_id": {"$ne": current_user}
+            }
+        elif search_type == "email":
+            # Email search - exact email matches first, then username/name
+            search_query = {
+                "$or": [
+                    {"email": {"$regex": sanitized_q, "$options": "i"}},  # Email exact match
+                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username fallback
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name fallback
+                ],
+                "_id": {"$ne": current_user}
+            }
+        elif search_type == "username":
+            # Username search - prioritized exact username match
+            search_query = {
+                "$or": [
+                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username priority
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name fallback
+                ],
+                "_id": {"$ne": current_user}
+            }
+        else:
+            # General name search
+            search_query = {
+                "$or": [
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name priority
+                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username fallback
+                ],
+                "_id": {"$ne": current_user}
+            }
+        
+        # Add phone search as fallback for general searches if numeric
+        if search_type == "general" and clean_phone and len(clean_phone) >= 3 and any(c.isdigit() for c in clean_phone):
             search_query["$or"].append({
                 "phone": {"$regex": re.escape(clean_phone), "$options": "i"}
             })
         
         cursor = users_collection().find(search_query).limit(20)
         
-        # Fetch results with timeout
+        # Fetch results with timeout and scoring
         async def fetch_results():
             results = []
             async for user in cursor:
+                score = _calculate_search_score(user, q, clean_phone, search_type)
                 results.append({
                     "id": user.get("_id", ""),
                     "name": user.get("name", ""),
                     "email": user.get("email", ""),
                     "phone": user.get("phone", ""),
-                    "username": user.get("username", "")
+                    "username": user.get("username", ""),
+                    "relevance_score": score
                 })
+            
+            # Sort by relevance score (highest first)
+            results.sort(key=lambda x: x["relevance_score"], reverse=True)
             return results
         
         users = await asyncio.wait_for(fetch_results(), timeout=5.0)
@@ -438,6 +494,66 @@ async def search_users(q: str, current_user: str = Depends(get_current_user)):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Search operation timed out. Please try again."
         )
+
+
+def _determine_search_type(query: str, clean_phone: str) -> str:
+    """Determine the type of search based on query characteristics"""
+    
+    # Email detection
+    if '@' in query and '.' in query.split('@')[-1]:
+        return "email"
+    
+    # Phone detection - starts with + or contains mostly digits
+    if query.startswith('+') or (len(clean_phone) >= 7 and clean_phone.isdigit()):
+        return "phone"
+    
+    # Username detection - starts with @ or contains underscores/hyphens
+    if query.startswith('@') or '_' in query or '-' in query:
+        return "username"
+    
+    return "general"
+
+
+def _calculate_search_score(user: dict, query: str, clean_phone: str, search_type: str) -> int:
+    """Calculate relevance score for search results (higher = more relevant)"""
+    score = 0
+    
+    query_lower = query.lower()
+    name = str(user.get("name", "")).lower()
+    email = str(user.get("email", "")).lower()
+    username = str(user.get("username", "")).lower()
+    phone = str(user.get("phone", "")).lower()
+    
+    # Exact matches get highest scores
+    if search_type == "email" and email == query_lower:
+        score += 100
+    elif search_type == "phone" and clean_phone in re.sub(r'[^\d+]', '', phone):
+        score += 90
+    elif search_type == "username" and username == query_lower.lstrip('@'):
+        score += 85
+    
+    # Prefix matches
+    if name.startswith(query_lower):
+        score += 50
+    elif username.startswith(query_lower.lstrip('@')):
+        score += 45
+    
+    # Contains matches
+    if query_lower in name:
+        score += 30
+    if query_lower in username:
+        score += 25
+    if query_lower in email:
+        score += 20
+    
+    # Phone partial matches
+    if clean_phone and len(clean_phone) >= 3:
+        # Normalize phone for comparison
+        normalized_phone = '+' + re.sub(r'[^\d]', '', phone[1:]) if phone.startswith('+') else re.sub(r'[^\d]', '', phone)
+        if clean_phone in normalized_phone:
+            score += 15
+    
+    return score
     except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -764,7 +880,7 @@ async def upload_avatar(
         
         # Clean up old avatar files to prevent storage leaks
         try:
-            # Find current user's old avatar files
+            # Find the current user's old avatar files
             user = await asyncio.wait_for(
                 users_collection().find_one({"_id": current_user}),
                 timeout=5.0
@@ -781,7 +897,7 @@ async def upload_avatar(
             _log("warning", f"Failed to cleanup old avatar", {"user_id": current_user, "operation": "avatar_cleanup"})
             # Continue with upload even if cleanup fails
         
-        # Save new file with proper error handling
+        # Save the new file with proper error handling
         try:
             with open(new_file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
@@ -795,7 +911,7 @@ async def upload_avatar(
         # Generate URL
         avatar_url = f"/api/v1/users/avatar/{new_file_name}"
         
-        # Update user in DB with timeout
+        # Update the user in the database with timeout
         try:
             result = await asyncio.wait_for(
                 users_collection().update_one(
@@ -805,7 +921,7 @@ async def upload_avatar(
                 timeout=5.0
             )
             
-            # Check for actual failure vs idempotent update
+            # Check for actual failure versus idempotent update
             user_exists = await asyncio.wait_for(
                 users_collection().find_one({"_id": current_user}),
                 timeout=5.0
@@ -815,7 +931,7 @@ async def upload_avatar(
                 
             _log("info", f"Avatar updated successfully", {"user_id": current_user, "operation": "avatar_update"})
         except asyncio.TimeoutError:
-            # Clean up uploaded file if DB update times out
+            # Clean up the uploaded file if the database update times out
             if new_file_path.exists():
                 new_file_path.unlink()
             raise HTTPException(
@@ -823,7 +939,7 @@ async def upload_avatar(
                 detail="Database operation timed out"
             )
         except Exception as db_error:
-            # Clean up uploaded file if DB update fails
+            # Clean up the uploaded file if the database update fails
             if new_file_path.exists():
                 new_file_path.unlink()
             _log("error", f"Failed to update database: {db_error}")
@@ -855,3 +971,567 @@ async def get_avatar(filename: str):
         raise HTTPException(status_code=404, detail="Avatar not found")
     
     return FileResponse(file_path)
+
+
+# Contact Management Endpoints
+
+@router.get("/contacts/list")
+async def get_contacts_list(
+    current_user: str = Depends(get_current_user),
+    limit: int = 100,
+    offset: int = 0
+):
+    """Get current user's contacts list with details"""
+    try:
+        # Get current user to fetch contacts
+        user = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        contact_ids = user.get("contacts", [])
+        
+        if not contact_ids:
+            return {"contacts": [], "total": 0}
+        
+        # Paginate contacts
+        paginated_ids = contact_ids[offset:offset + limit]
+        
+        # Fetch contact details
+        contacts = []
+        if paginated_ids:
+            cursor = users_collection().find(
+                {"_id": {"$in": paginated_ids}},
+                {
+                    "_id": 1,
+                    "name": 1,
+                    "email": 1,
+                    "username": 1,
+                    "phone": 1,
+                    "avatar_url": 1,
+                    "is_online": 1,
+                    "last_seen": 1,
+                    "status": 1,
+                    "created_at": 1
+                }
+            )
+            
+            async def fetch_contacts():
+                results = []
+                async for contact in cursor:
+                    results.append(UserSearchResponse(
+                        id=contact.get("_id", ""),
+                        name=contact.get("name", ""),
+                        email=contact.get("email", ""),
+                        username=contact.get("username"),
+                        phone=contact.get("phone"),
+                        avatar_url=contact.get("avatar_url"),
+                        is_online=contact.get("is_online", False),
+                        last_seen=contact.get("last_seen"),
+                        status=contact.get("status"),
+                        is_contact=True,
+                        is_blocked=False
+                    ))
+                return results
+            
+            contacts = await asyncio.wait_for(fetch_contacts(), timeout=5.0)
+        
+        return {
+            "contacts": contacts,
+            "total": len(contact_ids),
+            "offset": offset,
+            "limit": limit
+        }
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch contacts: {str(e)}"
+        )
+
+
+@router.post("/contacts/add")
+async def add_contact(
+    request: ContactAddRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Add a user to contacts"""
+    try:
+        # Validate target user exists
+        target_user = await asyncio.wait_for(
+            users_collection().find_one({"_id": request.user_id}),
+            timeout=5.0
+        )
+        
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Don't allow adding self as contact
+        if request.user_id == current_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot add yourself as a contact"
+            )
+        
+        # Check if already in contacts
+        current_user_data = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not current_user_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Current user not found"
+            )
+        
+        contacts = current_user_data.get("contacts", [])
+        if request.user_id in contacts:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is already in your contacts"
+            )
+        
+        # Add to contacts
+        contacts.append(request.user_id)
+        await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}}
+            ),
+            timeout=5.0
+        )
+        
+        return {
+            "message": "Contact added successfully",
+            "contact_id": request.user_id,
+            "contact_name": target_user.get("name", "")
+        }
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add contact: {str(e)}"
+        )
+
+
+@router.delete("/contacts/{contact_id}")
+async def delete_contact(
+    contact_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Remove a user from contacts"""
+    try:
+        # Get current user
+        current_user_data = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not current_user_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        contacts = current_user_data.get("contacts", [])
+        if contact_id not in contacts:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Contact not found in your contacts list"
+            )
+        
+        # Remove from contacts
+        contacts.remove(contact_id)
+        await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}}
+            ),
+            timeout=5.0
+        )
+        
+        return {"message": "Contact removed successfully"}
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to remove contact: {str(e)}"
+        )
+
+
+@router.post("/contacts/sync")
+async def sync_contacts(
+    request: ContactSyncRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Sync phone contacts with app users"""
+    try:
+        # Extract phone numbers from request
+        phone_numbers = []
+        for contact in request.contacts:
+            phone = contact.get("phone", "").strip()
+            if phone:
+                # Normalize phone number (remove spaces, dashes, parentheses, keep +)
+                if phone.startswith('+'):
+                    clean_phone = '+' + re.sub(r'[^\d]', '', phone[1:])
+                else:
+                    clean_phone = re.sub(r'[^\d]', '', phone)
+                if clean_phone:
+                    phone_numbers.append(clean_phone)
+        
+        if not phone_numbers:
+            return {"matched_contacts": []}
+        
+        # Find users with matching phone numbers
+        matched_users = await asyncio.wait_for(
+            users_collection().find(
+                {"phone": {"$in": phone_numbers}},
+                {
+                    "_id": 1,
+                    "name": 1,
+                    "email": 1,
+                    "username": 1,
+                    "phone": 1,
+                    "avatar_url": 1,
+                    "is_online": 1,
+                    "last_seen": 1,
+                    "status": 1
+                }
+            ).to_list(None),
+            timeout=5.0
+        )
+        
+        # Get current user's contacts to mark which users are already contacts
+        current_user_data = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}, {"contacts": 1}),
+            timeout=5.0
+        )
+        
+        existing_contacts = set(current_user_data.get("contacts", []))
+        
+        # Format response
+        matched_contacts = []
+        for user in matched_users:
+            user_id = user.get("_id")
+            contact_info = {
+                "id": user_id,
+                "name": user.get("name", ""),
+                "username": user.get("username"),
+                "phone": user.get("phone"),
+                "avatar_url": user.get("avatar_url"),
+                "is_online": user.get("is_online", False),
+                "last_seen": user.get("last_seen"),
+                "status": user.get("status"),
+                "is_already_contact": user_id in existing_contacts
+            }
+            
+            # Find the matching contact from request to include the contact's name
+            for contact in request.contacts:
+                contact_phone_raw = contact.get("phone", "").strip()
+                if contact_phone_raw:
+                    # Normalize contact phone number
+                    if contact_phone_raw.startswith('+'):
+                        contact_phone = '+' + re.sub(r'[^\d]', '', contact_phone_raw[1:])
+                    else:
+                        contact_phone = re.sub(r'[^\d]', '', contact_phone_raw)
+                    
+                    # Normalize user phone number
+                    user_phone = user.get("phone", "")
+                    if user_phone:
+                        if user_phone.startswith('+'):
+                            clean_user_phone = '+' + re.sub(r'[^\d]', '', user_phone[1:])
+                        else:
+                            clean_user_phone = re.sub(r'[^\d]', '', user_phone)
+                        
+                        if contact_phone == clean_user_phone:
+                            contact_info["contact_name"] = contact.get("name", "")
+                            break
+            
+            matched_contacts.append(contact_info)
+        
+        return {
+            "matched_contacts": matched_contacts,
+            "total_matched": len(matched_contacts)
+        }
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync contacts: {str(e)}"
+        )
+
+
+@router.get("/contacts/search")
+async def search_contacts(
+    q: str,
+    current_user: str = Depends(get_current_user),
+    limit: int = 20
+):
+    """Search users for adding to contacts with intelligent prioritization and enhanced info"""
+    try:
+        if len(q) < 2:
+            return {"users": []}
+        
+        # Sanitize input for regex search
+        sanitized_q = re.escape(q)
+        # Extract only digits and plus for phone search - fix digits_only bug
+        clean_phone = '+' + re.sub(r'[^\d]', '', q[1:]) if q.startswith('+') else re.sub(r'[^\d]', '', q)
+        
+        # Determine search type for better prioritization
+        search_type = _determine_search_type(q, clean_phone)
+        
+        # Get current user's existing contacts and blocked users
+        current_user_data = await asyncio.wait_for(
+            users_collection().find_one(
+                {"_id": current_user}, 
+                {"contacts": 1, "blocked_users": 1}
+            ),
+            timeout=5.0
+        )
+        
+        existing_contacts = set(current_user_data.get("contacts", []))
+        blocked_users = set(current_user_data.get("blocked_users", []))
+        
+        # Build prioritized search query based on detected search type
+        if search_type == "phone":
+            search_query = {
+                "$or": [
+                    {"phone": {"$regex": re.escape(clean_phone), "$options": "i"}},  # Phone priority
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name fallback
+                ],
+                "_id": {"$ne": current_user}
+            }
+        elif search_type == "email":
+            search_query = {
+                "$or": [
+                    {"email": {"$regex": sanitized_q, "$options": "i"}},  # Email priority
+                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username fallback
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name fallback
+                ],
+                "_id": {"$ne": current_user}
+            }
+        elif search_type == "username":
+            search_query = {
+                "$or": [
+                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username priority
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name fallback
+                ],
+                "_id": {"$ne": current_user}
+            }
+        else:
+            # General name search
+            search_query = {
+                "$or": [
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name priority
+                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username fallback
+                ],
+                "_id": {"$ne": current_user}
+            }
+        
+        # Add phone search as fallback for general searches if numeric
+        if search_type == "general" and clean_phone and len(clean_phone) >= 3 and any(c.isdigit() for c in clean_phone):
+            search_query["$or"].append({
+                "phone": {"$regex": re.escape(clean_phone), "$options": "i"}
+            })
+        
+        # Search users with limit
+        cursor = users_collection().find(
+            search_query,
+            {
+                "_id": 1,
+                "name": 1,
+                "email": 1,
+                "username": 1,
+                "phone": 1,
+                "avatar_url": 1,
+                "is_online": 1,
+                "last_seen": 1,
+                "status": 1
+            }
+        ).limit(limit)
+        
+        async def fetch_results():
+            results = []
+            async for user in cursor:
+                user_id = user.get("_id")
+                score = _calculate_search_score(user, q, clean_phone, search_type)
+                
+                result = UserSearchResponse(
+                    id=user_id,
+                    name=user.get("name", ""),
+                    email=user.get("email", ""),
+                    username=user.get("username"),
+                    phone=user.get("phone"),
+                    avatar_url=user.get("avatar_url"),
+                    is_online=user.get("is_online", False),
+                    last_seen=user.get("last_seen"),
+                    status=user.get("status"),
+                    is_contact=user_id in existing_contacts,
+                    is_blocked=user_id in blocked_users
+                )
+                
+                # Add relevance score for sorting
+                results.append({
+                    "id": result.id,
+                    "name": result.name,
+                    "email": result.email,
+                    "username": result.username,
+                    "phone": result.phone,
+                    "avatar_url": result.avatar_url,
+                    "is_online": result.is_online,
+                    "last_seen": result.last_seen,
+                    "status": result.status,
+                    "is_contact": result.is_contact,
+                    "is_blocked": result.is_blocked,
+                    "relevance_score": score
+                })
+            
+            # Sort by relevance score (highest first)
+            results.sort(key=lambda x: x["relevance_score"], reverse=True)
+            return results
+        
+        users = await asyncio.wait_for(fetch_results(), timeout=5.0)
+        return {"users": users}
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Search operation timed out. Please try again."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Search failed. Please try again."
+        )
+
+
+@router.post("/contacts/block/{user_id}")
+async def block_user(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Block a user"""
+    try:
+        # Validate user exists
+        target_user = await asyncio.wait_for(
+            users_collection().find_one({"_id": user_id}),
+            timeout=5.0
+        )
+        
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Don't allow blocking self
+        if user_id == current_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot block yourself"
+            )
+        
+        # Add to blocked users and remove from contacts if present
+        await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {
+                    "$addToSet": {"blocked_users": user_id},
+                    "$pull": {"contacts": user_id},
+                    "$set": {"updated_at": datetime.utcnow()}
+                }
+            ),
+            timeout=5.0
+        )
+        
+        return {"message": "User blocked successfully"}
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to block user: {str(e)}"
+        )
+
+
+@router.delete("/contacts/block/{user_id}")
+async def unblock_user(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Unblock a user"""
+    try:
+        # Remove from blocked users
+        result = await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {
+                    "$pull": {"blocked_users": user_id},
+                    "$set": {"updated_at": datetime.utcnow()}
+                }
+            ),
+            timeout=5.0
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        return {"message": "User unblocked successfully"}
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unblock user: {str(e)}"
+        )

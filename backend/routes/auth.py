@@ -47,7 +47,7 @@ async def register(user: UserCreate):
         
         # Lowercase email for consistency
         user_email = user.email.lower().strip()
-        auth_log(f"[AUTH] Registration request for email: {user_email}")
+        auth_log(f"[AUTH] Registration request for email: {user_email[:3]}***@{user_email.split('@')[1] if '@' in user_email else '***'}")
         
         # Get users collection - this will raise RuntimeError if DB not connected
         try:
@@ -74,7 +74,7 @@ async def register(user: UserCreate):
             )
         
         if existing_user:
-            auth_log(f"[AUTH] Registration failed - Email already exists: {user.email}")
+            auth_log(f"[AUTH] Registration failed - Email already exists")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email already registered - this email is already in use"
@@ -109,13 +109,13 @@ async def register(user: UserCreate):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Insert operation timeout for {user.email}")
+            print(f"[AUTH] Insert operation timeout during user registration")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
             )
         
-        auth_log(f"[AUTH] User registered successfully: {user.email} (ID: {user_doc['_id']})")
+        auth_log(f"[AUTH] User registered successfully: ID: {user_doc['_id']}")
         
         return UserResponse(
             id=user_doc["_id"],
@@ -178,7 +178,7 @@ async def login(credentials: UserLogin, request: Request):
         
         login_attempts[client_ip].append(current_time)
         
-        auth_log(f"[AUTH] Login attempt for email: {credentials.email}")
+        auth_log(f"[AUTH] Login attempt for user: {credentials.email[:3]}***@{credentials.email.split('@')[1] if '@' in credentials.email else '***'}")
         
         # Get users collection
         try:
@@ -200,7 +200,7 @@ async def login(credentials: UserLogin, request: Request):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            auth_log(f"[AUTH] Database query timeout for {credentials.email}")
+            auth_log(f"[AUTH] Database query timeout during login")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -214,7 +214,7 @@ async def login(credentials: UserLogin, request: Request):
             else:
                 failed_login_attempts[credentials.email] = (1, current_time + timedelta(minutes=15))
             
-            auth_log(f"[AUTH] Login failed - User not found: {credentials.email}")
+            auth_log(f"[AUTH] Login failed - User not found")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
@@ -238,7 +238,7 @@ async def login(credentials: UserLogin, request: Request):
             else:
                 failed_login_attempts[credentials.email] = (1, current_time + timedelta(minutes=15))
             
-            auth_log(f"[AUTH] Login failed - Incorrect password for: {credentials.email}")
+            auth_log(f"[AUTH] Login failed - Incorrect password")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
@@ -274,7 +274,7 @@ async def login(credentials: UserLogin, request: Request):
                 detail="Database operation timed out. Please try again."
             )
         
-        auth_log(f"[AUTH] Login successful for: {credentials.email}")
+        auth_log(f"[AUTH] Login successful for user ID: {user.get('_id')}")
         
         return Token(access_token=access_token, refresh_token=refresh_token)
     
@@ -419,7 +419,7 @@ async def forgot_password(request: ForgotPasswordRequest):
     try:
         # Normalize email
         email = request.email.lower().strip()
-        auth_log(f"[AUTH] Password reset request for email: {email}")
+        auth_log(f"[AUTH] Password reset request for email: {email[:3]}***@{email.split('@')[1] if '@' in email else '***'}")
         
         # Validate email format
         if not email or '@' not in email:
@@ -437,7 +437,7 @@ async def forgot_password(request: ForgotPasswordRequest):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            auth_log(f"[AUTH] Database query timeout for {email}")
+            auth_log(f"[AUTH] Database query timeout during password reset request")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -451,7 +451,7 @@ async def forgot_password(request: ForgotPasswordRequest):
         
         if not user:
             # Return success anyway (security: don't reveal if email exists)
-            auth_log(f"[AUTH] Password reset requested for non-existent email: {email}")
+            auth_log(f"[AUTH] Password reset requested for non-existent email")
             return {
                 "message": "If an account exists with this email, a password reset link has been sent.",
                 "success": True
@@ -478,7 +478,7 @@ async def forgot_password(request: ForgotPasswordRequest):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            auth_log(f"[AUTH] Timeout storing reset token for {email}")
+            auth_log(f"[AUTH] Timeout storing reset token")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to generate reset token. Please try again."
@@ -494,7 +494,7 @@ async def forgot_password(request: ForgotPasswordRequest):
         email_sent = False
         smtp_error = None
         if settings.SMTP_HOST and settings.EMAIL_FROM:
-            auth_log(f"[AUTH] SMTP configured - attempting to send email to: {email}")
+            auth_log(f"[AUTH] SMTP configured - attempting to send password reset email")
             try:
                 msg = EmailMessage()
                 msg["Subject"] = "Zaply - Password Reset"
@@ -521,7 +521,7 @@ async def forgot_password(request: ForgotPasswordRequest):
                     server.send_message(msg)
 
                 email_sent = True
-                auth_log(f"[AUTH] Password reset email sent to: {email}")
+                auth_log(f"[AUTH] Password reset email sent successfully")
             except Exception as e:
                 smtp_error = str(e)
                 auth_log(f"[AUTH] Failed to send reset email: {type(e).__name__}: {e}")

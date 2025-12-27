@@ -84,7 +84,7 @@ async def list_groups(current_user: str = Depends(get_current_user)):
     """List groups for current user."""
     groups = []
     async for chat in chats_collection().find({"type": "group", "members": current_user}).sort("created_at", -1):
-        # attach last message
+        # Attach the last message
         last_message = await messages_collection().find_one(
             {"chat_id": chat["_id"], "is_deleted": {"$ne": True}},
             sort=[("created_at", -1)],
@@ -107,7 +107,7 @@ async def get_group(group_id: str, current_user: str = Depends(get_current_user)
     async def fetch_member(uid: str) -> Optional[dict]:
         return await users_collection().find_one({"_id": uid})
 
-    # Avoid slow sequential queries for big groups (basic parallelism with gather)
+    # Avoid slow sequential queries for large groups (using basic parallelism with gather)
     tasks = [fetch_member(uid) for uid in member_ids]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     for uid, user in zip(member_ids, results):
@@ -311,9 +311,9 @@ async def restrict_member(
         raise HTTPException(status_code=403, detail="Cannot restrict an admin")
 
     # Store restrictions in a separate connection or embedded field
-    # For now, we'll assume we store it in a 'restrictions' dict in the chat doc or separate collection
-    # A cleaner way is to use the ChatMember model logic, but for now we'll patch the chat document
-    # "restrictions": { "user_id": { permissions... } }
+    # For now, store it in a 'restrictions' dict in the chat document or separate collection
+    # A cleaner way is to use ChatMember model logic, but for now patch the chat document
+    # Example: "restrictions": { "user_id": { permissions... } }
     
     restriction_data = permissions.model_dump()
     if until_date:

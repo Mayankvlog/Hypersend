@@ -5,15 +5,32 @@ class User extends Equatable {
   final String name;
   final String username;
   final String? email;
+  final String? phone;
+  final String? bio;
   final String avatar;
   final bool isOnline;
+  final DateTime? lastSeen;
+  final String? status;
+  final DateTime? updatedAt;
+  final int contactsCount;
+  final bool isContact;
+  final bool isBlocked;
+  
   const User({
     required this.id,
     required this.name,
     required this.username,
     required this.avatar,
     this.email,
+    this.phone,
+    this.bio,
     this.isOnline = false,
+    this.lastSeen,
+    this.status,
+    this.updatedAt,
+    this.contactsCount = 0,
+    this.isContact = false,
+    this.isBlocked = false,
   });
 
   /// Create a User from API response map
@@ -23,29 +40,56 @@ class User extends Equatable {
       name: (json['name'] ?? json['full_name'] ?? '').toString().trim(),
       username: (json['username'] ?? json['username_alias'] ?? (json['email'] as String?)?.split('@').first ?? 'user').toString().trim(),
       email: json['email']?.toString().trim(),
+      phone: json['phone']?.toString().trim(),
+      bio: json['bio']?.toString().trim(),
       avatar: (json['avatar_url'] ?? json['avatar'] ?? '').toString().trim(),
       isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
+      lastSeen: json['last_seen'] != null ? DateTime.tryParse(json['last_seen']) : null,
+      status: json['status']?.toString().trim(),
+      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at']) : null,
+      contactsCount: (json['contacts_count'] ?? 0) as int,
+      isContact: (json['is_contact'] ?? false) as bool,
+      isBlocked: (json['is_blocked'] ?? false) as bool,
     );
   }
 
   @override
-  List<Object?> get props => [id, name, username, email, avatar, isOnline];
+  List<Object?> get props => [
+        id, name, username, email, phone, bio, avatar, isOnline, 
+        lastSeen, status, updatedAt, contactsCount, isContact, isBlocked
+      ];
 
   User copyWith({
     String? id,
     String? name,
     String? username,
     String? email,
+    String? phone,
+    String? bio,
     String? avatar,
     bool? isOnline,
+    DateTime? lastSeen,
+    String? status,
+    DateTime? updatedAt,
+    int? contactsCount,
+    bool? isContact,
+    bool? isBlocked,
   }) {
     return User(
       id: id ?? this.id,
       name: name ?? this.name,
       username: username ?? this.username,
       email: email ?? this.email,
+      phone: phone ?? this.phone,
+      bio: bio ?? this.bio,
       avatar: avatar ?? this.avatar,
       isOnline: isOnline ?? this.isOnline,
+      lastSeen: lastSeen ?? this.lastSeen,
+      status: status ?? this.status,
+      updatedAt: updatedAt ?? this.updatedAt,
+      contactsCount: contactsCount ?? this.contactsCount,
+      isContact: isContact ?? this.isContact,
+      isBlocked: isBlocked ?? this.isBlocked,
     );
   }
 
@@ -101,5 +145,47 @@ class User extends Equatable {
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }
     return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
+  }
+
+  /// Get formatted last seen text
+  String get lastSeenText {
+    if (isOnline) return 'online';
+    if (lastSeen == null) return 'last seen a long time ago';
+    
+    final now = DateTime.now();
+    final difference = now.difference(lastSeen!);
+    
+    if (difference.inMinutes < 1) {
+      return 'last seen just now';
+    } else if (difference.inMinutes < 60) {
+      return 'last seen ${difference.inMinutes} minute${difference.inMinutes == 1 ? '' : 's'} ago';
+    } else if (difference.inHours < 24) {
+      return 'last seen ${difference.inHours} hour${difference.inHours == 1 ? '' : 's'} ago';
+    } else if (difference.inDays < 7) {
+      return 'last seen ${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+    } else {
+      // Format date for older times using locale-appropriate format
+      final date = lastSeen!;
+      return 'last seen ${date.day}/${date.month}/${date.year}';
+    }
+  }
+
+  /// Get status text or fallback to last seen
+  String get displayStatus {
+    if (status?.isNotEmpty == true) {
+      return status!;
+    }
+    return lastSeenText;
+  }
+
+  /// Check if username is not empty
+  bool get usernameIsNotEmpty => username != null && username!.isNotEmpty;
+
+  /// Check if user is recently online (within last 5 minutes)
+  bool get isRecentlyOnline {
+    if (isOnline) return true;
+    if (lastSeen == null) return false;
+    final difference = DateTime.now().difference(lastSeen!);
+    return difference.inMinutes < 5;
   }
 }

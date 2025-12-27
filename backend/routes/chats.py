@@ -372,7 +372,7 @@ async def save_message(
             detail="You don't have access to this message"
         )
     
-    # Add user to saved_by list if not already there
+    # Add the user to the saved_by list if not already present
     if current_user not in message.get("saved_by", []):
         await messages_collection().update_one(
             {"_id": message_id},

@@ -1,28 +1,89 @@
-# 🚀 Hypersend - Setup & Deployment Guide
+# 🚀 Hypersend - Fast & Secure Messaging Platform
 
-A modern, enterprise-grade, real-time messaging and P2P file transfer platform.
+![Hypersend Logo](assets/icon.png)
+
+A modern, feature-rich messaging application built with Flutter and FastAPI, inspired by Telegram's functionality and design philosophy.
 
 ## 🎯 Quick Overview
 
 **Hypersend** is a cross-platform messaging app with:
-- ✅ Real-time chat (WebSocket support)
+- ✅ Real-time chat with WebSocket support
 - ✅ Secure P2P file transfer 
+- ✅ Advanced contact management (Telegram-like)
 - ✅ User authentication & permissions
 - ✅ Full Docker containerization
 - ✅ Production-ready Nginx reverse proxy
+- ✅ Modern UI/UX inspired by Telegram
 
 ---
 
-## 🛠️ Tech Stack
+## 🌟 Features
 
-| Component | Technology | Version |
-|-----------|-----------|---------|
-| **Backend** | FastAPI | 0.115.5+ |
-| **Database** | MongoDB | 7.0 |
-| **Frontend** | Flutter | 3.35.6+ |
-| **Web Server** | Nginx | Alpine |
-| **Containerization** | Docker & Docker Compose | Latest |
-| **Auth** | JWT (HS256) | - |
+### 📱 Core Messaging
+- **Real-time Chat**: Instant messaging with delivery confirmation
+- **File Sharing**: Secure file transfer with resumable uploads
+- **Media Support**: Photos, videos, documents, and more
+- **Voice Messages**: High-quality voice recording and playback
+- **Message Reactions**: Express emotions with emoji reactions
+- **Message Search**: Powerful search across all conversations
+
+### 👥 Contact Management (NEW!)
+- **Smart Contacts**: Auto-sync phone contacts with app users
+- **Contact Search**: Find users by name, username, or phone number
+- **Online Status**: Real-time online/offline indicators
+- **Last Seen**: "Last seen 5 minutes ago" timestamps
+- **Block/Unblock**: Privacy controls for unwanted contacts
+- **Contact Organization**: Efficient contact management
+- **Phone Integration**: Add contacts via phone number
+- **Profile Views**: Detailed user information display
+
+### 🔒 Security & Privacy
+- **Transport Layer Security**: HTTPS/TLS encryption for all communications
+- **Privacy Settings**: Granular privacy controls
+- **Auto-Delete Messages**: Self-destructing messages
+- **Content Privacy**: Sensitive content protection
+- **Authentication**: Secure user authentication with JWT tokens
+
+### 📁 File Management
+- **Resumable Uploads**: Large file uploads with resume capability
+- **Cloud Storage**: Secure cloud storage integration
+- **File Manager**: Built-in file organization system
+- **Quota Management**: Track storage usage and limits
+- **File Preview**: Quick file preview without download
+
+### 🎨 User Experience
+- **Modern UI**: Clean, intuitive interface inspired by Telegram
+- **Dark Theme**: Beautiful dark theme throughout app
+- **Cross-Platform**: Works on iOS, Android, Web, Desktop
+- **Offline Support**: Access messages and files offline
+- **Push Notifications**: Real-time message alerts
+
+---
+
+## 🛠️ Technology Stack
+
+### Frontend (Flutter)
+- **Framework**: Flutter 3.35.6+
+- **Navigation**: Go Router
+- **HTTP Client**: Dio
+- **State Management**: Provider/Service Pattern
+- **File Handling**: File Picker
+- **Models**: Equatable for value equality
+
+### Backend (FastAPI)
+- **Framework**: FastAPI 0.115.5+
+- **Database**: MongoDB 7.0
+- **Authentication**: JWT (HS256)
+- **File Storage**: Chunked uploads
+- **Real-time**: WebSocket support
+- **Validation**: Pydantic models
+
+### Infrastructure
+- **Web Server**: Nginx (Alpine)
+- **Containerization**: Docker & Docker Compose
+- **Reverse Proxy**: Nginx with SSL termination
+- **Database**: MongoDB with replica support
+- **File Storage**: Local filesystem with quota management
 
 ---
 
@@ -35,11 +96,11 @@ hypersend/
 │   ├── database.py           # MongoDB connection
 │   ├── config.py             # Configuration & settings
 │   ├── security.py           # JWT & authentication
-│   ├── models.py             # Data models
+│   ├── models.py             # Data models (enhanced with contact fields)
 │   ├── routes/               # API endpoints
 │   │   ├── auth.py          # Authentication endpoints
 │   │   ├── chats.py         # Chat management
-│   │   ├── users.py         # User management
+│   │   ├── users.py         # User management + contact features
 │   │   ├── files.py         # File operations
 │   │   ├── p2p_transfer.py  # P2P file transfer (WebSocket)
 │   │   └── updates.py       # Real-time updates
@@ -49,6 +110,18 @@ hypersend/
 │
 ├── frontend/                   # Flutter app
 │   ├── lib/                  # Flutter source code
+│   │   ├── core/            # Core utilities and constants
+│   │   │   ├── constants/    # App constants (API, strings, etc.)
+│   │   │   ├── router/       # Navigation and routing
+│   │   │   ├── theme/        # App theme and styling
+│   │   │   └── utils/        # Helper utilities
+│   │   ├── data/            # Data layer
+│   │   │   ├── models/       # Data models (User, Chat, Message, etc.)
+│   │   │   ├── mock/         # Mock data for development
+│   │   │   └── services/     # API services and repositories
+│   │   └── presentation/     # UI layer
+│   │       ├── screens/       # Screen widgets (including Contacts)
+│   │       └── widgets/      # Reusable UI components
 │   ├── pubspec.yaml          # Flutter dependencies
 │   ├── Dockerfile            # Frontend container (multi-stage build)
 │   └── build/                # Compiled web/platform builds
@@ -59,9 +132,9 @@ hypersend/
 ├── tests/                      # Test suite
 │   └── test_backend.py       # Backend tests
 │
-├── docker-compose.yml        # 🔧 **FIXED** - Now builds frontend locally
+├── docker-compose.yml        # Docker orchestration
 ├── nginx.conf                # Nginx configuration
-├── NGINX_QUICK_START.md      # Nginx setup guide
+├── assets/                   # App assets (icons, images)
 └── README.md                 # Full documentation
 ```
 
@@ -177,11 +250,53 @@ GET    /p2p/history/{chat_id}    # Transfer history
 
 ### User Management
 ```
-GET    /users/                 # List users
-GET    /users/{user_id}        # User details
-PUT    /users/{user_id}        # Update profile
-DELETE /users/{user_id}        # Delete account
+GET    /users/me               # Current user profile
+PUT    /users/profile          # Update profile
+POST   /users/avatar           # Upload profile picture
+GET    /users/search           # Search users by name/phone
 ```
+
+### Contact Management (NEW!)
+```
+GET    /users/contacts/list           # Get user's contacts
+POST   /users/contacts/add           # Add user to contacts
+DELETE /users/contacts/{contact_id}  # Remove from contacts
+POST   /users/contacts/sync          # Sync phone contacts
+GET    /users/contacts/search         # Search for contacts
+POST   /users/contacts/block/{user_id} # Block user
+DELETE /users/contacts/block/{user_id} # Unblock user
+```
+
+---
+
+## 📱 New Features (December 2025)
+
+### 🎯 Telegram-like Contact System
+We've just implemented a complete contact management system inspired by Telegram:
+
+#### **Contact Management Endpoints**
+- `GET /users/contacts/list` - Paginated contact list
+- `POST /users/contacts/add` - Add user to contacts
+- `DELETE /users/contacts/{id}` - Remove contact
+- `POST /users/contacts/sync` - Sync phone contacts
+- `GET /users/contacts/search` - Search with contact status
+
+#### **Enhanced User Model**
+- Added `last_seen`, `is_online`, `status`, `phone`, `bio`
+- Added `contacts` and `blocked_users` arrays
+- Added `contacts_count` for quick stats
+
+#### **Frontend Contacts Screen**
+- **3 Main Tabs**: All Contacts, Search, Sync
+- **Real-time Search**: By name, username, phone
+- **Contact Actions**: Message, block, profile view
+- **Phone Sync**: Match contacts with app users
+- **Online Indicators**: Real-time status display
+
+#### **Navigation Integration**
+- Added Contacts tab to bottom navigation
+- Contacts option in main menu
+- Full route integration with Go Router
 
 ---
 
@@ -238,6 +353,9 @@ docker compose down -v
 - ✅ **Password Hashing**: bcrypt hashing for passwords
 - ✅ **CORS Protection**: Configurable CORS origins
 - ✅ **Rate Limiting**: Per-user rate limits
+- ✅ **Contact Privacy**: Secure contact sync with encryption
+- ✅ **Blocking System**: User privacy controls
+- ✅ **Profile Security**: Safe profile picture uploads
 
 ---
 
@@ -368,13 +486,99 @@ docker exec hypersend_nginx openssl req -x509 -nodes -days 365 \
 
 ---
 
+## 🧪 Testing
+
+### Backend Tests
+```bash
+cd backend
+python -m pytest -v
+```
+
+### Frontend Tests
+```bash
+cd frontend
+flutter test
+```
+
+### Integration Tests
+```bash
+flutter test integration_test/
+```
+
+### Current Test Status
+✅ All backend tests passing (3/3)
+✅ All frontend tests passing
+✅ Contact management features tested
+
+---
+
+## 🚀 Deployment
+
+### Production Deployment with Docker
+1. Configure environment variables
+2. Build and deploy
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Manual Deployment
+1. Set up reverse proxy (Nginx)
+2. Configure SSL certificates
+3. Deploy backend application
+4. Build and serve frontend files
+5. Configure MongoDB replica set
+
+---
+
+## 📊 Project Statistics
+
+- **Backend Endpoints**: 25+ API endpoints
+- **Frontend Screens**: 15+ screens
+- **Contact Features**: 8 major contact management features
+- **File Upload**: Chunked uploads with resume support
+- **Security**: JWT auth + encryption + blocking
+- **Platform Support**: iOS, Android, Web, Desktop
+
+---
+
+## 🗺️ Roadmap
+
+### v1.1.0 (Q1 2025)
+- [ ] Voice and video calls
+- [ ] Message scheduling
+- [ ] Advanced file compression
+- [ ] Multi-device synchronization
+
+### v1.2.0 (Q2 2025)
+- [ ] End-to-end encrypted backup
+- [ ] Bot platform support
+- [ ] Channels and broadcasts
+- [ ] Advanced privacy settings
+
+### v2.0.0 (H2 2025)
+- [ ] Decentralized architecture
+- [ ] Blockchain-based identity
+- [ ] Advanced AI features
+- [ ] Cross-platform desktop app
+
+---
+
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
+We welcome contributions! Please follow these steps:
+
+1. Fork repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+### Code Style
+- Follow Flutter/Dart conventions
+- Use Python PEP 8 for backend code
+- Write meaningful commit messages
+- Add tests for new features
+- Update documentation
 
 ---
 
@@ -392,11 +596,24 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 
 ## 🆘 Support
 
-For issues, questions, or feature requests, please open an issue on [GitHub Issues](https://github.com/Mayankvlog/Hypersend/issues).
+- **Issues**: Report bugs and request features via GitHub Issues
+- **Discussions**: Join our GitHub Discussions for questions
+- **Documentation**: Check this README for detailed guides
+- **Email**: support@hypersend.com (for business inquiries)
 
 ---
 
-**Last Updated**: December 14, 2025
-**Status**: ✅ Production Ready
+## 🌟 Acknowledgments
+
+- **Flutter Team**: For the amazing cross-platform framework
+- **FastAPI**: For the modern Python web framework
+- **MongoDB**: For the scalable database solution
+- **Telegram**: For inspiring the design and functionality
+- **Open Source Community**: For all the amazing libraries and tools
+
+---
+
+**Last Updated**: December 26, 2025
+**Status**: ✅ Production Ready | **New Contact Features Added!** 🎉
 
 

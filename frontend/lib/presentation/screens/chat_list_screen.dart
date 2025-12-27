@@ -257,9 +257,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
     
     if (index == 1) {
+      // Navigate to contacts
+      context.push('/contacts');
+    } else if (index == 2) {
       // Navigate to file transfer
       context.push('/file-transfer');
-    } else if (index == 2) {
+    } else if (index == 3) {
       // Navigate to settings
       context.push('/settings');
     }
@@ -431,6 +434,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onBottomNavTap,
+        type: BottomNavigationBarType.fixed,
         items: [
           BottomNavigationBarItem(
             icon: Stack(
@@ -467,6 +471,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
             label: AppStrings.chats,
           ),
           const BottomNavigationBarItem(
+            icon: Icon(Icons.contacts_outlined),
+            label: 'Contacts',
+          ),
+          const BottomNavigationBarItem(
             icon: Icon(Icons.cloud_upload_outlined),
             label: 'Files',
           ),
@@ -491,6 +499,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.contacts_outlined,
+                  color: AppTheme.primaryCyan,
+                ),
+                title: const Text('Contacts'),
+                subtitle: const Text('View and manage your contacts'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/contacts');
+                },
+              ),
+              const Divider(height: 0),
               ListTile(
                 leading: const Icon(
                   Icons.person_add_outlined,

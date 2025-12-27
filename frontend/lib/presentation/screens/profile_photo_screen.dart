@@ -100,38 +100,15 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
             // Upload options
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _pickImage,
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('Choose from Gallery'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryCyan,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Camera access granted'),
-                          backgroundColor: AppTheme.successGreen,
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Take a Photo'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.cardDark,
-                      foregroundColor: AppTheme.primaryCyan,
-                      minimumSize: const Size(double.infinity, 48),
-                      side: const BorderSide(color: AppTheme.primaryCyan),
-                    ),
-                  ),
-                ],
+              child: ElevatedButton.icon(
+                onPressed: _pickImage,
+                icon: const Icon(Icons.photo_library),
+                label: const Text('Choose from Gallery'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryCyan,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 48),
+                ),
               ),
             ),
             const SizedBox(height: 32),
