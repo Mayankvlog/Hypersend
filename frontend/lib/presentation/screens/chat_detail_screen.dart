@@ -12,7 +12,8 @@ import '../../data/services/service_provider.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/utils/emoji_utils.dart';
 // Web-specific imports
-import 'dart:html' as html show Blob, Url, AnchorElement;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 
 
 class ChatDetailScreen extends StatefulWidget {

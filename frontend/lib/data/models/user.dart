@@ -179,7 +179,7 @@ class User extends Equatable {
   }
 
   /// Check if username is not empty
-  bool get usernameIsNotEmpty => username != null && username!.isNotEmpty;
+  bool get usernameIsNotEmpty => username.isNotEmpty;
 
   /// Check if user is recently online (within last 5 minutes)
   bool get isRecentlyOnline {

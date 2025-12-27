@@ -29,7 +29,7 @@ class _ContactsScreenState extends State<ContactsScreen>
   bool _isSearching = false;
   bool _isSyncing = false;
   String? _error;
-  List<Map<String, dynamic>> _nearbyUsers = [];
+  final List<Map<String, dynamic>> _nearbyUsers = [];
   bool _loadingNearby = false;
   
   @override
@@ -241,7 +241,7 @@ class _ContactsScreenState extends State<ContactsScreen>
     try {
       await serviceProvider.apiService.addContact(
         userId: user.id,
-        displayName: user.name ?? user.username ?? 'Contact',
+        displayName: user.name.isNotEmpty ? user.name : (user.username.isNotEmpty ? user.username : 'Contact'),
       );
       _showSuccessSnackBar('Contact added successfully');
       _loadContacts(); // Refresh contacts
@@ -956,5 +956,4 @@ class _ContactsScreenState extends State<ContactsScreen>
       _showErrorSnackBar('Failed to start chat: $e');
     }
   }
-}
 }
