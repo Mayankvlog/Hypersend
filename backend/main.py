@@ -269,9 +269,24 @@ if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "
     )
 
 # CORS middleware - configured from settings to respect DEBUG/PRODUCTION modes
+# FIX: Ensure CORS is properly configured with fallback origins
+cors_origins = settings.CORS_ORIGINS
+# If CORS_ORIGINS contains the asterisk, convert to list with asterisk
+if isinstance(cors_origins, str):
+    cors_origins = [cors_origins]
+if isinstance(cors_origins, list) and len(cors_origins) > 0:
+    # Clean up whitespace in origins
+    cors_origins = [origin.strip() for origin in cors_origins]
+    # If wildcard present, keep it; otherwise add local fallbacks
+    if "*" not in cors_origins:
+        local_origins = ["http://localhost", "http://localhost:8000", "http://127.0.0.1:8000"]
+        for origin in local_origins:
+            if origin not in cors_origins:
+                cors_origins.append(origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],

@@ -71,17 +71,20 @@ class Settings:
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     
     # CORS Configuration
-    # Restrict CORS even without domain for better security
+    # FIX: Load from environment or use defaults that support all access patterns
+    # NOTE: CORS is for browser security, not API authentication - allow common patterns
     CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
+        "*",  # Allow all origins in development/local
         "http://localhost",
         "http://localhost:8000",
+        "http://localhost:3000",
         "http://localhost:8550",
-        "http://localhost:64216",
+        "http://127.0.0.1",
         "http://127.0.0.1:8000",
-        "http://127.0.0.1:8550",
-        "http://127.0.0.1:64216",
+        "http://127.0.0.1:3000",
         "http://0.0.0.0:8000",
         "http://backend:8000",
+        "http://frontend",
         # Add VPS IP / domain (HTTP + HTTPS) and production frontend
         "http://139.59.82.105",
         "http://139.59.82.105:8000",
@@ -91,6 +94,7 @@ class Settings:
         "http://zaply.in.net",
         "https://zaply.in.net",
         "https://www.zaply.in.net",
+        "http://zaply.in.net:8000",
     ]
     
     def __init__(self):

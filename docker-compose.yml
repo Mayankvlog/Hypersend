@@ -63,6 +63,8 @@ services:
       dockerfile: Dockerfile
     container_name: hypersend_backend
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     environment:
       MONGO_USER: ${MONGO_USER:-hypersend}
       MONGO_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
