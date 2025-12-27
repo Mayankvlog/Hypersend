@@ -26,32 +26,16 @@ class ProfileService {
     String? bio,
     String? phone,
   }) async {
-      // Validate field constraints and prevent conflicts (consolidated logic)
-      // Validate field constraints (single consolidated validation)
-    if (avatar != null && avatar.length > 10) {
-      debugPrint('[PROFILE_SERVICE] ERROR: Avatar field too long for initials. Use avatarUrl field for images.');
-      throw Exception('Avatar initials must be 10 characters or less. Use avatarUrl field for images.');
-    }
-    
-    if (avatarUrl != null && avatarUrl.length > 500) {
-      debugPrint('[PROFILE_SERVICE] ERROR: AvatarUrl field too long. Must be 500 characters or less.');
-      throw Exception('Avatar URL must be 500 characters or less.');
-    }
-    // SAFEGUARD: Prevent avatar field from being used with URLs
-    if (avatar != null && avatar.length > 10) {
-      debugPrint('[PROFILE_SERVICE] ERROR: Avatar field too long for initials. Use avatarUrl field for images.');
-      throw Exception('Avatar initials must be 10 characters or less. Use avatarUrl field for images.');
-    }
-    
-    if (avatarUrl != null && avatarUrl.length > 500) {
-      debugPrint('[PROFILE_SERVICE] ERROR: AvatarUrl field too long. Must be 500 characters or less.');
-      throw Exception('Avatar URL must be 500 characters or less.');
-    }
-    
-    if (avatarUrl != null && avatarUrl!.length > 500) {
-      debugPrint('[PROFILE_SERVICE] ERROR: AvatarUrl field too long. Use shorter URL or check data.');
-      throw Exception('Avatar URL must be 500 characters or less.');
-    }
+      // Validate field constraints
+      if (avatar != null && avatar.length > 10) {
+        debugPrint('[PROFILE_SERVICE] ERROR: Avatar field too long for initials. Use avatarUrl field for images.');
+        throw Exception('Avatar initials must be 10 characters or less. Use avatarUrl field for images.');
+      }
+      
+      if (avatarUrl != null && avatarUrl.length > 500) {
+        debugPrint('[PROFILE_SERVICE] ERROR: AvatarUrl field too long. Must be 500 characters or less.');
+        throw Exception('Avatar URL must be 500 characters or less.');
+      }
     if (_currentUser == null) {
       throw Exception('No user logged in');
     }

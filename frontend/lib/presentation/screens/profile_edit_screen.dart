@@ -127,11 +127,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         setState(() => _isLoading = true);
       }
 
-      // Update profile
+      // Update profile - use avatarUrl for image URLs, avatar for initials only
       final updatedUser = await serviceProvider.profileService.updateProfile(
         name: nameToSend,
         username: usernameToSend,
-        avatar: _avatarChanged ? _currentAvatar : null,
+        avatarUrl: _avatarChanged && _currentAvatar.startsWith('/') ? _currentAvatar : null,
         email: emailToSend,
         bio: bioToSend,
       );
@@ -261,11 +261,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       return CircleAvatar(
                         radius: 60,
                         backgroundColor: AppTheme.primaryCyan,
-                        backgroundImage: isUrl
+                        backgroundImage: isUrl && tempUser.fullAvatarUrl.isNotEmpty
                             ? NetworkImage(tempUser.fullAvatarUrl)
                             : null,
                         onBackgroundImageError: isUrl 
-                            ? (e, s) => debugPrint('Avatar image load failed: $e') 
+                            ? (e, s) {
+                                debugPrint('Avatar image load failed: $e');
+                                debugPrint('Image source: ${tempUser.fullAvatarUrl}');
+                              }
                             : null,
                         child: Center(
                           child: Text(
