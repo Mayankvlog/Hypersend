@@ -20,10 +20,7 @@ class ProfilePhotoScreen extends StatefulWidget {
 
 class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   late String _selectedPhoto;
-  final List<String> defaultAvatars = [
-    'AM', 'BN', 'CD', 'DT', 'ES', 'FG', 'HI', 'JK',
-    'LM', 'NO', 'PQ', 'RS', 'TU', 'VW', 'XY', 'ZZ'
-  ];
+
   bool _isUploading = false;
   Uint8List? _pickedFileBytes;
   String? _pickedFileName;
@@ -122,77 +119,6 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 48),
                 ),
-              ),
-            ),
-            const SizedBox(height: 32),
-            // Default avatars
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'DEFAULT AVATARS',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        letterSpacing: 1.2,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                ),
-                itemCount: defaultAvatars.length,
-                itemBuilder: (context, index) {
-                  final avatar = defaultAvatars[index];
-                  final isSelected = _selectedPhoto == avatar;
-
-                  return InkWell(
-                    onTap: () {
-                      setState(() {
-                        _selectedPhoto = avatar;
-                      });
-                    },
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        CircleAvatar(
-                          radius: 32,
-                          backgroundColor: isSelected
-                              ? AppTheme.primaryCyan
-                              : AppTheme.cardDark,
-                          child: Text(
-                            avatar,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        if (isSelected)
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: AppTheme.primaryCyan,
-                                width: 3,
-                              ),
-                            ),
-                            width: 64,
-                            height: 64,
-                          ),
-                      ],
-                    ),
-                  );
-                },
               ),
             ),
             const SizedBox(height: 32),
