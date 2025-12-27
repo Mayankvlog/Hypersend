@@ -145,7 +145,7 @@ class UserResponse(BaseModel):
     last_seen: Optional[datetime] = None
     is_online: bool = False
     status: Optional[str] = None
-    pinned_chats: List[str] = []
+    pinned_chats: List[str] = Field(default_factory=list)
     contacts_count: int = 0  # Number of contacts
     is_contact: bool = False  # Whether this user is a contact of the current user
 
@@ -383,7 +383,7 @@ class ChatInDB(BaseModel):
     avatar_url: Optional[str] = None
     members: List[str]
     member_count: int = 0
-    admins: List[str] = []
+    admins: List[str] = Field(default_factory=list)
     owner_id: Optional[str] = None
     
     # Settings
@@ -473,7 +473,7 @@ class MessageInDB(BaseModel):
     reply_to_message_id: Optional[str] = None
     # For future: thread_id if we want top-level threads
 
-    saved_by: List[str] = []  # List of user IDs who saved this message
+    saved_by: List[str] = Field(default_factory=list)  # List of user IDs who saved this message
     # Reactions: emoji -> [user_id]
     reactions: dict = Field(default_factory=dict)
     # Read receipts: list of {"user_id": str, "read_at": datetime}
@@ -583,7 +583,7 @@ class UploadInDB(BaseModel):
     chat_id: str
     total_chunks: int
     chunk_size: int
-    received_chunks: List[int] = []
+    received_chunks: List[int] = Field(default_factory=list)
     checksum: Optional[str] = None
     expires_at: datetime
     created_at: datetime = Field(default_factory=datetime.utcnow)

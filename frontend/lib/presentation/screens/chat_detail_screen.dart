@@ -11,7 +11,7 @@ import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/utils/emoji_utils.dart';
-// Web-specific imports
+// Web-specific imports - necessary for web file download functionality
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -630,17 +630,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         throw Exception('No data received or file is empty');
       }
       
-      // Create blob URL and trigger download for all files
-      final blob = html.Blob([bytes]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      
-      // Create download link
-      html.AnchorElement(href: url)
-        ..setAttribute('download', fileName)
-        ..click();
-      
-      // Clean up blob URL
-      html.Url.revokeObjectUrl(url);
+      if (kIsWeb) {
+        // Web-specific file download - suppress deprecation warning as it's necessary for web
+        // ignore: avoid_web_libraries_in_flutter
+        final blob = html.Blob([bytes]);
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        
+        // Create download link
+        html.AnchorElement(href: url)
+          ..setAttribute('download', fileName)
+          ..click();
+        
+        // Clean up blob URL
+        html.Url.revokeObjectUrl(url);
+      }
       
       debugPrint('[FILE_WEB] Downloaded ${bytes.length} bytes as $fileName');
     } catch (e) {
