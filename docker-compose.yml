@@ -84,7 +84,7 @@ services:
       FILE_RETENTION_HOURS: 0
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1/}
+      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       DEBUG: "False"
@@ -120,7 +120,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        API_BASE_URL: "https://zaply.in.net/api/v1/"
+        API_BASE_URL: "https://zaply.in.net/api/v1"
     container_name: hypersend_frontend
     restart: unless-stopped
     depends_on:

@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, JSONResponse
@@ -305,26 +305,125 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Total-Count"],
-    max_age=600,  # Cache preflight requests for 10 minutes
+    expose_headers=["Content-Disposition", "X-Total-Count", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # ✅ CRITICAL FIX: Handle CORS preflight requests (OPTIONS) without requiring authentication
 # Browser CORS preflight requests don't have auth headers, so they would fail 401 without this
 # NOTE: FastAPI automatically handles OPTIONS for registered routes, this is fallback only
 @app.options("/{full_path:path}")
-async def handle_options_request(full_path: str):
+async def handle_options_request(full_path: str, request: Request):
     """
     Handle CORS preflight OPTIONS requests.
     These must succeed without authentication for CORS to work in browsers.
     """
-    return Response(status_code=200, headers={
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    })
+    origin = request.headers.get("Origin", "*")
+    return Response(
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": origin if origin != "" else "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "86400",
+        }
+    )
+
+# Health check endpoint for monitoring and CORS testing
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint - used to verify API is running.
+    Accessible from browser without authentication (no CORS issues).
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "api_base_url": settings.API_BASE_URL,
+        "debug_mode": settings.DEBUG,
+    }
+
+# API version endpoint
+@app.get("/api/v1/health")
+async def api_health_check():
+    """
+    API health check endpoint under /api/v1 path.
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "api_base_url": settings.API_BASE_URL,
+        "debug_mode": settings.DEBUG,
+    }
+
+# Detailed status endpoint for debugging
+@app.get("/api/v1/status")
+async def api_status(request: Request):
+    """
+    Detailed API status endpoint for debugging connection issues.
+    RESTRICTED: Only accessible in DEBUG mode or from localhost.
+    """
+    # Only allow access in debug mode or from localhost
+    client_host = request.client.host if request.client else "unknown"
+    
+    if not settings.DEBUG and client_host not in ["127.0.0.1", "localhost", "::1"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint is only accessible in debug mode or from localhost"
+        )
+    
+    # In production, return minimal information
+    if not settings.DEBUG:
+        return {
+            "status": "operational",
+            "service": "zaply-api",
+            "version": "1.0.0",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    
+    # In debug mode, return detailed information
+    return {
+        "status": "operational",
+        "service": "zaply-api",
+        "version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "api": {
+            "base_url": settings.API_BASE_URL,
+            "host": settings.API_HOST,
+            "port": settings.API_PORT,
+            "debug_mode": settings.DEBUG,
+            "cors_origins": cors_origins[:3],  # Show first 3 origins only
+        },
+        "database": {
+            "type": "MongoDB",
+            "mock_mode": settings.USE_MOCK_DB,
+        },
+        "environment": "debug" if settings.DEBUG else "production",
+    }
+
+@app.get("/")
+async def root():
+    """Root endpoint - verify API is responding"""
+    return {
+        "app": "Hypersend",
+        "version": "1.0.0",
+        "status": "running",
+        "environment": "debug" if settings.DEBUG else "production",
+        "api_endpoint": settings.API_BASE_URL,
+    }
+
+
+# Serve favicon (avoid 404 in logs)
+FAVICON_PATH = Path("frontend/assets/favicon.ico")
+
+@app.get("/favicon.ico")
+async def favicon():
+    if FAVICON_PATH.exists():
+        return FileResponse(str(FAVICON_PATH))
+    return Response(status_code=204)
 
 # Security headers middleware
 @app.middleware("http")
@@ -344,16 +443,6 @@ async def add_security_headers(request, call_next):
     return response
 
 
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {
-        "app": "Hypersend",
-        "version": "1.0.0",
-        "status": "running",
-        "environment": "debug" if settings.DEBUG else "production"
-    }
-
 
 # Serve favicon (avoid 404 in logs)
 FAVICON_PATH = Path("frontend/assets/favicon.ico")
@@ -364,20 +453,6 @@ async def favicon():
         return FileResponse(str(FAVICON_PATH))
     return Response(status_code=204)
 
-
-@app.get("/health")
-async def health():
-    """Health check endpoint with detailed status for debugging"""
-    return {
-        "status": "healthy",
-        "service": "zaply-api",
-        "version": "1.0.0",
-        "api_base_url": settings.API_BASE_URL,
-        "api_host": settings.API_HOST,
-        "api_port": settings.API_PORT,
-        "debug": settings.DEBUG,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
 
 
 # Include routers
