@@ -298,10 +298,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
     }
   }
 
-  Future<List<Map<String, dynamic>>> getContacts({int limit = 50}) async {
-    final response = await _dio.get('${ApiConstants.usersEndpoint}/contacts', queryParameters: {'limit': limit});
-    return List<Map<String, dynamic>>.from(response.data?['users'] ?? const []);
-  }
+
 
   Future<Map<String, dynamic>> getSavedChat() async {
     try {
@@ -747,93 +744,7 @@ Future<void> postToChannel(String channelId, String text) async {
 
   // Contact Management Methods
   
-  Future<Map<String, dynamic>> getContactsList({int limit = 100, int offset = 0}) async {
-    try {
-      final response = await _dio.get(
-        '${ApiConstants.usersEndpoint}/contacts/list',
-        queryParameters: {'limit': limit, 'offset': offset}
-      );
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error getting contacts list: $e');
-      rethrow;
-    }
-  }
 
-  Future<Map<String, dynamic>> addContact({
-    required String userId,
-    required String displayName,
-  }) async {
-    try {
-      final response = await _dio.post(
-        '${ApiConstants.usersEndpoint}/contacts/add',
-        data: {
-          'user_id': userId,
-          'display_name': displayName,
-        }
-      );
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error adding contact: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> deleteContact(String userId) async {
-    try {
-      final response = await _dio.delete('${ApiConstants.usersEndpoint}/contacts/$userId');
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error deleting contact: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> syncContacts(List<Map<String, String>> contacts) async {
-    try {
-      final response = await _dio.post(
-        '${ApiConstants.usersEndpoint}/contacts/sync',
-        data: {'contacts': contacts}
-      );
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error syncing contacts: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> searchContacts(String query, {int limit = 20}) async {
-    try {
-      final response = await _dio.get(
-        '${ApiConstants.usersEndpoint}/contacts/search',
-        queryParameters: {'q': query, 'limit': limit}
-      );
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error searching contacts: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> blockUser(String userId) async {
-    try {
-      final response = await _dio.post('${ApiConstants.usersEndpoint}/contacts/block/$userId');
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error blocking user: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> unblockUser(String userId) async {
-    try {
-      final response = await _dio.delete('${ApiConstants.usersEndpoint}/contacts/block/$userId');
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error unblocking user: $e');
-      rethrow;
-    }
-  }
 
   // Location and People Nearby endpoints
   Future<Map<String, dynamic>> updateLocation({
@@ -1212,9 +1123,9 @@ if (!kIsWeb) {
   }
   
   /// Syncs account data across all connected devices
-  /// Ensures messages, contacts, and settings are consistent
+  /// Ensures messages and settings are consistent
   Future<Map<String, dynamic>> syncAccountDataAcrossDevices({
-    required String dataType, // 'chats', 'messages', 'contacts', 'settings'
+    required String dataType, // 'chats', 'messages', 'settings'
     Map<String, dynamic>? additionalData,
   }) async {
     try {
@@ -1505,7 +1416,7 @@ if (!kIsWeb) {
   /// Syncs data across all linked devices (Legacy - use syncAccountDataAcrossDevices)
   /// Used to keep accounts synchronized
   Future<Map<String, dynamic>> syncAcrossDevices({
-    required String dataType, // 'chats', 'messages', 'contacts', 'settings'
+    required String dataType, // 'chats', 'messages', 'settings'
     Map<String, dynamic>? additionalData,
   }) async {
     try {

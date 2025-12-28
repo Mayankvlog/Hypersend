@@ -71,22 +71,15 @@ class HelpSupportScreen extends StatelessWidget {
                     title: 'Email',
                     subtitle: 'support@hypersend.com',
                     onTap: () => _launchEmail(context, 'support@hypersend.com'),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildContactTile(
-                    icon: Icons.phone_outlined,
-                    title: 'Phone',
-                    subtitle: '+1 (555) 123-4567',
-                    onTap: () => _launchPhone(context, '+15551234567'),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildContactTile(
-                    icon: Icons.language_outlined,
-                    title: 'Community Forum',
-                    subtitle: 'discuss.hypersend.com',
-                    onTap: () => _launchUrl(context, 'https://discuss.hypersend.com'),
-                  ),
-                ],
+                   ),
+                   const SizedBox(height: 12),
+                   _buildContactTile(
+                     icon: Icons.language_outlined,
+                     title: 'Community Forum',
+                     subtitle: 'discuss.hypersend.com',
+                     onTap: () => _launchUrl(context, 'https://discuss.hypersend.com'),
+                   ),
+                 ],
               ),
             ),
             const SizedBox(height: 24),
@@ -257,22 +250,6 @@ class HelpSupportScreen extends StatelessWidget {
       }
     } catch (e) {
       _showErrorSnackBar(context, 'Error launching email: ${e.toString()}');
-    }
-  }
-
-  Future<void> _launchPhone(BuildContext context, String phoneNumber) async {
-    final Uri phoneUri = Uri(
-      scheme: 'tel',
-      path: phoneNumber,
-    );
-    try {
-      if (await canLaunchUrl(phoneUri)) {
-        await launchUrl(phoneUri);
-      } else {
-        _showErrorSnackBar(context, 'Could not open phone dialer');
-      }
-    } catch (e) {
-      _showErrorSnackBar(context, 'Error launching phone: ${e.toString()}');
     }
   }
 

@@ -24,7 +24,6 @@ class ProfileService {
     String? avatarUrl,  // NOTE: Only for image URLs (max 500 chars)
     String? email,
     String? bio,
-    String? phone,
   }) async {
       // Validate field constraints
       if (avatar != null && avatar.length > 10) {
@@ -60,7 +59,6 @@ class ProfileService {
       if (avatar != null) updateMap['avatar'] = avatar;  // Add avatar field for initials
       if (avatarUrl != null) updateMap['avatar_url'] = avatarUrl;  // Add avatar_url field for image URL
       if (bio != null) updateMap['bio'] = bio;
-      if (phone != null) updateMap['phone'] = phone;
       
       debugPrint('[PROFILE_UPDATE] Sending to API: $updateMap');
       
@@ -75,7 +73,6 @@ class ProfileService {
         username: username ?? _currentUser!.username,
         email: email ?? _currentUser!.email,
         bio: bio ?? _currentUser!.bio,
-        phone: phone ?? _currentUser!.phone,
         avatar: avatar ?? _currentUser!.avatar,
         avatarUrl: avatarUrl ?? _currentUser!.avatarUrl,
       );

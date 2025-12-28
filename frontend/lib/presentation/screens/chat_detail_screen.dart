@@ -218,18 +218,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       }
                       return;
                     }
-                    
-                    // Add to contacts in the backend
-                    await serviceProvider.apiService.addContact(
-                      userId: peerId,
-                      displayName: displayName,
-                    );
-                    
+                     
+                    // Contact functionality has been removed
                     if (mounted) {
                       nameController.dispose();
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('$displayName added to contacts')),
+                        SnackBar(content: Text('Started chat with $displayName')),
                       );
                     }
                   } catch (e) {

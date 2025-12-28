@@ -14,7 +14,6 @@ import '../../presentation/screens/blocked_users_screen.dart';
 import '../../presentation/screens/storage_manager_screen.dart';
 import '../../presentation/screens/help_support_screen.dart';
 import '../../presentation/screens/group_creation_screen.dart';
-import '../../presentation/screens/contacts_screen.dart';
 
 import '../../presentation/screens/group_detail_screen.dart';
 import '../../data/mock/mock_data.dart';
@@ -93,10 +92,6 @@ final appRouter = GoRouter(
       path: '/group-create',
       builder: (context, state) => const GroupCreationScreen(),
     ),
-    GoRoute(
-      path: '/contacts',
-      builder: (context, state) => const ContactsScreen(),
-    ),
 
     GoRoute(
       path: '/group/:id',
@@ -110,8 +105,8 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final query = state.pathParameters['query']!;
         // Route to user profile screen that handles search and display
-        // Supports @username and +phonenumber formats
-        return ContactsScreen(initialSearchQuery: query);
+        // Supports @username format
+        return ChatListScreen();
       },
     ),
   ],

@@ -45,7 +45,6 @@ async def get_profile_update_schema(
             "username": "johndoe",
             "email": "john@example.com",
             "bio": "Software developer",
-            "phone": "+1234567890",
             "avatar": "JD",
             "avatar_url": "https://example.com/avatar.jpg"
         },
@@ -56,7 +55,6 @@ async def get_profile_update_schema(
             "email: 5-255 characters (valid email format)",
             "avatar: 2-10 characters (e.g., 'JD', 'AM')",
             "bio: max 500 characters",
-            "phone: max 20 characters",
             "avatar_url: max 500 characters"
         ]
     }

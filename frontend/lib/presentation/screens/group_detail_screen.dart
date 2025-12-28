@@ -91,9 +91,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   Future<void> _addMembers() async {
     if (!_isAdmin) return;
-    final contacts = await serviceProvider.apiService.getContacts();
+    // Contacts functionality removed - get all users instead
+    final users = await serviceProvider.apiService.searchUsers('');
     final existing = _members.map((m) => (m['user_id'] ?? '').toString()).toSet();
-    final candidates = contacts.where((u) => !existing.contains((u['id'] ?? '').toString())).toList();
+    final candidates = users.where((u) => !existing.contains((u['id'] ?? '').toString())).toList();
     if (candidates.isEmpty) return;
 
     final selected = <String>{};

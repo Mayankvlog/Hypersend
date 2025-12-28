@@ -174,7 +174,6 @@ async def register(user: UserCreate):
             name=user_doc["name"],
             email=user_doc["email"],
             username=user_doc.get("username"),
-            phone=user_doc.get("phone"),
             bio=user_doc.get("bio"),
             avatar=user_doc.get("avatar"),
             avatar_url=user_doc.get("avatar_url"),
@@ -186,7 +185,6 @@ async def register(user: UserCreate):
             is_online=user_doc.get("is_online", False),
             status=user_doc.get("status"),
             pinned_chats=user_doc.get("pinned_chats", []) or [],
-            contacts_count=len(user_doc.get("contacts", [])),
             is_contact=False
         )
     

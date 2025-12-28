@@ -104,7 +104,6 @@ class UserInDB(BaseModel):
     email: str
     password_hash: str
     username: Optional[str] = None
-    phone: Optional[str] = None
     bio: Optional[str] = None
     avatar: Optional[str] = None  # Avatar initials like 'JD'
     avatar_url: Optional[str] = None
@@ -119,12 +118,9 @@ class UserInDB(BaseModel):
         "location": False,
         "camera": False,
         "microphone": False,
-        "contacts": False,
-        "phone": False,
         "storage": False
     })
     pinned_chats: List[str] = Field(default_factory=list)
-    contacts: List[str] = Field(default_factory=list)  # List of contact user IDs
     blocked_users: List[str] = Field(default_factory=list)  # List of blocked user IDs
     location: Optional[dict] = None  # {'lat': float, 'lng': float, 'updated_at': datetime}
 
@@ -134,7 +130,6 @@ class UserResponse(BaseModel):
     name: str
     email: str
     username: Optional[str] = None
-    phone: Optional[str] = None
     bio: Optional[str] = None
     avatar: Optional[str] = None  # Avatar initials like 'JD'
     avatar_url: Optional[str] = None
@@ -146,7 +141,6 @@ class UserResponse(BaseModel):
     is_online: bool = False
     status: Optional[str] = None
     pinned_chats: List[str] = Field(default_factory=list)
-    contacts_count: int = 0  # Number of contacts
     is_contact: bool = False  # Whether this user is a contact of the current user
 
 
@@ -157,7 +151,6 @@ class ProfileUpdate(BaseModel):
     email: Optional[str] = Field(None)  # Changed from EmailStr to str to handle validation manually
     avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
     bio: Optional[str] = Field(None, max_length=500)
-    phone: Optional[str] = Field(None, max_length=20)
     avatar_url: Optional[str] = Field(None, max_length=500)
     
     @field_validator('name')
@@ -204,41 +197,6 @@ class ProfileUpdate(BaseModel):
         if len(v) > 500:
             raise ValueError('Bio must be 500 characters or less')
         return v
-    
-    @field_validator('phone')
-    @classmethod
-    def validate_phone(cls, v):
-        if v is None:
-            return v
-        
-        # Remove ALL non-digit characters for validation (including +)
-        digits_only = re.sub(r'[^\d]', '', v)
-        
-        # Check for valid characters
-        if not re.match(r'^[\d\s\-\+\(\)]+$', v):
-            raise ValueError('Phone number can only contain digits, spaces, and basic formatting characters')
-        
-        # Must have at least 7 digits for a valid phone number
-        if len(digits_only) < 7:
-            raise ValueError('Phone number must have at least 7 digits')
-        
-        # Cannot have more than 15 digits (international standard)
-        if len(digits_only) > 15:
-            raise ValueError('Phone number cannot have more than 15 digits')
-        
-        # Validate international format if starts with +
-        if v.startswith('+'):
-            if len(digits_only) < 8:  # +cc + number minimum
-                raise ValueError('International phone numbers must have at least 8 digits including country code')
-        
-        # Validate US format if no country code
-        if not v.startswith('+') and len(digits_only) == 10:
-            # Standard US 10-digit number, validate area code
-            area_code = digits_only[:3]
-            if area_code.startswith('0') or area_code.startswith('1'):
-                raise ValueError('Invalid US area code - cannot start with 0 or 1')
-        
-        return v.strip()
     
     @field_validator('avatar_url')
     @classmethod
@@ -599,80 +557,19 @@ class UploadInDB(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-# Contact Management Models
-class ContactAddRequest(BaseModel):
-    """Add contact request model"""
-    user_id: str = Field(..., description="User ID to add as contact")
-    display_name: Optional[str] = Field(None, description="Custom display name for contact")
-    
-    @field_validator('user_id')
-    @classmethod
-    def validate_user_id(cls, v):
-        if not v or not ObjectId.is_valid(v):
-            raise ValueError('Invalid user ID format')
-        return v
-    
-class ContactDeleteRequest(BaseModel):
-    """Delete contact request model"""
-    user_id: str = Field(..., description="User ID to remove from contacts")
-    
-    @field_validator('user_id')
-    @classmethod
-    def validate_user_id(cls, v):
-        if not v or not ObjectId.is_valid(v):
-            raise ValueError('Invalid user ID format')
-        return v
 
-
-class ContactSyncRequest(BaseModel):
-    """Sync contacts request model"""
-    contacts: List[dict] = Field(..., max_length=1000, description="List of contacts with phone numbers and names")
-    
-    @field_validator('contacts')
-    @classmethod
-    def validate_contacts(cls, v):
-        if not v or len(v) == 0:
-            raise ValueError('At least one contact must be provided')
-        
-        validated_contacts = []
-        for contact in v:
-            if not isinstance(contact, dict):
-                raise ValueError('Each contact must be a dictionary')
-            if 'phone' not in contact or not contact['phone']:
-                raise ValueError('Each contact must have a phone number')
-            
-            # Validate phone format
-            phone = str(contact['phone']).strip()
-            digits_only = re.sub(r'[^\d]', '', phone)  # Remove ALL non-digit characters, including +
-            
-            if not phone or len(digits_only) < 7:
-                raise ValueError(f'Invalid phone number: {phone[:10]}{"*" if len(phone) > 10 else ""}')
-            
-            if len(digits_only) > 15:
-                raise ValueError(f'Phone number too long: {phone[:10]}{"*" if len(phone) > 10 else ""}')
-            
-            # Additional validation for phone format
-            if not re.match(r'^[\d\s\-\+\(\)]+$', phone):
-                raise ValueError(f'Invalid phone characters: {phone[:10]}{"*" if len(phone) > 10 else ""}')
-            
-            validated_contacts.append(contact)
-        
-        return validated_contacts
 
 
 class UserSearchResponse(BaseModel):
-    """Enhanced user search response with contact info"""
+    """Enhanced user search response"""
     id: str
     name: str
     email: str = Field(..., description="User email (always included for search)")
     username: Optional[str] = None
-    phone: Optional[str] = None
     avatar_url: Optional[str] = None
     is_online: bool = False
     last_seen: Optional[datetime] = None
     status: Optional[str] = None
-    is_contact: bool = False
-    is_blocked: bool = False
 
 # QR Code Models for Multi-Device Connection
 class QRCodeSession(BaseModel):

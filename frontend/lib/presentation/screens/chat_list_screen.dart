@@ -7,7 +7,9 @@ import '../../data/services/service_provider.dart';
 import '../widgets/chat_list_item.dart';
 
 class ChatListScreen extends StatefulWidget {
-  const ChatListScreen({super.key});
+  final String? initialSearchQuery;
+  
+  const ChatListScreen({super.key, this.initialSearchQuery});
 
   @override
   State<ChatListScreen> createState() => _ChatListScreenState();
@@ -24,6 +26,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialSearchQuery != null && widget.initialSearchQuery!.isNotEmpty) {
+      _searchController.text = widget.initialSearchQuery!;
+    }
     _loadChats();
   }
 
@@ -34,11 +39,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _showAddContactDialog() async {
-    final phoneController = TextEditingController();
     final emailController = TextEditingController();
     final usernameController = TextEditingController();
     final nameController = TextEditingController();
-    int selectedTab = 0; // 0 = Phone, 1 = Gmail, 2 = Username
+    int selectedTab = 0; // 0 = Gmail, 1 = Username
     
     try {
       final result = await showDialog<Map<String, dynamic>>(
@@ -94,10 +98,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.phone_outlined, size: 18),
+                                  const Icon(Icons.mail_outlined, size: 18),
                                   const SizedBox(width: 6),
                                   Text(
-                                    'Phone',
+                                    'Gmail',
                                     style: TextStyle(
                                       fontWeight: selectedTab == 0 
                                         ? FontWeight.w600 
@@ -130,10 +134,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.mail_outlined, size: 18),
+                                  const Icon(Icons.alternate_email, size: 18),
                                   const SizedBox(width: 6),
                                   Text(
-                                    'Gmail',
+                                    '@Username',
                                     style: TextStyle(
                                       fontWeight: selectedTab == 1 
                                         ? FontWeight.w600 
@@ -148,66 +152,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             ),
                           ),
                         ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => setState(() => selectedTab = 2),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color: selectedTab == 2 
-                                      ? AppTheme.primaryCyan 
-                                      : AppTheme.dividerColor,
-                                    width: selectedTab == 2 ? 2 : 1,
-                                  ),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.alternate_email, size: 18),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '@Username',
-                                    style: TextStyle(
-                                      fontWeight: selectedTab == 2 
-                                        ? FontWeight.w600 
-                                        : FontWeight.w400,
-                                      color: selectedTab == 2 
-                                        ? AppTheme.primaryCyan 
-                                        : AppTheme.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Phone input
-                  if (selectedTab == 0)
-                    TextField(
-                      controller: phoneController,
-                      decoration: InputDecoration(
-                        hintText: '+1 (555) 123-4567',
-                        prefixIcon: const Icon(Icons.phone_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                      keyboardType: TextInputType.phone,
-                    ),
-                  // Gmail input
-                  if (selectedTab == 1)
+                  // Input field based on selected tab
+                  if (selectedTab == 0) ...[
                     TextField(
                       controller: emailController,
                       decoration: InputDecoration(
-                        hintText: 'user@gmail.com',
+                        hintText: 'Email address',
                         prefixIcon: const Icon(Icons.mail_outlined),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -216,12 +170,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       ),
                       keyboardType: TextInputType.emailAddress,
                     ),
-                  // Username input
-                  if (selectedTab == 2)
+                  ] else if (selectedTab == 1) ...[
                     TextField(
                       controller: usernameController,
                       decoration: InputDecoration(
-                        hintText: '@username',
+                        hintText: 'Username',
                         prefixIcon: const Icon(Icons.alternate_email),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -230,6 +183,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       ),
                       keyboardType: TextInputType.text,
                     ),
+                  ],
                 ],
               ),
             ),
@@ -241,28 +195,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ElevatedButton(
                 onPressed: () async {
                   final name = nameController.text.trim();
-                  final phone = phoneController.text.trim();
                   final email = emailController.text.trim();
                   final username = usernameController.text.trim();
                   
                   // Validation
-                  if (selectedTab == 0 && phone.isEmpty) {
-                    _showErrorSnackBar('Please enter phone number');
-                    return;
-                  }
-                  
-                  if (selectedTab == 1 && email.isEmpty) {
+                  if (selectedTab == 0 && email.isEmpty) {
                     _showErrorSnackBar('Please enter email address');
                     return;
                   }
                   
-                  if (selectedTab == 2 && username.isEmpty) {
+                  if (selectedTab == 1 && username.isEmpty) {
                     _showErrorSnackBar('Please enter username');
                     return;
                   }
                   
                   // Email validation for Gmail tab
-                  if (selectedTab == 1) {
+                  if (selectedTab == 0) {
                     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
                     if (!emailRegex.hasMatch(email)) {
                       _showErrorSnackBar('Please enter a valid email address');
@@ -271,7 +219,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   }
                   
                   // Username validation
-                  if (selectedTab == 2) {
+                  if (selectedTab == 1) {
                     // Remove @ if user added it
                     final cleanUsername = username.startsWith('@') ? username.substring(1) : username;
                     
@@ -288,8 +236,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     // Search for user
                     List<dynamic> users;
                     if (selectedTab == 0) {
-                      users = await serviceProvider.apiService.searchUsers(phone);
-                    } else if (selectedTab == 1) {
                       // Search by email
                       users = await serviceProvider.apiService.searchUsersByEmail(email);
                     } else {
@@ -301,13 +247,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     
                     if (users.isEmpty) {
                       Navigator.pop(context);
-                      final searchType = selectedTab == 0 ? 'phone number' : (selectedTab == 1 ? 'email' : 'username');
+                      final searchType = selectedTab == 0 ? 'email' : 'username';
                       _showErrorSnackBar('User with this $searchType not found. Please check and try again.');
                       return;
                     }
                     
                     final user = users.first;
-                    // Pop with the user object and the name the user wants to assign
+                    // Pop with user object and name user wants to assign
                     if (mounted) {
                       Navigator.pop(context, {
                         ...user,
@@ -317,7 +263,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   } catch (e) {
                     if (!mounted) return;
                     Navigator.pop(context);
-                    final searchType = selectedTab == 0 ? 'phone' : (selectedTab == 1 ? 'email' : 'username');
+                    final searchType = selectedTab == 0 ? 'email' : 'username';
                     _showErrorSnackBar('Error searching by $searchType: ${e.toString()}');
                   }
                 },
@@ -349,8 +295,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     } catch (e) {
       _showErrorSnackBar('An error occurred');
     } finally {
-      phoneController.dispose();
       emailController.dispose();
+      usernameController.dispose();
       nameController.dispose();
     }
   }
@@ -443,7 +389,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  /// Get the app logo letter based on app state
+  /// Get app logo letter based on app state
   /// Logic: Show 'Z' by default (Zaply)
   /// Could be extended to show different letters based on app state/features
   String _getAppLogo() {
@@ -462,12 +408,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
     
     if (index == 1) {
-      // Navigate to contacts
-      context.push('/contacts');
-    } else if (index == 2) {
       // Navigate to file transfer
       context.push('/file-transfer');
-    } else if (index == 3) {
+    } else if (index == 2) {
       // Navigate to settings
       context.push('/settings');
     }
@@ -514,6 +457,63 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
   }
 
+  void _openMainMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Text(
+                  'Menu',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.person, color: AppTheme.primaryCyan),
+                title: const Text('Profile'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/profile-edit');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings, color: AppTheme.primaryCyan),
+                title: const Text('Settings'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/settings');
+                },
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -548,6 +548,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
             const Text(AppStrings.appName),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _showAddContactDialog,
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -631,171 +637,27 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddContactDialog,
-        backgroundColor: AppTheme.primaryCyan,
-        child: const Icon(Icons.person_add, color: Colors.white),
-      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onBottomNavTap,
         type: BottomNavigationBarType.fixed,
-        items: [
+        selectedItemColor: AppTheme.primaryCyan,
+        unselectedItemColor: Colors.grey,
+        items: const [
           BottomNavigationBarItem(
-            icon: Stack(
-              children: [
-                const Icon(Icons.chat_bubble),
-                if (_selectedIndex == 0)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: AppTheme.errorRed,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
-                      child: const Center(
-                        child: Text(
-                          '7',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            label: AppStrings.chats,
+            icon: Icon(Icons.message),
+            label: 'Chats',
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.contacts_outlined),
-            label: 'Contacts',
+          BottomNavigationBarItem(
+            icon: Icon(Icons.swap_horiz),
+            label: 'Transfer',
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.cloud_upload_outlined),
-            label: 'Files',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            label: AppStrings.settings,
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Settings',
           ),
         ],
       ),
-    );
-  }
-
-  void _openMainMenu() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppTheme.backgroundDark,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(
-                  Icons.contacts_outlined,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text('Contacts'),
-                subtitle: const Text('View and manage your contacts'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  context.push('/contacts');
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
-                  Icons.person_add_outlined,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text('Add Contact'),
-                subtitle: const Text('Search and add new contacts'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _showAddContactDialog();
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
-                  Icons.edit_outlined,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text('Edit Profile'),
-                subtitle: const Text('Change your name, bio and photo'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  context.push('/profile-edit');
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
-                  Icons.group_add_outlined,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text('New Group'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  context.push('/group-create');
-                },
-              ),
-
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
-                  Icons.settings_outlined,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text(AppStrings.settings),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  context.push('/settings');
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
-                  Icons.cloud_upload_outlined,
-                  color: AppTheme.primaryCyan,
-                ),
-                title: const Text('File Transfer'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  context.push('/file-transfer');
-                },
-              ),
-              const Divider(height: 0),
-              ListTile(
-                leading: const Icon(
-                  Icons.logout,
-                  color: AppTheme.errorRed,
-                ),
-                title: const Text(AppStrings.logout),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  serviceProvider.authService.logout();
-                  context.go('/auth');
-                },
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

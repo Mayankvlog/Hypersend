@@ -6,7 +6,6 @@ class User extends Equatable {
   final String name;
   final String username;
   final String? email;
-  final String? phone;
   final String? bio;
   final String avatar;
   final String? avatarUrl;
@@ -14,7 +13,6 @@ class User extends Equatable {
   final DateTime? lastSeen;
   final String? status;
   final DateTime? updatedAt;
-  final int contactsCount;
   final bool isContact;
   final bool isBlocked;
   
@@ -25,13 +23,11 @@ class User extends Equatable {
     required this.avatar,
     this.avatarUrl,
     this.email,
-    this.phone,
     this.bio,
     this.isOnline = false,
     this.lastSeen,
     this.status,
     this.updatedAt,
-    this.contactsCount = 0,
     this.isContact = false,
     this.isBlocked = false,
   });
@@ -43,7 +39,6 @@ class User extends Equatable {
       name: (json['name'] ?? json['full_name'] ?? '').toString().trim(),
       username: (json['username'] ?? json['username_alias'] ?? (json['email'] as String?)?.split('@').first ?? 'user').toString().trim(),
       email: json['email']?.toString().trim(),
-      phone: json['phone']?.toString().trim(),
       bio: json['bio']?.toString().trim(),
       avatar: json['avatar']?.toString().trim() ?? '',
       avatarUrl: json['avatar_url']?.toString().trim(),
@@ -51,7 +46,6 @@ class User extends Equatable {
       lastSeen: json['last_seen'] != null ? DateTime.tryParse(json['last_seen']) : null,
       status: json['status']?.toString().trim(),
       updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at']) : null,
-      contactsCount: (json['contacts_count'] ?? 0) as int,
       isContact: (json['is_contact'] ?? false) as bool,
       isBlocked: (json['is_blocked'] ?? false) as bool,
     );
@@ -59,8 +53,8 @@ class User extends Equatable {
 
   @override
   List<Object?> get props => [
-        id, name, username, email, phone, bio, avatar, avatarUrl, isOnline, 
-        lastSeen, status, updatedAt, contactsCount, isContact, isBlocked
+        id, name, username, email, bio, avatar, avatarUrl, isOnline, 
+        lastSeen, status, updatedAt, isContact, isBlocked
       ];
 
   User copyWith({
@@ -68,7 +62,6 @@ class User extends Equatable {
     String? name,
     String? username,
     String? email,
-    String? phone,
     String? bio,
     String? avatar,
     String? avatarUrl,
@@ -76,7 +69,6 @@ class User extends Equatable {
     DateTime? lastSeen,
     String? status,
     DateTime? updatedAt,
-    int? contactsCount,
     bool? isContact,
     bool? isBlocked,
   }) {
@@ -85,7 +77,6 @@ class User extends Equatable {
       name: name ?? this.name,
       username: username ?? this.username,
       email: email ?? this.email,
-      phone: phone ?? this.phone,
       bio: bio ?? this.bio,
       avatar: avatar ?? this.avatar,
       avatarUrl: avatarUrl ?? this.avatarUrl,
@@ -93,7 +84,6 @@ class User extends Equatable {
       lastSeen: lastSeen ?? this.lastSeen,
       status: status ?? this.status,
       updatedAt: updatedAt ?? this.updatedAt,
-      contactsCount: contactsCount ?? this.contactsCount,
       isContact: isContact ?? this.isContact,
       isBlocked: isBlocked ?? this.isBlocked,
     );

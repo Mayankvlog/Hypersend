@@ -16,7 +16,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
   final Set<String> _selectedMemberIds = {};
   bool _loading = true;
   String? _error;
-  List<Map<String, dynamic>> _contacts = [];
+  List<Map<String, dynamic>> _users = [];
 
   @override
   void dispose() {
@@ -42,10 +42,11 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       _error = null;
     });
     try {
-      final contacts = await serviceProvider.apiService.getContacts();
+      // Contacts functionality removed - get all users instead
+      final users = await serviceProvider.apiService.searchUsers('');
       if (!mounted) return;
       setState(() {
-        _contacts = contacts;
+        _users = users;
         _loading = false;
       });
     } catch (e) {
@@ -118,7 +119,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
                       children: [
                         const Icon(Icons.error_outline, color: AppTheme.errorRed, size: 48),
                         const SizedBox(height: 12),
-                        Text('Failed to load contacts', style: Theme.of(context).textTheme.titleMedium),
+                        Text('Failed to load users', style: Theme.of(context).textTheme.titleMedium),
                         const SizedBox(height: 8),
                         Text(_error!, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
                         const SizedBox(height: 16),
@@ -162,10 +163,10 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
                           border: Border.all(color: AppTheme.dividerColor),
                         ),
                         child: ListView.separated(
-                          itemCount: _contacts.length,
+                          itemCount: _users.length,
                           separatorBuilder: (_, __) => const Divider(height: 0),
                           itemBuilder: (context, index) {
-                            final u = _contacts[index];
+                            final u = _users[index];
                             final id = u['id']?.toString() ?? '';
                             final name = u['name']?.toString() ?? id;
                             final email = u['email']?.toString() ?? '';

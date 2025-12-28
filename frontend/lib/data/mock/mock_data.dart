@@ -146,7 +146,7 @@ class MockData {
     isOnline: true,
   );
 
-  static final List<User> contacts = [
+  static final List<User> users = [
     currentUser,
     chatUser,
     settingsUser,

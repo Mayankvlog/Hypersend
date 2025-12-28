@@ -10,7 +10,6 @@ class AppStrings {
   // Chat List
   static const String searchChats = 'Search chats...';
   static const String chats = 'Chats';
-  static const String contacts = 'Contacts';
   static const String settings = 'Settings';
   
   // Chat Detail
@@ -44,8 +43,6 @@ class AppStrings {
   static const String enableAccess = 'Enable Access';
   static const String permissionsDescription =
       'To provide the best messaging experience, Zaply needs access to a few things. You can update these later in Settings.';
-  static const String contactsPermission = 'Contacts';
-  static const String contactsDescription = 'To sync your friends list';
   static const String locationPermission = 'Location';
   static const String locationDescription = 'To share your live location';
   static const String cameraPermission = 'Camera';
@@ -54,8 +51,6 @@ class AppStrings {
   static const String microphoneDescription = 'To send voice notes';
   static const String filesPermission = 'Files & Media';
   static const String filesDescription = 'To send documents and images';
-  static const String phonePermission = 'Phone';
-  static const String phoneDescription = 'To verify your number';
   static const String startMessaging = 'Start Messaging';
   static const String skipForNow = 'Skip for now';
   
