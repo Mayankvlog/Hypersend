@@ -969,8 +969,6 @@ async def change_email(
         )
 
 
-@router.post("/avatar")
-@router.post("/avatar")
 @router.post("/avatar/")
 async def upload_avatar(
     file: UploadFile = File(...),
@@ -1484,14 +1482,25 @@ async def delete_contact(
             )
         
         contacts = current_user_data.get("contacts", [])
-        if contact_id not in contacts:
+        
+        # Check if contact exists (handle both string and dict formats)
+        contact_found = False
+        if isinstance(contacts, list):
+            for i, contact in enumerate(contacts):
+                if isinstance(contact, dict) and contact.get("user_id") == contact_id:
+                    contacts.pop(i)
+                    contact_found = True
+                    break
+                elif contact == contact_id:
+                    contacts.pop(i)
+                    contact_found = True
+                    break
+        
+        if not contact_found:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Contact not found in your contacts list"
             )
-        
-        # Remove from contacts
-        contacts.remove(contact_id)
         await asyncio.wait_for(
             users_collection().update_one(
                 {"_id": current_user},
