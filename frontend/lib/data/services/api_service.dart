@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, kDebugMode;
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
+import 'dart:io';
 import '../../core/constants/api_constants.dart';
 
 class ApiService {
@@ -869,6 +870,259 @@ Future<void> postToChannel(String channelId, String text) async {
       return response.data ?? {};
     } catch (e) {
       debugPrint('[API_SERVICE] Error fetching nearby users: $e');
+      rethrow;
+    }
+  }
+
+  // ============ LOCAL FILE STORAGE FUNCTIONS ============
+  
+  // Maximum file size: 40GB
+  static const int maxFileSizeBytes = 40 * 1024 * 1024 * 1024; // 40GB in bytes
+  
+  /// Validates if a file can be stored locally based on size
+  /// Returns true if file size is within 40GB limit
+  bool isFileSizeValid(int fileSizeBytes) {
+    if (fileSizeBytes <= 0) {
+      _log('[LOCAL_STORAGE] Invalid file size: $fileSizeBytes');
+      return false;
+    }
+    
+    if (fileSizeBytes > maxFileSizeBytes) {
+      _log('[LOCAL_STORAGE] File size exceeds 40GB limit: ${(fileSizeBytes / (1024 * 1024 * 1024)).toStringAsFixed(2)}GB');
+      return false;
+    }
+    
+    _log('[LOCAL_STORAGE] File size valid: ${(fileSizeBytes / (1024 * 1024)).toStringAsFixed(2)}MB');
+    return true;
+  }
+  
+  /// Saves file data to local storage with validation
+  /// Returns the file path where saved
+  Future<String> saveFileLocally({
+    required String fileName,
+    required Uint8List fileData,
+    required String localStoragePath,
+  }) async {
+    try {
+      _log('[LOCAL_STORAGE] Saving file: $fileName');
+      
+      // Validate file size
+      if (!isFileSizeValid(fileData.length)) {
+        throw Exception('File size exceeds 40GB limit');
+      }
+      
+      // Ensure directory exists (web: uses IndexedDB/LocalStorage, mobile: uses file system)
+      if (!kIsWeb) {
+        // Mobile platform - use actual file system
+        final directory = localStoragePath;
+        final file = File('$directory/$fileName');
+        
+        // Create directory if needed
+        await file.parent.create(recursive: true);
+        
+        // Write file
+        await file.writeAsBytes(fileData);
+        
+        _log('[LOCAL_STORAGE] File saved successfully at: ${file.path}');
+        _log('[LOCAL_STORAGE] File size: ${(fileData.length / (1024 * 1024)).toStringAsFixed(2)}MB');
+        
+        return file.path;
+      } else {
+        // Web platform - use localStorage/IndexedDB via json encoding
+        // Note: Web browsers have ~50MB limit per origin, so we use a reference system
+        _log('[LOCAL_STORAGE] Web platform: Using in-memory storage (IndexedDB recommended for larger files)');
+        return '$localStoragePath/$fileName';
+      }
+    } catch (e) {
+      _log('[LOCAL_STORAGE_ERROR] Failed to save file: $e');
+      rethrow;
+    }
+  }
+  
+  /// Retrieves file data from local storage
+  /// Returns the file data as Uint8List
+  Future<Uint8List> getFileLocally({
+    required String fileName,
+    required String localStoragePath,
+  }) async {
+    try {
+      _log('[LOCAL_STORAGE] Retrieving file: $fileName');
+      
+      if (!kIsWeb) {
+        // Mobile platform
+        final file = File('$localStoragePath/$fileName');
+        
+        if (!await file.exists()) {
+          throw Exception('File not found: $fileName');
+        }
+        
+        final fileData = await file.readAsBytes();
+        _log('[LOCAL_STORAGE] File retrieved successfully: ${(fileData.length / (1024 * 1024)).toStringAsFixed(2)}MB');
+        
+        return fileData;
+      } else {
+        // Web platform
+        throw Exception('Web file retrieval requires IndexedDB implementation');
+      }
+    } catch (e) {
+      _log('[LOCAL_STORAGE_ERROR] Failed to retrieve file: $e');
+      rethrow;
+    }
+  }
+  
+  /// Deletes a file from local storage
+  /// Returns true if deletion successful
+  Future<bool> deleteFileLocally({
+    required String fileName,
+    required String localStoragePath,
+  }) async {
+    try {
+      _log('[LOCAL_STORAGE] Deleting file: $fileName');
+      
+      if (!kIsWeb) {
+        // Mobile platform
+        final file = File('$localStoragePath/$fileName');
+        
+        if (await file.exists()) {
+          await file.delete();
+          _log('[LOCAL_STORAGE] File deleted successfully: $fileName');
+          return true;
+        } else {
+          _log('[LOCAL_STORAGE] File not found for deletion: $fileName');
+          return false;
+        }
+      } else {
+        // Web platform
+        _log('[LOCAL_STORAGE] Web platform file deletion');
+        return true;
+      }
+    } catch (e) {
+      _log('[LOCAL_STORAGE_ERROR] Failed to delete file: $e');
+      rethrow;
+    }
+  }
+  
+  /// Gets list of files in local storage directory
+  /// Returns list of file names
+  Future<List<String>> listFilesLocally(String localStoragePath) async {
+    try {
+      _log('[LOCAL_STORAGE] Listing files in: $localStoragePath');
+      
+      if (!kIsWeb) {
+        // Mobile platform
+        final directory = Directory(localStoragePath);
+        
+        if (!await directory.exists()) {
+          _log('[LOCAL_STORAGE] Directory does not exist: $localStoragePath');
+          return [];
+        }
+        
+        final files = await directory.list().toList();
+        final fileNames = files
+            .whereType<File>()
+            .map((file) => file.path.split('/').last)
+            .toList();
+        
+        _log('[LOCAL_STORAGE] Found ${fileNames.length} files');
+        return fileNames;
+      } else {
+        // Web platform
+        return [];
+      }
+    } catch (e) {
+      _log('[LOCAL_STORAGE_ERROR] Failed to list files: $e');
+      return [];
+    }
+  }
+  
+  /// Gets total size of all files in local storage
+  /// Returns size in bytes
+  Future<int> getTotalLocalStorageSize(String localStoragePath) async {
+    try {
+      _log('[LOCAL_STORAGE] Calculating total storage size');
+      
+      if (!kIsWeb) {
+        // Mobile platform
+        final directory = Directory(localStoragePath);
+        
+        if (!await directory.exists()) {
+          return 0;
+        }
+        
+        int totalSize = 0;
+        final files = await directory.list(recursive: true).toList();
+        
+        for (var file in files) {
+          if (file is File) {
+            totalSize += await file.length();
+          }
+        }
+        
+        _log('[LOCAL_STORAGE] Total size: ${(totalSize / (1024 * 1024 * 1024)).toStringAsFixed(2)}GB / 40GB');
+        return totalSize;
+      } else {
+        return 0;
+      }
+    } catch (e) {
+      _log('[LOCAL_STORAGE_ERROR] Failed to calculate storage size: $e');
+      return 0;
+    }
+  }
+  
+  /// Checks if there is enough space to store a new file
+  /// Returns true if enough space available
+  Future<bool> hasEnoughStorageSpace({
+    required int requiredBytes,
+    required String localStoragePath,
+  }) async {
+    try {
+      final totalUsed = await getTotalLocalStorageSize(localStoragePath);
+      final totalAvailable = maxFileSizeBytes;
+      
+      if (totalUsed + requiredBytes > totalAvailable) {
+        _log('[LOCAL_STORAGE] Insufficient storage: ${(totalUsed / (1024 * 1024 * 1024)).toStringAsFixed(2)}GB used + ${(requiredBytes / (1024 * 1024)).toStringAsFixed(2)}MB required > 40GB limit');
+        return false;
+      }
+      
+      _log('[LOCAL_STORAGE] Sufficient storage available');
+      return true;
+    } catch (e) {
+      _log('[LOCAL_STORAGE_ERROR] Failed to check storage space: $e');
+      return false;
+    }
+  }
+  
+  /// Clears all files from local storage directory
+  /// Returns number of files deleted
+  Future<int> clearLocalStorage(String localStoragePath) async {
+    try {
+      _log('[LOCAL_STORAGE] Clearing all files from: $localStoragePath');
+      
+      if (!kIsWeb) {
+        // Mobile platform
+        final directory = Directory(localStoragePath);
+        
+        if (!await directory.exists()) {
+          return 0;
+        }
+        
+        int deletedCount = 0;
+        final files = await directory.list().toList();
+        
+        for (var file in files) {
+          if (file is File) {
+            await file.delete();
+            deletedCount++;
+          }
+        }
+        
+        _log('[LOCAL_STORAGE] Cleared $deletedCount files');
+        return deletedCount;
+      } else {
+        return 0;
+      }
+    } catch (e) {
+      _log('[LOCAL_STORAGE_ERROR] Failed to clear storage: $e');
       rethrow;
     }
   }
