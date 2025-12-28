@@ -968,9 +968,11 @@ async def change_email(
 
 
 @router.options("/avatar/")
+@router.options("/avatar-upload/")
 async def avatar_options():
     """Handle CORS preflight for avatar endpoint"""
-    return {"status": "ok", "methods": ["GET", "POST", "OPTIONS"]}
+    print(f"[AVATAR-OPTIONS] OPTIONS preflight received for /avatar/")
+    return JSONResponse(status_code=200, content={"status": "ok", "methods": ["GET", "POST", "OPTIONS"]})
 
 @router.post("/avatar/")
 async def upload_avatar(
@@ -1127,6 +1129,77 @@ async def upload_avatar(
         )
 
 
+@router.post("/avatar-upload/")
+async def upload_avatar_alt(
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user)
+):
+    """Alternative avatar upload endpoint - same as /avatar/ but with different name"""
+    try:
+        print(f"[AVATAR-UPLOAD-ALT] Alternative upload endpoint called")
+        print(f"[AVATAR-UPLOAD-ALT] User: {current_user}, File: {file.filename}")
+        
+        import shutil
+        import os
+        import uuid
+        
+        # Validate file type
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be an image"
+            )
+        
+        # Create directory
+        avatar_dir = settings.DATA_ROOT / "avatars"
+        avatar_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if not file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported image format"
+            )
+        
+        unique_id = str(uuid.uuid4())[:8]
+        new_file_name = f"{current_user}_{unique_id}{file_ext}"
+        new_file_path = avatar_dir / new_file_name
+        
+        # Save file
+        with open(new_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Generate URL
+        avatar_url = f"/api/v1/users/avatar/{new_file_name}"
+        
+        # Update database
+        await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
+            ),
+            timeout=5.0
+        )
+        
+        response_data = {
+            "avatar_url": avatar_url,
+            "success": True,
+            "filename": new_file_name,
+            "message": "Avatar uploaded successfully"
+        }
+        print(f"[AVATAR-UPLOAD-ALT] Success: {response_data}")
+        return JSONResponse(status_code=200, content=response_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[AVATAR-UPLOAD-ALT] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload avatar: {str(e)}"
+        )
+
 @router.get("/health")
 async def users_health():
     """Health check for users module"""
@@ -1145,7 +1218,11 @@ async def test_avatar_route():
 @router.get("/avatar/")
 async def list_avatars():
     """Handle GET requests to avatar endpoint without filename - Returns usage documentation"""
-    print(f"[AVATAR-GET] GET /users/avatar/ endpoint called - This usually means POST request failed")
+    print(f"[AVATAR-GET] WARNING: GET /users/avatar/ endpoint called")
+    print(f"[AVATAR-GET] This usually means:")
+    print(f"[AVATAR-GET]   1. Frontend made GET request instead of POST")
+    print(f"[AVATAR-GET]   2. POST request failed and browser fell back to GET")
+    print(f"[AVATAR-GET]   3. OPTIONS preflight failed")
     return {
         "error": "Use POST /api/v1/users/avatar/ to upload avatar",
         "message": "Avatar upload endpoint",
