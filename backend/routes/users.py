@@ -968,70 +968,16 @@ async def change_email(
 @router.options("/avatar-upload/")
 async def avatar_options():
     """Handle CORS preflight for avatar endpoint"""
-    logger.debug("CORS OPTIONS preflight request received")
-    return JSONResponse(status_code=200, content={"status": "ok", "methods": ["GET", "POST", "OPTIONS"]})
-
-@router.post("/avatar-debug/")
-async def upload_avatar_debug(
-    file: UploadFile = File(...),
-):
-    """DEBUG endpoint - Avatar upload WITHOUT authentication requirement"""
-    try:
-        import shutil
-        import os
-        import uuid
-        
-        logger.debug("Debug endpoint avatar upload started")
-        
-        # Validate file type
-        if not file.content_type or not file.content_type.startswith("image/"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File must be an image"
-            )
-        
-        # Create directory
-        avatar_dir = settings.DATA_ROOT / "avatars"
-        avatar_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate unique filename
-        file_ext = os.path.splitext(file.filename)[1].lower()
-        if not file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Unsupported image format"
-            )
-        
-        # Use filename as user_id for debug mode
-        user_id = "debug_user"
-        unique_id = str(uuid.uuid4())[:8]
-        new_file_name = f"{user_id}_{unique_id}{file_ext}"
-        new_file_path = avatar_dir / new_file_name
-        
-        # Save file
-        with open(new_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Generate URL
-        avatar_url = f"/api/v1/users/avatar/{new_file_name}"
-        
-        response_data = {
-            "avatar_url": avatar_url,
-            "success": True,
-            "filename": new_file_name,
-            "message": "Avatar uploaded successfully (debug mode)"
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
         }
-        logger.debug("Debug avatar upload completed successfully")
-        return JSONResponse(status_code=200, content=response_data)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Debug endpoint error: {type(e).__name__}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload avatar: {str(e)}"
-        )
+    )
 
 @router.post("/avatar/")
 async def upload_avatar(
@@ -1266,17 +1212,32 @@ async def test_avatar_route():
     }
 
 @router.get("/avatar/")
-async def list_avatars():
-    """GET /avatar/ should not be called - only POST is supported for uploads"""
-    logger.warning("GET request to /avatar/ endpoint - POST is required for uploads")
-    # Return 405 Method Not Allowed status code
+async def list_avatars(request: Request):
+    """GET /avatar/ provides API documentation - use POST for uploads"""
+    # Log request info for debugging
+    logger.info(f"GET request to /avatar/ endpoint - providing API documentation")
+    logger.info(f"Request URL: {request.url}")
+    
+    # Return helpful API documentation instead of 405
     return JSONResponse(
-        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        status_code=status.HTTP_200_OK,
         content={
-            "error": "Method Not Allowed",
-            "message": "Use POST method to upload avatar, not GET",
-            "endpoint": "POST /api/v1/users/avatar/",
-            "details": "Avatar upload requires HTTP POST with multipart/form-data containing file"
+            "message": "Avatar API Documentation",
+            "endpoints": {
+                "upload": {
+                    "method": "POST",
+                    "url": "/api/v1/users/avatar/",
+                    "content_type": "multipart/form-data",
+                    "required_field": "file (image file)",
+                    "description": "Upload user profile avatar"
+                },
+                "retrieve": {
+                    "method": "GET", 
+                    "url": "/api/v1/users/avatar/{filename}",
+                    "description": "Retrieve uploaded avatar image"
+                }
+            },
+            "note": "This GET endpoint provides documentation. Use POST to upload avatars."
         }
     )
 

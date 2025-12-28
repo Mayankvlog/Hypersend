@@ -248,8 +248,13 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
         '${ApiConstants.usersEndpoint}/avatar', 
         data: formData,
         options: Options(
+          method: 'POST',
           sendTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 30),
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Accept': 'application/json',
+          },
         ),
       );
       

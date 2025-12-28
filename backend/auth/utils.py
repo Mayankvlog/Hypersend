@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 import uuid
 import jwt
 from jwt import PyJWTError
@@ -14,11 +14,51 @@ import secrets
 import string
 import base64
 import json
-try:
-    import qrcode
-except ImportError:
-    qrcode = None
 from io import BytesIO
+
+# Handle QRCode imports with Pylance compatibility
+if TYPE_CHECKING:
+    # Type checking mode - provide stubs for Pylance
+    from typing import Any
+    
+    class QRCode:
+        def __init__(self, version: int = 1, error_correction: Any = None, 
+                    box_size: int = 10, border: int = 2) -> None: ...
+        def add_data(self, data: str) -> None: ...
+        def make(self, fit: bool = True) -> None: ...
+        def make_image(self, fill_color: str = "black", back_color: str = "white") -> Any: ...
+    
+    class ERROR_CORRECT_L: ...
+    
+    # In type checking mode, assume QR code is available
+    QR_CODE_AVAILABLE = True
+else:
+    # Runtime mode - actual imports
+    try:
+        import qrcode
+        from qrcode import QRCode
+        from qrcode.constants import ERROR_CORRECT_L
+        QR_CODE_AVAILABLE = True
+    except ImportError as e:
+        # Create fallback classes for runtime when qrcode is not available
+        class QRCode:
+            def __init__(self, **kwargs):
+                raise ImportError(f"QR code library not available: {e}")
+            
+            def add_data(self, data):
+                pass
+            
+            def make(self, fit=True):
+                pass
+            
+            def make_image(self, **kwargs):
+                raise ImportError("QR code library not installed")
+        
+        class ERROR_CORRECT_L:
+            pass
+        
+        QR_CODE_AVAILABLE = False
+        logger.warning(f"QR code library not available: {e}")
 
 logger = logging.getLogger("auth")
 security = HTTPBearer()
@@ -224,13 +264,17 @@ def generate_qr_code(data: dict) -> Tuple[str, str]:
         Tuple of (base64_encoded_qr_image, json_string)
     """
     try:
+        # Check if QR code functionality is available
+        if not QR_CODE_AVAILABLE:
+            raise ImportError("QR code library not available")
+        
         # Convert data to JSON string
         json_data = json.dumps(data)
         
-        # Create QR code instance
-        qr = qrcode.QRCode(
+        # Create QR code instance using imported classes
+        qr = QRCode(
             version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            error_correction=ERROR_CORRECT_L,
             box_size=10,
             border=2,
         )
