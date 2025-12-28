@@ -5,11 +5,13 @@ import jwt
 from jwt import PyJWTError
 import hashlib
 import hmac
+import logging
 from fastapi import HTTPException, status, Depends, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import settings
 from models import TokenData
 
+logger = logging.getLogger("auth")
 security = HTTPBearer()
 
 
@@ -128,27 +130,35 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     return token_data.user_id
 
 
-async def get_current_user_optional(request) -> str:
+async def get_current_user_optional(request: Request) -> Optional[str]:
     """Dependency to get current user from token - returns None if auth fails or missing"""
     try:
         # Try to get authorization header
-        auth_header = request.headers.get("authorization")
+        auth_header = request.headers.get("authorization", "")
         if not auth_header:
+            logger.debug("No auth header provided, allowing guest access")
             return None
         
         # Extract token from "Bearer <token>"
         if not auth_header.startswith("Bearer "):
+            logger.debug("Invalid auth header format, allowing guest access")
             return None
         
-        token = auth_header.replace("Bearer ", "")
+        token = auth_header.replace("Bearer ", "").strip()
+        if not token:
+            logger.debug("Empty token, allowing guest access")
+            return None
+            
         token_data = decode_token(token)
         
         if token_data.token_type != "access":
+            logger.debug("Wrong token type, allowing guest access")
             return None
         
+        logger.debug(f"User authenticated successfully")
         return token_data.user_id
     except Exception as e:
-        print(f"[AUTH] Optional auth failed (non-fatal): {str(e)[:80]}")
+        logger.debug(f"Auth failed (non-fatal), allowing guest access")
         return None
 
 async def get_current_user_from_query(token: Optional[str] = Query(None)) -> str:

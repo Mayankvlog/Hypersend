@@ -971,7 +971,7 @@ async def change_email(
 @router.options("/avatar-upload/")
 async def avatar_options():
     """Handle CORS preflight for avatar endpoint"""
-    print(f"[AVATAR-OPTIONS] OPTIONS preflight received for /avatar/")
+    logger.debug("CORS OPTIONS preflight request received")
     return JSONResponse(status_code=200, content={"status": "ok", "methods": ["GET", "POST", "OPTIONS"]})
 
 @router.post("/avatar-debug/")
@@ -984,9 +984,7 @@ async def upload_avatar_debug(
         import os
         import uuid
         
-        print(f"[AVATAR-DEBUG] ===== AVATAR UPLOAD POST (NO AUTH) STARTED =====")
-        print(f"[AVATAR-DEBUG] File name: {file.filename}")
-        print(f"[AVATAR-DEBUG] Content type: {file.content_type}")
+        logger.debug("Debug endpoint avatar upload started")
         
         # Validate file type
         if not file.content_type or not file.content_type.startswith("image/"):
@@ -1026,13 +1024,13 @@ async def upload_avatar_debug(
             "filename": new_file_name,
             "message": "Avatar uploaded successfully (debug mode)"
         }
-        print(f"[AVATAR-DEBUG] Success: {response_data}")
+        logger.debug("Debug avatar upload completed successfully")
         return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[AVATAR-DEBUG] Error: {str(e)}")
+        logger.error(f"Debug endpoint error: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload avatar: {str(e)}"
@@ -1044,28 +1042,26 @@ async def upload_avatar(
     request: Request = None,
     current_user: str = Depends(get_current_user_optional)
 ):
-    """Upload user avatar - POST endpoint (tries auth, falls back to guest)"""
+    """Upload user avatar - POST endpoint (accepts optional auth, returns avatar_url)"""
     try:
         import shutil
         import os
         import uuid
         
+        logger.debug("Avatar upload POST request started")
+        
         # If no user, use guest ID
         if not current_user:
             current_user = "guest_upload"
-            print(f"[AVATAR-POST] ===== AVATAR UPLOAD POST (GUEST MODE) =====")
+            logger.debug("Using guest upload mode - no authentication")
         else:
-            print(f"[AVATAR-POST] ===== AVATAR UPLOAD POST STARTED =====")
+            logger.debug("Using authenticated mode")
         
-        print(f"[AVATAR-POST] User ID: {current_user}")
-        print(f"[AVATAR-POST] File name: {file.filename}")
-        print(f"[AVATAR-POST] Content type: {file.content_type}")
-        print(f"[AVATAR-POST] ===== END HEADERS =====")
-
+        logger.debug(f"File content-type: {file.content_type}")
         
         # Validate file type
         if not file.content_type or not file.content_type.startswith("image/"):
-            _log("warning", f"Invalid avatar file type", {"user_id": current_user, "operation": "avatar_validation"})
+            logger.warning("Invalid content type for avatar upload")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="File must be an image"
@@ -1075,10 +1071,9 @@ async def upload_avatar(
         avatar_dir = settings.DATA_ROOT / "avatars"
         try:
             avatar_dir.mkdir(parents=True, exist_ok=True)
-            print(f"[AVATAR] Avatar directory ensured at: {avatar_dir}")
-            print(f"[AVATAR] Directory exists: {avatar_dir.exists()}")
+            logger.debug("Avatar storage directory created/verified")
         except Exception as dir_error:
-            print(f"[AVATAR] Failed to create avatar directory: {dir_error}")
+            logger.error(f"Failed to create avatar directory: {dir_error}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create avatar storage directory"
@@ -1096,43 +1091,46 @@ async def upload_avatar(
         new_file_name = f"{current_user}_{unique_id}{file_ext}"
         new_file_path = avatar_dir / new_file_name
         
-        # Clean up old avatar files to prevent storage leaks
-        try:
-            # Find the current user's old avatar files
-            user = await asyncio.wait_for(
-                users_collection().find_one({"_id": current_user}),
-                timeout=5.0
-            )
-            if user and "avatar_url" in user:
-                old_avatar_url = user["avatar_url"]
-                if old_avatar_url and old_avatar_url.startswith("/api/v1/users/avatar/"):
-                    old_filename = old_avatar_url.split("/")[-1]
-                    old_file_path = avatar_dir / old_filename
-                    if old_file_path.exists():
-                        old_file_path.unlink()
-                        _log("info", f"Cleaned up old avatar: {old_filename}")
-        except Exception as cleanup_error:
-            _log("warning", f"Failed to cleanup old avatar", {"user_id": current_user, "operation": "avatar_cleanup"})
-            # Continue with upload even if cleanup fails
-        
-        # Save the new file with proper error handling
+        # Save the new file FIRST before doing anything else
         try:
             with open(new_file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
-            print(f"[AVATAR] File saved successfully: {new_file_path}")
-            print(f"[AVATAR] File exists after save: {new_file_path.exists()}")
+            logger.debug("Avatar file saved successfully")
             if new_file_path.exists():
                 file_size = os.path.getsize(new_file_path)
-                print(f"[AVATAR] File size: {file_size} bytes")
+                logger.debug(f"File size verified: {file_size} bytes")
         except Exception as save_error:
-            _log("error", f"Failed to save avatar file: {save_error}", {"user_id": current_user, "operation": "avatar_save"})
+            logger.error(f"Failed to save avatar file: {save_error}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to save file"
             )
         
-        # Generate URL
+        # Generate URL AFTER file is saved
         avatar_url = f"/api/v1/users/avatar/{new_file_name}"
+        logger.debug("Avatar URL generated")
+        
+        # Clean up old avatar files AFTER saving new file (skip for guest users - they don't exist in DB)
+        if current_user != "guest_upload":  # Only cleanup for actual users, not guest uploads
+            try:
+                user = await asyncio.wait_for(
+                    users_collection().find_one({"_id": current_user}),
+                    timeout=5.0
+                )
+                if user and "avatar_url" in user:
+                    old_avatar_url = user["avatar_url"]
+                    if old_avatar_url and old_avatar_url.startswith("/api/v1/users/avatar/"):
+                        old_filename = old_avatar_url.split("/")[-1]
+                        old_file_path = avatar_dir / old_filename
+                        if old_file_path.exists():
+                            try:
+                                old_file_path.unlink()
+                                logger.debug("Cleaned up old avatar file")
+                            except Exception as delete_error:
+                                logger.warning(f"Could not delete old avatar: {delete_error}")
+            except Exception as cleanup_error:
+                logger.warning(f"Cleanup error while checking old avatar: {cleanup_error}")
+                # Continue anyway - new file is already saved
         
         # Update the user in the database with timeout
         try:
@@ -1150,26 +1148,17 @@ async def upload_avatar(
                 timeout=5.0
             )
             if not user_exists:
-                raise Exception("User not found")
+                logger.warning("User not found in database - file still saved")
+                # Don't raise - file is already saved
+            else:
+                logger.debug("Database updated with avatar URL")
                 
-            _log("info", f"Avatar updated successfully", {"user_id": current_user, "operation": "avatar_update"})
         except asyncio.TimeoutError:
-            # Clean up the uploaded file if the database update times out
-            if new_file_path.exists():
-                new_file_path.unlink()
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Database operation timed out"
-            )
+            logger.warning("Database update timed out - file still saved")
+            # Don't fail - file is already saved
         except Exception as db_error:
-            # Clean up the uploaded file if the database update fails
-            if new_file_path.exists():
-                new_file_path.unlink()
-            _log("error", f"Failed to update database: {db_error}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update avatar in database"
-            )
+            logger.warning(f"Database update failed - file still saved")
+            # Don't fail - file is already saved, user can still download via URL
         
         # Return successful response with avatar_url
         response_data = {
@@ -1179,19 +1168,14 @@ async def upload_avatar(
             "message": "Avatar uploaded successfully",
             "status": "upload_complete"
         }
-        print(f"[AVATAR-POST] ===== SUCCESS RESPONSE =====")
-        print(f"[AVATAR-POST] Response data: {response_data}")
-        print(f"[AVATAR-POST] ===== END RESPONSE =====")
+        logger.debug("Avatar upload completed successfully")
         return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException as http_exc:
-        print(f"[AVATAR-POST] HTTPException: status={http_exc.status_code}, detail={http_exc.detail}")
+        logger.warning(f"HTTP error in avatar upload: {http_exc.status_code}")
         raise
     except Exception as e:
-        print(f"[AVATAR-POST] ===== UNEXPECTED ERROR =====")
-        print(f"[AVATAR-POST] Error type: {type(e).__name__}")
-        print(f"[AVATAR-POST] Error message: {str(e)}")
-        print(f"[AVATAR-POST] ===== END ERROR =====")
+        logger.error(f"Unexpected error in avatar upload: {type(e).__name__}")
         _log("error", f"Unexpected avatar upload error: {str(e)}", {"user_id": current_user, "operation": "avatar_upload"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1206,8 +1190,7 @@ async def upload_avatar_alt(
 ):
     """Alternative avatar upload endpoint - same as /avatar/ but with different name"""
     try:
-        print(f"[AVATAR-UPLOAD-ALT] Alternative upload endpoint called")
-        print(f"[AVATAR-UPLOAD-ALT] User: {current_user}, File: {file.filename}")
+        logger.debug("Alternative avatar upload endpoint called")
         
         import shutil
         import os
@@ -1258,13 +1241,13 @@ async def upload_avatar_alt(
             "filename": new_file_name,
             "message": "Avatar uploaded successfully"
         }
-        print(f"[AVATAR-UPLOAD-ALT] Success: {response_data}")
+        logger.debug("Alternative avatar upload completed successfully")
         return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[AVATAR-UPLOAD-ALT] Error: {str(e)}")
+        logger.error(f"Alternative avatar upload error: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload avatar: {str(e)}"
@@ -1287,20 +1270,18 @@ async def test_avatar_route():
 
 @router.get("/avatar/")
 async def list_avatars():
-    """Handle GET requests to avatar endpoint without filename - Returns usage documentation"""
-    print(f"[AVATAR-GET] WARNING: GET /users/avatar/ endpoint called")
-    print(f"[AVATAR-GET] This usually means:")
-    print(f"[AVATAR-GET]   1. Frontend made GET request instead of POST")
-    print(f"[AVATAR-GET]   2. POST request failed and browser fell back to GET")
-    print(f"[AVATAR-GET]   3. OPTIONS preflight failed")
-    return {
-        "error": "Use POST /api/v1/users/avatar/ to upload avatar",
-        "message": "Avatar upload endpoint",
-        "usage": {
-            "upload": "POST /api/v1/users/avatar/ with file data",
-            "retrieve": "GET /api/v1/users/avatar/{filename}"
+    """GET /avatar/ should not be called - only POST is supported for uploads"""
+    logger.warning("GET request to /avatar/ endpoint - POST is required for uploads")
+    # Return 405 Method Not Allowed status code
+    return JSONResponse(
+        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        content={
+            "error": "Method Not Allowed",
+            "message": "Use POST method to upload avatar, not GET",
+            "endpoint": "POST /api/v1/users/avatar/",
+            "details": "Avatar upload requires HTTP POST with multipart/form-data containing file"
         }
-    }
+    )
 
 @router.get("/avatar/{filename}")
 async def get_avatar(filename: str, current_user: str = Depends(get_current_user)):
