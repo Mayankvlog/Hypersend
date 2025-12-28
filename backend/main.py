@@ -319,15 +319,37 @@ async def handle_options_request(full_path: str, request: Request):
     """
     Handle CORS preflight OPTIONS requests.
     These must succeed without authentication for CORS to work in browsers.
+    SECURITY: Use exact regex matching to prevent origin bypass attacks
+    (e.g., https://evilzaply.in.net would bypass substring matching)
     """
-    origin = request.headers.get("Origin", "*")
+    import re
+    origin = request.headers.get("Origin")
+    
+    # SECURITY FIX: Use regex instead of substring matching to prevent bypasses
+    # Substring matching allows: evilzaply.in.net, localhostevil.com, etc.
+    allowed_origin = "null"  # Default deny-all for untrusted origins
+    
+    if origin:
+        # Whitelist patterns with proper boundary matching
+        allowed_patterns = [
+            r'^https://zaply\.in\.net(:[0-9]+)?$',      # zaply.in.net (no subdomain)
+            r'^https://www\.zaply\.in\.net(:[0-9]+)?$', # www.zaply.in.net only
+            r'^http://localhost(:[0-9]+)?$',             # localhost with optional port
+            r'^http://127\.0\.0\.1(:[0-9]+)?$',        # 127.0.0.1 with optional port
+        ]
+        
+        for pattern in allowed_patterns:
+            if re.match(pattern, origin):
+                allowed_origin = origin
+                break
+    
     return Response(
         status_code=204,
         headers={
-            "Access-Control-Allow-Origin": origin if origin != "" else "*",
+            "Access-Control-Allow-Origin": allowed_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
             "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With",
-            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Credentials": "true" if allowed_origin != "null" else "false",
             "Access-Control-Max-Age": "86400",
         }
     )

@@ -26,7 +26,8 @@ COPY . .
 # Build web app - web-only build doesn't need platform configs
 # Use ARG for API_BASE_URL - passed from docker-compose or build args
 # Removed 'flutter clean' as it's a fresh container and causes issues if files aren't there yet/we want to keep the pub cache
-RUN /opt/flutter/bin/flutter build web --release --no-tree-shake-icons --dart-define=API_BASE_URL=${API_BASE_URL}
+# Use auto web renderer to optimize for different browsers and reduce WebGL warnings
+RUN /opt/flutter/bin/flutter build web --release --no-tree-shake-icons --dart-define=API_BASE_URL=${API_BASE_URL} --web-renderer auto
 
 # Serve with Nginx
 FROM nginx:alpine
