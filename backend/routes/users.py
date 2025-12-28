@@ -321,7 +321,7 @@ async def update_profile(
             avatar_url=updated_user.get("avatar_url"),
             quota_used=int(updated_user.get("quota_used", 0)),
             quota_limit=int(updated_user.get("quota_limit", 42949672960)),
-            created_at=updated_user.get("created_at", datetime.now(timezone.utc)),
+            created_at=updated_user.get("created_at"),  # Let it be None if missing
             updated_at=updated_user.get("updated_at"),
             last_seen=updated_user.get("last_seen"),
             is_online=updated_user.get("is_online", False),

@@ -16,6 +16,11 @@ print("[STARTUP] Current working directory:", os.getcwd())
 print("[STARTUP] Starting backend imports...")
 
 try:
+    # Add current directory to Python path for Docker
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    
     from config import settings
     if settings.USE_MOCK_DB:
         from mock_database import connect_db, close_db
