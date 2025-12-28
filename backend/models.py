@@ -299,7 +299,17 @@ class TokenData(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(..., min_length=32, max_length=512)
+    
+    @field_validator('refresh_token')
+    @classmethod
+    def validate_refresh_token(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Refresh token cannot be empty')
+        # Basic format validation for JWT tokens
+        if len(v.split('.')) != 3:
+            raise ValueError('Invalid refresh token format')
+        return v.strip()
 
 
 # Password Reset Models
@@ -663,3 +673,95 @@ class UserSearchResponse(BaseModel):
     status: Optional[str] = None
     is_contact: bool = False
     is_blocked: bool = False
+
+# QR Code Models for Multi-Device Connection
+class QRCodeSession(BaseModel):
+    """QR Code session for connecting devices to same account"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str  # The user who initiated QR code
+    session_code: str  # Unique 6-8 digit code for verification
+    qr_code_data: str  # Base64 encoded QR code image
+    device_type: str  # 'mobile', 'web', 'desktop'
+    device_name: Optional[str] = None  # Custom device name
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime  # QR code expires after 5 minutes
+    is_verified: bool = False
+    verified_at: Optional[datetime] = None
+    verified_from: Optional[str] = None  # Device that verified the code
+    status: str = "pending"  # pending, verified, expired, cancelled
+
+
+class QRCodeRequest(BaseModel):
+    """Request to generate QR code"""
+    device_type: str = Field(..., description="Type of device: mobile, web, or desktop")
+    device_name: Optional[str] = Field(None, max_length=100, description="Custom device name")
+    
+    @field_validator('device_type')
+    @classmethod
+    def validate_device_type(cls, v):
+        allowed_types = ['mobile', 'web', 'desktop']
+        if v.lower() not in allowed_types:
+            raise ValueError(f'device_type must be one of: {", ".join(allowed_types)}')
+        return v.lower()
+    
+    @field_validator('device_name')
+    @classmethod
+    def validate_device_name(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError('device_name cannot be empty if provided')
+        # Remove any HTML tags and prevent XSS
+        if v:
+            import re
+            v = re.sub(r'<[^>]*>', '', v)
+        return v.strip() if v else v
+
+
+class QRCodeResponse(BaseModel):
+    """Response with QR code data"""
+    session_id: str = Field(..., min_length=32, max_length=128)
+    session_code: str = Field(..., min_length=6, max_length=6)
+    qr_code_data: str = Field(..., min_length=100, max_length=100000)  # Base64 encoded image
+    device_type: str = Field(..., max_length=20)
+    expires_in_seconds: int = Field(..., gt=0, le=3600)  # Max 1 hour
+    verification_url: str = Field(..., max_length=500)  # URL for devices to verify the code
+    
+    @field_validator('qr_code_data')
+    @classmethod
+    def validate_qr_code_data(cls, v):
+        if not v.startswith('data:image/'):
+            raise ValueError('qr_code_data must be a valid base64 image')
+        return v
+
+
+class VerifyQRCodeRequest(BaseModel):
+    """Request to verify QR code"""
+    session_id: str = Field(..., min_length=32, max_length=128)
+    session_code: str = Field(..., min_length=6, max_length=6)
+    device_info: Optional[str] = Field(None, max_length=500)
+    
+    @field_validator('session_code')
+    @classmethod
+    def validate_session_code(cls, v):
+        if not v.isdigit():
+            raise ValueError('session_code must be numeric')
+        return v
+    
+    @field_validator('device_info')
+    @classmethod
+    def validate_device_info(cls, v):
+        if v:
+            # Remove any HTML tags and prevent XSS
+            import re
+            v = re.sub(r'<[^>]*>', '', v)
+            v = v.strip()
+        return v
+
+
+class VerifyQRCodeResponse(BaseModel):
+    """Response after QR code verification"""
+    success: bool
+    message: str
+    auth_token: Optional[str] = None
+    user_id: Optional[str] = None

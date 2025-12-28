@@ -2,7 +2,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, kDebugMode;
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
-import 'dart:io';
+import 'dart:convert';
+import 'dart:async';
+import 'dart:math';
+
+// Conditional import: dart:io only available on mobile/desktop platforms
+import 'dart:io' as io;
 import '../../core/constants/api_constants.dart';
 
 class ApiService {
@@ -34,7 +39,8 @@ class ApiService {
         receiveTimeout: const Duration(seconds: 15),
         sendTimeout: const Duration(seconds: 15),
         contentType: 'application/json',
-        // CRITICAL: Remove validateStatus to properly handle 4xx errors
+        // Allow all status codes to be handled by interceptors for proper 4xx error handling
+        validateStatus: (status) => status != null && status < 500,
         headers: {
           'User-Agent': 'Zaply-Flutter-Web/1.0',
           'Accept': 'application/json',
@@ -911,11 +917,13 @@ Future<void> postToChannel(String channelId, String text) async {
         throw Exception('File size exceeds 40GB limit');
       }
       
-      // Ensure directory exists (web: uses IndexedDB/LocalStorage, mobile: uses file system)
+// Ensure directory exists (web: uses IndexedDB/LocalStorage, mobile: uses file system)
       if (!kIsWeb) {
         // Mobile platform - use actual file system
-        final directory = localStoragePath;
-        final file = File('$directory/$fileName');
+        final directory = io.Directory(localStoragePath);
+        // Fix: Use path string instead of Directory object
+        final filePath = io.Platform.isWindows ? '$localStoragePath\\$fileName' : '$localStoragePath/$fileName';
+        final file = io.File(filePath);
         
         // Create directory if needed
         await file.parent.create(recursive: true);
@@ -928,10 +936,9 @@ Future<void> postToChannel(String channelId, String text) async {
         
         return file.path;
       } else {
-        // Web platform - use localStorage/IndexedDB via json encoding
-        // Note: Web browsers have ~50MB limit per origin, so we use a reference system
-        _log('[LOCAL_STORAGE] Web platform: Using in-memory storage (IndexedDB recommended for larger files)');
-        return '$localStoragePath/$fileName';
+        // Web platform - file storage not supported
+        _log('[LOCAL_STORAGE] Web platform: File storage not supported');
+        return '';
       }
     } catch (e) {
       _log('[LOCAL_STORAGE_ERROR] Failed to save file: $e');
@@ -939,7 +946,7 @@ Future<void> postToChannel(String channelId, String text) async {
     }
   }
   
-  /// Retrieves file data from local storage
+/// Retrieves file data from local storage
   /// Returns the file data as Uint8List
   Future<Uint8List> getFileLocally({
     required String fileName,
@@ -950,88 +957,32 @@ Future<void> postToChannel(String channelId, String text) async {
       
       if (!kIsWeb) {
         // Mobile platform
-        final file = File('$localStoragePath/$fileName');
-        
-        if (!await file.exists()) {
-          throw Exception('File not found: $fileName');
-        }
-        
-        final fileData = await file.readAsBytes();
-        _log('[LOCAL_STORAGE] File retrieved successfully: ${(fileData.length / (1024 * 1024)).toStringAsFixed(2)}MB');
-        
-        return fileData;
-      } else {
-        // Web platform
-        throw Exception('Web file retrieval requires IndexedDB implementation');
-      }
-    } catch (e) {
-      _log('[LOCAL_STORAGE_ERROR] Failed to retrieve file: $e');
-      rethrow;
-    }
-  }
-  
-  /// Deletes a file from local storage
-  /// Returns true if deletion successful
-  Future<bool> deleteFileLocally({
-    required String fileName,
-    required String localStoragePath,
-  }) async {
-    try {
-      _log('[LOCAL_STORAGE] Deleting file: $fileName');
-      
-      if (!kIsWeb) {
-        // Mobile platform
-        final file = File('$localStoragePath/$fileName');
-        
-        if (await file.exists()) {
-          await file.delete();
-          _log('[LOCAL_STORAGE] File deleted successfully: $fileName');
-          return true;
-        } else {
-          _log('[LOCAL_STORAGE] File not found for deletion: $fileName');
-          return false;
-        }
-      } else {
-        // Web platform
-        _log('[LOCAL_STORAGE] Web platform file deletion');
-        return true;
-      }
-    } catch (e) {
-      _log('[LOCAL_STORAGE_ERROR] Failed to delete file: $e');
-      rethrow;
-    }
-  }
-  
-  /// Gets list of files in local storage directory
-  /// Returns list of file names
-  Future<List<String>> listFilesLocally(String localStoragePath) async {
-    try {
-      _log('[LOCAL_STORAGE] Listing files in: $localStoragePath');
-      
-      if (!kIsWeb) {
-        // Mobile platform
-        final directory = Directory(localStoragePath);
+        final directory = io.Directory(localStoragePath);
         
         if (!await directory.exists()) {
           _log('[LOCAL_STORAGE] Directory does not exist: $localStoragePath');
-          return [];
+          return Uint8List(0);
         }
         
-        final files = await directory.list().toList();
-        final fileNames = files
-            .whereType<File>()
-            .map((file) => file.path.split('/').last)
-            .toList();
+        // Fix: Use path string instead of Directory object
+        final filePath = io.Platform.isWindows ? '$localStoragePath\\$fileName' : '$localStoragePath/$fileName';
+        final file = io.File(filePath);
+        if (!await file.exists()) {
+          _log('[LOCAL_STORAGE] File does not exist: $fileName');
+          return Uint8List(0);
+        }
         
-        _log('[LOCAL_STORAGE] Found ${fileNames.length} files');
-        return fileNames;
+        final fileData = await file.readAsBytes();
+        _log('[LOCAL_STORAGE] File retrieved successfully: $fileName');
+        return fileData;
       } else {
-        // Web platform
-        return [];
+        // Web platform - not supported for direct file access
+        _log('[LOCAL_STORAGE] Web platform: Direct file access not supported');
+        return Uint8List(0);
       }
     } catch (e) {
-      _log('[LOCAL_STORAGE_ERROR] Failed to list files: $e');
-      return [];
+      _log('[LOCAL_STORAGE_ERROR] Failed to get file: $e');
+      return Uint8List(0);
     }
   }
   
@@ -1041,9 +992,9 @@ Future<void> postToChannel(String channelId, String text) async {
     try {
       _log('[LOCAL_STORAGE] Calculating total storage size');
       
-      if (!kIsWeb) {
+if (!kIsWeb) {
         // Mobile platform
-        final directory = Directory(localStoragePath);
+        final directory = io.Directory(localStoragePath);
         
         if (!await directory.exists()) {
           return 0;
@@ -1053,7 +1004,7 @@ Future<void> postToChannel(String channelId, String text) async {
         final files = await directory.list(recursive: true).toList();
         
         for (var file in files) {
-          if (file is File) {
+          if (file is io.File) {
             totalSize += await file.length();
           }
         }
@@ -1098,9 +1049,9 @@ Future<void> postToChannel(String channelId, String text) async {
     try {
       _log('[LOCAL_STORAGE] Clearing all files from: $localStoragePath');
       
-      if (!kIsWeb) {
+if (!kIsWeb) {
         // Mobile platform
-        final directory = Directory(localStoragePath);
+        final directory = io.Directory(localStoragePath);
         
         if (!await directory.exists()) {
           return 0;
@@ -1110,7 +1061,7 @@ Future<void> postToChannel(String channelId, String text) async {
         final files = await directory.list().toList();
         
         for (var file in files) {
-          if (file is File) {
+          if (file is io.File) {
             await file.delete();
             deletedCount++;
           }
@@ -1126,6 +1077,557 @@ Future<void> postToChannel(String channelId, String text) async {
       rethrow;
     }
   }
+
+  // ============ QR CODE CROSS-PLATFORM LINKING FUNCTIONS ============
+  
+  /// Generates a QR code for connecting same account across multiple platforms
+  /// Works for: Mobile APK, Web Page, Desktop App
+  /// Device types: 'mobile', 'web', 'desktop'
+  /// Returns session ID, session code, and QR code data
+  Future<Map<String, dynamic>> generateQRCodeForSameAccount({
+    required String deviceType, // 'mobile', 'web', 'desktop'
+    String? deviceName,
+  }) async {
+    try {
+      _log('[QR_CODE_SAME_ACCOUNT] Generating QR code for same account connection');
+      _log('[QR_CODE_SAME_ACCOUNT] Device Type: $deviceType');
+      
+      // Validate device type
+      const validDevices = ['mobile', 'web', 'desktop'];
+      if (!validDevices.contains(deviceType.toLowerCase())) {
+        throw Exception('Invalid device type. Must be one of: ${validDevices.join(", ")}');
+      }
+      
+      // Call backend to generate QR code
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/qrcode/generate',
+        data: {
+          'device_type': deviceType.toLowerCase(),
+          'device_name': deviceName ?? _getDeviceName(),
+        },
+      );
+      
+      final result = response.data ?? {};
+      
+      _log('[QR_CODE_SAME_ACCOUNT] QR code generated successfully');
+      _log('[QR_CODE_SAME_ACCOUNT] Session ID: ${result['session_id']}');
+      _log('[QR_CODE_SAME_ACCOUNT] Device: $deviceType');
+      
+      return {
+        'session_id': result['session_id'],
+        'session_code': result['session_code'],
+        'qr_code_data': result['qr_code_data'],
+        'device_type': deviceType.toLowerCase(),
+        'device_name': deviceName ?? _getDeviceName(),
+        'expiry_seconds': result['expires_in_seconds'] ?? 300,
+        'verification_url': result['verification_url'],
+      };
+    } catch (e) {
+      _log('[QR_CODE_SAME_ACCOUNT_ERROR] Failed to generate QR code: $e');
+      rethrow;
+    }
+  }
+  
+  /// Verifies QR code with session code for same account connection
+  /// Returns authentication tokens for the new device
+  Future<Map<String, dynamic>> verifyQRCodeForSameAccount({
+    required String sessionId,
+    required String sessionCode,
+  }) async {
+    try {
+      _log('[QR_CODE_VERIFY_SAME_ACCOUNT] Verifying QR code');
+      _log('[QR_CODE_VERIFY_SAME_ACCOUNT] Session ID: $sessionId');
+      
+      // Call backend to verify QR code
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/qrcode/verify',
+        data: {
+          'session_id': sessionId,
+          'session_code': sessionCode,
+        },
+      );
+      
+      final result = response.data ?? {};
+      
+      _log('[QR_CODE_VERIFY_SAME_ACCOUNT] QR code verified successfully');
+      _log('[QR_CODE_VERIFY_SAME_ACCOUNT] Access token received');
+      
+      return {
+        'access_token': result['access_token'],
+        'refresh_token': result['refresh_token'],
+        'token_type': result['token_type'] ?? 'bearer',
+        'user_id': result['user_id'],
+        'user_name': result['user_name'],
+        'device_id': result['device_id'],
+        'device_type': result['device_type'],
+        'expires_in': result['expires_in'],
+      };
+    } catch (e) {
+      _log('[QR_CODE_VERIFY_SAME_ACCOUNT_ERROR] Failed to verify QR code: $e');
+      rethrow;
+    }
+  }
+  
+  /// Gets list of all devices connected to same account
+  /// Shows device info: name, type, last seen, status
+  Future<List<Map<String, dynamic>>> getConnectedDevices() async {
+    try {
+      _log('[QR_CODE_DEVICES] Fetching connected devices for same account');
+      
+      final response = await _dio.get('${ApiConstants.usersEndpoint}/devices');
+      
+      final devices = (response.data as List?)?.cast<Map<String, dynamic>>() ?? [];
+      
+      _log('[QR_CODE_DEVICES] Found ${devices.length} connected devices');
+      
+      return devices;
+    } catch (e) {
+      _log('[QR_CODE_DEVICES_ERROR] Failed to fetch connected devices: $e');
+      return [];
+    }
+  }
+  
+  /// Disconnects a device from same account
+  /// Revokes access tokens for that device
+  Future<bool> disconnectDevice(String deviceId) async {
+    try {
+      _log('[QR_CODE_DISCONNECT] Disconnecting device: $deviceId');
+      
+      final response = await _dio.delete(
+        '${ApiConstants.usersEndpoint}/devices/$deviceId',
+      );
+      
+      _log('[QR_CODE_DISCONNECT] Device disconnected successfully');
+      
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('[QR_CODE_DISCONNECT_ERROR] Failed to disconnect device: $e');
+      rethrow;
+    }
+  }
+  
+  /// Syncs account data across all connected devices
+  /// Ensures messages, contacts, and settings are consistent
+  Future<Map<String, dynamic>> syncAccountDataAcrossDevices({
+    required String dataType, // 'chats', 'messages', 'contacts', 'settings'
+    Map<String, dynamic>? additionalData,
+  }) async {
+    try {
+      _log('[QR_CODE_SYNC] Syncing $dataType across all connected devices');
+      
+      final response = await _dio.post(
+        '${ApiConstants.usersEndpoint}/sync',
+        data: {
+          'data_type': dataType,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          ...?additionalData,
+        },
+      );
+      
+      _log('[QR_CODE_SYNC] Data sync completed for: $dataType');
+      
+      return response.data ?? {};
+    } catch (e) {
+      _log('[QR_CODE_SYNC_ERROR] Failed to sync $dataType: $e');
+      rethrow;
+    }
+  }
+  
+  /// Gets synchronization status for all connected devices
+  /// Shows which devices are online/offline and last sync time
+  Future<Map<String, dynamic>> getDeviceSyncStatus() async {
+    try {
+      _log('[QR_CODE_SYNC_STATUS] Fetching device synchronization status');
+      
+      final response = await _dio.get('${ApiConstants.usersEndpoint}/sync-status');
+      
+      final data = response.data ?? {};
+      
+      _log('[QR_CODE_SYNC_STATUS] Sync status retrieved');
+      _log('[QR_CODE_SYNC_STATUS] Devices online: ${data['devices_online']}');
+      _log('[QR_CODE_SYNC_STATUS] Last sync: ${data['last_sync']}');
+      
+      return data;
+    } catch (e) {
+      _log('[QR_CODE_SYNC_STATUS_ERROR] Failed to fetch sync status: $e');
+      return {};
+    }
+  }
+  
+  /// Enables real-time synchronization across all devices
+  /// When enabled, changes on one device instantly reflect on others
+  Future<bool> enableCrossDeviceSync() async {
+    try {
+      _log('[QR_CODE_ENABLE_SYNC] Enabling cross-device synchronization');
+      
+      final response = await _dio.put(
+        '${ApiConstants.usersEndpoint}/settings/sync',
+        data: {'enabled': true},
+      );
+      
+      _log('[QR_CODE_ENABLE_SYNC] Cross-device sync enabled');
+      
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('[QR_CODE_ENABLE_SYNC_ERROR] Failed to enable sync: $e');
+      rethrow;
+    }
+  }
+  
+  /// Disables real-time synchronization across devices
+  Future<bool> disableCrossDeviceSync() async {
+    try {
+      _log('[QR_CODE_DISABLE_SYNC] Disabling cross-device synchronization');
+      
+      final response = await _dio.put(
+        '${ApiConstants.usersEndpoint}/settings/sync',
+        data: {'enabled': false},
+      );
+      
+      _log('[QR_CODE_DISABLE_SYNC] Cross-device sync disabled');
+      
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('[QR_CODE_DISABLE_SYNC_ERROR] Failed to disable sync: $e');
+      rethrow;
+    }
+  }
+  
+  /// Checks if current device is the primary device for the account
+  /// Primary device can manage other connected devices
+  Future<bool> isPrimaryDevice() async {
+    try {
+      _log('[QR_CODE_PRIMARY] Checking if current device is primary');
+      
+      final response = await _dio.get(
+        '${ApiConstants.usersEndpoint}/device-status/is-primary',
+      );
+      
+      final isPrimary = response.data?['is_primary'] ?? false;
+      
+      _log('[QR_CODE_PRIMARY] Primary device: $isPrimary');
+      
+      return isPrimary;
+    } catch (e) {
+      _log('[QR_CODE_PRIMARY_ERROR] Failed to check primary device: $e');
+      return false;
+    }
+  }
+  
+  /// Gets complete account connection info for same account setup
+  /// Returns user, all devices, and sync settings
+  Future<Map<String, dynamic>> getAccountConnectionInfo() async {
+    try {
+      _log('[QR_CODE_ACCOUNT_INFO] Fetching account connection information');
+      
+      // Get user info
+      final userInfo = await getMe();
+      
+      // Get connected devices
+      final devices = await getConnectedDevices();
+      
+      // Get sync status
+      final syncStatus = await getDeviceSyncStatus();
+      
+      _log('[QR_CODE_ACCOUNT_INFO] Account info retrieved successfully');
+      
+      return {
+        'user': userInfo,
+        'devices': devices,
+        'sync_status': syncStatus,
+        'total_devices': devices.length,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+    } catch (e) {
+      _log('[QR_CODE_ACCOUNT_INFO_ERROR] Failed to get account connection info: $e');
+      rethrow;
+    }
+  }
+  
+  /// Generates a QR code for cross-platform account linking (Legacy - use generateQRCodeForSameAccount)
+  /// Works for: Mobile APK, Web Page, Desktop App
+  /// Returns QR code data string and pairing token
+  Future<Map<String, dynamic>> generateQRCodeForPairing({
+    required String userId,
+    required String userName,
+    String? deviceName,
+  }) async {
+    try {
+      _log('[QR_CODE] Generating QR code for cross-platform pairing');
+      
+      // Generate unique pairing session token
+      final pairingToken = _generatePairingToken();
+      final sessionId = _generateSessionId();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      
+      // Create pairing data object
+      final pairingData = {
+        'type': 'account_linking',
+        'session_id': sessionId,
+        'pairing_token': pairingToken,
+        'user_id': userId,
+        'user_name': userName,
+        'device_name': deviceName ?? _getDeviceName(),
+        'timestamp': timestamp,
+        'expiry': timestamp + (15 * 60 * 1000), // Expires in 15 minutes
+        'server_url': ApiConstants.baseUrl,
+      };
+      
+      // Encode as JSON string
+      final qrCodeData = jsonEncode(pairingData);
+      
+      _log('[QR_CODE] QR code generated successfully');
+      _log('[QR_CODE] Session ID: $sessionId');
+      _log('[QR_CODE] Expiry: 15 minutes');
+      
+      return {
+        'qr_data': qrCodeData,
+        'session_id': sessionId,
+        'pairing_token': pairingToken,
+        'expiry_seconds': 900,
+        'device_name': pairingData['device_name'],
+      };
+    } catch (e) {
+      _log('[QR_CODE_ERROR] Failed to generate QR code: $e');
+      rethrow;
+    }
+  }
+  
+  /// Validates and processes scanned QR code for account linking
+  /// Returns paired account information (Legacy - decodes local QR data)
+  Future<Map<String, dynamic>> validateQRCodeScan(String qrCodeData) async {
+    try {
+      _log('[QR_CODE_VALIDATE] Validating scanned QR code');
+      
+      // Decode QR data
+      final pairingData = jsonDecode(qrCodeData) as Map<String, dynamic>;
+      
+      // Validate required fields
+      _validateQRCodeFields(pairingData);
+      
+      // Check expiry
+      final currentTime = DateTime.now().millisecondsSinceEpoch;
+      final expiryTime = pairingData['expiry'] as int;
+      
+      if (currentTime > expiryTime) {
+        throw Exception('QR code has expired. Please generate a new one.');
+      }
+      
+      _log('[QR_CODE_VALIDATE] QR code validation successful');
+      _log('[QR_CODE_VALIDATE] User: ${pairingData['user_name']}');
+      _log('[QR_CODE_VALIDATE] Source Device: ${pairingData['device_name']}');
+      
+      return pairingData;
+    } catch (e) {
+      _log('[QR_CODE_VALIDATE_ERROR] Failed to validate QR code: $e');
+      rethrow;
+    }
+  }
+  
+  /// Links a new device/platform to existing account using pairing token
+  /// Returns success status and session information (Legacy function)
+  Future<Map<String, dynamic>> linkDeviceWithPairingToken({
+    required String pairingToken,
+    required String sessionId,
+    required String targetDeviceType, // 'mobile', 'web', 'desktop'
+    required String targetDeviceName,
+  }) async {
+    try {
+      _log('[QR_CODE_LINK_LEGACY] Linking device: $targetDeviceName ($targetDeviceType)');
+      
+      // Send pairing request to backend
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/link-device',
+        data: {
+          'pairing_token': pairingToken,
+          'session_id': sessionId,
+          'device_type': targetDeviceType,
+          'device_name': targetDeviceName,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        },
+      );
+      
+      final result = response.data ?? {};
+      
+      _log('[QR_CODE_LINK_LEGACY] Device linked successfully');
+      _log('[QR_CODE_LINK_LEGACY] Device ID: ${result['device_id']}');
+      
+      return result;
+    } catch (e) {
+      _log('[QR_CODE_LINK_LEGACY_ERROR] Failed to link device: $e');
+      rethrow;
+    }
+  }
+  
+  /// Gets list of all linked devices for current account
+  /// Returns list of device information (Legacy - use getConnectedDevices)
+  Future<List<Map<String, dynamic>>> getLinkedDevices() async {
+    try {
+      _log('[QR_CODE_LEGACY] Fetching linked devices');
+      
+      final response = await _dio.get('${ApiConstants.usersEndpoint}/devices');
+      
+      final devices = (response.data as List?)?.cast<Map<String, dynamic>>() ?? [];
+      
+      _log('[QR_CODE_LEGACY] Found ${devices.length} linked devices');
+      
+      return devices;
+    } catch (e) {
+      _log('[QR_CODE_LEGACY_ERROR] Failed to fetch linked devices: $e');
+      return [];
+    }
+  }
+  
+  /// Unlinks a device from account
+  /// Returns success status (Legacy - use disconnectDevice)
+  Future<bool> unlinkDevice(String deviceId) async {
+    try {
+      _log('[QR_CODE_UNLINK_LEGACY] Unlinking device: $deviceId');
+      
+      final response = await _dio.delete(
+        '${ApiConstants.usersEndpoint}/devices/$deviceId',
+      );
+      
+      _log('[QR_CODE_UNLINK_LEGACY] Device unlinked successfully');
+      
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('[QR_CODE_UNLINK_LEGACY_ERROR] Failed to unlink device: $e');
+      rethrow;
+    }
+  }
+  
+  /// Syncs data across all linked devices (Legacy - use syncAccountDataAcrossDevices)
+  /// Used to keep accounts synchronized
+  Future<Map<String, dynamic>> syncAcrossDevices({
+    required String dataType, // 'chats', 'messages', 'contacts', 'settings'
+    Map<String, dynamic>? additionalData,
+  }) async {
+    try {
+      _log('[QR_CODE_SYNC_LEGACY] Syncing $dataType across all devices');
+      
+      final response = await _dio.post(
+        '${ApiConstants.usersEndpoint}/sync',
+        data: {
+          'data_type': dataType,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          ...?additionalData,
+        },
+      );
+      
+      _log('[QR_CODE_SYNC_LEGACY] Sync completed successfully');
+      
+      return response.data ?? {};
+    } catch (e) {
+      _log('[QR_CODE_SYNC_LEGACY_ERROR] Failed to sync data: $e');
+      rethrow;
+    }
+  }
+  
+  /// Enables or disables cross-device notifications
+  /// When enabled, notifications sync across all linked devices (Legacy)
+  Future<bool> setCrossDeviceNotifications(bool enabled) async {
+    try {
+      _log('[QR_CODE_NOTIFICATIONS_LEGACY] Setting cross-device notifications: $enabled');
+      
+      final response = await _dio.put(
+        '${ApiConstants.usersEndpoint}/settings/cross-device-notifications',
+        data: {'enabled': enabled},
+      );
+      
+      _log('[QR_CODE_NOTIFICATIONS_LEGACY] Cross-device notifications updated');
+      
+      return response.statusCode == 200;
+    } catch (e) {
+      _log('[QR_CODE_NOTIFICATIONS_LEGACY_ERROR] Failed to update notifications: $e');
+      rethrow;
+    }
+  }
+  
+  /// Verifies a device login from another platform using pairing token
+  /// Prevents unauthorized access attempts (Legacy)
+  Future<Map<String, dynamic>> verifyDeviceLogin({
+    required String pairingToken,
+    required String deviceId,
+    required String deviceType,
+  }) async {
+    try {
+      _log('[QR_CODE_VERIFY_LOGIN_LEGACY] Verifying device login: $deviceId');
+      
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/verify-device-login',
+        data: {
+          'pairing_token': pairingToken,
+          'device_id': deviceId,
+          'device_type': deviceType,
+          'verification_time': DateTime.now().millisecondsSinceEpoch,
+        },
+      );
+      
+      _log('[QR_CODE_VERIFY_LOGIN_LEGACY] Device login verified');
+      
+      return response.data ?? {};
+    } catch (e) {
+      _log('[QR_CODE_VERIFY_LOGIN_LEGACY_ERROR] Failed to verify device login: $e');
+      rethrow;
+    }
+  }
+  
+  // ============ PRIVATE HELPER FUNCTIONS FOR QR CODE ============
+  
+  /// Generates a cryptographically secure pairing token
+  String _generatePairingToken() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    final random = Random.secure();
+    final token = List<String>.generate(32, (index) => chars[random.nextInt(chars.length)]).join();
+    return token;
+  }
+  
+  /// Generates a unique session ID for pairing
+  String _generateSessionId() {
+    return 'session_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}';
+  }
+  
+/// Gets device name based on platform
+  String _getDeviceName() {
+    if (kIsWeb) {
+      return 'Web Browser';
+    } else if (io.Platform.isAndroid) {
+      return 'Android Device';
+    } else if (io.Platform.isIOS) {
+      return 'iOS Device';
+    } else if (io.Platform.isWindows) {
+      return 'Windows Desktop';
+    } else if (io.Platform.isMacOS) {
+      return 'macOS Device';
+    } else if (io.Platform.isLinux) {
+      return 'Linux Device';
+    } else {
+      return 'Unknown Device';
+    }
+  }
+  
+  /// Validates required fields in QR code data
+  void _validateQRCodeFields(Map<String, dynamic> data) {
+    final requiredFields = [
+      'type',
+      'session_id',
+      'pairing_token',
+      'user_id',
+      'user_name',
+      'device_name',
+      'timestamp',
+      'expiry',
+    ];
+    
+    for (final field in requiredFields) {
+      if (!data.containsKey(field) || data[field] == null) {
+        throw Exception('Invalid QR code: Missing required field "$field"');
+      }
+    }
+    
+    if (data['type'] != 'account_linking') {
+      throw Exception('Invalid QR code: Incorrect type');
+    }
+  }
 }
-
-

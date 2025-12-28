@@ -49,8 +49,14 @@ class Settings:
         raise ValueError("SECRET_KEY environment variable must be set in production")
     SECRET_KEY: str = _env_secret
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    
+    # Token expiration constants
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+    
+    # QR Code session expiration
+    QR_CODE_SESSION_EXPIRE_MINUTES: int = int(os.getenv("QR_CODE_SESSION_EXPIRE_MINUTES", "5"))
+    PASSWORD_RESET_EXPIRE_MINUTES: int = int(os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "30"))
     
     # File Storage (WhatsApp-style: Local only)
     STORAGE_MODE: str = os.getenv("STORAGE_MODE", "local")  # local, server, or hybrid

@@ -1,14 +1,19 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from models import (
     UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
-    ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse
+    ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse,
+    QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
+    QRCodeSession
 )
 from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
 from auth.utils import (
     hash_password, verify_password, create_access_token, 
-    create_refresh_token, decode_token, get_current_user, get_current_user_from_query
+    create_refresh_token, decode_token, get_current_user, get_current_user_from_query,
+    generate_session_code, generate_qr_code, create_qr_session_payload, validate_session_code
 )
 from config import settings
+from rate_limiter import auth_rate_limiter, password_reset_limiter, qr_code_limiter
+from validators import validate_user_id, safe_object_id_conversion
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
@@ -229,6 +234,15 @@ async def login(credentials: UserLogin, request: Request):
         except Exception:
             client_ip = "unknown"
         current_time = datetime.now(timezone.utc)
+        
+        # Apply rate limiting
+        if not auth_rate_limiter.is_allowed(client_ip):
+            retry_after = auth_rate_limiter.get_retry_after(client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many login attempts. Try again in {retry_after} seconds.",
+                headers={"Retry-After": str(retry_after)}
+            )
         
         # IP-based rate limiting to prevent brute force attacks (check only, don't record yet)
         if client_ip in login_attempts:
@@ -812,3 +826,486 @@ async def reset_password(request: PasswordResetRequest):
             detail="Failed to reset password. Please try again."
         )
 
+
+# ===== QR CODE ROUTES FOR MULTI-DEVICE CONNECTION =====
+
+@router.post("/qrcode/generate", response_model=QRCodeResponse)
+async def generate_qr_code_endpoint(
+    qr_request: QRCodeRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Generate a QR code for connecting a new device to the same account.
+    
+    The QR code encodes:
+    - User ID
+    - Unique session ID
+    - Verification code (6 digits)
+    - Device type
+    - Server URL
+    
+    The code is valid for 5 minutes.
+    """
+    try:
+        # Validate device type
+        valid_devices = ["mobile", "web", "desktop"]
+        if qr_request.device_type not in valid_devices:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid device type. Must be one of: {', '.join(valid_devices)}"
+            )
+        
+        auth_log(f"[QR_CODE] Generating QR code for user {current_user}, device: {qr_request.device_type}")
+        
+        # Get or create qr_sessions collection
+        try:
+            db = users_collection().client.get_database(settings.DATABASE_NAME)
+            qr_sessions = db.qr_sessions
+        except Exception as e:
+            auth_log(f"[QR_CODE] Database error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is unavailable"
+            )
+        
+        # Generate session data
+        session_id = str(ObjectId())
+        session_code = generate_session_code(6)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        
+        # Create QR code payload
+        payload = create_qr_session_payload(
+            user_id=current_user,
+            session_id=session_id,
+            session_code=session_code,
+            device_type=qr_request.device_type,
+            server_url=getattr(settings, 'SERVER_URL', 'http://localhost:8000')
+        )
+        
+        # Generate QR code image
+        qr_code_data, qr_json = generate_qr_code(payload)
+        
+        # Store session in database
+        session_doc = {
+            "_id": ObjectId(session_id),
+            "user_id": current_user,
+            "session_code": session_code,
+            "qr_code_data": qr_code_data,
+            "device_type": qr_request.device_type,
+            "device_name": qr_request.device_name,
+            "created_at": datetime.now(timezone.utc),
+            "expires_at": expires_at,
+            "is_verified": False,
+            "verified_at": None,
+            "verified_from": None,
+            "status": "pending"
+        }
+        
+        try:
+            await asyncio.wait_for(
+                qr_sessions.insert_one(session_doc),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out"
+            )
+        
+        auth_log(f"[QR_CODE] QR code generated successfully. Session: {session_id}")
+        
+        return QRCodeResponse(
+            session_id=session_id,
+            session_code=session_code,
+            qr_code_data=qr_code_data,
+            device_type=qr_request.device_type,
+            expires_in_seconds=300,
+            verification_url=f"/auth/qrcode/verify"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"[QR_CODE] Failed to generate QR code: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate QR code"
+        )
+
+
+@router.post("/qrcode/verify", response_model=VerifyQRCodeResponse)
+async def verify_qr_code_endpoint(verify_request: VerifyQRCodeRequest):
+    """
+    Verify QR code with session code and return auth token.
+    
+    This endpoint is used by devices scanning the QR code to:
+    1. Verify the session code (6-digit confirmation)
+    2. Get authenticated as the same user who generated the QR code
+    3. Establish a connection for multi-device sync
+    
+    The device can be a mobile app, web page, or desktop application.
+    """
+    try:
+        auth_log(f"[QR_CODE] QR code verification attempt for session: {verify_request.session_id}")
+        
+        # Get qr_sessions collection
+        try:
+            db = users_collection().client.get_database(settings.DATABASE_NAME)
+            qr_sessions = db.qr_sessions
+        except Exception as e:
+            auth_log(f"[QR_CODE] Database error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is unavailable"
+            )
+        
+        # Find the session
+        try:
+            session = await asyncio.wait_for(
+                qr_sessions.find_one({"_id": ObjectId(verify_request.session_id)}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out"
+            )
+        
+        if not session:
+            auth_log(f"[QR_CODE] Session not found: {verify_request.session_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR code session not found"
+            )
+        
+        # Check if session has expired
+        if datetime.now(timezone.utc) > session.get("expires_at"):
+            auth_log(f"[QR_CODE] Session expired: {verify_request.session_id}")
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="QR code has expired. Please generate a new one."
+            )
+        
+        # Check if session is already verified
+        if session.get("is_verified"):
+            auth_log(f"[QR_CODE] Session already verified: {verify_request.session_id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This QR code has already been used"
+            )
+        
+        # Verify the session code
+        if not validate_session_code(verify_request.session_code, session.get("session_code", "")):
+            auth_log(f"[QR_CODE] Invalid session code for session: {verify_request.session_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid verification code"
+            )
+        
+        # Get the user
+        user_id = session.get("user_id")
+        # Validate user_id format before ObjectId conversion
+        validated_user_id = validate_user_id(user_id)
+        if not validated_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid user ID format"
+            )
+        
+        try:
+            users = users_collection()
+            user = await asyncio.wait_for(
+                users.find_one({"_id": validated_user_id}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out"
+            )
+        
+        if not user:
+            auth_log(f"[QR_CODE] User not found for session: {verify_request.session_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Create tokens for the connecting device
+        access_token = create_access_token(
+            data={"sub": user_id},
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        
+        refresh_token, jti = create_refresh_token(data={"sub": user_id})
+        
+        # Store refresh token
+        try:
+            refresh_tokens = refresh_tokens_collection()
+            await asyncio.wait_for(
+                refresh_tokens.insert_one({
+                    "user_id": validated_user_id,
+                    "token_jti": jti,
+                    "created_at": datetime.now(timezone.utc),
+                    "expires_at": datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            pass  # Non-critical, continue anyway
+        
+        # Mark session as verified
+        try:
+            await asyncio.wait_for(
+                qr_sessions.update_one(
+                    {"_id": ObjectId(verify_request.session_id)},
+                    {
+                        "$set": {
+                            "is_verified": True,
+                            "verified_at": datetime.now(timezone.utc),
+                            "verified_from": verify_request.device_info or "unknown",
+                            "status": "verified"
+                        }
+                    }
+                ),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            pass  # Non-critical, continue anyway
+        
+        auth_log(f"[QR_CODE] QR code verified successfully. User: {user_id}, Device: {session.get('device_type')}")
+        
+        return VerifyQRCodeResponse(
+            success=True,
+            message=f"Successfully connected {session.get('device_type')} device to account",
+            auth_token=access_token,
+            user_id=user_id
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"[QR_CODE] QR code verification failed: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify QR code"
+        )
+
+
+@router.get("/qrcode/status/{session_id}")
+async def get_qr_code_status(
+    session_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get the status of a QR code session.
+    Only the user who generated the QR code can check its status.
+    """
+    try:
+        auth_log(f"[QR_CODE] Status check for session: {session_id}")
+        
+        # Get qr_sessions collection
+        try:
+            db = users_collection().client.get_database(settings.DATABASE_NAME)
+            qr_sessions = db.qr_sessions
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is unavailable"
+            )
+        
+        # Find the session
+        try:
+            session = await asyncio.wait_for(
+                qr_sessions.find_one({"_id": ObjectId(session_id)}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out"
+            )
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR code session not found"
+            )
+        
+        # Verify ownership
+        if session.get("user_id") != current_user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to check this session"
+            )
+        
+        # Determine status based on expiration
+        if datetime.now(timezone.utc) > session.get("expires_at"):
+            status_value = "expired"
+        else:
+            status_value = session.get("status", "pending")
+        
+        return {
+            "session_id": session_id,
+            "device_type": session.get("device_type"),
+            "device_name": session.get("device_name"),
+            "status": status_value,
+            "is_verified": session.get("is_verified", False),
+            "verified_at": session.get("verified_at"),
+            "verified_from": session.get("verified_from"),
+            "created_at": session.get("created_at"),
+            "expires_at": session.get("expires_at")
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"[QR_CODE] Failed to get session status: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get QR code status"
+        )
+
+
+@router.delete("/qrcode/cancel/{session_id}")
+async def cancel_qr_code_session(
+    session_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Cancel a QR code session before it expires.
+    Only the user who generated the QR code can cancel it.
+    """
+    try:
+        auth_log(f"[QR_CODE] Cancelling session: {session_id}")
+        
+        # Get qr_sessions collection
+        try:
+            db = users_collection().client.get_database(settings.DATABASE_NAME)
+            qr_sessions = db.qr_sessions
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is unavailable"
+            )
+        
+        # Find the session
+        try:
+            session = await asyncio.wait_for(
+                qr_sessions.find_one({"_id": ObjectId(session_id)}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out"
+            )
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR code session not found"
+            )
+        
+        # Verify ownership
+        if session.get("user_id") != current_user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to cancel this session"
+            )
+        
+        # Cancel the session
+        try:
+            await asyncio.wait_for(
+                qr_sessions.update_one(
+                    {"_id": ObjectId(session_id)},
+                    {"$set": {"status": "cancelled"}}
+                ),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out"
+            )
+        
+        auth_log(f"[QR_CODE] Session cancelled: {session_id}")
+        
+        return {
+            "success": True,
+            "message": "QR code session cancelled successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"[QR_CODE] Failed to cancel session: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cancel QR code session"
+        )
+
+
+@router.get("/qrcode/sessions")
+async def list_qr_sessions(current_user: str = Depends(get_current_user)):
+    """
+    List all QR code sessions for the current user.
+    Shows both pending and verified sessions (up to last 30 days).
+    """
+    try:
+        auth_log(f"[QR_CODE] Listing sessions for user: {current_user}")
+        
+        # Get qr_sessions collection
+        try:
+            db = users_collection().client.get_database(settings.DATABASE_NAME)
+            qr_sessions = db.qr_sessions
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service is unavailable"
+            )
+        
+        # Get sessions from last 30 days
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        
+        try:
+            sessions = await asyncio.wait_for(
+                qr_sessions.find({
+                    "user_id": current_user,
+                    "created_at": {"$gte": thirty_days_ago}
+                }).sort("created_at", -1).to_list(100),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out"
+            )
+        
+        # Format response
+        result = []
+        for session in sessions:
+            result.append({
+                "session_id": str(session.get("_id")),
+                "device_type": session.get("device_type"),
+                "device_name": session.get("device_name"),
+                "status": "expired" if datetime.now(timezone.utc) > session.get("expires_at") else session.get("status"),
+                "is_verified": session.get("is_verified", False),
+                "created_at": session.get("created_at"),
+                "verified_at": session.get("verified_at"),
+                "verified_from": session.get("verified_from")
+            })
+        
+        return {
+            "total": len(result),
+            "sessions": result
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"[QR_CODE] Failed to list sessions: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list QR code sessions"
+        )

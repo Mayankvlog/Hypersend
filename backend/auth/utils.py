@@ -10,6 +10,15 @@ from fastapi import HTTPException, status, Depends, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import settings
 from models import TokenData
+import secrets
+import string
+import base64
+import json
+try:
+    import qrcode
+except ImportError:
+    qrcode = None
+from io import BytesIO
 
 logger = logging.getLogger("auth")
 security = HTTPBearer()
@@ -189,3 +198,97 @@ async def get_current_user_from_query(token: Optional[str] = Query(None)) -> str
         )
     
     return token_data.user_id
+
+# ===== QR CODE FUNCTIONS FOR MULTI-DEVICE CONNECTION =====
+
+def generate_session_code(length: int = 6) -> str:
+    """Generate a random numeric session code for QR verification.
+    
+    Args:
+        length: Length of the code (default 6 digits)
+        
+    Returns:
+        Random numeric string
+    """
+    digits = string.digits
+    return ''.join(secrets.choice(digits) for _ in range(length))
+
+
+def generate_qr_code(data: dict) -> Tuple[str, str]:
+    """Generate QR code and return as base64 encoded image.
+    
+    Args:
+        data: Dictionary containing session and user information to encode
+        
+    Returns:
+        Tuple of (base64_encoded_qr_image, json_string)
+    """
+    try:
+        # Convert data to JSON string
+        json_data = json.dumps(data)
+        
+        # Create QR code instance
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=2,
+        )
+        qr.add_data(json_data)
+        qr.make(fit=True)
+        
+        # Create PIL image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to base64
+        buffered = BytesIO()
+        img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        
+        return f"data:image/png;base64,{img_str}", json_data
+    except Exception as e:
+        logger.error(f"Failed to generate QR code: {str(e)}")
+        raise ValueError("Failed to generate QR code")
+
+
+def create_qr_session_payload(
+    user_id: str, 
+    session_id: str, 
+    session_code: str, 
+    device_type: str,
+    server_url: Optional[str] = None
+) -> dict:
+    """Create payload for QR code encoding.
+    
+    Args:
+        user_id: The user's ID
+        session_id: Unique session ID
+        session_code: Verification code
+        device_type: Type of device (mobile, web, desktop)
+        server_url: Server URL for verification
+        
+    Returns:
+        Dictionary with QR code payload
+    """
+    return {
+        "user_id": user_id,
+        "session_id": session_id,
+        "session_code": session_code,
+        "device_type": device_type,
+        "server_url": server_url or settings.SERVER_URL,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "version": "1.0"
+    }
+
+
+def validate_session_code(provided_code: str, stored_code: str) -> bool:
+    """Validate session code with timing attack protection.
+    
+    Args:
+        provided_code: Code provided by user
+        stored_code: Code stored in database
+        
+    Returns:
+        True if codes match
+    """
+    return hmac.compare_digest(provided_code, stored_code)

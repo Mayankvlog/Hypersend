@@ -25,3 +25,6 @@ h2>=4.1.0
 
 # Configuration
 python-dotenv==1.0.1
+# QR Code Generation
+qrcode[pil]==8.0
+Pillow>=10.0.0
