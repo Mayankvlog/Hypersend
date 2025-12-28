@@ -24,6 +24,20 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   bool _isUploading = false;
   Uint8List? _pickedFileBytes;
   String? _pickedFileName;
+  
+  // Add debouncing to prevent infinite requests
+  DateTime? _lastSaveAttempt;
+  static const Duration _debounceDelay = Duration(seconds: 2);
+  
+  // Build NetworkImage with proper error handling to prevent infinite GET requests
+  ImageProvider? _buildNetworkImage(String avatarUrl) {
+    if (avatarUrl.startsWith('http')) {
+      return NetworkImage(avatarUrl);
+    } else if (avatarUrl.startsWith('/')) {
+      return NetworkImage('${ApiConstants.serverBaseUrl}$avatarUrl');
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -87,11 +101,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                     backgroundColor: AppTheme.primaryCyan,
                     backgroundImage: _pickedFileBytes != null
                         ? MemoryImage(_pickedFileBytes!)
-                        : widget.currentAvatar.startsWith('http')
-                            ? NetworkImage(widget.currentAvatar)
-                            : widget.currentAvatar.startsWith('/')
-                                ? NetworkImage('${ApiConstants.serverBaseUrl}${widget.currentAvatar}')
-                                : null,
+                        : _buildNetworkImage(widget.currentAvatar),
                     child: _pickedFileBytes == null && !(widget.currentAvatar.startsWith('http') || widget.currentAvatar.startsWith('/'))
                         ? Text(
                             _selectedPhoto,
@@ -194,11 +204,19 @@ Future<void> _pickImage() async {
   }
 
 Future<void> _handleSave() async {
-    // Prevent duplicate save calls
+    // Prevent duplicate save calls with debouncing
+    final now = DateTime.now();
     if (_isUploading) {
       debugPrint('[PROFILE_PHOTO] Save already in progress, ignoring duplicate call');
       return;
     }
+    
+    if (_lastSaveAttempt != null && 
+        now.difference(_lastSaveAttempt!) < _debounceDelay) {
+      debugPrint('[PROFILE_PHOTO] Save attempt too soon, debouncing');
+      return;
+    }
+    _lastSaveAttempt = now;
     
     debugPrint('[PROFILE_PHOTO] _handleSave called');
     debugPrint('[PROFILE_PHOTO] _pickedFileBytes: ${_pickedFileBytes != null ? "not null (${_pickedFileBytes!.length} bytes)" : "null"}');
@@ -281,7 +299,11 @@ Future<void> _handleSave() async {
         ),
       );
     } finally {
-      if (mounted) setState(() => _isUploading = false);
+      if (mounted) {
+        setState(() => _isUploading = false);
+        // Reset debounce timer on error to prevent immediate retry
+        _lastSaveAttempt = DateTime.now().subtract(const Duration(seconds: 1));
+      }
     }
   }
 }
