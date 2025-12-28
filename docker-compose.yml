@@ -47,8 +47,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    command: mongod --auth --bind_ip 0.0.0.0
+      start_period: 40s
+    command: 
+      - mongod
+      - --auth
+      - --bind_ip
+      - 0.0.0.0
+      - --wiredTigerCacheSizeGB
+      - "0.5"
     logging:
       driver: "json-file"
       options:
@@ -86,7 +92,7 @@ services:
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       DEBUG: "False"
-      USE_MOCK_DB: "False"
+      USE_MOCK_DB: "False"  # CRITICAL: Use real database in production
       CORS_ORIGINS: "*,http://localhost,http://localhost:8000,http://localhost:3000,http://127.0.0.1,http://127.0.0.1:8000,http://127.0.0.1:3000,http://0.0.0.0:8000,http://backend:8000,http://frontend,https://zaply.in.net,http://zaply.in.net,https://www.zaply.in.net,http://zaply.in.net:8000"
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -107,7 +113,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 5
-      start_period: 60s
+      start_period: 90s
     logging:
       driver: "json-file"
       options:

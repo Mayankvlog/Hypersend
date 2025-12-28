@@ -27,9 +27,10 @@ async def init_mongodb():
         try:
             client = AsyncIOMotorClient(
                 settings.MONGODB_URI,
-                serverSelectionTimeoutMS=5000,
+                serverSelectionTimeoutMS=15000,  # Increased for VPS
+                connectTimeoutMS=15000,
             )
-            await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
+            await asyncio.wait_for(client.admin.command('ping'), timeout=10.0)
             print("[MONGO_INIT] Connected with existing credentials")
         except asyncio.TimeoutError:
             print("[MONGO_INIT] Connection timeout - MongoDB might not be ready yet")
@@ -54,8 +55,8 @@ async def init_mongodb():
             root_uri = f"mongodb://{quote_plus(root_user)}:{quote_plus(root_password)}@{parsed.hostname}:{parsed.port or 27017}/admin?authSource=admin"
             
             try:
-                root_client = AsyncIOMotorClient(root_uri, serverSelectionTimeoutMS=5000)
-                await asyncio.wait_for(root_client.admin.command('ping'), timeout=5.0)
+                root_client = AsyncIOMotorClient(root_uri, serverSelectionTimeoutMS=15000, connectTimeoutMS=15000)
+                await asyncio.wait_for(root_client.admin.command('ping'), timeout=10.0)
                 print("[MONGO_INIT] Connected as root user")
                 
                 # Create application user
@@ -87,9 +88,10 @@ async def init_mongodb():
                 # Now connect with the application user
                 client = AsyncIOMotorClient(
                     settings.MONGODB_URI,
-                    serverSelectionTimeoutMS=5000,
+                    serverSelectionTimeoutMS=15000,
+                    connectTimeoutMS=15000,
                 )
-                await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
+                await asyncio.wait_for(client.admin.command('ping'), timeout=10.0)
                 print("[MONGO_INIT] Connected with application user")
                 
             except asyncio.TimeoutError:
@@ -181,7 +183,7 @@ async def ensure_mongodb_ready():
     """
     Wait for MongoDB to be ready and initialize it
     """
-    max_retries = 60
+    max_retries = 120  # Increased for VPS
     retry_count = 0
     
     while retry_count < max_retries:
@@ -193,7 +195,7 @@ async def ensure_mongodb_ready():
             error_str = str(e)
             if retry_count < max_retries:
                 print(f"[MONGO_INIT] Retry {retry_count}/{max_retries}: {error_str[:100]}")
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1)  # Wait 1 second between retries
             else:
                 print(f"[MONGO_INIT] Failed to initialize after {max_retries} retries")
                 print(f"[MONGO_INIT] Last error: {error_str}")

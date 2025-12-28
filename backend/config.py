@@ -28,18 +28,19 @@ class Settings:
         MONGODB_URI: str = os.getenv("MONGODB_URI")
     else:
         # Construct MONGODB_URI with proper URL encoding for special characters in password
-        # Include authentication for production MongoDB
         from urllib.parse import quote_plus
         encoded_password = quote_plus(_MONGO_PASSWORD)
-        # Connect directly to the target database with authentication
-        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin"
+        # Connect directly to target database with admin authentication
+        # Include replicaSet and retry logic for VPS deployments
+        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&retryWrites=true&w=majority"
+        print(f"[CONFIG] MongoDB connection: authenticated with retries")
     
     # Log connection info without exposing credentials
     if '@' in MONGODB_URI:
         host_info = MONGODB_URI.split('@')[1].split('/')[0]
-        print(f"[CONFIG] MongoDB connection: {host_info}")
+        print(f"[CONFIG] MongoDB URI host: {host_info}")
     else:
-        print(f"[CONFIG] MongoDB connection: no-auth")
+        print(f"[CONFIG] MongoDB connection: direct connection")
     
     # Security
     # SECRET_KEY must be set in production - no fallbacks allowed
@@ -83,11 +84,17 @@ class Settings:
     # Default DEBUG to True for development; set to False in production with proper SECRET_KEY
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     
-    # Mock mode for testing without MongoDB
+    # Mock mode for testing without MongoDB - CRITICAL: Default to False for production
     use_mock_db_env = os.getenv("USE_MOCK_DB", "False")
     print(f"[CONFIG] USE_MOCK_DB env var: '{use_mock_db_env}'")
     USE_MOCK_DB: bool = use_mock_db_env.lower() in ("true", "1", "yes")
     print(f"[CONFIG] USE_MOCK_DB final: {USE_MOCK_DB}")
+    if USE_MOCK_DB:
+        print("[CONFIG] ⚠️ USING MOCK DATABASE - FOR TESTING ONLY")
+    
+    # CRITICAL: Production safety check
+    if not DEBUG and USE_MOCK_DB:
+        raise RuntimeError("🚨 PRODUCTION SAFETY ERROR: Mock database cannot be used in production. Set USE_MOCK_DB=False")
     
     # CORS Configuration
     # FIX: Load from environment or use defaults that support all access patterns

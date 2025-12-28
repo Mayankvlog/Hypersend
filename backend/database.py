@@ -9,36 +9,54 @@ db = None
 
 
 async def connect_db():
-    """Connect to MongoDB"""
+    """Connect to MongoDB with improved retry logic for VPS"""
     global client, db
-    try:
-        # Create client with server selection timeout
-        client = AsyncIOMotorClient(
-            settings.MONGODB_URI,
-            serverSelectionTimeoutMS=5000,  # 5 second timeout
-            connectTimeoutMS=5000,
-            socketTimeoutMS=5000
-        )
-        # Test the connection
-        await client.admin.command('ping')
-        db = client.hypersend
-        # Avoid leaking full connection string in logs; only log when DEBUG is enabled
-        if settings.DEBUG:
-            try:
-                safe_uri = settings.MONGODB_URI.split("@")[-1]
-            except Exception:
-                safe_uri = "[redacted]"
-            print(f"[OK] Connected to MongoDB: {safe_uri}")
-    except Exception as e:
-        error_msg = str(e)
-        print(f"[ERROR] Failed to connect to MongoDB")
-        print(f"[ERROR] Details: {error_msg}")
-        print("[ERROR] Troubleshooting steps:")
-        print("  1. Check if MongoDB is running")
-        print("  2. Verify connection string format")
-        print("  3. Check network connectivity")
-        print("  4. Validate authentication credentials")
-        raise
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            # Create client with extended timeouts for VPS connectivity
+            client = AsyncIOMotorClient(
+                settings.MONGODB_URI,
+                serverSelectionTimeoutMS=10000,  # 10 second timeout
+                connectTimeoutMS=10000,
+                socketTimeoutMS=30000,
+                retryWrites=True,
+                maxPoolSize=50,
+                minPoolSize=10
+            )
+            # Test the connection
+            await client.admin.command('ping')
+            db = client[settings._MONGO_DB]
+            
+            if settings.DEBUG:
+                try:
+                    safe_uri = settings.MONGODB_URI.split("@")[-1]
+                except Exception:
+                    safe_uri = "[redacted]"
+                print(f"[OK] Connected to MongoDB: {safe_uri}")
+            return
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[ERROR] MongoDB connection attempt {attempt + 1}/{max_retries} failed")
+            print(f"[ERROR] Details: {error_msg}")
+            
+            if attempt < max_retries - 1:
+                import asyncio
+                print(f"[ERROR] Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+                continue
+            else:
+                print("[ERROR] All connection attempts failed. Troubleshooting steps:")
+                print("  1. Verify MongoDB container is running: docker ps | grep mongodb")
+                print("  2. Check MongoDB logs: docker logs hypersend_mongodb")
+                print("  3. Verify credentials: MONGO_USER, MONGO_PASSWORD in docker-compose.yml")
+                print(f"  4. Check host:port connectivity: {settings._MONGO_HOST}:{settings._MONGO_PORT}")
+                print("  5. Ensure MongoDB is bound to 0.0.0.0 (check: mongod --bind_ip 0.0.0.0)")
+                print("  6. For VPS, verify firewall allows MongoDB port")
+                raise
 
 
 async def close_db():
