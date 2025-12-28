@@ -46,6 +46,6 @@ class ApiConstants {
   // Security: Validate SSL certificates in production
   static const bool validateCertificates = bool.fromEnvironment(
     'VALIDATE_CERTIFICATES',
-    defaultValue: true,
+    defaultValue: true, // CRITICAL: Always validate SSL in production
   );
 }

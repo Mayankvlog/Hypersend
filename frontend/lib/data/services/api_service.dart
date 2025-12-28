@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/constants/api_constants.dart';
 import 'dart:convert';
 
@@ -24,16 +25,41 @@ class ApiService {
     
     _log('[API_INIT] Base URL: $url');
     _log('[API_INIT] Auth endpoint: ${ApiConstants.authEndpoint}');
+    _log('[API_INIT] SSL validation: ${ApiConstants.validateCertificates}');
 
     _dio = Dio(
       BaseOptions(
         baseUrl: url,
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 10),
-        sendTimeout: const Duration(seconds: 10),
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+        sendTimeout: const Duration(seconds: 15),
         contentType: 'application/json',
+        // CRITICAL: Remove validateStatus to properly handle 4xx errors
+        headers: {
+          'User-Agent': 'Zaply-Flutter-Web/1.0',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
       ),
     );
+
+    // SSL validation - platform-specific handling
+    if (!ApiConstants.validateCertificates && kDebugMode) {
+      // Only mobile platforms support onHttpClientCreate
+      if (!kIsWeb) {
+        (_dio.httpClientAdapter as dynamic).onHttpClientCreate = (client) {
+          client.badCertificateCallback = (cert, host, port) => true;
+          return client;
+        };
+        _log('[API_SECURITY] ⚠️ SSL validation disabled - DEBUG MODE ONLY');
+      } else {
+        // Flutter Web: SSL validation cannot be disabled programmatically
+        _log('[API_SECURITY] ⚠️ SSL validation forced on - Flutter Web limitation');
+        _log('[API_SECURITY] 🔒 Browser controls SSL certificates');
+      }
+    } else {
+      _log('[API_SECURITY] 🔒 SSL validation enabled - SECURE');
+    }
 
     // Add interceptor for logging (disabled print to avoid leaking secrets)
     _dio.interceptors.add(LogInterceptor(
@@ -103,10 +129,15 @@ class ApiService {
         return 'Cannot connect to server. Please check:\n'
             '1. ✓ Internet connection is active\n'
             '2. Server is running: ${ApiConstants.serverBaseUrl}\n'
-            '3. API endpoint (${ApiConstants.baseUrl}) is reachable\n\n'
+            '3. API endpoint (${ApiConstants.baseUrl}) is reachable\n'
+            '4. SSL certificates are valid (${ApiConstants.validateCertificates ? "enabled" : "disabled"})\n'
+            '5. Security mode: ${ApiConstants.validateCertificates ? "SECURE 🔒" : "DEBUG MODE ⚠️"}\n'
+            '6. Platform: ${kIsWeb ? "Flutter Web (browser controls SSL)" : "Mobile"}\n\n'
+            'Debug info: ${error.message}\n\n'
             'If you continue seeing this error:\n'
             '• Verify: https://zaply.in.net/health\n'
-            '• Check VPS status and backend logs';
+            '• Check backend container logs: docker compose logs backend\n'
+            '• Ensure nginx is proxying requests correctly';
       case DioExceptionType.unknown:
         if (error.message?.contains('SocketException') == true) {
           return 'Network error. Please check internet connection and ensure ${ApiConstants.serverBaseUrl} is accessible.';
@@ -667,6 +698,40 @@ Future<void> postToChannel(String channelId, String text) async {
       withData: true,
       allowMultiple: false,
     );
+  }
+
+  // Test connectivity to API endpoints
+  Future<Map<String, dynamic>> testConnectivity() async {
+    try {
+      _log('[API_CONNECTIVITY] Testing connection to ${_dio.options.baseUrl}');
+      
+      // Test health endpoint
+      final healthResponse = await _dio.get('/health');
+      _log('[API_CONNECTIVITY] Health endpoint: ${healthResponse.statusCode}');
+      
+      // Test auth endpoint availability
+      try {
+        await _dio.head('${ApiConstants.authEndpoint}/login');
+        _log('[API_CONNECTIVITY] Auth endpoint: Available');
+      } catch (e) {
+        _log('[API_CONNECTIVITY] Auth endpoint error: $e');
+      }
+      
+      return {
+        'connected': true,
+        'baseUrl': _dio.options.baseUrl,
+        'authEndpoint': '${ApiConstants.authEndpoint}/login',
+        'healthStatus': healthResponse.statusCode,
+      };
+    } catch (e) {
+      _log('[API_CONNECTIVITY] Connection failed: $e');
+      return {
+        'connected': false,
+        'error': e.toString(),
+        'baseUrl': _dio.options.baseUrl,
+        'serverUrl': ApiConstants.serverBaseUrl,
+      };
+    }
   }
 
   // Contact Management Methods

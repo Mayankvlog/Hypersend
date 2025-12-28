@@ -120,6 +120,7 @@ services:
       dockerfile: Dockerfile
       args:
         API_BASE_URL: "https://zaply.in.net/api/v1"
+        VALIDATE_CERTIFICATES: "true"
     container_name: hypersend_frontend
     restart: unless-stopped
     depends_on:
