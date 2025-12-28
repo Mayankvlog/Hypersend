@@ -47,7 +47,7 @@ from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configure logger
 logger = logging.getLogger(__name__)

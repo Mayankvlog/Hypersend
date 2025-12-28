@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 import logging
 
@@ -87,23 +87,23 @@ async def subscribe_channel(channel_id: str, current_user: str = Depends(get_cur
          # For now, allow join if they have the ID (link sharing logic to be improved)
          pass
 
-        # Update channel atomically with proper member count
-        result = await chats_collection().update_one(
-            {"_id": channel_id},
-            {
-                "$addToSet": {"members": current_user}
-            }
-        )
+    # Update channel atomically with proper member count
+    result = await chats_collection().update_one(
+        {"_id": channel_id},
+        {
+            "$addToSet": {"members": current_user}
+        }
+    )
         
-        if result.modified_count > 0:
-            # Recalculate member count to avoid race conditions
-            channel = await chats_collection().find_one({"_id": channel_id})
-            if channel:
-                new_member_count = len(channel.get("members", []))
-                await chats_collection().update_one(
-                    {"_id": channel_id},
-                    {"$set": {"member_count": new_member_count}}
-                )
+    if result.modified_count > 0:
+        # Recalculate member count to avoid race conditions
+        channel = await chats_collection().find_one({"_id": channel_id})
+        if channel:
+            new_member_count = len(channel.get("members", []))
+            await chats_collection().update_one(
+                {"_id": channel_id},
+                {"$set": {"member_count": new_member_count}}
+            )
     return {"status": "subscribed"}
 
 @router.post("/{channel_id}/unsubscribe")

@@ -11,7 +11,7 @@ from typing import Dict, Optional
 import asyncio
 import uuid
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from db_proxy import files_collection, chats_collection
 from auth.utils import get_current_user
 

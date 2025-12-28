@@ -7,7 +7,8 @@ from db_proxy import users_collection, chats_collection, messages_collection, fi
 from auth.utils import get_current_user
 import asyncio
 from pydantic import BaseModel, Field, field_validator
-from datetime import datetime
+from datetime import datetime, timezone
+from config import settings
 from typing import Optional
 import re
 import logging
@@ -1123,7 +1124,6 @@ async def list_avatars():
 async def get_avatar(filename: str, current_user: str = Depends(get_current_user)):
     """Get user avatar - authenticated access only"""
     from fastapi.responses import FileResponse
-    from datetime import datetime
     import os
     
     logger.info(f"[AVATAR] Avatar requested: {filename}")

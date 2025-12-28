@@ -9,26 +9,73 @@ from auth.utils import (
     create_refresh_token, decode_token, get_current_user, get_current_user_from_query
 )
 from config import settings
-from datetime import timezone
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
 import jwt
 import smtplib
 from email.message import EmailMessage
 from collections import defaultdict
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Rate limiting using session-based storage (replace with Redis for production)
-# These would be replaced with distributed storage like Redis in production
+# Rate limiting with memory cleanup for production safety
+# In production, replace with Redis or similar distributed storage
+login_attempts: Dict[str, List[datetime]] = defaultdict(list)
+failed_login_attempts: Dict[str, Tuple[int, datetime]] = {}
+
+# Configuration for rate limiting
+MAX_LOGIN_ATTEMPTS_PER_IP = 20  # Maximum attempts per IP per 5 minutes
+LOGIN_ATTEMPT_WINDOW = 300  # 5 minutes in seconds
+ACCOUNT_LOCKOUT_DURATION = 900  # 15 minutes in seconds (final lockout)
+MAX_FAILED_ATTEMPTS_PER_ACCOUNT = 5  # Maximum failed attempts per account before lockout
+
+# Progressive lockout durations (in seconds)
+# Note: For attempts beyond 5, we use attempt 5's duration to prevent lockout decrease
+PROGRESSIVE_LOCKOUTS = {
+    1: 300,   # 5 minutes after 1st failed attempt
+    2: 600,   # 10 minutes after 2nd failed attempt
+    3: 900,   # 15 minutes after 3rd failed attempt
+    4: 1200,  # 20 minutes after 4th failed attempt
+    5: 1800,   # 30 minutes after 5th failed attempt (maximum duration)
+}
 
 
 def auth_log(message: str) -> None:
     """Log auth-related messages only when DEBUG is enabled."""
     if settings.DEBUG:
         print(message)
+
+
+def cleanup_old_attempts() -> None:
+    """Clean up old rate limiting attempts to prevent memory leaks."""
+    current_time = datetime.now(timezone.utc)
+    cutoff_time = current_time - timedelta(seconds=LOGIN_ATTEMPT_WINDOW)
+    
+    # Clean up old IP-based attempts
+    ips_to_remove = []
+    for ip, attempts in login_attempts.items():
+        # Remove old attempts
+        login_attempts[ip] = [t for t in attempts if t > cutoff_time]
+        # Mark for removal if no recent attempts
+        if not login_attempts[ip]:
+            ips_to_remove.append(ip)
+    
+    for ip in ips_to_remove:
+        del login_attempts[ip]
+    
+    # Clean up expired account lockouts
+    emails_to_remove = []
+    for email, (attempts, lockout_until) in failed_login_attempts.items():
+        if current_time > lockout_until:
+            emails_to_remove.append(email)
+    
+    for email in emails_to_remove:
+        del failed_login_attempts[email]
+    
+    if settings.DEBUG and (ips_to_remove or emails_to_remove):
+        auth_log(f"[AUTH] Cleanup: removed {len(ips_to_remove)} IPs, {len(emails_to_remove)} expired lockouts")
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -157,40 +204,31 @@ async def register(user: UserCreate):
 async def login(credentials: UserLogin, request: Request):
     """Login and receive JWT tokens"""
     try:
+        # Cleanup old attempts to prevent memory leaks
+        cleanup_old_attempts()
+        
         # Rate limiting check
         client_ip = request.client.host if request.client else "unknown"
         current_time = datetime.now(timezone.utc)
         
-        # Check failed login attempts (account lockout) - use database in production
-        # This is a simplified version - replace with Redis/Redis for production
-        failed_attempts = 0
-        lockout_until = None
-            # Note: Implement proper rate limiting with Redis for production
-        if False:  # Disabled for now - implement distributed rate limiting
-                remaining = int((lockout_until - current_time).total_seconds() / 60)
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Account temporarily locked. Try again in {remaining} minutes."
-                )
-            elif current_time >= lockout_until:
-                # Reset after lockout period
-                del failed_login_attempts[credentials.email]
-        
-        # Simple rate limiting by IP (50 attempts per 5 minutes for dev/testing)
+        # IP-based rate limiting to prevent brute force attacks (check only, don't record yet)
         if client_ip in login_attempts:
-            # Remove attempts older than 5 minutes
+            # Clean up old attempts (memory leak prevention)
+            cutoff_time = current_time - timedelta(seconds=LOGIN_ATTEMPT_WINDOW)
             login_attempts[client_ip] = [
-                t for t in login_attempts[client_ip] 
-                if (current_time - t).total_seconds() < 300
+                t for t in login_attempts[client_ip]
+                if t > cutoff_time
             ]
-            # Check if too many attempts
-            if len(login_attempts[client_ip]) >= 50:
+            
+            # Check if IP exceeded rate limit
+            if len(login_attempts[client_ip]) >= MAX_LOGIN_ATTEMPTS_PER_IP:
+                retry_after = LOGIN_ATTEMPT_WINDOW - (current_time - login_attempts[client_ip][0]).total_seconds()
+                auth_log(f"[AUTH] IP rate limit exceeded for {client_ip}: {len(login_attempts[client_ip])} attempts")
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Too many login attempts. Please try again in 5 minutes."
+                    detail=f"Too many login attempts from this IP. Please try again in {int(retry_after)} seconds.",
+                    headers={"Retry-After": str(int(retry_after))}
                 )
-        
-        login_attempts[client_ip].append(current_time)
         
         auth_log(f"[AUTH] Login attempt for user: {credentials.email[:3]}***@{credentials.email.split('@')[1] if '@' in credentials.email else '***'}")
         
@@ -221,18 +259,49 @@ async def login(credentials: UserLogin, request: Request):
             )
         
         if not user:
-            # Track failed attempt
+            # Track failed attempt with proper progressive lockout
             if credentials.email in failed_login_attempts:
                 attempts, _ = failed_login_attempts[credentials.email]
-                failed_login_attempts[credentials.email] = (attempts + 1, current_time + timedelta(minutes=15))
+                new_attempts = attempts + 1
+                
+                # Use progressive lockout durations with maximum protection
+                if new_attempts in PROGRESSIVE_LOCKOUTS:
+                    lockout_duration = PROGRESSIVE_LOCKOUTS[new_attempts]
+                else:
+                    # For attempts beyond 5, use maximum duration (30 minutes)
+                    # This prevents lockout duration from decreasing on attempts 6+
+                    lockout_duration = PROGRESSIVE_LOCKOUTS[5]  # 1800 seconds (30 minutes)
+                
+                lockout_time = current_time + timedelta(seconds=lockout_duration)
+                failed_login_attempts[credentials.email] = (new_attempts, lockout_time)
+                auth_log(f"[AUTH] Progressive lockout: {credentials.email}, attempt {new_attempts}, duration {lockout_duration}s")
             else:
-                failed_login_attempts[credentials.email] = (1, current_time + timedelta(minutes=15))
+                # First failed attempt
+                lockout_duration = PROGRESSIVE_LOCKOUTS[1]
+                lockout_time = current_time + timedelta(seconds=lockout_duration)
+                failed_login_attempts[credentials.email] = (1, lockout_time)
+                auth_log(f"[AUTH] First failed attempt: {credentials.email}, {lockout_duration}s lockout")
+            
+            # Record this failed attempt (after credential validation failure)
+            login_attempts[client_ip].append(current_time)
             
             auth_log(f"[AUTH] Login failed - User not found")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
             )
+        
+        # Check account lockout status
+        if credentials.email in failed_login_attempts:
+            attempts, lockout_until = failed_login_attempts[credentials.email]
+            if current_time < lockout_until:
+                remaining_time = int((lockout_until - current_time).total_seconds())
+                auth_log(f"[AUTH] Account locked: {credentials.email}, attempts: {attempts}, remaining: {remaining_time}s")
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Account temporarily locked due to too many failed attempts. Please try again in {remaining_time} seconds.",
+                    headers={"Retry-After": str(remaining_time)}
+                )
         
         auth_log(f"[AUTH] User found: {user.get('_id')} - Verifying password")
         
@@ -245,12 +314,31 @@ async def login(credentials: UserLogin, request: Request):
         auth_log(f"[AUTH] Password verification result: {password_valid}")
         
         if not password_valid:
-            # Track failed attempt
+            # Track failed attempt with proper progressive lockout
             if credentials.email in failed_login_attempts:
                 attempts, _ = failed_login_attempts[credentials.email]
-                failed_login_attempts[credentials.email] = (attempts + 1, current_time + timedelta(minutes=15))
+                new_attempts = attempts + 1
+                
+                # Use progressive lockout durations with maximum protection
+                if new_attempts in PROGRESSIVE_LOCKOUTS:
+                    lockout_duration = PROGRESSIVE_LOCKOUTS[new_attempts]
+                else:
+                    # For attempts beyond 5, use maximum duration (30 minutes)
+                    # This prevents lockout duration from decreasing on attempts 6+
+                    lockout_duration = PROGRESSIVE_LOCKOUTS[5]  # 1800 seconds (30 minutes)
+                
+                lockout_time = current_time + timedelta(seconds=lockout_duration)
+                failed_login_attempts[credentials.email] = (new_attempts, lockout_time)
+                auth_log(f"[AUTH] Progressive lockout: {credentials.email}, attempt {new_attempts}, duration {lockout_duration}s")
             else:
-                failed_login_attempts[credentials.email] = (1, current_time + timedelta(minutes=15))
+                # First failed attempt
+                lockout_duration = PROGRESSIVE_LOCKOUTS[1]
+                lockout_time = current_time + timedelta(seconds=lockout_duration)
+                failed_login_attempts[credentials.email] = (1, lockout_time)
+                auth_log(f"[AUTH] First failed attempt: {credentials.email}, {lockout_duration}s lockout")
+            
+            # Record this failed attempt (after credential validation failure)
+            login_attempts[client_ip].append(current_time)
             
             auth_log(f"[AUTH] Login failed - Incorrect password")
             raise HTTPException(
@@ -261,6 +349,9 @@ async def login(credentials: UserLogin, request: Request):
         # Clear failed attempts on successful login
         if credentials.email in failed_login_attempts:
             del failed_login_attempts[credentials.email]
+        
+        # Record this login attempt ONLY after successful credential validation
+        login_attempts[client_ip].append(current_time)
         
         auth_log(f"[AUTH] Password verified - Creating tokens for user: {user.get('_id')}")
         

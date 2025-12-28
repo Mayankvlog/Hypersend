@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 from models import ChatCreate, MessageCreate
 from db_proxy import chats_collection, messages_collection, users_collection

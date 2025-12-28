@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/updates", tags=["Updates"])
 
