@@ -967,16 +967,27 @@ async def change_email(
         )
 
 
+@router.options("/avatar/")
+async def avatar_options():
+    """Handle CORS preflight for avatar endpoint"""
+    return {"status": "ok", "methods": ["GET", "POST", "OPTIONS"]}
+
 @router.post("/avatar/")
 async def upload_avatar(
     file: UploadFile = File(...),
     current_user: str = Depends(get_current_user)
 ):
-    """Upload user avatar"""
+    """Upload user avatar - POST endpoint"""
     try:
         import shutil
         import os
         import uuid
+        
+        print(f"[AVATAR-POST] ===== AVATAR UPLOAD POST STARTED =====")
+        print(f"[AVATAR-POST] User ID: {current_user}")
+        print(f"[AVATAR-POST] File name: {file.filename}")
+        print(f"[AVATAR-POST] Content type: {file.content_type}")
+        print(f"[AVATAR-POST] ===== END HEADERS =====")
         
         _log("info", f"Avatar upload request - Filename: {file.filename}", {"user_id": current_user, "operation": "avatar_upload"})
         
@@ -1093,35 +1104,48 @@ async def upload_avatar(
             "avatar_url": avatar_url,
             "success": True,
             "filename": new_file_name,
-            "message": "Avatar uploaded successfully"
+            "message": "Avatar uploaded successfully",
+            "status": "upload_complete"
         }
-        print(f"[AVATAR] Returning POST response: {response_data}")
+        print(f"[AVATAR-POST] ===== SUCCESS RESPONSE =====")
+        print(f"[AVATAR-POST] Response data: {response_data}")
+        print(f"[AVATAR-POST] ===== END RESPONSE =====")
         return JSONResponse(status_code=200, content=response_data)
         
-    except HTTPException:
+    except HTTPException as http_exc:
+        print(f"[AVATAR-POST] HTTPException: status={http_exc.status_code}, detail={http_exc.detail}")
         raise
     except Exception as e:
-        print(f"[AVATAR] Unexpected error: {str(e)}")
-        _log("error", f"Unexpected avatar upload error", {"user_id": current_user, "operation": "avatar_upload"})
+        print(f"[AVATAR-POST] ===== UNEXPECTED ERROR =====")
+        print(f"[AVATAR-POST] Error type: {type(e).__name__}")
+        print(f"[AVATAR-POST] Error message: {str(e)}")
+        print(f"[AVATAR-POST] ===== END ERROR =====")
+        _log("error", f"Unexpected avatar upload error: {str(e)}", {"user_id": current_user, "operation": "avatar_upload"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to upload avatar"
+            detail=f"Failed to upload avatar: {str(e)}"
         )
 
 
 @router.get("/health")
 async def users_health():
     """Health check for users module"""
-    return {"status": "healthy", "module": "users", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {"status": "healthy", "module": "users", "timestamp": datetime.now(timezone.utc).isoformat(), "avatar_endpoint": "POST /api/v1/users/avatar/"}
 
 @router.get("/avatar-test")
 async def test_avatar_route():
-    """Test route to verify API routing"""
-    return {"message": "Avatar API is working", "status": "ok"}
+    """Test route to verify API routing for avatar endpoint"""
+    return {
+        "message": "Avatar API is working",
+        "status": "ok",
+        "post_endpoint": "POST /api/v1/users/avatar/ - Use this to upload",
+        "get_endpoint": "GET /api/v1/users/avatar/{filename} - Use this to retrieve"
+    }
 
 @router.get("/avatar/")
 async def list_avatars():
     """Handle GET requests to avatar endpoint without filename - Returns usage documentation"""
+    print(f"[AVATAR-GET] GET /users/avatar/ endpoint called - This usually means POST request failed")
     return {
         "error": "Use POST /api/v1/users/avatar/ to upload avatar",
         "message": "Avatar upload endpoint",
