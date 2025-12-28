@@ -4,9 +4,9 @@ from datetime import datetime
 from bson import ObjectId
 import logging
 
-from backend.auth.utils import get_current_user
-from backend.database import chats_collection, messages_collection, users_collection
-from backend.models import ChatCreate, MessageCreate, ChatType, ChatPermissions
+from auth.utils import get_current_user
+from db_proxy import chats_collection, messages_collection, users_collection
+from models import ChatCreate, MessageCreate, ChatType, ChatPermissions
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ async def create_channel(payload: ChatCreate, current_user: str = Depends(get_cu
         "admins": [current_user],
         "members": [current_user], # Creator is first subscriber
         "member_count": 1,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "permissions": ChatPermissions().model_dump(), # Default permissions
         "views_count": 0
     }
@@ -87,13 +87,23 @@ async def subscribe_channel(channel_id: str, current_user: str = Depends(get_cur
          # For now, allow join if they have the ID (link sharing logic to be improved)
          pass
 
-    await chats_collection().update_one(
-        {"_id": channel_id},
-        {
-            "$addToSet": {"members": current_user},
-            "$inc": {"member_count": 1}
-        }
-    )
+        # Update channel atomically with proper member count
+        result = await chats_collection().update_one(
+            {"_id": channel_id},
+            {
+                "$addToSet": {"members": current_user}
+            }
+        )
+        
+        if result.modified_count > 0:
+            # Recalculate member count to avoid race conditions
+            channel = await chats_collection().find_one({"_id": channel_id})
+            if channel:
+                new_member_count = len(channel.get("members", []))
+                await chats_collection().update_one(
+                    {"_id": channel_id},
+                    {"$set": {"member_count": new_member_count}}
+                )
     return {"status": "subscribed"}
 
 @router.post("/{channel_id}/unsubscribe")
@@ -104,13 +114,22 @@ async def unsubscribe_channel(channel_id: str, current_user: str = Depends(get_c
     if current_user == channel.get("owner_id"):
         raise HTTPException(status_code=400, detail="Owner cannot leave. Delete channel instead.")
 
-    await chats_collection().update_one(
+    result = await chats_collection().update_one(
         {"_id": channel_id},
         {
-            "$pull": {"members": current_user, "admins": current_user},
-            "$inc": {"member_count": -1}
+            "$pull": {"members": current_user, "admins": current_user}
         }
     )
+    
+    if result.modified_count > 0:
+        # Recalculate member count to avoid race conditions
+        channel = await chats_collection().find_one({"_id": channel_id})
+        if channel:
+            new_member_count = len(channel.get("members", []))
+            await chats_collection().update_one(
+                {"_id": channel_id},
+                {"$set": {"member_count": new_member_count}}
+            )
     return {"status": "unsubscribed"}
 
 @router.post("/{channel_id}/posts", status_code=201)
@@ -133,7 +152,7 @@ async def post_to_channel(
         "type": msg_type,
         "text": message.text,
         "file_id": message.file_id,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "views": 0,
         "author_signature": channel.get("name") # Default to channel name
     }
@@ -143,14 +162,13 @@ async def post_to_channel(
     # Update channel updated_at
     await chats_collection().update_one(
         {"_id": channel_id},
-        {"$set": {"updated_at": datetime.utcnow()}}
+        {"$set": {"updated_at": datetime.now(timezone.utc)}}
     )
     
     return {"message_id": msg_doc["_id"], "post": msg_doc}
 
 
-# New channel option: remove
-from backend.database import db
+
 
 @router.post("/{channel_id}/remove", status_code=200)
 async def remove_channel(channel_id: str, current_user: str = Depends(get_current_user)):

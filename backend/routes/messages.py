@@ -2,16 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
-from backend.auth.utils import get_current_user
-from backend.database import chats_collection, messages_collection
-from backend.models import MessageEditRequest, MessageReactionRequest
+from auth.utils import get_current_user
+from db_proxy import chats_collection, messages_collection
+from models import MessageEditRequest, MessageReactionRequest
 
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
 
 
 def _utcnow() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 async def _get_message_or_404(message_id: str) -> dict:

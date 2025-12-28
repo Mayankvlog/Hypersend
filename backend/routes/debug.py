@@ -4,9 +4,9 @@ These endpoints are only available in DEBUG mode
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends
-from backend.config import settings
-from backend.auth.utils import get_current_user
-from backend.models import ProfileUpdate, PasswordChangeRequest, EmailChangeRequest
+from config import settings
+from auth.utils import get_current_user
+from models import ProfileUpdate, PasswordChangeRequest, EmailChangeRequest
 from pydantic import BaseModel
 from typing import Dict, Any
 import json

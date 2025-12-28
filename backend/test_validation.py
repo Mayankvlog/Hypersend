@@ -6,7 +6,7 @@ Run this to test: python backend/test_validation.py
 import sys
 sys.path.insert(0, '.')
 
-from backend.models import (
+from models import (
     UserCreate, UserLogin, UserInDB, ProfileUpdate,
     EmailChangeRequest, ForgotPasswordRequest
 )

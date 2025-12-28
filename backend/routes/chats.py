@@ -2,9 +2,9 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from typing import Optional
 from datetime import datetime
 from bson import ObjectId
-from backend.models import ChatCreate, MessageCreate
-from backend.database import chats_collection, messages_collection, users_collection
-from backend.auth.utils import get_current_user
+from models import ChatCreate, MessageCreate
+from db_proxy import chats_collection, messages_collection, users_collection
+from auth.utils import get_current_user
 import logging
 
 # Setup logging
@@ -29,7 +29,7 @@ async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)
         "type": "saved",
         "name": "Saved Messages",
         "members": [current_user],
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     await chats_collection().insert_one(chat_doc)
     logger.info(f"Created new saved chat: {chat_doc['_id']}")
@@ -120,7 +120,7 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
         "description": getattr(chat, "description", None),
         "avatar_url": getattr(chat, "avatar_url", None),
         "members": chat.member_ids,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
 
     # Group/channel metadata
@@ -327,10 +327,10 @@ async def send_message(
         "language": message.language,
         "reply_to_message_id": message.reply_to_message_id,
         "scheduled_at": message.scheduled_at,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         # Message features
         "reactions": {},
-        "read_by": [{"user_id": current_user, "read_at": datetime.utcnow()}],
+        "read_by": [{"user_id": current_user, "read_at": datetime.now(timezone.utc)}],
         "is_pinned": False,
         "is_edited": False,
         "edit_history": [],
@@ -437,7 +437,7 @@ async def edit_message(
         {"_id": message_id},
         {"$set": {
             "text": new_text,
-            "edited_at": datetime.utcnow(),
+            "edited_at": datetime.now(timezone.utc),
             "is_edited": True
         }}
     )

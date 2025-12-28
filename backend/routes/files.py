@@ -9,12 +9,12 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request, Header
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional
 import aiofiles
-from backend.models import (
+from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
-from backend.database import files_collection, uploads_collection, users_collection
-from backend.auth.utils import get_current_user
-from backend.config import settings
+from db_proxy import files_collection, uploads_collection, users_collection
+from auth.utils import get_current_user
+from config import settings
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def _log(level: str, message: str, user_data: dict = None):
         safe_data = {
             "user_id": user_data.get("user_id", "unknown"),
             "operation": user_data.get("operation", "unknown"),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         safe_message = f"{message} (user: {safe_data['user_id']})"
     else:
@@ -87,7 +87,7 @@ async def initialize_upload(
     # Calculate chunks
     total_chunks = math.ceil(file_req.size / settings.CHUNK_SIZE)
     upload_id = str(uuid.uuid4())
-    expires_at = datetime.utcnow() + timedelta(hours=settings.UPLOAD_EXPIRE_HOURS)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.UPLOAD_EXPIRE_HOURS)
     
     # Create upload record
     upload_doc = {
@@ -102,7 +102,7 @@ async def initialize_upload(
         "received_chunks": [],
         "checksum": file_req.checksum,
         "expires_at": expires_at,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     
     await uploads_collection().insert_one(upload_doc)
@@ -152,7 +152,7 @@ async def upload_chunk(
         )
     
     # Check if expired
-    if upload["expires_at"] < datetime.utcnow():
+    if upload["expires_at"] < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="Upload session expired"
@@ -265,7 +265,7 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
         "storage_path": str(final_path),
         "checksum": final_checksum,
         "status": "completed",
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     
     await files_collection().insert_one(file_doc)
@@ -338,7 +338,7 @@ async def get_file_info(
                 "content_type": file_doc.get("mime", "application/octet-stream"),
                 "size": file_doc.get("size", file_path.stat().st_size),
                 "uploaded_by": file_doc.get("owner_id"),
-                "created_at": file_doc.get("created_at") or datetime.utcnow(),
+                "created_at": file_doc.get("created_at") or datetime.now(timezone.utc),
                 "checksum": file_doc.get("checksum")
             }
         
@@ -363,7 +363,7 @@ async def get_file_info(
                 "content_type": content_type or "image/jpeg",
                 "size": file_stat.st_size,
                 "uploaded_by": current_user,
-                "created_at": user_doc.get("created_at") if user_doc else datetime.utcnow(),
+                "created_at": user_doc.get("created_at") if user_doc else datetime.now(timezone.utc),
                 "checksum": None  # Avatars don't have checksums
             }
         

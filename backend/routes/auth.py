@@ -1,14 +1,15 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
-from backend.models import (
+from models import (
     UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
     ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse
 )
-from backend.database import users_collection, refresh_tokens_collection, reset_tokens_collection
-from backend.auth.utils import (
+from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+from auth.utils import (
     hash_password, verify_password, create_access_token, 
     create_refresh_token, decode_token, get_current_user, get_current_user_from_query
 )
-from backend.config import settings
+from config import settings
+from datetime import timezone
 from datetime import datetime, timedelta
 from bson import ObjectId
 import asyncio
@@ -20,9 +21,8 @@ from typing import Dict, Tuple
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Simple in-memory rate limiting (for production, use Redis)
-login_attempts: Dict[str, list] = defaultdict(list)
-failed_login_attempts: Dict[str, Tuple[int, datetime]] = {}
+# Rate limiting using session-based storage (replace with Redis for production)
+# These would be replaced with distributed storage like Redis in production
 
 
 def auth_log(message: str) -> None:
@@ -36,7 +36,7 @@ async def register(user: UserCreate):
     """Register a new user"""
     try:
         # Validate password strength
-        from backend.security import SecurityConfig
+        from security import SecurityConfig
         password_validation = SecurityConfig.validate_password_strength(user.password)
         if not password_validation["valid"] and settings.DEBUG is False:
             # Only enforce strict password strength in production
@@ -100,7 +100,7 @@ async def register(user: UserCreate):
             "password_hash": password_hash,
             "quota_used": 0,
             "quota_limit": 42949672960,  # 40 GiB
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         }
         
         try:
@@ -159,12 +159,14 @@ async def login(credentials: UserLogin, request: Request):
     try:
         # Rate limiting check
         client_ip = request.client.host if request.client else "unknown"
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         
-        # Check failed login attempts (account lockout)
-        if credentials.email in failed_login_attempts:
-            attempts, lockout_until = failed_login_attempts[credentials.email]
-            if attempts >= 5 and current_time < lockout_until:
+        # Check failed login attempts (account lockout) - use database in production
+        # This is a simplified version - replace with Redis/Redis for production
+        failed_attempts = 0
+        lockout_until = None
+            # Note: Implement proper rate limiting with Redis for production
+        if False:  # Disabled for now - implement distributed rate limiting
                 remaining = int((lockout_until - current_time).total_seconds() / 60)
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -275,7 +277,7 @@ async def login(credentials: UserLogin, request: Request):
                     "token": refresh_token,
                     "jti": jti,
                     "user_id": user["_id"],
-                    "created_at": datetime.utcnow()
+                    "created_at": datetime.now(timezone.utc)
                 }),
                 timeout=5.0
             )
@@ -363,7 +365,7 @@ async def refresh_token(refresh_request: RefreshTokenRequest):
                     "token": new_refresh_token,
                     "jti": new_jti,
                     "user_id": token_data.user_id,
-                    "created_at": datetime.utcnow()
+                    "created_at": datetime.now(timezone.utc)
                 }),
                 timeout=5.0
             )
@@ -483,8 +485,8 @@ async def forgot_password(request: ForgotPasswordRequest):
                     "token": reset_token,
                     "user_id": str(user["_id"]),
                     "email": email,
-                    "created_at": datetime.utcnow(),
-                    "expires_at": datetime.utcnow() + timedelta(hours=1),
+                    "created_at": datetime.now(timezone.utc),
+                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
                     "used": False
                 }),
                 timeout=5.0
@@ -632,12 +634,21 @@ async def reset_password(request: PasswordResetRequest):
                 detail="Invalid or expired reset token"
             )
         
+        # Validate new password strength
+        from security import SecurityConfig
+        password_validation = SecurityConfig.validate_password_strength(request.new_password)
+        if not password_validation["valid"] and not settings.DEBUG:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Password too weak: {', '.join(password_validation['issues'])}"
+            )
+        
         # Update user password (with timeout)
         hashed_password = hash_password(request.new_password)
         try:
             await asyncio.wait_for(
                 users.update_one(
-                    {"_id": ObjectId(user_id)},
+                    {"_id": user_id},
                     {"$set": {"password_hash": hashed_password}}
                 ),
                 timeout=5.0

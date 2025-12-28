@@ -81,7 +81,7 @@ class ValidationErrorDetail:
         error_details = {
             "validation_errors": [],
             "error_count": len(errors),
-            "timestamp": __import__('datetime').datetime.utcnow().isoformat()
+            "timestamp": __import__('datetime').datetime.now(timezone.utc).isoformat()
         }
         
         for error in errors:
@@ -311,7 +311,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         "status_code": status_code,
         "error": error_description,
         "detail": str(detail),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "path": str(request.url.path),
         "method": request.method,
     }

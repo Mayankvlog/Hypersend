@@ -3,7 +3,7 @@ MongoDB initialization - Creates admin and application users on first startup
 """
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
-from backend.config import settings
+from config import settings
 
 
 async def init_mongodb():
@@ -42,10 +42,13 @@ async def init_mongodb():
                 client.close()
             
             # Connect without authentication to create user
-            # Get root credentials from environment
+            # Get root credentials from environment - no fallbacks in production
             import os
-            root_user = os.getenv('MONGO_USER', 'hypersend')
-            root_password = os.getenv('MONGO_PASSWORD', 'hypersend_secure_password')
+            root_user = os.getenv('MONGO_USER')
+            root_password = os.getenv('MONGO_PASSWORD')
+            
+            if not root_user or not root_password:
+                raise ValueError("MONGO_USER and MONGO_PASSWORD must be set in production")
             
             # Connect as root user
             root_uri = f"mongodb://{quote_plus(root_user)}:{quote_plus(root_password)}@{parsed.hostname}:{parsed.port or 27017}/admin?authSource=admin"

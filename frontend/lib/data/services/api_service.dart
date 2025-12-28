@@ -21,12 +21,16 @@ class ApiService {
     if (!url.endsWith('/')) {
       url += '/';
     }
+    
+    _log('[API_INIT] Base URL: $url');
+    _log('[API_INIT] Auth endpoint: ${ApiConstants.authEndpoint}');
 
     _dio = Dio(
       BaseOptions(
         baseUrl: url,
-        connectTimeout: ApiConstants.connectTimeout,
-        receiveTimeout: ApiConstants.receiveTimeout,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        sendTimeout: const Duration(seconds: 10),
         contentType: 'application/json',
       ),
     );
@@ -137,7 +141,9 @@ class ApiService {
     required String password,
   }) async {
     try {
-      final response = await _dio.post('${ApiConstants.authEndpoint}/login', data: {
+      final loginUrl = '${ApiConstants.authEndpoint}/login';
+      _log('[API_LOGIN] Full URL: ${_dio.options.baseUrl}$loginUrl');
+      final response = await _dio.post(loginUrl, data: {
         'email': email,
         'password': password,
       });

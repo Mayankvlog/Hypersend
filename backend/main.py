@@ -16,47 +16,52 @@ print("[STARTUP] Current working directory:", os.getcwd())
 print("[STARTUP] Starting backend imports...")
 
 try:
-    from backend.database import connect_db, close_db
-    print("[STARTUP] ✓ database module imported")
+    from config import settings
+    if settings.USE_MOCK_DB:
+        from mock_database import connect_db, close_db
+        print("[STARTUP] + Using mock database module")
+    else:
+        from database import connect_db, close_db
+        print("[STARTUP] + database module imported")
 except Exception as e:
-    print(f"[STARTUP] ✗ Failed to import database: {e}")
+    print(f"[STARTUP] X Failed to import database: {e}")
     raise
 
 try:
-    from backend.routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels, debug
-    print("[STARTUP] ✓ routes modules imported")
+    from routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels, debug
+    print("[STARTUP] + routes modules imported")
 except Exception as e:
-    print(f"[STARTUP] ✗ Failed to import routes: {e}")
+    print(f"[STARTUP] X Failed to import routes: {e}")
     raise
 
 try:
-    from backend.config import settings
-    print("[STARTUP] ✓ config module imported")
+    from config import settings
+    print("[STARTUP] + config module imported")
     print(f"[STARTUP] MongoDB URI (sanitized): {settings.MONGODB_URI.split('@')[-1] if '@' in settings.MONGODB_URI else 'invalid'}")
     print(f"[STARTUP] DEBUG mode: {settings.DEBUG}")
 except Exception as e:
-    print(f"[STARTUP] ✗ Failed to import config: {e}")
+    print(f"[STARTUP] X Failed to import config: {e}")
     raise
 
 try:
-    from backend.mongo_init import ensure_mongodb_ready
-    print("[STARTUP] ✓ mongo_init module imported")
+    from mongo_init import ensure_mongodb_ready
+    print("[STARTUP] + mongo_init module imported")
 except Exception as e:
-    print(f"[STARTUP] ✗ Failed to import mongo_init: {e}")
+    print(f"[STARTUP] X Failed to import mongo_init: {e}")
     raise
 
 try:
-    from backend.security import SecurityConfig
-    print("[STARTUP] ✓ security module imported")
+    from security import SecurityConfig
+    print("[STARTUP] + security module imported")
 except Exception as e:
-    print(f"[STARTUP] ✗ Failed to import security: {e}")
+    print(f"[STARTUP] X Failed to import security: {e}")
     raise
 
 try:
-    from backend.error_handlers import register_exception_handlers
-    print("[STARTUP] ✓ error_handlers module imported")
+    from error_handlers import register_exception_handlers
+    print("[STARTUP] + error_handlers module imported")
 except Exception as e:
-    print(f"[STARTUP] ✗ Failed to import error_handlers: {e}")
+    print(f"[STARTUP] X Failed to import error_handlers: {e}")
     raise
 
 print("[STARTUP] All imports successful!")
@@ -64,7 +69,7 @@ print("[STARTUP] All imports successful!")
 
 # ===== VALIDATION MIDDLEWARE FOR 4XX ERROR HANDLING =====
 from starlette.middleware.base import BaseHTTPMiddleware
-from datetime import datetime
+from datetime import datetime, timezone
 
 class RequestValidationMiddleware(BaseHTTPMiddleware):
     """Middleware to validate requests and prevent common 4xx errors"""
@@ -98,7 +103,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                     "status_code": 413,
                                     "error": "Payload Too Large - Request body is too big",
                                     "detail": f"Request size {content_length} bytes exceeds maximum {max_size} bytes",
-                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "path": str(request.url.path),
                                     "method": request.method,
                                     "hints": ["Reduce file size", "Use chunked uploads", "Check server limits"]
@@ -111,7 +116,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 "status_code": 411,
                                 "error": "Length Required - Content-Length header is invalid",
                                 "detail": "Content-Length header must be a valid integer",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                                 "path": str(request.url.path),
                                 "method": request.method,
                                 "hints": ["Provide valid Content-Length", "Ensure header is a number"]
@@ -127,7 +132,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "status_code": 414,
                         "error": "URI Too Long - The requested URL is too long",
                         "detail": f"URL length {url_length} exceeds maximum 8000 characters",
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": ["Shorten the URL", "Use POST for complex queries"]
@@ -152,7 +157,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     "status_code": 500,
                     "error": "Internal Server Error",
                     "detail": "Server error processing request",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "path": str(request.url.path),
                     "method": request.method,
                 }
@@ -176,15 +181,18 @@ async def lifespan(app: FastAPI):
         print("[DB] Initializing MongoDB...")
         
         # Initialize MongoDB (create users, collections, indexes)
-        try:
-            result = await ensure_mongodb_ready()
-            if result:
-                print("[DB] MongoDB initialization completed successfully")
-            else:
-                print("[DB] MongoDB initialization skipped or incomplete - will initialize on first use")
-        except Exception as e:
-            print(f"[WARN] MongoDB initialization warning: {str(e)}")
-            print("[WARN] Continuing startup - collections will be created on first use")
+        if not settings.USE_MOCK_DB:
+            try:
+                result = await ensure_mongodb_ready()
+                if result:
+                    print("[DB] MongoDB initialization completed successfully")
+                else:
+                    print("[DB] MongoDB initialization skipped or incomplete - will initialize on first use")
+            except Exception as e:
+                print(f"[WARN] MongoDB initialization warning: {str(e)}")
+                print("[WARN] Continuing startup - collections will be created on first use")
+        else:
+            print("[DB] Using mock database - skipping MongoDB initialization")
         
         print(f"[DB] Connecting to MongoDB...")
         
@@ -203,10 +211,13 @@ async def lifespan(app: FastAPI):
             await connect_db()
             print("[DB] Database connection established")
         except Exception as e:
-            print(f"[WARN] Database connection failed (continuing in offline mode): {str(e)}")
-            print("[WARN] WARNING: Database operations will fail - used for development/testing only!")
-            # Don't raise - allow app to start for testing
-            pass
+            if settings.USE_MOCK_DB:
+                print("[DB] Mock database initialized")
+            else:
+                print(f"[WARN] Database connection failed (continuing in offline mode): {str(e)}")
+                print("[WARN] WARNING: Database operations will fail - used for development/testing only!")
+                # Don't raise - allow app to start for testing
+                pass
         
         if settings.DEBUG:
             print(f"[START] Zaply API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
@@ -355,7 +366,7 @@ async def health():
         "status": "healthy",
         "service": "zaply-api",
         "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -381,7 +392,7 @@ if settings.DEBUG:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "backend.main:app",
+        "main:app",
         host=settings.API_HOST,
         port=settings.API_PORT,
         reload=settings.DEBUG

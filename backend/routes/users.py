@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
-from backend.models import (
+from models import (
     UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
     ContactAddRequest, ContactDeleteRequest, ContactSyncRequest, UserSearchResponse
 )
-from backend.database import users_collection
-from backend.auth.utils import get_current_user
+from db_proxy import users_collection, chats_collection, messages_collection, files_collection
+from auth.utils import get_current_user
 import asyncio
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
@@ -34,7 +34,7 @@ def _log(level: str, message: str, user_data: dict = None):
         safe_data = {
             "user_id": user_data.get("user_id", "unknown"),
             "operation": user_data.get("operation", "unknown"),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         safe_message = f"{message} (user: {safe_data['user_id']})"
     else:
@@ -111,7 +111,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         )
 
 
-# ProfileUpdate model is imported from backend.models
+# ProfileUpdate model is imported from models
 
 
 @router.put("/profile", response_model=UserResponse)
@@ -257,7 +257,7 @@ async def update_profile(
             update_data["email"] = new_email
         
         # Add updated timestamp
-        update_data["updated_at"] = datetime.utcnow()
+        update_data["updated_at"] = datetime.now(timezone.utc)
         
         logger.info(f"Update data prepared with fields: {list(update_data.keys())}")
         logger.info(f"Update data values: {json.dumps({k: str(v)[:100] if isinstance(v, str) else str(v) for k, v in update_data.items()}, default=str)}")
@@ -321,7 +321,7 @@ async def update_profile(
             avatar_url=updated_user.get("avatar_url"),
             quota_used=int(updated_user.get("quota_used", 0)),
             quota_limit=int(updated_user.get("quota_limit", 42949672960)),
-            created_at=updated_user.get("created_at", datetime.utcnow()),
+            created_at=updated_user.get("created_at", datetime.now(timezone.utc)),
             updated_at=updated_user.get("updated_at"),
             last_seen=updated_user.get("last_seen"),
             is_online=updated_user.get("is_online", False),
@@ -368,9 +368,6 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
                 detail="User not found"
             )
         
-        # Get message count from chats collection
-        from database import chats_collection, messages_collection
-        
         # Count total messages sent by user
         message_count = await asyncio.wait_for(
             messages_collection().count_documents({"sender_id": current_user}),
@@ -378,7 +375,6 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
         )
         
         # Count files shared by user
-        from database import files_collection
         file_count = await asyncio.wait_for(
             files_collection().count_documents({"uploaded_by": current_user}),
             timeout=5.0
@@ -395,7 +391,7 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
             "storage_limit_mb": round(quota_limit / (1024 * 1024), 2),
             "storage_percentage": round((quota_used / quota_limit) * 100, 1) if quota_limit > 0 else 0,
             "account_created": user.get("created_at"),
-            "last_active": user.get("last_active", datetime.utcnow())
+            "last_active": user.get("last_active", datetime.now(timezone.utc))
         }
     except asyncio.TimeoutError:
         raise HTTPException(
@@ -852,7 +848,7 @@ async def change_password(
             )
         
         # Verify old password
-        from backend.auth.utils import verify_password, hash_password
+        from auth.utils import verify_password, hash_password
         
         if not verify_password(request.old_password, user.get("password_hash", "")):
             print(f"[PASSWORD_CHANGE] Old password verification failed for {current_user}")
@@ -868,7 +864,7 @@ async def change_password(
         result = await asyncio.wait_for(
             users_collection().update_one(
                 {"_id": current_user},
-                {"$set": {"password_hash": new_password_hash, "updated_at": datetime.utcnow()}}
+                {"$set": {"password_hash": new_password_hash, "updated_at": datetime.now(timezone.utc)}}
             ),
             timeout=5.0
         )
@@ -918,7 +914,7 @@ async def change_email(
             )
         
         # Verify password
-        from backend.auth.utils import verify_password
+        from auth.utils import verify_password
         if not verify_password(request.password, user.get("password_hash", "")):
             print(f"[EMAIL_CHANGE] Password verification failed for {current_user}")
             raise HTTPException(
@@ -944,7 +940,7 @@ async def change_email(
         result = await asyncio.wait_for(
             users_collection().update_one(
                 {"_id": current_user},
-                {"$set": {"email": new_email, "updated_at": datetime.utcnow()}}
+                {"$set": {"email": new_email, "updated_at": datetime.now(timezone.utc)}}
             ),
             timeout=5.0
         )
@@ -976,7 +972,6 @@ async def upload_avatar(
 ):
     """Upload user avatar"""
     try:
-        from backend.config import settings
         import shutil
         import os
         import uuid
@@ -1059,7 +1054,7 @@ async def upload_avatar(
             result = await asyncio.wait_for(
                 users_collection().update_one(
                     {"_id": current_user},
-                    {"$set": {"avatar_url": avatar_url, "updated_at": datetime.utcnow()}}
+                    {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
                 ),
                 timeout=5.0
             )
@@ -1106,7 +1101,7 @@ async def upload_avatar(
 @router.get("/health")
 async def users_health():
     """Health check for users module"""
-    return {"status": "healthy", "module": "users", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "healthy", "module": "users", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 @router.get("/avatar-test")
 async def test_avatar_route():
@@ -1125,9 +1120,8 @@ async def list_avatars():
     }
 
 @router.get("/avatar/{filename}")
-async def get_avatar(filename: str):
-    """Get user avatar - publicly accessible"""
-    from backend.config import settings
+async def get_avatar(filename: str, current_user: str = Depends(get_current_user)):
+    """Get user avatar - authenticated access only"""
     from fastapi.responses import FileResponse
     from datetime import datetime
     import os
@@ -1212,9 +1206,9 @@ async def update_location(
                         "location": {
                             "lat": lat,
                             "lng": lng,
-                            "updated_at": datetime.utcnow()
+                            "updated_at": datetime.now(timezone.utc)
                         },
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             ),
@@ -1230,7 +1224,7 @@ async def update_location(
         return {
             "message": "Location updated successfully",
             "location": {"lat": lat, "lng": lng},
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
         
     except asyncio.TimeoutError:
@@ -1261,7 +1255,7 @@ async def clear_location(current_user: str = Depends(get_current_user)):
                 {"_id": current_user},
                 {
                     "$unset": {"location": ""},
-                    "$set": {"updated_at": datetime.utcnow()}
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
                 }
             ),
             timeout=5.0
@@ -1437,7 +1431,7 @@ async def add_contact(
         await asyncio.wait_for(
             users_collection().update_one(
                 {"_id": current_user},
-                {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}}
+                {"$set": {"contacts": contacts, "updated_at": datetime.now(timezone.utc)}}
             ),
             timeout=5.0
         )
@@ -1504,7 +1498,7 @@ async def delete_contact(
         await asyncio.wait_for(
             users_collection().update_one(
                 {"_id": current_user},
-                {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}}
+                {"$set": {"contacts": contacts, "updated_at": datetime.now(timezone.utc)}}
             ),
             timeout=5.0
         )
@@ -1809,7 +1803,7 @@ async def block_user(
                 {
                     "$addToSet": {"blocked_users": user_id},
                     "$pull": {"contacts": user_id},
-                    "$set": {"updated_at": datetime.utcnow()}
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
                 }
             ),
             timeout=5.0
@@ -1844,7 +1838,7 @@ async def unblock_user(
                 {"_id": current_user},
                 {
                     "$pull": {"blocked_users": user_id},
-                    "$set": {"updated_at": datetime.utcnow()}
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
                 }
             ),
             timeout=5.0

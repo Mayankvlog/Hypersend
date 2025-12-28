@@ -90,7 +90,7 @@ async def release_new_version(version_data: dict):
     VERSION_INFO[version] = {
         "version": version,
         "build_number": version_data.get("build_number", 1),
-        "release_date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "release_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "download_url": version_data.get("download_url"),
         "changelog": version_data.get("changelog", ""),
         "min_supported_version": version_data.get("min_supported_version", "1.0.0"),
@@ -109,7 +109,7 @@ USER_ONLINE_STATUS = {}  # {user_id: {"last_seen": datetime, "is_online": bool}}
 
 
 from fastapi import Depends
-from backend.auth.utils import get_current_user
+from auth.utils import get_current_user
 
 
 @router.post("/typing")
@@ -123,7 +123,7 @@ async def set_typing_status(
         USER_TYPING_STATUS[current_user] = {}
     
     if is_typing:
-        USER_TYPING_STATUS[current_user][chat_id] = datetime.utcnow()
+        USER_TYPING_STATUS[current_user][chat_id] = datetime.now(timezone.utc)
     else:
         USER_TYPING_STATUS[current_user].pop(chat_id, None)
     
@@ -143,7 +143,7 @@ async def get_typing_users(chat_id: str):
     for user_id, chats in USER_TYPING_STATUS.items():
         if chat_id in chats:
             # Check if typing status is still valid (not older than 5 seconds)
-            if (datetime.utcnow() - chats[chat_id]).total_seconds() < 5:
+            if (datetime.now(timezone.utc) - chats[chat_id]).total_seconds() < 5:
                 typing_users.append(user_id)
     
     return {"chat_id": chat_id, "typing_users": typing_users}
@@ -155,7 +155,7 @@ async def set_online_status(
 ):
     """Update user online status"""
     USER_ONLINE_STATUS[current_user] = {
-        "last_seen": datetime.utcnow(),
+        "last_seen": datetime.now(timezone.utc),
         "is_online": True
     }
     
@@ -169,7 +169,7 @@ async def set_offline_status(
     """Mark user as offline"""
     if current_user in USER_ONLINE_STATUS:
         USER_ONLINE_STATUS[current_user]["is_online"] = False
-        USER_ONLINE_STATUS[current_user]["last_seen"] = datetime.utcnow()
+        USER_ONLINE_STATUS[current_user]["last_seen"] = datetime.now(timezone.utc)
     
     return {"status": "offline", "user_id": current_user}
 

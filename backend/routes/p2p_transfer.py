@@ -12,8 +12,8 @@ import asyncio
 import uuid
 import json
 from datetime import datetime, timedelta
-from backend.database import files_collection, chats_collection
-from backend.auth.utils import get_current_user
+from db_proxy import files_collection, chats_collection
+from auth.utils import get_current_user
 
 router = APIRouter(prefix="/p2p", tags=["P2P Transfer"])
 
@@ -37,8 +37,8 @@ class P2PSession:
         self.receiver_ws: Optional[WebSocket] = None
         
         self.bytes_transferred = 0
-        self.created_at = datetime.utcnow()
-        self.expires_at = datetime.utcnow() + timedelta(hours=24)
+        self.created_at = datetime.now(timezone.utc)
+        self.expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
         self.status = "pending"  # pending, active, completed, failed
         
     def is_ready(self):
@@ -97,7 +97,7 @@ async def initiate_p2p_transfer(
         "chat_id": chat_id,
         "storage_type": "local",  # WhatsApp-style
         "status": "pending",
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "expires_at": session.expires_at,
         # No server path - file is on sender's device
     }
@@ -114,15 +114,34 @@ async def initiate_p2p_transfer(
 
 
 @router.websocket("/sender/{session_id}")
-async def sender_stream(websocket: WebSocket, session_id: str):
+async def sender_stream(websocket: WebSocket, session_id: str, token: str = None):
     """
     Sender connects and streams file from their local storage
     """
+    # Verify token and extract user info
+    if not token:
+        await websocket.close(code=4001, reason="Authorization token required")
+        return
+    
+    try:
+        from auth.utils import decode_token
+        payload = decode_token(token)
+        current_user = payload.get("sub")
+    except:
+        await websocket.close(code=4001, reason="Invalid authorization token")
+        return
+    
     if session_id not in active_sessions:
         await websocket.close(code=4004, reason="Session not found")
         return
     
     session = active_sessions[session_id]
+    
+    # Verify sender owns this session
+    if session.sender_id != current_user:
+        await websocket.close(code=4003, reason="Not authorized for this session")
+        return
+    
     await websocket.accept()
     session.sender_ws = websocket
     session.status = "waiting_receiver"
@@ -196,7 +215,7 @@ async def sender_stream(websocket: WebSocket, session_id: str):
                             {"session_id": session_id},
                             {"$set": {
                                 "status": "completed",
-                                "completed_at": datetime.utcnow()
+                                "completed_at": datetime.now(timezone.utc)
                             }}
                         )
                         break
@@ -217,15 +236,34 @@ async def sender_stream(websocket: WebSocket, session_id: str):
 
 
 @router.websocket("/receiver/{session_id}")
-async def receiver_stream(websocket: WebSocket, session_id: str):
+async def receiver_stream(websocket: WebSocket, session_id: str, token: str = None):
     """
     Receiver connects and downloads file to their local storage
     """
+    # Verify token and extract user info
+    if not token:
+        await websocket.close(code=4001, reason="Authorization token required")
+        return
+    
+    try:
+        from auth.utils import decode_token
+        payload = decode_token(token)
+        current_user = payload.get("sub")
+    except:
+        await websocket.close(code=4001, reason="Invalid authorization token")
+        return
+    
     if session_id not in active_sessions:
         await websocket.close(code=4004, reason="Session not found")
         return
     
     session = active_sessions[session_id]
+    
+    # Verify receiver is authorized for this session
+    if session.receiver_id != current_user:
+        await websocket.close(code=4003, reason="Not authorized for this session")
+        return
+    
     await websocket.accept()
     session.receiver_ws = websocket
     

@@ -4,16 +4,16 @@ from datetime import datetime
 from bson import ObjectId
 import asyncio
 
-from backend.auth.utils import get_current_user
-from backend.database import chats_collection, users_collection, messages_collection, get_db
-from backend.models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
+from auth.utils import get_current_user
+from db_proxy import chats_collection, users_collection, messages_collection, get_db
+from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
 
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 async def _require_group(group_id: str, current_user: str) -> dict:

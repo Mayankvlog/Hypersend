@@ -15,25 +15,28 @@ if not os.getenv("MONGODB_URI") and not os.getenv("MONGO_USER"):
 
 class Settings:
     # MongoDB Connection
-    # MongoDB runs in Docker container as part of docker-compose
-    # Backend connects to MongoDB via Docker service name "mongodb" on internal network
-    # Data persisted on VPS at /var/lib/mongodb
-    
+    # For development, use MongoDB Atlas or local MongoDB
     # Read MongoDB credentials from environment
     _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
     _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
-    _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb")
+    _MONGO_HOST: str = os.getenv("MONGO_HOST", "localhost")
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     
-    # Construct MONGODB_URI with proper URL encoding for special characters in password
-    # quote_plus handles special chars like @#$% → %40%23%24%25
-    MONGODB_URI: str = f"mongodb://{quote_plus(_MONGO_USER)}:{quote_plus(_MONGO_PASSWORD)}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&retryWrites=true"
+    # Try to get MongoDB URI from environment first, fallback to local development setup
+    if os.getenv("MONGODB_URI"):
+        MONGODB_URI: str = os.getenv("MONGODB_URI")
+    else:
+        # Construct MONGODB_URI with proper URL encoding for special characters in password
+        # For local development, try simple connection first
+        MONGODB_URI: str = f"mongodb://{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}"
     
     # Security
-    # Use a constant fallback if env is missing to prevent session invalidation on restart
+    # SECRET_KEY must be set in production - no fallbacks allowed
     _env_secret = os.getenv("SECRET_KEY")
-    SECRET_KEY: str = _env_secret if _env_secret else "fallback-insecure-dev-key-do-not-use-in-prod-hypersend"
+    if not _env_secret:
+        raise ValueError("SECRET_KEY environment variable must be set in production")
+    SECRET_KEY: str = _env_secret
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -49,7 +52,7 @@ class Settings:
     
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
-    API_PORT: int = int(os.getenv("API_PORT", "8000"))
+    API_PORT: int = int(os.getenv("API_PORT", "8001"))
     # Default public API base URL for this deployment (VPS behind Nginx HTTPS)
     # Note: Nginx proxies /api/ to backend, so full URL includes /api/v1
     API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1/")
@@ -69,6 +72,9 @@ class Settings:
     # Development
     # Default DEBUG to True for development; set to False in production with proper SECRET_KEY
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+    
+    # Mock mode for testing without MongoDB
+    USE_MOCK_DB: bool = os.getenv("USE_MOCK_DB", "True").lower() in ("true", "1", "yes")
     
     # CORS Configuration
     # FIX: Load from environment or use defaults that support all access patterns
@@ -95,6 +101,10 @@ class Settings:
         "https://zaply.in.net",
         "https://www.zaply.in.net",
         "http://zaply.in.net:8000",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8080",
     ]
     
     def __init__(self):
@@ -103,11 +113,12 @@ class Settings:
     
     def validate_config(self):
         """Validate critical configuration"""
-        # Generate secure SECRET_KEY if not set
-        if not self.SECRET_KEY or self.SECRET_KEY in ["dev-secret-key-change-in-production-5y7L9x2K", "your-super-secret-production-key-change-this-2025"]:
-            self.SECRET_KEY = secrets.token_urlsafe(64)
-            if not os.getenv("SECRET_KEY"):
-                print("[WARN] SECRET_KEY not set in environment. For persistent tokens across restarts, set SECRET_KEY in .env")
+        # SECRET_KEY must be explicitly set in production
+        if not self.SECRET_KEY:
+            raise ValueError("SECRET_KEY environment variable must be set in production")
+        
+        if not os.getenv("SECRET_KEY"):
+            raise ValueError("SECRET_KEY must be set as environment variable in production")
         
         if len(self.SECRET_KEY) < 32:
             self.SECRET_KEY = secrets.token_urlsafe(64)

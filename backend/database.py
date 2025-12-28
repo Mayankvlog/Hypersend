@@ -2,7 +2,7 @@ import sys
 import os
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from backend.config import settings
+from config import settings
 
 client = None
 db = None
