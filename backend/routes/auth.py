@@ -156,7 +156,7 @@ async def register(user: UserCreate):
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            print(f"[AUTH] Insert operation timeout during user registration")
+            auth_log(f"[AUTH] Insert operation timeout during user registration")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -188,11 +188,27 @@ async def register(user: UserCreate):
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
+    except asyncio.TimeoutError:
+        auth_log("[AUTH] Timeout error during user registration")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Registration failed due to database timeout. Please try again."
+        )
     except (ValueError, TypeError, KeyError, OSError) as e:
         # Log the actual error for debugging when DEBUG is enabled
         if settings.DEBUG:
             import traceback
-            print(f"[AUTH] Registration failed with error: {type(e).__name__}: {str(e)}")
+            auth_log(f"[AUTH] Registration failed with error: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed. Please try again."
+        )
+    except Exception as e:
+        # Catch all other unexpected exceptions
+        auth_log(f"[AUTH] Unexpected exception during registration: {type(e).__name__}: {str(e)}")
+        if settings.DEBUG:
+            import traceback
             traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -207,8 +223,11 @@ async def login(credentials: UserLogin, request: Request):
         # Cleanup old attempts to prevent memory leaks
         cleanup_old_attempts()
         
-        # Rate limiting check
-        client_ip = request.client.host if request.client else "unknown"
+        # Rate limiting check - handle missing client info
+        try:
+            client_ip = request.client.host if request.client else "unknown"
+        except Exception:
+            client_ip = "unknown"
         current_time = datetime.now(timezone.utc)
         
         # IP-based rate limiting to prevent brute force attacks (check only, don't record yet)
@@ -386,11 +405,27 @@ async def login(credentials: UserLogin, request: Request):
     except HTTPException:
         # Re-raise HTTP exceptions (like 401 Unauthorized)
         raise
+    except asyncio.TimeoutError:
+        auth_log("[AUTH] Unexpected timeout error during login")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Login failed due to database timeout. Please try again."
+        )
     except (ValueError, TypeError, KeyError, OSError) as e:
         # Log the actual error for debugging when DEBUG is enabled
         if settings.DEBUG:
             import traceback
-            print(f"[AUTH] Login failed with unexpected error: {type(e).__name__}: {str(e)}")
+            auth_log(f"[AUTH] Login failed with unexpected error: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed. Please try again."
+        )
+    except Exception as e:
+        # Catch all other unexpected exceptions
+        auth_log(f"[AUTH] Unexpected exception during login: {type(e).__name__}: {str(e)}")
+        if settings.DEBUG:
+            import traceback
             traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

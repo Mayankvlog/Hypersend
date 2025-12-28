@@ -246,6 +246,31 @@ def register_exception_handlers(app: FastAPI) -> None:
     
     app.add_exception_handler(HTTPException, http_exception_handler)
     
+    # Add global exception handler for unhandled exceptions
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        """Handle all unhandled exceptions with proper JSON response"""
+        import traceback
+        
+        # Log the full traceback for debugging
+        logger.error(f"Unhandled exception: {type(exc).__name__}: {str(exc)}")
+        if logger.isEnabledFor(logging.DEBUG):
+            traceback.print_exc()
+        
+        # Return proper JSON response instead of letting exception crash connection
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "status_code": 500,
+                "error": "Internal Server Error",
+                "detail": "An unexpected server error occurred",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "path": str(request.url.path),
+                "method": request.method,
+                "hints": ["This is a server error, not your request", "Try again in a moment", "Contact support if persistent"]
+            }
+        )
+    
     logger.info("✅ Custom exception handlers registered")
 
 
