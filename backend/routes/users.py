@@ -970,6 +970,8 @@ async def change_email(
 
 
 @router.post("/avatar")
+@router.post("/avatar")
+@router.post("/avatar/")
 async def upload_avatar(
     file: UploadFile = File(...),
     current_user: str = Depends(get_current_user)
@@ -1112,6 +1114,17 @@ async def users_health():
 async def test_avatar_route():
     """Test route to verify API routing"""
     return {"message": "Avatar API is working", "status": "ok"}
+
+@router.get("/avatar/")
+async def list_avatars():
+    """Handle GET requests to avatar endpoint without filename"""
+    return {
+        "message": "Avatar upload endpoint",
+        "usage": {
+            "upload": "POST /api/v1/users/avatar/ with file data",
+            "retrieve": "GET /api/v1/users/avatar/{filename}"
+        }
+    }
 
 @router.get("/avatar/{filename}")
 async def get_avatar(filename: str):
