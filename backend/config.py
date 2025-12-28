@@ -28,8 +28,10 @@ class Settings:
         MONGODB_URI: str = os.getenv("MONGODB_URI")
     else:
         # Construct MONGODB_URI with proper URL encoding for special characters in password
-        # For local development, try simple connection first
-        MONGODB_URI: str = f"mongodb://{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}"
+        # Include authentication for production MongoDB
+        from urllib.parse import quote_plus
+        encoded_password = quote_plus(_MONGO_PASSWORD)
+        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}"
     
     # Security
     # SECRET_KEY must be set in production - no fallbacks allowed
@@ -74,7 +76,10 @@ class Settings:
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     
     # Mock mode for testing without MongoDB
-    USE_MOCK_DB: bool = os.getenv("USE_MOCK_DB", "True").lower() in ("true", "1", "yes")
+    use_mock_db_env = os.getenv("USE_MOCK_DB", "False")
+    print(f"[CONFIG] USE_MOCK_DB env var: '{use_mock_db_env}'")
+    USE_MOCK_DB: bool = use_mock_db_env.lower() in ("true", "1", "yes")
+    print(f"[CONFIG] USE_MOCK_DB final: {USE_MOCK_DB}")
     
     # CORS Configuration
     # FIX: Load from environment or use defaults that support all access patterns
