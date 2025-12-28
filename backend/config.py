@@ -28,10 +28,13 @@ class Settings:
         MONGODB_URI: str = os.getenv("MONGODB_URI")
     else:
         # Construct MONGODB_URI with proper URL encoding for special characters in password
-        # Include authentication for production MongoDB
+        # Include authentication for production MongoDB - connect to admin database first for root auth
         from urllib.parse import quote_plus
         encoded_password = quote_plus(_MONGO_PASSWORD)
-        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}"
+        # For MongoDB with root credentials, connect to admin database first
+        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/admin?authSource=admin"
+    
+    print(f"[CONFIG] MongoDB URI (constructed): {MONGODB_URI.split('@')[0] if '@' in MONGODB_URI else 'no-auth'}@{MONGODB_URI.split('@')[1].split('/')[0] if '@' in MONGODB_URI else 'invalid'}")
     
     # Security
     # SECRET_KEY must be set in production - no fallbacks allowed
