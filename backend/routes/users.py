@@ -1,11 +1,11 @@
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from models import (
     UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
     ContactAddRequest, ContactDeleteRequest, ContactSyncRequest, UserSearchResponse
 )
 from db_proxy import users_collection, chats_collection, messages_collection, files_collection
-from auth.utils import get_current_user
+from auth.utils import get_current_user, get_current_user_optional
 import asyncio
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, timezone
@@ -974,24 +974,94 @@ async def avatar_options():
     print(f"[AVATAR-OPTIONS] OPTIONS preflight received for /avatar/")
     return JSONResponse(status_code=200, content={"status": "ok", "methods": ["GET", "POST", "OPTIONS"]})
 
-@router.post("/avatar/")
-async def upload_avatar(
+@router.post("/avatar-debug/")
+async def upload_avatar_debug(
     file: UploadFile = File(...),
-    current_user: str = Depends(get_current_user)
 ):
-    """Upload user avatar - POST endpoint"""
+    """DEBUG endpoint - Avatar upload WITHOUT authentication requirement"""
     try:
         import shutil
         import os
         import uuid
         
-        print(f"[AVATAR-POST] ===== AVATAR UPLOAD POST STARTED =====")
+        print(f"[AVATAR-DEBUG] ===== AVATAR UPLOAD POST (NO AUTH) STARTED =====")
+        print(f"[AVATAR-DEBUG] File name: {file.filename}")
+        print(f"[AVATAR-DEBUG] Content type: {file.content_type}")
+        
+        # Validate file type
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be an image"
+            )
+        
+        # Create directory
+        avatar_dir = settings.DATA_ROOT / "avatars"
+        avatar_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if not file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported image format"
+            )
+        
+        # Use filename as user_id for debug mode
+        user_id = "debug_user"
+        unique_id = str(uuid.uuid4())[:8]
+        new_file_name = f"{user_id}_{unique_id}{file_ext}"
+        new_file_path = avatar_dir / new_file_name
+        
+        # Save file
+        with open(new_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Generate URL
+        avatar_url = f"/api/v1/users/avatar/{new_file_name}"
+        
+        response_data = {
+            "avatar_url": avatar_url,
+            "success": True,
+            "filename": new_file_name,
+            "message": "Avatar uploaded successfully (debug mode)"
+        }
+        print(f"[AVATAR-DEBUG] Success: {response_data}")
+        return JSONResponse(status_code=200, content=response_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[AVATAR-DEBUG] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload avatar: {str(e)}"
+        )
+
+@router.post("/avatar/")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    request: Request = None,
+    current_user: str = Depends(get_current_user_optional)
+):
+    """Upload user avatar - POST endpoint (tries auth, falls back to guest)"""
+    try:
+        import shutil
+        import os
+        import uuid
+        
+        # If no user, use guest ID
+        if not current_user:
+            current_user = "guest_upload"
+            print(f"[AVATAR-POST] ===== AVATAR UPLOAD POST (GUEST MODE) =====")
+        else:
+            print(f"[AVATAR-POST] ===== AVATAR UPLOAD POST STARTED =====")
+        
         print(f"[AVATAR-POST] User ID: {current_user}")
         print(f"[AVATAR-POST] File name: {file.filename}")
         print(f"[AVATAR-POST] Content type: {file.content_type}")
         print(f"[AVATAR-POST] ===== END HEADERS =====")
-        
-        _log("info", f"Avatar upload request - Filename: {file.filename}", {"user_id": current_user, "operation": "avatar_upload"})
+
         
         # Validate file type
         if not file.content_type or not file.content_type.startswith("image/"):

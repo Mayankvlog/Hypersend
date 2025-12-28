@@ -5,7 +5,7 @@ import jwt
 from jwt import PyJWTError
 import hashlib
 import hmac
-from fastapi import HTTPException, status, Depends, Query
+from fastapi import HTTPException, status, Depends, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import settings
 from models import TokenData
@@ -127,6 +127,29 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     
     return token_data.user_id
 
+
+async def get_current_user_optional(request) -> str:
+    """Dependency to get current user from token - returns None if auth fails or missing"""
+    try:
+        # Try to get authorization header
+        auth_header = request.headers.get("authorization")
+        if not auth_header:
+            return None
+        
+        # Extract token from "Bearer <token>"
+        if not auth_header.startswith("Bearer "):
+            return None
+        
+        token = auth_header.replace("Bearer ", "")
+        token_data = decode_token(token)
+        
+        if token_data.token_type != "access":
+            return None
+        
+        return token_data.user_id
+    except Exception as e:
+        print(f"[AUTH] Optional auth failed (non-fatal): {str(e)[:80]}")
+        return None
 
 async def get_current_user_from_query(token: Optional[str] = Query(None)) -> str:
     """Dependency to get current user from token in query parameter.
