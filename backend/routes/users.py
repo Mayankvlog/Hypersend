@@ -2,9 +2,9 @@ from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File,
 from fastapi.responses import JSONResponse
 from models import (
     UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
-    UserSearchResponse
+    UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
 )
-from db_proxy import users_collection, chats_collection, messages_collection, files_collection
+from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection
 from auth.utils import get_current_user, get_current_user_optional
 import asyncio
 from pydantic import BaseModel, Field, field_validator
@@ -12,9 +12,74 @@ from datetime import datetime, timezone
 from config import settings
 from typing import Optional
 import re
-import logging
 import json
 import math
+
+# Import create_group function directly since groups.routes exists
+def create_group(payload: GroupCreate, current_user: str):
+    """Create a new group chat (stored in chats collection with type=group)."""
+    try:
+        if not payload.name or not payload.name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group name is required"
+            )
+        
+        member_ids = list(dict.fromkeys([*(payload.member_ids or [])], current_user))
+        if len(member_ids) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group must have at least 2 members"
+            )
+        
+        group_id = str(ObjectId())
+        chat_doc = {
+            "_id": group_id,
+            "type": "group",
+            "name": payload.name.strip(),
+            "description": (payload.description or "").strip(),
+            "avatar_url": (payload.avatar_url or "").strip() or None,
+            "members": member_ids,
+            "admins": [current_user],
+            "created_by": current_user,
+            "created_at": datetime.now(timezone.utc),
+            "muted_by": [],
+        }
+        
+        await chats_collection().insert_one(chat_doc)
+        await _log_group_activity(group_id, current_user, "group_created", {"name": chat_doc["name"]})
+        
+        return {
+            "group_id": group_id,
+            "chat_id": group_id,
+            "group": chat_doc
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create group: {str(e)}"
+        )
+
+
+def _log_group_activity(group_id: str, actor_id: str, event: str, meta: Optional[dict] = None):
+    """Log group activity for auditing"""
+    try:
+        db = get_db()
+        col = db.group_activity
+        doc = {
+            "_id": str(ObjectId()),
+            "group_id": group_id,
+            "actor_id": actor_id,
+            "event": event,
+            "meta": meta or {},
+            "created_at": datetime.now(timezone.utc)
+        }
+        await col.insert_one(doc)
+    except Exception:
+        # Silently fail logging to avoid breaking main flow
+        pass
 
 # Set up detailed logging for profile operations
 logger = logging.getLogger("profile_endpoint")
@@ -730,7 +795,34 @@ async def update_permissions(
         )
 
 
-# PasswordChangeRequest moved to backend.models
+# Group Chat Creation Endpoint
+
+@router.post("/create-group")
+
+        
+        member_ids = list(dict.fromkeys([*(payload.member_ids or [])], current_user))
+        if len(member_ids) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group must have at least 2 members"
+            )
+        
+        from groups.routes import create_group as create_group_helper
+        group_result = await create_group_helper(payload, current_user)
+        
+        return {
+            "group_id": group_result["group_id"],
+            "chat_id": group_result["chat_id"], 
+            "group": group_result["group"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create group: {str(e)}"
+        )
 
 
 @router.post("/change-password")
