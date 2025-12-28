@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -631,17 +632,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       }
       
       if (kIsWeb) {
-        // Web-specific file download - suppress deprecation warning as it's necessary for web
+        // Web-specific file download using dart:html
         // ignore: avoid_web_libraries_in_flutter
         final blob = html.Blob([bytes]);
+        // ignore: avoid_web_libraries_in_flutter
         final url = html.Url.createObjectUrlFromBlob(blob);
         
         // Create download link
+        // ignore: avoid_web_libraries_in_flutter
         html.AnchorElement(href: url)
           ..setAttribute('download', fileName)
           ..click();
         
         // Clean up blob URL
+        // ignore: avoid_web_libraries_in_flutter
         html.Url.revokeObjectUrl(url);
       }
       

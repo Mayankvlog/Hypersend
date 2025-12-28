@@ -1,9 +1,8 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, kDebugMode;
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:typed_data';
 import '../../core/constants/api_constants.dart';
-import 'dart:convert';
 
 class ApiService {
   late final Dio _dio;
