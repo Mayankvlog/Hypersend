@@ -1,15 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, kDebugMode;
-import 'package:file_picker/file_picker.dart';
-import 'dart:typed_data';
-import 'dart:convert';
 import 'dart:async';
-import 'dart:math';
 import 'dart:io' as io;
-
-// Conditional imports for dart:io (not available on web)
-// Use conditional import to support both web and native platforms
-import 'dart:io' if (dart.library.html) 'dart:html' show Platform;
 
 class ApiService {
   late final Dio _dio;
@@ -67,23 +59,7 @@ class ApiService {
     }
   }
 
-  String _getDeviceName() {
-    if (kIsWeb) {
-      return 'Web Browser';
-    } else if (!kIsWeb && io.Platform.isAndroid) {
-      return 'Android Device';
-    } else if (!kIsWeb && io.Platform.isIOS) {
-      return 'iOS Device';
-    } else if (!kIsWeb && io.Platform.isWindows) {
-      return 'Windows Desktop';
-    } else if (!kIsWeb && io.Platform.isMacOS) {
-      return 'macOS Device';
-    } else if (!kIsWeb && io.Platform.isLinux) {
-      return 'Linux Device';
-    } else {
-      return 'Unknown Device';
-    }
-  }
+
 
   // Future methods that use File and Directory should be wrapped in !kIsWeb checks
   Future<List<String>> getLocalFiles(String localStoragePath) async {
@@ -106,8 +82,7 @@ class ApiService {
         
         final files = await directory.list().toList();
         final fileNames = files
-            .where((f) => f is io.File)
-            .cast<io.File>()
+            .whereType<io.File>()
             .map((file) => file.path.split('/').last)
             .toList();
         
