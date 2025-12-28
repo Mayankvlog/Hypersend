@@ -85,9 +85,9 @@ class ApiService {
   static String getErrorMessage(DioException error) {
     switch (error.type) {
       case DioExceptionType.connectionTimeout:
-        return 'Connection timeout. Please check if the server is running.';
+        return 'Connection timeout. Please check if the server is running at ${ApiConstants.serverBaseUrl}';
       case DioExceptionType.receiveTimeout:
-        return 'Server took too long to respond. Please try again.';
+        return 'Server took too long to respond. Server at ${ApiConstants.serverBaseUrl} may be overloaded. Please try again.';
       case DioExceptionType.badResponse:
         if (error.response?.statusCode == 422) {
           return 'Invalid data format. Please check your inputs.';
@@ -96,23 +96,28 @@ class ApiService {
         } else if (error.response?.statusCode == 401) {
           return 'Unauthorized. Please login again.';
         } else if (error.response?.statusCode == 404) {
-          return 'Resource not found.';
+          return 'API endpoint not found at ${ApiConstants.serverBaseUrl}';
         }
         return 'Server error: ${error.response?.statusCode}';
       case DioExceptionType.connectionError:
         return 'Cannot connect to server. Please check:\n'
-            '1. Internet connection is active\n'
-            '2. Server is running (check: ${ApiConstants.serverBaseUrl})\n'
-            '3. API endpoint is reachable';
+            '1. ✓ Internet connection is active\n'
+            '2. Server is running: ${ApiConstants.serverBaseUrl}\n'
+            '3. API endpoint (${ApiConstants.baseUrl}) is reachable\n\n'
+            'If you continue seeing this error:\n'
+            '• Verify: https://zaply.in.net/health\n'
+            '• Check VPS status and backend logs';
       case DioExceptionType.unknown:
         if (error.message?.contains('SocketException') == true) {
-          return 'Network error. Please check internet connection.';
+          return 'Network error. Please check internet connection and ensure ${ApiConstants.serverBaseUrl} is accessible.';
         } else if (error.message?.contains('Connection refused') == true) {
-          return 'Cannot connect to server. Server might be down.';
+          return 'Server at ${ApiConstants.serverBaseUrl} refused connection. Backend may be down.';
         } else if (error.message?.contains('Connection timeout') == true) {
-          return 'Connection timeout. Please try again.';
+          return 'Connection timeout. Server at ${ApiConstants.serverBaseUrl} is not responding.';
+        } else if (error.message?.contains('HandshakeException') == true) {
+          return 'SSL/TLS certificate error. The server\'s security certificate may be invalid.';
         }
-        return 'Connection error. Please try again.';
+        return 'Connection error. Please check if ${ApiConstants.serverBaseUrl} is accessible.';
       default:
         return 'An error occurred: ${error.message}';
     }

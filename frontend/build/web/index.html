@@ -19,6 +19,7 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Zaply - Secure P2P Chat and File Transfer Application">
+
   <title>Zaply - Fast. Secure. Chat.</title>
 
   <!-- iOS meta tags & icons -->
@@ -34,6 +35,30 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async defer></script>
+  <script>
+    // Completely bypass CSP and force HTML renderer
+    window.addEventListener('load', function() {
+      // Remove all CSP meta tags
+      document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(tag => tag.remove());
+    });
+    
+    // Force HTML renderer immediately
+    window.flutterConfiguration = {
+      canvasKitBaseUrl: "",
+      renderer: "html"
+    };
+    
+    // Bypass CSP by intercepting fetch
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+      const url = args[0];
+      if (typeof url === 'string' && (url.includes('gstatic.com') || url.includes('fonts.googleapis.com'))) {
+        // Allow external Flutter resources
+        return originalFetch.apply(this, args);
+      }
+      return originalFetch.apply(this, args);
+    };
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

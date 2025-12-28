@@ -6,15 +6,15 @@ class ApiConstants {
   // Examples: 'https://zaply.in.net/api/v1' or 'http://localhost:8000/api/v1'
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    // Default to production URL with /api/v1 path
+    // Default to zaply.in.net production backend with HTTPS
     // Override with build flag: --dart-define=API_BASE_URL=https://your-domain.com/api/v1
-    defaultValue: 'https://zaply.in.net/api/v1/',
+    defaultValue: 'https://zaply.in.net/api/v1',  // Production backend
   );
   
   // Server base URL (without /api/v1) - for avatar images and static files
   static String get serverBaseUrl {
     final uri = Uri.tryParse(baseUrl);
-    if (uri == null) return 'https://zaply.in.net';
+    if (uri == null) return 'https://zaply.in.net';  // Production fallback
     
     // Reconstruct URL without the path
     final port = uri.hasPort ? uri.port : null;

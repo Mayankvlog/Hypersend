@@ -367,11 +367,15 @@ async def favicon():
 
 @app.get("/health")
 async def health():
-    """Health check"""
+    """Health check endpoint with detailed status for debugging"""
     return {
         "status": "healthy",
         "service": "zaply-api",
         "version": "1.0.0",
+        "api_base_url": settings.API_BASE_URL,
+        "api_host": settings.API_HOST,
+        "api_port": settings.API_PORT,
+        "debug": settings.DEBUG,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
