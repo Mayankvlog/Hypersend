@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
+from fastapi.responses import JSONResponse
 from models import (
     UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
     ContactAddRequest, ContactDeleteRequest, ContactSyncRequest, UserSearchResponse
@@ -1087,11 +1088,20 @@ async def upload_avatar(
                 detail="Failed to update avatar in database"
             )
         
-        return {"avatar_url": avatar_url, "success": True}
+        # Return successful response with avatar_url
+        response_data = {
+            "avatar_url": avatar_url,
+            "success": True,
+            "filename": new_file_name,
+            "message": "Avatar uploaded successfully"
+        }
+        print(f"[AVATAR] Returning POST response: {response_data}")
+        return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[AVATAR] Unexpected error: {str(e)}")
         _log("error", f"Unexpected avatar upload error", {"user_id": current_user, "operation": "avatar_upload"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1111,8 +1121,9 @@ async def test_avatar_route():
 
 @router.get("/avatar/")
 async def list_avatars():
-    """Handle GET requests to avatar endpoint without filename"""
+    """Handle GET requests to avatar endpoint without filename - Returns usage documentation"""
     return {
+        "error": "Use POST /api/v1/users/avatar/ to upload avatar",
         "message": "Avatar upload endpoint",
         "usage": {
             "upload": "POST /api/v1/users/avatar/ with file data",
