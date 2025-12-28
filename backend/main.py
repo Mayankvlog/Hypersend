@@ -266,6 +266,26 @@ register_exception_handlers(app)
 # Add validation middleware for 4xx error handling (411, 413, 414, 415)
 app.add_middleware(RequestValidationMiddleware)
 
+# Add a catch-all exception handler for any unhandled exceptions
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Catch-all exception handler for any unhandled exceptions"""
+    import traceback
+    logger.error(f"[UNCAUGHT_EXCEPTION] {type(exc).__name__}: {str(exc)}")
+    if settings.DEBUG:
+        traceback.print_exc()
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "status_code": 500,
+            "error": "Internal Server Error",
+            "detail": "An unexpected error occurred" if not settings.DEBUG else str(exc),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "path": str(request.url.path),
+            "method": request.method,
+        }
+    )
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Log detailed validation errors"""
@@ -366,6 +386,29 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "api_base_url": settings.API_BASE_URL,
         "debug_mode": settings.DEBUG,
+    }
+
+# Diagnostic endpoint to help debug connection issues
+@app.get("/api/v1/health")
+async def api_health_check(request: Request):
+    """
+    API health endpoint with diagnostic info
+    Used to verify API endpoint is accessible from frontend
+    """
+    try:
+        client_ip = request.client.host if request.client else "unknown"
+    except:
+        client_ip = "unknown"
+    
+    return {
+        "status": "healthy",
+        "service": "Hypersend API",
+        "version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "client_ip": client_ip,
+        "api_base_url": settings.API_BASE_URL,
+        "debug_mode": settings.DEBUG,
+        "message": "API endpoint is reachable and responding properly"
     }
 
 # API version endpoint
@@ -493,33 +536,62 @@ app.include_router(channels.router, prefix="/api/v1")
 from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse
 from auth.utils import get_current_user
 
+# OPTIONS preflight handlers for alias endpoints
+@app.options("/api/v1/login")
+@app.options("/api/v1/register")
+@app.options("/api/v1/refresh")
+@app.options("/api/v1/logout")
+async def preflight_alias_endpoints():
+    """Handle CORS preflight for alias endpoints"""
+    return Response(status_code=204, headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    })
+
 # Forward /api/v1/login to /api/v1/auth/login
 @app.post("/api/v1/login", response_model=Token)
 async def login_alias(credentials: UserLogin, request: Request):
     """Alias endpoint for login - forwards to auth/login"""
-    from routes.auth import login as auth_login
-    return await auth_login(credentials, request)
+    try:
+        from routes.auth import login as auth_login
+        return await auth_login(credentials, request)
+    except Exception as e:
+        logger.error(f"[LOGIN_ALIAS] Error: {type(e).__name__}: {str(e)}")
+        raise
 
 # Forward /api/v1/register to /api/v1/auth/register
 @app.post("/api/v1/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_alias(user: UserCreate):
     """Alias endpoint for register - forwards to auth/register"""
-    from routes.auth import register as auth_register
-    return await auth_register(user)
+    try:
+        from routes.auth import register as auth_register
+        return await auth_register(user)
+    except Exception as e:
+        logger.error(f"[REGISTER_ALIAS] Error: {type(e).__name__}: {str(e)}")
+        raise
 
 # Forward /api/v1/refresh to /api/v1/auth/refresh
 @app.post("/api/v1/refresh", response_model=Token)
 async def refresh_alias(refresh_request: RefreshTokenRequest):
     """Alias endpoint for refresh - forwards to auth/refresh"""
-    from routes.auth import refresh_token as auth_refresh
-    return await auth_refresh(refresh_request)
+    try:
+        from routes.auth import refresh_token as auth_refresh
+        return await auth_refresh(refresh_request)
+    except Exception as e:
+        logger.error(f"[REFRESH_ALIAS] Error: {type(e).__name__}: {str(e)}")
+        raise
 
 # Forward /api/v1/logout to /api/v1/auth/logout
 @app.post("/api/v1/logout")
 async def logout_alias(current_user: str = Depends(get_current_user)):
     """Alias endpoint for logout - forwards to auth/logout"""
-    from routes.auth import logout as auth_logout
-    return await auth_logout(current_user)
+    try:
+        from routes.auth import logout as auth_logout
+        return await auth_logout(current_user)
+    except Exception as e:
+        logger.error(f"[LOGOUT_ALIAS] Error: {type(e).__name__}: {str(e)}")
+        raise
 
 # Include debug routes (only in DEBUG mode, but router checks internally)
 if settings.DEBUG:
