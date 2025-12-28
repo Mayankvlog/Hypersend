@@ -696,7 +696,7 @@ async def forgot_password(request: ForgotPasswordRequest):
         )
 
 
-@router.post("/reset-password", response_model=PasswordResetResponse)
+@router.post("/auth/reset-password", response_model=PasswordResetResponse)
 async def reset_password(request: PasswordResetRequest):
     """Reset password using reset token"""
     

@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status, HTTPException
+from fastapi import FastAPI, Request, status, HTTPException, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, JSONResponse
@@ -487,6 +487,39 @@ app.include_router(files.router, prefix="/api/v1")
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
+
+# Add endpoint aliases for frontend compatibility
+# Import models for alias endpoints
+from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse
+from auth.utils import get_current_user
+
+# Forward /api/v1/login to /api/v1/auth/login
+@app.post("/api/v1/login", response_model=Token)
+async def login_alias(credentials: UserLogin, request: Request):
+    """Alias endpoint for login - forwards to auth/login"""
+    from routes.auth import login as auth_login
+    return await auth_login(credentials, request)
+
+# Forward /api/v1/register to /api/v1/auth/register
+@app.post("/api/v1/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register_alias(user: UserCreate):
+    """Alias endpoint for register - forwards to auth/register"""
+    from routes.auth import register as auth_register
+    return await auth_register(user)
+
+# Forward /api/v1/refresh to /api/v1/auth/refresh
+@app.post("/api/v1/refresh", response_model=Token)
+async def refresh_alias(refresh_request: RefreshTokenRequest):
+    """Alias endpoint for refresh - forwards to auth/refresh"""
+    from routes.auth import refresh_token as auth_refresh
+    return await auth_refresh(refresh_request)
+
+# Forward /api/v1/logout to /api/v1/auth/logout
+@app.post("/api/v1/logout")
+async def logout_alias(current_user: str = Depends(get_current_user)):
+    """Alias endpoint for logout - forwards to auth/logout"""
+    from routes.auth import logout as auth_logout
+    return await auth_logout(current_user)
 
 # Include debug routes (only in DEBUG mode, but router checks internally)
 if settings.DEBUG:
