@@ -132,11 +132,10 @@ async def update_profile(
         logger.info(f"Received ProfileUpdate model:")
         logger.info(f"  - name: {profile_data.name} (type: {type(profile_data.name).__name__})")
         logger.info(f"  - username: {profile_data.username} (type: {type(profile_data.username).__name__})")
-        logger.info(f"  - email: {profile_data.email} (type: {type(profile_data.email).__name__})")
         logger.info(f"  - avatar: {profile_data.avatar} (type: {type(profile_data.avatar).__name__})")
         logger.info(f"  - bio: {profile_data.bio} (type: {type(profile_data.bio).__name__})")
-        logger.info(f"  - phone: {profile_data.phone} (type: {type(profile_data.phone).__name__})")
         logger.info(f"  - avatar_url: {profile_data.avatar_url} (type: {type(profile_data.avatar_url).__name__})")
+        logger.debug(f"[EMAIL_PII] Email and phone fields present but not logged for privacy")
         
         # Check if at least one field is being updated
         if all(v is None for v in [profile_data.name, profile_data.email, profile_data.username, profile_data.bio, profile_data.phone, profile_data.avatar_url, profile_data.avatar]):
@@ -163,7 +162,6 @@ async def update_profile(
         logger.info(f"Current user data retrieved:")
         logger.info(f"  - name: {current_user_data.get('name')}")
         logger.info(f"  - username: {current_user_data.get('username')}")
-        logger.info(f"  - email: {current_user_data.get('email')}")
         
         # Prepare the update data
         update_data = {}
@@ -216,7 +214,7 @@ async def update_profile(
             update_data["bio"] = profile_data.bio
         
         if profile_data.phone is not None:
-            logger.info(f"✓ Phone set: {profile_data.phone}")
+            logger.info(f"✓ Phone field updated")
             update_data["phone"] = profile_data.phone
         
         # Process the avatar
@@ -230,11 +228,11 @@ async def update_profile(
         
         # Process email (enforce uniqueness)
         if profile_data.email is not None and profile_data.email.strip():
-            logger.info(f"Processing email update: {profile_data.email}")
+            logger.info(f"Processing email field update")
             # Validate the email format
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, profile_data.email):
-                logger.warning(f"Email validation failed: invalid format for {profile_data.email}")
+                logger.warning(f"Email validation failed: invalid format")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid email format. Use format: user@example.com"
@@ -242,7 +240,7 @@ async def update_profile(
             
             # Normalize the email
             new_email = profile_data.email.lower().strip()
-            logger.info(f"Email normalized: {new_email}")
+            logger.info(f"Email field normalized")
             
             # Ensure no other user already uses this email
             existing = await asyncio.wait_for(
@@ -250,12 +248,12 @@ async def update_profile(
                 timeout=5.0
             )
             if existing and existing.get("_id") != current_user:
-                logger.warning(f"Email already in use: {new_email} by {existing.get('_id')}")
+                logger.warning(f"Email field is already in use")
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Email already in use"
                 )
-            logger.info(f"✓ Email validation passed: {new_email}")
+            logger.info(f"✓ Email field validation passed")
             update_data["email"] = new_email
         
         # Add updated timestamp
@@ -307,7 +305,6 @@ async def update_profile(
         logger.info(f"  - ID: {updated_user.get('_id')}")
         logger.info(f"  - Name: {updated_user.get('name')}")
         logger.info(f"  - Username: {updated_user.get('username')}")
-        logger.info(f"  - Email: {updated_user.get('email')}")
         logger.info(f"  - Updated at: {updated_user.get('updated_at')}")
         logger.info(f"{'='*80}")
         

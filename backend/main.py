@@ -549,49 +549,71 @@ async def preflight_alias_endpoints():
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
     })
 
-# Forward /api/v1/login to /api/v1/auth/login
+# Create simple redirect aliases - just accept and forward to auth handlers
 @app.post("/api/v1/login", response_model=Token)
 async def login_alias(credentials: UserLogin, request: Request):
-    """Alias endpoint for login - forwards to auth/login"""
+    """Forward /api/v1/login to /api/v1/auth/login"""
+    # Import here to avoid circular imports
+    from routes.auth import login
     try:
-        from routes.auth import login as auth_login
-        return await auth_login(credentials, request)
-    except Exception as e:
-        logger.error(f"[LOGIN_ALIAS] Error: {type(e).__name__}: {str(e)}")
+        logger.info(f"[LOGIN_ALIAS] Processing login request")
+        result = await login(credentials, request)
+        logger.info(f"[LOGIN_ALIAS] Login successful")
+        return result
+    except HTTPException as e:
+        logger.warning(f"[LOGIN_ALIAS] HTTP error: {e.status_code}")
         raise
+    except Exception as e:
+        logger.error(f"[LOGIN_ALIAS_ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Login failed")
 
-# Forward /api/v1/register to /api/v1/auth/register
 @app.post("/api/v1/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_alias(user: UserCreate):
-    """Alias endpoint for register - forwards to auth/register"""
+    """Forward /api/v1/register to /api/v1/auth/register"""
+    from routes.auth import register
     try:
-        from routes.auth import register as auth_register
-        return await auth_register(user)
-    except Exception as e:
-        logger.error(f"[REGISTER_ALIAS] Error: {type(e).__name__}: {str(e)}")
+        logger.info(f"[REGISTER_ALIAS] Processing registration request")
+        result = await register(user)
+        logger.info(f"[REGISTER_ALIAS] Registration successful")
+        return result
+    except HTTPException as e:
+        logger.warning(f"[REGISTER_ALIAS] HTTP error: {e.status_code}")
         raise
+    except Exception as e:
+        logger.error(f"[REGISTER_ALIAS_ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Registration failed")
 
-# Forward /api/v1/refresh to /api/v1/auth/refresh
 @app.post("/api/v1/refresh", response_model=Token)
 async def refresh_alias(refresh_request: RefreshTokenRequest):
-    """Alias endpoint for refresh - forwards to auth/refresh"""
+    """Forward /api/v1/refresh to /api/v1/auth/refresh"""
+    from routes.auth import refresh_token
     try:
-        from routes.auth import refresh_token as auth_refresh
-        return await auth_refresh(refresh_request)
-    except Exception as e:
-        logger.error(f"[REFRESH_ALIAS] Error: {type(e).__name__}: {str(e)}")
+        logger.info(f"[REFRESH_ALIAS] Processing token refresh")
+        result = await refresh_token(refresh_request)
+        logger.info(f"[REFRESH_ALIAS] Refresh successful")
+        return result
+    except HTTPException as e:
+        logger.warning(f"[REFRESH_ALIAS] HTTP error: {e.status_code}")
         raise
+    except Exception as e:
+        logger.error(f"[REFRESH_ALIAS_ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Refresh failed")
 
-# Forward /api/v1/logout to /api/v1/auth/logout
 @app.post("/api/v1/logout")
 async def logout_alias(current_user: str = Depends(get_current_user)):
-    """Alias endpoint for logout - forwards to auth/logout"""
+    """Forward /api/v1/logout to /api/v1/auth/logout"""
+    from routes.auth import logout
     try:
-        from routes.auth import logout as auth_logout
-        return await auth_logout(current_user)
-    except Exception as e:
-        logger.error(f"[LOGOUT_ALIAS] Error: {type(e).__name__}: {str(e)}")
+        logger.info(f"[LOGOUT_ALIAS] Processing logout for user")
+        result = await logout(current_user)
+        logger.info(f"[LOGOUT_ALIAS] Logout successful")
+        return result
+    except HTTPException as e:
+        logger.warning(f"[LOGOUT_ALIAS] HTTP error: {e.status_code}")
         raise
+    except Exception as e:
+        logger.error(f"[LOGOUT_ALIAS_ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Logout failed")
 
 # Include debug routes (only in DEBUG mode, but router checks internally)
 if settings.DEBUG:

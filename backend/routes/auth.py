@@ -94,7 +94,7 @@ async def register(user: UserCreate):
         
         # Lowercase email for consistency
         user_email = user.email.lower().strip()
-        auth_log(f"[AUTH] Registration request for email: {user_email[:3]}***@{user_email.split('@')[1] if '@' in user_email else '***'}")
+        auth_log(f"[AUTH] Registration request received")
         
         # Get users collection - this will raise RuntimeError if DB not connected
         try:
@@ -108,13 +108,13 @@ async def register(user: UserCreate):
         
         # Check if user already exists (with timeout)
         try:
-            auth_log(f"[AUTH] Checking existence for: {user_email}")
+            auth_log(f"[AUTH] Checking if user exists")
             existing_user = await asyncio.wait_for(
                 users.find_one({"email": user_email}),
                 timeout=5.0
             )
         except asyncio.TimeoutError:
-            auth_log(f"[AUTH] Database query timeout for {user.email}")
+            auth_log(f"[AUTH] Database query timeout during registration")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database operation timed out. Please try again."
@@ -249,7 +249,7 @@ async def login(credentials: UserLogin, request: Request):
                     headers={"Retry-After": str(int(retry_after))}
                 )
         
-        auth_log(f"[AUTH] Login attempt for user: {credentials.email[:3]}***@{credentials.email.split('@')[1] if '@' in credentials.email else '***'}")
+        auth_log(f"[AUTH] Login attempt received")
         
         # Get users collection
         try:
@@ -293,13 +293,13 @@ async def login(credentials: UserLogin, request: Request):
                 
                 lockout_time = current_time + timedelta(seconds=lockout_duration)
                 failed_login_attempts[credentials.email] = (new_attempts, lockout_time)
-                auth_log(f"[AUTH] Progressive lockout: {credentials.email}, attempt {new_attempts}, duration {lockout_duration}s")
+                auth_log(f"[AUTH] Progressive lockout applied: attempt {new_attempts}, duration {lockout_duration}s")
             else:
                 # First failed attempt
                 lockout_duration = PROGRESSIVE_LOCKOUTS[1]
                 lockout_time = current_time + timedelta(seconds=lockout_duration)
                 failed_login_attempts[credentials.email] = (1, lockout_time)
-                auth_log(f"[AUTH] First failed attempt: {credentials.email}, {lockout_duration}s lockout")
+                auth_log(f"[AUTH] First failed attempt detected, {lockout_duration}s lockout initiated")
             
             # Record this failed attempt (after credential validation failure)
             login_attempts[client_ip].append(current_time)
@@ -315,7 +315,7 @@ async def login(credentials: UserLogin, request: Request):
             attempts, lockout_until = failed_login_attempts[credentials.email]
             if current_time < lockout_until:
                 remaining_time = int((lockout_until - current_time).total_seconds())
-                auth_log(f"[AUTH] Account locked: {credentials.email}, attempts: {attempts}, remaining: {remaining_time}s")
+                auth_log(f"[AUTH] Account locked: attempts: {attempts}, remaining: {remaining_time}s")
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=f"Account temporarily locked due to too many failed attempts. Please try again in {remaining_time} seconds.",
@@ -348,13 +348,13 @@ async def login(credentials: UserLogin, request: Request):
                 
                 lockout_time = current_time + timedelta(seconds=lockout_duration)
                 failed_login_attempts[credentials.email] = (new_attempts, lockout_time)
-                auth_log(f"[AUTH] Progressive lockout: {credentials.email}, attempt {new_attempts}, duration {lockout_duration}s")
+                auth_log(f"[AUTH] Progressive lockout applied: attempt {new_attempts}, duration {lockout_duration}s")
             else:
                 # First failed attempt
                 lockout_duration = PROGRESSIVE_LOCKOUTS[1]
                 lockout_time = current_time + timedelta(seconds=lockout_duration)
                 failed_login_attempts[credentials.email] = (1, lockout_time)
-                auth_log(f"[AUTH] First failed attempt: {credentials.email}, {lockout_duration}s lockout")
+                auth_log(f"[AUTH] First failed attempt detected, {lockout_duration}s lockout initiated")
             
             # Record this failed attempt (after credential validation failure)
             login_attempts[client_ip].append(current_time)
@@ -559,7 +559,7 @@ async def forgot_password(request: ForgotPasswordRequest):
     try:
         # Normalize email
         email = request.email.lower().strip()
-        auth_log(f"[AUTH] Password reset request for email: {email[:3]}***@{email.split('@')[1] if '@' in email else '***'}")
+        auth_log(f"[AUTH] Password reset request received")
         
         # Validate email format
         if not email or '@' not in email:
@@ -696,7 +696,7 @@ async def forgot_password(request: ForgotPasswordRequest):
         )
 
 
-@router.post("/auth/reset-password", response_model=PasswordResetResponse)
+@router.post("/reset-password", response_model=PasswordResetResponse)
 async def reset_password(request: PasswordResetRequest):
     """Reset password using reset token"""
     
