@@ -552,68 +552,27 @@ async def preflight_alias_endpoints():
 # Create simple redirect aliases - just accept and forward to auth handlers
 @app.post("/api/v1/login", response_model=Token)
 async def login_alias(credentials: UserLogin, request: Request):
-    """Forward /api/v1/login to /api/v1/auth/login"""
-    # Import here to avoid circular imports
-    from routes.auth import login
-    try:
-        logger.info(f"[LOGIN_ALIAS] Processing login request")
-        result = await login(credentials, request)
-        logger.info(f"[LOGIN_ALIAS] Login successful")
-        return result
-    except HTTPException as e:
-        logger.warning(f"[LOGIN_ALIAS] HTTP error: {e.status_code}")
-        raise
-    except Exception as e:
-        logger.error(f"[LOGIN_ALIAS_ERROR] {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Login failed")
+    """Alias for /api/v1/auth/login - delegates to auth router"""
+    from routes.auth import login as auth_login
+    return await auth_login(credentials, request)
 
 @app.post("/api/v1/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_alias(user: UserCreate):
-    """Forward /api/v1/register to /api/v1/auth/register"""
-    from routes.auth import register
-    try:
-        logger.info(f"[REGISTER_ALIAS] Processing registration request")
-        result = await register(user)
-        logger.info(f"[REGISTER_ALIAS] Registration successful")
-        return result
-    except HTTPException as e:
-        logger.warning(f"[REGISTER_ALIAS] HTTP error: {e.status_code}")
-        raise
-    except Exception as e:
-        logger.error(f"[REGISTER_ALIAS_ERROR] {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Registration failed")
+    """Alias for /api/v1/auth/register - delegates to auth router"""
+    from routes.auth import register as auth_register
+    return await auth_register(user)
 
 @app.post("/api/v1/refresh", response_model=Token)
 async def refresh_alias(refresh_request: RefreshTokenRequest):
-    """Forward /api/v1/refresh to /api/v1/auth/refresh"""
-    from routes.auth import refresh_token
-    try:
-        logger.info(f"[REFRESH_ALIAS] Processing token refresh")
-        result = await refresh_token(refresh_request)
-        logger.info(f"[REFRESH_ALIAS] Refresh successful")
-        return result
-    except HTTPException as e:
-        logger.warning(f"[REFRESH_ALIAS] HTTP error: {e.status_code}")
-        raise
-    except Exception as e:
-        logger.error(f"[REFRESH_ALIAS_ERROR] {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Refresh failed")
+    """Alias for /api/v1/auth/refresh - delegates to auth router"""
+    from routes.auth import refresh_token as auth_refresh
+    return await auth_refresh(refresh_request)
 
 @app.post("/api/v1/logout")
 async def logout_alias(current_user: str = Depends(get_current_user)):
-    """Forward /api/v1/logout to /api/v1/auth/logout"""
-    from routes.auth import logout
-    try:
-        logger.info(f"[LOGOUT_ALIAS] Processing logout for user")
-        result = await logout(current_user)
-        logger.info(f"[LOGOUT_ALIAS] Logout successful")
-        return result
-    except HTTPException as e:
-        logger.warning(f"[LOGOUT_ALIAS] HTTP error: {e.status_code}")
-        raise
-    except Exception as e:
-        logger.error(f"[LOGOUT_ALIAS_ERROR] {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Logout failed")
+    """Alias for /api/v1/auth/logout - delegates to auth router"""
+    from routes.auth import logout as auth_logout
+    return await auth_logout(current_user)
 
 # Include debug routes (only in DEBUG mode, but router checks internally)
 if settings.DEBUG:
