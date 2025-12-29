@@ -133,7 +133,7 @@ async def test_email_endpoint():
         "recommendations": _get_email_recommendations(test_ok, test_message, config_info)
     }
 
-def _get_email_troubleshooting_recommendations(email_service_status: str, email_error: str?) -> list:
+def _get_email_troubleshooting_recommendations(email_service_status: str, email_error: str | None) -> list:
     """Get comprehensive troubleshooting recommendations for email issues."""
     recommendations = []
     
