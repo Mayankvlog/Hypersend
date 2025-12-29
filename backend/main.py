@@ -257,7 +257,8 @@ app = FastAPI(
     title="Zaply API",
     description="Secure peer-to-peer file transfer and messaging application",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    redirect_slashes=False  # Fix: Prevent automatic trailing slash redirects
 )
 
 # Register custom exception handlers

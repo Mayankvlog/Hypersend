@@ -7,7 +7,7 @@ class ApiConstants {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
     // Default to zaply.in.net production backend with HTTPS
-    // Override with build flag: --dart-define=API_BASE_URL=https://your-domain.com/api/v1
+    // Override with build flag: --dart-define=API_BASE_URL=http://localhost:8000/api/v1
     defaultValue: 'https://zaply.in.net/api/v1',  // Production backend
   );
   

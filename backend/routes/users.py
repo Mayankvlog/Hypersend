@@ -944,7 +944,6 @@ async def change_email(
 
 
 @router.post("/avatar")
-@router.post("/avatar/")
 async def upload_avatar(
     file: UploadFile = File(...),
     request: Request = None,
@@ -957,6 +956,10 @@ async def upload_avatar(
         import uuid
         
         logger.debug("Avatar upload POST request started")
+        logger.debug(f"Request headers: {dict(request.headers) if request else 'No request object'}")
+        logger.debug(f"File object: {file}")
+        logger.debug(f"File filename: {file.filename}")
+        logger.debug(f"File content type: {file.content_type}")
         
         # If no user, use guest ID
         if not current_user:
@@ -1007,14 +1010,23 @@ async def upload_avatar(
             # Use async file operations
             async with aiofiles.open(new_file_path, "wb") as buffer:
                 content = await file.read()
+                logger.debug(f"Read {len(content)} bytes from file")
                 await buffer.write(content)
             
             logger.debug("Avatar file saved successfully")
             if new_file_path.exists():
                 file_size = new_file_path.stat().st_size
                 logger.debug(f"File size verified: {file_size} bytes")
+            else:
+                logger.error("File was not created successfully")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to save file - file not created"
+                )
         except Exception as save_error:
             logger.error(f"Failed to save avatar file: {save_error}")
+            logger.error(f"File path attempted: {new_file_path}")
+            logger.error(f"Directory exists: {avatar_dir.exists()}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to save file"
@@ -1078,18 +1090,31 @@ async def upload_avatar(
             logger.warning(f"Database update failed: {db_error} - file still saved")
             # Don't fail - file is already saved, user can still download via URL
         
-        # Return successful response with BOTH avatar_url and avatar fields
-        # Both fields are required for frontend validation to pass
+        # Return response that matches frontend expectations
+        # Frontend specifically looks for 'avatar_url' field in profile_service.dart:178-182
         current_avatar = updated_user.get("avatar") if updated_user else None
         response_data = {
-            "avatar_url": avatar_url,  # ✅ Image URL (REQUIRED)
-            "avatar": current_avatar if current_avatar else "",  # ✅ Initials (REQUIRED - defaults to empty string)
+            "avatar_url": avatar_url,  # ✅ REQUIRED: Frontend expects this field
+            # Keep avatar field for frontend compatibility
+            "avatar": current_avatar if current_avatar else "",
             "success": True,
-            "filename": new_file_name,
-            "message": "Avatar uploaded successfully",
-            "status": "upload_complete"
+            "message": "Avatar uploaded successfully"
         }
         logger.debug(f"Avatar upload completed successfully: avatar_url={avatar_url}, avatar={response_data['avatar']}")
+        
+        # Validate response data before sending
+        if not isinstance(response_data, dict):
+            logger.error(f"Response data is not a dict: {type(response_data)}")
+            response_data = {"avatar_url": avatar_url, "avatar": "", "success": False, "message": "Internal error"}
+        
+        if "avatar_url" not in response_data:
+            logger.error("avatar_url missing from response_data")
+            response_data["avatar_url"] = avatar_url
+            
+        if "avatar" not in response_data:
+            response_data["avatar"] = current_avatar if current_avatar else ""
+            
+        logger.debug(f"Final response data: {response_data}")
         return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException as http_exc:
@@ -1184,6 +1209,20 @@ async def upload_avatar_alt(
             "message": "Avatar uploaded successfully"
         }
         logger.debug(f"Alternative avatar upload completed: avatar_url={avatar_url}, avatar={response_data['avatar']}")
+        
+        # Validate response data before sending
+        if not isinstance(response_data, dict):
+            logger.error(f"Response data is not a dict: {type(response_data)}")
+            response_data = {"avatar_url": avatar_url, "avatar": "", "success": False, "message": "Internal error"}
+        
+        if "avatar_url" not in response_data:
+            logger.error("avatar_url missing from response_data in alternative endpoint")
+            response_data["avatar_url"] = avatar_url
+            
+        if "avatar" not in response_data:
+            response_data["avatar"] = current_avatar if current_avatar else ""
+            
+        logger.debug(f"Final alternative response data: {response_data}")
         return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException:
@@ -1209,6 +1248,15 @@ async def test_avatar_route():
         "post_endpoint": "POST /api/v1/users/avatar/ - Use this to upload",
         "get_endpoint": "GET /api/v1/users/avatar/{filename} - Use this to retrieve"
     }
+
+@router.post("/avatar/")
+async def upload_avatar_with_slash(
+    file: UploadFile = File(...),
+    request: Request = None,
+    current_user: str = Depends(get_current_user_optional)
+):
+    """Upload user avatar - POST endpoint with trailing slash (same logic as without slash)"""
+    return await upload_avatar(file, request, current_user)
 
 @router.get("/avatar/")
 async def list_avatars(request: Request):

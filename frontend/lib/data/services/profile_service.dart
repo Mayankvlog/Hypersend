@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 
 import '../models/user.dart';
 import 'api_service.dart';
@@ -175,17 +176,35 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       debugPrint('[PROFILE_SERVICE] Uploading avatar: $filename');
       final response = await _apiService.uploadAvatar(bytes, filename);
       
-      if (response['avatar_url'] == null) {
-        throw Exception('Invalid response from server: missing avatar_url');
+      debugPrint('[PROFILE_SERVICE] Raw response: $response');
+      debugPrint('[PROFILE_SERVICE] Response type: ${response.runtimeType}');
+      
+      if (response is! Map) {
+        throw Exception('Invalid response from server: expected Map, got ${response.runtimeType}');
       }
       
-      final avatarUrl = response['avatar_url'] as String;
+      final Map<String, dynamic> responseMap = Map<String, dynamic>.from(response);
+      
+      // Check for avatar_url field (required)
+      if (!responseMap.containsKey('avatar_url') || responseMap['avatar_url'] == null) {
+        debugPrint('[PROFILE_SERVICE] Response keys: ${responseMap.keys.toList()}');
+        throw Exception('Invalid response from server: missing avatar_url field');
+      }
+      
+      final avatarUrl = responseMap['avatar_url'].toString();
       debugPrint('[PROFILE_SERVICE] Avatar uploaded successfully: $avatarUrl');
       
-      // Update local user with new avatar URL (server already updated during upload)
+      // Extract avatar field if available (for initials)
+      final String avatar = responseMap.containsKey('avatar') ? responseMap['avatar'].toString() : '';
+      
+      // Update local user with new avatar URL and avatar (server already updated during upload)
       if (_currentUser != null) {
-        _currentUser = _currentUser!.copyWith(avatarUrl: avatarUrl);
-        debugPrint('[PROFILE_SERVICE] Local user updated with new avatar URL');
+        _currentUser = _currentUser!.copyWith(
+          avatarUrl: avatarUrl,
+          avatar: avatar.isNotEmpty ? avatar : _currentUser!.avatar, // Keep existing if empty
+        );
+        debugPrint('[PROFILE_SERVICE] Local user updated with new avatar URL: $avatarUrl');
+        debugPrint('[PROFILE_SERVICE] Local user avatar field: $avatar');
       }
       
       return avatarUrl;

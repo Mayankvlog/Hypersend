@@ -29,7 +29,10 @@ class ApiService {
     }
     
     _log('[API_INIT] Base URL: $url');
+    _log('[API_INIT] Server Base URL: ${ApiConstants.serverBaseUrl}');
     _log('[API_INIT] Auth endpoint: ${ApiConstants.authEndpoint}');
+    _log('[API_INIT] Users endpoint: ${ApiConstants.usersEndpoint}');
+    _log('[API_INIT] Full avatar URL: ${url}${ApiConstants.usersEndpoint}/avatar');
     _log('[API_INIT] SSL validation: ${ApiConstants.validateCertificates}');
 
     _dio = Dio(
@@ -244,6 +247,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
         'file': MultipartFile.fromBytes(bytes, filename: filename),
       });
       
+      // Remove Content-Type header to let Dio set it automatically with correct boundary
       final response = await _dio.post(
         '${ApiConstants.usersEndpoint}/avatar', 
         data: formData,
@@ -252,21 +256,59 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
           sendTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 30),
           headers: {
-            'Content-Type': 'multipart/form-data',
             'Accept': 'application/json',
+            // Remove Content-Type to let Dio handle multipart/form-data with proper boundary
           },
         ),
       );
       
+      debugPrint('[API_SERVICE] Avatar upload status: ${response.statusCode}');
       debugPrint('[API_SERVICE] Avatar upload response: ${response.data}');
+      debugPrint('[API_SERVICE] Response data type: ${response.data.runtimeType}');
+      debugPrint('[API_SERVICE] Response headers: ${response.headers}');
+      
+      // Try to manually parse if it's a string
+      if (response.data is String) {
+        debugPrint('[API_SERVICE] Response is String, attempting to parse JSON...');
+        try {
+          final parsed = jsonDecode(response.data as String);
+          debugPrint('[API_SERVICE] Parsed JSON successfully: $parsed');
+          debugPrint('[API_SERVICE] Parsed type: ${parsed.runtimeType}');
+        } catch (e) {
+          debugPrint('[API_SERVICE] JSON parsing failed: $e');
+        }
+      }
       
       if (response.data == null) {
         throw Exception('Empty response from server');
       }
       
-      return response.data ?? {};
+      // Handle different response formats
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      } else if (response.data is Map) {
+        // Convert generic Map to Map<String, dynamic>
+        return Map<String, dynamic>.from(response.data as Map);
+      } else if (response.data is String) {
+        // Try to parse JSON string
+        try {
+          final parsed = jsonDecode(response.data as String);
+          if (parsed is Map) {
+            return Map<String, dynamic>.from(parsed);
+          }
+        } catch (e) {
+          debugPrint('[API_SERVICE] Failed to parse JSON string: $e');
+        }
+        debugPrint('[API_SERVICE] Response is not a Map: ${response.data}');
+        throw Exception('Invalid response format from server: expected JSON object');
+      } else {
+        debugPrint('[API_SERVICE] Response is not a Map: ${response.data}');
+        debugPrint('[API_SERVICE] Response type: ${response.data.runtimeType}');
+        throw Exception('Invalid response format from server: expected JSON object');
+      }
     } on DioException catch (e) {
       debugPrint('[API_SERVICE] DioException during avatar upload: ${e.type} - ${e.message}');
+      debugPrint('[API_SERVICE] Response status: ${e.response?.statusCode}');
       debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
       
       String errorMessage = 'Failed to upload avatar';
