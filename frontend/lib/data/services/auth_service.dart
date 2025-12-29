@@ -365,7 +365,6 @@ Future<void> resetPassword({required String email}) async {
     List<String> recommendations = [];
     
     final emailServiceStatus = result['email_service_status'] as String? ?? 'unknown';
-    final emailStatusDesc = result['email_status_description'] as String? ?? 'Unknown status';
     
     // Honest assessment based on actual email service status
     if (emailServiceStatus == 'not_configured') {
@@ -480,9 +479,6 @@ Future<void> resetPassword({required String email}) async {
     } else {
       return 'Contact technical support for assistance';
     }
-  }
-    
-    return recommendations;
   }
 
   // Test email service configuration
