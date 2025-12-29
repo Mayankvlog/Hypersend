@@ -9,6 +9,31 @@ from models import MessageEditRequest, MessageReactionRequest
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
 
+# OPTIONS handlers for CORS preflight requests
+@router.options("/{message_id}")
+@router.options("/{message_id}/versions")
+@router.options("/{message_id}/reactions")
+@router.options("/{message_id}/versions")
+@router.options("/{message_id}/reactions")
+@router.options("/{message_id}/pin")
+@router.options("/{message_id}/unpin")
+@router.options("/{message_id}/read")
+@router.options("/search")
+@router.options("/{message_id}/react")
+@router.options("/{message_id}/pin")
+async def messages_options():
+    """Handle CORS preflight for messages endpoints"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)

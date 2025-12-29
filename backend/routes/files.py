@@ -46,6 +46,26 @@ def _log(level: str, message: str, user_data: dict = None):
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
+# OPTIONS handlers for CORS preflight requests
+@router.options("/init")
+@router.options("/{upload_id}/chunk")
+@router.options("/{upload_id}/complete")
+@router.options("/{upload_id}/info")
+@router.options("/{upload_id}/download")
+@router.options("/{upload_id}/cancel")
+async def files_options():
+    """Handle CORS preflight for files endpoints"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Disposition",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
 
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(

@@ -952,10 +952,6 @@ async def upload_avatar(
 ):
     """Upload user avatar - POST endpoint (accepts optional auth, returns avatar_url)"""
     try:
-        logger.info(f"[AVATAR_UPLOAD] POST request received to /avatar endpoint")
-        logger.info(f"[AVATAR_UPLOAD] Request URL: {request.url if request else 'No request object'}")
-        logger.info(f"[AVATAR_UPLOAD] Current user: {current_user or 'Guest'}")
-        logger.info(f"[AVATAR_UPLOAD] File: {file.filename if file else 'No file'}")
         import shutil
         import os
         import uuid
@@ -1088,10 +1084,12 @@ async def upload_avatar(
         return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException as http_exc:
-        logger.warning(f"HTTP error in avatar upload: {http_exc.status_code}")
+        logger.warning(f"HTTP error in avatar upload: {http_exc.status_code} - {http_exc.detail}")
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in avatar upload: {type(e).__name__}")
+        import traceback
+        logger.error(f"Unexpected error in avatar upload: {type(e).__name__}: {str(e)}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         _log("error", f"Unexpected avatar upload error: {str(e)}", {"user_id": current_user, "operation": "avatar_upload"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1234,7 +1232,6 @@ async def list_avatars(request: Request):
     )
 
 @router.options("/avatar")
-@router.options("/avatar/")
 @router.options("/avatar-upload")
 async def avatar_options():
     """Handle CORS preflight for avatar endpoint"""

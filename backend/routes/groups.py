@@ -11,6 +11,33 @@ from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRole
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
 
+# OPTIONS handlers for CORS preflight requests
+@router.options("")
+@router.options("/{group_id}")
+@router.options("/{group_id}/members")
+@router.options("/{group_id}/members/{member_id}")
+@router.options("/{group_id}/members/{member_id}/role")
+@router.options("/{group_id}/members/{member_id}/restrict")
+@router.options("/{group_id}/members")
+@router.options("/{group_id}/members/{member_id}/role")
+async def groups_options():
+    """Handle CORS preflight for groups endpoints"""
+    from fastapi.responses import Response
+    # SECURITY: Restrict CORS origins in production for authenticated endpoints
+    from config import settings
+    
+    cors_origin = settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
+    
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": cors_origin,
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)

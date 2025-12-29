@@ -4,6 +4,29 @@ from datetime import datetime, timezone
 
 router = APIRouter(prefix="/updates", tags=["Updates"])
 
+# OPTIONS handlers for CORS preflight requests
+@router.options("/check")
+@router.options("/latest")
+@router.options("/version/{version}")
+@router.options("/release")
+@router.options("/typing")
+@router.options("/typing/{chat_id}")
+@router.options("/online-status")
+@router.options("/offline-status")
+@router.options("/user-status/{user_id}")
+async def updates_options():
+    """Handle CORS preflight for updates endpoints"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
 # Store version info (in production, use database)
 VERSION_INFO = {
     "1.0.0": {

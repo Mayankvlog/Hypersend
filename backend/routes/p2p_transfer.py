@@ -17,6 +17,23 @@ from auth.utils import get_current_user
 
 router = APIRouter(prefix="/p2p", tags=["P2P Transfer"])
 
+# OPTIONS handlers for CORS preflight requests
+@router.options("/send")
+@router.options("/status/{session_id}")
+@router.options("/history/{chat_id}")
+async def p2p_options():
+    """Handle CORS preflight for P2P transfer endpoints"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
 # Active P2P sessions (in-memory, no disk storage)
 active_sessions: Dict[str, dict] = {}
 

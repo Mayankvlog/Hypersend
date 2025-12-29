@@ -13,6 +13,33 @@ logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/chats", tags=["Chats"])
 
+# OPTIONS handlers for CORS preflight requests
+@router.options("/saved")
+@router.options("/messages/saved")
+@router.options("")
+@router.options("/{chat_id}")
+@router.options("/{chat_id}/pin_chat")
+@router.options("/{chat_id}/unpin_chat")
+@router.options("/{chat_id}/messages")
+@router.options("/messages/{message_id}/save")
+@router.options("/messages/{message_id}/unsave")
+@router.options("/messages/{message_id}/react")
+@router.options("/messages/{message_id}/pin")
+@router.options("/{chat_id}/messages/{message_id}")
+@router.options("/{message_id}")
+async def chats_options():
+    """Handle CORS preflight for chats endpoints"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
 
 @router.get("/saved", response_model=dict)
 async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)):

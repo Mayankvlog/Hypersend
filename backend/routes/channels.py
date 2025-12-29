@@ -12,6 +12,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/channels", tags=["Channels"])
 
+# OPTIONS handlers for CORS preflight requests
+@router.options("")
+@router.options("/{channel_id}")
+@router.options("/{channel_id}/subscribe")
+@router.options("/{channel_id}/unsubscribe")
+@router.options("/{channel_id}/posts")
+@router.options("/{channel_id}/remove")
+@router.options("/{channel_id}/posts/{message_id}/view")
+async def channels_options():
+    """Handle CORS preflight for channels endpoints"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
 async def _get_channel(channel_id: str) -> dict:
     channel = await chats_collection().find_one({"_id": channel_id, "type": ChatType.CHANNEL})
     if not channel:

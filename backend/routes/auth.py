@@ -25,6 +25,36 @@ from typing import Dict, Tuple, List
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+# OPTIONS handlers for CORS preflight requests
+@router.options("/register")
+@router.options("/login")
+@router.options("/refresh")
+@router.options("/logout")
+@router.options("/forgot-password")
+@router.options("/reset-password")
+@router.options("/qrcode/generate")
+@router.options("/qrcode/verify")
+@router.options("/qrcode/status/{session_id}")
+@router.options("/qrcode/cancel/{session_id}")
+@router.options("/qrcode/sessions")
+async def auth_options():
+    """Handle CORS preflight for auth endpoints"""
+    from fastapi.responses import Response
+    # SECURITY: Restrict CORS origins in production for authenticated endpoints
+    from config import settings
+    
+    cors_origin = settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
+    
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": cors_origin,
+            "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
 # Rate limiting with memory cleanup for production safety
 # In production, replace with Redis or similar distributed storage
 login_attempts: Dict[str, List[datetime]] = defaultdict(list)
