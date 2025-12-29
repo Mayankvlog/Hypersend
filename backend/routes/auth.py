@@ -133,42 +133,82 @@ async def test_email_endpoint():
         "recommendations": _get_email_recommendations(test_ok, test_message, config_info)
     }
 
-def _get_email_recommendations(test_ok: bool, test_message: str, config_info: dict) -> list:
-    """Get recommendations for fixing email service issues."""
+def _get_email_troubleshooting_recommendations(email_service_status: str, email_error: str?) -> list:
+    """Get comprehensive troubleshooting recommendations for email issues."""
     recommendations = []
     
-    if not config_info["email_service_enabled"]:
+    if email_service_status == "not_configured":
         recommendations.extend([
-            "Set SMTP_HOST environment variable (e.g., smtp.gmail.com)",
-            "Set SMTP_USERNAME environment variable (your email address)",
-            "Set SMTP_PASSWORD environment variable (your email password or app password)",
-            "Set EMAIL_FROM environment variable (your email address)",
-            "Consider using Gmail SMTP: smtp.gmail.com:587 with TLS"
+            "🔧 Server Issue: Email service not configured",
+            "📧 Contact server administrator to set up email service",
+            "🔑 Required environment variables: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM",
+            "📧 Test configuration: POST /auth/test-email (DEBUG mode only)",
+            "🔄 Fallback: In DEBUG mode, tokens are returned in response"
         ])
-        return recommendations
     
-    if not test_ok:
-        if "authentication" in test_message.lower():
-            recommendations.extend([
-                "Check SMTP_USERNAME and SMTP_PASSWORD are correct",
-                "For Gmail, use an App Password instead of your regular password",
-                "Enable 2-factor authentication on your Gmail account",
-                "Make sure 'Less secure app access' is enabled if required"
-            ])
-        elif "connection" in test_message.lower():
-            recommendations.extend([
-                "Check SMTP_HOST and SMTP_PORT are correct",
-                "Verify network connectivity to SMTP server",
-                "Check if firewall is blocking SMTP connections",
-                "Try different SMTP port (587, 465, or 25)"
-            ])
-        elif "tls" in test_message.lower():
-            recommendations.extend([
-                "Check SMTP_USE_TLS setting matches server requirements",
-                "Try with TLS enabled or disabled based on server"
-            ])
-        else:
-            recommendations.append("Check SMTP server configuration and credentials")
+    elif email_service_status == "failed":
+        recommendations.extend([
+            "🔧 Email Service Configuration Issue",
+            "📊 Check server logs for detailed error information",
+            "🔍 Test email service: POST /auth/test-email",
+            "🌐 Verify network connectivity to SMTP server",
+            "🔥 Check firewall rules for outbound SMTP connections (ports 25, 465, 587)",
+            "📱 Verify SMTP credentials are correct"
+        ])
+        
+        # Specific error-based recommendations
+        if email_error:
+            error_lower = email_error.lower()
+            if "authentication" in error_lower:
+                recommendations.extend([
+                    "🔐 Authentication failed - Check SMTP_USERNAME and SMTP_PASSWORD",
+                    "📱 For Gmail: Generate App Password at security.google.com",
+                    "🔐 Enable 2-factor authentication",
+                    "⚠️ Ensure 'Less secure app access' is enabled"
+                ])
+            elif "connection" in error_lower:
+                recommendations.extend([
+                    "🌐 Network connectivity issue - Check internet connection",
+                    "🔥 Firewall blocking - Allow outbound SMTP connections",
+                    "🌍 DNS issue - Verify SMTP_HOST is correct",
+                    "📡 Try telnet test: telnet smtp.gmail.com 587"
+                ])
+            elif "tls" in error_lower:
+                recommendations.extend([
+                    "🔒 TLS configuration issue - Check SMTP_USE_TLS setting",
+                    "📞 Contact email provider for correct SMTP settings",
+                    "🔄 Try different SMTP port (587 for TLS, 465 for SSL)"
+                ])
+            elif "timeout" in error_lower:
+                recommendations.extend([
+                    "⏰ Connection timeout - Check network latency",
+                    "🌐 Try closer SMTP server or improve network",
+                    "🔄 Increase timeout settings if network is slow"
+                ])
+            else:
+                recommendations.extend([
+                    "❓ Unknown error - Check all SMTP configuration",
+                    "📧 Review server logs for detailed error information",
+                    "🔄 Restart email service or application"
+                ])
+    
+    else:  # email_service_status == "configured"
+        recommendations.extend([
+            "✅ Email service is working correctly",
+            "📧 Check recipient email address for typos",
+            "📱 Check spam/junk folder in email client",
+            "🔍 Wait up to 5 minutes for email delivery",
+            "🌐 Verify email isn't blocked by recipient's email provider",
+            "📊 Check email service logs: POST /auth/test-email"
+        ])
+    
+    # General troubleshooting steps
+    recommendations.extend([
+        "🧪 Use test endpoint: POST /auth/test-email (DEBUG mode only)",
+        "📋 Check environment variables: SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM",
+        "🔧 Restart application after configuration changes",
+        "📖 Consult email provider documentation for SMTP settings"
+    ])
     
     return recommendations
 
@@ -860,36 +900,67 @@ async def forgot_password(request: ForgotPasswordRequest):
         # Enhanced email sending with validation and fallback
         email_result = await send_password_reset_email(email, user, reset_token)
         
-        # Build response with detailed status
+        # Honest and detailed response about email service status
+        email_service_status = "configured"
+        email_status_description = "Email service is configured and operational"
+        
+        if not settings.EMAIL_SERVICE_ENABLED:
+            email_service_status = "not_configured"
+            email_status_description = "Email service is not configured on this server"
+        elif not email_result["sent"]:
+            email_service_status = "failed"
+            email_status_description = f"Email service is configured but failed to send: {email_result.get('error', 'Unknown error')}"
+        
+        # Build response with honest status
         response = {
             "message": "If an account exists with this email, a password reset link has been sent.",
             "success": True,
             "email_sent": email_result["sent"],
             "email_service_configured": settings.EMAIL_SERVICE_ENABLED,
+            "email_service_status": email_service_status,
+            "email_status_description": email_status_description,
         }
         
-        # Add debug information in development mode
-        if settings.DEBUG:
-            response["debug_info"] = {
-                "email_service_enabled": settings.EMAIL_SERVICE_ENABLED,
-                "smtp_host": settings.SMTP_HOST if settings.EMAIL_SERVICE_ENABLED else None,
-                "email_from": settings.EMAIL_FROM if settings.EMAIL_SERVICE_ENABLED else None,
-                "reset_token": reset_token,
-                "email_error": email_result.get("error"),
-                "email_test_result": email_result.get("test_result")
-            }
-            
-            if not email_result["sent"]:
-                if not settings.EMAIL_SERVICE_ENABLED:
-                    response["message"] = "DEBUG: Email service not configured, token included in response."
-                else:
-                    response["message"] = f"DEBUG: Email failed to send ({email_result.get('error')}), token included in response."
+        # Always include debug information for transparency
+        response["debug_info"] = {
+            "email_service_enabled": settings.EMAIL_SERVICE_ENABLED,
+            "email_service_status": email_service_status,
+            "smtp_host": settings.SMTP_HOST if settings.EMAIL_SERVICE_ENABLED else None,
+            "smtp_port": settings.SMTP_PORT if settings.EMAIL_SERVICE_ENABLED else None,
+            "smtp_username": settings.SMTP_USERNAME if settings.EMAIL_SERVICE_ENABLED else None,
+            "email_from": settings.EMAIL_FROM if settings.EMAIL_SERVICE_ENABLED else None,
+            "reset_token": reset_token,
+            "email_error": email_result.get("error"),
+            "email_test_result": email_result.get("test_result"),
+            "email_attempt_timestamp": datetime.now(timezone.utc).isoformat(),
+            "recommendations": _get_email_troubleshooting_recommendations(email_service_status, email_result.get("error"))
+        }
         
-        # Log the result
-        if email_result["sent"]:
-            auth_log(f"[AUTH] Password reset email sent successfully to: {email}")
+        # Adjust message based on actual email status
+        if not email_result["sent"]:
+            if not settings.EMAIL_SERVICE_ENABLED:
+                response["message"] = "Email service is not configured on this server. Please contact administrator."
+                response["user_action"] = "Contact server administrator to configure email service"
+            else:
+                response["message"] = f"Failed to send password reset email: {email_result.get('error', 'Unknown error')}"
+                response["user_action"] = "Try again later or contact support"
         else:
-            auth_log(f"[AUTH] Password reset email failed to send to: {email} - {email_result.get('error')}")
+            if not settings.EMAIL_SERVICE_ENABLED:
+                response["message"] = "Email service not configured, but for testing purposes: token included in response"
+                response["user_action"] = "Use the token below to reset password (DEBUG MODE ONLY)"
+            else:
+                response["message"] = "Password reset email sent successfully. Please check your inbox."
+                response["user_action"] = "Check your email inbox (including spam folder)"
+        
+        # Log the result with enhanced details
+        if email_result["sent"]:
+            auth_log(f"[AUTH] ✅ Password reset email sent successfully to: {email}")
+        else:
+            auth_log(f"[AUTH] ❌ Password reset email failed: {email} - {email_result.get('error')}")
+            if not settings.EMAIL_SERVICE_ENABLED:
+                auth_log("[AUTH] ❌ Root cause: Email service not configured in backend")
+            else:
+                auth_log("[AUTH] ❌ Root cause: Email service configuration issue")
         
         return response
     

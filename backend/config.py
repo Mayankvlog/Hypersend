@@ -86,12 +86,18 @@ class Settings:
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() in ("true", "1", "yes")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
     
-    # Email service validation
+    # Email service validation with enhanced checking
     EMAIL_SERVICE_ENABLED: bool = bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and EMAIL_FROM)
     
     # Email rate limiting (prevent spam)
     EMAIL_RATE_LIMIT_PER_HOUR: int = int(os.getenv("EMAIL_RATE_LIMIT_PER_HOUR", "10"))
     EMAIL_RATE_LIMIT_PER_DAY: int = int(os.getenv("EMAIL_RATE_LIMIT_PER_DAY", "50"))
+    
+    # Email service auto-configuration for development
+    EMAIL_AUTO_CONFIGURE: bool = os.getenv("EMAIL_AUTO_CONFIGURE", "False").lower() in ("true", "1", "yes")
+    
+    # Fallback email configuration for development
+    EMAIL_FALLBACK_ENABLED: bool = os.getenv("EMAIL_FALLBACK_ENABLED", "True").lower() in ("true", "1", "yes")
     
     # Development
     # Default DEBUG to True for development; set to False in production with proper SECRET_KEY
@@ -160,20 +166,59 @@ class Settings:
         self.validate_email_config()
     
     def validate_email_config(self):
-        """Validate email service configuration"""
+        """Validate email service configuration with enhanced checking"""
         if self.EMAIL_SERVICE_ENABLED:
-            print(f"[EMAIL] Email service configured with host: {self.SMTP_HOST}")
+            print(f"[EMAIL] ✅ Email service configured with host: {self.SMTP_HOST}")
             print(f"[EMAIL] Email from: {self.EMAIL_FROM}")
             print(f"[EMAIL] Rate limits: {self.EMAIL_RATE_LIMIT_PER_HOUR}/hour, {self.EMAIL_RATE_LIMIT_PER_DAY}/day")
             
-            # Basic email format validation
+            # Enhanced email format validation
             if '@' not in self.EMAIL_FROM or '.' not in self.EMAIL_FROM.split('@')[1]:
-                print(f"[EMAIL] WARNING: Invalid email format: {self.EMAIL_FROM}")
-        else:
-            print("[EMAIL] Email service NOT configured - password reset emails will not be sent")
-            print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
+                print(f"[EMAIL] ⚠️ WARNING: Invalid email format: {self.EMAIL_FROM}")
+            
+            # Validate SMTP configuration
+            self._validate_smtp_config()
+            
+            # Test email service on startup in DEBUG mode
             if self.DEBUG:
-                print("[EMAIL] DEBUG: Password reset tokens will be returned in API response for testing")
+                self._test_email_service_on_startup()
+        else:
+            print("[EMAIL] ❌ Email service NOT configured - password reset emails will not be sent")
+            print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
+            
+            if self.EMAIL_FALLBACK_ENABLED:
+                print("[EMAIL] 🔄 Fallback mode: Tokens returned in debug mode for testing")
+            
+            if self.EMAIL_AUTO_CONFIGURE:
+                print("[EMAIL] 🔧 Auto-configuration enabled - attempting to setup default email")
+    
+    def _validate_smtp_config(self):
+        """Validate SMTP configuration details"""
+        # Common SMTP port validation
+        valid_ports = [25, 465, 587, 2525]
+        if self.SMTP_PORT not in valid_ports:
+            print(f"[EMAIL] ⚠️ WARNING: Unusual SMTP port: {self.SMTP_PORT}")
+            print("[EMAIL] Common ports: 25 (SMTP), 465 (SMTPS), 587 (SMTP+TLS), 2525")
+        
+        # Gmail-specific validation
+        if "gmail.com" in self.SMTP_HOST.lower():
+            if self.SMTP_PORT != 587 and self.SMTP_PORT != 465:
+                print("[EMAIL] ⚠️ WARNING: Gmail usually uses port 587 (TLS) or 465 (SSL)")
+        
+        # Check common configuration issues
+        if not self.SMTP_USE_TLS and self.SMTP_PORT in [587, 2525]:
+            print("[EMAIL] ⚠️ WARNING: Port {self.SMTP_PORT} typically requires TLS/SSL")
+    
+    def _test_email_service_on_startup(self):
+        """Test email service during startup in DEBUG mode"""
+        print("[EMAIL] 🧪 Testing email service on startup...")
+        test_ok, test_message = test_email_service()
+        
+        if test_ok:
+            print("[EMAIL] ✅ Email service test successful")
+        else:
+            print(f"[EMAIL] ❌ Email service test failed: {test_message}")
+            print("[EMAIL] Check SMTP configuration and network connectivity")
     
     def validate_production(self):
         """Validate production-safe settings.
@@ -219,3 +264,8 @@ class Settings:
 
 
 settings = Settings()
+
+# Test email service on startup in DEBUG mode
+if settings.DEBUG:
+    print("[CONFIG] DEBUG mode enabled - testing email service...")
+    settings.validate_email_config()

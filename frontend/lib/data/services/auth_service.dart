@@ -360,31 +360,127 @@ Future<void> resetPassword({required String email}) async {
     }
   }
 
-  // Get recommendations based on password reset result
+  // Get enhanced recommendations based on password reset result
   List<String> _getPasswordResetRecommendations(Map<String, dynamic> result) {
     List<String> recommendations = [];
     
-    if (!result['email_service_configured']) {
+    final emailServiceStatus = result['email_service_status'] as String? ?? 'unknown';
+    final emailStatusDesc = result['email_status_description'] as String? ?? 'Unknown status';
+    
+    // Honest assessment based on actual email service status
+    if (emailServiceStatus == 'not_configured') {
       recommendations.addAll([
-        'Email service is not configured on the server',
-        'Contact administrator to set up email service',
-        'In development mode, check debug information for manual reset token'
+        '❌ SERVER ISSUE: Email service not configured on backend',
+        '📧 Contact server administrator to set up email service',
+        '🔑 Required settings: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM',
+        '🧪 Test email: POST /auth/test-email (DEBUG mode only)',
+        '🔄 Fallback: In DEBUG mode, check debug info for reset token'
       ]);
-    } else if (!result['email_sent']) {
+    } else if (emailServiceStatus == 'failed') {
       recommendations.addAll([
-        'Email service is configured but failed to send',
-        'Check your spam/junk folder',
-        'Verify the email address is correct',
-        'Try again in a few minutes'
+        '❌ EMAIL SERVICE FAILED: Backend email service has configuration issues',
+        '🔍 Check server logs for detailed error information',
+        '🌐 Verify network connectivity to SMTP server',
+        '🔥 Check firewall rules for outbound SMTP (ports 25, 465, 587)',
+        '📧 Contact email provider for correct SMTP settings',
+        '⚠️ This is a SERVER CONFIGURATION issue, not user error'
+      ]);
+      
+      // Add specific error-based recommendations
+      if (result['debug_info'] != null) {
+        final debugInfo = result['debug_info'] as Map<String, dynamic>;
+        final emailError = debugInfo['email_error'] as String?;
+        
+        if (emailError != null) {
+          final errorLower = emailError.toLowerCase();
+          if (errorLower.contains('authentication')) {
+            recommendations.addAll([
+              '🔐 SMTP Authentication failed',
+              '📱 For Gmail: Use App Password (not regular password)',
+              '🔐 Enable 2-factor authentication on email account',
+              '⚠️ Enable "Less secure app access" in Gmail settings'
+            ]);
+          } else if (errorLower.contains('connection')) {
+            recommendations.addAll([
+              '🌐 Network connectivity issue to SMTP server',
+              '🔥 Firewall blocking outbound SMTP connections',
+              '🌍 DNS resolution failure - check SMTP_HOST',
+              '📡 Test connectivity: telnet smtp.gmail.com 587'
+            ]);
+          } else if (errorLower.contains('tls')) {
+            recommendations.addAll([
+              '🔒 TLS/SSL configuration mismatch',
+              '📞 Contact email provider for correct SMTP settings',
+              '🔄 Try different SMTP port (587 for TLS, 465 for SSL)'
+            ]);
+          }
+        }
+      }
+    } else if (emailServiceStatus == 'configured' && (result['email_sent'] == true)) {
+      recommendations.addAll([
+        '✅ Email service is working correctly',
+        '📧 Check recipient email address for typos',
+        '📱 Check ALL email folders: Inbox, Spam, Junk, Promotions, Social, Updates',
+        '⏰ Wait 2-5 minutes for email delivery',
+        '🌍 Verify email isn\'t blocked by recipient\'s email provider',
+        '📊 Check email service status: POST /auth/test-email'
       ]);
     } else {
       recommendations.addAll([
-        'Check your email inbox',
-        'Check your spam/junk folder',
-        'The reset link will expire in 1 hour',
-        'If you don\'t receive the email, try requesting again'
+        '❓ Unknown email service status',
+        '📋 Check server configuration',
+        '🔧 Contact technical support',
+        '📊 Check email service diagnostics'
       ]);
     }
+    
+    // Always add general troubleshooting steps
+    recommendations.addAll([
+      '🧪 Test email service: POST /auth/test-email (DEBUG mode)',
+      '📋 Verify all environment variables are set correctly',
+      '🔄 Restart backend after configuration changes',
+      '📖 Check email provider SMTP documentation'
+    ]);
+    
+    return recommendations;
+  }
+
+  // Get honest assessment of email service
+  String getEmailServiceAssessment(Map<String, dynamic> result) {
+    final emailServiceStatus = result['email_service_status'] as String? ?? 'unknown';
+    
+    switch (emailServiceStatus) {
+      case 'not_configured':
+        return '❌ Email service NOT configured - Contact administrator';
+      case 'failed':
+        return '❌ Email service BROKEN - Server configuration issue';
+      case 'configured':
+        return result['email_sent'] == true 
+            ? '✅ Email service WORKING - Check your email'
+            : '⚠️ Email service OK but delivery may be delayed';
+      default:
+        return '❓ Email service status unknown';
+    }
+  }
+
+  // Get user action based on email status
+  String getRequiredUserAction(Map<String, dynamic> result) {
+    final emailServiceStatus = result['email_service_status'] as String? ?? 'unknown';
+    
+    if (emailServiceStatus == 'not_configured') {
+      return 'Contact server administrator to configure email service';
+    } else if (emailServiceStatus == 'failed') {
+      return 'Wait for administrator to fix email service configuration';
+    } else if (emailServiceStatus == 'configured') {
+      if (result['debug_info'] != null && result['needs_manual_token'] == true) {
+        return 'Use the reset token from debug information (DEBUG MODE ONLY)';
+      } else {
+        return 'Check your email inbox and spam folder';
+      }
+    } else {
+      return 'Contact technical support for assistance';
+    }
+  }
     
     return recommendations;
   }
@@ -398,6 +494,61 @@ Future<void> resetPassword({required String email}) async {
     } catch (e) {
       debugPrint('[AUTH_TEST_EMAIL_ERROR] Failed: $e');
       rethrow;
+    }
+  }
+
+  // Get comprehensive email service status
+  Future<Map<String, dynamic>> getEmailServiceStatus() async {
+    try {
+      final result = await _api.testEmailService();
+      debugPrint('[AUTH_EMAIL_STATUS] Email service status: $result');
+      
+      return {
+        'service_configured': result['email_service_test']?['success'] ?? false,
+        'smtp_host': result['configuration']?['smtp_host'],
+        'smtp_port': result['configuration']?['smtp_port'],
+        'smtp_username': result['configuration']?['smtp_username'],
+        'email_from': result['configuration']?['email_from'],
+        'test_email_sent': result['test_email_sent'],
+        'test_email_error': result['test_email_error'],
+        'recommendations': result['recommendations'] ?? [],
+        'user_action': _getEmailAddressAction(result),
+        'status_message': _getEmailAddressStatusMessage(result),
+      };
+    } catch (e) {
+      debugPrint('[AUTH_EMAIL_STATUS_ERROR] Failed: $e');
+      return {
+        'service_configured': false,
+        'smtp_host': null,
+        'smtp_port': null,
+        'smtp_username': null,
+        'email_from': null,
+        'test_email_sent': false,
+        'test_email_error': e.toString(),
+        'recommendations': ['Check email service configuration', 'Contact technical support'],
+        'user_action': 'Contact server administrator',
+        'status_message': 'Email service status unknown - contact support',
+      };
+    }
+  }
+
+  String _getEmailAddressAction(Map<String, dynamic> result) {
+    if (result['service_configured'] == true && result['test_email_sent'] == true) {
+      return 'Email service is working - check your inbox for reset email';
+    } else if (result['service_configured'] == true && result['test_email_sent'] == false) {
+      return 'Email service configured but failing - check server logs';
+    } else {
+      return 'Email service not configured - contact server administrator';
+    }
+  }
+
+  String _getEmailAddressStatusMessage(Map<String, dynamic> result) {
+    if (result['service_configured'] == true && result['test_email_sent'] == true) {
+      return '✅ Email service operational';
+    } else if (result['service_configured'] == true) {
+      return '⚠️ Email service configured but has issues';
+    } else {
+      return '❌ Email service not configured';
     }
   }
 
