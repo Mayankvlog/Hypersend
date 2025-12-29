@@ -943,22 +943,7 @@ async def change_email(
         )
 
 
-@router.options("/avatar/")
-@router.options("/avatar-upload/")
-async def avatar_options():
-    """Handle CORS preflight for avatar endpoint"""
-    from fastapi.responses import Response
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Max-Age": "86400"
-        }
-    )
-
-@router.post("/avatar/")
+@router.post("/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
     request: Request = None,
@@ -966,6 +951,10 @@ async def upload_avatar(
 ):
     """Upload user avatar - POST endpoint (accepts optional auth, returns avatar_url)"""
     try:
+        logger.info(f"[AVATAR_UPLOAD] POST request received to /avatar endpoint")
+        logger.info(f"[AVATAR_UPLOAD] Request URL: {request.url if request else 'No request object'}")
+        logger.info(f"[AVATAR_UPLOAD] Current user: {current_user or 'Guest'}")
+        logger.info(f"[AVATAR_UPLOAD] File: {file.filename if file else 'No file'}")
         import shutil
         import os
         import uuid
@@ -1109,7 +1098,7 @@ async def upload_avatar(
         )
 
 
-@router.post("/avatar-upload/")
+@router.post("/avatar-upload")
 async def upload_avatar_alt(
     file: UploadFile = File(...),
     current_user: str = Depends(get_current_user)
@@ -1216,6 +1205,7 @@ async def list_avatars(request: Request):
     # Log request info for debugging
     logger.info(f"GET request to /avatar/ endpoint - providing API documentation")
     logger.info(f"Request URL: {request.url}")
+    logger.warning(f"POST requests should go to /avatar (without trailing slash)")
     
     # Return helpful API documentation instead of 405
     return JSONResponse(
@@ -1225,7 +1215,7 @@ async def list_avatars(request: Request):
             "endpoints": {
                 "upload": {
                     "method": "POST",
-                    "url": "/api/v1/users/avatar/",
+                    "url": "/api/v1/users/avatar",
                     "content_type": "multipart/form-data",
                     "required_field": "file (image file)",
                     "description": "Upload user profile avatar"
@@ -1236,7 +1226,23 @@ async def list_avatars(request: Request):
                     "description": "Retrieve uploaded avatar image"
                 }
             },
-            "note": "This GET endpoint provides documentation. Use POST to upload avatars."
+            "note": "This GET endpoint provides documentation. Use POST to upload avatars.",
+            "fix": "POST requests should use /avatar (without trailing slash)"
+        }
+    )
+
+@router.options("/avatar")
+@router.options("/avatar-upload")
+async def avatar_options():
+    """Handle CORS preflight for avatar endpoint"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "86400"
         }
     )
 
