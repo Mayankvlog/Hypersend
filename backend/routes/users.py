@@ -1083,26 +1083,18 @@ async def upload_avatar(
             logger.warning(f"Database update failed - file still saved")
             # Don't fail - file is already saved, user can still download via URL
         
-        # Return successful response with avatar_url and full user data
-        if updated_user:
-            response_data = {
-                "avatar_url": avatar_url,
-                "avatar": updated_user.get("avatar"),
-                "success": True,
-                "filename": new_file_name,
-                "message": "Avatar uploaded successfully",
-                "status": "upload_complete"
-            }
-        else:
-            # Fallback if user fetch failed
-            response_data = {
-                "avatar_url": avatar_url,
-                "success": True,
-                "filename": new_file_name,
-                "message": "Avatar uploaded successfully",
-                "status": "upload_complete"
-            }
-        logger.debug("Avatar upload completed successfully")
+        # Return successful response with BOTH avatar_url and avatar fields
+        # Both fields are required for frontend validation to pass
+        current_avatar = updated_user.get("avatar") if updated_user else None
+        response_data = {
+            "avatar_url": avatar_url,  # ✅ Image URL (REQUIRED)
+            "avatar": current_avatar if current_avatar else "",  # ✅ Initials (REQUIRED - defaults to empty string)
+            "success": True,
+            "filename": new_file_name,
+            "message": "Avatar uploaded successfully",
+            "status": "upload_complete"
+        }
+        logger.debug(f"Avatar upload completed successfully: avatar_url={avatar_url}, avatar={response_data['avatar']}")
         return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException as http_exc:
@@ -1182,23 +1174,16 @@ async def upload_avatar_alt(
             logger.warning(f"Database update failed: {db_error}")
         
         # Return response with both avatar_url and avatar fields
-        if updated_user:
-            response_data = {
-                "avatar_url": avatar_url,
-                "avatar": updated_user.get("avatar"),
-                "success": True,
-                "filename": new_file_name,
-                "message": "Avatar uploaded successfully"
-            }
-        else:
-            # Fallback if user fetch failed
-            response_data = {
-                "avatar_url": avatar_url,
-                "success": True,
-                "filename": new_file_name,
-                "message": "Avatar uploaded successfully"
-            }
-        logger.debug("Alternative avatar upload completed successfully")
+        # Both fields are required for frontend validation to pass
+        current_avatar = updated_user.get("avatar") if updated_user else None
+        response_data = {
+            "avatar_url": avatar_url,  # ✅ Image URL (REQUIRED)
+            "avatar": current_avatar if current_avatar else "",  # ✅ Initials (REQUIRED - defaults to empty string)
+            "success": True,
+            "filename": new_file_name,
+            "message": "Avatar uploaded successfully"
+        }
+        logger.debug(f"Alternative avatar upload completed: avatar_url={avatar_url}, avatar={response_data['avatar']}")
         return JSONResponse(status_code=200, content=response_data)
         
     except HTTPException:
