@@ -952,7 +952,7 @@ async def upload_avatar(
 ):
     """Upload user avatar - POST endpoint (accepts optional auth, returns avatar_url)"""
     try:
-        import shutil
+        import aiofiles
         import os
         import uuid
         
@@ -999,13 +999,19 @@ async def upload_avatar(
         new_file_name = f"{current_user}_{unique_id}{file_ext}"
         new_file_path = avatar_dir / new_file_name
         
-        # Save the new file FIRST before doing anything else
+        # Save the new file FIRST before doing anything else (using async file operations)
         try:
-            with open(new_file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+            # Reset file position to start
+            await file.seek(0)
+            
+            # Use async file operations
+            async with aiofiles.open(new_file_path, "wb") as buffer:
+                content = await file.read()
+                await buffer.write(content)
+            
             logger.debug("Avatar file saved successfully")
             if new_file_path.exists():
-                file_size = os.path.getsize(new_file_path)
+                file_size = new_file_path.stat().st_size
                 logger.debug(f"File size verified: {file_size} bytes")
         except Exception as save_error:
             logger.error(f"Failed to save avatar file: {save_error}")
@@ -1043,30 +1049,33 @@ async def upload_avatar(
         # Update the user in the database with timeout
         updated_user = None
         try:
-            result = await asyncio.wait_for(
-                users_collection().update_one(
-                    {"_id": current_user},
-                    {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
-                ),
-                timeout=5.0
-            )
-            
-            # Fetch updated user to return complete data
-            updated_user = await asyncio.wait_for(
-                users_collection().find_one({"_id": current_user}),
-                timeout=5.0
-            )
-            if not updated_user:
-                logger.warning("User not found in database - file still saved")
-                # Don't raise - file is already saved
+            if current_user != "guest_upload":  # Only update database for actual users
+                result = await asyncio.wait_for(
+                    users_collection().update_one(
+                        {"_id": current_user},
+                        {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
+                    ),
+                    timeout=5.0
+                )
+                
+                # Fetch updated user to return complete data
+                updated_user = await asyncio.wait_for(
+                    users_collection().find_one({"_id": current_user}),
+                    timeout=5.0
+                )
+                if not updated_user:
+                    logger.warning("User not found in database - file still saved")
+                    # Don't raise - file is already saved
+                else:
+                    logger.debug("Database updated with avatar URL")
             else:
-                logger.debug("Database updated with avatar URL")
+                logger.debug("Skipping database update for guest upload")
                 
         except asyncio.TimeoutError:
             logger.warning("Database update timed out - file still saved")
             # Don't fail - file is already saved
         except Exception as db_error:
-            logger.warning(f"Database update failed - file still saved")
+            logger.warning(f"Database update failed: {db_error} - file still saved")
             # Don't fail - file is already saved, user can still download via URL
         
         # Return successful response with BOTH avatar_url and avatar fields
@@ -1107,7 +1116,7 @@ async def upload_avatar_alt(
     try:
         logger.debug("Alternative avatar upload endpoint called")
         
-        import shutil
+        import aiofiles
         import os
         import uuid
         
@@ -1134,9 +1143,11 @@ async def upload_avatar_alt(
         new_file_name = f"{current_user}_{unique_id}{file_ext}"
         new_file_path = avatar_dir / new_file_name
         
-        # Save file
-        with open(new_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Save file using async operations
+        await file.seek(0)
+        async with aiofiles.open(new_file_path, "wb") as buffer:
+            content = await file.read()
+            await buffer.write(content)
         
         # Generate URL
         avatar_url = f"/api/v1/users/avatar/{new_file_name}"
