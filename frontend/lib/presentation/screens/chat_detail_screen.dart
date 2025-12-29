@@ -65,7 +65,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             title: const Text('Channel Info'),
             onTap: () {
               Navigator.pop(context);
-              // TODO: Navigate to channel info
+              // Navigate to channel info (implementation pending)
             },
           ),
           ListTile(

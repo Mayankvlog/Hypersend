@@ -41,8 +41,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Future<void> _showAddContactDialog() async {
     final emailController = TextEditingController();
     final usernameController = TextEditingController();
+    final phoneController = TextEditingController();
     final nameController = TextEditingController();
-    int selectedTab = 0; // 0 = Gmail, 1 = Username
+    int selectedTab = 0; // 0 = Gmail, 1 = Username, 2 = Phone
     
     try {
       final result = await showDialog<Map<String, dynamic>>(
@@ -152,6 +153,42 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             ),
                           ),
                         ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => selectedTab = 2),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: selectedTab == 2 
+                                      ? AppTheme.primaryCyan 
+                                      : AppTheme.dividerColor,
+                                    width: selectedTab == 2 ? 2 : 1,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.phone_outlined, size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Phone',
+                                    style: TextStyle(
+                                      fontWeight: selectedTab == 2 
+                                        ? FontWeight.w600 
+                                        : FontWeight.w400,
+                                      color: selectedTab == 2 
+                                        ? AppTheme.primaryCyan 
+                                        : AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -183,6 +220,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       ),
                       keyboardType: TextInputType.text,
                     ),
+                  ] else if (selectedTab == 2) ...[
+                    TextField(
+                      controller: phoneController,
+                      decoration: InputDecoration(
+                        hintText: 'Phone number',
+                        prefixIcon: const Icon(Icons.phone_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      keyboardType: TextInputType.phone,
+                    ),
                   ],
                 ],
               ),
@@ -209,6 +259,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     return;
                   }
                   
+                  if (selectedTab == 2 && phoneController.text.trim().isEmpty) {
+                    _showErrorSnackBar('Please enter phone number');
+                    return;
+                  }
+                  
                   // Email validation for Gmail tab
                   if (selectedTab == 0) {
                     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
@@ -232,22 +287,36 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     usernameController.text = cleanUsername;
                   }
                   
+                  // Phone validation
+                  if (selectedTab == 2) {
+                    final phone = phoneController.text.trim();
+                    // Basic phone validation: 6-15 digits, optional + prefix
+                    final phoneRegex = RegExp(r'^\+?[0-9]{6,15}$');
+                    if (!phoneRegex.hasMatch(phone)) {
+                      _showErrorSnackBar('Please enter a valid phone number (6-15 digits)');
+                      return;
+                    }
+                  }
+                  
                   try {
                     // Search for user
                     List<dynamic> users;
                     if (selectedTab == 0) {
                       // Search by email
                       users = await serviceProvider.apiService.searchUsersByEmail(email);
-                    } else {
+                    } else if (selectedTab == 1) {
                       // Search by username
                       users = await serviceProvider.apiService.searchUsersByUsername(username);
+                    } else {
+                      // Search by phone (use general search)
+                      users = await serviceProvider.apiService.searchUsers(phoneController.text.trim());
                     }
                     
                     if (!mounted) return;
                     
                     if (users.isEmpty) {
                       Navigator.pop(context);
-                      final searchType = selectedTab == 0 ? 'email' : 'username';
+                      final searchType = selectedTab == 0 ? 'email' : selectedTab == 1 ? 'username' : 'phone';
                       _showErrorSnackBar('User with this $searchType not found. Please check and try again.');
                       return;
                     }
@@ -295,8 +364,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     } catch (e) {
       _showErrorSnackBar('An error occurred');
     } finally {
-      emailController.dispose();
-      usernameController.dispose();
+                    emailController.dispose();
+                    usernameController.dispose();
+                    phoneController.dispose();
       nameController.dispose();
     }
   }

@@ -72,7 +72,7 @@ class Settings:
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment (VPS behind Nginx HTTPS)
     # Note: Nginx proxies /api/ to backend on port 8000, so full URL includes /api/v1
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://localhost:8000/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -136,10 +136,7 @@ class Settings:
         "http://139.59.82.105:8550",
         "https://139.59.82.105",
         "https://139.59.82.105:8000",
-        "http://zaply.in.net",
-        "https://zaply.in.net",
-        "https://www.zaply.in.net",
-        "http://zaply.in.net:8000",
+        # Production URLs should be configured via CORS_ORIGINS env var
         "http://localhost:3000",
         "http://localhost:8080",
         "http://127.0.0.1:3000",

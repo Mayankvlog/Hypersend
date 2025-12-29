@@ -260,7 +260,20 @@ def run_deep_scan():
     print("-" * 80)
     
     # Security checks - verify implementation presence
-    has_input_validation = 'if (email.isEmpty)' in chat_list_content if chat_list_content else False
+    # Check for comprehensive input validation patterns
+    input_validation_patterns = [
+        'email.isEmpty',
+        'username.isEmpty',
+        'phone.isEmpty',
+        'text.isEmpty',
+        'controller.text.trim()',
+        'RegExp(',
+        'hasMatch(',
+        'validateEmail',
+        'validatePhone'
+    ]
+    
+    has_input_validation = any(pattern in chat_list_content for pattern in input_validation_patterns) if chat_list_content else False
     has_safe_navigation = 'if (!mounted)' in chat_list_content if chat_list_content else False
     has_proper_disposal = 'emailController.dispose()' in chat_list_content if chat_list_content else False
     

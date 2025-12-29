@@ -341,22 +341,22 @@ async def handle_options_request(full_path: str, request: Request):
     Handle CORS preflight OPTIONS requests.
     These must succeed without authentication for CORS to work in browsers.
     SECURITY: Use exact regex matching to prevent origin bypass attacks
-    (e.g., https://evilzaply.in.net would bypass substring matching)
+    (e.g., https://evildomain.yourdomain.com would bypass substring matching)
     """
     import re
     origin = request.headers.get("Origin")
     
     # SECURITY FIX: Use regex instead of substring matching to prevent bypasses
-    # Substring matching allows: evilzaply.in.net, localhostevil.com, etc.
+    # Substring matching allows: evildomain.com, localhostevil.com, etc.
     allowed_origin = "null"  # Default deny-all for untrusted origins
     
     if origin:
         # Whitelist patterns with proper boundary matching
+        # Production URLs should be configured via environment variables
         allowed_patterns = [
-            r'^https://zaply\.in\.net(:[0-9]+)?$',      # zaply.in.net (no subdomain)
-            r'^https://www\.zaply\.in\.net(:[0-9]+)?$', # www.zaply.in.net only
             r'^http://localhost(:[0-9]+)?$',             # localhost with optional port
             r'^http://127\.0\.0\.1(:[0-9]+)?$',        # 127.0.0.1 with optional port
+            r'^https?://([a-zA-Z0-9-]+\.)?yourdomain\.com(:[0-9]+)?$',  # Replace with your domain
         ]
         
         for pattern in allowed_patterns:

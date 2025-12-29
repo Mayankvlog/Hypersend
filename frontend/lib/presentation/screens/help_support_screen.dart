@@ -3,10 +3,16 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 
-class HelpSupportScreen extends StatelessWidget {
+class HelpSupportScreen extends StatefulWidget {
   const HelpSupportScreen({super.key});
 
+  @override
+  State<HelpSupportScreen> createState() => _HelpSupportScreenState();
+}
+
+class _HelpSupportScreenState extends State<HelpSupportScreen> {
   void _showErrorSnackBar(BuildContext context, String message) {
+    if (!mounted) return;
     try {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
