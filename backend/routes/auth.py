@@ -272,3 +272,220 @@ async def auth_options():
             "Access-Control-Max-Age": "86400"
         }
     )
+
+# ✅ CORE AUTH FUNCTIONS - Handle user registration and login
+async def register(user: UserCreate) -> UserResponse:
+    """Register a new user account"""
+    try:
+        auth_log(f"Registration attempt for email: {user.email}")
+        
+        # Check if user already exists
+        existing_user = await users_collection().find_one({"email": user.email})
+        if existing_user:
+            auth_log(f"Registration failed: Email already exists: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered. Please login or use a different email."
+            )
+        
+        # Hash password
+        password_hash = hash_password(user.password)
+        
+        # Extract initials from name for avatar
+        initials = "".join([word[0].upper() for word in user.name.split() if word])[:2]
+        
+        # Create user document
+        user_doc = {
+            "_id": str(ObjectId()),
+            "name": user.name,
+            "email": user.email,
+            "password_hash": password_hash,
+            "avatar": initials,
+            "avatar_url": None,
+            "username": None,
+            "bio": None,
+            "quota_used": 0,
+            "quota_limit": 42949672960,  # 40 GiB default
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": None,
+            "last_seen": None,
+            "is_online": False,
+            "status": None,
+            "permissions": {
+                "location": False,
+                "camera": False,
+                "microphone": False,
+                "storage": False
+            },
+            "pinned_chats": [],
+            "blocked_users": []
+        }
+        
+        # Insert user into database
+        result = await users_collection().insert_one(user_doc)
+        auth_log(f"✓ User registered successfully: {user.email} (ID: {result.inserted_id})")
+        
+        # Create response
+        return UserResponse(
+            id=str(result.inserted_id),
+            name=user.name,
+            email=user.email,
+            username=None,
+            bio=None,
+            avatar=initials,
+            avatar_url=None,
+            quota_used=0,
+            quota_limit=42949672960,
+            created_at=user_doc["created_at"],
+            updated_at=None,
+            last_seen=None,
+            is_online=False,
+            status=None,
+            pinned_chats=[],
+            is_contact=False
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"❌ Registration error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {str(e)}"
+        )
+
+async def login(credentials: UserLogin, request: Request) -> Token:
+    """Login user and return access/refresh tokens"""
+    try:
+        auth_log(f"Login attempt for email: {credentials.email}")
+        
+        # Check rate limit
+        client_ip = request.client.host if request and request.client else "unknown"
+        auth_log(f"Login from IP: {client_ip}")
+        
+        # Find user by email
+        user = await users_collection().find_one({"email": credentials.email})
+        if not user:
+            auth_log(f"Login failed: User not found: {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Verify password
+        if not verify_password(credentials.password, user["password_hash"]):
+            auth_log(f"Login failed: Invalid password for: {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Create tokens
+        access_token = create_access_token(
+            data={"sub": str(user["_id"])},
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        refresh_token, jti = create_refresh_token({"sub": str(user["_id"])})
+        
+        # Store refresh token in database
+        await refresh_tokens_collection().insert_one({
+            "user_id": str(user["_id"]),
+            "jti": jti,
+            "created_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        })
+        
+        # Update last_seen
+        await users_collection().update_one(
+            {"_id": user["_id"]},
+            {"$set": {
+                "last_seen": datetime.now(timezone.utc),
+                "is_online": True,
+                "updated_at": datetime.now(timezone.utc)
+            }}
+        )
+        
+        auth_log(f"✓ Login successful: {credentials.email}")
+        
+        return Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"❌ Login error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login failed: {str(e)}"
+        )
+
+async def refresh_token(refresh_request: RefreshTokenRequest) -> Token:
+    """Refresh access token using refresh token"""
+    try:
+        auth_log(f"Token refresh attempt")
+        
+        # Decode refresh token
+        token_data = decode_token(refresh_request.refresh_token)
+        user_id = token_data.sub
+        
+        # Get user
+        user = await users_collection().find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        # Create new access token
+        access_token = create_access_token(
+            data={"sub": user_id},
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        
+        auth_log(f"✓ Token refreshed for user: {user_id}")
+        
+        return Token(
+            access_token=access_token,
+            refresh_token=refresh_request.refresh_token,
+            token_type="bearer"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"❌ Token refresh error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token refresh failed"
+        )
+
+async def logout(current_user: str) -> dict:
+    """Logout user by invalidating refresh tokens"""
+    try:
+        auth_log(f"Logout for user: {current_user}")
+        
+        # Invalidate refresh tokens
+        await refresh_tokens_collection().update_many(
+            {"user_id": current_user},
+            {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
+        )
+        
+        # Update user status
+        await users_collection().update_one(
+            {"_id": ObjectId(current_user)},
+            {"$set": {"is_online": False, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        auth_log(f"✓ Logout successful for user: {current_user}")
+        
+        return {"message": "Logged out successfully", "success": True}
+        
+    except Exception as e:
+        auth_log(f"❌ Logout error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Logout failed: {str(e)}"
+        )
