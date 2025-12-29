@@ -192,8 +192,44 @@ class ApiService {
         'email': email,
         'password': password,
       });
-      return response.data ?? {};
+      
+      // Check response status - only process 2xx responses as success
+      if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
+        return response.data ?? {};
+      } else {
+        // For non-2xx responses, throw appropriate error
+        final errorMessage = response.data?['detail'] as String? ?? 
+                           response.data?['error'] as String? ?? 
+                           'Login failed with status ${response.statusCode}';
+        _log('[API_LOGIN] Non-success response: ${response.statusCode} - $errorMessage');
+        throw Exception(errorMessage);
+      }
+    } on DioException catch (e) {
+      _log('[API_LOGIN] DioException: ${e.type} - ${e.message}');
+      _log('[API_LOGIN] Status: ${e.response?.statusCode}');
+      _log('[API_LOGIN] Response data: ${e.response?.data}');
+      
+      // Extract meaningful error message from response
+      String errorMessage = 'Login failed';
+      if (e.response?.data is Map) {
+        final data = e.response!.data as Map;
+        errorMessage = data['detail'] as String? ?? 
+                     data['error'] as String? ?? 
+                     data['message'] as String? ?? 
+                     getErrorMessage(e);
+      } else if (e.response?.statusCode == 429) {
+        errorMessage = 'Too many login attempts. Please wait before trying again.';
+      } else if (e.response?.statusCode == 401) {
+        errorMessage = 'Invalid email or password';
+      } else if (e.response?.statusCode == 403) {
+        errorMessage = 'Access forbidden. Account may be locked.';
+      } else {
+        errorMessage = getErrorMessage(e);
+      }
+      
+      throw Exception(errorMessage);
     } catch (e) {
+      _log('[API_LOGIN] Unexpected error: $e');
       rethrow;
     }
   }
@@ -741,6 +777,40 @@ Future<void> postToChannel(String channelId, String text) async {
   void clearAuthToken() {
     _dio.options.headers.remove('Authorization');
     _log('[API_AUTH] Token cleared from headers');
+  }
+
+  // Login with retry logic for handling rate limits
+  Future<Map<String, dynamic>> loginWithRetry({
+    required String email,
+    required String password,
+    int maxRetries = 3,
+  }) async {
+    int attempt = 0;
+    
+    while (attempt < maxRetries) {
+      try {
+        _log('[API_LOGIN_RETRY] Attempt ${attempt + 1} of $maxRetries');
+        return await login(email: email, password: password);
+      } on DioException catch (e) {
+        attempt++;
+        
+        if (e.response?.statusCode == 429 && attempt < maxRetries) {
+          // Rate limited - wait with exponential backoff
+          final waitTime = Duration(seconds: 2 * attempt); // 2s, 4s, 8s
+          _log('[API_LOGIN_RETRY] Rate limited, waiting ${waitTime.inSeconds}s before retry');
+          await Future.delayed(waitTime);
+          continue;
+        }
+        
+        // Other errors or max retries reached - rethrow
+        rethrow;
+      } catch (e) {
+        // Non-DioException - rethrow immediately
+        rethrow;
+      }
+    }
+    
+    throw Exception('Login failed after $maxRetries attempts due to rate limiting');
   }
 
   Future<FilePickerResult?> pickFile() async {

@@ -13,7 +13,26 @@ class AuthService {
 
   AuthService(this._api);
 
-  bool get isLoggedIn => (_accessToken ?? '').isNotEmpty;
+  bool get isLoggedIn => _isTokenValid(_accessToken);
+
+  bool _isTokenValid(String? token) {
+    if (token == null || token.isEmpty) return false;
+    
+    // Basic JWT token validation (should have 3 parts separated by dots)
+    final parts = token.split('.');
+    if (parts.length != 3) {
+      debugPrint('[AUTH_TOKEN] Invalid token format: expected 3 parts, got ${parts.length}');
+      return false;
+    }
+    
+    // Check if token seems reasonable length
+    if (token.length < 50) {
+      debugPrint('[AUTH_TOKEN] Token too short: ${token.length} characters');
+      return false;
+    }
+    
+    return true;
+  }
   String? get accessToken => _accessToken;
   String? get refreshToken => _refreshToken;
 
@@ -25,19 +44,44 @@ class AuthService {
       debugPrint('[AUTH_INIT] Access token: ${_accessToken != null ? '${_accessToken!.substring(0, 20)}...' : 'null'}');
       debugPrint('[AUTH_INIT] Refresh token: ${_refreshToken != null ? '${_refreshToken!.substring(0, 20)}...' : 'null'}');
       
-      if ((_accessToken ?? '').isNotEmpty) {
+      // Validate token formats
+      if (!_isTokenValid(_accessToken)) {
+        debugPrint('[AUTH_INIT] Invalid access token format, clearing');
+        _accessToken = null;
+      }
+      
+      if (!_isTokenValid(_refreshToken)) {
+        debugPrint('[AUTH_INIT] Invalid refresh token format, clearing');
+        _refreshToken = null;
+      }
+      
+      if (_isTokenValid(_accessToken)) {
         _api.setAuthToken(_accessToken!);
-        debugPrint('[AUTH_INIT] Token loaded from SharedPreferences and set in API service');
+        debugPrint('[AUTH_INIT] Valid token loaded from SharedPreferences and set in API service');
       } else {
-        debugPrint('[AUTH_INIT] No stored token found, user not logged in');
+        debugPrint('[AUTH_INIT] No valid stored token found, user not logged in');
         _api.clearAuthToken();
+        // Clear corrupted tokens from storage
+        if (_accessToken == null || _refreshToken == null) {
+          await _clearTokens();
+        }
       }
     } catch (e) {
       debugPrint('[AUTH_INIT_ERROR] Failed to initialize auth: $e');
       _accessToken = null;
       _refreshToken = null;
       _api.clearAuthToken();
+      await _clearTokens();
     }
+  }
+
+  // Method to clear auth state for troubleshooting
+  Future<void> clearAuthState() async {
+    debugPrint('[AUTH_CLEAR] Clearing authentication state');
+    _accessToken = null;
+    _refreshToken = null;
+    _api.clearAuthToken();
+    await _clearTokens();
   }
 
   Future<void> login({
@@ -46,13 +90,24 @@ class AuthService {
   }) async {
     debugPrint('[AUTH_LOGIN] Attempting login for: $email');
     try {
-      final result = await _api.login(email: email, password: password);
+      // Use retry logic to handle rate limiting
+      final result = await _api.loginWithRetry(email: email, password: password);
       debugPrint('[AUTH_LOGIN] Login response received');
+      
+      // Check if response contains error indicators
+      if (result.containsKey('detail') || result.containsKey('error')) {
+        final errorDetail = result['detail'] as String? ?? result['error'] as String? ?? 'Unknown error';
+        debugPrint('[AUTH_LOGIN_ERROR] Server returned error: $errorDetail');
+        throw Exception(errorDetail);
+      }
+      
       final access = result['access_token'] as String?;
       final refresh = result['refresh_token'] as String?;
       if ((access ?? '').isEmpty || (refresh ?? '').isEmpty) {
         debugPrint('[AUTH_LOGIN_ERROR] Invalid response - missing tokens');
-        throw Exception('Invalid login response');
+        debugPrint('[AUTH_LOGIN_ERROR] Response keys: ${result.keys.toList()}');
+        debugPrint('[AUTH_LOGIN_ERROR] Full response: $result');
+        throw Exception('Invalid login response - missing authentication tokens');
       }
       await _persistTokens(accessToken: access!, refreshToken: refresh!);
       debugPrint('[AUTH_LOGIN] Login successful - tokens persisted');
