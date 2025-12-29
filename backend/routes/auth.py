@@ -274,6 +274,7 @@ async def auth_options():
     )
 
 # ✅ CORE AUTH FUNCTIONS - Handle user registration and login
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate) -> UserResponse:
     """Register a new user account"""
     try:
@@ -354,6 +355,7 @@ async def register(user: UserCreate) -> UserResponse:
             detail=f"Registration failed: {str(e)}"
         )
 
+@router.post("/login", response_model=Token)
 async def login(credentials: UserLogin, request: Request) -> Token:
     """Login user and return access/refresh tokens"""
     try:
@@ -422,6 +424,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             detail=f"Login failed: {str(e)}"
         )
 
+@router.post("/refresh", response_model=Token)
 async def refresh_token(refresh_request: RefreshTokenRequest) -> Token:
     """Refresh access token using refresh token"""
     try:
@@ -462,7 +465,8 @@ async def refresh_token(refresh_request: RefreshTokenRequest) -> Token:
             detail="Token refresh failed"
         )
 
-async def logout(current_user: str) -> dict:
+@router.post("/logout")
+async def logout(current_user: str = Depends(get_current_user)) -> dict:
     """Logout user by invalidating refresh tokens"""
     try:
         auth_log(f"Logout for user: {current_user}")
