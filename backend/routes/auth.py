@@ -25,6 +25,10 @@ from typing import Dict, Tuple, List
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+# Email rate limiting tracking
+email_rate_limits: Dict[str, List[datetime]] = defaultdict(list)
+email_daily_limits: Dict[str, datetime] = defaultdict(datetime)
+
 # OPTIONS handlers for CORS preflight requests
 @router.options("/register")
 @router.options("/login")
@@ -55,6 +59,119 @@ async def auth_options():
         }
     )
 
+# Email testing endpoint (DEBUG mode only)
+@router.get("/test-email", status_code=status.HTTP_200_OK)
+async def test_email_endpoint():
+    """Test email service configuration and connectivity (DEBUG mode only)"""
+    
+    if not settings.DEBUG:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email testing is only available in DEBUG mode"
+        )
+    
+    # Test email service
+    test_ok, test_message = test_email_service()
+    
+    # Get current email configuration
+    config_info = {
+        "email_service_enabled": settings.EMAIL_SERVICE_ENABLED,
+        "smtp_host": settings.SMTP_HOST if settings.DEBUG else None,
+        "smtp_port": settings.SMTP_PORT if settings.DEBUG else None,
+        "smtp_username": settings.SMTP_USERNAME if settings.DEBUG else None,
+        "smtp_use_tls": settings.SMTP_USE_TLS,
+        "email_from": settings.EMAIL_FROM if settings.DEBUG else None,
+        "rate_limits": {
+            "per_hour": settings.EMAIL_RATE_LIMIT_PER_HOUR,
+            "per_day": settings.EMAIL_RATE_LIMIT_PER_DAY
+        }
+    }
+    
+    # Test sending a test email if service is configured
+    test_email_sent = False
+    test_email_error = None
+    
+    if settings.EMAIL_SERVICE_ENABLED and test_ok:
+        try:
+            import smtplib
+            from email.message import EmailMessage
+            
+            msg = EmailMessage()
+            msg["Subject"] = "Zaply - Email Service Test"
+            msg["From"] = settings.EMAIL_FROM
+            msg["To"] = settings.EMAIL_FROM  # Send to self for testing
+            
+            msg.set_content(
+                "This is a test email from Zaply to verify that the email service is working correctly.\n\n"
+                "If you receive this email, the email service is properly configured and functional.\n\n"
+                f"Test sent at: {datetime.now(timezone.utc).isoformat()}\n"
+                "Best regards,\nZaply Email Service"
+            )
+            
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+                if settings.SMTP_USE_TLS:
+                    server.starttls()
+                if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
+                    server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+                server.send_message(msg)
+            
+            test_email_sent = True
+            email_log("Test email sent successfully")
+            
+        except Exception as e:
+            test_email_error = str(e)
+            email_log(f"Test email failed: {test_email_error}")
+    
+    return {
+        "email_service_test": {
+            "success": test_ok,
+            "message": test_message
+        },
+        "configuration": config_info,
+        "test_email_sent": test_email_sent,
+        "test_email_error": test_email_error,
+        "recommendations": _get_email_recommendations(test_ok, test_message, config_info)
+    }
+
+def _get_email_recommendations(test_ok: bool, test_message: str, config_info: dict) -> list:
+    """Get recommendations for fixing email service issues."""
+    recommendations = []
+    
+    if not config_info["email_service_enabled"]:
+        recommendations.extend([
+            "Set SMTP_HOST environment variable (e.g., smtp.gmail.com)",
+            "Set SMTP_USERNAME environment variable (your email address)",
+            "Set SMTP_PASSWORD environment variable (your email password or app password)",
+            "Set EMAIL_FROM environment variable (your email address)",
+            "Consider using Gmail SMTP: smtp.gmail.com:587 with TLS"
+        ])
+        return recommendations
+    
+    if not test_ok:
+        if "authentication" in test_message.lower():
+            recommendations.extend([
+                "Check SMTP_USERNAME and SMTP_PASSWORD are correct",
+                "For Gmail, use an App Password instead of your regular password",
+                "Enable 2-factor authentication on your Gmail account",
+                "Make sure 'Less secure app access' is enabled if required"
+            ])
+        elif "connection" in test_message.lower():
+            recommendations.extend([
+                "Check SMTP_HOST and SMTP_PORT are correct",
+                "Verify network connectivity to SMTP server",
+                "Check if firewall is blocking SMTP connections",
+                "Try different SMTP port (587, 465, or 25)"
+            ])
+        elif "tls" in test_message.lower():
+            recommendations.extend([
+                "Check SMTP_USE_TLS setting matches server requirements",
+                "Try with TLS enabled or disabled based on server"
+            ])
+        else:
+            recommendations.append("Check SMTP server configuration and credentials")
+    
+    return recommendations
+
 # Rate limiting with memory cleanup for production safety
 # In production, replace with Redis or similar distributed storage
 login_attempts: Dict[str, List[datetime]] = defaultdict(list)
@@ -81,6 +198,60 @@ def auth_log(message: str) -> None:
     """Log auth-related messages only when DEBUG is enabled."""
     if settings.DEBUG:
         print(message)
+
+def email_log(message: str) -> None:
+    """Log email-related messages with proper formatting."""
+    if settings.DEBUG:
+        print(f"[EMAIL] {message}")
+
+def check_email_rate_limit(email: str) -> Tuple[bool, str]:
+    """Check if email is within rate limits."""
+    current_time = datetime.now(timezone.utc)
+    
+    # Clean up old entries (older than 24 hours)
+    cutoff_time = current_time - timedelta(hours=24)
+    email_rate_limits[email] = [
+        timestamp for timestamp in email_rate_limits[email] 
+        if timestamp > cutoff_time
+    ]
+    
+    # Check daily limit
+    if len(email_rate_limits[email]) >= settings.EMAIL_RATE_LIMIT_PER_DAY:
+        return False, f"Daily email limit reached ({settings.EMAIL_RATE_LIMIT_PER_DAY} emails per day)"
+    
+    # Check hourly limit
+    hour_cutoff = current_time - timedelta(hours=1)
+    hourly_count = len([
+        timestamp for timestamp in email_rate_limits[email] 
+        if timestamp > hour_cutoff
+    ])
+    
+    if hourly_count >= settings.EMAIL_RATE_LIMIT_PER_HOUR:
+        return False, f"Hourly email limit reached ({settings.EMAIL_RATE_LIMIT_PER_HOUR} emails per hour)"
+    
+    # Record this email request
+    email_rate_limits[email].append(current_time)
+    return True, "Email rate limit OK"
+
+def test_email_service() -> Tuple[bool, str]:
+    """Test email service connectivity and configuration."""
+    if not settings.EMAIL_SERVICE_ENABLED:
+        return False, "Email service not configured"
+    
+    try:
+        import smtplib
+        from email.message import EmailMessage
+        
+        # Test connection to SMTP server
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+            if settings.SMTP_USE_TLS:
+                server.starttls()
+            if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
+                server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+        
+        return True, "Email service test successful"
+    except Exception as e:
+        return False, f"Email service test failed: {str(e)}"
 
 
 def cleanup_old_attempts() -> None:
@@ -596,19 +767,329 @@ async def logout(refresh_request: RefreshTokenRequest, current_user: str = Depen
 # Password Reset Endpoints
 @router.post("/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest):
-    """Request password reset token"""
+    """Request password reset token with enhanced email validation and fallback"""
     
     try:
         # Normalize email
         email = request.email.lower().strip()
-        auth_log(f"[AUTH] Password reset request received")
+        auth_log(f"[AUTH] Password reset request received for: {email}")
         
         # Validate email format
-        if not email or '@' not in email:
+        if not email or '@' not in email or '.' not in email.split('@')[1]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format"
+                detail="Invalid email format. Please enter a valid email address."
             )
+        
+        # Check email rate limiting
+        rate_limit_ok, rate_limit_message = check_email_rate_limit(email)
+        if not rate_limit_ok:
+            auth_log(f"[AUTH] Email rate limit exceeded for: {email}")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=rate_limit_message,
+                headers={"Retry-After": "3600"}  # 1 hour retry
+            )
+        
+        users = users_collection()
+        
+        # Check if user exists (with timeout)
+        try:
+            user = await asyncio.wait_for(
+                users.find_one({"email": email}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            auth_log(f"[AUTH] Database query timeout during password reset request")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database operation timed out. Please try again."
+            )
+        except Exception as e:
+            auth_log(f"[AUTH] Database error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Service temporarily unavailable. Please try again."
+            )
+        
+        if not user:
+            # Return success anyway (security: don't reveal if email exists)
+            auth_log(f"[AUTH] Password reset requested for non-existent email: {email}")
+            return {
+                "message": "If an account exists with this email, a password reset link has been sent.",
+                "success": True,
+                "email_sent": False,
+                "debug_info": {
+                    "note": "For security reasons, we don't reveal if email exists in our system"
+                }
+            }
+        
+        # Create password reset token (valid for 1 hour)
+        reset_token = create_access_token(
+            data={"sub": str(user["_id"]), "type": "password_reset"},
+            expires_delta=timedelta(hours=1)
+        )
+        
+        # Store reset token in database
+        reset_tokens = reset_tokens_collection()
+        try:
+            await asyncio.wait_for(
+                reset_tokens.insert_one({
+                    "token": reset_token,
+                    "user_id": str(user["_id"]),
+                    "email": email,
+                    "created_at": datetime.now(timezone.utc),
+                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+                    "used": False
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            auth_log(f"[AUTH] Timeout storing reset token")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to generate reset token. Please try again."
+            )
+        except Exception as e:
+            auth_log(f"[AUTH] Error storing reset token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate reset token. Please try again."
+            )
+        
+        # Enhanced email sending with validation and fallback
+        email_result = await send_password_reset_email(email, user, reset_token)
+        
+        # Build response with detailed status
+        response = {
+            "message": "If an account exists with this email, a password reset link has been sent.",
+            "success": True,
+            "email_sent": email_result["sent"],
+            "email_service_configured": settings.EMAIL_SERVICE_ENABLED,
+        }
+        
+        # Add debug information in development mode
+        if settings.DEBUG:
+            response["debug_info"] = {
+                "email_service_enabled": settings.EMAIL_SERVICE_ENABLED,
+                "smtp_host": settings.SMTP_HOST if settings.EMAIL_SERVICE_ENABLED else None,
+                "email_from": settings.EMAIL_FROM if settings.EMAIL_SERVICE_ENABLED else None,
+                "reset_token": reset_token,
+                "email_error": email_result.get("error"),
+                "email_test_result": email_result.get("test_result")
+            }
+            
+            if not email_result["sent"]:
+                if not settings.EMAIL_SERVICE_ENABLED:
+                    response["message"] = "DEBUG: Email service not configured, token included in response."
+                else:
+                    response["message"] = f"DEBUG: Email failed to send ({email_result.get('error')}), token included in response."
+        
+        # Log the result
+        if email_result["sent"]:
+            auth_log(f"[AUTH] Password reset email sent successfully to: {email}")
+        else:
+            auth_log(f"[AUTH] Password reset email failed to send to: {email} - {email_result.get('error')}")
+        
+        return response
+    
+    except HTTPException:
+        raise
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        auth_log(f"[AUTH] Forgot password failed: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process password reset request."
+        )
+
+async def send_password_reset_email(email: str, user: dict, reset_token: str) -> dict:
+    """Send password reset email with comprehensive error handling and validation."""
+    
+    if not settings.EMAIL_SERVICE_ENABLED:
+        email_log("Email service not configured - skipping email send")
+        return {
+            "sent": False,
+            "error": "Email service not configured",
+            "test_result": None
+        }
+    
+    # Test email service before attempting to send
+    test_ok, test_error = test_email_service()
+    if not test_ok:
+        email_log(f"Email service test failed: {test_error}")
+        return {
+            "sent": False,
+            "error": f"Email service unavailable: {test_error}",
+            "test_result": test_error
+        }
+    
+    try:
+        import smtplib
+        from email.message import EmailMessage
+        
+        email_log(f"Attempting to send password reset email to: {email}")
+        
+        # Create email message
+        msg = EmailMessage()
+        msg["Subject"] = "Zaply - Password Reset Request"
+        msg["From"] = settings.EMAIL_FROM
+        msg["To"] = email
+        msg["Reply-To"] = settings.EMAIL_FROM
+        
+        # Create reset link
+        base_url = settings.API_BASE_URL.replace('/api/v1', '')
+        reset_link = f"{base_url}/#/reset-password?token={reset_token}"
+        
+        # Enhanced email content with HTML support
+        text_content = f"""Hi {user.get('name', 'User')},
+
+You requested a password reset for your Zaply account.
+
+Click here to reset your password:
+{reset_link}
+
+Or copy and paste this link:
+{reset_link}
+
+Alternative: Use this reset token: {reset_token}
+
+This link is valid for 1 hour from the time of this email.
+If you did not request this password reset, you can safely ignore this email.
+
+For security, please:
+- Never share this link with anyone
+- Reset your password to something strong and unique
+- Enable two-factor authentication if available
+
+Best regards,
+The Zaply Team
+---
+If you're having trouble clicking the reset link, copy and paste it into your browser.
+"""
+
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Zaply Password Reset</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: #4CAF50; color: white; padding: 20px; text-align: center; }}
+        .content {{ padding: 20px; background: #f9f9f9; }}
+        .button {{ display: inline-block; padding: 12px 24px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }}
+        .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
+        .security {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 20px 0; border-radius: 4px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 Zaply Password Reset</h1>
+        </div>
+        <div class="content">
+            <p>Hi {user.get('name', 'User')},</p>
+            <p>You requested a password reset for your Zaply account. Click the button below to reset your password:</p>
+            
+            <div style="text-align: center;">
+                <a href="{reset_link}" class="button">Reset Password</a>
+            </div>
+            
+            <p>If the button doesn't work, copy and paste this link into your browser:</p>
+            <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 4px;">{reset_link}</p>
+            
+            <p>Or use this reset token:</p>
+            <p style="background: #e8f4fd; padding: 10px; border-radius: 4px; font-family: monospace;"><strong>{reset_token}</strong></p>
+            
+            <div class="security">
+                <strong>🔒 Security Notice:</strong>
+                <ul>
+                    <li>This link is valid for 1 hour</li>
+                    <li>Never share this link with anyone</li>
+                    <li>If you didn't request this, ignore this email</li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Best regards,<br>The Zaply Team</p>
+            <p><small>If you're having trouble, contact support</small></p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        
+        # Set both text and HTML content
+        msg.set_content(text_content)
+        msg.add_alternative(html_content, subtype="html")
+        
+        # Send email with enhanced error handling
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
+            server.set_debuglevel(1 if settings.DEBUG else 0)
+            
+            if settings.SMTP_USE_TLS:
+                server.starttls()
+                email_log("TLS started")
+            
+            if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
+                server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+                email_log(f"Logged in as: {settings.SMTP_USERNAME}")
+            
+            # Send the email
+            result = server.send_message(msg)
+            email_log(f"Email sent successfully. Server response: {result}")
+        
+        return {
+            "sent": True,
+            "error": None,
+            "test_result": "Email sent successfully"
+        }
+        
+    except smtplib.SMTPAuthenticationError as e:
+        error_msg = f"SMTP authentication failed: {str(e)}"
+        email_log(f"SMTP Authentication Error: {error_msg}")
+        return {
+            "sent": False,
+            "error": error_msg,
+            "test_result": "Authentication failed - check SMTP credentials"
+        }
+    
+    except smtplib.SMTPConnectError as e:
+        error_msg = f"Failed to connect to SMTP server: {str(e)}"
+        email_log(f"SMTP Connection Error: {error_msg}")
+        return {
+            "sent": False,
+            "error": error_msg,
+            "test_result": "Connection failed - check SMTP host and port"
+        }
+    
+    except smtplib.SMTPServerDisconnected as e:
+        error_msg = f"SMTP server disconnected: {str(e)}"
+        email_log(f"SMTP Disconnection Error: {error_msg}")
+        return {
+            "sent": False,
+            "error": error_msg,
+            "test_result": "Server disconnected - try again later"
+        }
+    
+    except smtplib.SMTPException as e:
+        error_msg = f"SMTP error: {str(e)}"
+        email_log(f"SMTP Error: {error_msg}")
+        return {
+            "sent": False,
+            "error": error_msg,
+            "test_result": "SMTP protocol error"
+        }
+    
+    except Exception as e:
+        error_msg = f"Unexpected error sending email: {type(e).__name__}: {str(e)}"
+        email_log(f"Unexpected Email Error: {error_msg}")
+        return {
+            "sent": False,
+            "error": error_msg,
+            "test_result": "Unexpected error occurred"
+        }
         
         users = users_collection()
         

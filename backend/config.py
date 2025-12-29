@@ -86,6 +86,13 @@ class Settings:
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() in ("true", "1", "yes")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
     
+    # Email service validation
+    EMAIL_SERVICE_ENABLED: bool = bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and EMAIL_FROM)
+    
+    # Email rate limiting (prevent spam)
+    EMAIL_RATE_LIMIT_PER_HOUR: int = int(os.getenv("EMAIL_RATE_LIMIT_PER_HOUR", "10"))
+    EMAIL_RATE_LIMIT_PER_DAY: int = int(os.getenv("EMAIL_RATE_LIMIT_PER_DAY", "50"))
+    
     # Development
     # Default DEBUG to True for development; set to False in production with proper SECRET_KEY
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
@@ -148,6 +155,25 @@ class Settings:
         
         if len(self.SECRET_KEY) < 32:
             self.SECRET_KEY = secrets.token_urlsafe(64)
+        
+        # Validate email configuration
+        self.validate_email_config()
+    
+    def validate_email_config(self):
+        """Validate email service configuration"""
+        if self.EMAIL_SERVICE_ENABLED:
+            print(f"[EMAIL] Email service configured with host: {self.SMTP_HOST}")
+            print(f"[EMAIL] Email from: {self.EMAIL_FROM}")
+            print(f"[EMAIL] Rate limits: {self.EMAIL_RATE_LIMIT_PER_HOUR}/hour, {self.EMAIL_RATE_LIMIT_PER_DAY}/day")
+            
+            # Basic email format validation
+            if '@' not in self.EMAIL_FROM or '.' not in self.EMAIL_FROM.split('@')[1]:
+                print(f"[EMAIL] WARNING: Invalid email format: {self.EMAIL_FROM}")
+        else:
+            print("[EMAIL] Email service NOT configured - password reset emails will not be sent")
+            print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
+            if self.DEBUG:
+                print("[EMAIL] DEBUG: Password reset tokens will be returned in API response for testing")
     
     def validate_production(self):
         """Validate production-safe settings.

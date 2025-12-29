@@ -1194,7 +1194,7 @@ Future<void> postToChannel(String channelId, String text) async {
     }
   }
 
-  Future<bool> resetPassword({required String email}) async {
+Future<bool> resetPassword({required String email}) async {
     try {
       _log('[API_RESET_PASSWORD] Sending forgot-password request for: $email');
       final response = await _dio.post(
@@ -1202,6 +1202,20 @@ Future<void> postToChannel(String channelId, String text) async {
         data: {'email': email},
       );
       _log('[API_RESET_PASSWORD] Success: ${response.statusCode}');
+      _log('[API_RESET_PASSWORD] Response data: ${response.data}');
+      
+      // Handle enhanced response with email service status
+      final responseData = response.data as Map<String, dynamic>? ?? {};
+      final emailSent = responseData['email_sent'] as bool? ?? false;
+      final emailServiceConfigured = responseData['email_service_configured'] as bool? ?? false;
+      
+      if (responseData['debug_info'] != null) {
+        _log('[API_RESET_PASSWORD] Debug info: ${responseData['debug_info']}');
+      }
+      
+      _log('[API_RESET_PASSWORD] Email service configured: $emailServiceConfigured');
+      _log('[API_RESET_PASSWORD] Email sent: $emailSent');
+      
       return response.statusCode == 200 || response.statusCode == 201;
     } on DioException catch (e) {
       _log('[API_RESET_PASSWORD_ERROR] Dio error: ${e.message}');
@@ -1210,6 +1224,76 @@ Future<void> postToChannel(String channelId, String text) async {
       rethrow;
     } catch (e) {
       _log('[API_RESET_PASSWORD_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
+  // Enhanced password reset with detailed response
+  Future<Map<String, dynamic>> resetPasswordWithDetails({required String email}) async {
+    try {
+      _log('[API_RESET_PASSWORD] Sending forgot-password request for: $email');
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/forgot-password',
+        data: {'email': email},
+      );
+      _log('[API_RESET_PASSWORD] Success: ${response.statusCode}');
+      
+      final responseData = response.data as Map<String, dynamic>? ?? {};
+      
+      return {
+        'success': true,
+        'status_code': response.statusCode,
+        'email_sent': responseData['email_sent'] as bool? ?? false,
+        'email_service_configured': responseData['email_service_configured'] as bool? ?? false,
+        'message': responseData['message'] as String? ?? 'Password reset request sent',
+        'debug_info': responseData['debug_info'] as Map<String, dynamic>?,
+      };
+    } on DioException catch (e) {
+      _log('[API_RESET_PASSWORD_ERROR] Dio error: ${e.message}');
+      _log('[API_RESET_PASSWORD_ERROR] Status code: ${e.response?.statusCode}');
+      _log('[API_RESET_PASSWORD_ERROR] Response: ${e.response?.data}');
+      
+      String errorMessage = 'Failed to send password reset email';
+      if (e.response?.data is Map) {
+        final data = e.response!.data as Map;
+        errorMessage = data['detail'] as String? ?? 
+                     data['error'] as String? ?? 
+                     data['message'] as String? ?? 
+                     errorMessage;
+      } else if (e.response?.statusCode == 429) {
+        errorMessage = 'Too many password reset requests. Please wait before trying again.';
+      } else if (e.response?.statusCode == 400) {
+        errorMessage = 'Invalid email address. Please check and try again.';
+      }
+      
+      throw Exception(errorMessage);
+    } catch (e) {
+      _log('[API_RESET_PASSWORD_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
+  // Test email service (DEBUG mode only)
+  Future<Map<String, dynamic>> testEmailService() async {
+    try {
+      _log('[API_TEST_EMAIL] Testing email service configuration');
+      final response = await _dio.get(
+        '${ApiConstants.authEndpoint}/test-email',
+      );
+      _log('[API_TEST_EMAIL] Success: ${response.statusCode}');
+      
+      return response.data as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      _log('[API_TEST_EMAIL_ERROR] Dio error: ${e.message}');
+      _log('[API_TEST_EMAIL_ERROR] Status code: ${e.response?.statusCode}');
+      
+      if (e.response?.statusCode == 403) {
+        throw Exception('Email testing is only available in DEBUG mode');
+      }
+      
+      rethrow;
+    } catch (e) {
+      _log('[API_TEST_EMAIL_ERROR] Failed: $e');
       rethrow;
     }
   }

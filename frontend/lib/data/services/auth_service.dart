@@ -310,8 +310,95 @@ class AuthService {
     await login(email: email, password: password);
   }
 
-  Future<void> resetPassword({required String email}) async {
-    await _api.resetPassword(email: email);
+Future<void> resetPassword({required String email}) async {
+    try {
+      final result = await _api.resetPasswordWithDetails(email: email);
+      debugPrint('[AUTH_RESET_PASSWORD] Result: $result');
+      
+      // Log detailed information for debugging
+      if (result['email_service_configured'] == false) {
+        debugPrint('[AUTH_RESET_PASSWORD] Email service not configured');
+      }
+      
+      if (result['debug_info'] != null) {
+        debugPrint('[AUTH_RESET_PASSWORD] Debug info available');
+        if (result['debug_info']['reset_token'] != null) {
+          debugPrint('[AUTH_RESET_PASSWORD] Reset token available for testing');
+        }
+      }
+    } catch (e) {
+      debugPrint('[AUTH_RESET_PASSWORD_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
+  // Get detailed password reset status
+  Future<Map<String, dynamic>> getPasswordResetStatus({required String email}) async {
+    try {
+      final result = await _api.resetPasswordWithDetails(email: email);
+      
+      return {
+        'success': result['success'],
+        'message': result['message'],
+        'email_sent': result['email_sent'],
+        'email_service_configured': result['email_service_configured'],
+        'needs_manual_token': !result['email_sent'] && result['debug_info']?['reset_token'] != null,
+        'manual_token': result['debug_info']?['reset_token'],
+        'recommendations': _getPasswordResetRecommendations(result),
+      };
+    } catch (e) {
+      debugPrint('[AUTH_RESET_STATUS_ERROR] Failed: $e');
+      return {
+        'success': false,
+        'message': e.toString(),
+        'email_sent': false,
+        'email_service_configured': false,
+        'needs_manual_token': false,
+        'manual_token': null,
+        'recommendations': ['Please try again later or contact support'],
+      };
+    }
+  }
+
+  // Get recommendations based on password reset result
+  List<String> _getPasswordResetRecommendations(Map<String, dynamic> result) {
+    List<String> recommendations = [];
+    
+    if (!result['email_service_configured']) {
+      recommendations.addAll([
+        'Email service is not configured on the server',
+        'Contact administrator to set up email service',
+        'In development mode, check debug information for manual reset token'
+      ]);
+    } else if (!result['email_sent']) {
+      recommendations.addAll([
+        'Email service is configured but failed to send',
+        'Check your spam/junk folder',
+        'Verify the email address is correct',
+        'Try again in a few minutes'
+      ]);
+    } else {
+      recommendations.addAll([
+        'Check your email inbox',
+        'Check your spam/junk folder',
+        'The reset link will expire in 1 hour',
+        'If you don\'t receive the email, try requesting again'
+      ]);
+    }
+    
+    return recommendations;
+  }
+
+  // Test email service configuration
+  Future<Map<String, dynamic>> testEmailService() async {
+    try {
+      final result = await _api.testEmailService();
+      debugPrint('[AUTH_TEST_EMAIL] Result: $result');
+      return result;
+    } catch (e) {
+      debugPrint('[AUTH_TEST_EMAIL_ERROR] Failed: $e');
+      rethrow;
+    }
   }
 
   Future<void> logout() async {
