@@ -944,6 +944,7 @@ async def change_email(
 
 
 @router.post("/avatar")
+@router.post("/avatar/")
 async def upload_avatar(
     file: UploadFile = File(...),
     request: Request = None,
@@ -1099,6 +1100,7 @@ async def upload_avatar(
 
 
 @router.post("/avatar-upload")
+@router.post("/avatar-upload/")
 async def upload_avatar_alt(
     file: UploadFile = File(...),
     current_user: str = Depends(get_current_user)
@@ -1205,7 +1207,7 @@ async def list_avatars(request: Request):
     # Log request info for debugging
     logger.info(f"GET request to /avatar/ endpoint - providing API documentation")
     logger.info(f"Request URL: {request.url}")
-    logger.warning(f"POST requests should go to /avatar (without trailing slash)")
+    logger.debug(f"POST requests can use /avatar or /avatar/ (both supported)")
     
     # Return helpful API documentation instead of 405
     return JSONResponse(
@@ -1215,7 +1217,7 @@ async def list_avatars(request: Request):
             "endpoints": {
                 "upload": {
                     "method": "POST",
-                    "url": "/api/v1/users/avatar",
+                    "url": "/api/v1/users/avatar/ or /api/v1/users/avatar",
                     "content_type": "multipart/form-data",
                     "required_field": "file (image file)",
                     "description": "Upload user profile avatar"
@@ -1227,11 +1229,12 @@ async def list_avatars(request: Request):
                 }
             },
             "note": "This GET endpoint provides documentation. Use POST to upload avatars.",
-            "fix": "POST requests should use /avatar (without trailing slash)"
+            "note": "Both /avatar and /avatar/ are supported for POST requests"
         }
     )
 
 @router.options("/avatar")
+@router.options("/avatar/")
 @router.options("/avatar-upload")
 async def avatar_options():
     """Handle CORS preflight for avatar endpoint"""
