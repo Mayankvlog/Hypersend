@@ -124,46 +124,211 @@ class ApiService {
       case DioExceptionType.receiveTimeout:
         return 'Server took too long to respond. Server at ${ApiConstants.serverBaseUrl} may be overloaded. Please try again.';
       case DioExceptionType.badResponse:
-        if (error.response?.statusCode == 422) {
-          return 'Invalid data format. Please check your inputs.';
-        } else if (error.response?.statusCode == 409) {
-          return 'Email already in use.';
-        } else if (error.response?.statusCode == 401) {
-          return 'Unauthorized. Please login again.';
-        } else if (error.response?.statusCode == 404) {
-          return 'API endpoint not found at ${ApiConstants.serverBaseUrl}';
-        }
-        return 'Server error: ${error.response?.statusCode}';
+        return _handleHttpStatusCodes(error);
       case DioExceptionType.connectionError:
-        return 'Cannot connect to server. Please check:\n'
-            '1. ✓ Internet connection is active\n'
-            '2. Server is running: ${ApiConstants.serverBaseUrl}\n'
-            '3. API endpoint (${ApiConstants.baseUrl}) is reachable\n'
-            '4. SSL certificates are valid (${ApiConstants.validateCertificates ? "enabled" : "disabled"})\n'
-            '5. Security mode: ${ApiConstants.validateCertificates ? "SECURE 🔒" : "DEBUG MODE ⚠️"}\n'
-            '6. Platform: ${kIsWeb ? "Flutter Web (browser controls SSL)" : "Mobile"}\n\n'
-            'Debug info: ${error.message}\n\n'
-            'If you continue seeing this error:\n'
-            '• Verify: https://zaply.in.net/health\n'
-            '• Check backend container logs: docker compose logs backend\n'
-            '• Ensure nginx is proxying requests correctly';
+        return _handleConnectionErrors(error);
       case DioExceptionType.unknown:
-        if (error.message?.contains('SocketException') == true) {
-          return 'Network error. Please check internet connection and ensure ${ApiConstants.serverBaseUrl} is accessible.';
-        } else if (error.message?.contains('Connection refused') == true) {
-          return 'Server at ${ApiConstants.serverBaseUrl} refused connection. Backend may be down.';
-        } else if (error.message?.contains('Connection timeout') == true) {
-          return 'Connection timeout. Server at ${ApiConstants.serverBaseUrl} is not responding.';
-        } else if (error.message?.contains('HandshakeException') == true) {
-          return 'SSL/TLS certificate error. The server\'s security certificate may be invalid.';
-        }
-        return 'Connection error. Please check if ${ApiConstants.serverBaseUrl} is accessible.';
+        return _handleUnknownErrors(error);
       default:
         return 'An error occurred: ${error.message}';
     }
   }
 
-  // Auth endpoints
+  // Handle HTTP status codes 300-600
+  static String _handleHttpStatusCodes(DioException error) {
+    final statusCode = error.response?.statusCode;
+    final responseData = error.response?.data;
+    
+    // Extract custom error message from response if available
+    String? customMessage;
+    if (responseData is Map) {
+      customMessage = responseData['detail'] as String? ?? 
+                     responseData['error'] as String? ??
+                     responseData['message'] as String?;
+    }
+    
+    // Handle specific HTTP status codes
+    switch (statusCode) {
+      // 3xx Redirection
+      case 300:
+        return customMessage ?? 'Multiple choices available. Please select a specific option.';
+      case 301:
+        return customMessage ?? 'Resource permanently moved. Please update your bookmarks.';
+      case 302:
+        return customMessage ?? 'Resource temporarily moved. Redirecting...';
+      case 303:
+        return customMessage ?? 'See other resource. Please follow the provided link.';
+      case 304:
+        return customMessage ?? 'Resource not modified. Using cached version.';
+      case 305:
+        return customMessage ?? 'Use proxy. Please configure your proxy settings.';
+      case 306:
+        return customMessage ?? 'Reserved for future use.';
+      case 307:
+        return customMessage ?? 'Temporary redirect. Preserving request method.';
+      case 308:
+        return customMessage ?? 'Permanent redirect. Preserving request method.';
+      
+      // 4xx Client Errors
+      case 400:
+        return customMessage ?? 'Bad request. Please check your input data and try again.';
+      case 401:
+        return customMessage ?? 'Unauthorized. Please login again to continue.';
+      case 402:
+        return customMessage ?? 'Payment required. Please check your subscription.';
+      case 403:
+        return customMessage ?? 'Access forbidden. You don\'t have permission to perform this action.';
+      case 404:
+        return customMessage ?? 'Resource not found. Please check the URL or contact support.';
+      case 405:
+        return customMessage ?? 'Method not allowed. Please use the correct HTTP method.';
+      case 406:
+        return customMessage ?? 'Not acceptable. Server cannot fulfill your request format.';
+      case 407:
+        return customMessage ?? 'Proxy authentication required. Please check proxy credentials.';
+      case 408:
+        return customMessage ?? 'Request timeout. Please try again with a faster connection.';
+      case 409:
+        return customMessage ?? 'Conflict. Resource already exists or is being modified.';
+      case 410:
+        return customMessage ?? 'Resource gone. This resource is no longer available.';
+      case 411:
+        return customMessage ?? 'Length required. Please specify content length.';
+      case 412:
+        return customMessage ?? 'Precondition failed. Request conditions not met.';
+      case 413:
+        return customMessage ?? 'Payload too large. Please reduce file size or data.';
+      case 414:
+        return customMessage ?? 'URI too long. Please use shorter URLs.';
+      case 415:
+        return customMessage ?? 'Unsupported media type. Please use supported file formats.';
+      case 416:
+        return customMessage ?? 'Range not satisfiable. Requested range not available.';
+      case 417:
+        return customMessage ?? 'Expectation failed. Server cannot meet requirements.';
+      case 418:
+        return customMessage ?? 'I\'m a teapot! (RFC 2324 Easter egg)';
+      case 421:
+        return customMessage ?? 'Misdirected request. Please try again.';
+      case 422:
+        return customMessage ?? 'Unprocessable entity. Please validate your input data.';
+      case 423:
+        return customMessage ?? 'Locked. Resource is currently locked.';
+      case 424:
+        return customMessage ?? 'Failed dependency. Required action failed.';
+      case 425:
+        return customMessage ?? 'Too early. Server is not ready to process this request.';
+      case 426:
+        return customMessage ?? 'Upgrade required. Please upgrade your client.';
+      case 428:
+        return customMessage ?? 'Precondition required. Please provide required conditions.';
+      case 429:
+        return customMessage ?? 'Too many requests. Please wait before trying again.';
+      case 431:
+        return customMessage ?? 'Request header fields too large.';
+      case 451:
+        return customMessage ?? 'Unavailable for legal reasons.';
+      
+      // 5xx Server Errors
+      case 500:
+        return customMessage ?? 'Internal server error. Please try again later.';
+      case 501:
+        return customMessage ?? 'Not implemented. This feature is not available yet.';
+      case 502:
+        return customMessage ?? 'Bad gateway. Server received invalid response.';
+      case 503:
+        return customMessage ?? 'Service unavailable. Server is temporarily down.';
+      case 504:
+        return customMessage ?? 'Gateway timeout. Server took too long to respond.';
+      case 505:
+        return customMessage ?? 'HTTP version not supported. Please use HTTP/1.1 or HTTP/2.';
+      case 506:
+        return customMessage ?? 'Variant also negotiates. Content negotiation failed.';
+      case 507:
+        return customMessage ?? 'Insufficient storage. Server storage full.';
+      case 508:
+        return customMessage ?? 'Loop detected. Request redirection loop.';
+      case 510:
+        return customMessage ?? 'Not extended. Required extensions not available.';
+      case 511:
+        return customMessage ?? 'Network authentication required. Please check network credentials.';
+      
+      default:
+        if (statusCode != null && statusCode >= 300 && statusCode < 600) {
+          return customMessage ?? 'HTTP ${statusCode}: ${_getHttpStatusCategory(statusCode)}';
+        }
+        return 'Server error: ${statusCode ?? 'Unknown'}';
+    }
+  }
+
+  // Get category of HTTP status code
+  static String _getHttpStatusCategory(int statusCode) {
+    if (statusCode >= 300 && statusCode < 400) return 'Redirection error';
+    if (statusCode >= 400 && statusCode < 500) return 'Client error';
+    if (statusCode >= 500 && statusCode < 600) return 'Server error';
+    return 'HTTP error';
+  }
+
+  // Handle connection errors
+  static String _handleConnectionErrors(DioException error) {
+    final message = error.message ?? '';
+    
+    if (message.contains('SocketException')) {
+      return 'Network error. Please check internet connection and ensure ${ApiConstants.serverBaseUrl} is accessible.';
+    } else if (message.contains('Connection refused')) {
+      return 'Server at ${ApiConstants.serverBaseUrl} refused connection. Backend may be down.';
+    } else if (message.contains('Connection timeout')) {
+      return 'Connection timeout. Server at ${ApiConstants.serverBaseUrl} is not responding.';
+    } else if (message.contains('HandshakeException')) {
+      return 'SSL/TLS certificate error. The server\'s security certificate may be invalid.';
+    } else if (message.contains('No Internet connection')) {
+      return 'No internet connection. Please check your network settings.';
+    } else if (message.contains('Host is down')) {
+      return 'Server ${ApiConstants.serverBaseUrl} is down. Please try again later.';
+    } else if (message.contains('Network is unreachable')) {
+      return 'Network unreachable. Please check your internet connection.';
+    } else if (message.contains('DNS resolution failed')) {
+      return 'DNS resolution failed. Please check the server URL: ${ApiConstants.serverBaseUrl}';
+    }
+    
+    return 'Cannot connect to server. Please check:\n'
+        '1. ✓ Internet connection is active\n'
+        '2. Server is running: ${ApiConstants.serverBaseUrl}\n'
+        '3. API endpoint (${ApiConstants.baseUrl}) is reachable\n'
+        '4. SSL certificates are valid (${ApiConstants.validateCertificates ? "enabled" : "disabled"})\n'
+        '5. Security mode: ${ApiConstants.validateCertificates ? "SECURE 🔒" : "DEBUG MODE ⚠️"}\n'
+        '6. Platform: ${kIsWeb ? "Flutter Web (browser controls SSL)" : "Mobile"}\n\n'
+        'Debug info: ${message}\n\n'
+        'If you continue seeing this error:\n'
+        '• Verify: https://zaply.in.net/health\n'
+        '• Check backend container logs: docker compose logs backend\n'
+        '• Ensure nginx is proxying requests correctly';
+  }
+
+  // Handle unknown errors
+  static String _handleUnknownErrors(DioException error) {
+    final message = error.message ?? '';
+    
+    if (message.contains('SocketException')) {
+      return 'Network error. Please check internet connection and ensure ${ApiConstants.serverBaseUrl} is accessible.';
+    } else if (message.contains('Connection refused')) {
+      return 'Server at ${ApiConstants.serverBaseUrl} refused connection. Backend may be down.';
+    } else if (message.contains('Connection timeout')) {
+      return 'Connection timeout. Server at ${ApiConstants.serverBaseUrl} is not responding.';
+    } else if (message.contains('HandshakeException')) {
+      return 'SSL/TLS certificate error. The server\'s security certificate may be invalid.';
+    } else if (message.contains('FormatException')) {
+      return 'Invalid data format. Please check your input and try again.';
+    } else if (message.contains('JsonException')) {
+      return 'Invalid JSON response from server. Please try again.';
+    } else if (message.contains('TimeoutException')) {
+      return 'Request timed out. Please try again with better connection.';
+    }
+    
+    return 'Connection error. Please check if ${ApiConstants.serverBaseUrl} is accessible.';
+  }
+
+// Auth endpoints
   Future<Map<String, dynamic>> register({
     required String email,
     required String password,
@@ -175,9 +340,112 @@ class ApiService {
         'password': password,
         'name': name,
       });
-      return response.data ?? {};
+      
+      // Handle all HTTP status codes for registration
+      return _handleRegisterResponse(response);
     } catch (e) {
+      _log('[API_REGISTER] Registration error: $e');
       rethrow;
+    }
+  }
+
+  // Handle registration response for all HTTP status codes
+  Map<String, dynamic> _handleRegisterResponse(Response response) {
+    final statusCode = response.statusCode;
+    final responseData = response.data;
+    
+    _log('[API_REGISTER] Response status: $statusCode');
+    
+    // Success: 2xx status codes
+    if (statusCode != null && statusCode >= 200 && statusCode < 300) {
+      if (responseData is Map<String, dynamic>) {
+        return responseData;
+      } else if (responseData is Map) {
+        return Map<String, dynamic>.from(responseData);
+      } else if (responseData != null) {
+        _log('[API_REGISTER] Unexpected response format: $responseData');
+        throw Exception('Invalid server response format');
+      } else {
+        _log('[API_REGISTER] Empty response received');
+        throw Exception('Empty server response');
+      }
+    }
+    
+    // Handle 3xx-6xx status codes
+    String errorMessage = _getRegisterErrorMessage(statusCode!, responseData);
+    _log('[API_REGISTER] Registration failed: $statusCode - $errorMessage');
+    throw Exception(errorMessage);
+  }
+
+  // Get specific registration error messages
+  String _getRegisterErrorMessage(int statusCode, dynamic responseData) {
+    // Extract custom message from response if available
+    String? customMessage;
+    if (responseData is Map) {
+      customMessage = responseData['detail'] as String? ?? 
+                     responseData['error'] as String? ??
+                     responseData['message'] as String?;
+    }
+    
+    // Return custom message if available, otherwise use defaults
+    switch (statusCode) {
+      // 3xx Redirection
+      case 300: return customMessage ?? 'Multiple registration options available. Please contact support.';
+      case 301: return customMessage ?? 'Registration endpoint permanently moved. Please update app.';
+      case 302: return customMessage ?? 'Registration redirected. Please try again.';
+      case 307: return customMessage ?? 'Temporary registration redirect. Please try again.';
+      case 308: return customMessage ?? 'Permanent registration redirect. Please update app.';
+      
+      // 4xx Client Errors  
+      case 400: return customMessage ?? 'Invalid registration request. Please check your input data.';
+      case 401: return customMessage ?? 'Registration requires authentication. Please login first.';
+      case 402: return customMessage ?? 'Payment required for registration. Please check subscription.';
+      case 403: return customMessage ?? 'Registration forbidden. You may not be allowed to register.';
+      case 404: return customMessage ?? 'Registration endpoint not found. Please update app.';
+      case 405: return customMessage ?? 'Registration method not allowed. Please update app.';
+      case 406: return customMessage ?? 'Registration format not acceptable. Please update app.';
+      case 407: return customMessage ?? 'Proxy authentication required. Please check network settings.';
+      case 408: return customMessage ?? 'Registration request timed out. Please try again.';
+      case 409: return customMessage ?? 'Email already registered. Please use a different email or login.';
+      case 410: return customMessage ?? 'Registration service gone. Please contact support.';
+      case 412: return customMessage ?? 'Registration precondition failed. Please clear app cache.';
+      case 413: return customMessage ?? 'Registration request too large. Please reduce data size.';
+      case 415: return customMessage ?? 'Registration format unsupported. Please update app.';
+      case 416: return customMessage ?? 'Registration range not satisfiable. Please try again.';
+      case 417: return customMessage ?? 'Registration expectation failed. Please try again.';
+      case 421: return customMessage ?? 'Misdirected registration request. Please try again.';
+      case 422: return customMessage ?? 'Invalid registration data. Please check your name, email, and password.';
+      case 423: return customMessage ?? 'Registration locked due to security reasons. Please contact support.';
+      case 424: return customMessage ?? 'Registration dependency failed. Please try again.';
+      case 425: return customMessage ?? 'Registration request too early. Please wait and try again.';
+      case 426: return customMessage ?? 'Registration upgrade required. Please update app.';
+      case 428: return customMessage ?? 'Registration precondition required. Please include required headers.';
+      case 429: return customMessage ?? 'Too many registration attempts. Please wait before trying again.';
+      case 431: return customMessage ?? 'Registration headers too large. Please try again.';
+      case 451: return customMessage ?? 'Registration unavailable for legal reasons. Please contact support.';
+      
+      // 5xx Server Errors
+      case 500: return customMessage ?? 'Server registration error. Please try again later.';
+      case 501: return customMessage ?? 'Registration method not implemented. Please update app.';
+      case 502: return customMessage ?? 'Registration gateway error. Please try again later.';
+      case 503: return customMessage ?? 'Registration service temporarily unavailable. Please try again later.';
+      case 504: return customMessage ?? 'Registration gateway timeout. Server is too busy.';
+      case 505: return customMessage ?? 'Registration HTTP version not supported. Please update app.';
+      case 506: return customMessage ?? 'Registration content negotiation failed. Please try again.';
+      case 507: return customMessage ?? 'Registration service storage full. Please contact support.';
+      case 508: return customMessage ?? 'Registration redirection loop detected. Please contact support.';
+      case 510: return customMessage ?? 'Registration extension not available. Please update app.';
+      case 511: return customMessage ?? 'Network registration authentication required. Please check network.';
+      
+      default:
+        if (statusCode >= 300 && statusCode < 400) {
+          return customMessage ?? 'Registration redirection required. Please try again.';
+        } else if (statusCode >= 400 && statusCode < 500) {
+          return customMessage ?? 'Registration request failed (Error $statusCode). Please try again.';
+        } else if (statusCode >= 500 && statusCode < 600) {
+          return customMessage ?? 'Registration server error (Error $statusCode). Please try again later.';
+        }
+        return customMessage ?? 'Registration failed with error $statusCode. Please try again.';
     }
   }
 
@@ -188,70 +456,249 @@ class ApiService {
     try {
       final loginUrl = '${ApiConstants.authEndpoint}/login';
       _log('[API_LOGIN] Full URL: ${_dio.options.baseUrl}$loginUrl');
+      
       final response = await _dio.post(loginUrl, data: {
         'email': email,
         'password': password,
       });
       
-      // Check response status - only process 2xx responses as success
-      if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
-        return response.data ?? {};
-      } else {
-        // For non-2xx responses, throw appropriate error
-        final errorMessage = response.data?['detail'] as String? ?? 
-                           response.data?['error'] as String? ?? 
-                           'Login failed with status ${response.statusCode}';
-        _log('[API_LOGIN] Non-success response: ${response.statusCode} - $errorMessage');
-        throw Exception(errorMessage);
-      }
-    } on DioException catch (e) {
-      _log('[API_LOGIN] DioException: ${e.type} - ${e.message}');
-      _log('[API_LOGIN] Status: ${e.response?.statusCode}');
-      _log('[API_LOGIN] Response data: ${e.response?.data}');
-      
-      // Extract meaningful error message from response
-      String errorMessage = 'Login failed';
-      if (e.response?.data is Map) {
-        final data = e.response!.data as Map;
-        errorMessage = data['detail'] as String? ?? 
-                     data['error'] as String? ?? 
-                     data['message'] as String? ?? 
-                     getErrorMessage(e);
-      } else if (e.response?.statusCode == 429) {
-        errorMessage = 'Too many login attempts. Please wait before trying again.';
-      } else if (e.response?.statusCode == 401) {
-        errorMessage = 'Invalid email or password';
-      } else if (e.response?.statusCode == 403) {
-        errorMessage = 'Access forbidden. Account may be locked.';
-      } else {
-        errorMessage = getErrorMessage(e);
-      }
-      
-      throw Exception(errorMessage);
+      // Handle all HTTP status codes properly
+      return _handleLoginResponse(response);
     } catch (e) {
-      _log('[API_LOGIN] Unexpected error: $e');
+      _log('[API_LOGIN] Login error: $e');
       rethrow;
     }
   }
 
-  Future<Map<String, dynamic>> logout({required String refreshToken}) async {
-    final response = await _dio.post(
-      '${ApiConstants.authEndpoint}/logout',
-      data: {'refresh_token': refreshToken},
-    );
-    return response.data;
+  // Handle login response for all HTTP status codes
+  Map<String, dynamic> _handleLoginResponse(Response response) {
+    final statusCode = response.statusCode;
+    final responseData = response.data;
+    
+    _log('[API_LOGIN] Response status: $statusCode');
+    _log('[API_LOGIN] Response data type: ${responseData.runtimeType}');
+    
+    // Success: 2xx status codes
+    if (statusCode != null && statusCode >= 200 && statusCode < 300) {
+      if (responseData is Map<String, dynamic>) {
+        return responseData;
+      } else if (responseData is Map) {
+        return Map<String, dynamic>.from(responseData);
+      } else if (responseData != null) {
+        _log('[API_LOGIN] Unexpected response format: $responseData');
+        throw Exception('Invalid server response format');
+      } else {
+        _log('[API_LOGIN] Empty response received');
+        throw Exception('Empty server response');
+      }
+    }
+    
+    // Handle 3xx-6xx status codes
+    String errorMessage = _getLoginErrorMessage(statusCode!, responseData);
+    _log('[API_LOGIN] Login failed: $statusCode - $errorMessage');
+    throw Exception(errorMessage);
   }
 
-  // User endpoints
+  // Get specific login error messages
+  String _getLoginErrorMessage(int statusCode, dynamic responseData) {
+    // Extract custom message from response if available
+    String? customMessage;
+    if (responseData is Map) {
+      customMessage = responseData['detail'] as String? ?? 
+                     responseData['error'] as String? ??
+                     responseData['message'] as String?;
+    }
+    
+    // Return custom message if available, otherwise use defaults
+    switch (statusCode) {
+      // 3xx Redirection
+      case 300: return customMessage ?? 'Multiple login options available. Please contact support.';
+      case 301: return customMessage ?? 'Login endpoint permanently moved. Please update app.';
+      case 302: return customMessage ?? 'Login redirected. Please try again.';
+      case 307: return customMessage ?? 'Temporary login redirect. Please try again.';
+      case 308: return customMessage ?? 'Permanent login redirect. Please update app.';
+      
+      // 4xx Client Errors  
+      case 400: return customMessage ?? 'Invalid login request. Please check your credentials.';
+      case 401: return customMessage ?? 'Invalid email or password. Please try again.';
+      case 402: return customMessage ?? 'Payment required. Please check your subscription.';
+      case 403: return customMessage ?? 'Access forbidden. Your account may be locked or suspended.';
+      case 404: return customMessage ?? 'Login endpoint not found. Please update app.';
+      case 405: return customMessage ?? 'Login method not allowed. Please update app.';
+      case 406: return customMessage ?? 'Login format not acceptable. Please update app.';
+      case 407: return customMessage ?? 'Proxy authentication required. Please check network settings.';
+      case 408: return customMessage ?? 'Login request timed out. Please try again.';
+      case 409: return customMessage ?? 'Login conflict. User may be already logged in elsewhere.';
+      case 410: return customMessage ?? 'Login service gone. Please contact support.';
+      case 412: return customMessage ?? 'Login precondition failed. Please clear app cache.';
+      case 413: return customMessage ?? 'Login request too large. Please try again.';
+      case 415: return customMessage ?? 'Login format unsupported. Please update app.';
+      case 416: return customMessage ?? 'Login range not satisfiable. Please try again.';
+      case 417: return customMessage ?? 'Login expectation failed. Please try again.';
+      case 421: return customMessage ?? 'Misdirected login request. Please try again.';
+      case 422: return customMessage ?? 'Invalid login data. Please check your email and password.';
+      case 423: return customMessage ?? 'Account locked due to security reasons. Please contact support.';
+      case 424: return customMessage ?? 'Login dependency failed. Please try again.';
+      case 425: return customMessage ?? 'Login request too early. Please wait and try again.';
+      case 426: return customMessage ?? 'Login upgrade required. Please update app.';
+      case 428: return customMessage ?? 'Login precondition required. Please include required headers.';
+      case 429: return customMessage ?? 'Too many login attempts. Please wait before trying again.';
+      case 431: return customMessage ?? 'Login headers too large. Please try again.';
+      case 451: return customMessage ?? 'Login unavailable for legal reasons. Please contact support.';
+      
+      // 5xx Server Errors
+      case 500: return customMessage ?? 'Server login error. Please try again later.';
+      case 501: return customMessage ?? 'Login method not implemented. Please update app.';
+      case 502: return customMessage ?? 'Login gateway error. Please try again later.';
+      case 503: return customMessage ?? 'Login service temporarily unavailable. Please try again later.';
+      case 504: return customMessage ?? 'Login gateway timeout. Server is too busy.';
+      case 505: return customMessage ?? 'Login HTTP version not supported. Please update app.';
+      case 506: return customMessage ?? 'Login content negotiation failed. Please try again.';
+      case 507: return customMessage ?? 'Login service storage full. Please contact support.';
+      case 508: return customMessage ?? 'Login redirection loop detected. Please contact support.';
+      case 510: return customMessage ?? 'Login extension not available. Please update app.';
+      case 511: return customMessage ?? 'Network login authentication required. Please check network.';
+      
+      default:
+        if (statusCode >= 300 && statusCode < 400) {
+          return customMessage ?? 'Login redirection required. Please try again.';
+        } else if (statusCode >= 400 && statusCode < 500) {
+          return customMessage ?? 'Login request failed (Error $statusCode). Please try again.';
+        } else if (statusCode >= 500 && statusCode < 600) {
+          return customMessage ?? 'Login server error (Error $statusCode). Please try again later.';
+        }
+        return customMessage ?? 'Login failed with error $statusCode. Please try again.';
+    }
+  }
+
+Future<Map<String, dynamic>> logout({required String refreshToken}) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/logout',
+        data: {'refresh_token': refreshToken},
+      );
+      
+      // Handle all HTTP status codes for logout
+      return _handleLogoutResponse(response);
+    } catch (e) {
+      _log('[API_LOGOUT] Logout error: $e');
+      rethrow;
+    }
+  }
+
+  // Handle logout response for all HTTP status codes
+  Map<String, dynamic> _handleLogoutResponse(Response response) {
+    final statusCode = response.statusCode;
+    final responseData = response.data;
+    
+    _log('[API_LOGOUT] Response status: $statusCode');
+    
+    // Success: 2xx status codes
+    if (statusCode != null && statusCode >= 200 && statusCode < 300) {
+      if (responseData is Map<String, dynamic>) {
+        return responseData;
+      } else if (responseData is Map) {
+        return Map<String, dynamic>.from(responseData);
+      } else {
+        return {'message': 'Logged out successfully'};
+      }
+    }
+    
+    // Handle 3xx-6xx status codes
+    String errorMessage = _getLogoutErrorMessage(statusCode!, responseData);
+    _log('[API_LOGOUT] Logout failed: $statusCode - $errorMessage');
+    throw Exception(errorMessage);
+  }
+
+  // Get specific logout error messages
+  String _getLogoutErrorMessage(int statusCode, dynamic responseData) {
+    // Extract custom message from response if available
+    String? customMessage;
+    if (responseData is Map) {
+      customMessage = responseData['detail'] as String? ?? 
+                     responseData['error'] as String? ??
+                     responseData['message'] as String?;
+    }
+    
+    // Return custom message if available, otherwise use defaults
+    switch (statusCode) {
+      case 400: return customMessage ?? 'Invalid logout request. Please try again.';
+      case 401: return customMessage ?? 'Already logged out or session expired.';
+      case 403: return customMessage ?? 'Logout forbidden. Please contact support.';
+      case 404: return customMessage ?? 'Logout endpoint not found.';
+      case 429: return customMessage ?? 'Too many logout requests. Please wait.';
+      case 500: return customMessage ?? 'Server logout error. Session may be cleared.';
+      case 503: return customMessage ?? 'Logout service temporarily unavailable.';
+      default:
+        return customMessage ?? 'Logout failed (Error $statusCode). Please try again.';
+    }
+  }
+
+// User endpoints
   Future<Map<String, dynamic>> getMe() async {
     try {
       _log('[API_ME] Fetching current user profile');
       final response = await _dio.get('${ApiConstants.usersEndpoint}/me');
       _log('[API_ME] Success: ${response.data}');
-      return response.data ?? {};
+      
+      // Handle all HTTP status codes for getMe
+      return _handleGetMeResponse(response);
     } catch (e) {
       _log('[API_ME_ERROR] Failed: $e');
       rethrow;
+    }
+  }
+
+  // Handle getMe response for all HTTP status codes
+  Map<String, dynamic> _handleGetMeResponse(Response response) {
+    final statusCode = response.statusCode;
+    final responseData = response.data;
+    
+    _log('[API_ME] Response status: $statusCode');
+    
+    // Success: 2xx status codes
+    if (statusCode != null && statusCode >= 200 && statusCode < 300) {
+      if (responseData is Map<String, dynamic>) {
+        return responseData;
+      } else if (responseData is Map) {
+        return Map<String, dynamic>.from(responseData);
+      } else if (responseData != null) {
+        _log('[API_ME] Unexpected response format: $responseData');
+        throw Exception('Invalid user data format');
+      } else {
+        _log('[API_ME] Empty user response received');
+        throw Exception('Empty user data received');
+      }
+    }
+    
+    // Handle 3xx-6xx status codes
+    String errorMessage = _getGetMeErrorMessage(statusCode!, responseData);
+    _log('[API_ME] Get user failed: $statusCode - $errorMessage');
+    throw Exception(errorMessage);
+  }
+
+  // Get specific getMe error messages
+  String _getGetMeErrorMessage(int statusCode, dynamic responseData) {
+    // Extract custom message from response if available
+    String? customMessage;
+    if (responseData is Map) {
+      customMessage = responseData['detail'] as String? ?? 
+                     responseData['error'] as String? ??
+                     responseData['message'] as String?;
+    }
+    
+    // Return custom message if available, otherwise use defaults
+    switch (statusCode) {
+      case 301: return customMessage ?? 'User endpoint permanently moved. Please update app.';
+      case 400: return customMessage ?? 'Invalid user request. Please try again.';
+      case 401: return customMessage ?? 'Authentication required. Please login again.';
+      case 403: return customMessage ?? 'Access to user profile forbidden.';
+      case 404: return customMessage ?? 'User profile not found. Please login again.';
+      case 429: return customMessage ?? 'Too many profile requests. Please wait.';
+      case 500: return customMessage ?? 'Server error fetching user profile. Please try again.';
+      case 503: return customMessage ?? 'User service temporarily unavailable.';
+      default:
+        return customMessage ?? 'Failed to fetch user profile (Error $statusCode). Please try again.';
     }
   }
 
@@ -300,67 +747,91 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
       
       debugPrint('[API_SERVICE] Avatar upload status: ${response.statusCode}');
       debugPrint('[API_SERVICE] Avatar upload response: ${response.data}');
-      debugPrint('[API_SERVICE] Response data type: ${response.data.runtimeType}');
-      debugPrint('[API_SERVICE] Response headers: ${response.headers}');
       
-      // Try to manually parse if it's a string
-      if (response.data is String) {
-        debugPrint('[API_SERVICE] Response is String, attempting to parse JSON...');
+      // Handle all HTTP status codes for avatar upload
+      return _handleAvatarUploadResponse(response, filename);
+    } on DioException catch (e) {
+      debugPrint('[API_SERVICE] DioException during avatar upload: ${e.type} - ${e.message}');
+      debugPrint('[API_SERVICE] Response status: ${e.response?.statusCode}');
+      debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
+      
+      String errorMessage = _getAvatarUploadErrorMessage(e.response?.statusCode, e.response?.data);
+      throw Exception(errorMessage);
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error during avatar upload: $e');
+      rethrow;
+    }
+  }
+
+  // Handle avatar upload response for all HTTP status codes
+  Map<String, dynamic> _handleAvatarUploadResponse(Response response, String filename) {
+    final statusCode = response.statusCode;
+    final responseData = response.data;
+    
+    debugPrint('[API_SERVICE] Response status: $statusCode');
+    debugPrint('[API_SERVICE] Response data type: ${responseData.runtimeType}');
+    
+    // Success: 2xx status codes
+    if (statusCode != null && statusCode >= 200 && statusCode < 300) {
+      // Try to parse different response formats
+      if (responseData is Map<String, dynamic>) {
+        return responseData;
+      } else if (responseData is Map) {
+        return Map<String, dynamic>.from(responseData);
+      } else if (responseData is String) {
         try {
-          final parsed = jsonDecode(response.data as String);
-          debugPrint('[API_SERVICE] Parsed JSON successfully: $parsed');
-          debugPrint('[API_SERVICE] Parsed type: ${parsed.runtimeType}');
-        } catch (e) {
-          debugPrint('[API_SERVICE] JSON parsing failed: $e');
-        }
-      }
-      
-      if (response.data == null) {
-        throw Exception('Empty response from server');
-      }
-      
-      // Handle different response formats
-      if (response.data is Map<String, dynamic>) {
-        return response.data as Map<String, dynamic>;
-      } else if (response.data is Map) {
-        // Convert generic Map to Map<String, dynamic>
-        return Map<String, dynamic>.from(response.data as Map);
-      } else if (response.data is String) {
-        // Try to parse JSON string
-        try {
-          final parsed = jsonDecode(response.data as String);
+          final parsed = jsonDecode(responseData);
           if (parsed is Map) {
             return Map<String, dynamic>.from(parsed);
           }
         } catch (e) {
           debugPrint('[API_SERVICE] Failed to parse JSON string: $e');
         }
-        debugPrint('[API_SERVICE] Response is not a Map: ${response.data}');
         throw Exception('Invalid response format from server: expected JSON object');
+      } else if (responseData != null) {
+        debugPrint('[API_SERVICE] Unexpected response format: $responseData');
+        throw Exception('Invalid server response format');
       } else {
-        debugPrint('[API_SERVICE] Response is not a Map: ${response.data}');
-        debugPrint('[API_SERVICE] Response type: ${response.data.runtimeType}');
-        throw Exception('Invalid response format from server: expected JSON object');
+        throw Exception('Empty response from server');
       }
-    } on DioException catch (e) {
-      debugPrint('[API_SERVICE] DioException during avatar upload: ${e.type} - ${e.message}');
-      debugPrint('[API_SERVICE] Response status: ${e.response?.statusCode}');
-      debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
-      
-      String errorMessage = 'Failed to upload avatar';
-      if (e.response?.data is Map) {
-        final data = e.response!.data as Map;
-        errorMessage = data['detail'] ?? errorMessage;
-      } else if (e.type == DioExceptionType.sendTimeout) {
-        errorMessage = 'Upload timeout - please check your connection and try again';
-      } else if (e.type == DioExceptionType.receiveTimeout) {
-        errorMessage = 'Server timeout - please try again';
-      }
-      
-      throw Exception(errorMessage);
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error during avatar upload: $e');
-      rethrow;
+    }
+    
+    // Handle 3xx-6xx status codes
+    String errorMessage = _getAvatarUploadErrorMessage(statusCode!, responseData);
+    debugPrint('[API_SERVICE] Avatar upload failed: $statusCode - $errorMessage');
+    throw Exception(errorMessage);
+  }
+
+  // Get specific avatar upload error messages
+  String _getAvatarUploadErrorMessage(int? statusCode, dynamic responseData) {
+    // Extract custom message from response if available
+    String? customMessage;
+    if (responseData is Map) {
+      customMessage = responseData['detail'] as String? ?? 
+                     responseData['error'] as String? ??
+                     responseData['message'] as String?;
+    }
+    
+    // Return custom message if available, otherwise use defaults
+    switch (statusCode) {
+      case 301: return customMessage ?? 'Avatar upload endpoint permanently moved. Please update app.';
+      case 400: return customMessage ?? 'Invalid avatar upload request. Please check file format.';
+      case 401: return customMessage ?? 'Authentication required for avatar upload. Please login.';
+      case 403: return customMessage ?? 'Avatar upload forbidden. You may not have permission.';
+      case 404: return customMessage ?? 'Avatar upload endpoint not found. Please update app.';
+      case 408: return customMessage ?? 'Avatar upload timeout. Please check connection and try again.';
+      case 413: return customMessage ?? 'Avatar file too large. Please use a smaller image.';
+      case 415: return customMessage ?? 'Unsupported image format. Please use JPG, PNG, or GIF.';
+      case 422: return customMessage ?? 'Invalid avatar file. Please check file format and size.';
+      case 429: return customMessage ?? 'Too many avatar uploads. Please wait before trying again.';
+      case 500: return customMessage ?? 'Server error uploading avatar. Please try again later.';
+      case 503: return customMessage ?? 'Avatar upload service temporarily unavailable.';
+      case 507: return customMessage ?? 'Storage full. Cannot upload avatar at this time.';
+      default:
+        if (statusCode != null) {
+          return customMessage ?? 'Avatar upload failed (Error $statusCode). Please try again.';
+        }
+        return 'Failed to upload avatar. Please check your connection and try again.';
     }
   }
 
@@ -779,39 +1250,85 @@ Future<void> postToChannel(String channelId, String text) async {
     _log('[API_AUTH] Token cleared from headers');
   }
 
-  // Login with retry logic for handling rate limits
-  Future<Map<String, dynamic>> loginWithRetry({
-    required String email,
-    required String password,
-    int maxRetries = 3,
-  }) async {
-    int attempt = 0;
-    
-    while (attempt < maxRetries) {
-      try {
-        _log('[API_LOGIN_RETRY] Attempt ${attempt + 1} of $maxRetries');
-        return await login(email: email, password: password);
-      } on DioException catch (e) {
-        attempt++;
-        
-        if (e.response?.statusCode == 429 && attempt < maxRetries) {
-          // Rate limited - wait with exponential backoff
-          final waitTime = Duration(seconds: 2 * attempt); // 2s, 4s, 8s
-          _log('[API_LOGIN_RETRY] Rate limited, waiting ${waitTime.inSeconds}s before retry');
-          await Future.delayed(waitTime);
-          continue;
+  // Comprehensive error handling for all API methods
+  Future<Map<String, dynamic>> _handleApiResponse(
+    Future<Response> apiCall,
+    String operationName,
+  ) async {
+    try {
+      final response = await apiCall;
+      _log('[$operationName] Response status: ${response.statusCode}');
+      
+      // Success: 2xx status codes
+      if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
+        if (response.data is Map<String, dynamic>) {
+          return response.data as Map<String, dynamic>;
+        } else if (response.data is Map) {
+          return Map<String, dynamic>.from(response.data);
+        } else if (response.data != null) {
+          _log('[$operationName] Unexpected response format: ${response.data}');
+          throw Exception('Invalid server response format for $operationName');
+        } else {
+          return {'message': '$operationName completed successfully'};
         }
-        
-        // Other errors or max retries reached - rethrow
-        rethrow;
-      } catch (e) {
-        // Non-DioException - rethrow immediately
-        rethrow;
       }
+      
+      // Handle error status codes
+      String errorMessage = _getGenericErrorMessage(response.statusCode!, response.data, operationName);
+      _log('[$operationName] Failed: ${response.statusCode} - $errorMessage');
+      throw Exception(errorMessage);
+    } on DioException catch (e) {
+      _log('[$operationName] DioException: ${e.type} - ${e.message}');
+      _log('[$operationName] Status: ${e.response?.statusCode}');
+      
+      String errorMessage = _getGenericErrorMessage(e.response?.statusCode, e.response?.data, operationName);
+      throw Exception(errorMessage);
+    } catch (e) {
+      _log('[$operationName] Unexpected error: $e');
+      rethrow;
+    }
+  }
+
+  // Generic error message handler for all operations
+  String _getGenericErrorMessage(int? statusCode, dynamic responseData, String operationName) {
+    // Extract custom message from response if available
+    String? customMessage;
+    if (responseData is Map) {
+      customMessage = responseData['detail'] as String? ?? 
+                     responseData['error'] as String? ??
+                     responseData['message'] as String?;
     }
     
-    throw Exception('Login failed after $maxRetries attempts due to rate limiting');
+    if (customMessage != null) {
+      return customMessage;
+    }
+    
+    // Return operation-specific error messages
+    switch (statusCode) {
+      case 301: return '$operationName endpoint permanently moved. Please update app.';
+      case 400: return 'Invalid $operationName request. Please check your input data.';
+      case 401: return 'Authentication required for $operationName. Please login.';
+      case 403: return '$operationName forbidden. You may not have permission.';
+      case 404: return '$operationName endpoint not found. Please update app.';
+      case 408: return '$operationName timeout. Please try again.';
+      case 413: return '$operationName request too large. Please reduce data size.';
+      case 415: return 'Unsupported format for $operationName. Please use supported formats.';
+      case 422: return 'Invalid data for $operationName. Please check your input.';
+      case 429: return 'Too many $operationName requests. Please wait before trying again.';
+      case 500: return 'Server error during $operationName. Please try again later.';
+      case 502: return 'Gateway error during $operationName. Please try again later.';
+      case 503: return '$operationName service temporarily unavailable. Please try again later.';
+      case 504: return '$operationName gateway timeout. Server is too busy.';
+      case 507: return 'Storage full. Cannot complete $operationName at this time.';
+      default:
+        if (statusCode != null) {
+          return '$operationName failed (Error $statusCode). Please try again.';
+        }
+        return '$operationName failed. Please check your connection and try again.';
+    }
   }
+
+
 
   Future<FilePickerResult?> pickFile() async {
     return await FilePicker.platform.pickFiles(
