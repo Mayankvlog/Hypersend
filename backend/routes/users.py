@@ -1055,6 +1055,7 @@ async def upload_avatar(
                 # Continue anyway - new file is already saved
         
         # Update the user in the database with timeout
+        updated_user = None
         try:
             result = await asyncio.wait_for(
                 users_collection().update_one(
@@ -1064,12 +1065,12 @@ async def upload_avatar(
                 timeout=5.0
             )
             
-            # Check for actual failure versus idempotent update
-            user_exists = await asyncio.wait_for(
+            # Fetch updated user to return complete data
+            updated_user = await asyncio.wait_for(
                 users_collection().find_one({"_id": current_user}),
                 timeout=5.0
             )
-            if not user_exists:
+            if not updated_user:
                 logger.warning("User not found in database - file still saved")
                 # Don't raise - file is already saved
             else:
@@ -1082,14 +1083,25 @@ async def upload_avatar(
             logger.warning(f"Database update failed - file still saved")
             # Don't fail - file is already saved, user can still download via URL
         
-        # Return successful response with avatar_url
-        response_data = {
-            "avatar_url": avatar_url,
-            "success": True,
-            "filename": new_file_name,
-            "message": "Avatar uploaded successfully",
-            "status": "upload_complete"
-        }
+        # Return successful response with avatar_url and full user data
+        if updated_user:
+            response_data = {
+                "avatar_url": avatar_url,
+                "avatar": updated_user.get("avatar"),
+                "success": True,
+                "filename": new_file_name,
+                "message": "Avatar uploaded successfully",
+                "status": "upload_complete"
+            }
+        else:
+            # Fallback if user fetch failed
+            response_data = {
+                "avatar_url": avatar_url,
+                "success": True,
+                "filename": new_file_name,
+                "message": "Avatar uploaded successfully",
+                "status": "upload_complete"
+            }
         logger.debug("Avatar upload completed successfully")
         return JSONResponse(status_code=200, content=response_data)
         
@@ -1148,21 +1160,44 @@ async def upload_avatar_alt(
         # Generate URL
         avatar_url = f"/api/v1/users/avatar/{new_file_name}"
         
-        # Update database
-        await asyncio.wait_for(
-            users_collection().update_one(
-                {"_id": current_user},
-                {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
-            ),
-            timeout=5.0
-        )
+        # Update database and fetch updated user
+        updated_user = None
+        try:
+            await asyncio.wait_for(
+                users_collection().update_one(
+                    {"_id": current_user},
+                    {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
+                ),
+                timeout=5.0
+            )
+            
+            # Fetch updated user to return complete data
+            updated_user = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Database update timed out")
+        except Exception as db_error:
+            logger.warning(f"Database update failed: {db_error}")
         
-        response_data = {
-            "avatar_url": avatar_url,
-            "success": True,
-            "filename": new_file_name,
-            "message": "Avatar uploaded successfully"
-        }
+        # Return response with both avatar_url and avatar fields
+        if updated_user:
+            response_data = {
+                "avatar_url": avatar_url,
+                "avatar": updated_user.get("avatar"),
+                "success": True,
+                "filename": new_file_name,
+                "message": "Avatar uploaded successfully"
+            }
+        else:
+            # Fallback if user fetch failed
+            response_data = {
+                "avatar_url": avatar_url,
+                "success": True,
+                "filename": new_file_name,
+                "message": "Avatar uploaded successfully"
+            }
         logger.debug("Alternative avatar upload completed successfully")
         return JSONResponse(status_code=200, content=response_data)
         
