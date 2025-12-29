@@ -998,8 +998,23 @@ async def upload_avatar(
                 detail="Unsupported image format"
             )
         
-        unique_id = str(uuid.uuid4())[:8]
-        new_file_name = f"{current_user}_{unique_id}{file_ext}"
+        # Security: Generate secure filename
+        unique_id = str(uuid.uuid4())
+        # Sanitize user ID to prevent path issues
+        safe_user_id = "".join(c for c in current_user if c.isalnum())[:16]
+        if not safe_user_id:
+            safe_user_id = "user"
+        
+        new_file_name = f"{safe_user_id}_{unique_id}{file_ext}"
+        
+        # Security: Validate complete filename
+        import re
+        if not re.match(r'^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$', new_file_name):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Filename generation failed"
+            )
+        
         new_file_path = avatar_dir / new_file_name
         
         # Save the new file FIRST before doing anything else (using async file operations)
@@ -1313,10 +1328,23 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
     
     logger.info(f"[AVATAR] Avatar requested: {filename}")
     
-    # Validate filename to prevent directory traversal
-    if not filename or '..' in filename or '/' in filename:
-        logger.warning(f"[AVATAR] Invalid filename: {filename}")
+# Security: Validate filename to prevent directory traversal
+    if not filename:
+        logger.warning(f"[AVATAR] Empty filename")
         raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    # Security: Check for directory traversal attempts (both Unix and Windows)
+    dangerous_patterns = ['..', '\\', '/', '\x00']
+    for pattern in dangerous_patterns:
+        if pattern in filename:
+            logger.warning(f"[AVATAR] Dangerous filename detected: {filename}")
+            raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    # Security: Ensure filename is alphanumeric with safe characters only
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$', filename):
+        logger.warning(f"[AVATAR] Invalid filename format: {filename}")
+        raise HTTPException(status_code=400, detail="Invalid filename format")
     
     file_path = settings.DATA_ROOT / "avatars" / filename
     logger.debug(f"[AVATAR] File path: {file_path}")

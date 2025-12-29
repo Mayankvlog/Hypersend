@@ -172,7 +172,13 @@ async def upload_chunk(
         )
     
     # Check if expired
-    if upload["expires_at"] < datetime.now(timezone.utc):
+    # Fix: Handle both offset-naive and offset-aware datetimes
+    expires_at = upload["expires_at"]
+    if expires_at.tzinfo is None:
+        # offset-naive datetime from database - add UTC timezone
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    
+    if expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="Upload session expired"
@@ -247,7 +253,35 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
     
     # Assemble file
     file_uuid = str(uuid.uuid4())
-    file_ext = Path(upload["filename"]).suffix
+    # Security: Validate and sanitize file extension
+    original_filename = upload["filename"]
+    file_ext = Path(original_filename).suffix.lower()
+    
+    # Security: Block dangerous extensions (case-insensitive)
+    dangerous_exts = {
+        '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
+        '.app', '.deb', '.rpm', '.dmg', '.pkg', '.msi', '.php', '.asp', '.jsp',
+        '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url'
+    }
+    
+    # Case-insensitive check for dangerous extensions
+    if file_ext.lower() in dangerous_exts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type {file_ext} is not allowed for security reasons"
+        )
+    
+    # Security: Double-extension check to prevent bypass
+    filename_parts = original_filename.lower().split('.')
+    if len(filename_parts) > 2:  # Check for multiple extensions like file.exe.jpg
+        primary_ext = file_ext.lower()
+        for part in filename_parts[:-1]:  # Check all parts except the last one
+            if f'.{part}' in dangerous_exts:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Double extension with dangerous type detected: .{part}"
+                )
+    
     final_path = settings.DATA_ROOT / "files" / f"{file_uuid}{file_ext}"
     upload_dir = settings.DATA_ROOT / "tmp" / upload_id
     
@@ -342,8 +376,38 @@ async def get_file_info(
                     detail="Access denied: you don't have permission to access this file"
                 )
             
-            # Check file exists on disk
-            file_path = Path(file_doc.get("storage_path", ""))
+            # Security: Validate storage path to prevent directory traversal
+            storage_path = file_doc.get("storage_path", "")
+            if not storage_path:
+                _log("error", "File missing storage path in DB", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="File storage path missing"
+                )
+            
+            # Security: Ensure path is within expected directories
+            file_path = Path(storage_path)
+            try:
+                # Resolve to absolute path and check it's within data root
+                resolved_path = file_path.resolve()
+                data_root = settings.DATA_ROOT.resolve()
+                # Use proper path comparison to prevent traversal bypass
+                try:
+                    resolved_path.relative_to(data_root)
+                except ValueError:
+                    _log("error", f"Attempted path traversal: {storage_path}", {"user_id": current_user, "operation": "file_info"})
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied"
+                    )
+                file_path = resolved_path
+            except (OSError, ValueError) as path_error:
+                _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Invalid file path"
+                )
+            
             if not file_path.exists():
                 _log("error", f"File exists in DB but not on disk", {"user_id": current_user, "operation": "file_info"})
                 raise HTTPException(
@@ -363,8 +427,17 @@ async def get_file_info(
             }
         
 # If not found in files_collection, check if it's an avatar file
-        # Only check avatar ownership, don't rely on potentially vulnerable prefix check
+        # Security: Validate file_id before using as filename
         if await _is_avatar_owner(file_id, current_user):
+            # Security: Validate file_id to prevent path traversal
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', file_id):
+                _log("error", f"Invalid avatar file_id: {file_id}", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid file ID"
+                )
+            
             avatar_path = settings.DATA_ROOT / "avatars" / file_id
             if avatar_path.exists():
                 # Avatar file - get user info for metadata
@@ -463,7 +536,31 @@ async def download_file(
             detail="File not found"
         )
     
-    file_path = Path(file_doc["storage_path"])
+    # Security: Validate storage path to prevent directory traversal
+    storage_path = file_doc["storage_path"]
+    file_path = Path(storage_path)
+    
+    try:
+        # Resolve to absolute path and check it's within data root
+        resolved_path = file_path.resolve()
+        data_root = settings.DATA_ROOT.resolve()
+        # Use proper path comparison to prevent traversal bypass
+        try:
+            resolved_path.relative_to(data_root)
+        except ValueError:
+            _log("error", f"Download path traversal attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        file_path = resolved_path
+    except (OSError, ValueError) as path_error:
+        _log("error", f"Invalid download path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid file path"
+        )
+    
     if not file_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

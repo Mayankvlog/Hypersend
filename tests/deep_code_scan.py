@@ -48,12 +48,12 @@ class DeepCodeScanner:
                 self.issues.append(f"{filepath}: TextEditingController not properly disposed in all cases")
                 issues_count += 1
             else:
-                self.best_practices.append(f"{filepath}: ✓ TextEditingController properly disposed")
+                self.best_practices.append(f"{filepath}: + TextEditingController properly disposed")
                 best_practices_count += 1
         
         # Check 2: Mounted checks before setState/showSnackBar
         if 'showSnackBar' in content and 'if (!mounted)' in content:
-            self.best_practices.append(f"{filepath}: ✓ Proper mounted checks before showSnackBar")
+            self.best_practices.append(f"{filepath}: + Proper mounted checks before showSnackBar")
             best_practices_count += 1
         elif 'showSnackBar' in content:
             self.warnings.append(f"{filepath}: Missing mounted check before showSnackBar")
@@ -64,24 +64,24 @@ class DeepCodeScanner:
             # Generic catch - check if it has proper error handling
             has_proper_handling = 'try' in content and ('_showErrorSnackBar' in content or 'catch' in content)
             if has_proper_handling:
-                self.best_practices.append(f"{filepath}: ✓ Using generic catch with proper handling")
+                self.best_practices.append(f"{filepath}: + Using generic catch with proper handling")
                 best_practices_count += 1
         
         # Check 4: User-friendly error messages
         if '_showErrorSnackBar' in content:
-            self.best_practices.append(f"{filepath}: ✓ Using centralized error message method")
+            self.best_practices.append(f"{filepath}: + Using centralized error message method")
             best_practices_count += 1
         
         # Check 5: No hardcoded magic strings in dialog
         if 'AlertDialog' in content:
             if 'const' in content and 'Text(' in content:
-                self.best_practices.append(f"{filepath}: ✓ Using const constructors for constants")
+                self.best_practices.append(f"{filepath}: + Using const constructors for constants")
                 best_practices_count += 1
         
         # Check 6: Async/await proper usage
         if 'async' in content and 'await' in content:
             if 'Future' in content:
-                self.best_practices.append(f"{filepath}: ✓ Proper async/await usage")
+                self.best_practices.append(f"{filepath}: + Proper async/await usage")
                 best_practices_count += 1
         
         # Check 7: No dead code
@@ -102,13 +102,13 @@ class DeepCodeScanner:
             self.issues.append(f"{filepath}: Bare except clause found")
             issues_count += 1
         else:
-            self.best_practices.append(f"{filepath}: ✓ No bare except clauses")
+            self.best_practices.append(f"{filepath}: + No bare except clauses")
             best_practices_count += 1
         
         # Check 2: File operations safety
         if 'open(' in content:
             if 'with open' in content or 'aiofiles.open' in content:
-                self.best_practices.append(f"{filepath}: ✓ Using context manager for file operations")
+                self.best_practices.append(f"{filepath}: + Using context manager for file operations")
                 best_practices_count += 1
             else:
                 self.issues.append(f"{filepath}: File operations not using context manager")
@@ -117,7 +117,7 @@ class DeepCodeScanner:
         # Check 3: String slicing safety
         if '.find(' in content and '[' in content:
             if 'if' in content and '-1' in content:
-                self.best_practices.append(f"{filepath}: ✓ Safe string slicing with bounds checking")
+                self.best_practices.append(f"{filepath}: + Safe string slicing with bounds checking")
                 best_practices_count += 1
             else:
                 self.warnings.append(f"{filepath}: Potential unsafe string slicing")
@@ -127,12 +127,12 @@ class DeepCodeScanner:
         if 'def ' in content:
             func_defs = re.findall(r'def \w+\(.*?\):', content)
             if len(func_defs) > 0:
-                self.best_practices.append(f"{filepath}: ✓ Function definitions present")
+                self.best_practices.append(f"{filepath}: + Function definitions present")
                 best_practices_count += 1
         
         # Check 5: Docstrings
         if '"""' in content or "'''" in content:
-            self.best_practices.append(f"{filepath}: ✓ Docstrings present")
+            self.best_practices.append(f"{filepath}: + Docstrings present")
             best_practices_count += 1
         
         return issues_count, warnings_count, best_practices_count
@@ -147,8 +147,6 @@ def run_deep_scan():
         'frontend/lib/presentation/screens/help_support_screen.dart',
         'backend/routes/files.py',
         'backend/routes/messages.py',
-        'test_fixes.py',
-        'validate_all_fixes.py',
     ]
     
     print("=" * 80)
@@ -165,35 +163,39 @@ def run_deep_scan():
     
     for filepath in files_to_scan:
         if os.path.exists(filepath):
-            issues, warnings, practices = scanner.scan_file(filepath)
-            total_issues += issues
-            total_warnings += warnings
-            total_best_practices += practices
+            try:
+                issues, warnings, practices = scanner.scan_file(filepath)
+                total_issues += issues
+                total_warnings += warnings
+                total_best_practices += practices
+            except Exception as e:
+                print(f"ERROR scanning {filepath}: {e}")
+                continue
             
-            status = "✓" if issues == 0 else "✗"
+            status = "PASS" if issues == 0 else "FAIL"
             print(f"{status} {filepath}")
             print(f"   Issues: {issues} | Warnings: {warnings} | Best Practices: {practices}")
         else:
-            print(f"⊘ {filepath} - NOT FOUND")
+            print(f"MISSING {filepath} - NOT FOUND")
     
     print()
     print("[2] DETAILED FINDINGS")
     print("-" * 80)
     
     if scanner.issues:
-        print("\n⚠ CRITICAL ISSUES:")
+        print("\nCRITICAL ISSUES:")
         for issue in scanner.issues:
-            print(f"  ✗ {issue}")
+            print(f"  - {issue}")
     
     if scanner.warnings:
-        print("\n⚠ WARNINGS:")
+        print("\nWARNINGS:")
         for warning in scanner.warnings:
-            print(f"  ⚠ {warning}")
+            print(f"  * {warning}")
     
     if scanner.best_practices:
-        print("\n✓ BEST PRACTICES FOLLOWED:")
+        print("\nBEST PRACTICES FOLLOWED:")
         for practice in scanner.best_practices:
-            print(f"  ✓ {practice}")
+            print(f"  + {practice}")
     
     print()
     print("[3] CODE QUALITY SUMMARY")
@@ -233,11 +235,11 @@ def run_deep_scan():
         has_saved_header = "'header_saved'" in chat_list_content
         saved_proper_ui = 'Icons.bookmark' in chat_list_content
         
-        print(f"{'✓' if has_saved else '✗'} Saved Messages feature implemented")
-        print(f"{'✓' if has_saved_header else '✗'} Saved Messages shown as header")
-        print(f"{'✓' if saved_proper_ui else '✗'} Saved Messages has proper UI (bookmark icon)")
+        print(f"{'PASS' if has_saved else 'FAIL'} Saved Messages feature implemented")
+        print(f"{'PASS' if has_saved_header else 'FAIL'} Saved Messages shown as header")
+        print(f"{'PASS' if saved_proper_ui else 'FAIL'} Saved Messages has proper UI (bookmark icon)")
     except Exception:
-        print("✗ Error checking Saved Messages feature")
+        print("FAIL Error checking Saved Messages feature")
     
     # Check for New Contact feature with Phone Number
     if chat_list_content:
@@ -246,12 +248,12 @@ def run_deep_scan():
         has_phone_number = 'phoneController' in chat_list_content and 'TextInputType.phone' in chat_list_content
         has_error_handling = '_showErrorSnackBar' in chat_list_content
         
-        print(f"{'✓' if has_contact_dialog else '✗'} New Contact dialog implemented")
-        print(f"{'✓' if has_email_search else '✗'} Email search functionality present")
-        print(f"{'✓' if has_phone_number else '✗'} Phone number support (WhatsApp-style)")
-        print(f"{'✓' if has_error_handling else '✗'} Proper error handling for user feedback")
+        print(f"{'PASS' if has_contact_dialog else 'FAIL'} New Contact dialog implemented")
+        print(f"{'PASS' if has_email_search else 'FAIL'} Email search functionality present")
+        print(f"{'PASS' if has_phone_number else 'FAIL'} Phone number support (WhatsApp-style)")
+        print(f"{'PASS' if has_error_handling else 'FAIL'} Proper error handling for user feedback")
     else:
-        print("✗ Error checking New Contact feature")
+        print("FAIL Error checking New Contact feature")
     
     print()
     print("[5] SECURITY CHECKS")
@@ -262,19 +264,19 @@ def run_deep_scan():
     has_safe_navigation = 'if (!mounted)' in chat_list_content if chat_list_content else False
     has_proper_disposal = 'emailController.dispose()' in chat_list_content if chat_list_content else False
     
-    print(f"{'✓' if has_input_validation else '✗'} Input validation for user data")
-    print(f"{'✓' if has_safe_navigation else '✗'} Safe widget lifecycle management (mounted checks)")
-    print(f"{'✓' if has_proper_disposal else '✗'} Resource cleanup (TextEditingController disposal)")
+    print(f"{'PASS' if has_input_validation else 'FAIL'} Input validation for user data")
+    print(f"{'PASS' if has_safe_navigation else 'FAIL'} Safe widget lifecycle management (mounted checks)")
+    print(f"{'PASS' if has_proper_disposal else 'FAIL'} Resource cleanup (TextEditingController disposal)")
     
     print()
     print("=" * 80)
     
     if total_issues == 0 and total_warnings <= 2:
-        print("✓ CODE QUALITY: PRODUCTION READY")
+        print("PASS CODE QUALITY: PRODUCTION READY")
     elif total_issues == 0:
-        print("⚠ CODE QUALITY: ACCEPTABLE (Minor warnings)")
+        print("WARN CODE QUALITY: ACCEPTABLE (Minor warnings)")
     else:
-        print(f"✗ CODE QUALITY: NEEDS REVIEW ({total_issues} critical issues)")
+        print(f"FAIL CODE QUALITY: NEEDS REVIEW ({total_issues} critical issues)")
     
     print("=" * 80)
     print()

@@ -21,11 +21,33 @@ class TestContactUsRemoval:
         with open(settings_screen_path, 'r') as f:
             content = f.read()
         
-        # Verify Help & Support menu item is removed
-        assert "Help & Support" not in content, \
-            "Help & Support menu item should be removed from settings"
-        assert "context.push('/help-support')" not in content, \
-            "Help & Support route should not be accessible from settings"
+# Verify Help & Support menu item is removed using robust string checking
+        help_support_variations = [
+            "Help & Support",
+            "help_support",
+            "help-support", 
+            "HelpSupport",
+            "help and support"
+        ]
+        
+        for variation in help_support_variations:
+            assert variation not in content.lower(), \
+                f"Help & Support variation '{variation}' should be removed from settings"
+            assert variation not in content, \
+                f"Help & Support variation '{variation}' should be removed (case sensitive)"
+        
+        # Verify navigation methods are also removed
+        navigation_patterns = [
+            "context.push('/help-support')",
+            "Navigator.push('/help-support')",
+            "GoRouter.push('/help-support')",
+            "push('/help-support')",
+            "go('/help-support')"
+        ]
+        
+        for pattern in navigation_patterns:
+            assert pattern not in content, \
+                f"Help & Support navigation '{pattern}' should not be accessible from settings"
         
         print("✓ Help & Support menu item removed from settings")
 

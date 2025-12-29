@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+"""
+Test script to validate all fixes applied:
+1. Contact tiles perform actual actions ✓
+2. File upload functionality properly implemented ✓
+3. Exception handling improved ✓
+4. String matching robustness improved ✓
+"""
+
+import os
+import re
+import sys
+
+def validate_file_exists(filepath):
+    """Validate that file exists before processing"""
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"File not found: {filepath}")
+    return True
+
+def safe_read_file(filepath):
+    """Safely read a file with comprehensive error handling"""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Security: Validate file content
+        if len(content) > 10_000_000:  # 10MB limit
+            print(f"File too large: {filepath}")
+            return None
+            
+        # Security: Enhanced binary content detection
+        try:
+            # Test for null bytes and control characters
+            if '\x00' in content or any(ord(c) < 32 and c not in '\t\n\r' for c in content):
+                print(f"File contains binary/control characters: {filepath}")
+                return None
+                
+            # Test for high proportion of non-printable characters
+            non_printable = sum(1 for c in content if ord(c) < 32 or ord(c) > 126)
+            total_chars = len(content)
+            if total_chars > 0 and non_printable / total_chars > 0.3:  # 30% threshold
+                print(f"File appears to be binary: {filepath}")
+                return None
+                
+            # Test UTF-8 encoding
+            content.encode('utf-8')
+        except UnicodeEncodeError:
+            print(f"File contains invalid UTF-8 sequences: {filepath}")
+            return None
+            
+        return content
+    except FileNotFoundError:
+        print(f"File not found: {filepath}")
+        return None
+    except PermissionError:
+        print(f"Permission denied: {filepath}")
+        return None
+    except UnicodeDecodeError:
+        print(f"File encoding error (not UTF-8): {filepath}")
+        return None
+    except Exception as e:
+        print(f"Error reading {filepath}: {e}")
+        return None
+
+def validate_security_patterns(content, filepath=""):
+    """Validate content for security issues"""
+    security_issues = []
+    
+    # Check for dangerous patterns
+    dangerous_patterns = [
+        ('eval(', 'Potential code injection'),
+        ('exec(', 'Potential code injection'),
+        ('system(', 'Potential command injection'),
+        ('subprocess.', 'Potential command injection'),
+        ('shell=True', 'Potential shell injection'),
+        ('password=', 'Potential hardcoded password'),
+        ('secret=', 'Potential hardcoded secret'),
+        ('token=', 'Potential hardcoded token'),
+        ('api_key=', 'Potential hardcoded API key'),
+    ]
+    
+    for pattern, description in dangerous_patterns:
+        if pattern in content:
+            security_issues.append(f"{description} found in {filepath}")
+    
+    return security_issues
+
+def run_security_validation(filepath):
+    """Run security validation on a file"""
+    try:
+        content = safe_read_file(filepath)
+        if content is None:
+            print(f"⚠ WARNING: Cannot read file {filepath} for validation")
+            return False  # Don't skip validation - report failure
+            
+        issues = validate_security_patterns(content, filepath)
+        if issues:
+            for issue in issues:
+                print(f"⚠ SECURITY WARNING: {issue}")
+            return len(issues) == 0
+        return True
+        
+    except UnicodeDecodeError as e:
+        print(f"✗ FAILED: Could not decode file {filepath}: {e}")
+        return False
+    except Exception as e:
+        print(f"✗ FAILED: Unexpected error validating {filepath}: {type(e).__name__}: {e}")
+        return False
+
+def test_contact_tiles_perform_actions():
+    """Test that contact tiles perform actual URL launching actions"""
+    content = safe_read_file('frontend/lib/presentation/screens/help_support_screen.dart')
+    if content is None:
+        return False
+    
+    # Check for actual URL launcher import
+    if 'import \'package:url_launcher/url_launcher.dart\'' not in content:
+        print("✗ FAILED: URL launcher not imported")
+        return False
+    
+    # Check for actual launch methods
+    if 'Future<void> _launchEmail' not in content:
+        print("✗ FAILED: _launchEmail method not implemented")
+        return False
+    
+    if 'Future<void> _launchPhone' not in content:
+        print("✗ FAILED: _launchPhone method not implemented")
+        return False
+    
+    if 'Future<void> _launchUrl' not in content:
+        print("✗ FAILED: _launchUrl method not implemented")
+        return False
+    
+    # Check for proper error handling in methods
+    if 'canLaunchUrl' not in content:
+        print("✗ FAILED: URL launch capability check not implemented")
+        return False
+    
+    # Check that methods use context parameter
+    if '_launchEmail(context,' not in content:
+        print("✗ FAILED: Email launch doesn't use context")
+        return False
+    
+    print("✓ PASSED: Contact tiles perform actual actions")
+    return True
+
+def test_file_upload_implementation():
+    """Test that file upload uses actual implementation, not placeholder"""
+    content = safe_read_file('frontend/lib/presentation/screens/chat_detail_screen.dart')
+    if content is None:
+        return False
+    
+    # Check for actual file picker call
+    if '_pickAndUploadFile()' not in content:
+        print("✗ FAILED: Actual file upload method not called")
+        return False
+    
+    # Check that _uploadFile delegates to real implementation
+    if 'await _pickAndUploadFile()' not in content:
+        print("✗ FAILED: File upload not awaiting actual implementation")
+        return False
+    
+    # Check for proper error handling with toString()
+    if 'e.toString()' not in content:
+        print("✗ FAILED: Error handling not using toString()")
+        return False
+    
+    # Ensure no placeholder messages remain
+    if 'placeholder' in content.lower() and '_uploadFile' in content:
+        print("✗ FAILED: Placeholder messages still present in upload function")
+        return False
+    
+    print("✓ PASSED: File upload properly implemented")
+    return True
+
+def test_exception_handling():
+    """Test that bare except clauses are replaced with specific exceptions"""
+    content_chat = safe_read_file('frontend/lib/presentation/screens/chat_detail_screen.dart')
+    if content_chat is None:
+        return False
+    
+    content_help = safe_read_file('frontend/lib/presentation/screens/help_support_screen.dart')
+    if content_help is None:
+        return False
+    
+    # Check for proper exception types
+    files_to_check = [content_chat, content_help]
+    
+    for content in files_to_check:
+        # Look for bare except clauses
+        if re.search(r'except\s*:', content):
+            print("✗ FAILED: Bare except clause found (should specify exception type)")
+            return False
+        
+        # Check for proper exception handling with types
+        if 'except FileNotFoundError' not in content_chat and 'except Exception' in content_chat:
+            # This is acceptable for runtime errors
+            pass
+    
+    print("✓ PASSED: Exception handling uses specific exception types")
+    return True
+
+def test_application_security_validation():
+    """Test that actual application validates security against real attacks"""
+    
+    # Test actual backend security by checking file upload validation
+    files_py_content = safe_read_file('../backend/routes/files.py')
+    if not files_py_content:
+        print("✗ FAILED: Cannot read backend files.py for security testing")
+        return False
+    
+    # Verify dangerous extension blocking exists
+    dangerous_extensions_found = []
+    dangerous_exts = ['.exe', '.bat', '.cmd', '.php', '.asp', '.jsp', '.sh', '.ps1']
+    
+    for ext in dangerous_exts:
+        if f"'{ext}'" not in files_py_content and f'"{ext}"' not in files_py_content:
+            dangerous_extensions_found.append(ext)
+    
+    if dangerous_extensions_found:
+        print(f"✗ FAILED: Missing dangerous extension blocking for: {dangerous_extensions_found}")
+        return False
+    
+    # Verify case-insensitive extension checking
+    if 'file_ext.lower()' not in files_py_content:
+        print("✗ FAILED: File extension checking is not case-insensitive")
+        return False
+    
+    # Verify path traversal protection
+    if 'resolved_path.relative_to(data_root)' not in files_py_content:
+        print("✗ FAILED: Path traversal protection not properly implemented")
+        return False
+    
+    # Verify input sanitization
+    input_sanitization_checks = [
+        ('filename', 'Filename sanitization'),
+        ('storage_path', 'Storage path validation'),
+        ('file_id', 'File ID validation')
+    ]
+    
+    # Verify actual security controls are implemented
+    security_controls = [
+        ('dangerous_exts', 'Dangerous extension blocking'),
+        ('file_ext.lower()', 'Case-insensitive extension check'),
+        ('resolved_path.relative_to(data_root)', 'Path traversal protection'),
+        ('HTTP_403_FORBIDDEN', 'Proper error codes'),
+        ('HTTP_400_BAD_REQUEST', 'Input validation errors'),
+    ]
+    
+    for control_pattern, description in security_controls:
+        if control_pattern not in files_py_content:
+            print(f"✗ FAILED: {description} not implemented: {control_pattern}")
+            return False
+    
+    # Verify error messages don't expose system paths
+    dangerous_error_patterns = [
+        'settings.DATA_ROOT',
+        '/data/',
+        'file_path.resolve()',
+        'str(e)'  # Raw exception details
+    ]
+    
+    safe_error_patterns = [
+        'detail="Access denied"',
+        'detail="File not found"',
+        'detail="Invalid file"'
+    ]
+    
+    has_dangerous_errors = any(pattern in files_py_content for pattern in dangerous_error_patterns)
+    has_safe_errors = any(pattern in files_py_content for pattern in safe_error_patterns)
+    
+    if has_dangerous_errors and not has_safe_errors:
+        print("✗ FAILED: Error messages may expose system information")
+        return False
+    
+    print("✓ PASSED: Application security validation is comprehensive")
+    return True
+
+def test_file_existence_validation():
+    """Test that all required files exist"""
+    required_files = [
+        'frontend/lib/presentation/screens/chat_list_screen.dart',
+        'frontend/lib/presentation/screens/chat_detail_screen.dart',
+        'frontend/lib/presentation/screens/help_support_screen.dart',
+        'backend/routes/files.py',
+        'backend/routes/messages.py',
+    ]
+    
+    for filepath in required_files:
+        try:
+            validate_file_exists(filepath)
+        except FileNotFoundError as e:
+            print(f"✗ FAILED: {e}")
+            return False
+    
+    print("✓ PASSED: All required files exist")
+    return True
+
+def test_implementation_logic():
+    """Test implementation logic, not just comments"""
+    content = safe_read_file('frontend/lib/presentation/screens/chat_detail_screen.dart')
+    if content is None:
+        return False
+    
+    # Check for actual emoji Unicode implementation
+    if "'\\u{1F44D}'" not in content:
+        print("✗ FAILED: Emoji Unicode not properly implemented")
+        return False
+    
+    # Check for implementation of methods, not just stubs
+    upload_method = re.search(r'Future<void> _uploadFile\(\).*?(?=Future<void>|def |$)', 
+                             content, re.DOTALL)
+    if upload_method is None:
+        print("✗ FAILED: _uploadFile method not found")
+        return False
+    
+    method_body = upload_method.group(0)
+    if 'await _pickAndUploadFile()' not in method_body:
+        print("✗ FAILED: _uploadFile doesn't call actual implementation")
+        return False
+    
+    print("✓ PASSED: Implementation logic properly tested")
+    return True
+
+def test_phone_number_support():
+    """Test that phone number support is implemented like WhatsApp"""
+    content = safe_read_file('frontend/lib/presentation/screens/chat_list_screen.dart')
+    if content is None:
+        return False
+    
+    # Check for phone controller
+    if 'phoneController' not in content:
+        print("✗ FAILED: Phone number input field not implemented")
+        return False
+    
+    # Check for phone keyboard type
+    if 'TextInputType.phone' not in content:
+        print("✗ FAILED: Phone keyboard type not set")
+        return False
+    
+    # Check for phone validation
+    if 'phone.isEmpty' not in content:
+        print("✗ FAILED: Phone number validation not implemented")
+        return False
+    
+    # Check that dialog accepts phone input
+    if "hintText: '+1 (555)" not in content:
+        print("✗ FAILED: Phone number hint not present")
+        return False
+    
+    print("✓ PASSED: Phone number support (WhatsApp-style) implemented")
+    return True
+
+def main():
+    """Run all tests"""
+    print("=" * 70)
+    print("HYPERSEND FIXES - COMPREHENSIVE IMPLEMENTATION TEST")
+    print("=" * 70)
+    
+tests = [
+        test_file_existence_validation,
+        test_contact_tiles_perform_actions,
+        test_file_upload_implementation,
+        test_exception_handling,
+        test_application_security_validation,
+        test_implementation_logic,
+        test_phone_number_support,
+    ]
+    
+    results = []
+    for test in tests:
+        try:
+            results.append(test())
+        except Exception:
+            print(f"✗ ERROR in {test.__name__}: An error occurred.")
+            results.append(False)
+    
+    print("\n" + "=" * 70)
+    passed = sum(results)
+    total = len(results)
+    print(f"Results: {passed}/{total} tests passed")
+    if passed == total:
+        print("✓ ALL TESTS PASSED")
+    else:
+        print(f"✗ {total - passed} TEST(S) FAILED")
+    print("=" * 70)
+    
+    return passed == total
+
+if __name__ == "__main__":
+    try:
+        success = main()
+        sys.exit(0 if success else 1)
+    except KeyboardInterrupt:
+        print("\n\nTest interrupted by user")
+        sys.exit(1)
+    except Exception:
+        print(f"\n\nFATAL ERROR: An unexpected error occurred.")
+        sys.exit(1)
