@@ -1,2 +1,0 @@
-# Add this at the very beginning of the upload_avatar function to catch 500 errors
-        try:
