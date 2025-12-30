@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 from datetime import datetime, timedelta, timezone
 
 from auth.utils import get_current_user

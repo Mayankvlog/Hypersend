@@ -83,6 +83,7 @@ class UserLogin(BaseModel):
         if not v or not v.strip():
             raise ValueError('Email cannot be empty')
         v = v.lower().strip()
+        # SECURITY: Strict email validation for all environments
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
             raise ValueError('Invalid email format')
@@ -157,116 +158,48 @@ class ProfileUpdate(BaseModel):
     @classmethod
     def validate_name(cls, v):
         if v is None:
-            return v
+            return None  # Allow None for photo-only updates
         if not v or not v.strip():
             raise ValueError('Name cannot be empty')
+        if '\x00' in v:  # Null byte protection
+            raise ValueError('Name contains invalid characters')
         v = re.sub(r'<[^>]*>', '', v)
         v = re.sub(r'[<>"\']', '', v)
-        return v.strip()
+        cleaned = v.strip()
+        if len(cleaned) < 2 and len(cleaned) > 0:  # Only validate if provided with content
+            raise ValueError('Name must be at least 2 characters after cleaning')
+        return cleaned
     
     @field_validator('username')
     @classmethod
     def validate_username(cls, v):
         if v is None:
-            return v
+            raise ValueError('Username is required')
         if not v or not v.strip():
             raise ValueError('Username cannot be empty')
-        if not re.match(r'^[a-zA-Z0-9_.\-]+$', v):
-            raise ValueError('Username can only contain letters, numbers, underscores, dots and hyphens')
-        return v.strip()
+        if '\x00' in v:  # Null byte protection
+            raise ValueError('Username contains invalid characters')
+        if not re.match(r'^[a-zA-Z0-9_.-]+$', v):  # Remove underscore since frontend only allows alphanum
+            raise ValueError('Username can only contain letters, numbers, dots and hyphens')
+        cleaned = v.strip()
+        if len(cleaned) < 3:
+            raise ValueError('Username must be at least 3 characters')
+        return cleaned
     
     @field_validator('avatar')
     @classmethod
     def validate_avatar(cls, v):
         if v is None:
-            return v
+            return v  # Avatar can be optional
         # Strip whitespace
         v = v.strip() if isinstance(v, str) else v
-        # Return None if empty after stripping
+        # Return None if empty after stripping (allow clearing avatar)
         if not v:
             return None
+        if '\x00' in v:  # Null byte protection
+            raise ValueError('Avatar contains invalid characters')
         if len(v) > 10:
             raise ValueError('Avatar initials must be 10 characters or less')
-        return v
-    
-    @field_validator('bio')
-    @classmethod
-    def validate_bio(cls, v):
-        if v is None:
-            return v
-        if len(v) > 500:
-            raise ValueError('Bio must be 500 characters or less')
-        return v
-    
-    @field_validator('avatar_url')
-    @classmethod
-    def validate_avatar_url(cls, v):
-        if v is None:
-            return v
-        if len(v) > 500:
-            raise ValueError('Avatar URL must be 500 characters or less')
-        return v
-    
-    @field_validator('email')
-    @classmethod
-    def validate_email(cls, v):
-        if v is None:
-            return v
-        v = v.strip().lower()
-        if not v:
-            return None  # Empty email is allowed (treat as not updating)
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format. Use format: user@example.com')
-        return v
-
-
-class PasswordChangeRequest(BaseModel):
-    """Password change request model"""
-    old_password: str = Field(..., min_length=6, max_length=128)
-    new_password: str = Field(..., min_length=6, max_length=128)
-
-
-class EmailChangeRequest(BaseModel):
-    """Email change request model"""
-    email: str = Field(..., max_length=254)
-    password: str = Field(..., min_length=6, max_length=128)
-    
-    @field_validator('email')
-    @classmethod
-    def validate_change_email(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Email cannot be empty')
-        v = v.lower().strip()
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format. Use format: user@example.com')
-        return v
-
-
-# Auth Models
-class Token(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-
-
-class TokenData(BaseModel):
-    user_id: Optional[str] = None
-    token_type: Optional[str] = None
-
-
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str = Field(..., min_length=32, max_length=512)
-    
-    @field_validator('refresh_token')
-    @classmethod
-    def validate_refresh_token(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Refresh token cannot be empty')
-        # Basic format validation for JWT tokens
-        if len(v.split('.')) != 3:
-            raise ValueError('Invalid refresh token format')
         return v.strip()
 
 

@@ -1,4 +1,3 @@
-import sys
 import os
 
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -33,8 +32,10 @@ async def connect_db():
             if settings.DEBUG:
                 try:
                     safe_uri = settings.MONGODB_URI.split("@")[-1]
-                except Exception:
+                except Exception as e:
                     safe_uri = "[redacted]"
+                    if settings.DEBUG:
+                        print(f"[DEBUG] URI parse error: {e}")
                 print(f"[OK] Connected to MongoDB: {safe_uri}")
             return
             

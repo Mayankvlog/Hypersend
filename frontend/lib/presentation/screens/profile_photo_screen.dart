@@ -228,9 +228,9 @@ Future<void> _handleSave() async {
     try {
       String resultValue;
       
-      if (_pickedFileBytes != null && _pickedFileName != null) {
+       if (_pickedFileBytes != null && _pickedFileName != null) {
         debugPrint('[PROFILE_PHOTO] Uploading new avatar image...');
-        // Upload file
+        // Upload file - this updates both avatar and avatar_url on backend
         resultValue = await serviceProvider.profileService.uploadAvatar(
           _pickedFileBytes!,
           _pickedFileName!,
@@ -238,8 +238,8 @@ Future<void> _handleSave() async {
         debugPrint('[PROFILE_PHOTO] Avatar uploaded successfully: $resultValue');
       } else {
         debugPrint('[PROFILE_PHOTO] Updating avatar to: $_selectedPhoto');
-        // Just update initials
-        await serviceProvider.profileService.updateAvatar(_selectedPhoto);
+        // Just update initials - use updateProfile to avoid validation conflicts
+        await serviceProvider.profileService.updateProfile(avatar: _selectedPhoto);
         resultValue = _selectedPhoto;
         debugPrint('[PROFILE_PHOTO] Avatar initials updated successfully');
       }
@@ -289,8 +289,12 @@ Future<void> _handleSave() async {
         errorMessage = 'Avatar URL is too long. Please use a shorter URL (max 500 characters).';
       } else if (errorString.contains('avatar too long') || errorString.contains('avatar must be 10 characters or less')) {
         errorMessage = 'Avatar initials are too long. Please use 1-10 characters only.';
-      } else if (errorString.contains('name cannot be empty') || errorString.contains('name must be at least 2 characters')) {
-        errorMessage = 'Name validation failed. Please check your name input.';
+       } else if (errorString.contains('name cannot be empty') || errorString.contains('name must be at least 2 characters')) {
+        // This shouldn't happen on photo-only screen - log for debugging
+        debugPrint('[PHOTO_SCREEN] Unexpected name validation error on photo upload: $errorString');
+        errorMessage = 'Profile update failed. Please try again or use profile edit screen for name changes.';
+      } else if (errorString.contains('validation failed') && errorString.contains('avatar')) {
+        errorMessage = 'Avatar validation failed. Please try a different image.';
       } else if (errorString.contains('validation') || errorString.contains('invalid')) {
         errorMessage = 'Validation failed. Please check all input fields and try again.';
       } else if (errorString.isNotEmpty) {

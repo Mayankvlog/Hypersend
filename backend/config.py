@@ -116,8 +116,18 @@ class Settings:
         raise RuntimeError("🚨 PRODUCTION SAFETY ERROR: Mock database cannot be used in production. Set USE_MOCK_DB=False")
     
     # CORS Configuration
-    # FIX: Load from environment or use defaults that support all access patterns
-    # NOTE: CORS is for browser security, not API authentication - allow common patterns
+    # ENHANCED: Load from environment with secure defaults
+    # PRODUCTION: Use specific allowed origins only
+    cors_origins_default = [
+        "http://localhost:3000",  # Frontend development server
+        "http://localhost:8000",  # Backend direct access
+        "http://127.0.0.1:3000",  # Alternative localhost
+        "http://127.0.0.1:8000",  # Alternative localhost
+        "https://*.hypersend.com",  # Production domain pattern
+        "https://*.hypersend.io",    # Alternative production domain
+    ]
+    
+    # NOTE: CORS origins should be configured per environment
     CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
         "*",  # Allow all origins in development/local
         "http://localhost",

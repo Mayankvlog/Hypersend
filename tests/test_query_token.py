@@ -10,12 +10,13 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 # Add backend to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+backend_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backend')
+sys.path.insert(0, backend_path)
 
-from backend.auth.utils import (
+from auth.utils import (
     create_access_token, decode_token, get_current_user_from_query
 )
-from backend.models import TokenData
+from models import TokenData
 from fastapi import Query, HTTPException
 
 
@@ -176,7 +177,7 @@ def test_refresh_token_raises_exception():
     async def test_async():
         try:
             # Create a refresh token instead of access token
-            from backend.auth.utils import create_refresh_token
+            from auth.utils import create_refresh_token
             user_id = "test_user_refresh"
             token_data = {"sub": user_id}
             test_token, jti = create_refresh_token(token_data)

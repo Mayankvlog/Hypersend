@@ -1,5 +1,4 @@
-from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict
 import time
 import threading
 from collections import defaultdict
@@ -37,8 +36,11 @@ class RateLimiter:
                 self.requests[identifier] = valid_requests
                 return True
         except Exception as e:
-            # On any error, allow the request (fail open)
-            return True
+            # SECURITY FIX: On error, block request instead of fail-open
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Rate limiter error: {e}. Blocking request for security.")
+            return False  # Block request on errors for security
     
     def get_retry_after(self, identifier: str) -> int:
         """Get seconds until next request is allowed"""
@@ -64,7 +66,10 @@ class RateLimiter:
                     return max(0, int(reset_time - now))
                 
                 return 0
-        except Exception:
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Rate limiter get_retry_after error: {e}")
             return 0
 
 # Global rate limiters for different auth operations

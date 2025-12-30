@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:async';
 import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'api_service.dart';
 import '../../core/constants/api_constants.dart';
 
@@ -139,7 +140,9 @@ class FileTransferService {
           );
           chunkIndex += 1;
           sentBytes += chunk.length;
-          _updateProgress(transfer.id, sentBytes / fileSize, onProgress);
+// Prevent double callback invocation
+          final progress = sentBytes / fileSize;
+          _updateProgress(transfer.id, progress, (_) {}); // Internal update only
         }
       }
 
@@ -184,10 +187,62 @@ class FileTransferService {
     _transfers.add(transfer);
 
     try {
-      await _api.downloadFileToPath(fileId: fileId, savePath: savePath);
+      debugPrint('[FILE_TRANSFER] Getting file info to determine download strategy');
+      
+      // Get file info first to determine size and strategy
+      final fileInfo = await _api.getFileInfo(fileId);
+      final fileSize = fileInfo['size'] as int? ?? 0;
+      
+      debugPrint('[FILE_TRANSFER] File size: $fileSize bytes');
+      
+      // Use chunked download for large files (>100MB)
+      if (fileSize > 100 * 1024 * 1024) {
+        debugPrint('[FILE_TRANSFER] Using chunked download for large file: $fileSize bytes');
+        
+        // Update transfer with actual file size
+        final transferIndex = _transfers.indexWhere((t) => t.id == fileId);
+        if (transferIndex >= 0) {
+          _transfers[transferIndex] = _transfers[transferIndex].copyWith(fileSize: fileSize);
+        }
+        
+        int lastReportedProgress = 0;
+        await _api.downloadLargeFileToPath(
+          fileId: fileId,
+          savePath: savePath,
+          onReceiveProgress: (received, total) {
+            // Only update progress on significant changes to avoid too many UI updates
+            if (total > 0 && (received - lastReportedProgress) >= (total ~/ 100)) {  // Update every 1%
+              final progress = received / total;
+              _updateProgress(fileId, progress, (p) {});  // Update internal progress without duplicating callback
+              onProgress(progress);
+              lastReportedProgress = received;
+            }
+          },
+        );
+      } else {
+        debugPrint('[FILE_TRANSFER] Using regular download for small file: $fileSize bytes');
+        
+        // Update transfer with actual file size and track progress
+        final transferIndex = _transfers.indexWhere((t) => t.id == fileId);
+        if (transferIndex >= 0) {
+          _transfers[transferIndex] = _transfers[transferIndex].copyWith(fileSize: fileSize);
+        }
+        
+        await _api.downloadFileToPathWithProgress(
+          fileId: fileId,
+          savePath: savePath,
+          onProgress: (progress) {
+            // Track progress for small files too
+            _updateProgress(fileId, progress, onProgress);
+            onProgress(progress);
+          },
+        );
+      }
+      
       _markCompleted(fileId);
       onProgress(1);
     } catch (e) {
+      debugPrint('[FILE_TRANSFER] Download failed: $e');
       _markFailed(fileId);
       rethrow;
     }
@@ -227,7 +282,9 @@ class FileTransferService {
     final index = _transfers.indexWhere((t) => t.id == transferId);
     if (index != -1) {
       final clamped = p.clamp(0.0, 1.0);
+      // Update internal state first
       _transfers[index] = _transfers[index].copyWith(progress: clamped);
+      // Then call external callback with consistent value
       onProgress(clamped);
     }
   }

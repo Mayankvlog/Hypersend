@@ -14,13 +14,16 @@ print("[STARTUP] Python version:", sys.version)
 print("[STARTUP] Python path:", sys.path)
 print("[STARTUP] Current working directory:", os.getcwd())
 print("[STARTUP] Starting backend imports...")
-
 try:
     # Add current directory to Python path for Docker
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent))
     from datetime import datetime, timezone
+    
+    # SECURITY: Prevent importing config with missing secrets in production
+    if not os.getenv('SECRET_KEY') and not os.getenv('DEBUG', 'false').lower() in ('true', '1'):
+        raise RuntimeError("🚨 PRODUCTION SAFETY: SECRET_KEY must be set in production")
     
     from config import settings
     if settings.USE_MOCK_DB:
@@ -270,7 +273,11 @@ app.add_middleware(RequestValidationMiddleware)
 # Add a catch-all exception handler for any unhandled exceptions
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """Catch-all exception handler for any unhandled exceptions"""
+    """Catch-all exception handler for any unhandled exceptions except HTTPException"""
+    # Don't catch HTTPException - let the specific handler deal with those
+    if isinstance(exc, HTTPException):
+        raise exc  # Re-raise HTTPException to be handled by its specific handler
+    
     import traceback
     logger.error(f"[UNCAUGHT_EXCEPTION] {type(exc).__name__}: {str(exc)}")
     if settings.DEBUG:
@@ -307,20 +314,30 @@ if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "
     )
 
 # CORS middleware - configured from settings to respect DEBUG/PRODUCTION modes
-# FIX: Ensure CORS is properly configured with fallback origins
+# ENHANCED: Multiple origin support with exact pattern matching
 cors_origins = settings.CORS_ORIGINS
-# If CORS_ORIGINS contains the asterisk, convert to list with asterisk
+
+# Convert to list if single origin
 if isinstance(cors_origins, str):
     cors_origins = [cors_origins]
+
+# Clean up whitespace in origins
 if isinstance(cors_origins, list) and len(cors_origins) > 0:
-    # Clean up whitespace in origins
-    cors_origins = [origin.strip() for origin in cors_origins]
-    # If wildcard present, keep it; otherwise add local fallbacks
-    if "*" not in cors_origins:
-        local_origins = ["http://localhost", "http://localhost:8000", "http://127.0.0.1:8000"]
-        for origin in local_origins:
-            if origin not in cors_origins:
-                cors_origins.append(origin)
+    cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
+
+# SECURITY: Only add local development origins in debug mode
+if settings.DEBUG:
+    local_dev_origins = [
+        "http://localhost:3000",
+        "http://localhost:8000", 
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000"
+    ]
+    
+    # Merge origins without duplicates
+    for origin in local_dev_origins:
+        if origin not in cors_origins:
+            cors_origins.append(origin)
 
 app.add_middleware(
     CORSMiddleware,
@@ -389,7 +406,7 @@ async def health_check():
         "debug_mode": settings.DEBUG,
     }
 
-# Diagnostic endpoint to help debug connection issues
+# API health endpoint with diagnostic info
 @app.get("/api/v1/health")
 async def api_health_check(request: Request):
     """
@@ -398,8 +415,10 @@ async def api_health_check(request: Request):
     """
     try:
         client_ip = request.client.host if request.client else "unknown"
-    except:
+    except Exception as e:
         client_ip = "unknown"
+        if settings.DEBUG:
+            print(f"[DEBUG] Client IP detection failed: {e}")
     
     return {
         "status": "healthy",
@@ -410,19 +429,6 @@ async def api_health_check(request: Request):
         "api_base_url": settings.API_BASE_URL,
         "debug_mode": settings.DEBUG,
         "message": "API endpoint is reachable and responding properly"
-    }
-
-# API version endpoint
-@app.get("/api/v1/health")
-async def api_health_check():
-    """
-    API health check endpoint under /api/v1 path.
-    """
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "api_base_url": settings.API_BASE_URL,
-        "debug_mode": settings.DEBUG,
     }
 
 # Detailed status endpoint for debugging
@@ -481,16 +487,6 @@ async def root():
         "api_endpoint": settings.API_BASE_URL,
     }
 
-
-# Serve favicon (avoid 404 in logs)
-FAVICON_PATH = Path("frontend/assets/favicon.ico")
-
-@app.get("/favicon.ico")
-async def favicon():
-    if FAVICON_PATH.exists():
-        return FileResponse(str(FAVICON_PATH))
-    return Response(status_code=204)
-
 # Security headers middleware
 @app.middleware("http")
 async def add_security_headers(request, call_next):
@@ -507,7 +503,6 @@ async def add_security_headers(request, call_next):
         response.headers[header] = value
     
     return response
-
 
 
 # Serve favicon (avoid 404 in logs)
@@ -537,9 +532,9 @@ app.include_router(channels.router, prefix="/api/v1")
 from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse
 from auth.utils import get_current_user
 
-# OPTIONS preflight handlers for alias endpoints
+# Unified OPTIONS handler for all alias endpoints
 @app.options("/api/v1/login")
-@app.options("/api/v1/register")
+@app.options("/api/v1/register") 
 @app.options("/api/v1/refresh")
 @app.options("/api/v1/logout")
 async def preflight_alias_endpoints():
@@ -550,7 +545,7 @@ async def preflight_alias_endpoints():
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
     })
 
-# Create simple redirect aliases - just accept and forward to auth handlers
+# Create redirect aliases - forward to auth handlers
 @app.post("/api/v1/login", response_model=Token)
 async def login_alias(credentials: UserLogin, request: Request):
     """Alias for /api/v1/auth/login - delegates to auth router"""

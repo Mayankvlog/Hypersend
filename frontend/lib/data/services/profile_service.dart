@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'dart:typed_data';
 
 import '../models/user.dart';
 import 'api_service.dart';
@@ -46,12 +45,14 @@ class ProfileService {
     }
 
     try {
-      // Validate name
-      if ((name ?? '').isEmpty && _currentUser!.name.isEmpty) {
-        throw Exception('Name cannot be empty. Please provide a valid name.');
-      }
-      if ((name ?? '').isNotEmpty && name!.length < 2) {
-        throw Exception('Name must be at least 2 characters long. Current length: ${name!.length}');
+      // Validate name - only if name is being updated
+      if (name != null) {
+        if (name.isEmpty && _currentUser!.name.isEmpty) {
+          throw Exception('Name cannot be empty. Please provide a valid name.');
+        }
+        if (name.isNotEmpty && name.length < 2) {
+          throw Exception('Name must be at least 2 characters long. Current length: ${name.length}');
+        }
       }
 
       debugPrint('[PROFILE_UPDATE] Starting profile update');
@@ -188,11 +189,11 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       debugPrint('[PROFILE_SERVICE] Raw response: $response');
       debugPrint('[PROFILE_SERVICE] Response type: ${response.runtimeType}');
       
-      if (response is! Map) {
+       if (response is! Map<String, dynamic>) {
         throw Exception('Invalid response from server: expected Map, got ${response.runtimeType}');
       }
       
-      final Map<String, dynamic> responseMap = Map<String, dynamic>.from(response);
+       final Map<String, dynamic> responseMap = response;
       
       // Check for avatar_url field (required)
       if (!responseMap.containsKey('avatar_url') || responseMap['avatar_url'] == null) {
@@ -229,9 +230,8 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       if (avatarPath.isEmpty) {
         throw Exception('Avatar path cannot be empty');
       }
-      // Call API to update avatar
-      await _apiService.updateProfile({'avatar': avatarPath});
-      _currentUser = _currentUser!.copyWith(avatar: avatarPath);
+      // Call API to update avatar - use updateProfile with only avatar field
+      await updateProfile(avatar: avatarPath);
       return avatarPath;
     } catch (e) {
       rethrow;

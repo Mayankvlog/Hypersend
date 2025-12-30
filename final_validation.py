@@ -10,7 +10,23 @@ import json
 from datetime import datetime
 
 # Add backend to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'backend'))
+backend_path = os.path.join(os.path.dirname(__file__), 'backend')
+if backend_path not in sys.path:
+    sys.path.append(backend_path)
+
+# Import P2P transfer module with consistent path
+try:
+    # Ensure backend is in path
+    backend_path = os.path.join(os.path.dirname(__file__), 'backend')
+    if backend_path not in sys.path:
+        sys.path.insert(0, backend_path)
+    
+    from routes.p2p_transfer import P2PSession as P2PSessionClass
+    from routes.p2p_transfer import P2PSession
+except ImportError as e:
+    print(f"Warning: Could not import P2P transfer module: {e}")
+    P2PSessionClass = None
+    P2PSession = None
 
 def check_p2p_thread_safety():
     """Check P2P thread safety implementation"""
@@ -18,7 +34,13 @@ def check_p2p_thread_safety():
     print("-" * 50)
     
     try:
-        from routes.p2p_transfer import P2PSession, get_active_session, set_active_session
+        # Import P2P transfer components
+        try:
+            from routes.p2p_transfer import P2PSession, get_active_session, set_active_session
+        except ImportError as e:
+            print(f"ERROR: Could not import P2P transfer module: {e}")
+            return False
+        
         import threading
         
         # Test session creation

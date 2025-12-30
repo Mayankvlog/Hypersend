@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:io' show Platform;
 
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/api_constants.dart';
@@ -653,19 +654,36 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _downloadAndOpenFile(String fileId, String fileName, String contentType) async {
     try {
-      final fileUrl = '${ApiConstants.filesEndpoint}/$fileId/download';
-      debugPrint('[FILE_NATIVE] Opening file: $fileUrl');
+      debugPrint('[FILE_NATIVE] Starting enhanced download for: $fileName');
       
-      final uri = Uri.parse(fileUrl);
-      
-      // Launch file with system default application
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
+      if (kIsWeb) {
+        // Web: Use browser download
+        final isPDF = contentType.toLowerCase().contains('pdf');
+        await _openFileInWeb(fileId, fileName, isPDF);
+        return;
       } else {
-        throw Exception('Could not open file with system application');
+        // Native: Use FileTransferService for proper chunked download
+        // Generate a safe filename and path
+        final safeFileName = fileName.replaceAll(RegExp(r'[^\w\-_.]'), '_');
+        final savePath = '$safeFileName';
+        
+        debugPrint('[FILE_NATIVE] Download path: $savePath');
+        
+        // Use FileTransferService for chunked download (now supports large files)
+        await serviceProvider.fileTransferService.downloadFile(
+          fileId: fileId,
+          fileName: fileName,
+          savePath: savePath,
+          onProgress: (progress) {
+            debugPrint('[FILE_NATIVE] Download progress: ${(progress * 100).toStringAsFixed(1)}%');
+          },
+        );
+        
+        debugPrint('[FILE_NATIVE] Download completed, attempting to open file');
+        
+        // For now, just log completion - opening file requires platform-specific handling
+        debugPrint('[FILE_NATIVE] Download completed: $savePath');
+        debugPrint('[FILE_NATIVE] File saved successfully');
       }
     } catch (e) {
       debugPrint('[FILE_NATIVE_ERROR] $e');

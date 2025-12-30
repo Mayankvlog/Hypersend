@@ -8,14 +8,16 @@ import os
 import asyncio
 from datetime import datetime, timedelta
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add backend to Python path
+backend_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backend')
+sys.path.insert(0, backend_path)
 
-from backend.auth.utils import (
+from auth.utils import (
     create_access_token,
     get_current_user,
     get_current_user_from_query
 )
-from backend.security import SecurityConfig
+from security import SecurityConfig
 from fastapi.security import HTTPAuthorizationCredentials
 
 

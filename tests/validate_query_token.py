@@ -14,17 +14,22 @@ def validate_imports():
     print("\n[1] VALIDATING IMPORTS")
     print("-" * 70)
     
+    # Add backend to path
+    backend_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backend')
+    if backend_path not in sys.path:
+        sys.path.insert(0, backend_path)
+    
     try:
-        from backend.auth.utils import (
+        from auth.utils import (
             get_current_user, 
             get_current_user_from_query,
             create_access_token,
             decode_token
         )
-        print("✓ All functions imported successfully from backend.auth.utils")
+        print("✓ All functions imported successfully from auth.utils")
         
-        from backend.routes.auth import get_current_user_from_query as auth_import
-        print("✓ get_current_user_from_query imported in backend.routes.auth")
+        from routes.auth import get_current_user_from_query as auth_import
+        print("✓ get_current_user_from_query imported in routes.auth")
         
         return True
     except ImportError as e:
@@ -38,7 +43,7 @@ def check_function_signatures():
     print("-" * 70)
     
     import inspect
-    from backend.auth.utils import get_current_user, get_current_user_from_query
+    from auth.utils import get_current_user, get_current_user_from_query
     
     # Check get_current_user (should use HTTPAuthorizationCredentials = Depends(security))
     sig1 = inspect.signature(get_current_user)
@@ -163,7 +168,7 @@ def validate_no_breaking_changes():
     print("-" * 70)
     
     import asyncio
-    from backend.auth.utils import (
+    from auth.utils import (
         get_current_user, 
         create_access_token,
         HTTPAuthorizationCredentials

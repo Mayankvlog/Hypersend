@@ -186,7 +186,7 @@ async def update_profile(
         update_data = {}
         
         # Process the name
-        if profile_data.name is not None:
+        if profile_data.name is not None and len(profile_data.name.strip()) > 0:
             name = profile_data.name.strip()
             if not name:
                 logger.warning(f"Name validation failed: empty string after strip")

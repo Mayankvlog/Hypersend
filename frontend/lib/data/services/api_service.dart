@@ -7,8 +7,10 @@ import 'dart:async';
 import 'dart:math';
 
 // Conditional import: dart:io only available on mobile/desktop platforms
-import 'dart:io' as io;
 import '../../core/constants/api_constants.dart';
+
+// Platform-specific imports
+import 'dart:io' as io if (dart.library.io) 'dart:io';
 
 class ApiService {
   late final Dio _dio;
@@ -38,9 +40,9 @@ class ApiService {
     _dio = Dio(
       BaseOptions(
         baseUrl: url,
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 15),
-        sendTimeout: const Duration(seconds: 15),
+        connectTimeout: const Duration(minutes: 5),
+        receiveTimeout: const Duration(hours: 2),
+        sendTimeout: const Duration(minutes: 5),
         contentType: 'application/json',
         // Allow all status codes to be handled by interceptors for proper 4xx error handling
         validateStatus: (status) => status != null && status < 500,
@@ -61,7 +63,7 @@ class ApiService {
           return client;
         };
         _log('[API_SECURITY] ⚠️ SSL validation disabled - DEBUG MODE ONLY');
-      } else {
+      } else if (kIsWeb) {
         // Flutter Web: SSL validation cannot be disabled programmatically
         _log('[API_SECURITY] ⚠️ SSL validation forced on - Flutter Web limitation');
         _log('[API_SECURITY] 🔒 Browser controls SSL certificates');
@@ -1167,6 +1169,29 @@ options: Options(
       '${ApiConstants.filesEndpoint}/$fileId/download',
       savePath,
       onReceiveProgress: onReceiveProgress,
+      options: Options(
+        headers: {'Range': 'bytes=0-'},  // Request range, not Accept-Ranges
+      ),
+    );
+  }
+
+  // Convenience method that accepts double progress callback
+  Future<void> downloadFileToPathWithProgress({
+    required String fileId,
+    required String savePath,
+    required Function(double) onProgress,
+  }) async {
+    await _dio.download(
+      '${ApiConstants.filesEndpoint}/$fileId/download',
+      savePath,
+      onReceiveProgress: (received, total) {
+        if (total > 0) {
+          onProgress(received / total);
+        }
+      },
+      options: Options(
+        headers: {'Range': 'bytes=0-'},  // Request range, not Accept-Ranges
+      ),
     );
   }
 
@@ -1176,8 +1201,103 @@ options: Options(
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: false,
+        headers: {'Range': 'bytes=0-'},  // Request range, not Accept-Ranges
       ),
     );
+  }
+
+  // NEW: Chunked download for large files with range requests
+  Future<void> downloadLargeFileToPath({
+    required String fileId,
+    required String savePath,
+    int chunkSize = 4 * 1024 * 1024, // 4MB chunks like upload
+    void Function(int, int)? onReceiveProgress,
+  }) async {
+    try {
+      _log('[DOWNLOAD_LARGE] Starting chunked download for file: $fileId');
+      
+      // Get file info first
+      final fileInfo = await this.getFileInfo(fileId);
+      final totalSize = fileInfo['size']?.toString().length ?? 0;
+      final fileName = fileInfo['filename']?.toString() ?? 'unknown';
+      
+      _log('[DOWNLOAD_LARGE] File info: size=$totalSize, name=$fileName');
+      
+      // For small files (<100MB), use regular download
+      if (totalSize < 100 * 1024 * 1024) {
+        _log('[DOWNLOAD_LARGE] Small file detected, using regular download');
+        await downloadFileToPath(
+          fileId: fileId,
+          savePath: savePath,
+          onReceiveProgress: onReceiveProgress,
+        );
+        return;
+      }
+      
+      // For large files, use chunked download with range requests
+      int downloadedBytes = 0;
+      final file = io.File(savePath);
+      
+      // Create/clear file
+      if (file.existsSync()) {
+        await file.delete();
+      }
+      await file.create(recursive: true);
+      
+      final sink = file.openWrite();
+      
+      try {
+        while (downloadedBytes < totalSize) {
+          final endByte = min(downloadedBytes + chunkSize - 1, totalSize - 1);
+          
+          _log('[DOWNLOAD_LARGE] Downloading chunk: $downloadedBytes-$endByte');
+          
+          final response = await _dio.get(
+            '${ApiConstants.filesEndpoint}/$fileId/download',
+            options: Options(
+              responseType: ResponseType.bytes,
+              headers: {
+                'Range': 'bytes=$downloadedBytes-$endByte',
+              },
+            ),
+          );
+          
+          // Write chunk directly to file with proper type checking
+          List<int> chunkBytes;
+          if (response.data is List<int>) {
+            chunkBytes = response.data as List<int>;
+          } else if (response.data is Uint8List) {
+            chunkBytes = (response.data as Uint8List).toList();
+          } else {
+            debugPrint('[DOWNLOAD_LARGE] Unexpected response type: ${response.data.runtimeType}');
+            chunkBytes = <int>[];
+          }
+          sink.add(Uint8List.fromList(chunkBytes));
+          
+          downloadedBytes = endByte + 1;
+          
+          // Update progress
+          onReceiveProgress?.call(downloadedBytes, totalSize);
+          
+          _log('[DOWNLOAD_LARGE] Chunk downloaded: $downloadedBytes/$totalSize bytes');
+        }
+        
+        await sink.close();
+        _log('[DOWNLOAD_LARGE] Download completed: $savePath');
+        
+      } catch (e) {
+        await sink.close();
+        // Cleanup on error
+        if (file.existsSync()) {
+          await file.delete();
+        }
+        rethrow;
+      }
+      
+    } catch (e) {
+      _log('[DOWNLOAD_LARGE_ERROR] Failed: $e');
+      rethrow;
+    }
   }
 
   // Settings endpoints
@@ -1557,11 +1677,17 @@ Future<bool> resetPassword({required String email}) async {
   
   /// Saves file data to local storage with validation
   /// Returns the file path where saved
-  Future<String> saveFileLocally({
+  Future<String?> saveFileLocally({
     required String fileName,
     required Uint8List fileData,
     required String localStoragePath,
   }) async {
+    if (kIsWeb) {
+      // Web platform - return empty string instead of null for consistency
+      _log('[LOCAL_STORAGE] Web platform: File storage not supported');
+      return ''; // Return empty string, not null
+    }
+    
     try {
       _log('[LOCAL_STORAGE] Saving file: $fileName');
       
@@ -1573,9 +1699,12 @@ Future<bool> resetPassword({required String email}) async {
 // Ensure directory exists (web: uses IndexedDB/LocalStorage, mobile: uses file system)
       if (!kIsWeb) {
         // Mobile platform - use actual file system
+        // Use complete file path for native platforms
         final directory = io.Directory(localStoragePath);
-        // Fix: Use path string instead of Directory object
-        final filePath = io.Platform.isWindows ? '$localStoragePath\\$fileName' : '$localStoragePath/$fileName';
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        final filePath = io.Platform.isWindows ? '${directory.path}\\$fileName' : '${directory.path}/$fileName';
         final file = io.File(filePath);
         
         // Create directory if needed
@@ -1588,10 +1717,6 @@ Future<bool> resetPassword({required String email}) async {
         _log('[LOCAL_STORAGE] File size: ${(fileData.length / (1024 * 1024)).toStringAsFixed(2)}MB');
         
         return file.path;
-      } else {
-        // Web platform - file storage not supported
-        _log('[LOCAL_STORAGE] Web platform: File storage not supported');
-        return '';
       }
     } catch (e) {
       _log('[LOCAL_STORAGE_ERROR] Failed to save file: $e');
@@ -1658,7 +1783,7 @@ if (!kIsWeb) {
         
         for (var file in files) {
           if (file is io.File) {
-            totalSize += await file.length();
+            totalSize += (await file.length()) as int;
           }
         }
         
