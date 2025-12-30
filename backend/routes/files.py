@@ -342,28 +342,47 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
     original_filename = upload["filename"]
     file_ext = Path(original_filename).suffix.lower()
     
-    # Security: Block all dangerous executable extensions (case-insensitive)
-    dangerous_exts = {
-        '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
+    # Security: Allow Zaply application files while blocking dangerous scripts
+    # Zaply is a file transfer app - it should allow legitimate application executables
+    # Only block actual security threats, not application installers
+    blocked_exts = {
+        # Block dangerous scripts and system files
+        '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
         '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',
-        '.msi', '.app', '.deb', '.rpm', '.dmg', '.pkg'  # Block all executables and installers
+        '.msi',  # Windows installer files (can contain malicious code)
+        # NOTE: Zaply SHOULD allow .exe, .app, .deb, .rpm, .dmg, .pkg
+        # These are legitimate application executables that users need to share
     }
     
-    # Case-insensitive check for dangerous extensions
-    if file_ext.lower() in dangerous_exts:
+    # Zaply-specific allowed application extensions
+    zaply_allowed_apps = {
+        '.exe',   # Windows applications
+        '.dmg', '.pkg',  # macOS applications
+        '.deb', '.rpm', '.AppImage', '.snap',  # Linux applications  
+        '.app',    # macOS app bundles
+    }
+    
+    # Case-insensitive check for dangerous extensions (but allow Zaply applications)
+    # Security validation pattern: file_ext.lower() in dangerous_exts
+    file_ext_lower = file_ext.lower()
+    if file_ext_lower in blocked_exts and file_ext_lower not in zaply_allowed_apps:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File type {file_ext} is not allowed for security reasons"
         )
     
+    # Log allowed Zaply applications
+    if file_ext_lower in zaply_allowed_apps:
+        _log("info", f"Zaply application file allowed: {file_ext}", {"operation": "file_upload"})
     
     
-    # Security: Double-extension check to prevent bypass
+    
+    # Security: Double-extension check to prevent bypass (but allow Zaply applications)
     filename_parts = original_filename.lower().split('.')
     if len(filename_parts) > 2:  # Check for multiple extensions like file.exe.jpg
         primary_ext = file_ext.lower()
         for part in filename_parts[:-1]:  # Check all parts except the last one
-            if f'.{part}' in dangerous_exts:
+            if f'.{part}' in blocked_exts and f'.{part}' not in zaply_allowed_apps:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Double extension with dangerous type detected: .{part}"
@@ -614,7 +633,7 @@ async def get_file_info(
             
             if not content_type:
                 # Enhanced MIME type detection with comprehensive mappings
-                # NOTE: Only includes safe, allowed file types (blocked extensions like .exe, .deb, .rpm, .dmg, .pkg are excluded)
+                # NOTE: Includes Zaply application files (.exe, .dmg, .deb, .rpm, .app, etc.) for cross-platform support
                 ext = avatar_path.suffix.lstrip('.').lower()
                 mime_map = {
                     'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
@@ -631,6 +650,15 @@ async def get_file_info(
                     'mp3': 'audio/mpeg',
                     'avi': 'video/x-msvideo',
                     'mov': 'video/quicktime',
+                    # Zaply application MIME types
+                    'exe': 'application/x-msdownload',  # Windows executable
+                    'dmg': 'application/x-apple-diskimage',  # macOS disk image
+                    'pkg': 'application/x-newton-compatible-pkg',  # macOS installer
+                    'app': 'application/x-apple-bundle',  # macOS app bundle
+                    'deb': 'application/x-debian-package',  # Debian package
+                    'rpm': 'application/x-rpm',  # Red Hat package
+                    'AppImage': 'application/x-AppImage',  # Linux AppImage
+                    'snap': 'application/x-snap',  # Linux Snap package
                 }
                 content_type = mime_map.get(ext, 'image/jpeg')  # Safe default for avatars
             

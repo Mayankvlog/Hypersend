@@ -504,6 +504,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.group_add, color: AppTheme.primaryCyan),
+                title: const Text('Create Group'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/group-create');
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.settings, color: AppTheme.primaryCyan),
                 title: const Text('Settings'),
                 onTap: () {
@@ -555,8 +563,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.group_add),
+            onPressed: () {
+              Navigator.pop(context);
+              context.push('/group-create');
+            },
+            tooltip: 'Create Group',
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_add),
             onPressed: _showAddContactDialog,
+            tooltip: 'Add Contact',
           ),
         ],
       ),
