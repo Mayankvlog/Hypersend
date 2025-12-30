@@ -61,35 +61,69 @@ async def p2p_options():
 
 # Thread-safe session storage
 import threading
+import time
 from typing import Dict
+from contextlib import contextmanager
 
 # Active P2P sessions (in-memory, no disk storage)
 _active_sessions: Dict[str, dict] = {}
 _session_lock = threading.RLock()
 
-def get_active_session(session_id: str) -> Optional[P2PSession]:
-    """Thread-safe session access"""
-    with _session_lock:
-        return _active_sessions.get(session_id)
+@contextmanager
+def _session_lock_context():
+    """Context manager for session lock with timeout"""
+    acquired = _session_lock.acquire(timeout=5.0)
+    if not acquired:
+        raise RuntimeError("Failed to acquire session lock within timeout")
+    try:
+        yield
+    finally:
+        _session_lock.release()
 
-def set_active_session(session_id: str, session: P2PSession) -> None:
-    """Thread-safe session storage"""
-    with _session_lock:
+def get_active_session(session_id: str):
+    """Thread-safe session access with validation"""
+    with _session_lock_context():
+        session = _active_sessions.get(session_id)
+        if session and hasattr(session, 'session_id'):
+            # Validate session hasn't expired
+            if session.expires_at < datetime.now(timezone.utc):
+                remove_active_session(session_id)
+                return None
+            return session
+        return None
+
+def set_active_session(session_id: str, session) -> None:
+    """Thread-safe session storage with validation"""
+    with _session_lock_context():
+        if not hasattr(session, 'session_id'):
+            raise ValueError("Invalid session object type")
         _active_sessions[session_id] = session
 
-def remove_active_session(session_id: str) -> Optional[P2PSession]:
-    """Thread-safe session removal"""
-    with _session_lock:
-        return _active_sessions.pop(session_id, None)
+def remove_active_session(session_id: str):
+    """Thread-safe session removal with cleanup"""
+    with _session_lock_context():
+        session = _active_sessions.pop(session_id, None)
+        if session and hasattr(session, 'sender_ws') and session.sender_ws:
+            # Mark websocket for cleanup
+            session.cleanup_scheduled = True
+        return session
 
-def get_all_active_sessions() -> Dict[str, P2PSession]:
-    """Thread-safe session snapshot"""
-    with _session_lock:
+def get_all_active_sessions() -> Dict[str, dict]:
+    """Thread-safe session snapshot with cleanup"""
+    with _session_lock_context():
+        # Clean up expired sessions
+        current_time = datetime.now(timezone.utc)
+        expired_sessions = [
+            sid for sid, sess in _active_sessions.items()
+            if sess.expires_at < current_time
+        ]
+        for sid in expired_sessions:
+            remove_active_session(sid)
         return _active_sessions.copy()
 
 
 class P2PSession:
-    """WhatsApp-style transfer session"""
+    """WhatsApp-style transfer session with thread safety"""
     def __init__(self, session_id: str, sender_id: str, receiver_id: str, 
                  filename: str, file_size: int, mime_type: str, chat_id: str):
         self.session_id = session_id
@@ -107,14 +141,42 @@ class P2PSession:
         self.created_at = datetime.now(timezone.utc)
         self.expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
         self.status = "pending"  # pending, active, completed, failed
+        self._lock = threading.RLock()
+        self.cleanup_scheduled = False
         
     def is_ready(self):
-        return self.sender_ws is not None and self.receiver_ws is not None
+        """Thread-safe readiness check"""
+        with self._lock:
+            return self.sender_ws is not None and self.receiver_ws is not None
     
     def get_progress(self):
-        if self.file_size == 0:
-            return 0
-        return round((self.bytes_transferred / self.file_size) * 100, 2)
+        """Thread-safe progress calculation"""
+        with self._lock:
+            if self.file_size == 0:
+                return 0
+            return round((self.bytes_transferred / self.file_size) * 100, 2)
+    
+    def set_status(self, status: str):
+        """Thread-safe status update"""
+        with self._lock:
+            old_status = self.status
+            self.status = status
+            print(f"[P2P_SESSION] Session {self.session_id} status: {old_status} -> {status}")
+    
+    def add_bytes(self, chunk_size: int):
+        """Thread-safe bytes counter"""
+        with self._lock:
+            self.bytes_transferred += chunk_size
+    
+    def set_websocket(self, role: str, ws: WebSocket):
+        """Thread-safe websocket assignment"""
+        with self._lock:
+            if role == "sender":
+                self.sender_ws = ws
+            elif role == "receiver":
+                self.receiver_ws = ws
+            else:
+                raise ValueError(f"Invalid role: {role}")
 
 
 @router.post("/send")
@@ -151,7 +213,7 @@ async def initiate_p2p_transfer(
         chat_id=chat_id
     )
     
-    active_sessions[session_id] = session
+    set_active_session(session_id, session)
     
     # Store metadata only (no file data)
     file_metadata = {
@@ -197,11 +259,10 @@ async def sender_stream(websocket: WebSocket, session_id: str, token: str = None
     
     current_user = payload.get("sub")
     
-    if session_id not in active_sessions:
+    session = get_active_session(session_id)
+    if not session:
         await websocket.close(code=4004, reason="Session not found")
         return
-    
-    session = active_sessions[session_id]
     
     # Verify sender owns this session
     if session.sender_id != current_user:
@@ -209,8 +270,8 @@ async def sender_stream(websocket: WebSocket, session_id: str, token: str = None
         return
     
     await websocket.accept()
-    session.sender_ws = websocket
-    session.status = "waiting_receiver"
+    session.set_websocket("sender", websocket)
+    session.set_status("waiting_receiver")
     
     try:
         # Notify sender: connected
@@ -235,7 +296,7 @@ async def sender_stream(websocket: WebSocket, session_id: str, token: str = None
             return
         
         # Both connected - start transfer
-        session.status = "transferring"
+        session.set_status("transferring")
         await websocket.send_json({
             "type": "start",
             "message": "Receiver connected. Start sending file chunks."
@@ -251,26 +312,27 @@ async def sender_stream(websocket: WebSocket, session_id: str, token: str = None
                     chunk_data = message["bytes"]
                     
                     # Relay directly to receiver (NO SERVER STORAGE)
-                    if session.receiver_ws:
-                        await session.receiver_ws.send_bytes(chunk_data)
-                        session.bytes_transferred += len(chunk_data)
-                        
-                        # Send progress
-                        await websocket.send_json({
-                            "type": "progress",
-                            "bytes": session.bytes_transferred,
-                            "total": session.file_size,
-                            "percent": session.get_progress()
-                        })
-                    else:
-                        raise Exception("Receiver disconnected")
+                    with session._lock:
+                        if session.receiver_ws:
+                            await session.receiver_ws.send_bytes(chunk_data)
+                            session.add_bytes(len(chunk_data))
+                            
+                            # Send progress
+                            await websocket.send_json({
+                                "type": "progress",
+                                "bytes": session.bytes_transferred,
+                                "total": session.file_size,
+                                "percent": session.get_progress()
+                            })
+                        else:
+                            raise Exception("Receiver disconnected")
                 
                 elif "text" in message:
                     data = json.loads(message["text"])
                     
                     if data.get("type") == "complete":
                         # Transfer complete
-                        session.status = "completed"
+                        session.set_status("completed")
                         await websocket.send_json({
                             "type": "complete",
                             "bytes_transferred": session.bytes_transferred
@@ -287,17 +349,18 @@ async def sender_stream(websocket: WebSocket, session_id: str, token: str = None
                         break
                         
             except WebSocketDisconnect:
-                session.status = "failed"
+                session.set_status("failed")
                 break
             except Exception as e:
-                session.status = "failed"
+                session.set_status("failed")
                 await websocket.send_json({"type": "error", "message": str(e)})
                 break
     
     finally:
-        # Cleanup
-        if session_id in active_sessions:
-            del active_sessions[session_id]
+        # Thread-safe cleanup
+        removed_session = remove_active_session(session_id)
+        if removed_session:
+            print(f"[P2P_TRANSFER] Cleaned up session {session_id}")
         await websocket.close()
 
 
@@ -318,11 +381,10 @@ async def receiver_stream(websocket: WebSocket, session_id: str, token: str = No
     
     current_user = payload.get("sub")
     
-    if session_id not in active_sessions:
+    session = get_active_session(session_id)
+    if not session:
         await websocket.close(code=4004, reason="Session not found")
         return
-    
-    session = active_sessions[session_id]
     
     # Verify receiver is authorized for this session
     if session.receiver_id != current_user:
@@ -330,7 +392,7 @@ async def receiver_stream(websocket: WebSocket, session_id: str, token: str = No
         return
     
     await websocket.accept()
-    session.receiver_ws = websocket
+    session.set_websocket("receiver", websocket)
     
     try:
         # Send file metadata
@@ -368,7 +430,7 @@ async def receiver_stream(websocket: WebSocket, session_id: str, token: str = No
                 )
                 
                 if message.get("action") == "cancel":
-                    session.status = "failed"
+                    session.set_status("failed")
                     await files_collection().update_one(
                         {"session_id": session_id},
                         {"$set": {"status": "cancelled"}}
@@ -378,7 +440,7 @@ async def receiver_stream(websocket: WebSocket, session_id: str, token: str = No
             except asyncio.TimeoutError:
                 continue
             except WebSocketDisconnect:
-                session.status = "failed"
+                session.set_status("failed")
                 break
         
         # Check completion
@@ -397,7 +459,8 @@ async def receiver_stream(websocket: WebSocket, session_id: str, token: str = No
 async def get_session_status(session_id: str):
     """Get transfer status"""
     
-    if session_id not in active_sessions:
+    session = get_active_session(session_id)
+    if not session:
         # Check database for completed transfers
         metadata = await files_collection().find_one({"session_id": session_id})
         if metadata:
@@ -413,8 +476,6 @@ async def get_session_status(session_id: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found"
         )
-    
-    session = active_sessions[session_id]
     
     return {
         "session_id": session_id,

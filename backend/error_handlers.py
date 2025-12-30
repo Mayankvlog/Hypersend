@@ -173,7 +173,7 @@ def log_validation_error(request_path: str, method: str, body: Any, errors: List
 {chr(10).join('  ' + line for line in body_str.split(chr(10)))}
 """)
     except Exception as e:
-        logger.error(f"    ⚠️ Could not parse request body: {e}")
+        logger.error(f"    Could not parse request body: {e}")
     
     logger.error("═" * 80)
 
@@ -197,7 +197,7 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
     
     try:
         body = await request.json()
-    except:
+    except (json.JSONDecodeError, ValueError):
         body = {"error": "Could not parse request body"}
     
     # Get error list
@@ -271,7 +271,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             }
         )
     
-    logger.info("✅ Custom exception handlers registered")
+    logger.info("Custom exception handlers registered")
 
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:

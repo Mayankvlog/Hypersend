@@ -367,7 +367,7 @@ async def register(user: UserCreate) -> UserResponse:
     except HTTPException:
         raise
     except Exception as e:
-        auth_log(f"❌ Registration error: {type(e).__name__}: {str(e)}")
+        auth_log(f"Registration error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}"
@@ -436,77 +436,9 @@ async def login(credentials: UserLogin, request: Request) -> Token:
     except HTTPException:
         raise
     except Exception as e:
-        auth_log(f"❌ Login error: {type(e).__name__}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login failed: {str(e)}"
-        )
-
-@router.post("/refresh", response_model=Token)
-async def refresh_token(refresh_request: RefreshTokenRequest) -> Token:
-    """Refresh access token using refresh token"""
-    try:
-        auth_log(f"Token refresh attempt")
-        
-        # Decode refresh token
-        token_data = decode_token(refresh_request.refresh_token)
-        user_id = token_data.sub
-        
-        # Get user
-        user = await users_collection().find_one({"_id": ObjectId(user_id)})
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found"
-            )
-        
-        # Create new access token
-        access_token = create_access_token(
-            data={"sub": user_id},
-            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        )
-        
-        auth_log(f"✓ Token refreshed for user: {user_id}")
-        
-        return Token(
-            access_token=access_token,
-            refresh_token=refresh_request.refresh_token,
-            token_type="bearer"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        auth_log(f"❌ Token refresh error: {type(e).__name__}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token refresh failed"
-        )
-
-@router.post("/logout")
-async def logout(current_user: str = Depends(get_current_user)) -> dict:
-    """Logout user by invalidating refresh tokens"""
-    try:
-        auth_log(f"Logout for user: {current_user}")
-        
-        # Invalidate refresh tokens
-        await refresh_tokens_collection().update_many(
-            {"user_id": current_user},
-            {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
-        )
-        
-        # Update user status
-        await users_collection().update_one(
-            {"_id": ObjectId(current_user)},
-            {"$set": {"is_online": False, "updated_at": datetime.now(timezone.utc)}}
-        )
-        
-        auth_log(f"✓ Logout successful for user: {current_user}")
-        
-        return {"message": "Logged out successfully", "success": True}
-        
-    except Exception as e:
-        auth_log(f"❌ Logout error: {type(e).__name__}: {str(e)}")
+        auth_log(f"Login error: {type(e).__name__}: {str(e)}")
+        auth_log(f"Token refresh error: {type(e).__name__}: {str(e)}")
+        auth_log(f"Logout error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Logout failed: {str(e)}"

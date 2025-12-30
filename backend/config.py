@@ -109,7 +109,7 @@ class Settings:
     USE_MOCK_DB: bool = use_mock_db_env.lower() in ("true", "1", "yes")
     print(f"[CONFIG] USE_MOCK_DB final: {USE_MOCK_DB}")
     if USE_MOCK_DB:
-        print("[CONFIG] ⚠️ USING MOCK DATABASE - FOR TESTING ONLY")
+        print("[CONFIG] WARNING: USING MOCK DATABASE - FOR TESTING ONLY")
     
     # CRITICAL: Production safety check
     if not DEBUG and USE_MOCK_DB:
@@ -165,13 +165,13 @@ class Settings:
     def validate_email_config(self):
         """Validate email service configuration with enhanced checking"""
         if self.EMAIL_SERVICE_ENABLED:
-            print(f"[EMAIL] ✅ Email service configured with host: {self.SMTP_HOST}")
+            print(f"[EMAIL] Email service configured with host: {self.SMTP_HOST}")
             print(f"[EMAIL] Email from: {self.EMAIL_FROM}")
             print(f"[EMAIL] Rate limits: {self.EMAIL_RATE_LIMIT_PER_HOUR}/hour, {self.EMAIL_RATE_LIMIT_PER_DAY}/day")
             
             # Enhanced email format validation
             if '@' not in self.EMAIL_FROM or '.' not in self.EMAIL_FROM.split('@')[1]:
-                print(f"[EMAIL] ⚠️ WARNING: Invalid email format: {self.EMAIL_FROM}")
+                print(f"[EMAIL] WARNING: Invalid email format: {self.EMAIL_FROM}")
             
             # Validate SMTP configuration
             self._validate_smtp_config()
@@ -180,41 +180,30 @@ class Settings:
             if self.DEBUG:
                 self._test_email_service_on_startup()
         else:
-            print("[EMAIL] ❌ Email service NOT configured - password reset emails will not be sent")
+            print("[EMAIL] X Email service NOT configured - password reset emails will not be sent")
             print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
             
             if self.EMAIL_FALLBACK_ENABLED:
-                print("[EMAIL] 🔄 Fallback mode: Tokens returned in debug mode for testing")
+                print("[EMAIL] Fallback mode: Tokens returned in debug mode for testing")
             
             if self.EMAIL_AUTO_CONFIGURE:
-                print("[EMAIL] 🔧 Auto-configuration enabled - attempting to setup default email")
+                print("[EMAIL] Auto-configuration enabled - attempting to setup default email")
     
     def _validate_smtp_config(self):
         """Validate SMTP configuration details"""
         # Common SMTP port validation
         valid_ports = [25, 465, 587, 2525]
         if self.SMTP_PORT not in valid_ports:
-            print(f"[EMAIL] ⚠️ WARNING: Unusual SMTP port: {self.SMTP_PORT}")
+            print(f"[EMAIL] WARNING: Unusual SMTP port: {self.SMTP_PORT}")
             print("[EMAIL] Common ports: 25 (SMTP), 465 (SMTPS), 587 (SMTP+TLS), 2525")
         
         # Gmail-specific validation
         if "gmail.com" in self.SMTP_HOST.lower():
             if self.SMTP_PORT != 587 and self.SMTP_PORT != 465:
-                print("[EMAIL] ⚠️ WARNING: Gmail usually uses port 587 (TLS) or 465 (SSL)")
-        
-        # Check common configuration issues
-        if not self.SMTP_USE_TLS and self.SMTP_PORT in [587, 2525]:
-            print("[EMAIL] ⚠️ WARNING: Port {self.SMTP_PORT} typically requires TLS/SSL")
-    
-    def _test_email_service_on_startup(self):
-        """Test email service during startup in DEBUG mode"""
-        print("[EMAIL] 🧪 Testing email service on startup...")
-        test_ok, test_message = test_email_service()
-        
-        if test_ok:
-            print("[EMAIL] ✅ Email service test successful")
-        else:
-            print(f"[EMAIL] ❌ Email service test failed: {test_message}")
+                print("[EMAIL] WARNING: Gmail usually uses port 587 (TLS) or 465 (SSL)")
+            print("[EMAIL] WARNING: Port {self.SMTP_PORT} typically requires TLS/SSL")
+            print("[EMAIL] Email service test successful")
+            print(f"[EMAIL] Email service test failed: {test_message}")
             print("[EMAIL] Check SMTP configuration and network connectivity")
     
     def validate_production(self):
