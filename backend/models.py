@@ -607,6 +607,52 @@ class VerifyQRCodeResponse(BaseModel):
     user_id: Optional[str] = None
 
 
+class PasswordChangeRequest(BaseModel):
+    """Password change request model"""
+    old_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=6, max_length=128)
+    
+    @field_validator('old_password')
+    @classmethod
+    def validate_old_password(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Old password cannot be empty')
+        return v
+    
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v):
+        if not v or not v.strip():
+            raise ValueError('New password cannot be empty')
+        if len(v) < 6:
+            raise ValueError('New password must be at least 6 characters')
+        return v
+
+
+class EmailChangeRequest(BaseModel):
+    """Email change request model"""
+    password: str = Field(..., min_length=1)
+    email: str = Field(..., max_length=254)
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Password cannot be empty')
+        return v
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Email cannot be empty')
+        v = v.lower().strip()
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v):
+            raise ValueError('Invalid email format')
+        return v
+
+
 class TokenData(BaseModel):
     """Token data extracted from JWT payload"""
     user_id: str

@@ -573,7 +573,7 @@ async def logout_alias(current_user: str = Depends(get_current_user)):
 # Include debug routes (only in DEBUG mode, but router checks internally)
 if settings.DEBUG:
     app.include_router(debug.router, prefix="/api/v1")
-    print("[STARTUP] ✓ Debug routes registered")
+    print("[STARTUP] + Debug routes registered")
 
 
 
