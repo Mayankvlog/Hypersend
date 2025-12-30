@@ -12,25 +12,7 @@ class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> 
 
   @override
   Future<AppLocalizations> load(Locale locale) async {
-    return AppLocalizations(locale);
-  }
-
-  @override
-  bool shouldReload(LocalizationsDelegate<AppLocalizations> old) => false;
-}
-
-class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
-  const _AppLocalizationsDelegate();
-
-  @override
-  bool isSupported(Locale locale) {
-    return AppLocalizations.supportedLocales
-        .any((supportedLocale) => supportedLocale.languageCode == locale.languageCode);
-  }
-
-  @override
-  Future<AppLocalizations> load(Locale locale) async {
-    return AppLocalizations(locale);
+    return AppLocalizations();
   }
 
   @override
@@ -79,45 +61,24 @@ class AppLocalizations {
   static String get email => 'Email';
   static String get username => 'Username';
   static String get password => 'Password';
-static String get login => 'Login';
+  static String get login => 'Login';
   static String get logout => 'Logout';
   static String get register => 'Register';
   static String get forgotPassword => 'Forgot Password?';
   static String get savedMessages => 'Saved Messages';
   static String get online => 'Online';
   static String get offline => 'Offline';
-}
   static String get typing => 'typing...';
   static String get connectionLost => 'Connection Lost';
   static String get reconnecting => 'Reconnecting...';
   static String get noInternet => 'No Internet Connection';
   static String get serverError => 'Server Error';
   static String get somethingWentWrong => 'Something went wrong';
-static String get pleaseTryAgain => 'Please try again';
+  static String get pleaseTryAgain => 'Please try again';
 
-  static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationDelegate();
-
-  static AppLocalizations of(BuildContext context) {
-    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
-  }
+  static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationsDelegate();
 
   static AppLocalizations of(BuildContext context) {
-    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
-  }
-
-  static AppLocalizations of(BuildContext context) {
-    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
-  }
-
-  static AppLocalizations of(BuildContext context) {
-    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
-  }
-
-  static AppLocalizations of(BuildContext context) {
-    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
-  }
-
-  static AppLocalizations of(BuildContext context) {
-    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
+    return Localizations.of<AppLocalizations>(context, AppLocalizations) ?? AppLocalizations();
   }
 }

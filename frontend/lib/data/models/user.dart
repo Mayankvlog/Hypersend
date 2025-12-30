@@ -157,12 +157,10 @@ class User extends Equatable {
       if (trimmed.startsWith('/')) {
         return '${ApiConstants.serverBaseUrl}$trimmed';
       }
-      }
       // If it doesn't start with http or /, assume it's a relative path
       return '${ApiConstants.serverBaseUrl}/$trimmed';
     }
-    }
-  
+    
     // Fallback to avatar field
     final trimmed = avatar.trim();
     if (trimmed.startsWith('http')) return trimmed;
