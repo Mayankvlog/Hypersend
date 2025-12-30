@@ -465,7 +465,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         debugPrint('[CHAT_LIST] Authentication error detected');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: 'Session expired. Please login again.',
+            content: Text('Session expired. Please login again.'),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 4),
             action: SnackBarAction(
@@ -476,8 +476,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 context.go('/auth');
               },
             ),
-          ),
-        );
           ),
         );
       }

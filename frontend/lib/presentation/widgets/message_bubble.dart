@@ -43,10 +43,8 @@ class MessageBubble extends StatelessWidget {
                   ? (avatarUrl!.startsWith('http')
                       ? NetworkImage(avatarUrl!)
                       : NetworkImage('${ApiConstants.serverBaseUrl}${avatarUrl!}')
+                  )
                   : null,
-              onBackgroundImageError: (exception, stackTrace) {
-                // Fallback handled by child
-              },
               child: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/')
                   ? null
                   : Center(

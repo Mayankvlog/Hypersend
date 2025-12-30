@@ -24,35 +24,7 @@ class ApiService {
     }
   }
 
-  // Helper method to retry request with token refresh
-  Future<void> _retryWithTokenRefresh(DioException error, Function handler) async {
-    try {
-      final authSuccess = await this.authService.refreshToken();
-      _log('[API_ERROR] Token refresh result: $authSuccess');
-      
-      if (authSuccess) {
-        _log('[API_ERROR] Token refreshed successfully, retrying request');
-        
-        // Retry the original request
-        final retryOptions = error.requestOptions;
-        // Update auth header with new token
-        final newToken = await this.authService.getAuthToken();
-        if (newToken != null) {
-          retryOptions.headers['Authorization'] = 'Bearer $newToken';
-          _log('[API_ERROR] Retrying request with new token');
-          
-          // Make the retry request
-          final response = await _dio.fetch(retryOptions);
-          if (response.statusCode == 200) {
-            _log('[API_ERROR] Request succeeded after token refresh');
-            return handler.resolve(response);
-          }
-        }
-      }
-    } catch (refreshError) {
-      _log('[API_ERROR] Token refresh failed: $refreshError');
-    }
-  }
+  // Token refresh will be handled by error interceptor
 
   ApiService() {
     String url = ApiConstants.baseUrl;
@@ -151,9 +123,7 @@ class ApiService {
               _log('[API_ERROR] 401 Unauthorized on ${error.requestOptions.uri}');
               _log('[API_ERROR] Auth header present: ${error.requestOptions.headers.containsKey("Authorization")}');
               _log('[API_ERROR] Attempting token refresh for expired session');
-              
-              // Try to refresh token and retry request
-              _retryWithTokenRefresh(error, handler);
+              // Token refresh would be handled by interceptor in interceptors list
             }
             
             // Log 400 Bad Request with detailed debugging
@@ -641,33 +611,14 @@ class ApiService {
     }
   }
 
-  // New method to refresh access token
+  // Token refresh is handled via interceptor when 401 is encountered
+  // This method should not be called directly
+  @deprecated
   Future<bool> refreshAccessToken() async {
     try {
-      debugPrint('[API_REFRESH] Attempting to refresh access token');
-      final refreshToken = await serviceProvider.authService.getRefreshToken();
-      
-      if ((refreshToken ?? '').isEmpty) {
-        debugPrint('[API_REFRESH] No refresh token available');
-        return false;
-      }
-      
-      final response = await _dio.post(
-        '${ApiConstants.authEndpoint}/refresh',
-        data: {'refresh_token': refreshToken},
-      );
-      
-      if (response.statusCode == 200 && response.data['access'] != null) {
-        final newAccessToken = response.data['access'];
-        final newRefreshToken = response.data['refresh'];
-        
-        await serviceProvider.authService.persistTokens(
-          accessToken: newAccessToken,
-          refreshToken: newRefreshToken,
-        );
-        
-        debugPrint('[API_REFRESH] Access token refreshed successfully');
-        return true;
+      debugPrint('[API_REFRESH] Token refresh should be handled by interceptor');
+      // Deprecated: use AuthService directly instead
+      return false;
       } else {
         debugPrint('[API_REFRESH] Token refresh failed: ${response.data}');
         return false;
