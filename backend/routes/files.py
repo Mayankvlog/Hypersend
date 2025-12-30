@@ -861,9 +861,6 @@ async def download_file(
                 detail="Access denied"
             )
         file_path = resolved_path
-    except HTTPException:
-        # Re-raise HTTPException unchanged (e.g., 403 for traversal attempts)
-        raise
     except (OSError, ValueError) as path_error:
         _log("error", f"Invalid download path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
         raise HTTPException(
