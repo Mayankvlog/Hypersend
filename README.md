@@ -1,4 +1,4 @@
-# 🚀 HyperSend - WhatsApp-Style Chat & File Transfer Platform
+# 🚀 HyperSend - Chat & File Transfer Platform
 
 A modern, production-ready messaging application with large file transfer capabilities, multi-language support, and comprehensive security features. Built with Flutter frontend and FastAPI backend, supporting 40GB file transfers with chunked uploads and local storage.
 
@@ -6,7 +6,7 @@ A modern, production-ready messaging application with large file transfer capabi
 
 ### 📁 **File Transfer System**
 - **🔥 40GB File Support** - Transfer files up to 40GB with chunked uploads
-- **💾 Local Storage** - WhatsApp-style local file storage (no server dependency)
+- **💾 Local Storage** -  local file storage (no server dependency)
 - **⚡ Resumable Uploads** - Pause and resume large file transfers
 - **🧩 Chunked Transfer** - 4MB chunks for efficient large file handling
 - **🔒 File Validation** - Security checks for dangerous file types
