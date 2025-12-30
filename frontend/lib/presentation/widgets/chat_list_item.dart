@@ -193,9 +193,18 @@ class ChatListItem extends StatelessWidget {
       );
     }
 
-    final fullUrl = chat.avatar.startsWith('/') 
-        ? '${ApiConstants.serverBaseUrl}${chat.avatar}'
-        : chat.avatar;
+    // Handle avatar URL safely - prevent GET requests to POST endpoints
+    String? fullUrl;
+    if (chat.avatar != null && chat.avatar.isNotEmpty) {
+      if (chat.avatar.startsWith('/')) {
+        fullUrl = '${ApiConstants.serverBaseUrl}${chat.avatar}';
+      } else {
+        fullUrl = chat.avatar;
+      }
+    } else {
+      // No avatar URL - don't make any request
+      fullUrl = null;
+    }
 
     // Use a temporary user object (or simple logic) to get initials
     final initials = chat.name.length >= 2 
@@ -205,7 +214,7 @@ class ChatListItem extends StatelessWidget {
     return CircleAvatar(
       radius: 28,
       backgroundColor: AppTheme.cardDark,
-      backgroundImage: NetworkImage(fullUrl),
+      backgroundImage: fullUrl != null ? NetworkImage(fullUrl!) : null,
       onBackgroundImageError: (exception, stackTrace) {
         debugPrint('Error loading avatar: $exception');
       },

@@ -132,14 +132,28 @@ class FileTransferService {
           if (remaining.isNotEmpty) buffer.add(remaining);
 
           final checksum = sha256.convert(chunk).toString();
-          await _api.uploadChunk(
-            uploadId: uploadId,
-            chunkIndex: chunkIndex,
-            bytes: Uint8List.fromList(chunk),
-            chunkChecksum: checksum,
-          );
-          chunkIndex += 1;
-          sentBytes += chunk.length;
+          try {
+            await _api.uploadChunk(
+              uploadId: uploadId,
+              chunkIndex: chunkIndex,
+              bytes: Uint8List.fromList(chunk),
+              chunkChecksum: checksum,
+            );
+            debugPrint('[TRANSFER] Chunk $chunkIndex uploaded successfully (${chunk.length} bytes)');
+            chunkIndex += 1;
+            sentBytes += chunk.length;
+          } catch (e) {
+            debugPrint('[TRANSFER] Failed to upload chunk $chunkIndex: $e');
+            // Check if it's a validation error (400)
+            if (e.toString().contains('400') || e.toString().contains('Bad Request')) {
+              debugPrint('[TRANSFER] This might be a server configuration issue. Check:');
+              debugPrint('[TRANSFER] 1. Upload ID is valid and not expired');
+              debugPrint('[TRANSFER] 2. Chunk index is within valid range');
+              debugPrint('[TRANSFER] 3. File size is within limits');
+              debugPrint('[TRANSFER] 4. Content type is application/octet-stream');
+            }
+            rethrow;
+          }
 // Prevent double callback invocation
           final progress = sentBytes / fileSize;
           _updateProgress(transfer.id, progress, (_) {}); // Internal update only

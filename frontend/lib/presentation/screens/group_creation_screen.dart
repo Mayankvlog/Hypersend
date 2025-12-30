@@ -32,7 +32,10 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
   }
 
   Future<void> _loadContacts() async {
+    debugPrint('[GROUP_CREATE] Loading contacts for group creation');
+    
     if (!serviceProvider.authService.isLoggedIn) {
+      debugPrint('[GROUP_CREATE] User not logged in, redirecting to auth');
       if (!mounted) return;
       context.go('/auth');
       return;
@@ -44,12 +47,14 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     try {
       // Contacts functionality removed - get all users instead
       final users = await serviceProvider.apiService.searchUsers('');
+      debugPrint('[GROUP_CREATE] Loaded ${users.length} users for group creation');
       if (!mounted) return;
       setState(() {
         _users = users;
         _loading = false;
       });
     } catch (e) {
+      debugPrint('[GROUP_CREATE] Error loading users: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -60,7 +65,11 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
 
   Future<void> _createGroup() async {
     final name = _groupNameController.text.trim();
+    debugPrint('[GROUP_CREATE] Creating group with name: "$name"');
+    debugPrint('[GROUP_CREATE] Selected members: ${_selectedMemberIds.toList()}');
+    
     if (name.isEmpty) {
+      debugPrint('[GROUP_CREATE] Error: Group name is empty');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Group name is required')),
       );
@@ -69,6 +78,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
 
     // Ensure at least 1 other member besides current user
     if (_selectedMemberIds.isEmpty) {
+      debugPrint('[GROUP_CREATE] Error: No members selected');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Select at least 1 member')),
       );
@@ -76,21 +86,27 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     }
 
     try {
+      debugPrint('[GROUP_CREATE] Calling API to create group...');
       final res = await serviceProvider.apiService.createGroup(
         name: name,
         description: _groupDescriptionController.text.trim(),
         memberIds: _selectedMemberIds.toList(),
       );
+      debugPrint('[GROUP_CREATE] API response: $res');
       final groupId = (res['group_id'] ?? res['groupId'] ?? '').toString();
+      debugPrint('[GROUP_CREATE] Group created with ID: $groupId');
+      
       if (!mounted) return;
       context.pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Group created successfully')),
       );
       if (groupId.isNotEmpty) {
+        debugPrint('[GROUP_CREATE] Navigating to chat: /chat/$groupId');
         context.push('/chat/$groupId');
       }
     } catch (e) {
+      debugPrint('[GROUP_CREATE] Error creating group: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),

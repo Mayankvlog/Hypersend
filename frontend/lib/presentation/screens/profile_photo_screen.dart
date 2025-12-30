@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
@@ -31,9 +33,13 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   
   // Build NetworkImage with proper error handling to prevent infinite GET requests
   ImageProvider? _buildNetworkImage(String avatarUrl) {
+    // Only create NetworkImage if avatarUrl is not empty and doesn't point to POST endpoint
+    if (avatarUrl.isEmpty) return null;
+    
     if (avatarUrl.startsWith('http')) {
       return NetworkImage(avatarUrl);
-    } else if (avatarUrl.startsWith('/')) {
+    } else if (avatarUrl.startsWith('/') && !avatarUrl.endsWith('/')) {
+      // Only build NetworkImage for GET endpoints (not POST endpoints)
       return NetworkImage('${ApiConstants.serverBaseUrl}$avatarUrl');
     }
     return null;
@@ -281,35 +287,40 @@ Future<void> _handleSave() async {
         errorMessage = 'Cannot connect to server. Please check if server is running';
       } else if (errorString.contains('network') || errorString.contains('connection error')) {
         errorMessage = 'Network error. Please check your internet connection';
+      } else if (errorString.contains('method not allowed') || errorString.contains('405')) {
+        errorMessage = 'Method not allowed. Please update app or contact support.';
       } else if (errorString.contains('server error') || errorString.contains('500')) {
         errorMessage = 'Server error. Please try again later';
       } else if (errorString.contains('string should have at most 10 characters')) {
         errorMessage = 'Avatar initials too long. Please use 1-10 characters only.';
       } else if (errorString.contains('avatar_url too long') || errorString.contains('avatarurl must be 500 characters or less')) {
         errorMessage = 'Avatar URL is too long. Please use a shorter URL (max 500 characters).';
-      } else if (errorString.contains('avatar too long') || errorString.contains('avatar must be 10 characters or less')) {
-        errorMessage = 'Avatar initials are too long. Please use 1-10 characters only.';
-} else if (errorString.contains('name cannot be empty') || errorString.contains('name must be at least 2 characters')) {
+       } else if (errorString.contains('avatar too long') || errorString.contains('avatar must be 10 characters or less')) {
+         errorMessage = 'Avatar initials are too long. Please use 1-10 characters only.';
+       } else if (errorString.contains('name cannot be empty') || errorString.contains('name must be at least 2 characters')) {
          // This shouldn't happen on photo-only screen - log for debugging
          debugPrint('[PHOTO_SCREEN] Unexpected name validation error on photo upload: $errorString');
          errorMessage = 'Photo upload failed. This appears to be a server issue. Please try again.';
        } else if (errorString.contains('validation failed') && errorString.contains('avatar')) {
-         errorMessage = 'Photo validation failed. Please try a different image or check the format.';
-       } else if (errorString.contains('validation failed') || errorString.contains('validation error')) {
-         // For photo screen, be more specific about validation failures
-         if (errorString.contains('file') || errorString.contains('upload') || errorString.contains('image')) {
-           errorMessage = 'Photo upload failed. Please check image format (JPG, PNG) and file size.';
-         } else {
-           errorMessage = 'Photo upload failed due to server validation. Please try again.';
-         }
-       } else if (errorString.contains('validation') && !errorString.contains('avatar')) {
-          // For photo screen, hide validation errors that don't make sense
-          errorMessage = 'Photo upload failed. Please try a different image or check your connection.';
-       } else if (errorString.contains('invalid') && !errorString.contains('avatar')) {
-          errorMessage = 'Photo upload failed. Please check the image and try again.';
-       } else if (errorString.isNotEmpty) {
-        errorMessage = e.toString();
-      }
+          errorMessage = 'Photo validation failed. Please try a different image or check the format.';
+        } else if (errorString.contains('validation failed') || errorString.contains('validation error')) {
+          // For photo screen, be more specific about validation failures
+          if (errorString.contains('file') || errorString.contains('upload') || errorString.contains('image')) {
+            errorMessage = 'Photo upload failed. Please check image format (JPG, PNG) and file size.';
+          } else {
+            errorMessage = 'Photo upload failed due to server validation. Please try again.';
+          }
+        } else if (errorString.contains('invalid data provided')) {
+          // Catch specific backend validation error
+          errorMessage = 'Photo upload failed. Please check image format and try again.';
+        } else if (errorString.contains('validation') && !errorString.contains('avatar')) {
+           // For photo screen, hide validation errors that don't make sense
+           errorMessage = 'Photo upload failed. Please try a different image or check your connection.';
+        } else if (errorString.contains('invalid') && !errorString.contains('avatar')) {
+           errorMessage = 'Photo upload failed. Please check image and try again.';
+        } else if (errorString.isNotEmpty) {
+         errorMessage = e.toString();
+       }
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

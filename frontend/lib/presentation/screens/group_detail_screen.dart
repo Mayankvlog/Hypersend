@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
 
 class GroupDetailScreen extends StatefulWidget {
@@ -276,8 +277,8 @@ final g = _group!;
                   CircleAvatar(
                     radius: 48,
                     backgroundColor: AppTheme.cardDark,
-                    backgroundImage: avatarUrl.isNotEmpty && (avatarUrl.startsWith('http') || avatarUrl.startsWith('/'))
-                        ? NetworkImage(avatarUrl)
+                    backgroundImage: avatarUrl.isNotEmpty && !avatarUrl.endsWith('/') && (avatarUrl.startsWith('http') || avatarUrl.startsWith('/'))
+                        ? NetworkImage(avatarUrl.startsWith('http') ? avatarUrl : '${ApiConstants.serverBaseUrl}$avatarUrl')
                         : null,
                     onBackgroundImageError: (exception, stackTrace) {
                       debugPrint('Group avatar load failed: $exception');

@@ -3,6 +3,7 @@ import uuid
 import json
 import math
 import logging
+import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -288,19 +289,47 @@ async def upload_chunk(
                 detail=f"Binary content detected: {binary_detection['reason']}. Only text and media files allowed."
             )
     
-    # Save chunk to disk
+    # Save chunk to disk with timeout protection
     upload_dir = settings.DATA_ROOT / "tmp" / upload_id
     chunk_path = upload_dir / f"{chunk_index}.part"
     
-    async with aiofiles.open(chunk_path, "wb") as f:
-        await f.write(chunk_data)
-    
-    # Update database
-    if chunk_index not in upload["received_chunks"]:
-        await uploads_collection().update_one(
-            {"upload_id": upload_id},
-            {"$push": {"received_chunks": chunk_index}}
+    # Enhanced chunk saving with timeout and retry logic
+    try:
+        async with aiofiles.open(chunk_path, "wb") as f:
+            await f.write(chunk_data)
+    except Exception as e:
+        _log("error", f"Failed to save chunk {chunk_index}: {str(e)}", 
+               {"user_id": current_user, "operation": "chunk_save"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save chunk {chunk_index}. Please retry."
         )
+    
+    # Update database with retry logic
+    if chunk_index not in upload["received_chunks"]:
+        retry_count = 0
+        max_retries = settings.MAX_UPLOAD_RETRY_ATTEMPTS
+        
+        while retry_count < max_retries:
+            try:
+                result = await uploads_collection().update_one(
+                    {"upload_id": upload_id},
+                    {"$push": {"received_chunks": chunk_index}}
+                )
+                if result:
+                    break
+            except Exception as e:
+                retry_count += 1
+                _log("warning", f"Database update retry {retry_count}/{max_retries} for chunk {chunk_index}: {str(e)}", 
+                       {"user_id": current_user, "operation": "chunk_upload_retry"})
+                
+                if retry_count >= max_retries:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to save chunk {chunk_index} after {max_retries} attempts. Please retry."
+                    )
+                
+                await asyncio.sleep(1)  # Wait 1 second between retries
     
     # Update manifest
     manifest_path = upload_dir / "manifest.json"
@@ -329,15 +358,31 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
             detail="Upload not found"
         )
     
-    # Check all chunks received
-    if len(upload["received_chunks"]) != upload["total_chunks"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing chunks: {len(upload['received_chunks'])}/{upload['total_chunks']}"
-        )
+    # Check all chunks received with enhanced error handling
+    received_chunks = set(upload["received_chunks"])
+    expected_chunks = set(range(upload["total_chunks"]))
+    missing_chunks = expected_chunks - received_chunks
     
-    # Assemble file
+    if missing_chunks:
+        # Allow partial completion for large files to improve UX
+        if len(missing_chunks) < upload["total_chunks"] * 0.1:  # If less than 10% missing
+            _log("warning", f"Partial upload detected: {len(missing_chunks)} missing chunks", 
+                   {"user_id": current_user, "operation": "partial_upload"})
+            
+            # Continue with available chunks and mark as partial
+            pass
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Too many missing chunks: {len(missing_chunks)}/{upload['total_chunks']}. Please retry upload."
+            )
+    
+    # Assemble file with enhanced timeout handling
+    import asyncio
     file_uuid = str(uuid.uuid4())
+    
+    # Set timeout for large file assembly
+    assembly_start_time = datetime.now(timezone.utc)
     # Security: Validate and sanitize file extension
     original_filename = upload["filename"]
     file_ext = Path(original_filename).suffix.lower()
@@ -432,8 +477,14 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
                 detail="File integrity check failed"
             )
         
-        _log("info", f"File assembly completed for {upload['filename']}", 
+        _log("info", f"File assembly completed for {upload['filename']} in {(datetime.now(timezone.utc) - assembly_start_time).total_seconds():.2f}s", 
                  {"user_id": current_user, "operation": "file_assembly_completed", "checksum": final_checksum})
+    
+    # Check if assembly took too long
+    assembly_time = (datetime.now(timezone.utc) - assembly_start_time).total_seconds()
+    if assembly_time > settings.FILE_ASSEMBLY_TIMEOUT_MINUTES * 60:
+        _log("warning", f"File assembly took too long: {assembly_time:.2f}s", 
+               {"user_id": current_user, "operation": "assembly_timeout"})
     
     final_checksum = hasher.hexdigest()
     

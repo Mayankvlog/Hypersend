@@ -44,8 +44,8 @@ class ApiService {
         receiveTimeout: const Duration(hours: 2),
         sendTimeout: const Duration(minutes: 5),
         contentType: 'application/json',
-        // Allow all status codes to be handled by interceptors for proper 4xx error handling
-        validateStatus: (status) => status != null && status < 500,
+        // Allow only 2xx and 3xx status codes - treat 4xx as errors
+        validateStatus: (status) => status != null && (status >= 200 && status < 400),
         headers: {
           'User-Agent': 'Zaply-Flutter-Web/1.0',
           'Accept': 'application/json',
@@ -106,10 +106,36 @@ class ApiService {
             _log('[API_ERROR] Backend unreachable - ensure server is running');
           } else {
             _log('[API_ERROR] HTTP ${error.response?.statusCode}: ${error.message}');
+            
+            // Special handling for 405 Method Not Allowed to prevent infinite loops
+            if (error.response?.statusCode == 405) {
+              _log('[API_ERROR] 405 Method Not Allowed on ${error.requestOptions.uri}');
+              _log('[API_ERROR] Used method: ${error.requestOptions.method}');
+              _log('[API_ERROR] Expected method: POST (for avatar upload)');
+              _log('[API_ERROR] ERROR: 405 errors should NOT be retried under any circumstances!');
+            }
+            
             // Log 401 specifically with headers info for debugging
             if (error.response?.statusCode == 401) {
               _log('[API_ERROR] 401 Unauthorized on ${error.requestOptions.uri}');
               _log('[API_ERROR] Auth header present: ${error.requestOptions.headers.containsKey("Authorization")}');
+            }
+            
+            // Log 400 Bad Request with detailed debugging
+            if (error.response?.statusCode == 400) {
+              _log('[API_ERROR] 400 Bad Request on ${error.requestOptions.uri}');
+              _log('[API_ERROR] Method: ${error.requestOptions.method}');
+              _log('[API_ERROR] Request URL: ${error.requestOptions.uri}');
+              _log('[API_ERROR] Request data size: ${error.requestOptions.data?.length ?? 0} bytes');
+              _log('[API_ERROR] Response data: ${error.response?.data}');
+              
+              // Try to extract more specific error info
+              if (error.response?.data is Map) {
+                final responseData = error.response!.data as Map;
+                _log('[API_ERROR] Error detail: ${responseData['detail']}');
+              }
+              
+              _log('[API_ERROR] TROUBLESHOOTING: Check upload_id validity, chunk_index range, file size, content-type');
             }
           }
           return handler.next(error);
@@ -753,6 +779,10 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
             'Accept': 'application/json',
             // Remove Content-Type to let Dio handle multipart/form-data with proper boundary
           },
+          // Explicitly disable redirects to prevent 301/302 -> GET conversion
+          followRedirects: false,
+          // Ensure we only allow 2xx responses as success
+          validateStatus: (status) => status != null && status >= 200 && status < 300,
         ),
       );
       
@@ -765,6 +795,13 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
       debugPrint('[API_SERVICE] DioException during avatar upload: ${e.type} - ${e.message}');
       debugPrint('[API_SERVICE] Response status: ${e.response?.statusCode}');
       debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
+      
+      // Special handling for 405 Method Not Allowed - prevent any retry attempts
+      if (e.response?.statusCode == 405) {
+        final errorMessage = 'Method Not Allowed: Avatar upload only supports POST requests. Please check your app configuration.';
+        debugPrint('[API_SERVICE] 405 ERROR: $errorMessage');
+        throw Exception(errorMessage);
+      }
       
       String errorMessage = _getAvatarUploadErrorMessage(e.response?.statusCode, e.response?.data);
       throw Exception(errorMessage);
@@ -848,6 +885,7 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
       case 401: return customMessage ?? 'Authentication required for avatar upload. Please login.';
       case 403: return customMessage ?? 'Avatar upload forbidden. You may not have permission.';
       case 404: return customMessage ?? 'Avatar upload endpoint not found. Please update app.';
+      case 405: return customMessage ?? 'Method Not Allowed: Avatar upload only supports POST requests. This error cannot be retried.';
       case 408: return customMessage ?? 'Avatar upload timeout. Please check connection and try again.';
       case 413: return customMessage ?? 'Avatar file too large. Please use a smaller image.';
       case 415: return customMessage ?? 'Unsupported image format. Please use JPG, PNG, or GIF.';
@@ -1144,17 +1182,24 @@ Future<void> postToChannel(String channelId, String text) async {
     required Uint8List bytes,
     String? chunkChecksum,
   }) async {
+    debugPrint('[API_SERVICE] Uploading chunk $chunkIndex for upload $uploadId (${bytes.length} bytes)');
+    
+    final url = '${ApiConstants.filesEndpoint}/$uploadId/chunk?chunk_index=$chunkIndex';
+    debugPrint('[API_SERVICE] Chunk upload URL: $url');
+    
     await _dio.put(
-      '${ApiConstants.filesEndpoint}/$uploadId/chunk',
+      url,
       data: bytes,
-options: Options(
+      options: Options(
         contentType: 'application/octet-stream',
         sendTimeout: const Duration(minutes: 30),
         headers: {
           if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
         },
+        // Ensure no redirects and proper validation
+        followRedirects: false,
+        validateStatus: (status) => status != null && status < 500,
       ),
-      queryParameters: {'chunk_index': chunkIndex},
     );
   }
 

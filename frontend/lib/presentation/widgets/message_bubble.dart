@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/constants/api_constants.dart';
 import '../../core/utils/time_formatter.dart';
 import '../../data/models/message.dart';
 import 'message_reactions_bar.dart';
@@ -38,13 +39,15 @@ class MessageBubble extends StatelessWidget {
             CircleAvatar(
               radius: 16,
               backgroundColor: AppTheme.cardDark,
-              backgroundImage: avatarUrl!.startsWith('http')
-                  ? NetworkImage(avatarUrl!)
+              backgroundImage: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/')
+                  ? (avatarUrl!.startsWith('http')
+                      ? NetworkImage(avatarUrl!)
+                      : NetworkImage('${ApiConstants.serverBaseUrl}${avatarUrl!}'))
                   : null,
               onBackgroundImageError: (exception, stackTrace) {
                 // Fallback handled by child
               },
-              child: avatarUrl!.startsWith('http')
+              child: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/')
                   ? null
                   : Center(
                       child: Text(

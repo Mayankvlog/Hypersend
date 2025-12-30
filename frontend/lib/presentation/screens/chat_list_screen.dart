@@ -463,6 +463,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   void _openMainMenu() {
+    debugPrint('[CHAT_LIST] Main menu opened');
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -503,13 +504,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   context.push('/profile-edit');
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.group_add, color: AppTheme.primaryCyan),
-                title: const Text('Create Group'),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.push('/group-create');
-                },
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    debugPrint('[CHAT_LIST] Group creation from menu pressed');
+                    Navigator.pop(context);
+                    context.push('/group-create');
+                  },
+                  icon: const Icon(Icons.group_add),
+                  label: const Text('Create Group'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryCyan,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 48),
+                  ),
+                ),
               ),
               ListTile(
                 leading: const Icon(Icons.settings, color: AppTheme.primaryCyan),
@@ -562,18 +572,40 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.group_add),
-            onPressed: () {
-              Navigator.pop(context);
-              context.push('/group-create');
-            },
-            tooltip: 'Create Group',
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            child: ElevatedButton.icon(
+              onPressed: () {
+                debugPrint('[CHAT_LIST] Group creation button pressed');
+                Navigator.pop(context);
+                context.push('/group-create');
+              },
+              icon: const Icon(Icons.group_add, size: 20),
+              label: const Text('Group', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryCyan,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                minimumSize: const Size(80, 36),
+              ),
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.person_add),
-            onPressed: _showAddContactDialog,
-            tooltip: 'Add Contact',
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            child: ElevatedButton.icon(
+              onPressed: () {
+                debugPrint('[CHAT_LIST] Add contact button pressed');
+                _showAddContactDialog();
+              },
+              icon: const Icon(Icons.person_add, size: 20),
+              label: const Text('Contact', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryCyan,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                minimumSize: const Size(80, 36),
+              ),
+            ),
           ),
         ],
       ),
