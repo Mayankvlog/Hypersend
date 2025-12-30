@@ -558,9 +558,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       // Get file metadata first to determine file type
       final fileInfo = await _getFileInfo(fileId);
       final contentType = fileInfo['content_type'] ?? 'application/octet-stream';
+      // Enhanced file type detection for better download handling
       final isPDF = contentType.toLowerCase().contains('pdf');
+      final isImage = contentType.toLowerCase().contains('image');
+      final isVideo = contentType.toLowerCase().contains('video');
+      final isAudio = contentType.toLowerCase().contains('audio');
+      final isText = contentType.toLowerCase().contains('text');
       
-      debugPrint('[FILE_DOWNLOAD] File type: $contentType, isPDF: $isPDF');
+      debugPrint('[FILE_DOWNLOAD] File type: $contentType, isPDF: $isPDF, isImage: $isImage, isVideo: $isVideo');
       
       if (kIsWeb) {
         // For web, create blob URL and open in new tab

@@ -262,21 +262,55 @@ async def auth_options(request: Request):
     from config import settings
     import re
     
+    def _is_valid_domain_format(domain: str) -> bool:
+        """Validate domain format to prevent malformed origins"""
+        # Strict domain validation - prevents double dots, starting hyphens, etc.
+        domain_pattern = r'^(?!-)(?!.*?-$)(?!.*?\.\.)[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$'
+        return bool(re.match(domain_pattern, domain))
+    
+    def _is_valid_origin_format(origin: str) -> bool:
+        """Validate full origin URL format"""
+        # Parse URL to validate components separately
+        try:
+            parsed = re.match(r'^(https?):\/\/([a-zA-Z0-9.-]+)(?::\d+)?(?:\/.*)?$', origin)
+            if not parsed:
+                return False
+            
+            scheme = parsed.group(1)
+            domain = parsed.group(2)
+            
+            # For localhost, allow HTTP regardless of DEBUG mode
+            if domain.startswith('localhost') or domain.startswith('127.0.0.1'):
+                return True
+            
+            # Only allow HTTPS in production for non-localhost domains
+            if not settings.DEBUG and scheme != 'https':
+                return False
+            
+            # For other domains, require HTTPS and validate domain format
+            if scheme != 'https':
+                return False
+            
+            # Validate domain part separately
+            return _is_valid_domain_format(domain)
+            
+        except Exception:
+            return False
+    
     def get_safe_cors_origin(request_origin: Optional[str]) -> str:
-        """Get safe CORS origin with validation"""
+        """Get safe CORS origin with validation - NO code duplication"""
         if not request_origin:
             return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
         
-        # Validate origin format
-        origin_pattern = r'^https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/.*)?$'
-        if not re.match(origin_pattern, request_origin):
+        # Validate origin format strictly
+        if not _is_valid_origin_format(request_origin):
             return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
         
-        # Check if origin is in allowed list
+        # Check if origin is explicitly in allowed list
         if request_origin in settings.CORS_ORIGINS:
             return request_origin
         
-        # Return default origin
+        # Return first allowed origin as safe fallback
         return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
     
     cors_origin = get_safe_cors_origin(request.headers.get("origin", ""))

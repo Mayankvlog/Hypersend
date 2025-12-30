@@ -40,18 +40,48 @@ class ProfileService {
         debugPrint('[PROFILE_SERVICE] ERROR: AvatarUrl field extremely long. Truncating.');
         avatarUrl = avatarUrl.substring(0, 2000);  // Truncate instead of throwing
       }
+      
+      // Helper function to detect avatar-only updates (NO duplication)
+    bool _isAvatarOnlyUpdate({
+      String? name,
+      String? username, 
+      String? email,
+      String? bio,
+      String? avatar,
+      String? avatarUrl,
+    }) {
+      return (avatar != null || avatarUrl != null) && 
+             name == null && 
+             username == null && 
+             email == null && 
+             bio == null;
+    }
+    
     if (_currentUser == null) {
       throw Exception('No user logged in');
     }
 
     try {
-      // Validate name - only if name is being updated
-      if (name != null) {
-        if (name.isEmpty && _currentUser!.name.isEmpty) {
-          throw Exception('Name cannot be empty. Please provide a valid name.');
-        }
-        if (name.isNotEmpty && name.length < 2) {
-          throw Exception('Name must be at least 2 characters long. Current length: ${name.length}');
+      final isAvatarOnlyUpdate = _isAvatarOnlyUpdate(
+        name: name,
+        username: username,
+        email: email,
+        bio: bio,
+        avatar: avatar,
+        avatarUrl: avatarUrl,
+      );
+      
+      if (isAvatarOnlyUpdate) {
+        debugPrint('[PROFILE_SERVICE] Avatar-only update detected - skipping field validation');
+      } else {
+        // Validate name - only if name is being updated
+        if (name != null) {
+          if (name.isEmpty && _currentUser!.name.isEmpty) {
+            throw Exception('Name cannot be empty. Please provide a valid name.');
+          }
+          if (name.isNotEmpty && name.length < 2) {
+            throw Exception('Name must be at least 2 characters long. Current length: ${name.length}');
+          }
         }
       }
 

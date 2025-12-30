@@ -162,7 +162,40 @@ class ProfileUpdate(BaseModel):
     email: Optional[str] = Field(None)  # Changed from EmailStr to str to handle validation manually
     avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
     bio: Optional[str] = Field(None, max_length=500)
-    avatar_url: Optional[str] = Field(None, max_length=500)
+    
+    @field_validator('bio')
+    @classmethod
+    def validate_bio(cls, v):
+        if v is None:
+            return v  # Bio is optional
+        if not v or not v.strip():
+            return None  # Empty bio becomes None
+        # Strip whitespace first, then validate length
+        v = v.strip()
+        # Validate length after stripping to prevent whitespace bypass
+        if len(v) > 500:
+            v = v[:500]  # Truncate if too long
+        # Remove potentially dangerous characters
+        import re
+        v = re.sub(r'[<>"\']', '', v)
+        return v
+    
+    avatar_url: Optional[str] = Field(None, max_length=512)  # Increased to accommodate full paths with UUIDs
+    
+    @field_validator('avatar_url')
+    @classmethod
+    def validate_avatar_url(cls, v):
+        if v is None:
+            return v  # Avatar URL is optional
+        if not isinstance(v, str):
+            return v
+        # Avatar URL should follow pattern: /api/v1/users/avatar/{filename}
+        if v and not v.startswith('/api/v1/users/avatar/'):
+            raise ValueError('Avatar URL must start with /api/v1/users/avatar/')
+        # Prevent directory traversal
+        if '..' in v or '\x00' in v:
+            raise ValueError('Avatar URL contains invalid characters')
+        return v
     
     @field_validator('name')
     @classmethod

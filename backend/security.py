@@ -53,8 +53,9 @@ class SecurityConfig:
     
     MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
     BLOCKED_FILE_EXTENSIONS = {
-        '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-        '.app', '.deb', '.pkg', '.dmg', '.rpm', '.deb', '.msi', '.dll'
+        '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
+        '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',
+        '.msi', '.dll', '.app', '.deb', '.rpm', '.dmg', '.pkg'  # Block all dangerous executables
     }
     
     @staticmethod

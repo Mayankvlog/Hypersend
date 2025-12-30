@@ -5,6 +5,7 @@ import math
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional, List
@@ -257,11 +258,11 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
     original_filename = upload["filename"]
     file_ext = Path(original_filename).suffix.lower()
     
-    # Security: Block dangerous extensions (case-insensitive)
+    # Security: Block all dangerous executable extensions (case-insensitive)
     dangerous_exts = {
         '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-        '.app', '.deb', '.rpm', '.dmg', '.pkg', '.msi', '.php', '.asp', '.jsp',
-        '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url'
+        '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',
+        '.msi', '.app', '.deb', '.rpm', '.dmg', '.pkg'  # Block all executables and installers
     }
     
     # Case-insensitive check for dangerous extensions
@@ -270,6 +271,8 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File type {file_ext} is not allowed for security reasons"
         )
+    
+    
     
     # Security: Double-extension check to prevent bypass
     filename_parts = original_filename.lower().split('.')
@@ -507,9 +510,33 @@ async def get_file_info(
                     timeout=5.0
                 )
                 file_stat = avatar_path.stat()
-                # Detect MIME type from file extension
+                # Enhanced MIME type detection from file extension
                 import mimetypes
                 content_type, _ = mimetypes.guess_type(str(avatar_path))
+                if not content_type:
+                    # Enhanced MIME type detection with comprehensive mappings
+                    ext = avatar_path.suffix.lstrip('.').lower()
+                    mime_map = {
+                        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                        'png': 'image/png', 'gif': 'image/gif',
+                        'webp': 'image/webp', 'bmp': 'image/bmp',
+                        'svg': 'image/svg+xml',
+                        'pdf': 'application/pdf',
+                        'doc': 'application/msword',
+                        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'txt': 'text/plain',
+                        'zip': 'application/zip',
+                        'rar': 'application/x-rar-compressed',
+                        'deb': 'application/x-debian-package',
+                        'rpm': 'application/x-rpm',
+                        'dmg': 'application/x-apple-diskimage',
+                        'pkg': 'application/x-newton-compatible-pkg',
+                        'mp4': 'video/mp4',
+                        'mp3': 'audio/mpeg',
+                        'avi': 'video/x-msvideo',
+                        'mov': 'video/quicktime',
+                    }
+                    content_type = mime_map.get(ext, 'application/octet-stream')
             
             if not user_doc:
                 _log("error", f"User not found for avatar file", {"user_id": current_user, "operation": "file_info"})
@@ -727,7 +754,9 @@ async def download_file(
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Content-Length": str(end - start + 1),
                 "Content-Type": file_doc["mime"],
-                "Accept-Ranges": "bytes"
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
+                "Cache-Control": "no-cache"
             }
         )
     
@@ -750,7 +779,9 @@ async def download_file(
             headers={
                 "Content-Length": str(file_size),
                 "Content-Type": file_doc["mime"],
-                "Accept-Ranges": "bytes"
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
+                "Cache-Control": "no-cache"
             }
         )
     
@@ -758,7 +789,11 @@ async def download_file(
     return FileResponse(
         file_path,
         media_type=file_doc["mime"],
-        filename=file_doc["filename"]
+        filename=file_doc["filename"],
+        headers={
+            "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
+            "Cache-Control": "no-cache"
+        }
     )
 
 

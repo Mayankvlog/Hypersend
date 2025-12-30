@@ -152,7 +152,7 @@ async def update_profile(
         logger.info(f"  - name: {profile_data.name} (type: {type(profile_data.name).__name__})")
         logger.info(f"  - username: {profile_data.username} (type: {type(profile_data.username).__name__})")
         logger.info(f"  - avatar: {profile_data.avatar} (type: {type(profile_data.avatar).__name__})")
-        logger.info(f"  - bio: {profile_data.bio} (type: {type(profile_data.bio).__name__})")
+        logger.info(f"  - bio: [REDACTED_FOR_PRIVACY] (type: {type(profile_data.bio).__name__})")
         logger.info(f"  - avatar_url: {profile_data.avatar_url} (type: {type(profile_data.avatar_url).__name__})")
         logger.debug(f"[EMAIL_PII] Email fields present but not logged for privacy")
         
@@ -227,10 +227,24 @@ async def update_profile(
             logger.info(f"✓ Username validation passed: {username}")
             update_data["username"] = username
         
-        # Process the bio and phone
+# Process the bio and phone
         if profile_data.bio is not None:
-            logger.info(f"✓ Bio set: {profile_data.bio[:50]}..." if len(profile_data.bio) > 50 else f"✓ Bio set: {profile_data.bio}")
-            update_data["bio"] = profile_data.bio
+            # Validate bio length and content
+            if len(profile_data.bio) > 500:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Bio/Status is too long. Maximum 500 characters allowed."
+                )
+            # Basic content sanitization
+            import re
+            sanitized_bio = re.sub(r'[<>"\']', '', profile_data.bio.strip())
+            if sanitized_bio != profile_data.bio.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Bio/Status contains invalid characters. Please use plain text only."
+                )
+            logger.info(f"✓ Bio set: [REDACTED_FOR_PRIVACY]")
+            update_data["bio"] = sanitized_bio
         
 
         

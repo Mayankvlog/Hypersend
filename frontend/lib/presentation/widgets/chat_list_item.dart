@@ -159,10 +159,25 @@ class ChatListItem extends StatelessWidget {
           : (chat.name.length >= 2 ? chat.name.substring(0, 2).toUpperCase() : chat.name.toUpperCase());
       
       IconData? typeIcon;
-      if (chat.type == ChatType.channel) typeIcon = Icons.campaign;
-      if (chat.type == ChatType.group) typeIcon = Icons.group;
-      if (chat.type == ChatType.supergroup) typeIcon = Icons.groups;
-      if (chat.type == ChatType.secret) typeIcon = Icons.lock;
+      // Enhanced type detection for better group chat display
+      switch (chat.type) {
+        case ChatType.channel:
+          typeIcon = Icons.campaign;
+          break;
+        case ChatType.group:
+          typeIcon = Icons.group;
+          break;
+        case ChatType.supergroup:
+          typeIcon = Icons.groups;
+          break;
+        case ChatType.secret:
+          typeIcon = Icons.lock;
+          break;
+        default:
+          // Handle unknown types gracefully
+          typeIcon = Icons.chat;
+          break;
+      }
       
       return Container(
         width: 56,

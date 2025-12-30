@@ -1170,7 +1170,7 @@ options: Options(
       savePath,
       onReceiveProgress: onReceiveProgress,
       options: Options(
-        headers: {'Range': 'bytes=0-'},  // Request range, not Accept-Ranges
+        headers: {},  // Remove Range header to get full file
       ),
     );
   }

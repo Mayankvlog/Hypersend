@@ -72,7 +72,7 @@ class Settings:
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment (VPS behind Nginx HTTPS)
     # Note: Nginx proxies /api/ to backend on port 8000, so full URL includes /api/v1
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://localhost:8000/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://example.com/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -123,38 +123,41 @@ class Settings:
         "http://localhost:8000",  # Backend direct access
         "http://127.0.0.1:3000",  # Alternative localhost
         "http://127.0.0.1:8000",  # Alternative localhost
-        "https://*.hypersend.com",  # Production domain pattern
-        "https://*.hypersend.io",    # Alternative production domain
+        "https://example.com",    # Production domain (replace with your actual domain)
+        "https://www.example.com", # Production domain with www (replace with your actual domain)
     ]
     
-    # NOTE: CORS origins should be configured per environment
-    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
-        "*",  # Allow all origins in development/local
-        "http://localhost",
-        "http://localhost:8000",
-        "http://localhost:3000",
-        "http://localhost:8550",
-        "http://127.0.0.1",
-        "http://127.0.0.1:8000",
-        "http://127.0.0.1:3000",
-        "http://0.0.0.0:8000",
-        "http://backend:8000",
-        "http://frontend",
-        # Add VPS IP / domain (HTTP + HTTPS) and production frontend
-        "http://139.59.82.105",
-        "http://139.59.82.105:8000",
-        "http://139.59.82.105:8550",
-        "https://139.59.82.105",
-        "https://139.59.82.105:8000",
-        # Production URLs should be configured via CORS_ORIGINS env var
-        "http://localhost:3000",
-        "http://localhost:8080",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8080",
-    ]
+    # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production
+    def _get_cors_origins(self) -> list:
+        """Get CORS origins based on environment"""
+        if self.DEBUG:
+            # Development: Allow specific localhost origins only
+            return [
+                "http://localhost",
+                "http://localhost:8000",
+                "http://localhost:3000",
+                "http://localhost:8550",
+                "http://127.0.0.1",
+                "http://127.0.0.1:8000",
+                "http://127.0.0.1:3000",
+                "http://0.0.0.0:8000",
+                "http://backend:8000",
+                "http://frontend",
+                "http://localhost:8080",
+                "http://127.0.0.1:8080",
+            ]
+        else:
+            # Production: Only allow specific domains
+            return [
+                "https://your-domain.com",  # Replace with your actual domain in production
+                "https://www.your-domain.com",  # Replace with your actual domain in production
+            ]
+    
+    CORS_ORIGINS: list = None  # Will be set in __init__ method
     
     def __init__(self):
         """Initialize settings and validate critical configuration"""
+        self.CORS_ORIGINS = self._get_cors_origins()
         self.validate_config()
     
     def validate_config(self):

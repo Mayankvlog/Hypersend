@@ -236,9 +236,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       );
     }
 
-    final g = _group!;
+final g = _group!;
     final name = (g['name'] ?? 'Group').toString();
     final description = (g['description'] ?? '').toString();
+    final avatarUrl = (g['avatar_url'] ?? g['avatar'] ?? '').toString();
 
     return Scaffold(
       appBar: AppBar(
@@ -271,13 +272,22 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               ),
               child: Column(
                 children: [
+// Enhanced group avatar display with URL support
                   CircleAvatar(
                     radius: 48,
                     backgroundColor: AppTheme.cardDark,
-                    child: Text(
-                      _initials(name),
-                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
-                    ),
+                    backgroundImage: avatarUrl.isNotEmpty && (avatarUrl.startsWith('http') || avatarUrl.startsWith('/'))
+                        ? NetworkImage(avatarUrl)
+                        : null,
+                    onBackgroundImageError: (exception, stackTrace) {
+                      debugPrint('Group avatar load failed: $exception');
+                    },
+                    child: avatarUrl.isEmpty || !(avatarUrl.startsWith('http') || avatarUrl.startsWith('/'))
+                        ? Text(
+                            _initials(name),
+                            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+                          )
+                        : null,
                   ),
                   const SizedBox(height: 12),
                   Text(name, style: Theme.of(context).textTheme.titleLarge),

@@ -54,18 +54,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     super.dispose();
   }
 
-  Future<void> _saveProfile() async {
+Future<void> _saveProfile() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Validate name
-      if (_nameController.text.trim().isEmpty) {
-        throw Exception('Name cannot be empty');
-      }
-      if (_nameController.text.trim().length < 2) {
-        throw Exception('Name must be at least 2 characters');
+      // Only validate name if it's being changed
+      if (_nameChanged) {
+        if (_nameController.text.trim().isEmpty) {
+          throw Exception('Name cannot be empty');
+        }
+        if (_nameController.text.trim().length < 2) {
+          throw Exception('Name must be at least 2 characters');
+        }
       }
       
       // Email is optional - only validate and send if changed and not empty
@@ -102,16 +104,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         nameToSend = newName;
       }
 
-      // Status field is treated as bio
+// Status field is treated as bio
       String? bioToSend;
-      if (_statusController.text.trim() != 'Available') {
-        bioToSend = _statusController.text.trim();
+      final newBio = _statusController.text.trim();
+      final currentBio = _initialUser.bio ?? 'Available'; // Use actual user bio from database
+      
+      if (newBio != currentBio) {
+        // Validate bio length (optional but should have reasonable limits)
+        if (newBio.length > 500) {
+          throw Exception('Status is too long. Maximum 500 characters allowed.');
+        }
+        bioToSend = newBio.isEmpty ? null : newBio;
       }
 
       debugPrint('[PROFILE_EDIT] Sending profile update: fields=${[nameToSend != null, usernameToSend != null, emailToSend != null, _avatarChanged, bioToSend != null]}');
 
-      // Check if at least one field is being updated (including avatar)
+// Check if at least one field is being updated (including avatar)
       if (nameToSend == null && usernameToSend == null && emailToSend == null && !_avatarChanged && bioToSend == null) {
+        debugPrint('[PROFILE_EDIT] No changes detected - skipping save');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('No changes to save'),
@@ -121,6 +131,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         setState(() => _isLoading = false);
         return;
       }
+      
+      debugPrint('[PROFILE_EDIT] Validation: nameChanged=$_nameChanged, usernameChanged=$_usernameChanged, emailChanged=$_emailChanged, avatarChanged=$_avatarChanged');
 
 // Disable save button to prevent race condition
       if (mounted) {
@@ -175,12 +187,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     } catch (e) {
       if (!mounted) return;
       
-      // Extract meaningful error message
+// Extract meaningful error message
       String errorMessage = 'Error: ${e.toString()}';
-if (e.toString().contains('422')) {
-        // Try to extract real validation error
-        final errorString = e.toString();
-        if (errorString.contains('avatar') || errorString.contains('picture')) {
+      final errorString = e.toString().toLowerCase();
+      
+      // Check for specific error types with more precise matching
+      if (errorString.contains('422')) {
+        // Only show validation error if it's not related to avatar-only operations
+        if (_avatarChanged && !_nameChanged && !_usernameChanged && !_emailChanged) {
+          // Avatar-only operation - don't show generic validation error
+          errorMessage = 'Profile picture update failed. Please try again.';
+        } else if (errorString.contains('avatar') || errorString.contains('picture')) {
           errorMessage = 'Profile picture issue: Please check image format or try a different photo.';
         } else if (errorString.contains('email')) {
           errorMessage = 'Email issue: Please check if this email is already in use or invalid.';
@@ -188,21 +205,29 @@ if (e.toString().contains('422')) {
           errorMessage = 'Username issue: This username may be taken or invalid.';
         } else if (errorString.contains('name')) {
           errorMessage = 'Name issue: Please provide a valid name (2+ characters).';
+        } else if (errorString.contains('bio') || errorString.contains('status') || errorString.contains('too long')) {
+          errorMessage = 'Status issue: Please check your status message and try again.';
         } else {
           errorMessage = 'Validation error: Please check all fields and try again.';
         }
-      } else if (e.toString().contains('409')) {
+      } else if (errorString.contains('409')) {
         errorMessage = 'Email already in use. Please try another email.';
       } else if (e.toString().contains('401')) {
         errorMessage = 'Unauthorized. Please login again.';
       } else if (e.toString().contains('404')) {
         errorMessage = 'User not found. Please try again.';
-      } else if (e.toString().contains('Email already')) {
+      } else if (errorString.contains('email already')) {
         errorMessage = 'Email already in use. Please try another email.';
-      } else if (e.toString().contains('Invalid email')) {
+      } else if (errorString.contains('invalid email')) {
         errorMessage = 'Invalid email format. Use: user@example.com';
-      } else if (e.toString().contains('at least')) {
+      } else if (errorString.contains('at least')) {
         errorMessage = e.toString();
+      } else if (errorString.contains('avatar') && (errorString.contains('upload') || errorString.contains('image'))) {
+        // Specific avatar upload errors
+        errorMessage = 'Profile picture upload failed. Please try again.';
+      } else if (_avatarChanged && !_nameChanged && !_usernameChanged && !_emailChanged) {
+        // Avatar-only operation with unknown error
+        errorMessage = 'Profile picture update failed. Please try again.';
       }
       
       debugPrint('[PROFILE_EDIT_ERROR] Error: $e');
@@ -304,12 +329,13 @@ if (e.toString().contains('422')) {
                         final scaffoldMessenger = ScaffoldMessenger.of(context);
 final result = await router.push('/profile-photo', extra: _currentAvatar);
                         if (!mounted) return;
-                        if (result != null && result is String) {
+if (result != null && result is String) {
                           debugPrint('[PROFILE_EDIT] Avatar updated successfully');
                           setState(() {
-                            _currentAvatar = result.trim();
-                            // Compare with initial avatar to determine change
-                            _avatarChanged = _currentAvatar != _initialUser.avatar;
+                            final newAvatar = result.trim();
+                            // Only mark as changed if the avatar actually changed
+                            _avatarChanged = newAvatar != _currentAvatar;
+                            _currentAvatar = newAvatar;
                           });
                           
                           // Show success message

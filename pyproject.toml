@@ -57,7 +57,8 @@ frontend = [
 [tool.hypersend]
 app_name = "Hypersend"
 backend_url_dev = "http://localhost:8000"
-backend_url_prod = "${PRODUCTION_API_URL}"
+backend_url_prod = "https://example.com/api/v1"
+backend_url_base = "https://example.com"
 frontend_dir = "frontend"
 backend_dir = "backend"
 

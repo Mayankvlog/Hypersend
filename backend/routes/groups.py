@@ -25,8 +25,9 @@ async def groups_options():
     from fastapi.responses import Response
     # SECURITY: Restrict CORS origins in production for authenticated endpoints
     from config import settings
+    from routes.auth import get_safe_cors_origin
     
-    cors_origin = settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
+    cors_origin = get_safe_cors_origin(request.headers.get("origin", ""))
     
     return Response(
         status_code=200,

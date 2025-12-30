@@ -787,7 +787,7 @@ cd frontend && flutter run  # Start Flutter app
 
 # Production Commands
 docker-compose -f docker-compose.prod.yml up -d
-# Visit https://your-domain.com
+# Visit https://example.com
 ```
 
 **HyperSend - Secure File Transfer, Simplified!** 🚀

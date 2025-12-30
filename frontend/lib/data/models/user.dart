@@ -139,8 +139,8 @@ class User extends Equatable {
       }
     }
     
-    // If it's very short (1-2 chars), it's definitely initials
-    if (trimmed.length <= 2) return false;
+    // If it's very short (1-3 chars), it's likely initials
+    if (trimmed.length <= 3) return false;
 
     // Fallback: If it contains a slash and is long enough, likely a path
     if (trimmed.contains('/') && trimmed.length > 5) return true;
