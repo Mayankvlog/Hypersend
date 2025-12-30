@@ -21,7 +21,7 @@ import jwt
 import smtplib
 from email.message import EmailMessage
 from collections import defaultdict
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # Email rate limiting tracking
@@ -255,7 +255,7 @@ def cleanup_old_login_attempts() -> None:
 @router.options("/qrcode/status/{session_id}")
 @router.options("/qrcode/cancel/{session_id}")
 @router.options("/qrcode/sessions")
-async def auth_options():
+async def auth_options(request: Request):
     """Handle CORS preflight for auth endpoints"""
     from fastapi.responses import Response
     # SECURITY: Restrict CORS origins in production for authenticated endpoints
