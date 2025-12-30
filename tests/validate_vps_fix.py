@@ -25,7 +25,7 @@ def print_header(text: str):
     print(f"{Colors.BOLD}{Colors.CYAN}{'='*70}{Colors.RESET}\n")
 
 def print_check(passed: bool, text: str):
-    status = f"{Colors.GREEN}✓ PASS{Colors.RESET}" if passed else f"{Colors.RED}✗ FAIL{Colors.RESET}"
+    status = f"{Colors.GREEN}[PASS] PASS{Colors.RESET}" if passed else f"{Colors.RED}[FAIL] FAIL{Colors.RESET}"
     print(f"  {status} {text}")
     return passed
 
@@ -146,7 +146,7 @@ def validate_fixes():
     print()
     
     if all(results):
-        print(f"{Colors.GREEN}{Colors.BOLD}✓ All fixes validated successfully!{Colors.RESET}")
+        print(f"{Colors.GREEN}{Colors.BOLD}[PASS] All fixes validated successfully!{Colors.RESET}")
         print()
         print("Next Steps:")
         print("  1. Rebuild frontend with:")
@@ -161,7 +161,7 @@ def validate_fixes():
         print()
         return 0
     else:
-        print(f"{Colors.RED}{Colors.BOLD}✗ Some fixes are missing!{Colors.RESET}")
+        print(f"{Colors.RED}{Colors.BOLD}[FAIL] Some fixes are missing!{Colors.RESET}")
         print()
         print("Please review the failed checks above and apply the fixes from:")
         print("  VPS_CONNECTIVITY_FIX.md")

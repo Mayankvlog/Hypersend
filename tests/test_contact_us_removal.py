@@ -49,7 +49,7 @@ class TestContactUsRemoval:
             assert pattern not in content, \
                 f"Help & Support navigation '{pattern}' should not be accessible from settings"
         
-        print("✓ Help & Support menu item removed from settings")
+        print("[PASS] Help & Support menu item removed from settings")
 
     def test_contact_tile_method_removed(self):
         """Test that unused _buildContactTile method is cleaned up"""
@@ -62,7 +62,7 @@ class TestContactUsRemoval:
         assert "_buildContactTile" not in content, \
             "Unused _buildContactTile method should be removed"
         
-        print("✓ Unused _buildContactTile method removed")
+        print("[PASS] Unused _buildContactTile method removed")
 
     def test_help_support_screen_still_exists(self):
         """Test that HelpSupportScreen file still exists (for potential future use)"""
@@ -77,7 +77,7 @@ class TestContactUsRemoval:
             assert "FREQUENTLY ASKED QUESTIONS" in content, \
                 "FAQ content should still be available"
             
-            print("✓ HelpSupportScreen file exists with FAQ content")
+            print("[PASS] HelpSupportScreen file exists with FAQ content")
         except FileNotFoundError:
             pytest.fail("HelpSupportScreen file should still exist")
 
@@ -93,7 +93,7 @@ class TestContactUsRemoval:
         assert "HelpSupportScreen" in content, \
             "HelpSupportScreen should still be registered in router"
         
-        print("✓ Router still has help-support route (prevents 404)")
+        print("[PASS] Router still has help-support route (prevents 404)")
 
     def test_contact_us_not_in_ui_flow(self):
         """Test that Contact Us is not accessible through normal UI navigation"""
@@ -109,7 +109,7 @@ class TestContactUsRemoval:
         assert help_support_pushes == 0, \
             "Help & Support should not be accessible from Settings menu"
         
-        print("✓ Contact Us/Help & Support not accessible through Settings menu")
+        print("[PASS] Contact Us/Help & Support not accessible through Settings menu")
 
     def test_feedback_functionality_preserved(self):
         """Test that Feedback functionality is still available in HelpSupportScreen"""
@@ -124,7 +124,7 @@ class TestContactUsRemoval:
         assert "Send Feedback" in content, "Send Feedback button should exist"
         assert "send feedback" in content.lower(), "Feedback feature should be available"
         
-        print("✓ Feedback functionality preserved in HelpSupportScreen")
+        print("[PASS] Feedback functionality preserved in HelpSupportScreen")
 
     def test_faq_content_preserved(self):
         """Test that FAQ content is preserved"""
@@ -145,7 +145,7 @@ class TestContactUsRemoval:
         for faq in faq_items:
             assert faq in content, f"FAQ item '{faq}' should be preserved"
         
-        print(f"✓ All {len(faq_items)} FAQ items preserved")
+        print(f"[PASS] All {len(faq_items)} FAQ items preserved")
 
     def test_no_email_contact_in_code(self):
         """Test that hardcoded email/phone contact info is removed from code"""
@@ -159,7 +159,7 @@ class TestContactUsRemoval:
         assert "+1 (555)" not in content, "Phone number should not be in code"
         assert "discuss.zaply.com" not in content, "Community forum URL should not be in code"
         
-        print("✓ No hardcoded email/phone/community links in code")
+        print("[PASS] No hardcoded email/phone/community links in code")
 
     def test_git_commit_message(self):
         """Test that the commit message clearly documents the change"""
@@ -178,7 +178,7 @@ class TestContactUsRemoval:
                "Help & Support" in commit_message or "help" in commit_message.lower(), \
             f"Commit message should document Contact Us removal: {commit_message}"
         
-        print(f"✓ Git commit message documents the change: {commit_message}")
+        print(f"[PASS] Git commit message documents the change: {commit_message}")
 
 
 class TestContactUsRemovalIntegration:
@@ -207,7 +207,7 @@ class TestContactUsRemovalIntegration:
         for item in menu_items:
             assert item in content, f"Menu item '{item}' should still exist"
         
-        print(f"✓ Settings screen maintains {len(menu_items)} other menu items")
+        print(f"[PASS] Settings screen maintains {len(menu_items)} other menu items")
 
     def test_no_broken_imports(self):
         """Test that file changes don't introduce broken imports"""
@@ -226,7 +226,7 @@ class TestContactUsRemovalIntegration:
         for import_stmt in required_imports:
             assert import_stmt in content, f"Required import missing: {import_stmt}"
         
-        print(f"✓ All {len(required_imports)} required imports present")
+        print(f"[PASS] All {len(required_imports)} required imports present")
 
     def test_no_orphaned_methods(self):
         """Test that removing Contact Us doesn't leave orphaned methods"""
@@ -239,7 +239,7 @@ class TestContactUsRemovalIntegration:
         assert "buildContactTile" not in content, \
             "Orphaned buildContactTile reference should not exist"
         
-        print("✓ No orphaned method references")
+        print("[PASS] No orphaned method references")
 
 
 class TestContactUsRemovalCompliance:
@@ -262,7 +262,7 @@ class TestContactUsRemovalCompliance:
         assert settings_content.count("help") == 0 or "help" not in settings_content.lower(), \
             "Help references should be removed from settings"
         
-        print("✓ Removal follows established code patterns")
+        print("[PASS] Removal follows established code patterns")
 
     def test_feature_flag_not_needed(self):
         """Test that no feature flag is needed (hard removal is appropriate)"""
@@ -278,7 +278,7 @@ class TestContactUsRemovalCompliance:
         assert "enableContactUs" not in content, \
             "Should not use feature flags for Contact Us"
         
-        print("✓ No feature flags needed - hard removal is appropriate")
+        print("[PASS] No feature flags needed - hard removal is appropriate")
 
 
 def run_all_tests():
@@ -311,9 +311,9 @@ def run_all_tests():
                 method()
                 passed_tests += 1
             except AssertionError as e:
-                print(f"✗ {test_method}: {str(e)}")
+                print(f"[FAIL] {test_method}: {str(e)}")
             except Exception as e:
-                print(f"✗ {test_method}: {type(e).__name__}: {str(e)}")
+                print(f"[FAIL] {test_method}: {type(e).__name__}: {str(e)}")
     
     print("\n" + "="*70)
     print(f"TEST RESULTS: {passed_tests}/{total_tests} tests passed")

@@ -18,16 +18,16 @@ def test_error(code, name, method, endpoint, **kwargs):
             r = requests.post(f"{BASE_URL}{endpoint}", timeout=5, **kwargs)
         
         if r.status_code == code:
-            print(f"  ✓ Got {code} as expected")
+            print(f"  [PASS] Got {code} as expected")
             data = r.json()
             print(f"  Error: {data.get('error')}")
             print(f"  Detail: {data.get('detail')}")
             errors_tested.append((code, True, data))
         else:
-            print(f"  ✗ Got {r.status_code} instead of {code}")
+            print(f"  [FAIL] Got {r.status_code} instead of {code}")
             errors_tested.append((code, False, {"status": r.status_code}))
     except Exception as e:
-        print(f"  ✗ Error: {e}")
+        print(f"  [FAIL] Error: {e}")
         errors_tested.append((code, False, {"error": str(e)}))
 
 print("=" * 80)
@@ -36,18 +36,18 @@ print(f"Testing: {BASE_URL}")
 print("=" * 80)
 
 # Wait for server to be ready
-print("\n🔍 Checking server availability...")
+print("\n[SCAN] Checking server availability...")
 for attempt in range(3):
     try:
         r = requests.get(f"{BASE_URL}/health", timeout=2)
-        print("✅ Server is ready")
+        print("[PASS] Server is ready")
         break
     except:
         if attempt < 2:
             print(f"⏳ Waiting for server... (attempt {attempt+1}/3)")
             time.sleep(2)
         else:
-            print("❌ Server not responding - aborting tests")
+            print("[FAIL] Server not responding - aborting tests")
             exit(1)
 
 # Test 400 Bad Request
@@ -79,7 +79,7 @@ try:
     print(f"First registration: {r1.status_code}")
     
     if r1.status_code == 201:
-        print(f"✓ First user created successfully")
+        print(f"[PASS] First user created successfully")
         print(f"Now attempting duplicate email registration...")
         test_error(409, "Conflict (Duplicate Email)", "POST", "/auth/register",
             json={"name": "User2", "email": email, "password": "Different123!"},
@@ -109,7 +109,7 @@ print("TEST SUMMARY")
 print("=" * 80)
 passed_count = sum(1 for _, passed, _ in errors_tested if passed)
 failed_count = sum(1 for _, passed, _ in errors_tested if not passed)
-print(f"✓ Passed: {passed_count}")
-print(f"✗ Failed: {failed_count}")
+print(f"[PASS] Passed: {passed_count}")
+print(f"[FAIL] Failed: {failed_count}")
 print(f"Total: {len(errors_tested)}")
 print("=" * 80)

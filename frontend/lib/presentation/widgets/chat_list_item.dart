@@ -153,10 +153,7 @@ class ChatListItem extends StatelessWidget {
     final isUrl = chat.avatar.startsWith('http') || chat.avatar.startsWith('/');
     
     if (!isUrl || chat.avatar.isEmpty) {
-      // If avatar field is not empty and not a URL, it might be initials (e.g., from default avatars)
-      final String initials = (chat.avatar.isNotEmpty && chat.avatar.length <= 3) 
-          ? chat.avatar.toUpperCase()
-          : (chat.name.length >= 2 ? chat.name.substring(0, 2).toUpperCase() : chat.name.toUpperCase());
+
       
       IconData? typeIcon;
       // Enhanced type detection for better group chat display
@@ -187,16 +184,11 @@ class ChatListItem extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: Center(
-          child: typeIcon != null 
-            ? Icon(typeIcon, color: AppTheme.primaryCyan, size: 24)
-            : Text(
-                initials,
-                style: const TextStyle(
-                  color: AppTheme.primaryCyan,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+          child: Icon(
+            typeIcon,
+            color: AppTheme.primaryCyan,
+            size: 24,
+          ),
         ),
       );
     }

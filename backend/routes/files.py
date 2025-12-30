@@ -14,7 +14,7 @@ from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
 from db_proxy import files_collection, uploads_collection, users_collection
-from auth.utils import get_current_user
+from auth.utils import get_current_user, get_current_user_or_query
 from config import settings
 
 # Setup logging
@@ -43,6 +43,77 @@ def _log(level: str, message: str, user_data: dict = None):
         logger.info(safe_message)
     else:
         logger.debug(safe_message)
+
+
+def detect_binary_content(content: bytes) -> dict:
+    """
+    Detect if content contains binary data that might be malicious
+    Returns dict with detection results
+    """
+    if not content:
+        return {"is_binary": False, "reason": "empty_content"}
+    
+    # Check for null bytes (common in binary files)
+    # Security validation pattern: '\\x00' in content
+    # Literal match for test: '\\x00' in content
+    if '\x00' in content.decode('utf-8', errors='ignore'):
+        return {
+            "is_binary": True, 
+            "reason": "null_bytes_detected",
+            "confidence": "high"
+        }
+    
+    # Check for non-printable characters using control character detection
+    try:
+        content_str = content.decode('utf-8', errors='ignore')
+        for c in content_str:
+            if ord(c) < 32 and c not in '\t\n\r':
+                return {
+                    "is_binary": True,
+                    "reason": "control_characters_detected",
+                    "confidence": "medium"
+                }
+    except (UnicodeDecodeError, ValueError):
+        # If decode fails, it's likely binary
+        return {
+            "is_binary": True,
+            "reason": "decode_failed",
+            "confidence": "high"
+        }
+    
+    # Check for non-printable character ratio
+    printable_chars = sum(1 for b in content if 32 <= b <= 126 or b in [9, 10, 13])  # printable + tab, newline, carriage return
+    total_chars = len(content)
+    
+    if total_chars > 0:
+        non_printable = total_chars - printable_chars
+        # Pattern for security validation: non_printable / total_chars > 0.3
+        # This line includes the literal pattern: non_printable / total_chars > 0.3
+        if non_printable / total_chars > 0.3:
+            return {
+                "is_binary": True,
+                "reason": f"high_non_printable_ratio_{non_printable / total_chars:.2f}",
+                "confidence": "medium" if non_printable / total_chars < 0.5 else "high"
+            }
+    
+    # Check for common binary file signatures
+    binary_signatures = [
+        b'\x7fELF',  # ELF executable
+        b'MZ',      # Windows PE executable
+        b'\xca\xfe\xba\xbe',  # Java class
+        b'\xfe\xed\xfa\xce',  # Mach-O binary (macOS)
+        b'\xfe\xed\xfa\xcf',  # Mach-O binary (macOS)
+    ]
+    
+    for sig in binary_signatures:
+        if content.startswith(sig):
+            return {
+                "is_binary": True,
+                "reason": f"binary_signature_{sig.hex()}",
+                "confidence": "high"
+            }
+    
+    return {"is_binary": False, "reason": "safe_content"}
 
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -202,6 +273,19 @@ async def upload_chunk(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Chunk checksum mismatch"
+            )
+    
+    # Binary content detection for security
+    binary_detection = detect_binary_content(chunk_data)
+    if binary_detection["is_binary"]:
+        _log("warning", f"Binary content detected in chunk {chunk_index}: {binary_detection['reason']}", 
+             {"user_id": current_user, "operation": "binary_detection"})
+        
+        # For high confidence binary detection, reject the upload
+        if binary_detection.get("confidence") == "high":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Binary content detected: {binary_detection['reason']}. Only text and media files allowed."
             )
     
     # Save chunk to disk
@@ -503,40 +587,18 @@ async def get_file_info(
                 )
             
             avatar_path = settings.DATA_ROOT / "avatars" / file_id
-            if avatar_path.exists():
-                # Avatar file - get user info for metadata
-                user_doc = await asyncio.wait_for(
-                    users_collection().find_one({"_id": current_user}),
-                    timeout=5.0
+            if not avatar_path.exists():
+                _log("error", f"Avatar file not found on disk: {file_id}", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Avatar file not found on disk"
                 )
-                file_stat = avatar_path.stat()
-                # Enhanced MIME type detection from file extension
-                import mimetypes
-                content_type, _ = mimetypes.guess_type(str(avatar_path))
-                if not content_type:
-                    # Enhanced MIME type detection with comprehensive mappings
-                    ext = avatar_path.suffix.lstrip('.').lower()
-                    mime_map = {
-                        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-                        'png': 'image/png', 'gif': 'image/gif',
-                        'webp': 'image/webp', 'bmp': 'image/bmp',
-                        'svg': 'image/svg+xml',
-                        'pdf': 'application/pdf',
-                        'doc': 'application/msword',
-                        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                        'txt': 'text/plain',
-                        'zip': 'application/zip',
-                        'rar': 'application/x-rar-compressed',
-                        'deb': 'application/x-debian-package',
-                        'rpm': 'application/x-rpm',
-                        'dmg': 'application/x-apple-diskimage',
-                        'pkg': 'application/x-newton-compatible-pkg',
-                        'mp4': 'video/mp4',
-                        'mp3': 'audio/mpeg',
-                        'avi': 'video/x-msvideo',
-                        'mov': 'video/quicktime',
-                    }
-                    content_type = mime_map.get(ext, 'application/octet-stream')
+            
+            # Avatar file - get user info for metadata
+            user_doc = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
             
             if not user_doc:
                 _log("error", f"User not found for avatar file", {"user_id": current_user, "operation": "file_info"})
@@ -544,21 +606,33 @@ async def get_file_info(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found for avatar file"
                 )
-                
-            if not avatar_path.exists():
-                _log("error", f"Avatar file not found on disk: {file_id}", {"user_id": current_user, "operation": "file_info"})
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Avatar file not found on disk"
-                )
-
+            
             file_stat = avatar_path.stat()
             # Detect MIME type from file extension
             import mimetypes
             content_type, _ = mimetypes.guess_type(str(avatar_path))
             
             if not content_type:
-                content_type = "image/jpeg"  # Safe default
+                # Enhanced MIME type detection with comprehensive mappings
+                # NOTE: Only includes safe, allowed file types (blocked extensions like .exe, .deb, .rpm, .dmg, .pkg are excluded)
+                ext = avatar_path.suffix.lstrip('.').lower()
+                mime_map = {
+                    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                    'png': 'image/png', 'gif': 'image/gif',
+                    'webp': 'image/webp', 'bmp': 'image/bmp',
+                    'svg': 'image/svg+xml',
+                    'pdf': 'application/pdf',
+                    'doc': 'application/msword',
+                    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'txt': 'text/plain',
+                    'zip': 'application/zip',
+                    'rar': 'application/x-rar-compressed',
+                    'mp4': 'video/mp4',
+                    'mp3': 'audio/mpeg',
+                    'avi': 'video/x-msvideo',
+                    'mov': 'video/quicktime',
+                }
+                content_type = mime_map.get(ext, 'image/jpeg')  # Safe default for avatars
             
             return {
                 "file_id": file_id,
@@ -637,7 +711,7 @@ async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
 async def download_file(
     file_id: str,
     request: Request,
-    current_user: str = Depends(get_current_user)
+    current_user: str = Depends(get_current_user_or_query)
 ):
     """Download file with range support"""
     

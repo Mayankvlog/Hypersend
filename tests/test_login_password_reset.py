@@ -24,7 +24,7 @@ class TestRunner:
         self.test_count += 1
         self.results[name] = passed
         
-        status = "✅ PASS" if passed else "❌ FAIL"
+        status = "[PASS] PASS" if passed else "[FAIL] FAIL"
         timestamp = datetime.now().strftime('%H:%M:%S')
         print(f"[{timestamp}] {status} - {name}")
         if details:
@@ -219,7 +219,7 @@ class TestRunner:
         
         # Check server first
         if not self.test_server_health():
-            print("\n❌ Server is not running. Cannot continue tests.")
+            print("\n[FAIL] Server is not running. Cannot continue tests.")
             sys.exit(1)
         
         # Run all tests
@@ -240,7 +240,7 @@ class TestRunner:
         print("=" * 70)
         
         for test_name, passed in self.results.items():
-            status = "✅" if passed else "❌"
+            status = "[PASS]" if passed else "[FAIL]"
             print(f"{status} {test_name}")
         
         print(f"\nTotal Tests: {self.test_count}")
@@ -249,7 +249,7 @@ class TestRunner:
         print(f"Success Rate: {(self.passed_count / self.test_count * 100):.1f}%")
         
         if self.passed_count == self.test_count:
-            print("\n✅ All tests passed!")
+            print("\n[PASS] All tests passed!")
             return 0
         else:
             print(f"\n⚠️  {self.test_count - self.passed_count} test(s) failed")

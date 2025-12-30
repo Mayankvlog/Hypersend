@@ -23,9 +23,9 @@ def test_user_create():
             email="john@example.com",
             password="MyPassword123"
         )
-        print(f"  ✅ Valid user created: {user.email}")
+        print(f"  [PASS] Valid user created: {user.email}")
     except Exception as e:
-        print(f"  ❌ Error: {e}")
+        print(f"  [FAIL] Error: {e}")
         return False
     
     # Invalid email
@@ -35,10 +35,10 @@ def test_user_create():
             email="invalid-email",
             password="password"
         )
-        print(f"  ❌ Invalid email should have failed!")
+        print(f"  [FAIL] Invalid email should have failed!")
         return False
     except Exception as e:
-        print(f"  ✅ Correctly rejected invalid email: {e}")
+        print(f"  [PASS] Correctly rejected invalid email: {e}")
     
     return True
 
@@ -52,9 +52,9 @@ def test_user_login():
             email="john@example.com",
             password="MyPassword123"
         )
-        print(f"  ✅ Valid login: {login.email}")
+        print(f"  [PASS] Valid login: {login.email}")
     except Exception as e:
-        print(f"  ❌ Error: {e}")
+        print(f"  [FAIL] Error: {e}")
         return False
     
     return True
@@ -70,9 +70,9 @@ def test_profile_update():
             username=None,
             email=None
         )
-        print(f"  ✅ Valid profile update: name={update.name}")
+        print(f"  [PASS] Valid profile update: name={update.name}")
     except Exception as e:
-        print(f"  ❌ Error: {e}")
+        print(f"  [FAIL] Error: {e}")
         return False
     
     # Valid case - update email
@@ -80,9 +80,9 @@ def test_profile_update():
         update = ProfileUpdate(
             email="newemail@example.com"
         )
-        print(f"  ✅ Valid email update: {update.email}")
+        print(f"  [PASS] Valid email update: {update.email}")
     except Exception as e:
-        print(f"  ❌ Error: {e}")
+        print(f"  [FAIL] Error: {e}")
         return False
     
     # Invalid username (too short)
@@ -90,10 +90,10 @@ def test_profile_update():
         update = ProfileUpdate(
             username="ab"  # Only 2 chars, needs 3+
         )
-        print(f"  ❌ Short username should have failed!")
+        print(f"  [FAIL] Short username should have failed!")
         return False
     except Exception as e:
-        print(f"  ✅ Correctly rejected short username")
+        print(f"  [PASS] Correctly rejected short username")
     
     return True
 
@@ -107,9 +107,9 @@ def test_email_change():
             email="newemail@example.com",
             password="CurrentPassword123"
         )
-        print(f"  ✅ Valid email change request: {request.email}")
+        print(f"  [PASS] Valid email change request: {request.email}")
     except Exception as e:
-        print(f"  ❌ Error: {e}")
+        print(f"  [FAIL] Error: {e}")
         return False
     
     return True
@@ -123,9 +123,9 @@ def test_forgot_password():
         request = ForgotPasswordRequest(
             email="john@example.com"
         )
-        print(f"  ✅ Valid forgot password request: {request.email}")
+        print(f"  [PASS] Valid forgot password request: {request.email}")
     except Exception as e:
-        print(f"  ❌ Error: {e}")
+        print(f"  [FAIL] Error: {e}")
         return False
     
     return True
@@ -147,15 +147,15 @@ if __name__ == "__main__":
     print("=" * 60)
     
     for model_name, passed in results:
-        status = "✅ PASSED" if passed else "❌ FAILED"
+        status = "[PASS] PASSED" if passed else "[FAIL] FAILED"
         print(f"{model_name}: {status}")
     
     all_passed = all(r[1] for r in results)
     print("\n" + ("=" * 60))
     if all_passed:
-        print("✅ ALL TESTS PASSED - Models are working correctly!")
+        print("[PASS] ALL TESTS PASSED - Models are working correctly!")
     else:
-        print("❌ SOME TESTS FAILED - Check errors above")
+        print("[FAIL] SOME TESTS FAILED - Check errors above")
     print("=" * 60)
     
     sys.exit(0 if all_passed else 1)

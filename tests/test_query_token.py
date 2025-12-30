@@ -25,7 +25,7 @@ def test_get_current_user_from_query_implementation():
     
     # Check that the function exists
     if not hasattr(get_current_user_from_query, '__call__'):
-        print("✗ FAILED: get_current_user_from_query is not callable")
+        print("[FAIL] FAILED: get_current_user_from_query is not callable")
         return False
     
     # Check function signature has Query parameter
@@ -34,28 +34,28 @@ def test_get_current_user_from_query_implementation():
     params = list(sig.parameters.values())
     
     if len(params) != 1:
-        print(f"✗ FAILED: Expected 1 parameter, got {len(params)}")
+        print(f"[FAIL] FAILED: Expected 1 parameter, got {len(params)}")
         return False
     
     param = params[0]
     
     # Check parameter name is 'token'
     if param.name != 'token':
-        print(f"✗ FAILED: Expected parameter name 'token', got '{param.name}'")
+        print(f"[FAIL] FAILED: Expected parameter name 'token', got '{param.name}'")
         return False
     
     # Check parameter uses Query() dependency
     if not hasattr(param.default, '__class__'):
-        print("✗ FAILED: Parameter doesn't have Query() dependency")
+        print("[FAIL] FAILED: Parameter doesn't have Query() dependency")
         return False
     
     # The default should be a Query object
     default_class_name = param.default.__class__.__name__
     if 'Query' not in default_class_name and not isinstance(param.default, type(Query(None))):
-        print(f"✗ FAILED: Parameter uses {default_class_name}, not Query()")
+        print(f"[FAIL] FAILED: Parameter uses {default_class_name}, not Query()")
         return False
     
-    print("✓ PASSED: get_current_user_from_query properly uses Query() dependency")
+    print("[PASS] PASSED: get_current_user_from_query properly uses Query() dependency")
     return True
 
 
@@ -72,20 +72,20 @@ def test_token_parameter_handling():
     test_token = create_access_token(token_data)
     
     if not test_token:
-        print("✗ FAILED: Could not create test token")
+        print("[FAIL] FAILED: Could not create test token")
         return False
     
     # Verify token can be decoded
     try:
         decoded = decode_token(test_token)
         if decoded.user_id != user_id:
-            print(f"✗ FAILED: Decoded user_id '{decoded.user_id}' != expected '{user_id}'")
+            print(f"[FAIL] FAILED: Decoded user_id '{decoded.user_id}' != expected '{user_id}'")
             return False
     except Exception as e:
-        print(f"✗ FAILED: Could not decode token: {e}")
+        print(f"[FAIL] FAILED: Could not decode token: {e}")
         return False
     
-    print("✓ PASSED: Token parameter handling works correctly")
+    print("[PASS] PASSED: Token parameter handling works correctly")
     return True
 
 
@@ -97,20 +97,20 @@ def test_none_token_raises_exception():
         try:
             # Call with None token (which is the default in Query(None))
             result = await get_current_user_from_query(token=None)
-            print("✗ FAILED: Expected HTTPException for None token, but got result")
+            print("[FAIL] FAILED: Expected HTTPException for None token, but got result")
             return False
         except HTTPException as e:
             # Should raise 401 Unauthorized
             if e.status_code != 401:
-                print(f"✗ FAILED: Expected status 401, got {e.status_code}")
+                print(f"[FAIL] FAILED: Expected status 401, got {e.status_code}")
                 return False
             if "required in query parameters" not in e.detail:
-                print(f"✗ FAILED: Expected 'required in query parameters' in detail, got '{e.detail}'")
+                print(f"[FAIL] FAILED: Expected 'required in query parameters' in detail, got '{e.detail}'")
                 return False
-            print("✓ PASSED: None token properly raises HTTPException with 401")
+            print("[PASS] PASSED: None token properly raises HTTPException with 401")
             return True
         except Exception as e:
-            print(f"✗ FAILED: Unexpected exception: {type(e).__name__}: {e}")
+            print(f"[FAIL] FAILED: Unexpected exception: {type(e).__name__}: {e}")
             return False
     
     return asyncio.run(test_async())
@@ -124,17 +124,17 @@ def test_invalid_token_raises_exception():
         try:
             # Call with invalid token
             result = await get_current_user_from_query(token="invalid.token.here")
-            print("✗ FAILED: Expected HTTPException for invalid token")
+            print("[FAIL] FAILED: Expected HTTPException for invalid token")
             return False
         except HTTPException as e:
             # Should raise 401 Unauthorized
             if e.status_code != 401:
-                print(f"✗ FAILED: Expected status 401, got {e.status_code}")
+                print(f"[FAIL] FAILED: Expected status 401, got {e.status_code}")
                 return False
-            print("✓ PASSED: Invalid token properly raises HTTPException with 401")
+            print("[PASS] PASSED: Invalid token properly raises HTTPException with 401")
             return True
         except Exception as e:
-            print(f"✗ FAILED: Unexpected exception: {type(e).__name__}: {e}")
+            print(f"[FAIL] FAILED: Unexpected exception: {type(e).__name__}: {e}")
             return False
     
     return asyncio.run(test_async())
@@ -158,13 +158,13 @@ def test_valid_token_returns_user_id():
             result = await get_current_user_from_query(token=test_token)
             
             if result != user_id:
-                print(f"✗ FAILED: Expected user_id '{user_id}', got '{result}'")
+                print(f"[FAIL] FAILED: Expected user_id '{user_id}', got '{result}'")
                 return False
             
-            print("✓ PASSED: Valid token properly returns user_id")
+            print("[PASS] PASSED: Valid token properly returns user_id")
             return True
         except Exception as e:
-            print(f"✗ FAILED: Unexpected exception: {type(e).__name__}: {e}")
+            print(f"[FAIL] FAILED: Unexpected exception: {type(e).__name__}: {e}")
             return False
     
     return asyncio.run(test_async())
@@ -184,19 +184,19 @@ def test_refresh_token_raises_exception():
             
             # Call with refresh token (should fail)
             result = await get_current_user_from_query(token=test_token)
-            print("✗ FAILED: Expected HTTPException for refresh token (wrong type)")
+            print("[FAIL] FAILED: Expected HTTPException for refresh token (wrong type)")
             return False
         except HTTPException as e:
             if e.status_code != 401:
-                print(f"✗ FAILED: Expected status 401, got {e.status_code}")
+                print(f"[FAIL] FAILED: Expected status 401, got {e.status_code}")
                 return False
             if "Invalid token type" not in e.detail:
-                print(f"✗ FAILED: Expected 'Invalid token type' in detail, got '{e.detail}'")
+                print(f"[FAIL] FAILED: Expected 'Invalid token type' in detail, got '{e.detail}'")
                 return False
-            print("✓ PASSED: Refresh token properly raises HTTPException")
+            print("[PASS] PASSED: Refresh token properly raises HTTPException")
             return True
         except Exception as e:
-            print(f"✗ FAILED: Unexpected exception: {type(e).__name__}: {e}")
+            print(f"[FAIL] FAILED: Unexpected exception: {type(e).__name__}: {e}")
             return False
     
     return asyncio.run(test_async())
@@ -224,7 +224,7 @@ def main():
             result = test()
             results.append(result)
         except Exception as e:
-            print(f"✗ ERROR in {test.__name__}: {type(e).__name__}: {e}")
+            print(f"[FAIL] ERROR in {test.__name__}: {type(e).__name__}: {e}")
             results.append(False)
     
     print()
@@ -233,9 +233,9 @@ def main():
     total = len(results)
     print(f"Results: {passed}/{total} tests passed")
     if passed == total:
-        print("✓ ALL TESTS PASSED")
+        print("[PASS] ALL TESTS PASSED")
     else:
-        print(f"✗ {total - passed} TEST(S) FAILED")
+        print(f"[FAIL] {total - passed} TEST(S) FAILED")
     print("=" * 70)
     
     return passed == total

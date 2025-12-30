@@ -969,6 +969,9 @@ async def upload_avatar(
         import os
         import uuid
         
+        print(f"[AVATAR_UPLOAD] POST /avatar endpoint called!")
+        print(f"[AVATAR_UPLOAD] Request method: {request.method if request else 'No request'}")
+        print(f"[AVATAR_UPLOAD] Request URL: {request.url if request else 'No request'}")
         logger.debug("Avatar upload POST request started")
         logger.debug(f"Request headers: {dict(request.headers) if request else 'No request object'}")
         logger.debug(f"File object: {file}")
@@ -1285,39 +1288,11 @@ async def upload_avatar_with_slash(
     current_user: str = Depends(get_current_user_optional)
 ):
     """Upload user avatar - POST endpoint with trailing slash (same logic as without slash)"""
+    print(f"[AVATAR_UPLOAD_SLASH] POST /avatar/ endpoint called!")
+    print(f"[AVATAR_UPLOAD_SLASH] Request method: {request.method if request else 'No request'}")
     return await upload_avatar(file, request, current_user)
 
-@router.get("/avatar/")
-async def list_avatars(request: Request):
-    """GET /avatar/ provides API documentation - use POST for uploads"""
-    # Log request info for debugging
-    logger.info(f"GET request to /avatar/ endpoint - providing API documentation")
-    logger.info(f"Request URL: {request.url}")
-    logger.debug(f"POST requests can use /avatar or /avatar/ (both supported)")
-    
-    # Return helpful API documentation instead of 405
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={
-            "message": "Avatar API Documentation",
-            "endpoints": {
-                "upload": {
-                    "method": "POST",
-                    "url": "/api/v1/users/avatar/ or /api/v1/users/avatar",
-                    "content_type": "multipart/form-data",
-                    "required_field": "file (image file)",
-                    "description": "Upload user profile avatar"
-                },
-                "retrieve": {
-                    "method": "GET", 
-                    "url": "/api/v1/users/avatar/{filename}",
-                    "description": "Retrieve uploaded avatar image"
-                }
-            },
-            "note": "This GET endpoint provides documentation. Use POST to upload avatars.",
-            "note": "Both /avatar and /avatar/ are supported for POST requests"
-        }
-    )
+
 
 @router.options("/avatar")
 @router.options("/avatar-upload")

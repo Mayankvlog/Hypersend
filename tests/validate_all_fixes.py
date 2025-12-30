@@ -61,13 +61,13 @@ def validate_changes():
     for filepath in files_modified:
         exists = os.path.exists(filepath)
         file_hash = get_file_hash(filepath) if exists else "N/A"
-        status = "✓ MODIFIED" if exists else "✗ NOT FOUND"
+        status = "[PASS] MODIFIED" if exists else "[FAIL] NOT FOUND"
         print(f"{status:15} | {filepath:55} | Hash: {file_hash}")
         if not exists:
             all_files_exist = False
     
     if not all_files_exist:
-        print("\n✗ ERROR: Some files not found!")
+        print("\n[FAIL] ERROR: Some files not found!")
         return False
     
     print("\n[2] SPECIFIC CHANGES VERIFICATION")
@@ -78,7 +78,7 @@ def validate_changes():
         print("\nCheck 1: Contact tiles perform actual actions")
         content = safe_read_file('frontend/lib/presentation/screens/help_support_screen.dart')
         if content is None:
-            print("  Status: ✗ FAIL - Could not read file")
+            print("  Status: [FAIL] FAIL - Could not read file")
             check1 = False
         else:
             has_url_launcher = 'import \'package:url_launcher/url_launcher.dart\'' in content
@@ -89,18 +89,18 @@ def validate_changes():
             
             check1 = all([has_url_launcher, has_launch_email, has_launch_phone, 
                          has_launch_url, has_url_check])
-            print(f"  URL Launcher Import: {'✓' if has_url_launcher else '✗'}")
-            print(f"  Launch Email Method: {'✓' if has_launch_email else '✗'}")
-            print(f"  Launch Phone Method: {'✓' if has_launch_phone else '✗'}")
-            print(f"  Launch URL Method: {'✓' if has_launch_url else '✗'}")
-            print(f"  URL Capability Check: {'✓' if has_url_check else '✗'}")
-            print(f"  Status: {'✓ PASS' if check1 else '✗ FAIL'}")
+            print(f"  URL Launcher Import: {'[PASS]' if has_url_launcher else '[FAIL]'}")
+            print(f"  Launch Email Method: {'[PASS]' if has_launch_email else '[FAIL]'}")
+            print(f"  Launch Phone Method: {'[PASS]' if has_launch_phone else '[FAIL]'}")
+            print(f"  Launch URL Method: {'[PASS]' if has_launch_url else '[FAIL]'}")
+            print(f"  URL Capability Check: {'[PASS]' if has_url_check else '[FAIL]'}")
+            print(f"  Status: {'[PASS] PASS' if check1 else '[FAIL] FAIL'}")
         
         # Check 2: File upload uses actual implementation
         print("\nCheck 2: File upload uses actual implementation")
         content = safe_read_file('frontend/lib/presentation/screens/chat_detail_screen.dart')
         if content is None:
-            print("  Status: ✗ FAIL - Could not read file")
+            print("  Status: [FAIL] FAIL - Could not read file")
             check2 = False
         else:
             has_pick_upload = '_pickAndUploadFile()' in content
@@ -109,11 +109,11 @@ def validate_changes():
             has_no_placeholder = 'placeholder' not in content.lower() or '_uploadFile' not in content
             
             check2 = all([has_pick_upload, has_await, has_error_handling])
-            print(f"  Calls File Picker: {'✓' if has_pick_upload else '✗'}")
-            print(f"  Awaits Implementation: {'✓' if has_await else '✗'}")
-            print(f"  Proper Error Handling: {'✓' if has_error_handling else '✗'}")
-            print(f"  No Placeholders: {'✓' if has_no_placeholder else '✗'}")
-            print(f"  Status: {'✓ PASS' if check2 else '✗ FAIL'}")
+            print(f"  Calls File Picker: {'[PASS]' if has_pick_upload else '[FAIL]'}")
+            print(f"  Awaits Implementation: {'[PASS]' if has_await else '[FAIL]'}")
+            print(f"  Proper Error Handling: {'[PASS]' if has_error_handling else '[FAIL]'}")
+            print(f"  No Placeholders: {'[PASS]' if has_no_placeholder else '[FAIL]'}")
+            print(f"  Status: {'[PASS] PASS' if check2 else '[FAIL] FAIL'}")
         
         # Check 3: Exception handling with specific types
         print("\nCheck 3: Exception handling with specific types")
@@ -133,18 +133,18 @@ def validate_changes():
             # Check for bare except clauses
             bare_except = re.search(r'except\s*:', content)
             if bare_except and name != 'help_support':  # Allow in some cases
-                print(f"  {name}: Has bare except clause ✗")
+                print(f"  {name}: Has bare except clause [FAIL]")
                 check3 = False
             else:
-                print(f"  {name}: Proper exception handling ✓")
+                print(f"  {name}: Proper exception handling [PASS]")
         
-        print(f"  Status: {'✓ PASS' if check3 else '✗ FAIL'}")
+        print(f"  Status: {'[PASS] PASS' if check3 else '[FAIL] FAIL'}")
         
         # Check 4: String matching robustness
         print("\nCheck 4: String matching and validation robustness")
         content = safe_read_file('frontend/lib/presentation/screens/chat_list_screen.dart')
         if content is None:
-            print("  Status: ✗ FAIL - Could not read file")
+            print("  Status: [FAIL] FAIL - Could not read file")
             check4 = False
         else:
             # Safely extract AppBar section to handle missing patterns
@@ -163,35 +163,35 @@ def validate_changes():
             has_return_logic = 'return _filteredChats' in content or 'items.addAll' in content
             
             check4 = all([no_empty_actions, has_filter_method, has_return_logic])
-            print(f"  No Empty Actions Array: {'✓' if no_empty_actions else '✗'}")
-            print(f"  Filter Method Exists: {'✓' if has_filter_method else '✗'}")
-            print(f"  Filter Logic Implemented: {'✓' if has_return_logic else '✗'}")
-            print(f"  Status: {'✓ PASS' if check4 else '✗ FAIL'}")
+            print(f"  No Empty Actions Array: {'[PASS]' if no_empty_actions else '[FAIL]'}")
+            print(f"  Filter Method Exists: {'[PASS]' if has_filter_method else '[FAIL]'}")
+            print(f"  Filter Logic Implemented: {'[PASS]' if has_return_logic else '[FAIL]'}")
+            print(f"  Status: {'[PASS] PASS' if check4 else '[FAIL] FAIL'}")
         
         # Check 5: Emoji implementation
         print("\nCheck 5: Emoji Unicode implementation")
         content = safe_read_file('frontend/lib/presentation/screens/chat_detail_screen.dart')
         if content is None:
-            print("  Status: ✗ FAIL - Could not read file")
+            print("  Status: [FAIL] FAIL - Could not read file")
             check5 = False
         else:
             has_unicode_emoji = "'\\u{1F44D}'" in content
             has_emoji_list = '_quickReactions' in content
             
             check5 = has_unicode_emoji and has_emoji_list
-            print(f"  Unicode Emoji Format: {'✓' if has_unicode_emoji else '✗'}")
-            print(f"  Emoji List Defined: {'✓' if has_emoji_list else '✗'}")
-            print(f"  Status: {'✓ PASS' if check5 else '✗ FAIL'}")
+            print(f"  Unicode Emoji Format: {'[PASS]' if has_unicode_emoji else '[FAIL]'}")
+            print(f"  Emoji List Defined: {'[PASS]' if has_emoji_list else '[FAIL]'}")
+            print(f"  Status: {'[PASS] PASS' if check5 else '[FAIL] FAIL'}")
         
     except Exception:
-        print(f"\n✗ ERROR during validation: An error occurred.")
+        print(f"\n[FAIL] ERROR during validation: An error occurred.")
         return False
     
     # Check 6: Phone number support
     print("\nCheck 6: Phone number support (WhatsApp-style)")
     content = safe_read_file('frontend/lib/presentation/screens/chat_list_screen.dart')
     if content is None:
-        print("  Status: ✗ FAIL - Could not read file")
+        print("  Status: [FAIL] FAIL - Could not read file")
         check6 = False
     else:
         has_phone_controller = 'phoneController' in content
@@ -200,11 +200,11 @@ def validate_changes():
         has_phone_keyboard = 'TextInputType.phone' in content
         
         check6 = all([has_phone_controller, has_phone_input, has_phone_validation, has_phone_keyboard])
-        print(f"  Phone Controller: {'✓' if has_phone_controller else '✗'}")
-        print(f"  Phone Input Field: {'✓' if has_phone_input else '✗'}")
-        print(f"  Phone Validation: {'✓' if has_phone_validation else '✗'}")
-        print(f"  Phone Keyboard Type: {'✓' if has_phone_keyboard else '✗'}")
-        print(f"  Status: {'✓ PASS' if check6 else '✗ FAIL'}")
+        print(f"  Phone Controller: {'[PASS]' if has_phone_controller else '[FAIL]'}")
+        print(f"  Phone Input Field: {'[PASS]' if has_phone_input else '[FAIL]'}")
+        print(f"  Phone Validation: {'[PASS]' if has_phone_validation else '[FAIL]'}")
+        print(f"  Phone Keyboard Type: {'[PASS]' if has_phone_keyboard else '[FAIL]'}")
+        print(f"  Status: {'[PASS] PASS' if check6 else '[FAIL] FAIL'}")
     
     print("\n[3] CODE QUALITY CHECKS")
     print("-" * 70)
@@ -219,7 +219,7 @@ def validate_changes():
     ]
     
     for check_name, result in quality_checks:
-        status = "✓" if result else "✗"
+        status = "[PASS]" if result else "[FAIL]"
         print(f"{status} {check_name}")
     
     print("\n[4] SUMMARY")
@@ -232,10 +232,10 @@ def validate_changes():
     print(f"Success Rate: {100*passed/total:.1f}%")
     
     if passed == total:
-        print("\n✓ ALL VALIDATIONS PASSED - READY FOR DEPLOYMENT")
+        print("\n[PASS] ALL VALIDATIONS PASSED - READY FOR DEPLOYMENT")
         return True
     else:
-        print(f"\n✗ {total - passed} VALIDATION(S) FAILED")
+        print(f"\n[FAIL] {total - passed} VALIDATION(S) FAILED")
         return False
 
 if __name__ == "__main__":

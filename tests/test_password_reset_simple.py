@@ -28,20 +28,20 @@ def test_forgot_password():
         if response.status_code == 200:
             data = response.json()
             if data.get("success"):
-                print("✅ PASS: Forgot password endpoint working")
+                print("[PASS] PASS: Forgot password endpoint working")
                 print(f"   - Email sent: {data.get('email_sent')}")
                 print(f"   - Message: {data.get('message')}")
                 return True
         
-        print(f"❌ FAIL: Unexpected status {response.status_code}")
+        print(f"[FAIL] FAIL: Unexpected status {response.status_code}")
         return False
         
     except requests.exceptions.ConnectionError:
-        print("❌ FAIL: Cannot connect to server. Is it running?")
+        print("[FAIL] FAIL: Cannot connect to server. Is it running?")
         print(f"   URL: {API_URL}")
         return False
     except Exception as e:
-        print(f"❌ FAIL: {type(e).__name__}: {e}")
+        print(f"[FAIL] FAIL: {type(e).__name__}: {e}")
         return False
 
 def test_invalid_email():
@@ -56,14 +56,14 @@ def test_invalid_email():
         )
         
         if response.status_code in [400, 422]:
-            print(f"✅ PASS: Correctly rejected invalid email (status: {response.status_code})")
+            print(f"[PASS] PASS: Correctly rejected invalid email (status: {response.status_code})")
             return True
         else:
             print(f"⚠️  Status {response.status_code} for invalid email")
             return False
             
     except Exception as e:
-        print(f"❌ FAIL: {e}")
+        print(f"[FAIL] FAIL: {e}")
         return False
 
 def test_nonexistent_email():
@@ -81,14 +81,14 @@ def test_nonexistent_email():
             data = response.json()
             # Should return generic message (security: no user enumeration)
             if "If an account exists" in data.get("message", ""):
-                print("✅ PASS: Generic response (prevents user enumeration)")
+                print("[PASS] PASS: Generic response (prevents user enumeration)")
                 return True
         
         print(f"⚠️  Status {response.status_code}")
         return False
         
     except Exception as e:
-        print(f"❌ FAIL: {e}")
+        print(f"[FAIL] FAIL: {e}")
         return False
 
 if __name__ == "__main__":
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     total = len(results)
     
     for test, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "[PASS] PASS" if result else "[FAIL] FAIL"
         print(f"{test}: {status}")
     
     print(f"\nTotal: {passed}/{total} tests passed")

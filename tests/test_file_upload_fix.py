@@ -25,18 +25,18 @@ def test_datetime_fix():
         all_present = all(indicator in content for indicator in fix_indicators)
         
         if all_present:
-            print("✅ File upload datetime fix is properly implemented")
-            print("✅ Handles both offset-naive and offset-aware datetimes")
-            print("✅ Prevents TypeError: can't compare offset-naive and offset-aware datetimes")
+            print("[PASS] File upload datetime fix is properly implemented")
+            print("[PASS] Handles both offset-naive and offset-aware datetimes")
+            print("[PASS] Prevents TypeError: can't compare offset-naive and offset-aware datetimes")
             return True
         else:
-            print("❌ Fix not properly implemented")
+            print("[FAIL] Fix not properly implemented")
             missing = [ind for ind in fix_indicators if ind not in content]
             print(f"Missing: {missing}")
             return False
             
     except Exception as e:
-        print(f"❌ Error testing datetime fix: {e}")
+        print(f"[FAIL] Error testing datetime fix: {e}")
         return False
 
 if __name__ == "__main__":

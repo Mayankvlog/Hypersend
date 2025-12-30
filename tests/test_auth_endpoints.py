@@ -38,7 +38,7 @@ def test_cors_preflight():
     
     try:
         response = requests.options(url, headers=headers, timeout=5)
-        print(f"✅ OPTIONS request to {url}")
+        print(f"[PASS] OPTIONS request to {url}")
         print(f"   Status: {response.status_code}")
         print(f"   CORS Headers:")
         for header in ["Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"]:
@@ -46,7 +46,7 @@ def test_cors_preflight():
             print(f"     - {header}: {value}")
         return response.status_code == 200 or response.status_code == 204
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         return False
 
 def test_registration():
@@ -72,18 +72,18 @@ def test_registration():
         
         if response.status_code in [200, 201]:
             data = response.json()
-            print(f"   ✅ Registration successful!")
+            print(f"   [PASS] Registration successful!")
             print(f"   User ID: {data.get('id', 'N/A')}")
             print(f"   Email: {data.get('email', 'N/A')}")
             print(f"   Name: {data.get('name', 'N/A')}")
             return True, data
         else:
-            print(f"   ❌ Registration failed!")
+            print(f"   [FAIL] Registration failed!")
             print(f"   Response: {response.text}")
             return False, None
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         return False, None
 
 def test_login(email, password):
@@ -112,17 +112,17 @@ def test_login(email, password):
         
         if response.status_code == 200:
             data = response.json()
-            print(f"   ✅ Login successful!")
+            print(f"   [PASS] Login successful!")
             print(f"   Token Type: {data.get('token_type', 'N/A')}")
             print(f"   Access Token: {data.get('access_token', 'N/A')[:50]}...")
             return True, data
         else:
-            print(f"   ❌ Login failed!")
+            print(f"   [FAIL] Login failed!")
             print(f"   Response: {response.text}")
             return False, None
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         return False, None
 
 def test_invalid_registration():
@@ -140,11 +140,11 @@ def test_invalid_registration():
         response = requests.post(url, json=payload, headers=headers, timeout=5)
         print(f"    Status: {response.status_code}")
         if response.status_code == 422:
-            print(f"    ✅ Correctly rejected: Invalid email field")
+            print(f"    [PASS] Correctly rejected: Invalid email field")
         else:
-            print(f"    ❌ Expected 422, got {response.status_code}")
+            print(f"    [FAIL] Expected 422, got {response.status_code}")
     except Exception as e:
-        print(f"    ❌ Error: {e}")
+        print(f"    [FAIL] Error: {e}")
     
     # Test 2: Duplicate email
     print("\n4b. Testing with duplicate email:")
@@ -155,11 +155,11 @@ def test_invalid_registration():
         response = requests.post(url, json=payload, headers=headers, timeout=5)
         print(f"    Status: {response.status_code}")
         if response.status_code == 409:
-            print(f"    ✅ Correctly rejected: Duplicate email")
+            print(f"    [PASS] Correctly rejected: Duplicate email")
         else:
-            print(f"    ❌ Expected 409, got {response.status_code}")
+            print(f"    [FAIL] Expected 409, got {response.status_code}")
     except Exception as e:
-        print(f"    ❌ Error: {e}")
+        print(f"    [FAIL] Error: {e}")
 
 def main():
     """Run all tests"""
@@ -174,9 +174,9 @@ def main():
     print("\n⏳ Checking if server is running...")
     try:
         response = requests.get(f"{BASE_URL.rsplit('/', 1)[0]}/health", timeout=2)
-        print("✅ Server is responding")
+        print("[PASS] Server is responding")
     except:
-        print("❌ Server is not responding. Please start the backend server:")
+        print("[FAIL] Server is not responding. Please start the backend server:")
         print("   cd backend")
         print("   python main.py")
         return
@@ -196,7 +196,7 @@ def main():
     # Summary
     print_section("TEST SUMMARY")
     for name, passed in results:
-        status = "✅ PASS" if passed else "❌ FAIL"
+        status = "[PASS] PASS" if passed else "[FAIL] FAIL"
         print(f"{name}: {status}")
     
     passed_count = sum(1 for _, p in results if p)
@@ -204,7 +204,7 @@ def main():
     print(f"\nTotal: {passed_count}/{total_count} tests passed")
     
     if passed_count == total_count:
-        print("\n🎉 All tests passed! Authentication endpoints are working correctly.")
+        print("\n[SUCCESS] All tests passed! Authentication endpoints are working correctly.")
     else:
         print("\n⚠️  Some tests failed. Check the errors above.")
 

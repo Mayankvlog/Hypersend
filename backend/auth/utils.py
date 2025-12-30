@@ -230,6 +230,49 @@ async def get_current_user_optional(request: Request) -> Optional[str]:
         logger.debug(f"Auth failed (non-fatal), allowing guest access")
         return None
 
+async def get_current_user_or_query(
+    request: Request, 
+    token: Optional[str] = Query(None)
+) -> str:
+    """Dependency to get current user from header OR query parameter.
+    
+    First tries Authorization header, then falls back to query parameter.
+    This is useful for file downloads where headers might not work properly.
+    
+    Args:
+        request: The request object (for header auth)
+        token: The JWT token passed as query parameter (?token=...)
+        
+    Returns:
+        The user_id from the token
+        
+    Raises:
+        HTTPException: If token is missing or invalid from both sources
+    """
+    # First try header auth
+    try:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header and auth_header.startswith("Bearer "):
+            header_token = auth_header.replace("Bearer ", "").strip()
+            if header_token:
+                token_data = decode_token(header_token)
+                if token_data.token_type == "access":
+                    return token_data.user_id
+    except Exception:
+        pass  # Fall through to query parameter auth
+    
+    # Then try query parameter auth
+    if token is not None:
+        return await get_current_user_from_query(token)
+    
+    # If neither auth method worked, raise error
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required - use Authorization header or token query parameter",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 async def get_current_user_from_query(token: Optional[str] = Query(None)) -> str:
     """Dependency to get current user from token in query parameter.
     

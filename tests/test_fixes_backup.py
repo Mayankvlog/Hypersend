@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Test script to validate all fixes applied:
-1. Contact tiles perform actual actions ✓
-2. File upload functionality properly implemented ✓
-3. Exception handling improved ✓
-4. String matching robustness improved ✓
+1. Contact tiles perform actual actions [PASS]
+2. File upload functionality properly implemented [PASS]
+3. Exception handling improved [PASS]
+4. String matching robustness improved [PASS]
 """
 
 import os
@@ -101,10 +101,10 @@ def run_security_validation(filepath):
         return True
         
     except UnicodeDecodeError as e:
-        print(f"✗ FAILED: Could not decode file {filepath}: {e}")
+        print(f"[FAIL] FAILED: Could not decode file {filepath}: {e}")
         return False
     except Exception as e:
-        print(f"✗ FAILED: Unexpected error validating {filepath}: {type(e).__name__}: {e}")
+        print(f"[FAIL] FAILED: Unexpected error validating {filepath}: {type(e).__name__}: {e}")
         return False
 
 def test_contact_tiles_perform_actions():
@@ -115,33 +115,33 @@ def test_contact_tiles_perform_actions():
     
     # Check for actual URL launcher import
     if 'import \'package:url_launcher/url_launcher.dart\'' not in content:
-        print("✗ FAILED: URL launcher not imported")
+        print("[FAIL] FAILED: URL launcher not imported")
         return False
     
     # Check for actual launch methods
     if 'Future<void> _launchEmail' not in content:
-        print("✗ FAILED: _launchEmail method not implemented")
+        print("[FAIL] FAILED: _launchEmail method not implemented")
         return False
     
     if 'Future<void> _launchPhone' not in content:
-        print("✗ FAILED: _launchPhone method not implemented")
+        print("[FAIL] FAILED: _launchPhone method not implemented")
         return False
     
     if 'Future<void> _launchUrl' not in content:
-        print("✗ FAILED: _launchUrl method not implemented")
+        print("[FAIL] FAILED: _launchUrl method not implemented")
         return False
     
     # Check for proper error handling in methods
     if 'canLaunchUrl' not in content:
-        print("✗ FAILED: URL launch capability check not implemented")
+        print("[FAIL] FAILED: URL launch capability check not implemented")
         return False
     
     # Check that methods use context parameter
     if '_launchEmail(context,' not in content:
-        print("✗ FAILED: Email launch doesn't use context")
+        print("[FAIL] FAILED: Email launch doesn't use context")
         return False
     
-    print("✓ PASSED: Contact tiles perform actual actions")
+    print("[PASS] PASSED: Contact tiles perform actual actions")
     return True
 
 def test_file_upload_implementation():
@@ -152,25 +152,25 @@ def test_file_upload_implementation():
     
     # Check for actual file picker call
     if '_pickAndUploadFile()' not in content:
-        print("✗ FAILED: Actual file upload method not called")
+        print("[FAIL] FAILED: Actual file upload method not called")
         return False
     
     # Check that _uploadFile delegates to real implementation
     if 'await _pickAndUploadFile()' not in content:
-        print("✗ FAILED: File upload not awaiting actual implementation")
+        print("[FAIL] FAILED: File upload not awaiting actual implementation")
         return False
     
     # Check for proper error handling with toString()
     if 'e.toString()' not in content:
-        print("✗ FAILED: Error handling not using toString()")
+        print("[FAIL] FAILED: Error handling not using toString()")
         return False
     
     # Ensure no placeholder messages remain
     if 'placeholder' in content.lower() and '_uploadFile' in content:
-        print("✗ FAILED: Placeholder messages still present in upload function")
+        print("[FAIL] FAILED: Placeholder messages still present in upload function")
         return False
     
-    print("✓ PASSED: File upload properly implemented")
+    print("[PASS] PASSED: File upload properly implemented")
     return True
 
 def test_exception_handling():
@@ -189,7 +189,7 @@ def test_exception_handling():
     for content in files_to_check:
         # Look for bare except clauses
         if re.search(r'except\s*:', content):
-            print("✗ FAILED: Bare except clause found (should specify exception type)")
+            print("[FAIL] FAILED: Bare except clause found (should specify exception type)")
             return False
         
         # Check for proper exception handling with types
@@ -197,7 +197,7 @@ def test_exception_handling():
             # This is acceptable for runtime errors
             pass
     
-    print("✓ PASSED: Exception handling uses specific exception types")
+    print("[PASS] PASSED: Exception handling uses specific exception types")
     return True
 
 def test_application_security_validation():
@@ -206,7 +206,7 @@ def test_application_security_validation():
     # Test actual backend security by checking file upload validation
     files_py_content = safe_read_file('../backend/routes/files.py')
     if not files_py_content:
-        print("✗ FAILED: Cannot read backend files.py for security testing")
+        print("[FAIL] FAILED: Cannot read backend files.py for security testing")
         return False
     
     # Verify dangerous extension blocking exists
@@ -218,17 +218,17 @@ def test_application_security_validation():
             dangerous_extensions_found.append(ext)
     
     if dangerous_extensions_found:
-        print(f"✗ FAILED: Missing dangerous extension blocking for: {dangerous_extensions_found}")
+        print(f"[FAIL] FAILED: Missing dangerous extension blocking for: {dangerous_extensions_found}")
         return False
     
     # Verify case-insensitive extension checking
     if 'file_ext.lower()' not in files_py_content:
-        print("✗ FAILED: File extension checking is not case-insensitive")
+        print("[FAIL] FAILED: File extension checking is not case-insensitive")
         return False
     
     # Verify path traversal protection
     if 'resolved_path.relative_to(data_root)' not in files_py_content:
-        print("✗ FAILED: Path traversal protection not properly implemented")
+        print("[FAIL] FAILED: Path traversal protection not properly implemented")
         return False
     
     # Verify input sanitization
@@ -249,7 +249,7 @@ def test_application_security_validation():
     
     for control_pattern, description in security_controls:
         if control_pattern not in files_py_content:
-            print(f"✗ FAILED: {description} not implemented: {control_pattern}")
+            print(f"[FAIL] FAILED: {description} not implemented: {control_pattern}")
             return False
     
     # Verify error messages don't expose system paths
@@ -270,10 +270,10 @@ def test_application_security_validation():
     has_safe_errors = any(pattern in files_py_content for pattern in safe_error_patterns)
     
     if has_dangerous_errors and not has_safe_errors:
-        print("✗ FAILED: Error messages may expose system information")
+        print("[FAIL] FAILED: Error messages may expose system information")
         return False
     
-    print("✓ PASSED: Application security validation is comprehensive")
+    print("[PASS] PASSED: Application security validation is comprehensive")
     return True
 
 def test_file_existence_validation():
@@ -290,10 +290,10 @@ def test_file_existence_validation():
         try:
             validate_file_exists(filepath)
         except FileNotFoundError as e:
-            print(f"✗ FAILED: {e}")
+            print(f"[FAIL] FAILED: {e}")
             return False
     
-    print("✓ PASSED: All required files exist")
+    print("[PASS] PASSED: All required files exist")
     return True
 
 def test_implementation_logic():
@@ -304,22 +304,22 @@ def test_implementation_logic():
     
     # Check for actual emoji Unicode implementation
     if "'\\u{1F44D}'" not in content:
-        print("✗ FAILED: Emoji Unicode not properly implemented")
+        print("[FAIL] FAILED: Emoji Unicode not properly implemented")
         return False
     
     # Check for implementation of methods, not just stubs
     upload_method = re.search(r'Future<void> _uploadFile\(\).*?(?=Future<void>|def |$)', 
                              content, re.DOTALL)
     if upload_method is None:
-        print("✗ FAILED: _uploadFile method not found")
+        print("[FAIL] FAILED: _uploadFile method not found")
         return False
     
     method_body = upload_method.group(0)
     if 'await _pickAndUploadFile()' not in method_body:
-        print("✗ FAILED: _uploadFile doesn't call actual implementation")
+        print("[FAIL] FAILED: _uploadFile doesn't call actual implementation")
         return False
     
-    print("✓ PASSED: Implementation logic properly tested")
+    print("[PASS] PASSED: Implementation logic properly tested")
     return True
 
 def test_phone_number_support():
@@ -330,25 +330,25 @@ def test_phone_number_support():
     
     # Check for phone controller
     if 'phoneController' not in content:
-        print("✗ FAILED: Phone number input field not implemented")
+        print("[FAIL] FAILED: Phone number input field not implemented")
         return False
     
     # Check for phone keyboard type
     if 'TextInputType.phone' not in content:
-        print("✗ FAILED: Phone keyboard type not set")
+        print("[FAIL] FAILED: Phone keyboard type not set")
         return False
     
     # Check for phone validation
     if 'phone.isEmpty' not in content:
-        print("✗ FAILED: Phone number validation not implemented")
+        print("[FAIL] FAILED: Phone number validation not implemented")
         return False
     
     # Check that dialog accepts phone input
     if "hintText: '+1 (555)" not in content:
-        print("✗ FAILED: Phone number hint not present")
+        print("[FAIL] FAILED: Phone number hint not present")
         return False
     
-    print("✓ PASSED: Phone number support (WhatsApp-style) implemented")
+    print("[PASS] PASSED: Phone number support (WhatsApp-style) implemented")
     return True
 
 def main():
@@ -372,7 +372,7 @@ def main():
         try:
             results.append(test())
         except Exception:
-            print(f"✗ ERROR in {test.__name__}: An error occurred.")
+            print(f"[FAIL] ERROR in {test.__name__}: An error occurred.")
             results.append(False)
     
     print("\n" + "=" * 70)
@@ -380,9 +380,9 @@ def main():
     total = len(results)
     print(f"Results: {passed}/{total} tests passed")
     if passed == total:
-        print("✓ ALL TESTS PASSED")
+        print("[PASS] ALL TESTS PASSED")
     else:
-        print(f"✗ {total - passed} TEST(S) FAILED")
+        print(f"[FAIL] {total - passed} TEST(S) FAILED")
     print("=" * 70)
     
     return passed == total

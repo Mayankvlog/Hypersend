@@ -57,11 +57,11 @@ def print_section(text: str):
 
 def print_success(text: str):
     """Print success message"""
-    print(f"{Colors.GREEN}✓ {text}{Colors.RESET}")
+    print(f"{Colors.GREEN}[PASS] {text}{Colors.RESET}")
 
 def print_error(text: str):
     """Print error message"""
-    print(f"{Colors.RED}✗ {text}{Colors.RESET}")
+    print(f"{Colors.RED}[FAIL] {text}{Colors.RESET}")
 
 def print_warning(text: str):
     """Print warning message"""

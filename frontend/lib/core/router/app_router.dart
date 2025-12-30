@@ -103,7 +103,6 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/user/:query',
       builder: (context, state) {
-        final query = state.pathParameters['query']!;
         // Route to user profile screen that handles search and display
         // Supports @username format
         return ChatListScreen();

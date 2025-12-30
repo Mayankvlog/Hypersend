@@ -22,13 +22,13 @@ def test_file_extension_security():
         
         missing_fixes = [fix for fix in required_fixes if fix not in content]
         if missing_fixes:
-            print(f"❌ File extension security missing: {missing_fixes}")
+            print(f"[FAIL] File extension security missing: {missing_fixes}")
             return False
         
-        print("✅ File extension security properly implemented")
+        print("[PASS] File extension security properly implemented")
         return True
     except Exception as e:
-        print(f"❌ Error testing file extension security: {e}")
+        print(f"[FAIL] Error testing file extension security: {e}")
         return False
 
 def test_path_security():
@@ -44,13 +44,13 @@ def test_path_security():
         
         missing_fixes = [fix for fix in required_fixes if fix not in content]
         if missing_fixes:
-            print(f"❌ Path security missing: {missing_fixes}")
+            print(f"[FAIL] Path security missing: {missing_fixes}")
             return False
         
-        print("✅ Path traversal security properly implemented")
+        print("[PASS] Path traversal security properly implemented")
         return True
     except Exception as e:
-        print(f"❌ Error testing path security: {e}")
+        print(f"[FAIL] Error testing path security: {e}")
         return False
 
 def test_binary_detection():
@@ -67,13 +67,17 @@ def test_binary_detection():
         
         missing_fixes = [fix for fix in required_fixes if fix not in content]
         if missing_fixes:
-            print(f"❌ Binary detection missing: {missing_fixes}")
+            print(f"[FAIL] Binary detection missing: {missing_fixes}")
+            # Debug: show what we're looking for
+            for fix in missing_fixes:
+                print(f"  Looking for: {repr(fix)}")
+                print(f"  Found in content: {fix in content}")
             return False
         
-        print("✅ Binary content detection properly implemented")
+        print("[PASS] Binary content detection properly implemented")
         return True
     except Exception as e:
-        print(f"❌ Error testing binary detection: {e}")
+        print(f"[FAIL] Error testing binary detection: {e}")
         return False
 
 def test_security_validation():
@@ -90,18 +94,18 @@ def test_security_validation():
         
         missing_fixes = [fix for fix in required_fixes if fix not in content]
         if missing_fixes:
-            print(f"❌ Security validation missing: {missing_fixes}")
+            print(f"[FAIL] Security validation missing: {missing_fixes}")
             return False
         
-        print("✅ Security validation properly implemented")
+        print("[PASS] Security validation properly implemented")
         return True
     except Exception as e:
-        print(f"❌ Error testing security validation: {e}")
+        print(f"[FAIL] Error testing security validation: {e}")
         return False
 
 def main():
     """Run all security validation tests"""
-    print("🔍 Running comprehensive security validation...")
+    print("Running comprehensive security validation...")
     print("=" * 60)
     
     tests = [
@@ -116,7 +120,7 @@ def main():
         try:
             results.append(test())
         except Exception as e:
-            print(f"❌ Error in {test.__name__}: {e}")
+            print(f"[FAIL] Error in {test.__name__}: {e}")
             results.append(False)
     
     print("=" * 60)
@@ -125,14 +129,14 @@ def main():
     print(f"Results: {passed}/{total} security validation tests passed")
     
     if passed == total:
-        print("🎉 ALL SECURITY VALIDATIONS PASSED")
-        print("✅ File upload security hardened")
-        print("✅ Path traversal protection enhanced") 
-        print("✅ Binary detection improved")
-        print("✅ Test validation logic fixed")
+        print("[SUCCESS] ALL SECURITY VALIDATIONS PASSED")
+        print("[PASS] File upload security hardened")
+        print("[PASS] Path traversal protection enhanced") 
+        print("[PASS] Binary detection improved")
+        print("[PASS] Test validation logic fixed")
         return True
     else:
-        print(f"❌ {total - passed} VALIDATION(S) FAILED")
+        print(f"[FAIL] {total - passed} VALIDATION(S) FAILED")
         return False
 
 if __name__ == "__main__":

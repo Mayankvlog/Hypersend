@@ -113,7 +113,7 @@ class Settings:
     
     # CRITICAL: Production safety check
     if not DEBUG and USE_MOCK_DB:
-        raise RuntimeError("🚨 PRODUCTION SAFETY ERROR: Mock database cannot be used in production. Set USE_MOCK_DB=False")
+        raise RuntimeError("PRODUCTION SAFETY ERROR: Mock database cannot be used in production. Set USE_MOCK_DB=False")
     
     # CORS Configuration
     # ENHANCED: Load from environment with secure defaults

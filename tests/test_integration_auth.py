@@ -34,7 +34,7 @@ async def test_bearer_token_authentication():
             "token_type": "access"
         }
         token = create_access_token(token_data)
-        print(f"✓ Created token for user: {user_id}")
+        print(f"[PASS] Created token for user: {user_id}")
         print(f"  Token (first 50 chars): {token[:50]}...")
         
         # Simulate Bearer authentication
@@ -42,20 +42,20 @@ async def test_bearer_token_authentication():
             scheme="Bearer",
             credentials=token
         )
-        print(f"✓ Created Bearer credentials")
+        print(f"[PASS] Created Bearer credentials")
         
         # Call get_current_user
         result = await get_current_user(credentials)
         
         if result == user_id:
-            print(f"✓ PASSED: get_current_user returned correct user_id: {result}")
+            print(f"[PASS] PASSED: get_current_user returned correct user_id: {result}")
             return True
         else:
-            print(f"✗ FAILED: Expected {user_id}, got {result}")
+            print(f"[FAIL] FAILED: Expected {user_id}, got {result}")
             return False
             
     except Exception as e:
-        print(f"✗ ERROR: {type(e).__name__}: {e}")
+        print(f"[FAIL] ERROR: {type(e).__name__}: {e}")
         return False
 
 
@@ -72,21 +72,21 @@ async def test_query_token_authentication():
             "token_type": "access"
         }
         token = create_access_token(token_data)
-        print(f"✓ Created token for user: {user_id}")
+        print(f"[PASS] Created token for user: {user_id}")
         print(f"  Token would be passed as: ?token={token[:20]}...")
         
         # Call get_current_user_from_query with token from query
         result = await get_current_user_from_query(token=token)
         
         if result == user_id:
-            print(f"✓ PASSED: get_current_user_from_query returned correct user_id: {result}")
+            print(f"[PASS] PASSED: get_current_user_from_query returned correct user_id: {result}")
             return True
         else:
-            print(f"✗ FAILED: Expected {user_id}, got {result}")
+            print(f"[FAIL] FAILED: Expected {user_id}, got {result}")
             return False
             
     except Exception as e:
-        print(f"✗ ERROR: {type(e).__name__}: {e}")
+        print(f"[FAIL] ERROR: {type(e).__name__}: {e}")
         return False
 
 
@@ -98,16 +98,16 @@ async def test_query_missing_token():
     try:
         # Call without token (default None)
         result = await get_current_user_from_query(token=None)
-        print(f"✗ FAILED: Should have raised HTTPException, got: {result}")
+        print(f"[FAIL] FAILED: Should have raised HTTPException, got: {result}")
         return False
         
     except Exception as e:
         if "401" in str(e) or "Unauthorized" in str(e):
-            print(f"✓ PASSED: Correctly raised HTTPException for missing token")
+            print(f"[PASS] PASSED: Correctly raised HTTPException for missing token")
             print(f"  Error: {e}")
             return True
         else:
-            print(f"✗ FAILED: Wrong exception: {type(e).__name__}: {e}")
+            print(f"[FAIL] FAILED: Wrong exception: {type(e).__name__}: {e}")
             return False
 
 
@@ -138,7 +138,7 @@ async def test_mixed_usage_scenario():
         creds_web = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token_web)
         result_web = await get_current_user(creds_web)
         if result_web == user_web:
-            print(f"  ✓ {user_web}: Bearer auth successful")
+            print(f"  [PASS] {user_web}: Bearer auth successful")
             successful += 1
         
         # Mobile user with Query
@@ -149,7 +149,7 @@ async def test_mixed_usage_scenario():
         })
         result_mobile = await get_current_user_from_query(token=token_mobile)
         if result_mobile == user_mobile:
-            print(f"  ✓ {user_mobile}: Query auth successful")
+            print(f"  [PASS] {user_mobile}: Query auth successful")
             successful += 1
         
         # Desktop user with Bearer
@@ -161,19 +161,19 @@ async def test_mixed_usage_scenario():
         creds_desktop = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token_desktop)
         result_desktop = await get_current_user(creds_desktop)
         if result_desktop == user_desktop:
-            print(f"  ✓ {user_desktop}: Bearer auth successful")
+            print(f"  [PASS] {user_desktop}: Bearer auth successful")
             successful += 1
         
         print()
         if successful == 3:
-            print(f"✓ PASSED: All {successful} auth methods working in mixed scenario")
+            print(f"[PASS] PASSED: All {successful} auth methods working in mixed scenario")
             return True
         else:
-            print(f"✗ FAILED: Only {successful}/3 auth methods succeeded")
+            print(f"[FAIL] FAILED: Only {successful}/3 auth methods succeeded")
             return False
             
     except Exception as e:
-        print(f"✗ ERROR: {type(e).__name__}: {e}")
+        print(f"[FAIL] ERROR: {type(e).__name__}: {e}")
         return False
 
 
@@ -198,18 +198,18 @@ async def test_token_validation_consistency():
         result_query = await get_current_user_from_query(token=token)
         
         if result_bearer == result_query == user_id:
-            print(f"✓ PASSED: Both methods validate tokens identically")
+            print(f"[PASS] PASSED: Both methods validate tokens identically")
             print(f"  Bearer result: {result_bearer}")
             print(f"  Query result: {result_query}")
             return True
         else:
-            print(f"✗ FAILED: Results differ")
+            print(f"[FAIL] FAILED: Results differ")
             print(f"  Bearer: {result_bearer}")
             print(f"  Query: {result_query}")
             return False
             
     except Exception as e:
-        print(f"✗ ERROR: {type(e).__name__}: {e}")
+        print(f"[FAIL] ERROR: {type(e).__name__}: {e}")
         return False
 
 
@@ -233,7 +233,7 @@ async def main():
             result = await test()
             results.append(result)
         except Exception as e:
-            print(f"\n✗ ERROR in {test.__name__}: {type(e).__name__}: {e}")
+            print(f"\n[FAIL] ERROR in {test.__name__}: {type(e).__name__}: {e}")
             results.append(False)
     
     # Summary
@@ -245,7 +245,7 @@ async def main():
     total = len(results)
     
     for i, (test, result) in enumerate(zip(tests, results)):
-        status = "✓" if result else "✗"
+        status = "[PASS]" if result else "[FAIL]"
         test_name = test.__name__.replace('test_', '').replace('_', ' ').title()
         print(f"{status} Test {i+1}: {test_name}")
     
@@ -253,11 +253,11 @@ async def main():
     print(f"Total: {passed}/{total} tests passed")
     
     if passed == total:
-        print("\n✅ ALL INTEGRATION TESTS PASSED")
+        print("\n[PASS] ALL INTEGRATION TESTS PASSED")
         print("Both Bearer and Query token authentication methods are working correctly!")
         return True
     else:
-        print(f"\n❌ {total - passed} TEST(S) FAILED")
+        print(f"\n[FAIL] {total - passed} TEST(S) FAILED")
         return False
 
 

@@ -29,10 +29,10 @@ def test_auth_routes():
                 missing_decorators.append(decorator)
         
         if missing_decorators:
-            print(f"❌ Missing decorators: {missing_decorators}")
+            print(f"[FAIL] Missing decorators: {missing_decorators}")
             return False
         else:
-            print("✅ All auth routes have proper HTTP method decorators")
+            print("[PASS] All auth routes have proper HTTP method decorators")
             
         # Check for OPTIONS handlers (CORS)
         options_handlers = [
@@ -50,20 +50,20 @@ def test_auth_routes():
         if missing_options:
             print(f"⚠️  Missing OPTIONS handlers: {missing_options}")
         else:
-            print("✅ All auth routes have CORS OPTIONS handlers")
+            print("[PASS] All auth routes have CORS OPTIONS handlers")
             
         # Verify router prefix
         if 'prefix="/auth"' in content:
-            print("✅ Auth router has correct prefix")
+            print("[PASS] Auth router has correct prefix")
         else:
-            print("❌ Auth router missing prefix")
+            print("[FAIL] Auth router missing prefix")
             return False
         
         print("🎯 HTTP 405 Method Not Allowed fix verified!")
         return True
         
     except Exception as e:
-        print(f"❌ Error testing auth routes: {e}")
+        print(f"[FAIL] Error testing auth routes: {e}")
         return False
 
 if __name__ == "__main__":

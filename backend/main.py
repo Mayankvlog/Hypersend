@@ -23,7 +23,7 @@ try:
     
     # SECURITY: Prevent importing config with missing secrets in production
     if not os.getenv('SECRET_KEY') and not os.getenv('DEBUG', 'false').lower() in ('true', '1'):
-        raise RuntimeError("🚨 PRODUCTION SAFETY: SECRET_KEY must be set in production")
+        raise RuntimeError("PRODUCTION SAFETY: SECRET_KEY must be set in production")
     
     from config import settings
     if settings.USE_MOCK_DB:

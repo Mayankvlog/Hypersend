@@ -34,7 +34,7 @@ class ApiService {
     _log('[API_INIT] Server Base URL: ${ApiConstants.serverBaseUrl}');
     _log('[API_INIT] Auth endpoint: ${ApiConstants.authEndpoint}');
     _log('[API_INIT] Users endpoint: ${ApiConstants.usersEndpoint}');
-    _log('[API_INIT] Full avatar URL: ${url}${ApiConstants.usersEndpoint}/avatar');
+    _log('[API_INIT] Full avatar URL: $url${ApiConstants.usersEndpoint}/avatar');
     _log('[API_INIT] SSL validation: ${ApiConstants.validateCertificates}');
 
     _dio = Dio(
@@ -257,7 +257,7 @@ class ApiService {
       
       default:
         if (statusCode != null && statusCode >= 300 && statusCode < 600) {
-          return customMessage ?? 'HTTP ${statusCode}: ${_getHttpStatusCategory(statusCode)}';
+          return customMessage ?? 'HTTP $statusCode: ${_getHttpStatusCategory(statusCode)}';
         }
         return 'Server error: ${statusCode ?? 'Unknown'}';
     }
@@ -300,7 +300,7 @@ class ApiService {
         '4. SSL certificates are valid (${ApiConstants.validateCertificates ? "enabled" : "disabled"})\n'
         '5. Security mode: ${ApiConstants.validateCertificates ? "SECURE 🔒" : "DEBUG MODE ⚠️"}\n'
         '6. Platform: ${kIsWeb ? "Flutter Web (browser controls SSL)" : "Mobile"}\n\n'
-        'Debug info: ${message}\n\n'
+        'Debug info: $message\n\n'
         'If you continue seeing this error:\n'
         '• Verify: https://zaply.in.net/health\n'
         '• Check backend container logs: docker compose logs backend\n'
@@ -738,9 +738,12 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
         'file': MultipartFile.fromBytes(bytes, filename: filename),
       });
       
+      final uploadUrl = '${ApiConstants.usersEndpoint}/avatar';
+      debugPrint('[API_SERVICE] Avatar upload URL: ${_dio.options.baseUrl}$uploadUrl');
+      
       // Remove Content-Type header to let Dio set it automatically with correct boundary
       final response = await _dio.post(
-        '${ApiConstants.usersEndpoint}/avatar', 
+        uploadUrl, 
         data: formData,
         options: Options(
           method: 'POST',
@@ -1217,7 +1220,7 @@ options: Options(
       _log('[DOWNLOAD_LARGE] Starting chunked download for file: $fileId');
       
       // Get file info first
-      final fileInfo = await this.getFileInfo(fileId);
+      final fileInfo = await getFileInfo(fileId);
       final totalSize = fileInfo['size']?.toString().length ?? 0;
       final fileName = fileInfo['filename']?.toString() ?? 'unknown';
       
@@ -1479,6 +1482,7 @@ Future<bool> resetPassword({required String email}) async {
   }
 
   // Comprehensive error handling for all API methods
+  // ignore: unused_element
   Future<Map<String, dynamic>> _handleApiResponse(
     Future<Response> apiCall,
     String operationName,
@@ -1697,27 +1701,25 @@ Future<bool> resetPassword({required String email}) async {
       }
       
 // Ensure directory exists (web: uses IndexedDB/LocalStorage, mobile: uses file system)
-      if (!kIsWeb) {
-        // Mobile platform - use actual file system
-        // Use complete file path for native platforms
-        final directory = io.Directory(localStoragePath);
-        if (!await directory.exists()) {
-          await directory.create(recursive: true);
-        }
-        final filePath = io.Platform.isWindows ? '${directory.path}\\$fileName' : '${directory.path}/$fileName';
-        final file = io.File(filePath);
-        
-        // Create directory if needed
-        await file.parent.create(recursive: true);
-        
-        // Write file
-        await file.writeAsBytes(fileData);
-        
-        _log('[LOCAL_STORAGE] File saved successfully at: ${file.path}');
-        _log('[LOCAL_STORAGE] File size: ${(fileData.length / (1024 * 1024)).toStringAsFixed(2)}MB');
-        
-        return file.path;
+      // Mobile platform - use actual file system
+      // Use complete file path for native platforms
+      final directory = io.Directory(localStoragePath);
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
       }
+      final filePath = io.Platform.isWindows ? '${directory.path}\\$fileName' : '${directory.path}/$fileName';
+      final file = io.File(filePath);
+      
+      // Create directory if needed
+      await file.parent.create(recursive: true);
+      
+      // Write file
+      await file.writeAsBytes(fileData);
+      
+      _log('[LOCAL_STORAGE] File saved successfully at: ${file.path}');
+      _log('[LOCAL_STORAGE] File size: ${(fileData.length / (1024 * 1024)).toStringAsFixed(2)}MB');
+      
+      return file.path;
     } catch (e) {
       _log('[LOCAL_STORAGE_ERROR] Failed to save file: $e');
       rethrow;
@@ -1783,7 +1785,7 @@ if (!kIsWeb) {
         
         for (var file in files) {
           if (file is io.File) {
-            totalSize += (await file.length()) as int;
+            totalSize += await file.length();
           }
         }
         

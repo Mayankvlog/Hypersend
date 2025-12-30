@@ -42,27 +42,27 @@ class ProfileService {
       }
       
       // Helper function to detect avatar-only updates (NO duplication)
-    bool _isAvatarOnlyUpdate({
-      String? name,
-      String? username, 
-      String? email,
-      String? bio,
-      String? avatar,
-      String? avatarUrl,
-    }) {
-      return (avatar != null || avatarUrl != null) && 
-             name == null && 
-             username == null && 
-             email == null && 
-             bio == null;
-    }
+      bool isAvatarOnlyUpdate({
+        String? name,
+        String? username, 
+        String? email,
+        String? bio,
+        String? avatar,
+        String? avatarUrl,
+      }) {
+        return (avatar != null || avatarUrl != null) && 
+               name == null && 
+               username == null && 
+               email == null && 
+               bio == null;
+      }
     
     if (_currentUser == null) {
       throw Exception('No user logged in');
     }
 
     try {
-      final isAvatarOnlyUpdate = _isAvatarOnlyUpdate(
+      final isAvatarOnly = isAvatarOnlyUpdate(
         name: name,
         username: username,
         email: email,
@@ -71,7 +71,7 @@ class ProfileService {
         avatarUrl: avatarUrl,
       );
       
-      if (isAvatarOnlyUpdate) {
+      if (isAvatarOnly) {
         debugPrint('[PROFILE_SERVICE] Avatar-only update detected - skipping field validation');
       } else {
         // Validate name - only if name is being updated
@@ -218,10 +218,6 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       
       debugPrint('[PROFILE_SERVICE] Raw response: $response');
       debugPrint('[PROFILE_SERVICE] Response type: ${response.runtimeType}');
-      
-       if (response is! Map<String, dynamic>) {
-        throw Exception('Invalid response from server: expected Map, got ${response.runtimeType}');
-      }
       
        final Map<String, dynamic> responseMap = response;
       

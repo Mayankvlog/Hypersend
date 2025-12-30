@@ -59,13 +59,13 @@ def check_server_health() -> bool:
     try:
         response = requests.get(f"{API_BASE_URL}/health", timeout=5)
         if response.status_code == 200:
-            print_status("✓ Server is healthy", "PASS")
+            print_status("[PASS] Server is healthy", "PASS")
             return True
     except requests.exceptions.ConnectionError:
-        print_status("✗ Cannot connect to server", "FAIL")
+        print_status("[FAIL] Cannot connect to server", "FAIL")
         return False
     except Exception as e:
-        print_status(f"✗ Server check failed: {e}", "FAIL")
+        print_status(f"[FAIL] Server check failed: {e}", "FAIL")
         return False
     return False
 
@@ -85,7 +85,7 @@ def test_forgot_password_endpoint() -> Optional[dict]:
         
         if response.status_code == 200:
             data = response.json()
-            print_status(f"✓ Forgot password endpoint working", "PASS")
+            print_status(f"[PASS] Forgot password endpoint working", "PASS")
             print_status(f"  Message: {data.get('message', 'N/A')}", "INFO")
             print_status(f"  Success: {data.get('success', False)}", "INFO")
             print_status(f"  Email Sent: {data.get('email_sent', False)}", "INFO")
@@ -93,18 +93,18 @@ def test_forgot_password_endpoint() -> Optional[dict]:
             return data
         else:
             error_data = response.json()
-            print_status(f"✗ Endpoint returned {response.status_code}", "FAIL")
+            print_status(f"[FAIL] Endpoint returned {response.status_code}", "FAIL")
             print_status(f"  Error: {error_data.get('detail', 'Unknown error')}", "FAIL")
             return None
     
     except requests.exceptions.Timeout:
-        print_status("✗ Request timed out", "FAIL")
+        print_status("[FAIL] Request timed out", "FAIL")
         return None
     except requests.exceptions.ConnectionError:
-        print_status("✗ Cannot connect to server", "FAIL")
+        print_status("[FAIL] Cannot connect to server", "FAIL")
         return None
     except Exception as e:
-        print_status(f"✗ Request failed: {e}", "FAIL")
+        print_status(f"[FAIL] Request failed: {e}", "FAIL")
         return None
 
 def test_forgot_password_invalid_email() -> bool:
@@ -128,11 +128,11 @@ def test_forgot_password_invalid_email() -> bool:
             )
             
             if response.status_code in [400, 422]:
-                print_status(f"✓ Correctly rejected invalid email: '{email}'", "PASS")
+                print_status(f"[PASS] Correctly rejected invalid email: '{email}'", "PASS")
             else:
                 print_status(f"⚠ Unexpected status {response.status_code} for: '{email}'", "WARN")
         except Exception as e:
-            print_status(f"✗ Error testing email '{email}': {e}", "FAIL")
+            print_status(f"[FAIL] Error testing email '{email}': {e}", "FAIL")
             return False
     
     return True
@@ -155,17 +155,17 @@ def test_forgot_password_nonexistent_user() -> bool:
             
             # Security check: Should return generic message (not reveal if user exists)
             if "If an account exists" in message or "reset link" in message:
-                print_status("✓ Generic response for non-existent user (good security)", "PASS")
+                print_status("[PASS] Generic response for non-existent user (good security)", "PASS")
                 return True
             else:
                 print_status("⚠ Response might reveal user existence", "WARN")
                 return True
         else:
-            print_status(f"✗ Unexpected status {response.status_code}", "FAIL")
+            print_status(f"[FAIL] Unexpected status {response.status_code}", "FAIL")
             return False
     
     except Exception as e:
-        print_status(f"✗ Error: {e}", "FAIL")
+        print_status(f"[FAIL] Error: {e}", "FAIL")
         return False
 
 def test_reset_password_invalid_token() -> bool:
@@ -184,14 +184,14 @@ def test_reset_password_invalid_token() -> bool:
         )
         
         if response.status_code in [400, 401]:
-            print_status(f"✓ Correctly rejected invalid token", "PASS")
+            print_status(f"[PASS] Correctly rejected invalid token", "PASS")
             return True
         else:
             print_status(f"⚠ Unexpected status {response.status_code}", "WARN")
             return True
     
     except Exception as e:
-        print_status(f"✗ Error: {e}", "FAIL")
+        print_status(f"[FAIL] Error: {e}", "FAIL")
         return False
 
 def test_reset_password_weak_password() -> bool:
@@ -210,14 +210,14 @@ def test_reset_password_weak_password() -> bool:
         )
         
         if response.status_code in [400, 401]:
-            print_status(f"✓ Correctly rejected weak password", "PASS")
+            print_status(f"[PASS] Correctly rejected weak password", "PASS")
             return True
         else:
             print_status(f"⚠ Unexpected status {response.status_code}", "WARN")
             return True
     
     except Exception as e:
-        print_status(f"✗ Error: {e}", "FAIL")
+        print_status(f"[FAIL] Error: {e}", "FAIL")
         return False
 
 def test_response_structure(response_data: dict) -> bool:
@@ -232,10 +232,10 @@ def test_response_structure(response_data: dict) -> bool:
             missing_fields.append(field)
     
     if missing_fields:
-        print_status(f"✗ Missing fields: {', '.join(missing_fields)}", "FAIL")
+        print_status(f"[FAIL] Missing fields: {', '.join(missing_fields)}", "FAIL")
         return False
     
-    print_status(f"✓ Response has all required fields", "PASS")
+    print_status(f"[PASS] Response has all required fields", "PASS")
     return True
 
 def test_email_validation() -> bool:
@@ -256,7 +256,7 @@ def test_email_validation() -> bool:
         "user @example.com"
     ]
     
-    print_status(f"✓ Email validation tests prepared", "PASS")
+    print_status(f"[PASS] Email validation tests prepared", "PASS")
     return True
 
 def generate_test_report(results: dict) -> None:
@@ -291,7 +291,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     
     for test_name, result in results.items():
         if isinstance(result, bool):
-            status = "✓ PASS" if result else "✗ FAIL"
+            status = "[PASS] PASS" if result else "[FAIL] FAIL"
             report_content += f"- {test_name}: {status}\n"
     
     report_content += f"""
@@ -386,7 +386,7 @@ def main():
     total = sum(1 for v in test_results.values() if isinstance(v, bool))
     
     if passed == total:
-        print_status(f"All {total} tests passed! ✓", "PASS")
+        print_status(f"All {total} tests passed! [PASS]", "PASS")
         return 0
     else:
         print_status(f"{passed}/{total} tests passed", "WARN")

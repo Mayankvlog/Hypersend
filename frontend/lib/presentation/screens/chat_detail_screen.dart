@@ -2,11 +2,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'dart:io' show Platform;
 
 import '../../core/constants/app_strings.dart';
-import '../../core/constants/api_constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
@@ -562,8 +559,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final isPDF = contentType.toLowerCase().contains('pdf');
       final isImage = contentType.toLowerCase().contains('image');
       final isVideo = contentType.toLowerCase().contains('video');
-      final isAudio = contentType.toLowerCase().contains('audio');
-      final isText = contentType.toLowerCase().contains('text');
+
       
       debugPrint('[FILE_DOWNLOAD] File type: $contentType, isPDF: $isPDF, isImage: $isImage, isVideo: $isVideo');
       
@@ -670,7 +666,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         // Native: Use FileTransferService for proper chunked download
         // Generate a safe filename and path
         final safeFileName = fileName.replaceAll(RegExp(r'[^\w\-_.]'), '_');
-        final savePath = '$safeFileName';
+        final savePath = safeFileName;
         
         debugPrint('[FILE_NATIVE] Download path: $savePath');
         

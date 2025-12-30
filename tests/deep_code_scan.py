@@ -32,7 +32,7 @@ class DeepCodeScanner:
             elif filepath.endswith('.py'):
                 return self._scan_python(filepath, content)
         except Exception as e:
-            print(f"✗ Error scanning {filepath}: {e}")
+            print(f"[FAIL] Error scanning {filepath}: {e}")
             return 0, 0, 0
         return 0, 0, 0
     
