@@ -619,13 +619,122 @@ class ApiService {
       debugPrint('[API_REFRESH] Token refresh should be handled by interceptor');
       // Deprecated: use AuthService directly instead
       return false;
-      } else {
-        debugPrint('[API_REFRESH] Token refresh failed: ${response.data}');
-        return false;
-      }
     } catch (e) {
       debugPrint('[API_REFRESH] Token refresh error: $e');
       return false;
+    }
+  }
+
+  // Token management methods used by AuthService
+  void setAuthToken(String token) {
+    _dio.options.headers['Authorization'] = 'Bearer $token';
+    _log('[API_AUTH] Token set (Bearer token), length: ${token.length}');
+  }
+
+  void clearAuthToken() {
+    _dio.options.headers.remove('Authorization');
+    _log('[API_AUTH] Token cleared from headers');
+  }
+
+  Future<Map<String, dynamic>> refreshToken({required String refreshToken}) async {
+    try {
+      _log('[API_REFRESH_TOKEN] Attempting token refresh');
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/refresh',
+        data: {'refresh_token': refreshToken},
+      );
+      return response.data ?? {};
+    } on DioException catch (e) {
+      _log('[API_REFRESH_TOKEN_ERROR] Dio error: ${e.message}');
+      rethrow;
+    } catch (e) {
+      _log('[API_REFRESH_TOKEN_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> resetPassword({required String email}) async {
+    try {
+      _log('[API_RESET_PASSWORD] Sending password reset request for: $email');
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/forgot-password',
+        data: {'email': email},
+      );
+      return response.data ?? {};
+    } on DioException catch (e) {
+      _log('[API_RESET_PASSWORD_ERROR] Dio error: ${e.message}');
+      rethrow;
+    } catch (e) {
+      _log('[API_RESET_PASSWORD_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> resetPasswordWithDetails({required String email}) async {
+    try {
+      _log('[API_RESET_PASSWORD] Sending forgot-password request for: $email');
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/forgot-password',
+        data: {'email': email},
+      );
+      return response.data ?? {};
+    } on DioException catch (e) {
+      _log('[API_RESET_PASSWORD_ERROR] Dio error: ${e.message}');
+      rethrow;
+    } catch (e) {
+      _log('[API_RESET_PASSWORD_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      _log('[API_CHANGE_PASSWORD] Sending password change request');
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/change-password',
+        data: {'current_password': currentPassword, 'new_password': newPassword},
+      );
+      return response.data ?? {};
+    } on DioException catch (e) {
+      _log('[API_CHANGE_PASSWORD_ERROR] Dio error: ${e.message}');
+      rethrow;
+    } catch (e) {
+      _log('[API_CHANGE_PASSWORD_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> testEmailService() async {
+    try {
+      _log('[API_TEST_EMAIL] Testing email service configuration');
+      final response = await _dio.get('${ApiConstants.authEndpoint}/test-email');
+      return response.data ?? {};
+    } on DioException catch (e) {
+      _log('[API_TEST_EMAIL_ERROR] Dio error: ${e.message}');
+      rethrow;
+    } catch (e) {
+      _log('[API_TEST_EMAIL_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> changeEmail({required String newEmail}) async {
+    try {
+      _log('[API_CHANGE_EMAIL] Sending change email request for: $newEmail');
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/change-email',
+        data: {'new_email': newEmail},
+      );
+      return response.data ?? {};
+    } on DioException catch (e) {
+      _log('[API_CHANGE_EMAIL_ERROR] Dio error: ${e.message}');
+      rethrow;
+    } catch (e) {
+      _log('[API_CHANGE_EMAIL_ERROR] Failed: $e');
+      rethrow;
     }
   }
 
