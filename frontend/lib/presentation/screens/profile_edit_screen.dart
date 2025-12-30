@@ -74,8 +74,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final newEmail = _emailController.text.trim();
       
       if (newEmail.isNotEmpty && newEmail != currentEmail) {
-        // Strict email validation: user@domain.extension format
-        if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(newEmail)) {
+// More lenient email validation: basic format check
+        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(newEmail)) {
           throw Exception('Invalid email format. Example: user@example.com');
         }
         emailToSend = newEmail;
@@ -177,8 +177,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       
       // Extract meaningful error message
       String errorMessage = 'Error: ${e.toString()}';
-      if (e.toString().contains('422')) {
-        errorMessage = 'Invalid data. Please check your inputs.';
+if (e.toString().contains('422')) {
+        // Try to extract real validation error
+        final errorString = e.toString();
+        if (errorString.contains('avatar') || errorString.contains('picture')) {
+          errorMessage = 'Profile picture issue: Please check image format or try a different photo.';
+        } else if (errorString.contains('email')) {
+          errorMessage = 'Email issue: Please check if this email is already in use or invalid.';
+        } else if (errorString.contains('username')) {
+          errorMessage = 'Username issue: This username may be taken or invalid.';
+        } else if (errorString.contains('name')) {
+          errorMessage = 'Name issue: Please provide a valid name (2+ characters).';
+        } else {
+          errorMessage = 'Validation error: Please check all fields and try again.';
+        }
       } else if (e.toString().contains('409')) {
         errorMessage = 'Email already in use. Please try another email.';
       } else if (e.toString().contains('401')) {

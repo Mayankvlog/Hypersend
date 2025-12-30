@@ -1,15 +1,32 @@
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'api_service.dart';
+import '../../core/constants/api_constants.dart';
 
 class FileTransferService {
   final ApiService _api;
   final List<FileTransfer> _transfers = [];
+  Timer? _cleanupTimer;
 
-  FileTransferService(this._api);
+  FileTransferService(this._api) {
+    // Initialize periodic cleanup of completed transfers
+    _cleanupTimer = Timer.periodic(const Duration(minutes: 5), (_) => _cleanupCompleted());
+  }
 
   List<FileTransfer> get activeTransfers => _transfers;
+
+  void _cleanupCompleted() {
+    _transfers.removeWhere((transfer) {
+      // Remove completed transfers to prevent memory leaks
+      return transfer.status == TransferStatus.completed;
+    });
+  }
+
+  void dispose() {
+    _cleanupTimer?.cancel();
+  }
 
   /// Pick and upload a file using the backend's resumable chunk upload API.
   /// This supports very large files (e.g. 40GB) on desktop/mobile where `dart:io` is available.
@@ -17,12 +34,22 @@ class FileTransferService {
     required String chatId,
     required Function(double) onProgress,
   }) async {
-    final result = await FilePicker.platform.pickFiles(withReadStream: true);
+    final result = await FilePicker.platform.pickFiles(
+      withReadStream: true,
+      type: FileType.any, // Allow all file types
+      allowMultiple: false,
+    );
     if (result == null || result.files.isEmpty) return;
 
     final file = result.files.single;
     if (file.name.isEmpty || file.size <= 0) {
       throw Exception('Invalid file selection');
+    }
+
+    // Check against 40GB limit
+    if (file.size > ApiConstants.maxFileSizeBytes) {
+      final sizeGB = file.size / (1024 * 1024 * 1024);
+      throw Exception('File size (${sizeGB.toStringAsFixed(2)}GB) exceeds 40GB limit');
     }
 
     final stream = file.readStream ?? (file.bytes != null ? Stream.value(file.bytes!) : null);

@@ -168,9 +168,9 @@ Future<void> _pickImage() async {
         final file = result.files.single;
         debugPrint('[PROFILE_PHOTO] Image picked: ${file.name} (${file.bytes?.length} bytes)');
         
-        // Validate file size (max 5MB)
-        if (file.bytes != null && file.bytes!.length > 5 * 1024 * 1024) {
-          throw Exception('Image size must be less than 5MB');
+        // Validate file size (max 10MB for profile photos)
+        if (file.bytes != null && file.bytes!.length > 10 * 1024 * 1024) {
+          throw Exception('Image size must be less than 10MB');
         }
         
         debugPrint('[PROFILE_PHOTO] Setting state with picked image...');
@@ -285,8 +285,14 @@ Future<void> _handleSave() async {
         errorMessage = 'Server error. Please try again later';
       } else if (errorString.contains('string should have at most 10 characters')) {
         errorMessage = 'Avatar initials too long. Please use 1-10 characters only.';
+      } else if (errorString.contains('avatar_url too long') || errorString.contains('avatarurl must be 500 characters or less')) {
+        errorMessage = 'Avatar URL is too long. Please use a shorter URL (max 500 characters).';
+      } else if (errorString.contains('avatar too long') || errorString.contains('avatar must be 10 characters or less')) {
+        errorMessage = 'Avatar initials are too long. Please use 1-10 characters only.';
+      } else if (errorString.contains('name cannot be empty') || errorString.contains('name must be at least 2 characters')) {
+        errorMessage = 'Name validation failed. Please check your name input.';
       } else if (errorString.contains('validation') || errorString.contains('invalid')) {
-        errorMessage = 'Invalid data provided. Please check your inputs and try again.';
+        errorMessage = 'Validation failed. Please check all input fields and try again.';
       } else if (errorString.isNotEmpty) {
         errorMessage = e.toString();
       }

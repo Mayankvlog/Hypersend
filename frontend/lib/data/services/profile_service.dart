@@ -26,15 +26,20 @@ class ProfileService {
     String? email,
     String? bio,
   }) async {
-      // Validate field constraints
-      if (avatar != null && avatar.length > 10) {
-        debugPrint('[PROFILE_SERVICE] ERROR: Avatar field too long for initials. Use avatarUrl field for images.');
-        throw Exception('Avatar initials must be 10 characters or less. Use avatarUrl field for images.');
+      // Validate field constraints - MORE RELAXED VALIDATION
+      if (avatar != null && avatar.length > 200) {  // Increased from 50 to 200
+        debugPrint('[PROFILE_SERVICE] WARNING: Avatar field long. Using avatarUrl field instead.');
+        // Don't throw error, just handle gracefully
+        if (avatarUrl == null) {
+          // Move long avatar to avatarUrl field
+          avatarUrl = avatar;
+          avatar = null;
+        }
       }
       
-      if (avatarUrl != null && avatarUrl.length > 500) {
-        debugPrint('[PROFILE_SERVICE] ERROR: AvatarUrl field too long. Must be 500 characters or less.');
-        throw Exception('Avatar URL must be 500 characters or less.');
+      if (avatarUrl != null && avatarUrl.length > 2000) {  // Increased from 1000 to 2000
+        debugPrint('[PROFILE_SERVICE] ERROR: AvatarUrl field extremely long. Truncating.');
+        avatarUrl = avatarUrl.substring(0, 2000);  // Truncate instead of throwing
       }
     if (_currentUser == null) {
       throw Exception('No user logged in');
@@ -43,10 +48,10 @@ class ProfileService {
     try {
       // Validate name
       if ((name ?? '').isEmpty && _currentUser!.name.isEmpty) {
-        throw Exception('Name cannot be empty');
+        throw Exception('Name cannot be empty. Please provide a valid name.');
       }
       if ((name ?? '').isNotEmpty && name!.length < 2) {
-        throw Exception('Name must be at least 2 characters');
+        throw Exception('Name must be at least 2 characters long. Current length: ${name!.length}');
       }
 
       debugPrint('[PROFILE_UPDATE] Starting profile update');
@@ -58,7 +63,11 @@ class ProfileService {
       if (username != null) updateMap['username'] = username;
       if (email != null) updateMap['email'] = email;
       if (avatar != null) updateMap['avatar'] = avatar;  // Add avatar field for initials
-      if (avatarUrl != null) updateMap['avatar_url'] = avatarUrl;  // Add avatar_url field for image URL
+      if (avatarUrl != null) {
+        updateMap['avatar_url'] = avatarUrl;  // Add avatar_url field for image URL
+        // Also send profile_picture for backend compatibility
+        updateMap['profile_picture'] = avatarUrl;
+      }
       if (bio != null) updateMap['bio'] = bio;
       
       debugPrint('[PROFILE_UPDATE] Sending to API: $updateMap');

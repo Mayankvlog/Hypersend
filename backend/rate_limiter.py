@@ -12,23 +12,47 @@ class RateLimiter:
         self.lock = threading.Lock()
     
     def is_allowed(self, identifier: str) -> bool:
-        """Check if the identifier is allowed to make a request"""
+"""Check if the identifier is allowed to make a request with thread safety"""
+    try:
         now = time.time()
         
         with self.lock:
-            # Clean old requests
-            self.requests[identifier] = [
-                req_time for req_time in self.requests[identifier]
+            # Atomic: Get current requests list
+            current_requests = self.requests.get(identifier, [])
+            
+            # Atomic: Clean old requests
+            valid_requests = [
+                req_time for req_time in current_requests
                 if now - req_time < self.window_seconds
             ]
             
-            # Check if under limit
-            if len(self.requests[identifier]) >= self.max_requests:
+            # Atomic: Check limit
+            if len(valid_requests) >= self.max_requests:
+                # Store cleaned list back
+                self.requests[identifier] = valid_requests
                 return False
             
-            # Add current request
-            self.requests[identifier].append(now)
+            # Atomic: Add current request and store
+            valid_requests.append(now)
+            self.requests[identifier] = valid_requests
             return True
+    
+    def get_retry_after(self, identifier: str) -> int:
+        """Get seconds until next request is allowed"""
+        with self.lock:
+            current_requests = self.requests.get(identifier, [])
+            
+            # Sort requests by time (newest first)
+            sorted_requests = sorted(current_requests, reverse=True)
+            
+            # Find when rate limit will be reset
+            if len(sorted_requests) >= self.max_requests:
+                # After reaching limit, calculate reset time
+                oldest_request = sorted_requests[-1]
+                reset_time = oldest_request + self.window_seconds
+                return int(reset_time - now)
+            
+            return 0
     
     def get_retry_after(self, identifier: str) -> int:
         """Get seconds until next request is allowed"""

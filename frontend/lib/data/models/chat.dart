@@ -31,6 +31,10 @@ class Chat extends Equatable {
     final typeStr = (json['type'] ?? 'private').toString();
     ChatType chatType;
     switch (typeStr) {
+      case 'private':
+      case 'direct':
+        chatType = ChatType.direct;
+        break;
       case 'group':
         chatType = ChatType.group;
         break;

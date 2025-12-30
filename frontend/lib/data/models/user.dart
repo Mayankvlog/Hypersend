@@ -150,26 +150,27 @@ class User extends Equatable {
 
   /// Resolves the full avatar URL for display
   String get fullAvatarUrl {
-    // Use avatarUrl if available (for uploaded images)
+    // Try avatarUrl first (for uploaded images)
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
       final trimmed = avatarUrl!.trim();
       if (trimmed.startsWith('http')) return trimmed;
       if (trimmed.startsWith('/')) {
         return '${ApiConstants.serverBaseUrl}$trimmed';
       }
-      // Relative path fallback
-      return trimmed;
+      }
+      // If it doesn't start with http or /, assume it's a relative path
+      return '${ApiConstants.serverBaseUrl}/$trimmed';
     }
-    
-    // Fallback to avatar field (for initials)
+    }
+  
+    // Fallback to avatar field
     final trimmed = avatar.trim();
-    if (!isAvatarPath) return '';
     if (trimmed.startsWith('http')) return trimmed;
     if (trimmed.startsWith('/')) {
       return '${ApiConstants.serverBaseUrl}$trimmed';
     }
-    // Relative path fallback
-    return trimmed;
+    // For non-URL avatars (initials), return empty string
+    return '';
   }
 
   /// Helper to get initials from name or avatar field

@@ -285,15 +285,49 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
     final_path = settings.DATA_ROOT / "files" / f"{file_uuid}{file_ext}"
     upload_dir = settings.DATA_ROOT / "tmp" / upload_id
     
-    # Stream-concatenate chunks
+    # Stream-concatenate chunks with memory efficiency for 40GB files
     hasher = hashlib.sha256()
     async with aiofiles.open(final_path, "wb") as outfile:
+        chunk_size = settings.CHUNK_SIZE
         for i in sorted(upload["received_chunks"]):
             chunk_path = upload_dir / f"{i}.part"
+            
+            # Validate chunk file exists and is readable
+            if not chunk_path.exists():
+                # Clean up partially assembled file
+                final_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Chunk {i} not found during assembly"
+                )
+            
+            # Process chunk in smaller chunks to handle 40GB files
             async with aiofiles.open(chunk_path, "rb") as infile:
-                chunk_data = await infile.read()
-                hasher.update(chunk_data)
-                await outfile.write(chunk_data)
+                while True:
+                    chunk_data = await infile.read(chunk_size)
+                    if not chunk_data:
+                        break
+                    hasher.update(chunk_data)
+                    await outfile.write(chunk_data)
+                    
+                    # Periodic progress logging for large files
+                    if i == 0 and len(chunk_data) == chunk_size:
+                        _log("info", f"Starting file assembly for {upload['filename']} ({upload['size']/1024**3:.2f} GB)", 
+                                     {"user_id": current_user, "operation": "file_assembly"})
+        
+        final_checksum = hasher.hexdigest()
+        
+        # Verify final checksum matches provided checksum (if any)
+        if upload.get("expected_checksum") and final_checksum != upload["expected_checksum"]:
+            _log("error", f"Checksum mismatch for file {upload['filename']}", 
+                   {"user_id": current_user, "operation": "file_assembly", "expected": upload["expected_checksum"], "actual": final_checksum})
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File integrity check failed"
+            )
+        
+        _log("info", f"File assembly completed for {upload['filename']}", 
+                 {"user_id": current_user, "operation": "file_assembly_completed", "checksum": final_checksum})
     
     final_checksum = hasher.hexdigest()
     
@@ -450,14 +484,39 @@ async def get_file_info(
                 import mimetypes
                 content_type, _ = mimetypes.guess_type(str(avatar_path))
             
+            if not user_doc:
+                _log("error", f"User not found for avatar file", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found for avatar file"
+                )
+                
+            if not avatar_path.exists():
+                _log("error", f"Avatar file not found on disk: {file_id}", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Avatar file not found on disk"
+                )
+
+            file_stat = avatar_path.stat()
+            # Detect MIME type from file extension
+            import mimetypes
+            content_type, _ = mimetypes.guess_type(str(avatar_path))
+            
+            if not content_type:
+                content_type = "image/jpeg"  # Safe default
+            
             return {
                 "file_id": file_id,
                 "filename": f"avatar_{current_user}",
-                "content_type": content_type or "image/jpeg",
+                "content_type": content_type,
                 "size": file_stat.st_size,
                 "uploaded_by": current_user,
-                "created_at": user_doc.get("created_at") if user_doc else datetime.now(timezone.utc),
-                "checksum": None  # Avatars don't have checksums
+                "created_at": user_doc.get("created_at", datetime.now(timezone.utc)),
+                "checksum": None,  # Avatars don't have checksums
+                "file_type": "avatar",
+                "mime_type": content_type,
+                "user_id": current_user
             }
         
         # File not found in either collection

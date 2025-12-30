@@ -663,11 +663,17 @@ Future<Map<String, dynamic>> logout({required String refreshToken}) async {
       } else if (responseData is Map) {
         return Map<String, dynamic>.from(responseData);
       } else if (responseData != null) {
-        _log('[API_ME] Unexpected response format: $responseData');
-        throw Exception('Invalid user data format');
+        // Try to convert any response to Map
+        try {
+          return Map<String, dynamic>.from(responseData);
+        } catch (e) {
+          _log('[API_ME] Could not convert response to Map: $responseData');
+          // Return empty map instead of throwing
+          return {};
+        }
       } else {
-        _log('[API_ME] Empty user response received');
-        throw Exception('Empty user data received');
+        _log('[API_ME] Empty user response received, returning empty map');
+        return {};  // Return empty map instead of throwing
       }
     }
     
@@ -784,15 +790,33 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
           if (parsed is Map) {
             return Map<String, dynamic>.from(parsed);
           }
+          // If JSON decoded to non-Map type, throw exception
+          throw Exception(
+            'Avatar upload: JSON parse returned non-Map type (${parsed.runtimeType}). '
+            'Status: $statusCode'
+          );
         } catch (e) {
           debugPrint('[API_SERVICE] Failed to parse JSON string: $e');
+          throw Exception(
+            'Avatar upload: Failed to parse JSON response. Status: $statusCode, Error: $e'
+          );
         }
-        throw Exception('Invalid response format from server: expected JSON object');
       } else if (responseData != null) {
         debugPrint('[API_SERVICE] Unexpected response format: $responseData');
-        throw Exception('Invalid server response format');
+        // Try to convert any response to Map
+        try {
+          return Map<String, dynamic>.from(responseData);
+        } catch (e) {
+          throw Exception(
+            'Avatar upload: Cannot convert response to Map. '
+            'Status: $statusCode, Response type: ${responseData.runtimeType}, Error: $e'
+          );
+        }
       } else {
-        throw Exception('Empty response from server');
+        // Null response body in successful response
+        throw Exception(
+          'Avatar upload: Empty response body received. Status: $statusCode, but expected data'
+        );
       }
     }
     
@@ -1118,9 +1142,9 @@ Future<void> postToChannel(String channelId, String text) async {
     await _dio.put(
       '${ApiConstants.filesEndpoint}/$uploadId/chunk',
       data: bytes,
-      options: Options(
+options: Options(
         contentType: 'application/octet-stream',
-        sendTimeout: const Duration(minutes: 10),
+        sendTimeout: const Duration(minutes: 30),
         headers: {
           if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
         },

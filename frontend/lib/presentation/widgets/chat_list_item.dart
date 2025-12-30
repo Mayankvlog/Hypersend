@@ -160,6 +160,7 @@ class ChatListItem extends StatelessWidget {
       
       IconData? typeIcon;
       if (chat.type == ChatType.channel) typeIcon = Icons.campaign;
+      if (chat.type == ChatType.group) typeIcon = Icons.group;
       if (chat.type == ChatType.supergroup) typeIcon = Icons.groups;
       if (chat.type == ChatType.secret) typeIcon = Icons.lock;
       

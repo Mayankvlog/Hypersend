@@ -15,6 +15,31 @@ from datetime import datetime, timedelta, timezone
 from db_proxy import files_collection, chats_collection
 from auth.utils import get_current_user
 
+def decode_token_safely(token: str) -> Optional[dict]:
+    """Safely decode JWT token with proper error handling and validation"""
+    try:
+        if not token or not isinstance(token, str):
+            print(f"[P2P_TRANSFER] Invalid token format: {type(token)}")
+            return None
+        
+        from auth.utils import decode_token
+        token_data = decode_token(token)
+        
+        # Convert to dictionary for consistency
+        payload = {
+            "sub": token_data.user_id,
+            "token_type": token_data.token_type
+        }
+        
+        print(f"[P2P_TRANSFER] Token decoded successfully for user: {token_data.user_id}")
+        return payload
+    except HTTPException as http_e:
+        print(f"[P2P_TRANSFER] HTTPException during token decode: {http_e.detail}")
+        return None
+    except Exception as e:
+        print(f"[P2P_TRANSFER] Unexpected token decode error: {type(e).__name__}: {str(e)}")
+        return None
+
 router = APIRouter(prefix="/p2p", tags=["P2P Transfer"])
 
 # OPTIONS handlers for CORS preflight requests
@@ -34,8 +59,33 @@ async def p2p_options():
         }
     )
 
+# Thread-safe session storage
+import threading
+from typing import Dict
+
 # Active P2P sessions (in-memory, no disk storage)
-active_sessions: Dict[str, dict] = {}
+_active_sessions: Dict[str, dict] = {}
+_session_lock = threading.RLock()
+
+def get_active_session(session_id: str) -> Optional[P2PSession]:
+    """Thread-safe session access"""
+    with _session_lock:
+        return _active_sessions.get(session_id)
+
+def set_active_session(session_id: str, session: P2PSession) -> None:
+    """Thread-safe session storage"""
+    with _session_lock:
+        _active_sessions[session_id] = session
+
+def remove_active_session(session_id: str) -> Optional[P2PSession]:
+    """Thread-safe session removal"""
+    with _session_lock:
+        return _active_sessions.pop(session_id, None)
+
+def get_all_active_sessions() -> Dict[str, P2PSession]:
+    """Thread-safe session snapshot"""
+    with _session_lock:
+        return _active_sessions.copy()
 
 
 class P2PSession:
@@ -140,13 +190,12 @@ async def sender_stream(websocket: WebSocket, session_id: str, token: str = None
         await websocket.close(code=4001, reason="Authorization token required")
         return
     
-    try:
-        from auth.utils import decode_token
-        payload = decode_token(token)
-        current_user = payload.get("sub")
-    except:
+    payload = decode_token_safely(token)
+    if payload is None:
         await websocket.close(code=4001, reason="Invalid authorization token")
         return
+    
+    current_user = payload.get("sub")
     
     if session_id not in active_sessions:
         await websocket.close(code=4004, reason="Session not found")
@@ -262,13 +311,12 @@ async def receiver_stream(websocket: WebSocket, session_id: str, token: str = No
         await websocket.close(code=4001, reason="Authorization token required")
         return
     
-    try:
-        from auth.utils import decode_token
-        payload = decode_token(token)
-        current_user = payload.get("sub")
-    except:
+    payload = decode_token_safely(token)
+    if payload is None:
         await websocket.close(code=4001, reason="Invalid authorization token")
         return
+    
+    current_user = payload.get("sub")
     
     if session_id not in active_sessions:
         await websocket.close(code=4004, reason="Session not found")

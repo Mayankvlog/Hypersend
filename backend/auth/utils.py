@@ -137,17 +137,37 @@ def create_refresh_token(data: dict) -> Tuple[str, str]:
 
 
 def decode_token(token: str) -> TokenData:
-    """Decode and validate JWT token"""
+    """Decode and validate JWT token with enhanced validation"""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")
         token_type: str = payload.get("token_type")
-        if user_id is None:
+        
+        # Enhanced 'sub' field validation
+        if not user_id or not isinstance(user_id, str):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
+                detail="Invalid token: missing or invalid subject identifier",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        
+        # Validate user_id format (ObjectId format)
+        import re
+        if not re.match(r'^[a-fA-F0-9]{24}$', user_id):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: malformed user identifier",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Validate token type
+        if token_type not in ["access", "refresh", "password_reset"]:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: unsupported token type",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
         return TokenData(user_id=user_id, token_type=token_type)
     except jwt.ExpiredSignatureError:
         raise HTTPException(

@@ -245,12 +245,21 @@ async def search_messages(
     if not q and not has_media and not has_link:
         raise HTTPException(status_code=400, detail="Search query or filter required")
     
+    # Validate and sanitize search query
+    if q:
+        # Limit search query length
+        if len(q) > 1000:
+            raise HTTPException(status_code=400, detail="Search query too long (max 1000 characters)")
+        # Prevent regex injection by escaping special characters
+        import re
+        q_escaped = re.escape(q)
+    
     # Base filter
     filter_doc = {"is_deleted": {"$ne": True}}
     
     # Text search
     if q:
-        filter_doc["text"] = {"$regex": q, "$options": "i"}
+        filter_doc["text"] = {"$regex": q_escaped, "$options": "i"}
         
     # Media/Link filters
     if has_media:

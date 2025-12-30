@@ -3,6 +3,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_strings.dart';
 import 'data/services/service_provider.dart';
+import 'l10n/app_localizations.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,6 +49,12 @@ class _ZaplyAppState extends State<ZaplyApp> {
       debugShowCheckedModeBanner: false,
       theme: _darkMode ? AppTheme.darkTheme : AppTheme.lightTheme,
       routerConfig: appRouter,
+      // Internationalization support
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: AppLocalizations.fallbackLocale,
+localizationsDelegates: [
+        AppLocalizations.delegate,
+      ],
     );
   }
 }
