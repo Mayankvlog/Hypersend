@@ -605,3 +605,9 @@ class VerifyQRCodeResponse(BaseModel):
     message: str
     auth_token: Optional[str] = None
     user_id: Optional[str] = None
+
+
+class TokenData(BaseModel):
+    """Token data extracted from JWT payload"""
+    user_id: str
+    token_type: str
