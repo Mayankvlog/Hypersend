@@ -34,13 +34,29 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   // Build NetworkImage with proper error handling to prevent infinite GET requests
   ImageProvider? _buildNetworkImage(String avatarUrl) {
     // Only create NetworkImage if avatarUrl is not empty and doesn't point to POST endpoint
-    if (avatarUrl.isEmpty) return null;
+    if (avatarUrl.isEmpty) {
+      debugPrint('[PROFILE_PHOTO] Avatar URL is empty, using initials');
+      return null;
+    }
     
     if (avatarUrl.startsWith('http')) {
+      debugPrint('[PROFILE_PHOTO] Loading HTTP avatar: $avatarUrl');
       return NetworkImage(avatarUrl);
-    } else if (avatarUrl.startsWith('/') && !avatarUrl.endsWith('/')) {
-      // Only build NetworkImage for GET endpoints (not POST endpoints)
-      return NetworkImage('${ApiConstants.serverBaseUrl}$avatarUrl');
+    } else if (avatarUrl.startsWith('/')) {
+      // PREVENT requests to POST endpoints
+      if (avatarUrl.endsWith('/')) {
+        debugPrint('[PROFILE_PHOTO] Blocking POST endpoint request: $avatarUrl');
+        return null;  // Don't load POST endpoints
+      }
+      
+      // Only load GET endpoints with filename
+      if (!avatarUrl.contains('/avatar/') || avatarUrl.contains('?')) {
+        debugPrint('[PROFILE_PHOTO] Loading GET avatar: ${ApiConstants.serverBaseUrl}$avatarUrl');
+        return NetworkImage('${ApiConstants.serverBaseUrl}$avatarUrl');
+      }
+      
+      debugPrint('[PROFILE_PHOTO] Blocking potentially invalid avatar URL: $avatarUrl');
+      return null;
     }
     return null;
   }

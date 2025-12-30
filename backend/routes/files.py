@@ -8,6 +8,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body
+from typing import Optional, List
+import aiofiles
+from models import (
+    FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
+)
+from db_proxy import files_collection, uploads_collection, users_collection
+from auth.utils import get_current_user
+from config import settings
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from urllib.parse import quote
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional, List
 import aiofiles
@@ -259,13 +271,19 @@ async def upload_chunk(
     
     # Validate chunk index
     if chunk_index < 0 or chunk_index >= upload["total_chunks"]:
+        _log("error", f"[UPLOAD] Invalid chunk index: {chunk_index} (valid range: 0-{upload['total_chunks']-1})", 
+               {"user_id": current_user, "operation": "chunk_upload_validation"})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid chunk index"
+            detail=f"Invalid chunk index. Valid range is 0-{upload['total_chunks']-1}"
         )
     
-    # Read chunk data
+    # Read chunk data with enhanced logging
     chunk_data = await request.body()
+    logger.info(f"[UPLOAD] Chunk {chunk_index} received: {len(chunk_data)} bytes")
+    logger.info(f"[UPLOAD] Upload ID: {upload_id}")
+    logger.info(f"[UPLOAD] Content-Type: {request.headers.get('content-type')}")
+    logger.info(f"[UPLOAD] Request URL: {request.url}")
     
     # Verify checksum if provided
     if x_chunk_checksum:
@@ -298,10 +316,21 @@ async def upload_chunk(
         async with aiofiles.open(chunk_path, "wb") as f:
             await f.write(chunk_data)
     except Exception as e:
-        _log("error", f"Failed to save chunk {chunk_index}: {str(e)}", 
-               {"user_id": current_user, "operation": "chunk_save"})
+        _log("error", f"[UPLOAD] Failed to save chunk {chunk_index}: {str(e)}", 
+               {"user_id": current_user, "operation": "chunk_save_error"})
+        
+        # Enhanced error categorization for 400 errors
+        if e.status_code == 400:
+            _log("error", f"[UPLOAD] Bad Request - Failed to save chunk {chunk_index}: {str(e)}", 
+                       {"user_id": current_user, "operation": "chunk_save_400_error"})
+            _log("error", f"[UPLOAD] Possible 400 causes - Server storage issue, permission denied, disk full", 
+                       {"user_id": current_user, "operation": "chunk_save_400_debug"})
+        else:
+            _log("error", f"[UPLOAD] Server error {e.status_code} - Failed to save chunk {chunk_index}: {str(e)}", 
+                       {"user_id": current_user, "operation": "chunk_save_server_error"})
+        
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=e.status_code,
             detail=f"Failed to save chunk {chunk_index}. Please retry."
         )
     
@@ -616,8 +645,23 @@ async def get_file_info(
                         detail="Access denied"
                     )
                 file_path = resolved_path
-            except HTTPException:
-                # Re-raise HTTPException unchanged (e.g., 403 for traversal attempts)
+            except HTTPException as e:
+                # Enhanced logging for security debugging
+                _log("error", f"HTTP Exception in file download: {e.status_code} - {e.detail}", 
+                       {"user_id": current_user, "operation": "file_download_http_exception", 
+                        "status_code": e.status_code, "detail": e.detail})
+                
+                if e.status_code == 403:
+                    _log("error", f"403 Forbidden - Possible causes:", 
+                           {"user_id": current_user, "operation": "file_download_403_debug"})
+                    _log("error", "1. User doesn't own this file", 
+                           {"user_id": current_user, "operation": "file_download_debug"})
+                    _log("error", "2. File access permissions issue", 
+                           {"user_id": current_user, "operation": "file_download_debug"})
+                    _log("error", "3. Traversal attempt detected", 
+                           {"user_id": current_user, "operation": "file_download_debug"})
+                
+                # Re-raise HTTPException unchanged
                 raise
             except (OSError, ValueError) as path_error:
                 _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_info"})

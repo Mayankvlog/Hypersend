@@ -39,10 +39,10 @@ class MessageBubble extends StatelessWidget {
             CircleAvatar(
               radius: 16,
               backgroundColor: AppTheme.cardDark,
-              backgroundImage: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/')
+              backgroundImage: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/') && !avatarUrl!.contains('/avatar/')
                   ? (avatarUrl!.startsWith('http')
                       ? NetworkImage(avatarUrl!)
-                      : NetworkImage('${ApiConstants.serverBaseUrl}${avatarUrl!}'))
+                      : NetworkImage('${ApiConstants.serverBaseUrl}${avatarUrl!}')
                   : null,
               onBackgroundImageError: (exception, stackTrace) {
                 // Fallback handled by child

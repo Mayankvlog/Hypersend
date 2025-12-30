@@ -454,11 +454,33 @@ class _ChatListScreenState extends State<ChatListScreen> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      debugPrint('[CHAT_LIST] Failed to load chats: $e');
       setState(() {
-        _error = e.toString();
         _loading = false;
+        _error = e.toString();
       });
+      
+      // Handle specific error types with user-friendly messages
+      if (e.toString().contains('401') || e.toString().contains('Unauthorized')) {
+        debugPrint('[CHAT_LIST] Authentication error detected');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: 'Session expired. Please login again.',
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Login',
+              textColor: Colors.white,
+              onPressed: () {
+                debugPrint('[CHAT_LIST] Redirecting to login');
+                context.go('/auth');
+              },
+            ),
+          ),
+        );
+          ),
+        );
+      }
     }
   }
 

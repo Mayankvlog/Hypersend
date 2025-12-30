@@ -570,12 +570,46 @@ Future<void> resetPassword({required String email}) async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kAccessTokenKey, accessToken);
       await prefs.setString(_kRefreshTokenKey, refreshToken);
-      debugPrint('[AUTH_PERSIST] Tokens saved to SharedPreferences and API service');
-      debugPrint('[AUTH_PERSIST] Token valid: ${_accessToken!.isNotEmpty}');
+      debugPrint('[AUTH_TOKENS] Tokens persisted - access: ${accessToken.substring(0, 20)}..., refresh: ${refreshToken.substring(0, 20)}...');
     } catch (e) {
-      debugPrint('[AUTH_PERSIST_ERROR] Failed to persist tokens: $e');
-      rethrow;
+      debugPrint('[AUTH_TOKENS] Error persisting tokens: $e');
+      // Re-throw as auth exception to maintain error type consistency
+      throw Exception('Failed to save authentication tokens: ${e.toString()}');
     }
+  }
+
+  // New method to refresh tokens using refresh token
+  Future<bool> refreshTokens() async {
+    try {
+      debugPrint('[AUTH_REFRESH] Attempting to refresh tokens...');
+      
+      if ((_refreshToken ?? '').isEmpty) {
+        debugPrint('[AUTH_REFRESH] No refresh token available');
+        return false;
+      }
+      
+      // Call refresh endpoint
+      final response = await _api.refreshToken(refreshToken: _refreshToken!);
+      
+      if (response['access'] != null && response['refresh'] != null) {
+        await _persistTokens(
+          accessToken: response['access'],
+          refreshToken: response['refresh'],
+        );
+        debugPrint('[AUTH_REFRESH] Tokens refreshed successfully');
+        return true;
+      } else {
+        debugPrint('[AUTH_REFRESH] Token refresh failed: $response');
+        // Clear invalid tokens
+        await _clearTokens();
+        return false;
+      }
+    } catch (e) {
+      debugPrint('[AUTH_REFRESH] Token refresh error: $e');
+      await _clearTokens();
+      return false;
+    }
+  }
   }
 
   Future<void> _clearTokens() async {

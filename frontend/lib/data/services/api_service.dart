@@ -24,6 +24,36 @@ class ApiService {
     }
   }
 
+  // Helper method to retry request with token refresh
+  Future<void> _retryWithTokenRefresh(DioException error, Function handler) async {
+    try {
+      final authSuccess = await this.authService.refreshToken();
+      _log('[API_ERROR] Token refresh result: $authSuccess');
+      
+      if (authSuccess) {
+        _log('[API_ERROR] Token refreshed successfully, retrying request');
+        
+        // Retry the original request
+        final retryOptions = error.requestOptions;
+        // Update auth header with new token
+        final newToken = await this.authService.getAuthToken();
+        if (newToken != null) {
+          retryOptions.headers['Authorization'] = 'Bearer $newToken';
+          _log('[API_ERROR] Retrying request with new token');
+          
+          // Make the retry request
+          final response = await _dio.fetch(retryOptions);
+          if (response.statusCode == 200) {
+            _log('[API_ERROR] Request succeeded after token refresh');
+            return handler.resolve(response);
+          }
+        }
+      }
+    } catch (refreshError) {
+      _log('[API_ERROR] Token refresh failed: $refreshError');
+    }
+  }
+
   ApiService() {
     String url = ApiConstants.baseUrl;
     if (!url.endsWith('/')) {
@@ -96,7 +126,7 @@ class ApiService {
           }
           return handler.next(options);
         },
-        onError: (error, handler) {
+          onError: (error, handler) {
           // Log network errors with detailed info
           if (error.response?.statusCode == null) {
             _log('[API_ERROR] Network/Connection error: ${error.message}');
@@ -112,6 +142,7 @@ class ApiService {
               _log('[API_ERROR] 405 Method Not Allowed on ${error.requestOptions.uri}');
               _log('[API_ERROR] Used method: ${error.requestOptions.method}');
               _log('[API_ERROR] Expected method: POST (for avatar upload)');
+              _log('[API_ERROR] This error indicates GET request to POST endpoint!');
               _log('[API_ERROR] ERROR: 405 errors should NOT be retried under any circumstances!');
             }
             
@@ -119,6 +150,10 @@ class ApiService {
             if (error.response?.statusCode == 401) {
               _log('[API_ERROR] 401 Unauthorized on ${error.requestOptions.uri}');
               _log('[API_ERROR] Auth header present: ${error.requestOptions.headers.containsKey("Authorization")}');
+              _log('[API_ERROR] Attempting token refresh for expired session');
+              
+              // Try to refresh token and retry request
+              _retryWithTokenRefresh(error, handler);
             }
             
             // Log 400 Bad Request with detailed debugging
@@ -126,16 +161,8 @@ class ApiService {
               _log('[API_ERROR] 400 Bad Request on ${error.requestOptions.uri}');
               _log('[API_ERROR] Method: ${error.requestOptions.method}');
               _log('[API_ERROR] Request URL: ${error.requestOptions.uri}');
-              _log('[API_ERROR] Request data size: ${error.requestOptions.data?.length ?? 0} bytes');
+              _log('[API_ERROR] Request data: ${(error.requestOptions.data as dynamic)?.length ?? 0} bytes');
               _log('[API_ERROR] Response data: ${error.response?.data}');
-              
-              // Try to extract more specific error info
-              if (error.response?.data is Map) {
-                final responseData = error.response!.data as Map;
-                _log('[API_ERROR] Error detail: ${responseData['detail']}');
-              }
-              
-              _log('[API_ERROR] TROUBLESHOOTING: Check upload_id validity, chunk_index range, file size, content-type');
             }
           }
           return handler.next(error);
@@ -599,7 +626,7 @@ class ApiService {
     }
   }
 
-Future<Map<String, dynamic>> logout({required String refreshToken}) async {
+  Future<Map<String, dynamic>> logout({required String refreshToken}) async {
     try {
       final response = await _dio.post(
         '${ApiConstants.authEndpoint}/logout',
@@ -611,6 +638,43 @@ Future<Map<String, dynamic>> logout({required String refreshToken}) async {
     } catch (e) {
       _log('[API_LOGOUT] Logout error: $e');
       rethrow;
+    }
+  }
+
+  // New method to refresh access token
+  Future<bool> refreshAccessToken() async {
+    try {
+      debugPrint('[API_REFRESH] Attempting to refresh access token');
+      final refreshToken = await serviceProvider.authService.getRefreshToken();
+      
+      if ((refreshToken ?? '').isEmpty) {
+        debugPrint('[API_REFRESH] No refresh token available');
+        return false;
+      }
+      
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/refresh',
+        data: {'refresh_token': refreshToken},
+      );
+      
+      if (response.statusCode == 200 && response.data['access'] != null) {
+        final newAccessToken = response.data['access'];
+        final newRefreshToken = response.data['refresh'];
+        
+        await serviceProvider.authService.persistTokens(
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        );
+        
+        debugPrint('[API_REFRESH] Access token refreshed successfully');
+        return true;
+      } else {
+        debugPrint('[API_REFRESH] Token refresh failed: ${response.data}');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('[API_REFRESH] Token refresh error: $e');
+      return false;
     }
   }
 
@@ -1187,14 +1251,45 @@ Future<void> postToChannel(String channelId, String text) async {
     final url = '${ApiConstants.filesEndpoint}/$uploadId/chunk?chunk_index=$chunkIndex';
     debugPrint('[API_SERVICE] Chunk upload URL: $url');
     
+    try {
+      final response = await _dio.put(
+        url,
+        data: bytes,
+        options: Options(
+          contentType: 'application/octet-stream',
+          sendTimeout: const Duration(minutes: 30),
+          receiveTimeout: const Duration(minutes: 30),
+          headers: {
+            if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
+            'Content-Length': bytes.length.toString(),
+          },
+          followRedirects: false,
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+      
+      if (response.statusCode == 200) {
+        debugPrint('[API_SERVICE] Chunk $chunkIndex uploaded successfully');
+      }
+    } on DioException catch (e) {
+      debugPrint('[API_SERVICE] Chunk upload failed: $e');
+      debugPrint('[API_SERVICE] Status: ${e.response?.statusCode}');
+      debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
+      debugPrint('[API_SERVICE] Request URL: ${e.requestOptions.uri}');
+      debugPrint('[API_SERVICE] Request method: ${e.requestOptions.method}');
+      rethrow;
+    }
+    
     await _dio.put(
       url,
       data: bytes,
       options: Options(
         contentType: 'application/octet-stream',
         sendTimeout: const Duration(minutes: 30),
+        receiveTimeout: const Duration(minutes: 30),
         headers: {
           if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
+          'Content-Length': bytes.length.toString(),
         },
         // Ensure no redirects and proper validation
         followRedirects: false,
