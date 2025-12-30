@@ -5,9 +5,9 @@ import math
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, status, Depends, Request, Header
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body
 from fastapi.responses import FileResponse, StreamingResponse
-from typing import Optional
+from typing import Optional, List
 import aiofiles
 from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
@@ -403,11 +403,35 @@ async def get_file_info(
             # Regular file from files_collection
             # Authorization check: only allow access if user owns the file
             owner_id = file_doc.get("owner_id")
-            if owner_id != current_user:
-                _log("warning", f"Unauthorized file access attempt", {"user_id": current_user, "operation": "file_info"})
+            # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
+            owner_id = file_doc.get("owner_id")
+            chat_id = file_doc.get("chat_id")
+            shared_with = file_doc.get("shared_with", [])
+            
+            # Owner can always access
+            if owner_id == current_user:
+                _log("info", f"Owner accessing file info: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
+            # Shared user can access
+            elif current_user in shared_with:
+                _log("info", f"Shared user accessing file info: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
+            # Chat members can access files in their chats
+            elif chat_id:
+                from db_proxy import chats_collection
+                chat_doc = await chats_collection().find_one({"_id": chat_id})
+                if chat_doc and current_user in chat_doc.get("members", []):
+                    _log("info", f"Chat member accessing file info: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
+                else:
+                    _log("warning", f"Non-chat member file info attempt: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied: you don't have permission to access this file (not a chat member)"
+                    )
+            # No access for unauthorized users
+            else:
+                _log("warning", f"Unauthorized file info attempt: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: you don't have permission to access this file"
+                    detail="Access denied: you don't have permission to access this file. Ask the file owner to share it with you."
                 )
             
             # Security: Validate storage path to prevent directory traversal
@@ -435,6 +459,9 @@ async def get_file_info(
                         detail="Access denied"
                     )
                 file_path = resolved_path
+            except HTTPException:
+                # Re-raise HTTPException unchanged (e.g., 403 for traversal attempts)
+                raise
             except (OSError, ValueError) as path_error:
                 _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_info"})
                 raise HTTPException(
@@ -595,6 +622,47 @@ async def download_file(
             detail="File not found"
         )
     
+    # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
+    owner_id = file_doc.get("owner_id")
+    chat_id = file_doc.get("chat_id")
+    shared_with = file_doc.get("shared_with", [])
+    
+    # Owner can always access
+    if owner_id == current_user:
+        _log("info", f"Owner accessing file: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+    # Shared user can access
+    elif current_user in shared_with:
+        _log("info", f"Shared user accessing file: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+    # Chat members can access files in their chats
+    elif chat_id:
+        try:
+            from db_proxy import chats_collection
+            chat_doc = await chats_collection().find_one({"_id": chat_id})
+            if chat_doc and current_user in chat_doc.get("members", []):
+                _log("info", f"Chat member accessing file: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+            else:
+                _log("warning", f"Non-chat member download attempt: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: you don't have permission to download this file (not a chat member)"
+                )
+        except HTTPException:
+            # Re-raise HTTPException unchanged (e.g., 403 Forbidden)
+            raise
+        except (OSError, TimeoutError, Exception) as e:
+            _log("error", f"Error checking chat membership: {e}", {"user_id": current_user, "operation": "file_download"})
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: unable to verify chat membership"
+            )
+    # No access for unauthorized users
+    else:
+        _log("warning", f"Unauthorized download attempt: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: you don't have permission to download this file. Ask the file owner to share it with you."
+        )
+    
     # Security: Validate storage path to prevent directory traversal
     storage_path = file_doc["storage_path"]
     file_path = Path(storage_path)
@@ -613,6 +681,9 @@ async def download_file(
                 detail="Access denied"
             )
         file_path = resolved_path
+    except HTTPException:
+        # Re-raise HTTPException unchanged (e.g., 403 for traversal attempts)
+        raise
     except (OSError, ValueError) as path_error:
         _log("error", f"Invalid download path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
         raise HTTPException(
@@ -640,7 +711,7 @@ async def download_file(
             async with aiofiles.open(file_path, "rb") as f:
                 await f.seek(start)
                 remaining = end - start + 1
-                chunk_size = 1024 * 1024  # 1MB chunks
+                chunk_size = 4 * 1024 * 1024  # 4MB chunks (same as upload)
                 while remaining > 0:
                     read_size = min(chunk_size, remaining)
                     data = await f.read(read_size)
@@ -660,12 +731,133 @@ async def download_file(
             }
         )
     
-    # Full file download
+    # Full file download - use streaming for large files to avoid memory issues
+    if file_size > 100 * 1024 * 1024:  # 100MB threshold
+        async def file_iterator():
+            async with aiofiles.open(file_path, "rb") as f:
+                chunk_size = 4 * 1024 * 1024  # 4MB chunks
+                remaining = file_size
+                while remaining > 0:
+                    read_size = min(chunk_size, remaining)
+                    data = await f.read(read_size)
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+        
+        return StreamingResponse(
+            file_iterator(),
+            headers={
+                "Content-Length": str(file_size),
+                "Content-Type": file_doc["mime"],
+                "Accept-Ranges": "bytes"
+            }
+        )
+    
+    # Small files - use FileResponse
     return FileResponse(
         file_path,
         media_type=file_doc["mime"],
         filename=file_doc["filename"]
     )
+
+
+@router.post("/{file_id}/share")
+async def share_file(
+    file_id: str,
+    user_ids: List[str] = Body(...),
+    current_user: str = Depends(get_current_user)
+):
+    """Share file with specific users"""
+    
+    # Find file
+    file_doc = await files_collection().find_one({"_id": file_id})
+    if not file_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+    
+    # Check if user is owner
+    owner_id = file_doc.get("owner_id")
+    if owner_id != current_user:
+        _log("warning", f"Unauthorized share attempt: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_share"})
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: only file owner can share files"
+        )
+    
+    # Add users to shared_with list
+    await files_collection().update_one(
+        {"_id": file_id},
+        {"$addToSet": {"shared_with": {"$each": user_ids}}}
+    )
+    
+    _log("info", f"File shared: owner={current_user}, file={file_id}, users={user_ids}", {"user_id": current_user, "operation": "file_share"})
+    
+    return {"message": f"File shared with {len(user_ids)} users"}
+
+
+@router.get("/{file_id}/shared-users")
+async def get_shared_users(file_id: str, current_user: str = Depends(get_current_user)):
+    """Get list of users file is shared with"""
+    
+    # Find file
+    file_doc = await files_collection().find_one({"_id": file_id})
+    if not file_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+    
+    # Check if user is owner or in shared list
+    owner_id = file_doc.get("owner_id")
+    shared_with = file_doc.get("shared_with", [])
+    
+    if owner_id != current_user and current_user not in shared_with:
+        _log("warning", f"Unauthorized access to shared users list: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_shared_users"})
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: you don't have permission to view shared users for this file"
+        )
+    
+    return {"shared_users": shared_with}
+
+
+@router.delete("/{file_id}/share/{user_id}")
+async def revoke_file_access(
+    file_id: str,
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Revoke file access from specific user"""
+    
+    # Find file
+    file_doc = await files_collection().find_one({"_id": file_id})
+    if not file_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+    
+    # Check if user is owner
+    owner_id = file_doc.get("owner_id")
+    if owner_id != current_user:
+        _log("warning", f"Unauthorized revoke attempt: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_revoke_access"})
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: only file owner can revoke access"
+        )
+    
+    # Remove user from shared_with list
+    await files_collection().update_one(
+        {"_id": file_id},
+        {"$pull": {"shared_with": user_id}}
+    )
+    
+    _log("info", f"File access revoked: owner={current_user}, file={file_id}, user={user_id}", {"user_id": current_user, "operation": "file_revoke_access"})
+    
+    return {"message": f"Access revoked for user {user_id}"}
 
 
 @router.post("/{upload_id}/cancel")
