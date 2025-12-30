@@ -12,56 +12,60 @@ class RateLimiter:
         self.lock = threading.Lock()
     
     def is_allowed(self, identifier: str) -> bool:
-"""Check if the identifier is allowed to make a request with thread safety"""
-    try:
-        now = time.time()
-        
-        with self.lock:
-            # Atomic: Get current requests list
-            current_requests = self.requests.get(identifier, [])
+        """Check if the identifier is allowed to make a request with thread safety"""
+        try:
+            now = time.time()
             
-            # Atomic: Clean old requests
-            valid_requests = [
-                req_time for req_time in current_requests
-                if now - req_time < self.window_seconds
-            ]
-            
-            # Atomic: Check limit
-            if len(valid_requests) >= self.max_requests:
-                # Store cleaned list back
+            with self.lock:
+                # Atomic: Get current requests list
+                current_requests = self.requests.get(identifier, [])
+                
+                # Atomic: Clean old requests
+                valid_requests = [
+                    req_time for req_time in current_requests
+                    if now - req_time < self.window_seconds
+                ]
+                
+                # Atomic: Check limit
+                if len(valid_requests) >= self.max_requests:
+                    # Store cleaned list back
+                    self.requests[identifier] = valid_requests
+                    return False
+                
+                # Atomic: Add current request and store
+                valid_requests.append(now)
                 self.requests[identifier] = valid_requests
-                return False
-            
-            # Atomic: Add current request and store
-            valid_requests.append(now)
-            self.requests[identifier] = valid_requests
+                return True
+        except Exception as e:
+            # On any error, allow the request (fail open)
             return True
     
     def get_retry_after(self, identifier: str) -> int:
         """Get seconds until next request is allowed"""
-        with self.lock:
-            current_requests = self.requests.get(identifier, [])
-            
-            # Sort requests by time (newest first)
-            sorted_requests = sorted(current_requests, reverse=True)
-            
-            # Find when rate limit will be reset
-            if len(sorted_requests) >= self.max_requests:
-                # After reaching limit, calculate reset time
-                oldest_request = sorted_requests[-1]
-                reset_time = oldest_request + self.window_seconds
-                return int(reset_time - now)
-            
+        try:
+            now = time.time()
+            with self.lock:
+                current_requests = self.requests.get(identifier, [])
+                
+                if not current_requests:
+                    return 0
+                
+                # Clean old requests
+                valid_requests = [
+                    req_time for req_time in current_requests
+                    if now - req_time < self.window_seconds
+                ]
+                
+                # Find when rate limit will be reset
+                if len(valid_requests) >= self.max_requests:
+                    # After reaching limit, calculate reset time
+                    oldest_request = min(valid_requests)
+                    reset_time = oldest_request + self.window_seconds
+                    return max(0, int(reset_time - now))
+                
+                return 0
+        except Exception:
             return 0
-    
-    def get_retry_after(self, identifier: str) -> int:
-        """Get seconds until next request is allowed"""
-        if not self.requests[identifier]:
-            return 0
-        
-        oldest_request = min(self.requests[identifier])
-        retry_after = int(self.window_seconds - (time.time() - oldest_request))
-        return max(0, retry_after)
 
 # Global rate limiters for different auth operations
 auth_rate_limiter = RateLimiter(max_requests=5, window_seconds=300)  # 5 requests per 5 minutes
