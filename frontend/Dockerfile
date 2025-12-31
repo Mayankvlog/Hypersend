@@ -2,7 +2,6 @@
 FROM debian:bookworm-slim AS build
 
 ARG API_BASE_URL=https://zaply.in.net/api/v1
-ARG BUILD_ID=2
 
 RUN apt-get update && apt-get install -y \
     curl git unzip xz-utils zip \
