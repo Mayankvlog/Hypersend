@@ -3,21 +3,11 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_strings.dart';
-import 'core/constants/api_constants.dart';
 import 'data/services/service_provider.dart';
 import 'l10n/app_localizations.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Ensure API constants are loaded safely
-  try {
-    print('[MAIN] Loading API configuration...');
-    // Access baseUrl to trigger any const initialization issues early
-    print('[MAIN] API Base URL: ${ApiConstants.baseUrl}');
-  } catch (e) {
-    print('[MAIN] WARNING: API config load error: $e - using defaults');
-  }
   
   try {
     print('[MAIN] Initializing service provider...');

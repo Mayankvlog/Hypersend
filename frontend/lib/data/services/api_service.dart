@@ -29,9 +29,6 @@ class ApiService {
   ApiService() {
     try {
       String url = ApiConstants.baseUrl;
-      if (url.isEmpty) {
-        url = 'https://zaply.in.net/api/v1'; // Fallback
-      }
       if (!url.endsWith('/')) {
         url += '/';
       }
