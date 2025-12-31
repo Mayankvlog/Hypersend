@@ -101,7 +101,7 @@ class _ZaplyAppState extends State<ZaplyApp> {
       routerConfig: appRouter,
       supportedLocales: AppLocalizations.supportedLocales,
       locale: AppLocalizations.fallbackLocale,
-      localizationsDelegates: const [
+      localizationsDelegates: [
         AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
