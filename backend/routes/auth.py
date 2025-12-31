@@ -229,6 +229,25 @@ async def register(user: UserCreate) -> UserResponse:
     try:
         auth_log(f"Registration attempt for email: {user.email}")
         
+        # Validate email and password
+        if not user.email or '@' not in user.email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
+        
+        if not user.password or len(user.password) < 6:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must be at least 6 characters"
+            )
+        
+        if not user.name or not user.name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Name is required"
+            )
+        
         # Check if user already exists
         existing_user = await users_collection().find_one({"email": user.email})
         if existing_user:
@@ -308,6 +327,19 @@ async def register(user: UserCreate) -> UserResponse:
 async def login(credentials: UserLogin, request: Request) -> Token:
     """Login user and return access/refresh tokens"""
     try:
+        # Validate input
+        if not credentials.email or '@' not in credentials.email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
+        
+        if not credentials.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password is required"
+            )
+        
         auth_log(f"Login attempt for email: {credentials.email}")
         
         # Check rate limit
@@ -380,6 +412,13 @@ async def login(credentials: UserLogin, request: Request) -> Token:
 async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetResponse:
     """Send password reset email to user"""
     try:
+        # Validate email
+        if not request.email or '@' not in request.email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
+        
         auth_log(f"Password reset request for email: {request.email}")
         
         # Rate limiting check
@@ -431,19 +470,19 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
                 email_message["From"] = settings.EMAIL_FROM
                 email_message["To"] = request.email
                 email_message.set_content(f"""
-                Hello {user['name']},
-                
-                You requested a password reset for your Zaply account.
-                
-                Click the following link to reset your password:
-                {reset_link}
-                
-                This link will expire in {settings.PASSWORD_RESET_EXPIRE_MINUTES} minutes.
-                
-                If you didn't request This, please ignore this email.
-                
-                Best regards,
-                Zaply Team
+Hello {user['name']},
+
+You requested a password reset for your Zaply account.
+
+Click the following link to reset your password:
+{reset_link}
+
+This link will expire in {settings.PASSWORD_RESET_EXPIRE_MINUTES} minutes.
+
+If you didn't request this, please ignore this email.
+
+Best regards,
+Zaply Team
                 """)
                 
                 with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
@@ -454,11 +493,13 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
                     server.send_message(email_message)
                 
                 email_sent = True
-                auth_log(f"Password reset email sent to: {request.email}")
+                auth_log(f"✓ Password reset email sent to: {request.email}")
                 
             except Exception as e:
                 email_error = str(e)
                 auth_log(f"Failed to send password reset email: {email_error}")
+        else:
+            auth_log(f"Email service disabled - password reset token: {reset_token[:50]}...")
         
         # In DEBUG mode, return token in response if email fails
         debug_info = None
