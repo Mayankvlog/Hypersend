@@ -28,8 +28,15 @@ class ApiConstants {
     ).toString();
   }
   
-  // Effective base URL - uses const baseUrl value
-  static String get effectiveBaseUrl => baseUrl;
+  // Effective base URL - uses const baseUrl value with runtime safety
+  static String get effectiveBaseUrl {
+    try {
+      return baseUrl;
+    } catch (e) {
+      // Fallback for any runtime issues
+      return 'https://zaply.in.net/api/v1';
+    }
+  }
   
   // API Endpoints
   static const String authEndpoint = 'auth';
