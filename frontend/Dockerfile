@@ -27,8 +27,7 @@ RUN rm -rf build/ && flutter clean
 RUN flutter build web --release \
     --no-tree-shake-icons \
     --dart-define=API_BASE_URL=${API_BASE_URL} \
-    --dart-define=ENVIRONMENT=production \
-    --web-renderer canvaskit
+    --dart-define=ENVIRONMENT=production
 
 # ==============================
 # NGINX Production Server
