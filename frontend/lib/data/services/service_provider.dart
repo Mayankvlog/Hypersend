@@ -34,19 +34,28 @@ class ServiceProvider {
   // Initialize all services
   Future<void> init() async {
     try {
-      await authService.init();
+      // Initialize auth service first
+      try {
+        await authService.init();
+      } catch (e) {
+        print('[ServiceProvider] Auth initialization error (non-blocking): $e');
+        // Non-blocking - app continues even if auth fails initially
+      }
+
       // If logged in, fetch current user and populate profile service
       if (authService.isLoggedIn) {
         try {
           final me = await apiService.getMe();
           profileService.setUser(User.fromApi(me));
         } catch (e) {
-          // Ignore errors fetching profile; user will be prompted to log in again
+          print('[ServiceProvider] Profile fetch error: $e');
+          // User will be prompted to log in again
         }
       }
-      // Initialization complete
+      print('[ServiceProvider] Initialization complete');
     } catch (e) {
-      // Handle initialization error silently
+      print('[ServiceProvider] Critical initialization error: $e');
+      // Allow app to continue - user can retry login
     }
   }
 

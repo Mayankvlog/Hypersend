@@ -26,11 +26,21 @@ class _SplashScreenState extends State<SplashScreen>
     _animation = Tween<double>(begin: 0.0, end: 0.6).animate(_controller);
     _controller.forward();
 
-    // Navigate to permissions screen after 3 seconds
+    // Navigate after 3 seconds with proper error handling
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
-        final isLoggedIn = serviceProvider.authService.isLoggedIn;
-        context.go(isLoggedIn ? '/chats' : '/auth');
+        try {
+          final isLoggedIn = serviceProvider.authService.isLoggedIn;
+          final nextRoute = isLoggedIn ? '/chats' : '/auth';
+          print('[SplashScreen] Navigating to: $nextRoute (isLoggedIn: $isLoggedIn)');
+          context.go(nextRoute);
+        } catch (e) {
+          print('[SplashScreen] Navigation error: $e');
+          // Fallback to auth screen on error
+          if (mounted) {
+            context.go('/auth');
+          }
+        }
       }
     });
   }

@@ -49,11 +49,12 @@ class _ZaplyAppState extends State<ZaplyApp> {
       debugShowCheckedModeBanner: false,
       theme: _darkMode ? AppTheme.darkTheme : AppTheme.lightTheme,
       routerConfig: appRouter,
-      // Internationalization support
       supportedLocales: AppLocalizations.supportedLocales,
       locale: AppLocalizations.fallbackLocale,
-localizationsDelegates: [
+      localizationsDelegates: const [
         AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
       ],
     );
   }
