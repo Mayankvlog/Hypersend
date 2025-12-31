@@ -39,20 +39,20 @@ RUN rm /etc/nginx/conf.d/default.conf
 COPY --from=build /app/build/web /usr/share/nginx/html
 
 # Create minimal nginx config for Flutter SPA
-RUN echo 'server {
-    listen 80;
-    server_name _;
-    
-    location /health {
-        add_header Content-Type "text/plain";
-        return 200 "healthy\n";
-    }
-    
-    location / {
-        root /usr/share/nginx/html;
-        try_files $uri $uri/ /index.html;
-    }
-}' > /etc/nginx/conf.d/default.conf
+RUN printf '%s\n' 'server {' \
+    '    listen 80;' \
+    '    server_name _;' \
+    '    ' \
+    '    location /health {' \
+    '        add_header Content-Type "text/plain";' \
+    '        return 200 "healthy\n";' \
+    '    }' \
+    '    ' \
+    '    location / {' \
+    '        root /usr/share/nginx/html;' \
+    '        try_files $uri $uri/ /index.html;' \
+    '    }' \
+    '}' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 80 443
 
