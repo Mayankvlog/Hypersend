@@ -407,6 +407,108 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             detail=f"Logout failed: {str(e)}"
         )
 
+# Token Refresh Endpoint
+@router.post("/refresh", response_model=Token)
+async def refresh_access_token(request: RefreshTokenRequest) -> Token:
+    """Refresh access token using refresh token"""
+    try:
+        auth_log(f"Token refresh request")
+        
+        # Decode refresh token
+        token_data = decode_token(request.refresh_token)
+        if not token_data.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+        
+        # Check if refresh token exists and is not invalidated
+        refresh_doc = await refresh_tokens_collection().find_one({
+            "jti": token_data.jti,
+            "user_id": token_data.user_id,
+            "$or": [
+                {"invalidated": {"$exists": False}},
+                {"invalidated": False}
+            ]
+        })
+        
+        if not refresh_doc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token is invalid or has been revoked"
+            )
+        
+        # Check if token has expired
+        if refresh_doc["expires_at"] < datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has expired"
+            )
+        
+        # Get user
+        user = await users_collection().find_one({"_id": token_data.user_id})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Create new access token
+        new_access_token = create_access_token(
+            data={"sub": str(user["_id"])},
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        
+        auth_log(f"✓ Token refreshed successfully for user: {token_data.user_id}")
+        
+        return Token(
+            access_token=new_access_token,
+            refresh_token=request.refresh_token,
+            token_type="bearer"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Token refresh error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh failed"
+        )
+
+@router.post("/logout")
+async def logout(current_user: str = Depends(get_current_user)):
+    """Logout user by invalidating refresh tokens"""
+    try:
+        auth_log(f"Logout request for user: {current_user}")
+        
+        # Invalidate all refresh tokens for this user
+        await refresh_tokens_collection().update_many(
+            {"user_id": current_user},
+            {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
+        )
+        
+        # Update user status
+        await users_collection().update_one(
+            {"_id": current_user},
+            {"$set": {
+                "is_online": False,
+                "last_seen": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
+            }}
+        )
+        
+        auth_log(f"✓ Logout successful for user: {current_user}")
+        
+        return {"message": "Logged out successfully"}
+        
+    except Exception as e:
+        auth_log(f"Logout error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Logout failed"
+        )
+
 # Password Reset Endpoints
 @router.post("/forgot-password", response_model=PasswordResetResponse)
 async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetResponse:

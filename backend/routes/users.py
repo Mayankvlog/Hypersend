@@ -4,7 +4,7 @@ from models import (
     UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
     UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
 )
-from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, get_db
+from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
 from auth.utils import get_current_user, get_current_user_optional
 import asyncio
 from pydantic import BaseModel, Field, field_validator
@@ -957,33 +957,161 @@ async def change_email(
         )
 
 
+@router.delete("/account")
+async def delete_account(
+    current_user: str = Depends(get_current_user)
+):
+    """Delete user account permanently"""
+    try:
+        print(f"[ACCOUNT_DELETE] Delete request for user: {current_user}")
+        logger.info(f"Account deletion request for user: {current_user}")
+        
+        # Get user to verify they exist
+        user = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Delete user avatar file if exists
+        try:
+            if user.get("avatar_url") and user["avatar_url"].startswith("/api/v1/users/avatar/"):
+                avatar_filename = user["avatar_url"].split("/")[-1]
+                avatar_path = settings.DATA_ROOT / "avatars" / avatar_filename
+                if avatar_path.exists():
+                    avatar_path.unlink()
+                    logger.info(f"Deleted avatar file for user: {current_user}")
+        except Exception as e:
+            logger.warning(f"Failed to delete avatar file: {e}")
+            # Continue anyway - user deletion is more important
+        
+        # Delete all user's chats (both 1-to-1 and groups)
+        try:
+            chats = await asyncio.wait_for(
+                chats_collection().find({"members": {"$in": [current_user]}}).to_list(None),
+                timeout=10.0
+            )
+            
+            for chat in chats:
+                chat_id = chat["_id"]
+                members = chat.get("members", [])
+                
+                if len(members) == 2:
+                    # 1-to-1 chat - delete it
+                    await asyncio.wait_for(
+                        chats_collection().delete_one({"_id": chat_id}),
+                        timeout=5.0
+                    )
+                else:
+                    # Group chat - just remove user from members
+                    await asyncio.wait_for(
+                        chats_collection().update_one(
+                            {"_id": chat_id},
+                            {"$pull": {"members": current_user}}
+                        ),
+                        timeout=5.0
+                    )
+            
+            logger.info(f"Deleted/updated {len(chats)} chats for user: {current_user}")
+        except Exception as e:
+            logger.warning(f"Failed to delete chats: {e}")
+        
+        # Delete all user's messages
+        try:
+            result = await asyncio.wait_for(
+                messages_collection().delete_many({"sender_id": current_user}),
+                timeout=10.0
+            )
+            logger.info(f"Deleted {result.deleted_count} messages for user: {current_user}")
+        except Exception as e:
+            logger.warning(f"Failed to delete messages: {e}")
+        
+        # Delete all user's files
+        try:
+            result = await asyncio.wait_for(
+                files_collection().delete_many({"owner_id": current_user}),
+                timeout=10.0
+            )
+            logger.info(f"Deleted {result.deleted_count} files for user: {current_user}")
+        except Exception as e:
+            logger.warning(f"Failed to delete files: {e}")
+        
+        # Delete all refresh tokens
+        try:
+            await asyncio.wait_for(
+                refresh_tokens_collection().delete_many({"user_id": current_user}),
+                timeout=5.0
+            )
+            logger.info(f"Deleted refresh tokens for user: {current_user}")
+        except Exception as e:
+            logger.warning(f"Failed to delete refresh tokens: {e}")
+        
+        # Finally, delete the user document
+        result = await asyncio.wait_for(
+            users_collection().delete_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        if result.deleted_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        print(f"[ACCOUNT_DELETE] ✓ Successfully deleted account for user: {current_user}")
+        logger.info(f"✓ Account deleted successfully for user: {current_user}")
+        
+        return {"message": "Account deleted successfully"}
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation timed out. Please try again."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Account deletion error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete account: {str(e)}"
+        )
+
+
 @router.post("/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
     request: Request = None,
-    current_user: str = Depends(get_current_user_optional)
+    current_user: str = Depends(get_current_user)
 ):
-    """Upload user avatar - POST endpoint (accepts optional auth, returns avatar_url)"""
+    """Upload user avatar - POST endpoint (requires authentication, returns avatar_url)"""
     try:
         import aiofiles
         import os
         import uuid
         
-        print(f"[AVATAR_UPLOAD] POST /avatar endpoint called!")
+        print(f"[AVATAR_UPLOAD] POST /avatar endpoint called for user: {current_user}")
         print(f"[AVATAR_UPLOAD] Request method: {request.method if request else 'No request'}")
         print(f"[AVATAR_UPLOAD] Request URL: {request.url if request else 'No request'}")
-        logger.debug("Avatar upload POST request started")
+        logger.debug(f"Avatar upload POST request started for user: {current_user}")
         logger.debug(f"Request headers: {dict(request.headers) if request else 'No request object'}")
         logger.debug(f"File object: {file}")
         logger.debug(f"File filename: {file.filename}")
         logger.debug(f"File content type: {file.content_type}")
         
-        # If no user, use guest ID
+        # User must be authenticated
         if not current_user:
-            current_user = "guest_upload"
-            logger.debug("Using guest upload mode - no authentication")
-        else:
-            logger.debug("Using authenticated mode")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for avatar upload"
+            )
+        
+        logger.debug(f"Using authenticated mode for user: {current_user}")
         
         logger.debug(f"File content-type: {file.content_type}")
         
@@ -1068,52 +1196,48 @@ async def upload_avatar(
         avatar_url = f"/api/v1/users/avatar/{new_file_name}"
         logger.debug("Avatar URL generated")
         
-        # Clean up old avatar files AFTER saving new file (skip for guest users - they don't exist in DB)
-        if current_user != "guest_upload":  # Only cleanup for actual users, not guest uploads
-            try:
-                user = await asyncio.wait_for(
-                    users_collection().find_one({"_id": current_user}),
-                    timeout=5.0
-                )
-                if user and "avatar_url" in user:
-                    old_avatar_url = user["avatar_url"]
-                    if old_avatar_url and old_avatar_url.startswith("/api/v1/users/avatar/"):
-                        old_filename = old_avatar_url.split("/")[-1]
-                        old_file_path = avatar_dir / old_filename
-                        if old_file_path.exists():
-                            try:
-                                old_file_path.unlink()
-                                logger.debug("Cleaned up old avatar file")
-                            except Exception as delete_error:
-                                logger.warning(f"Could not delete old avatar: {delete_error}")
-            except Exception as cleanup_error:
-                logger.warning(f"Cleanup error while checking old avatar: {cleanup_error}")
-                # Continue anyway - new file is already saved
+        # Clean up old avatar files AFTER saving new file
+        try:
+            user = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
+            if user and "avatar_url" in user:
+                old_avatar_url = user["avatar_url"]
+                if old_avatar_url and old_avatar_url.startswith("/api/v1/users/avatar/"):
+                    old_filename = old_avatar_url.split("/")[-1]
+                    old_file_path = avatar_dir / old_filename
+                    if old_file_path.exists():
+                        try:
+                            old_file_path.unlink()
+                            logger.debug("Cleaned up old avatar file")
+                        except Exception as delete_error:
+                            logger.warning(f"Could not delete old avatar: {delete_error}")
+        except Exception as cleanup_error:
+            logger.warning(f"Cleanup error while checking old avatar: {cleanup_error}")
+            # Continue anyway - new file is already saved
         
         # Update the user in the database with timeout
         updated_user = None
         try:
-            if current_user != "guest_upload":  # Only update database for actual users
-                result = await asyncio.wait_for(
-                    users_collection().update_one(
-                        {"_id": current_user},
-                        {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
-                    ),
-                    timeout=5.0
-                )
-                
-                # Fetch updated user to return complete data
-                updated_user = await asyncio.wait_for(
-                    users_collection().find_one({"_id": current_user}),
-                    timeout=5.0
-                )
-                if not updated_user:
-                    logger.warning("User not found in database - file still saved")
-                    # Don't raise - file is already saved
-                else:
-                    logger.debug("Database updated with avatar URL")
+            result = await asyncio.wait_for(
+                users_collection().update_one(
+                    {"_id": current_user},
+                    {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
+                ),
+                timeout=5.0
+            )
+            
+            # Fetch updated user to return complete data
+            updated_user = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
+            if not updated_user:
+                logger.warning("User not found in database - file still saved")
+                # Don't raise - file is already saved
             else:
-                logger.debug("Skipping database update for guest upload")
+                logger.debug("Database updated with avatar URL")
                 
         except asyncio.TimeoutError:
             logger.warning("Database update timed out - file still saved")
