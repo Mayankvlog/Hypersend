@@ -5,11 +5,23 @@ from urllib.parse import quote_plus
 import secrets
 
 # Load environment variables from .env file
-env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+env_path = Path(__file__).parent / ".env"
+print(f"[CONFIG] Looking for .env at: {env_path}")
+if env_path.exists():
+    print(f"[CONFIG] Loading .env from: {env_path}")
+    load_dotenv(dotenv_path=env_path)
+else:
+    print(f"[CONFIG] .env not found at: {env_path}")
+
+# Also check parent directory
+env_path_parent = Path(__file__).parent.parent / ".env"
+if env_path_parent.exists():
+    print(f"[CONFIG] Loading .env from parent: {env_path_parent}")
+    load_dotenv(dotenv_path=env_path_parent)
 
 # Also check current directory
 if not os.getenv("MONGODB_URI") and not os.getenv("MONGO_USER"):
+    print("[CONFIG] Loading .env from current directory")
     load_dotenv()
 
 
@@ -77,7 +89,7 @@ class Settings:
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment (VPS behind Nginx HTTPS)
     # Note: Nginx proxies /api/ to backend on port 8000, so full URL includes /api/v1
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://example.com/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -128,37 +140,83 @@ class Settings:
         "http://localhost:8000",  # Backend direct access
         "http://127.0.0.1:3000",  # Alternative localhost
         "http://127.0.0.1:8000",  # Alternative localhost
-        "https://example.com",    # Production domain (replace with your actual domain)
-        "https://www.example.com", # Production domain with www (replace with your actual domain)
+        "https://zaply.in.net",    # Production domain
+        "https://www.zaply.in.net", # Production domain with www
     ]
     
     # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production
     def _get_cors_origins(self) -> list:
         """Get CORS origins based on environment"""
-        if self.DEBUG:
+        # Priority: API_BASE_URL (docker-compose compatible) > ALLOWED_ORIGINS > CORS_ORIGINS > defaults
+        env_api_base_url = os.getenv("API_BASE_URL")      # From docker-compose (highest priority)
+        env_allowed_origins = os.getenv("ALLOWED_ORIGINS")  # Alternative name
+        env_cors_origins = os.getenv("CORS_ORIGINS")  # Legacy support (lowest priority)
+        
+        # FIRST: Derive CORS origins from API_BASE_URL (docker-compose compatible solution)
+        if env_api_base_url:
+            # Extract base domain from API_BASE_URL
+            api_url = env_api_base_url.rstrip('/')
+            if api_url.endswith('/api/v1'):
+                # Remove /api/v1 to get base URL
+                base_url = api_url[:-7]  # Remove '/api/v1'
+                # Parse the URL to get the domain
+                if '://' in base_url:
+                    domain = base_url.split('://')[1].split(':')[0]  # Remove protocol and port
+                    if domain and domain != 'localhost' and not domain.startswith('127.') and '.' in domain:
+                        # Production domain derived from API_BASE_URL
+                        origins = [
+                            f"https://{domain}",
+                            f"https://www.{domain}",
+                            "http://localhost:3000",  # Development fallback
+                            "http://localhost:8000",  # Development fallback
+                        ]
+                        print(f"[CONFIG] Derived CORS origins from API_BASE_URL: {origins}")
+                        return origins
+        
+        # SECOND: Parse ALLOWED_ORIGINS if available
+        if env_allowed_origins:
+            origins = [origin.strip() for origin in env_allowed_origins.split(",") if origin.strip()]
+            if origins:
+                print(f"[CONFIG] Using ALLOWED_ORIGINS from environment: {origins}")
+                return origins
+        
+        # THIRD: Parse CORS_ORIGINS if available (legacy, lowest priority)
+        if env_cors_origins:
+            origins = [origin.strip() for origin in env_cors_origins.split(",") if origin.strip()]
+            if origins:
+                print(f"[CONFIG] Using CORS_ORIGINS from environment (legacy): {origins}")
+                return origins
+        
+        # Fallback to DEBUG/Production defaults if no environment variable
+        debug_mode = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+        
+        if debug_mode:
             # Development: Allow specific localhost origins only
+            print(f"[CONFIG] Using DEBUG mode CORS origins")
             return [
                 "http://localhost",
                 "http://localhost:8000",
                 "http://localhost:3000",
-                "http://localhost:8550",
                 "http://127.0.0.1",
                 "http://127.0.0.1:8000",
                 "http://127.0.0.1:3000",
                 "http://0.0.0.0:8000",
+                "http://0.0.0.0:8080",
                 "http://backend:8000",
                 "http://frontend",
-                "http://localhost:8080",
-                "http://127.0.0.1:8080",
             ]
         else:
             # Production: Only allow specific domains
-            return [
-                "https://your-domain.com",  # Replace with your actual domain in production
-                "https://www.your-domain.com",  # Replace with your actual domain in production
-            ]
+            print(f"[CONFIG] Using PRODUCTION mode CORS origins: {self.PRODUCTION_DOMAINS}")
+            return self.PRODUCTION_DOMAINS
     
     CORS_ORIGINS: list = None  # Will be set in __init__ method
+    
+    # Production domain configuration
+    PRODUCTION_DOMAINS: list = [
+        "https://zaply.in.net",
+        "https://www.zaply.in.net",
+    ]
     
     def __init__(self):
         """Initialize settings and validate critical configuration"""

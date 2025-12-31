@@ -1,22 +1,37 @@
+import 'package:flutter/foundation.dart';
+
 class ApiConstants {
   // Backend API Base URL
   // SECURITY: Use environment variable or build flavor
   // For production, use HTTPS with your domain
-  // IMPORTANT: This should be the FULL API base URL including /api/v1
+  // IMPORTANT: This should be FULL API base URL including /api/v1
   // Examples: 'https://zaply.in.net/api/v1' or 'http://localhost:8000/api/v1'
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    // Default to production domain
+    // Default to production domain with fallback to localhost for development
     // Override with build flag: --dart-define=API_BASE_URL=http://localhost:8000/api/v1
     defaultValue: 'https://zaply.in.net/api/v1',
   );
   
+  // Development fallback URL
+  static String get effectiveBaseUrl {
+    final envUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    if (envUrl.isNotEmpty) return envUrl;
+    
+    // If production URL is unreachable and we're in debug mode, use localhost
+    if (kDebugMode) {
+      return 'http://localhost:8080/api/v1';
+    }
+    
+    return baseUrl;
+  }
+  
   // Server base URL (without /api/v1) - for avatar images and static files
   static String get serverBaseUrl {
-    final uri = Uri.tryParse(baseUrl);
+    final uri = Uri.tryParse(effectiveBaseUrl);
     if (uri == null) return 'https://zaply.in.net';
     
-    // Reconstruct URL without the path
+    // Reconstruct URL without path
     final port = uri.hasPort ? uri.port : null;
     return Uri(
       scheme: uri.scheme,

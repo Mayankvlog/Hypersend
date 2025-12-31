@@ -8,12 +8,33 @@ import logging
 from pathlib import Path
 import os
 import sys
+from dotenv import load_dotenv
+
+# Load environment variables FIRST before importing config
+print("[STARTUP] Loading environment variables...")
+env_paths = [
+    Path(__file__).parent / ".env",
+    Path(__file__).parent.parent / ".env"
+]
+
+for env_path in env_paths:
+    if env_path.exists():
+        print(f"[STARTUP] Loading .env from: {env_path}")
+        load_dotenv(dotenv_path=env_path)
+        break
+else:
+    print("[STARTUP] No .env file found, using environment variables")
 
 # Early diagnostic logging
 print("[STARTUP] Python version:", sys.version)
 print("[STARTUP] Python path:", sys.path)
 print("[STARTUP] Current working directory:", os.getcwd())
 print("[STARTUP] Starting backend imports...")
+
+# Debug environment variables
+print(f"[DEBUG] SECRET_KEY env var: {os.getenv('SECRET_KEY')}")
+print(f"[DEBUG] DEBUG env var: {os.getenv('DEBUG')}")
+
 try:
     # Add current directory to Python path for Docker
     import sys
@@ -23,6 +44,8 @@ try:
     
     # SECURITY: Prevent importing config with missing secrets in production
     if not os.getenv('SECRET_KEY') and not os.getenv('DEBUG', 'false').lower() in ('true', '1'):
+        print(f"[DEBUG] SECRET_KEY env var: {os.getenv('SECRET_KEY')}")
+        print(f"[DEBUG] DEBUG env var: {os.getenv('DEBUG')}")
         raise RuntimeError("PRODUCTION SAFETY: SECRET_KEY must be set in production")
     
     from config import settings
@@ -373,7 +396,7 @@ async def handle_options_request(full_path: str, request: Request):
         allowed_patterns = [
             r'^http://localhost(:[0-9]+)?$',             # localhost with optional port
             r'^http://127\.0\.0\.1(:[0-9]+)?$',        # 127.0.0.1 with optional port
-            r'^https?://([a-zA-Z0-9-]+\.)?yourdomain\.com(:[0-9]+)?$',  # Replace with your domain
+            r'^https?://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',  # Production domain
         ]
         
         for pattern in allowed_patterns:
@@ -540,7 +563,7 @@ from auth.utils import get_current_user
 async def preflight_alias_endpoints():
     """Handle CORS preflight for alias endpoints"""
     return Response(status_code=204, headers={
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://zaply.in.net",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
     })
