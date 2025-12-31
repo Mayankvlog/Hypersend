@@ -58,7 +58,7 @@ else:
             pass
         
         QR_CODE_AVAILABLE = False
-        logger.warning(f"QR code library not available: {e}")
+        print(f"QR code library not available: {e}")
 
 logger = logging.getLogger("auth")
 security = HTTPBearer()

@@ -139,109 +139,58 @@ def test_email_service() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Email service test failed: {type(e).__name__}: {str(e)}"
 
-def _get_email_troubleshooting_recommendations(email_service_status: str, email_error: str | None) -> list:
-    """Get comprehensive troubleshooting recommendations for email issues."""
-    recommendations = []
-    
-    if email_service_status == "not_configured":
-        recommendations.extend([
-            "Server Issue: Email service not configured",
-            "Contact server administrator to set up email service",
-            "Required settings: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM",
-            "Test configuration: POST /auth/test-email (DEBUG mode only)",
-            "Fallback: In DEBUG mode, check debug info for reset token"
-        ])
-    elif email_service_status == "failed":
-        recommendations.extend([
-            "Email Service Configuration Issue",
-            "Check server logs for detailed error information",
-            "Test email service: POST /auth/test-email",
-            "Verify network connectivity to SMTP server",
-            "Check firewall rules for outbound SMTP connections (ports 25, 465, 587)",
-            "Verify SMTP credentials are correct"
-            "This is a SERVER CONFIGURATION issue, not user error"
-        ])
-        
-        # Specific error-based recommendations
-        if email_error:
-            error_lower = email_error.lower()
-            if "authentication" in error_lower:
-                recommendations.extend([
-                    "SMTP Authentication failed",
-                    "Check SMTP_USERNAME and SMTP_PASSWORD are correct",
-                    "For Gmail: Generate App Password at security.google.com",
-                    "Enable 2-factor authentication on email account",
-                    "Ensure 'Less secure app access' is enabled"
-                ])
-            elif "connection" in error_lower:
-                recommendations.extend([
-                    "Network connectivity issue",
-                    "Check internet connection",
-                    "Check if firewall is blocking SMTP connections",
-                    "Verify SMTP_HOST and SMTP_PORT are correct"
-                ])
-            elif "tls" in error_lower:
-                recommendations.extend([
-                    "TLS configuration issue",
-                    "Check SMTP_USE_TLS setting matches server requirements",
-                    "Try with TLS enabled or disabled based on server"
-                ])
-            elif "timeout" in error_lower:
-                recommendations.extend([
-                    "Connection timeout",
-                    "Check network latency",
-                    "Try closer SMTP server or improve network"
-                ])
-            else:
-                recommendations.extend([
-                    "Unknown error",
-                    "Check all SMTP configuration",
-                    "Review server logs for detailed error information"
-                ])
-    else:
-        recommendations.extend([
-            "Email service is working correctly",
-            "Check recipient email address for typos",
-            "Check ALL email folders: Inbox, Spam, Junk, Promotions, Social, Updates",
-            "Wait 2-5 minutes for email delivery",
-            "Verify email is not blocked by recipient's email provider",
-            "Check email service status: POST /auth/test-email"
-        ])
-    
-    # Always add general troubleshooting steps
-    recommendations.extend([
-        "Test email service: POST /auth/test-email (DEBUG mode only)",
-        "Verify all environment variables are set correctly",
-        "Restart backend after configuration changes",
-        "Check email provider SMTP documentation"
-    ])
-    
-    return recommendations
+# CORS helper functions - moved to module level for importability
+import re
 
-def cleanup_old_login_attempts() -> None:
-    """Clean up old login attempts and email rate limit entries."""
-    current_time = datetime.now(timezone.utc)
-    cutoff_time = current_time - timedelta(hours=24)
+def _is_valid_domain_format(domain: str) -> bool:
+    """Validate domain format to prevent malformed origins"""
+    # Strict domain validation - prevents double dots, starting hyphens, etc.
+    domain_pattern = r'^(?!-)(?!.*?-$)(?!.*?\.\.)[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$'
+    return bool(re.match(domain_pattern, domain))
+
+def _is_valid_origin_format(origin: str) -> bool:
+    """Validate full origin URL format"""
+    # Parse URL to validate components separately
+    try:
+        parsed = re.match(r'^(https?):\/\/([a-zA-Z0-9.-]+)(?::\d+)?(?:\/.*)?$', origin)
+        if not parsed:
+            return False
+        
+        scheme, domain, port, path = parsed.groups()
+        
+        # For localhost, allow HTTP regardless of DEBUG mode
+        if domain.startswith('localhost') or domain.startswith('127.0.0.1'):
+            return True
+        
+        # Only allow HTTPS in production for non-localhost domains
+        if not settings.DEBUG and scheme != 'https':
+            return False
+        
+        # For other domains, require HTTPS and validate domain format
+        if scheme != 'https':
+            return False
+        
+        # Validate domain part separately
+        return _is_valid_domain_format(domain)
+        
+    except Exception:
+        return False
+
+def get_safe_cors_origin(request_origin: Optional[str]) -> str:
+    """Get safe CORS origin with validation - NO code duplication"""
+    if not request_origin:
+        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
     
-    # Clean up login attempts
-    for email in list(login_attempts.keys()):
-        login_attempts[email] = [
-            timestamp for timestamp in login_attempts[email] 
-            if timestamp > cutoff_time
-        ]
-        if not login_attempts[email]:
-            del login_attempts[email]
+    # Validate origin format strictly
+    if not _is_valid_origin_format(request_origin):
+        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
     
-    # Clean up email rate limits
-    for email in list(email_rate_limits.keys()):
-        email_rate_limits[email] = [
-            timestamp for timestamp in email_rate_limits[email] 
-            if timestamp > cutoff_time
-        ]
-        if not email_rate_limits[email]:
-            del email_rate_limits[email]
+    # Check if origin is explicitly in allowed list
+    if request_origin in settings.CORS_ORIGINS:
+        return request_origin
     
-    auth_log("Cleaned up old login attempts and email rate limits")
+    # Return first allowed origin as safe fallback
+    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
 
 # OPTIONS handlers for CORS preflight requests
 @router.options("/register")
@@ -260,58 +209,6 @@ async def auth_options(request: Request):
     from fastapi.responses import Response
     # SECURITY: Restrict CORS origins in production for authenticated endpoints
     from config import settings
-    import re
-    
-    def _is_valid_domain_format(domain: str) -> bool:
-        """Validate domain format to prevent malformed origins"""
-        # Strict domain validation - prevents double dots, starting hyphens, etc.
-        domain_pattern = r'^(?!-)(?!.*?-$)(?!.*?\.\.)[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$'
-        return bool(re.match(domain_pattern, domain))
-    
-    def _is_valid_origin_format(origin: str) -> bool:
-        """Validate full origin URL format"""
-        # Parse URL to validate components separately
-        try:
-            parsed = re.match(r'^(https?):\/\/([a-zA-Z0-9.-]+)(?::\d+)?(?:\/.*)?$', origin)
-            if not parsed:
-                return False
-            
-            scheme = parsed.group(1)
-            domain = parsed.group(2)
-            
-            # For localhost, allow HTTP regardless of DEBUG mode
-            if domain.startswith('localhost') or domain.startswith('127.0.0.1'):
-                return True
-            
-            # Only allow HTTPS in production for non-localhost domains
-            if not settings.DEBUG and scheme != 'https':
-                return False
-            
-            # For other domains, require HTTPS and validate domain format
-            if scheme != 'https':
-                return False
-            
-            # Validate domain part separately
-            return _is_valid_domain_format(domain)
-            
-        except Exception:
-            return False
-    
-    def get_safe_cors_origin(request_origin: Optional[str]) -> str:
-        """Get safe CORS origin with validation - NO code duplication"""
-        if not request_origin:
-            return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
-        
-        # Validate origin format strictly
-        if not _is_valid_origin_format(request_origin):
-            return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
-        
-        # Check if origin is explicitly in allowed list
-        if request_origin in settings.CORS_ORIGINS:
-            return request_origin
-        
-        # Return first allowed origin as safe fallback
-        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
     
     cors_origin = get_safe_cors_origin(request.headers.get("origin", ""))
     

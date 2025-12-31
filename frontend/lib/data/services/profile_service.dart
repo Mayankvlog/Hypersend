@@ -140,7 +140,7 @@ class ProfileService {
       }
       // Call API to change password
       await _apiService.changePassword(
-        oldPassword: oldPassword,
+        currentPassword: oldPassword,
         newPassword: newPassword,
       );
       return true;
@@ -178,7 +178,6 @@ class ProfileService {
       // Call API to change email
       await _apiService.changeEmail(
         newEmail: newEmail,
-        password: password,
       );
       // Update user email in memory
       if (_currentUser != null) {

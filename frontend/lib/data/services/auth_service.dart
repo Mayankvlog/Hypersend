@@ -610,11 +610,11 @@ Future<void> resetPassword({required String email}) async {
       return false;
     }
   }
-  }
 
   Future<void> _clearTokens() async {
     _accessToken = null;
     _refreshToken = null;
+    _api.clearAuthToken();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kAccessTokenKey);
     await prefs.remove(_kRefreshTokenKey);

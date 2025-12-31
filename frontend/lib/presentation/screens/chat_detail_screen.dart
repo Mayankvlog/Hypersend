@@ -10,9 +10,10 @@ import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/utils/emoji_utils.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 // Web-specific imports - necessary for web file download functionality
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+// Conditional import for web only
+import 'dart:html' as html if (dart.library.html) 'dart:html';
 
 
 class ChatDetailScreen extends StatefulWidget {

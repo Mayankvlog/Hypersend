@@ -3,18 +3,18 @@ class ApiConstants {
   // SECURITY: Use environment variable or build flavor
   // For production, use HTTPS with your domain
   // IMPORTANT: This should be the FULL API base URL including /api/v1
-  // Examples: 'https://your-domain.com/api/v1' or 'http://localhost:8000/api/v1'
+  // Examples: 'https://zaply.in.net/api/v1' or 'http://localhost:8000/api/v1'
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    // Default to placeholder domain - replace with your actual production domain
+    // Default to production domain
     // Override with build flag: --dart-define=API_BASE_URL=http://localhost:8000/api/v1
-    defaultValue: 'https://your-domain.com/api/v1',  // Replace with your actual domain
+    defaultValue: 'https://zaply.in.net/api/v1',
   );
   
   // Server base URL (without /api/v1) - for avatar images and static files
   static String get serverBaseUrl {
     final uri = Uri.tryParse(baseUrl);
-    if (uri == null) return 'https://your-domain.com';  // Replace with your actual domain
+    if (uri == null) return 'https://zaply.in.net';
     
     // Reconstruct URL without the path
     final port = uri.hasPort ? uri.port : null;
