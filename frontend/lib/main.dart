@@ -7,7 +7,16 @@ import 'l10n/app_localizations.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await serviceProvider.init();
+  
+  try {
+    print('[MAIN] Initializing service provider...');
+    await serviceProvider.init();
+    print('[MAIN] Service provider initialized successfully');
+  } catch (e) {
+    print('[MAIN] ERROR during service provider init: $e');
+    // Continue anyway - app can still load with fallback state
+  }
+  
   runApp(const ZaplyApp());
 }
 
@@ -20,23 +29,35 @@ class ZaplyApp extends StatefulWidget {
 
 class _ZaplyAppState extends State<ZaplyApp> {
   late bool _darkMode;
+  String? _initError;
 
   @override
   void initState() {
     super.initState();
-    _darkMode = serviceProvider.settingsService.darkMode;
-    // Listen for theme changes
-    _setupThemeListener();
+    try {
+      _darkMode = serviceProvider.settingsService.darkMode;
+      _setupThemeListener();
+    } catch (e) {
+      print('[ZaplyApp] Initialization error: $e');
+      _initError = e.toString();
+      _darkMode = false; // Fallback to light theme
+    }
   }
 
   void _setupThemeListener() {
-    // Periodically check for theme changes (in a real app, use a proper state management solution)
     Future.doWhile(() async {
       await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted && _darkMode != serviceProvider.settingsService.darkMode) {
-        setState(() {
-          _darkMode = serviceProvider.settingsService.darkMode;
-        });
+      if (mounted) {
+        try {
+          final newDarkMode = serviceProvider.settingsService.darkMode;
+          if (_darkMode != newDarkMode) {
+            setState(() {
+              _darkMode = newDarkMode;
+            });
+          }
+        } catch (e) {
+          print('[ZaplyApp] Theme listener error: $e');
+        }
       }
       return mounted;
     });
@@ -44,6 +65,35 @@ class _ZaplyAppState extends State<ZaplyApp> {
 
   @override
   Widget build(BuildContext context) {
+    // If there's an init error, show error screen
+    if (_initError != null) {
+      return MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text('Initialization Error'),
+                const SizedBox(height: 8),
+                Text(_initError!),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _initError = null;
+                    });
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return MaterialApp.router(
       title: AppStrings.appName,
       debugShowCheckedModeBanner: false,

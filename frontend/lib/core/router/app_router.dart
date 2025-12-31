@@ -1,4 +1,5 @@
 import 'package:go_router/go_router.dart';
+import 'package:flutter/material.dart';
 import '../../presentation/screens/splash_screen.dart';
 import '../../presentation/screens/auth_screen.dart';
 import '../../presentation/screens/chat_list_screen.dart';
@@ -21,6 +22,27 @@ import '../../data/services/service_provider.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
+  errorBuilder: (context, state) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            const Text('Navigation Error'),
+            const SizedBox(height: 8),
+            Text(state.error.toString()),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => context.go('/'),
+              child: const Text('Go Home'),
+            ),
+          ],
+        ),
+      ),
+    );
+  },
   routes: [
     GoRoute(
       path: '/',

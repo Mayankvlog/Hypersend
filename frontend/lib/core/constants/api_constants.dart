@@ -1,44 +1,34 @@
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  // Backend API Base URL
-  // SECURITY: Use environment variable or build flavor
-  // For production, use HTTPS with your domain
-  // IMPORTANT: This should be FULL API base URL including /api/v1
-  // Examples: 'https://zaply.in.net/api/v1' or 'http://localhost:8000/api/v1'
+  // Backend API Base URL - MUST be const for Flutter web build with --dart-define
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    // Default to production domain with fallback to localhost for development
-    // Override with build flag: --dart-define=API_BASE_URL=http://localhost:8000/api/v1
     defaultValue: 'https://zaply.in.net/api/v1',
   );
   
-  // Development fallback URL
-  static String get effectiveBaseUrl {
-    final envUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
-    if (envUrl.isNotEmpty) return envUrl;
-    
-    // If production URL is unreachable and we're in debug mode, use localhost
-    if (kDebugMode) {
-      return 'http://localhost:8080/api/v1';
-    }
-    
-    return baseUrl;
-  }
-  
   // Server base URL (without /api/v1) - for avatar images and static files
   static String get serverBaseUrl {
-    final uri = Uri.tryParse(effectiveBaseUrl);
+    final uri = Uri.tryParse(baseUrl);
     if (uri == null) return 'https://zaply.in.net';
     
-    // Reconstruct URL without path
-    final port = uri.hasPort ? uri.port : null;
+    // Reconstruct URL without /api/v1 path
+    final pathSegments = uri.pathSegments;
+    // Remove 'api' and 'v1' from path if present
+    final cleanPath = pathSegments
+        .where((segment) => segment.isNotEmpty && segment != 'api' && segment != 'v1')
+        .toList();
+    
     return Uri(
       scheme: uri.scheme,
       host: uri.host,
-      port: port,
+      port: uri.hasPort ? uri.port : null,
+      pathSegments: cleanPath,
     ).toString();
   }
+  
+  // Effective base URL - uses const baseUrl value
+  static String get effectiveBaseUrl => baseUrl;
   
   // API Endpoints
   static const String authEndpoint = 'auth';
