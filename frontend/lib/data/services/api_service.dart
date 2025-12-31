@@ -27,27 +27,31 @@ class ApiService {
   // Token refresh will be handled by error interceptor
 
   ApiService() {
-    String url = ApiConstants.baseUrl;
-    if (!url.endsWith('/')) {
-      url += '/';
-    }
-    
-    _log('[API_INIT] Base URL: $url');
-    _log('[API_INIT] Server Base URL: ${ApiConstants.serverBaseUrl}');
-    _log('[API_INIT] Auth endpoint: ${ApiConstants.authEndpoint}');
-    _log('[API_INIT] Users endpoint: ${ApiConstants.usersEndpoint}');
-    _log('[API_INIT] Full avatar URL: $url${ApiConstants.usersEndpoint}/avatar');
-    _log('[API_INIT] SSL validation: ${ApiConstants.validateCertificates}');
+    try {
+      String url = ApiConstants.baseUrl;
+      if (url.isEmpty) {
+        url = 'https://zaply.in.net/api/v1'; // Fallback
+      }
+      if (!url.endsWith('/')) {
+        url += '/';
+      }
+      
+      _log('[API_INIT] Base URL: $url');
+      _log('[API_INIT] Server Base URL: ${ApiConstants.serverBaseUrl}');
+      _log('[API_INIT] Auth endpoint: ${ApiConstants.authEndpoint}');
+      _log('[API_INIT] Users endpoint: ${ApiConstants.usersEndpoint}');
+      _log('[API_INIT] Full avatar URL: $url${ApiConstants.usersEndpoint}/avatar');
+      _log('[API_INIT] SSL validation: ${ApiConstants.validateCertificates}');
 
-    _dio = Dio(
-      BaseOptions(
-        baseUrl: url,
-        connectTimeout: const Duration(minutes: 5),
-        receiveTimeout: const Duration(hours: 2),
-        sendTimeout: const Duration(minutes: 5),
-        contentType: 'application/json',
-        // Allow only 2xx and 3xx status codes - treat 4xx as errors
-        validateStatus: (status) => status != null && (status >= 200 && status < 400),
+      _dio = Dio(
+        BaseOptions(
+          baseUrl: url,
+          connectTimeout: const Duration(minutes: 5),
+          receiveTimeout: const Duration(hours: 2),
+          sendTimeout: const Duration(minutes: 5),
+          contentType: 'application/json',
+          // Allow only 2xx and 3xx status codes - treat 4xx as errors
+          validateStatus: (status) => status != null && (status >= 200 && status < 400),
         headers: {
           'User-Agent': 'Zaply-Flutter-Web/1.0',
           'Accept': 'application/json',
@@ -139,6 +143,18 @@ class ApiService {
         },
       ),
     );
+    } catch (e) {
+      // Fallback: create basic Dio instance if initialization fails
+      _log('[API_ERROR] ApiService initialization failed: $e');
+      _dio = Dio(
+        BaseOptions(
+          baseUrl: 'https://zaply.in.net/api/v1/',
+          connectTimeout: const Duration(minutes: 5),
+          receiveTimeout: const Duration(hours: 2),
+        ),
+      );
+      _log('[API_WARN] Using fallback API configuration');
+    }
   }
 
   // Helper method to get user-friendly error message

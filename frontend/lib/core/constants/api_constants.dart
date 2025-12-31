@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  // Backend API Base URL - MUST be const for Flutter web build with --dart-define
+  // Backend API Base URL - Safe const initialization with guaranteed fallback
+  static const String _defaultUrl = 'https://zaply.in.net/api/v1';
+  
+  // Use const String.fromEnvironment safely - Flutter web const context
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://zaply.in.net/api/v1',
+    defaultValue: _defaultUrl,
   );
   
   // Server base URL (without /api/v1) - for avatar images and static files
