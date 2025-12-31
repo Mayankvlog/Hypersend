@@ -4,6 +4,7 @@
 FROM debian:bookworm-slim AS build
 
 ARG API_BASE_URL=https://zaply.in.net/api/v1
+ARG BUILD_ID=1
 
 RUN apt-get update && apt-get install -y \
     curl git unzip xz-utils zip \
@@ -19,9 +20,12 @@ RUN flutter precache --web && flutter config --enable-web
 
 WORKDIR /app
 COPY pubspec.yaml pubspec.lock ./
-RUN flutter pub get
+RUN rm -rf .pub-cache && flutter pub get --verbose
 
 COPY . .
+
+# Clean and build
+RUN rm -rf build/ && flutter clean
 
 RUN flutter build web --release \
     --no-tree-shake-icons \
