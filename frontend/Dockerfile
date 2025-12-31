@@ -1,4 +1,5 @@
 # ✅ FIXED Dockerfile - Flutter Web Production Ready
+# Force fresh build: 2025-01-01-final-fix
 FROM debian:bookworm-slim AS build
 
 ARG API_BASE_URL=https://zaply.in.net/api/v1
