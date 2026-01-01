@@ -547,12 +547,17 @@ async def health_check():
         }
     except Exception as e:
         logger.error(f"[HEALTH_CHECK] Error: {str(e)}")
-        return {
-            "status": "degraded",
-            "service": "hypersend-api",
-            "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }, 503
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "degraded",
+                "service": "hypersend-api",
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
+
+
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(chats.router, prefix="/api/v1")
