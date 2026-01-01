@@ -288,7 +288,7 @@ async def upload_chunk(
     # NOTE: Removed overly strict binary content detection - this is a file upload system
     # and should accept all binary formats (PDFs, images, videos, etc.)
     try:
-        chunk_path = os.path.join(settings.UPLOAD_DIR, upload_id, f"chunk_{chunk_index}")
+        chunk_path = os.path.join(settings.UPLOAD_DIR, upload_id, f"{chunk_index}.part")
         os.makedirs(os.path.dirname(chunk_path), exist_ok=True)
         async with aiofiles.open(chunk_path, 'wb') as f:
             await f.write(chunk_data)
@@ -343,7 +343,7 @@ async def upload_chunk(
     manifest_path = upload_dir / "manifest.json"
     async with aiofiles.open(manifest_path, "r") as f:
         manifest = json.loads(await f.read())
-        
+
     
     if chunk_index not in manifest["received_chunks"]:
         manifest["received_chunks"].append(chunk_index)
