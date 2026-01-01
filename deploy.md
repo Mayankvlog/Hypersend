@@ -368,7 +368,163 @@ iostat -x 1
 
 ---
 
+---
+
+## 🔐 **GitHub Actions Secrets Configuration**
+
+Your GitHub repository has the following secrets configured for deployment:
+
+### **📋 Current Secrets Status**
+```yaml
+# GitHub Actions Secrets (Repository Settings)
+DOCKERHUB_TOKEN:      ✅ Configured (2 months ago)
+DOCKERHUB_USERNAME:   ✅ Configured (2 months ago)
+MONGO_PASSWORD:       ✅ Configured (last month)
+MONGO_USER:           ✅ Configured (last month)
+SECRET_KEY:           ✅ Configured (20 hours ago) - MOST RECENT
+VPS_HOST:             ✅ Configured (2 months ago)
+VPS_PASSWORD:         ✅ Configured (last month)
+VPS_USER:             ✅ Configured (2 months ago)
+```
+
+### **🚀 Deployment Pipeline Flow**
+```
+GitHub Push → GitHub Actions → Docker Build → Push to DockerHub → SSH to VPS → Pull & Deploy
+```
+
+### **📝 Secret Usage in Deployment**
+```yaml
+# .github/workflows/deploy-backend.yml
+- name: Deploy to VPS
+  uses: appleboy/ssh-action@v1.2.0
+  with:
+    host: ${{ secrets.VPS_HOST }}           # Your VPS IP/Domain
+    username: ${{ secrets.VPS_USER }}         # SSH username
+    password: ${{ secrets.VPS_PASSWORD }}     # SSH password
+    script: |
+      cd /hypersend/Hypersend
+      docker compose pull backend
+      docker compose up -d backend
+```
+
+```yaml
+# Docker Login in GitHub Actions
+- name: Log in to Docker Hub
+  uses: docker/login-action@v3
+  with:
+    username: ${{ secrets.DOCKERHUB_USERNAME }}
+    password: ${{ secrets.DOCKERHUB_TOKEN }}
+```
+
+### **🔧 VPS Environment Variables Setup**
+Create `/hypersend/Hypersend/.env` on your VPS:
+```bash
+# Database Configuration (from GitHub Secrets)
+MONGO_USER=${MONGO_USER}
+MONGO_PASSWORD=${MONGO_PASSWORD}
+
+# Security Configuration (from GitHub Secrets)
+SECRET_KEY=${SECRET_KEY}
+
+# API Configuration
+API_BASE_URL=https://zaply.in.net/api/v1
+DEBUG=False
+CORS_ORIGINS=https://zaply.in.net,https://www.zaply.in.net
+
+# Production Settings
+USE_MOCK_DB=False
+EMAIL_SERVICE_ENABLED=False
+```
+
+### **🔄 How Secrets Connect VPS to GitHub**
+
+1. **GitHub Actions** uses `VPS_HOST`, `VPS_USER`, `VPS_PASSWORD` to SSH into your VPS
+2. **DockerHub Integration** uses `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` to push/pull images
+3. **Runtime Configuration** uses `MONGO_USER`, `MONGO_PASSWORD`, `SECRET_KEY` for application
+
+### **⚠️ Security Best Practices**
+- ✅ All secrets are properly configured
+- ✅ SECRET_KEY was recently updated (20 hours ago)
+- ✅ No secrets are exposed in repository code
+- ⚠️ Consider using SSH keys instead of password for VPS access
+- ⚠️ Rotate SECRET_KEY periodically for security
+
+### **🛠️ Troubleshooting Secret Issues**
+
+#### If deployment fails due to secrets:
+```bash
+# Test SSH connection manually
+ssh ${VPS_USER}@${VPS_HOST}
+
+# Verify DockerHub credentials
+docker login -u ${DOCKERHUB_USERNAME}
+
+# Check VPS environment variables
+cd /hypersend/Hypersend
+cat .env
+```
+
+#### Update secrets if needed:
+1. Go to GitHub Repository → Settings → Secrets and variables → Actions
+2. Click "New repository secret" 
+3. Add/Update the secret value
+4. Secrets are automatically available in next workflow run
+
+---
+
+## 🎯 **Complete Architecture Overview**
+
+### **🏗️ Current vs Target Architecture**
+
+#### **❌ Current State (Issues)**
+```
+User Browser → Nginx → ❌ Frontend Container
+                    ↓
+                 ❌ Backend Container (Not Connecting)
+                    ↓
+                 MongoDB Container
+```
+
+#### **✅ Target State (Working)**
+```
+User Browser
+     ↓ (HTTPS)
+Nginx Reverse Proxy
+     ↓ (Proxy Pass)
+┌─────────────┬─────────────┐
+│ Frontend    │ Backend     │
+│ Container   │ Container   │
+│ (Port 80)   │ (Port 8000) │
+└─────────────┴─────────────┘
+     ↓                    ↓
+Static Files         MongoDB
+(Flutter Web)       (Port 27017)
+```
+
+### **📊 Service Dependencies**
+```yaml
+Services:
+  nginx:
+    depends_on: [backend, frontend]
+    ports: ["80:80", "443:443"]
+    
+  frontend:
+    depends_on: [backend]
+    ports: ["3000:80"]
+    
+  backend:
+    depends_on: [mongodb]
+    ports: ["8000:8000"]
+    environment: [MONGO_USER, MONGO_PASSWORD, SECRET_KEY]
+    
+  mongodb:
+    ports: ["27018:27017"]
+    environment: [MONGO_USER, MONGO_PASSWORD]
+```
+
+---
+
 **🎉 By following this roadmap, you should have your Hypersend application fully functional on your VPS with proper frontend-backend connectivity!**
 
 *Last Updated: January 2026*
-*Version: 1.0*
+*Version: 2.0 - Updated with GitHub Secrets Configuration*
