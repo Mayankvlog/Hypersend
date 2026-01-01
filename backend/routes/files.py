@@ -282,26 +282,9 @@ async def upload_chunk(
                 detail="Chunk checksum mismatch"
             )
     
-    # Binary content detection for security
-    binary_detection = detect_binary_content(chunk_data)
-    if binary_detection["is_binary"]:
-        _log("warning", f"Binary content detected in chunk {chunk_index}: {binary_detection['reason']}", 
-             {"user_id": current_user, "operation": "binary_detection"})
-        
-        # For high confidence binary detection, reject the upload
-        if binary_detection.get("confidence") == "high":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Binary content detected: {binary_detection['reason']}. Only text and media files allowed."
-            )
-    
     # Save chunk to disk with timeout protection
-    upload_dir = settings.DATA_ROOT / "tmp" / upload_id
-    chunk_path = upload_dir / f"{chunk_index}.part"
-    
-    # Enhanced chunk saving with timeout and retry logic
-    try:
-        async with aiofiles.open(chunk_path, "wb") as f:
+    # NOTE: Removed overly strict binary content detection - this is a file upload system
+    # and should accept all binary formats (PDFs, images, videos, etc.)
             await f.write(chunk_data)
     except Exception as e:
         _log("error", f"[UPLOAD] Failed to save chunk {chunk_index}: {str(e)}", 
