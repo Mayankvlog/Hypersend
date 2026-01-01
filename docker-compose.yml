@@ -72,15 +72,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # ===== REMOTE DATABASE SUPPORT (NEW) =====
-      MONGODB_URI: ${MONGODB_URI:-}  # MongoDB Atlas or remote DB
-      USE_REMOTE_DB: ${USE_REMOTE_DB:-false}
-      
-      # ===== LOCAL DATABASE (Default fallback) =====
+      # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
+      # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
       MONGO_USER: ${MONGO_USER:-hypersend}
       MONGO_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
-      MONGO_HOST: ${MONGO_HOST:-mongodb}
-      MONGO_PORT: ${MONGO_PORT:-27017}
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      # Force empty MONGODB_URI in Docker so it constructs one using MONGO_* vars above
+      MONGODB_URI: ""
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
       
       # ===== API CONFIGURATION =====
