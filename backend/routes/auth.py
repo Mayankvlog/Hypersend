@@ -249,7 +249,16 @@ async def register(user: UserCreate) -> UserResponse:
             )
         
         # Check if user already exists
-        existing_user = await users_collection().find_one({"email": user.email})
+        try:
+            users_col = users_collection()
+            existing_user = await users_col.find_one({"email": user.email})
+        except Exception as db_error:
+            auth_log(f"Database error checking existing user: {type(db_error).__name__}: {str(db_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service temporarily unavailable. Please try again."
+            )
+        
         if existing_user:
             auth_log(f"Registration failed: Email already exists: {user.email}")
             raise HTTPException(
@@ -291,8 +300,16 @@ async def register(user: UserCreate) -> UserResponse:
         }
         
         # Insert user into database
-        result = await users_collection().insert_one(user_doc)
-        auth_log(f"✓ User registered successfully: {user.email} (ID: {result.inserted_id})")
+        try:
+            users_col = users_collection()
+            result = await users_col.insert_one(user_doc)
+            auth_log(f"✓ User registered successfully: {user.email} (ID: {result.inserted_id})")
+        except Exception as db_error:
+            auth_log(f"Database error during user insertion: {type(db_error).__name__}: {str(db_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to create user account. Database service may be unavailable."
+            )
         
         # Create response
         return UserResponse(
@@ -320,7 +337,7 @@ async def register(user: UserCreate) -> UserResponse:
         auth_log(f"Registration error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Registration failed: {str(e)}"
+            detail=f"Registration failed: {type(e).__name__} - {str(e)[:100]}"
         )
 
 @router.post("/login", response_model=Token)

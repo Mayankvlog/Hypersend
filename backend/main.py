@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 import os
 import sys
+import asyncio
 from dotenv import load_dotenv
 
 # Load environment variables FIRST before importing config
@@ -238,16 +239,32 @@ async def lifespan(app: FastAPI):
             print(f"[ERROR] Unexpected validation error: {str(e)}")
             raise
         
-        # Connect to database with error handling
-        try:
-            await connect_db()
-            print("[DB] Database connection established")
-        except Exception as e:
-            if settings.USE_MOCK_DB:
-                print("[DB] Mock database initialized")
-            else:
-                print(f"[WARN] Database connection failed (continuing in offline mode): {str(e)}")
-                print("[WARN] WARNING: Database operations will fail - used for development/testing only!")
+        # Connect to database with retry logic
+        max_db_retries = 5
+        db_connected = False
+        for db_attempt in range(max_db_retries):
+            try:
+                await connect_db()
+                print("[DB] ✓ Database connection established successfully")
+                db_connected = True
+                break
+            except Exception as e:
+                if db_attempt < max_db_retries - 1:
+                    print(f"[DB] Connection attempt {db_attempt + 1}/{max_db_retries} failed, retrying in 2 seconds...")
+                    await asyncio.sleep(2)
+                else:
+                    if settings.USE_MOCK_DB:
+                        print("[DB] ✓ Mock database initialized (no real DB needed)")
+                        db_connected = True
+                    else:
+                        print(f"[ERROR] Database connection failed after {max_db_retries} attempts")
+                        print(f"[ERROR] Details: {str(e)}")
+                        if 'MONGODB_URI' not in os.environ:
+                            print("[ERROR] MONGODB_URI not found in environment variables!")
+                        raise
+        
+        if db_connected:
+            print("[START] ✓ Server startup complete - Ready to accept requests")
                 # Don't raise - allow app to start for testing
                 pass
         
@@ -537,6 +554,38 @@ async def favicon():
         return FileResponse(str(FAVICON_PATH))
     return Response(status_code=204)
 
+
+# Health check endpoint
+@app.get("/health", tags=["System"])
+@app.get("/api/v1/health", tags=["System"])
+async def health_check():
+    """Health check endpoint for monitoring and load balancers"""
+    try:
+        # Check database connection
+        try:
+            from database import client
+            if client:
+                await client.admin.command('ping')
+                db_status = "healthy"
+            else:
+                db_status = "not_connected"
+        except Exception as db_error:
+            db_status = f"error: {str(db_error)[:50]}"
+        
+        return {
+            "status": "healthy",
+            "service": "hypersend-api",
+            "version": "1.0.0",
+            "database": db_status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "service": "hypersend-api",
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }, 503
 
 
 # Include routers
