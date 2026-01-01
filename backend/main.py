@@ -430,44 +430,7 @@ async def handle_options_request(full_path: str, request: Request):
         }
     )
 
-# Health check endpoint for monitoring and CORS testing
-@app.get("/health")
-async def health_check():
-    """
-    Health check endpoint - used to verify API is running.
-    Accessible from browser without authentication (no CORS issues).
-    """
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "api_base_url": settings.API_BASE_URL,
-        "debug_mode": settings.DEBUG,
-    }
-
-# API health endpoint with diagnostic info
-@app.get("/api/v1/health")
-async def api_health_check(request: Request):
-    """
-    API health endpoint with diagnostic info
-    Used to verify API endpoint is accessible from frontend
-    """
-    try:
-        client_ip = request.client.host if request.client else "unknown"
-    except Exception as e:
-        client_ip = "unknown"
-        if settings.DEBUG:
-            print(f"[DEBUG] Client IP detection failed: {e}")
-    
-    return {
-        "status": "healthy",
-        "service": "Hypersend API",
-        "version": "1.0.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "client_ip": client_ip,
-        "api_base_url": settings.API_BASE_URL,
-        "debug_mode": settings.DEBUG,
-        "message": "API endpoint is reachable and responding properly"
-    }
+# Removed - consolidated into single health endpoint below
 
 # Detailed status endpoint for debugging
 @app.get("/api/v1/status")
@@ -557,7 +520,7 @@ async def favicon():
 @app.get("/health", tags=["System"])
 @app.get("/api/v1/health", tags=["System"])
 async def health_check():
-    """Health check endpoint for monitoring and load balancers"""
+    """Health check endpoint for monitoring and load balancers - multiple routes for compatibility"""
     try:
         # Check database connection
         try:
@@ -584,9 +547,6 @@ async def health_check():
             "error": str(e),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }, 503
-
-
-# Include routers
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(chats.router, prefix="/api/v1")
