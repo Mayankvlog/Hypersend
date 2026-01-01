@@ -73,6 +73,7 @@ class Settings:
     # File Storage (WhatsApp-style: Local only)
     STORAGE_MODE: str = os.getenv("STORAGE_MODE", "local")  # local, server, or hybrid
     DATA_ROOT: Path = Path(os.getenv("DATA_ROOT", "./data"))  # Only for metadata/temp
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./uploads")  # Upload directory for chunks
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB
     MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", "42949672960"))  # 40 GiB
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))

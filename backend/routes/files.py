@@ -4,6 +4,8 @@ import json
 import math
 import logging
 import asyncio
+import os
+import aiofiles
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -285,23 +287,28 @@ async def upload_chunk(
     # Save chunk to disk with timeout protection
     # NOTE: Removed overly strict binary content detection - this is a file upload system
     # and should accept all binary formats (PDFs, images, videos, etc.)
+    try:
+        chunk_path = os.path.join(settings.UPLOAD_DIR, upload_id, f"chunk_{chunk_index}")
+        os.makedirs(os.path.dirname(chunk_path), exist_ok=True)
+        async with aiofiles.open(chunk_path, 'wb') as f:
             await f.write(chunk_data)
     except Exception as e:
         _log("error", f"[UPLOAD] Failed to save chunk {chunk_index}: {str(e)}", 
                {"user_id": current_user, "operation": "chunk_save_error"})
         
         # Enhanced error categorization for 400 errors
-        if e.status_code == 400:
+        status_code = getattr(e, 'status_code', 500)
+        if status_code == 400:
             _log("error", f"[UPLOAD] Bad Request - Failed to save chunk {chunk_index}: {str(e)}", 
                        {"user_id": current_user, "operation": "chunk_save_400_error"})
             _log("error", f"[UPLOAD] Possible 400 causes - Server storage issue, permission denied, disk full", 
                        {"user_id": current_user, "operation": "chunk_save_400_debug"})
         else:
-            _log("error", f"[UPLOAD] Server error {e.status_code} - Failed to save chunk {chunk_index}: {str(e)}", 
+            _log("error", f"[UPLOAD] Server error {status_code} - Failed to save chunk {chunk_index}: {str(e)}", 
                        {"user_id": current_user, "operation": "chunk_save_server_error"})
         
         raise HTTPException(
-            status_code=e.status_code,
+            status_code=status_code,
             detail=f"Failed to save chunk {chunk_index}. Please retry."
         )
     
@@ -332,6 +339,7 @@ async def upload_chunk(
                 await asyncio.sleep(1)  # Wait 1 second between retries
     
     # Update manifest
+    upload_dir = settings.DATA_ROOT / "tmp" / upload_id
     manifest_path = upload_dir / "manifest.json"
     async with aiofiles.open(manifest_path, "r") as f:
         manifest = json.loads(await f.read())
