@@ -14,8 +14,10 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - nginx_cache:/var/cache/nginx
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:
