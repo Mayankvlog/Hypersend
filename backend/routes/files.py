@@ -7,19 +7,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
-from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body
-from typing import Optional, List
-import aiofiles
-from models import (
-    FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
-)
-from db_proxy import files_collection, uploads_collection, users_collection
-from auth.utils import get_current_user
-from config import settings
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from urllib.parse import quote
-from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional, List
 import aiofiles
@@ -241,8 +229,8 @@ async def initialize_upload(
 @router.put("/{upload_id}/chunk", response_model=ChunkUploadResponse)
 async def upload_chunk(
     upload_id: str,
-    request: Request,
-    chunk_index: int,
+    chunk_index: int = Query(..., description="Index of the chunk being uploaded (0-based)"),
+    request: Request = ...,
     x_chunk_checksum: Optional[str] = Header(None),
     current_user: str = Depends(get_current_user)
 ):
