@@ -343,6 +343,7 @@ async def upload_chunk(
     manifest_path = upload_dir / "manifest.json"
     async with aiofiles.open(manifest_path, "r") as f:
         manifest = json.loads(await f.read())
+        
     
     if chunk_index not in manifest["received_chunks"]:
         manifest["received_chunks"].append(chunk_index)
