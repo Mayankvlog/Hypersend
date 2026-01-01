@@ -265,8 +265,6 @@ async def lifespan(app: FastAPI):
         
         if db_connected:
             print("[START] ✓ Server startup complete - Ready to accept requests")
-                # Don't raise - allow app to start for testing
-                pass
         
         if settings.DEBUG:
             print(f"[START] Zaply API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
