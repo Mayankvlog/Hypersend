@@ -383,7 +383,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Total-Count", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"],
+    expose_headers=["Content-Disposition", "X-Total-Count", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers", "Content-Length"],
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
@@ -538,9 +538,15 @@ async def health_check():
             "service": "hypersend-api",
             "version": "1.0.0",
             "database": db_status,
+            "cors_origins": cors_origins,
+            "websocket_support": True,
+            "p2p_relay": "enabled",
+            "max_file_size_gb": settings.MAX_FILE_SIZE_BYTES / (1024**3),
+            "chunk_size_mb": settings.CHUNK_SIZE / (1024**2),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
+        logger.error(f"[HEALTH_CHECK] Error: {str(e)}")
         return {
             "status": "degraded",
             "service": "hypersend-api",
