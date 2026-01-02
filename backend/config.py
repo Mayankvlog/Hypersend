@@ -89,9 +89,9 @@ class Settings:
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment
-    # DEV: Defaults to localhost:8080 (via nginx), PROD: Set API_BASE_URL env var to your domain
-    # Note: Nginx proxies /api/ to backend on port 8000, so full URL includes /api/v1
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8080/api/v1")
+    # PROD: https://zaply.in.net/api/v1 (requires DNS + SSL setup)
+    # DEV: Set API_BASE_URL=http://localhost:8080/api/v1 in docker-compose
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))

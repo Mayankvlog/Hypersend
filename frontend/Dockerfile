@@ -1,5 +1,7 @@
 FROM debian:bookworm-slim AS build
 
+# Production default: zaply.in.net (requires DNS + SSL)
+# Development: override with API_BASE_URL=http://localhost:8080/api/v1 in docker-compose build args
 ARG API_BASE_URL=https://zaply.in.net/api/v1
 
 RUN apt-get update && apt-get install -y \
