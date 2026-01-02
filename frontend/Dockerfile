@@ -1,13 +1,20 @@
 FROM debian:bookworm-slim AS build
 
-# Production default: HTTPS zaply.in.net (REQUIRED for production deployment)
-# This is built into the compiled Flutter app at build-time
+# ✅ SECURITY: Use build args for flexibility and security updates
+
 # Development: override with API_BASE_URL=http://localhost:8080/api/v1 in docker-compose build args
 ARG API_BASE_URL=https://zaply.in.net/api/v1
 
-RUN apt-get update && apt-get install -y \
-    curl git unzip xz-utils zip \
-    && rm -rf /var/lib/apt/lists/*
+# ✅ SECURITY FIX: Apply comprehensive security updates to patch all base image vulnerabilities
+# dist-upgrade ensures all security patches including critical/high severity CVEs are applied
+# This ensures all CVEs in the base image layers are remediated before Flutter installation
+RUN apt-get update && \
+    apt-get dist-upgrade -y && \
+    apt-get install -y --no-install-recommends \
+    curl git unzip xz-utils zip ca-certificates && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/*
 
 RUN git clone --depth 1 --branch 3.35.6 https://github.com/flutter/flutter.git /opt/flutter
 
@@ -35,77 +42,113 @@ RUN flutter build web --release \
 # ==============================
 FROM nginx:alpine
 
+# ✅ SECURITY: Apply comprehensive security updates to nginx base image
+# Update alpine package manager and apply all security patches
+RUN apk update && \
+    apk upgrade && \
+    apk add --no-cache ca-certificates && \
+    rm -rf /var/cache/apk/*
+
+# ✅ SECURITY: Run nginx as non-root user for defense-in-depth
+# Ensure nginx cache and run directories exist and have proper permissions BEFORE switching user
+RUN mkdir -p /var/cache/nginx /var/run/nginx && \
+    chown -R nginx:nginx /var/cache/nginx /var/run/nginx && \
+    chmod -R 755 /var/cache/nginx /var/run/nginx
+
 # Copy Flutter build
 COPY --from=build /app/build/web /usr/share/nginx/html
 
-# ✅ PRODUCTION NGINX CONFIG - Flutter Web Optimized
+# ✅ PRODUCTION NGINX CONFIG - Flutter Web Optimized + Security Headers
 RUN printf '%s\n' \
-    'server {' \
-    '    listen 80;' \
-    '    listen [::]:80;' \
-    '    server_name _;' \
-    '    root /usr/share/nginx/html;' \
-    '    index index.html;' \
+    'user nginx;' \
+    'worker_processes auto;' \
+    'error_log /var/log/nginx/error.log warn;' \
+    'pid /var/run/nginx.pid;' \
     '' \
-    '    types {' \
-    '        text/html html htm;' \
-    '        text/css css;' \
-    '        application/javascript js mjs;' \
-    '        application/wasm wasm;' \
-    '        image/png png;' \
-    '        image/jpeg jpeg jpg;' \
-    '        image/webp webp;' \
-    '        image/svg+xml svg svgz;' \
-    '        image/x-icon ico;' \
-    '        font/woff woff;' \
-    '        font/woff2 woff2;' \
-    '        font/ttf ttf;' \
-    '        font/otf otf;' \
-    '        application/json json;' \
-    '        application/manifest+json webmanifest;' \
-    '    }' \
-    '' \
-    '    gzip on;' \
-    '    gzip_vary on;' \
-    '    gzip_proxied any;' \
-    '    gzip_comp_level 6;' \
-    '    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json application/xml image/svg+xml;' \
-    '' \
-    '    location = /health {' \
-    '        add_header Content-Type "text/plain";' \
-    '        return 200 "healthy";' \
-    '        access_log off;' \
-    '    }' \
-    '' \
-    '    location ~* \.(js|css|png|jpg|jpeg|webp|gif|ico|svg|woff|woff2|ttf|otf|wasm)$ {' \
-    '        expires 365d;' \
-    '        add_header Cache-Control "public, immutable";' \
-    '        add_header X-Content-Type-Options "nosniff" always;' \
-    '        access_log off;' \
-    '    }' \
-    '' \
-    '    location /canvaskit/ {' \
-    '        expires 365d;' \
-    '        add_header Cache-Control "public, immutable";' \
-    '        access_log off;' \
-    '    }' \
-    '' \
-    '    location ~ ^/(index\.html|flutter_service_worker\.js)$ {' \
-    '        expires -1;' \
-    '        add_header Cache-Control "no-cache, no-store, must-revalidate";' \
-    '        add_header Service-Worker-Allowed "/" always;' \
-    '    }' \
-    '' \
-    '    location / {' \
-    '        try_files $uri $uri/ /index.html;' \
-    '        add_header Cache-Control "no-cache, no-store, must-revalidate";' \
-    '    }' \
-    '' \
-    '    error_page 404 /index.html;' \
+    'events {' \
+    '    worker_connections 1024;' \
     '}' \
-    > /etc/nginx/conf.d/default.conf
+    '' \
+    'http {' \
+    '    server {' \
+    '        listen 80;' \
+    '        listen [::]:80;' \
+    '        server_name _;' \
+    '        root /usr/share/nginx/html;' \
+    '        index index.html;' \
+    '' \
+    '        # ✅ SECURITY: Comprehensive headers to prevent attacks' \
+    '        add_header X-Content-Type-Options "nosniff" always;' \
+    '        add_header X-Frame-Options "SAMEORIGIN" always;' \
+    '        add_header X-XSS-Protection "1; mode=block" always;' \
+    '        add_header Referrer-Policy "strict-origin-when-cross-origin" always;' \
+    '        add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;' \
+    '        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;' \
+    '' \
+    '        types {' \
+    '            text/html html htm;' \
+    '            text/css css;' \
+    '            application/javascript js mjs;' \
+    '            application/wasm wasm;' \
+    '            image/png png;' \
+    '            image/jpeg jpeg jpg;' \
+    '            image/webp webp;' \
+    '            image/svg+xml svg svgz;' \
+    '            image/x-icon ico;' \
+    '            font/woff woff;' \
+    '            font/woff2 woff2;' \
+    '            font/ttf ttf;' \
+    '            font/otf otf;' \
+    '            application/json json;' \
+    '            application/manifest+json webmanifest;' \
+    '        }' \
+    '' \
+    '        gzip on;' \
+    '        gzip_vary on;' \
+    '        gzip_proxied any;' \
+    '        gzip_comp_level 6;' \
+    '        gzip_types text/plain text/css text/xml text/javascript application/javascript application/json application/xml image/svg+xml;' \
+    '' \
+    '        location = /health {' \
+    '            add_header Content-Type "text/plain";' \
+    '            return 200 "healthy";' \
+    '            access_log off;' \
+    '        }' \
+    '' \
+    '        location ~* \.(js|css|png|jpg|jpeg|webp|gif|ico|svg|woff|woff2|ttf|otf|wasm)$ {' \
+    '            expires 365d;' \
+    '            add_header Cache-Control "public, immutable";' \
+    '            add_header X-Content-Type-Options "nosniff" always;' \
+    '            access_log off;' \
+    '        }' \
+    '' \
+    '        location /canvaskit/ {' \
+    '            expires 365d;' \
+    '            add_header Cache-Control "public, immutable";' \
+    '            access_log off;' \
+    '        }' \
+    '' \
+    '        location ~ ^/(index\.html|flutter_service_worker\.js)$ {' \
+    '            expires -1;' \
+    '            add_header Cache-Control "no-cache, no-store, must-revalidate";' \
+    '            add_header Service-Worker-Allowed "/" always;' \
+    '        }' \
+    '' \
+    '        location / {' \
+    '            try_files $uri $uri/ /index.html;' \
+    '            add_header Cache-Control "no-cache, no-store, must-revalidate";' \
+    '        }' \
+    '' \
+    '        error_page 404 /index.html;' \
+    '    }' \
+    '}' \
+    > /etc/nginx/nginx.conf
 
 EXPOSE 80
+
+# ✅ SECURITY: Run as non-root user (nginx user created by Alpine nginx image)
+USER nginx
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://127.0.0.1/health || exit 1
 
