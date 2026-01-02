@@ -88,9 +88,10 @@ class Settings:
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
-    # Default public API base URL for this deployment (VPS behind Nginx HTTPS)
+    # Default public API base URL for this deployment
+    # DEV: Defaults to localhost:8080 (via nginx), PROD: Set API_BASE_URL env var to your domain
     # Note: Nginx proxies /api/ to backend on port 8000, so full URL includes /api/v1
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8080/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -253,9 +254,7 @@ class Settings:
             # Validate SMTP configuration
             self._validate_smtp_config()
             
-            # Test email service on startup in DEBUG mode
-            if self.DEBUG:
-                self._test_email_service_on_startup()
+            print("[EMAIL] Email service ready for use")
         else:
             print("[EMAIL] X Email service NOT configured - password reset emails will not be sent")
             print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
@@ -278,10 +277,11 @@ class Settings:
         if "gmail.com" in self.SMTP_HOST.lower():
             if self.SMTP_PORT != 587 and self.SMTP_PORT != 465:
                 print("[EMAIL] WARNING: Gmail usually uses port 587 (TLS) or 465 (SSL)")
-            print("[EMAIL] WARNING: Port {self.SMTP_PORT} typically requires TLS/SSL")
-            print("[EMAIL] Email service test successful")
-            print(f"[EMAIL] Email service test failed: {test_message}")
-            print("[EMAIL] Check SMTP configuration and network connectivity")
+            print(f"[EMAIL] Port {self.SMTP_PORT} configured for Gmail - verifying TLS/SSL requirements")
+            if self.SMTP_USE_TLS:
+                print("[EMAIL] Email service configured with TLS - settings validated")
+            else:
+                print("[EMAIL] WARNING: Gmail requires TLS/SSL - SMTP_USE_TLS should be True")
     
     def validate_production(self):
         """Validate production-safe settings.

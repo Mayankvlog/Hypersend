@@ -103,11 +103,11 @@ services:
       FILE_RETENTION_HOURS: 0
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8080/api/v1}
       
       # ===== CORS CONFIGURATION =====
-      # CRITICAL: Set explicit origins for production HTTPS deployment
-      ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net,http://localhost:3000,http://localhost:8000"
+      # DEV: Default to localhost, PROD: Override with ALLOWED_ORIGINS env var
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:3000,http://localhost:8000,http://127.0.0.1:8080,http://127.0.0.1:3000}
       
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
@@ -147,14 +147,14 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        API_BASE_URL: "https://zaply.in.net/api/v1"
-        VALIDATE_CERTIFICATES: "true"
+        API_BASE_URL: ${API_BASE_URL:-http://localhost:8080/api/v1}
+        VALIDATE_CERTIFICATES: "false"
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
       - "3000:80"
     environment:
-      CORS_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080,http://127.0.0.1:3000}
     depends_on:
       backend:
         condition: service_healthy
