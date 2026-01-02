@@ -6,7 +6,8 @@ services:
     container_name: hypersend_nginx
     restart: unless-stopped
     ports:
-      # If port 80/443 already in use, change to: "8080:80" and "8443:443"
+      # Development: Access at http://localhost:8080 or http://127.0.0.1:8080
+      # If port 80/443 already in use, keep these. Otherwise use: "80:80" and "443:443"
       - "${NGINX_HTTP_PORT:-8080}:80"
       - "${NGINX_HTTPS_PORT:-8443}:443"
     volumes:
@@ -26,6 +27,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    environment:
+      # Suppress SSL verification warnings for self-signed certs in dev
+      - NGINX_ALLOW_UNSAFE_SSL=true
     logging:
       driver: "json-file"
       options:
