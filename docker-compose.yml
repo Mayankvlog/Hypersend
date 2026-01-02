@@ -22,11 +22,11 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "-s", "http://127.0.0.1/health"]
+      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     environment:
       # Suppress SSL verification warnings for self-signed certs in dev
       - NGINX_ALLOW_UNSAFE_SSL=true
@@ -60,8 +60,7 @@ services:
     command:
       - mongod
       - --auth
-      - --bind_ip
-      - 0.0.0.0
+      - --bind_ip_all
       - --wiredTigerCacheSizeGB
       - "0.5"
     logging:
@@ -131,11 +130,11 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5); sys.exit(0)"]
+      test: ["CMD", "python", "-c", "import sys; import socket; sock = socket.socket(); sock.connect(('127.0.0.1', 8000)); sock.close(); sys.exit(0)"]
       interval: 30s
-      timeout: 15s
+      timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 120s
     logging:
       driver: "json-file"
       options:
@@ -161,11 +160,11 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "-s", "http://127.0.0.1/health"]
+      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 20s
     logging:
       driver: "json-file"
       options:
