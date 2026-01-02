@@ -1,6 +1,7 @@
 FROM debian:bookworm-slim AS build
 
-# Production default: zaply.in.net (requires DNS + SSL)
+# Production default: HTTPS zaply.in.net (REQUIRED for production deployment)
+# This is built into the compiled Flutter app at build-time
 # Development: override with API_BASE_URL=http://localhost:8080/api/v1 in docker-compose build args
 ARG API_BASE_URL=https://zaply.in.net/api/v1
 

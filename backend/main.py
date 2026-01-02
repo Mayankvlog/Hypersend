@@ -409,9 +409,16 @@ async def handle_options_request(full_path: str, request: Request):
         # Whitelist patterns with proper boundary matching
         # Production URLs should be configured via environment variables
         allowed_patterns = [
+            # Production domains
+            r'^https?://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',  # Production domain
+            # Development/Testing
             r'^http://localhost(:[0-9]+)?$',             # localhost with optional port
             r'^http://127\.0\.0\.1(:[0-9]+)?$',        # 127.0.0.1 with optional port
-            r'^https?://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',  # Production domain
+            # Docker internal hostnames
+            r'^http://hypersend_frontend(:[0-9]+)?$',    # Docker container name
+            r'^http://hypersend_backend(:[0-9]+)?$',     # Docker container name
+            r'^http://frontend(:[0-9]+)?$',              # Docker service name
+            r'^http://backend(:[0-9]+)?$',               # Docker service name
         ]
         
         for pattern in allowed_patterns:

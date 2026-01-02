@@ -89,8 +89,8 @@ class Settings:
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment
-    # PROD: https://zaply.in.net/api/v1 (requires DNS + SSL setup)
-    # DEV: Set API_BASE_URL=http://localhost:8080/api/v1 in docker-compose
+    # PROD: https://zaply.in.net/api/v1 (requires DNS + SSL setup + certbot)
+    # DEV: Set API_BASE_URL=http://localhost:8080/api/v1 when port 80 unavailable
     API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
     
     # Rate Limiting
@@ -138,56 +138,71 @@ class Settings:
     # ENHANCED: Load from environment with secure defaults
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
-        "http://localhost:3000",  # Frontend development server
-        "http://localhost:8000",  # Backend direct access
-        "http://127.0.0.1:3000",  # Alternative localhost
-        "http://127.0.0.1:8000",  # Alternative localhost
-        "https://zaply.in.net",    # Production domain
-        "https://www.zaply.in.net", # Production domain with www
+        "https://zaply.in.net",       # Production domain (primary)
+        "https://www.zaply.in.net",   # Production domain with www
+        "http://hypersend_frontend:80",  # Docker internal: frontend container
+        "http://hypersend_frontend",     # Docker internal: frontend (port 80 default)
+        "http://frontend:80",            # Docker internal: frontend service
+        "http://frontend",               # Docker internal: frontend (port 80 default)
+        "http://hypersend_backend:8000", # Docker internal: backend for testing
+        "http://localhost:3000",         # Frontend development
+        "http://localhost:8000",         # Backend direct access
+        "http://127.0.0.1:3000",        # Alternative localhost
+        "http://127.0.0.1:8000",        # Alternative localhost
     ]
     
     # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production
     def _get_cors_origins(self) -> list:
         """Get CORS origins based on environment"""
-        # Priority: API_BASE_URL (docker-compose compatible) > ALLOWED_ORIGINS > CORS_ORIGINS > defaults
-        env_api_base_url = os.getenv("API_BASE_URL")      # From docker-compose (highest priority)
-        env_allowed_origins = os.getenv("ALLOWED_ORIGINS")  # Alternative name
-        env_cors_origins = os.getenv("CORS_ORIGINS")  # Legacy support (lowest priority)
+        # Priority: ALLOWED_ORIGINS > CORS_ORIGINS > API_BASE_URL-derived > defaults
+        env_allowed_origins = os.getenv("ALLOWED_ORIGINS")  # Highest priority: docker-compose
+        env_cors_origins = os.getenv("CORS_ORIGINS")        # Alternative name
+        env_api_base_url = os.getenv("API_BASE_URL")        # Used to derive domain
         
-        # FIRST: Derive CORS origins from API_BASE_URL (docker-compose compatible solution)
-        if env_api_base_url:
-            # Extract base domain from API_BASE_URL
-            api_url = env_api_base_url.rstrip('/')
-            if api_url.endswith('/api/v1'):
-                # Remove /api/v1 to get base URL
-                base_url = api_url[:-7]  # Remove '/api/v1'
-                # Parse the URL to get the domain
-                if '://' in base_url:
-                    domain = base_url.split('://')[1].split(':')[0]  # Remove protocol and port
-                    if domain and domain != 'localhost' and not domain.startswith('127.') and '.' in domain:
-                        # Production domain derived from API_BASE_URL
-                        origins = [
-                            f"https://{domain}",
-                            f"https://www.{domain}",
-                            "http://localhost:3000",  # Development fallback
-                            "http://localhost:8000",  # Development fallback
-                        ]
-                        print(f"[CONFIG] Derived CORS origins from API_BASE_URL: {origins}")
-                        return origins
-        
-        # SECOND: Parse ALLOWED_ORIGINS if available
+        # FIRST: Use ALLOWED_ORIGINS if explicitly provided (takes precedence)
         if env_allowed_origins:
             origins = [origin.strip() for origin in env_allowed_origins.split(",") if origin.strip()]
             if origins:
-                print(f"[CONFIG] Using ALLOWED_ORIGINS from environment: {origins}")
+                print(f"[CONFIG] Using ALLOWED_ORIGINS from environment (highest priority): {len(origins)} origins")
                 return origins
         
-        # THIRD: Parse CORS_ORIGINS if available (legacy, lowest priority)
+        # SECOND: Use CORS_ORIGINS if available (legacy, second priority)
         if env_cors_origins:
             origins = [origin.strip() for origin in env_cors_origins.split(",") if origin.strip()]
             if origins:
-                print(f"[CONFIG] Using CORS_ORIGINS from environment (legacy): {origins}")
+                print(f"[CONFIG] Using CORS_ORIGINS from environment (legacy): {len(origins)} origins")
                 return origins
+        
+        # THIRD: Derive production domain from API_BASE_URL and add Docker hostnames
+        if env_api_base_url:
+            api_url = env_api_base_url.rstrip('/')
+            if api_url.endswith('/api/v1'):
+                base_url = api_url[:-7]  # Remove '/api/v1'
+                if '://' in base_url:
+                    domain = base_url.split('://')[1].split(':')[0]  # Extract domain
+                    if domain and domain != 'localhost' and not domain.startswith('127.') and '.' in domain:
+                        # PRODUCTION: Production HTTPS must be primary
+                        # DOCKER: Internal HTTP hostnames for inter-container communication
+                        # DEV: Localhost for testing
+                        origins = [
+                            # ===== PRODUCTION (HTTPS) =====
+                            f"https://{domain}",                  # Production HTTPS primary
+                            f"https://www.{domain}",              # Production HTTPS with www
+                            # ===== DOCKER INTERNAL (HTTP only) =====
+                            "http://hypersend_frontend:80",       # Docker: frontend by container name
+                            "http://hypersend_frontend",          # Docker: frontend (no port)
+                            "http://frontend:80",                 # Docker: frontend by service name
+                            "http://frontend",                    # Docker: frontend (no port)
+                            "http://hypersend_backend:8000",      # Docker: backend by container name
+                            "http://backend:8000",                # Docker: backend by service name
+                            # ===== DEVELOPMENT (HTTP localhost) =====
+                            "http://localhost:3000",              # Dev: frontend
+                            "http://localhost:8000",              # Dev: backend
+                            "http://127.0.0.1:3000",             # Dev: localhost alias
+                            "http://127.0.0.1:8000",             # Dev: localhost alias
+                        ]
+                        print(f"[CONFIG] PRODUCTION mode: {len(origins)} origins (HTTPS + Docker + Dev)")
+                        return origins
         
         # Fallback to DEBUG/Production defaults if no environment variable
         debug_mode = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")

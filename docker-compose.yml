@@ -8,9 +8,10 @@ services:
     ports:
       # PRODUCTION: Use "80:80" and "443:443" after DNS setup
       # DEVELOPMENT: Use "8080:80" and "8443:443" if ports 80/443 are taken
+      # DETECTED: Port 80 already in use on VPS, using 8080 fallback
       # To change: set NGINX_HTTP_PORT=80 NGINX_HTTPS_PORT=443 before docker-compose up
-      - "${NGINX_HTTP_PORT:-80}:80"
-      - "${NGINX_HTTPS_PORT:-443}:443"
+      - "${NGINX_HTTP_PORT:-8080}:80"
+      - "${NGINX_HTTPS_PORT:-8443}:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
@@ -106,8 +107,9 @@ services:
       API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
       
       # ===== CORS CONFIGURATION =====
-      # PROD: zaply.in.net on standard ports, DEV: Override with ALLOWED_ORIGINS env var
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://localhost,http://localhost:80,http://localhost:3000,http://127.0.0.1:80,http://127.0.0.1:3000}
+      # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
+      # Structure: HTTPS production first, then Docker HTTP, then Dev HTTP
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://hypersend_frontend:80,http://hypersend_frontend,http://frontend:80,http://frontend,http://hypersend_backend:8000,http://backend:8000,http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000}
       
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
@@ -153,8 +155,6 @@ services:
     restart: unless-stopped
     ports:
       - "3000:80"
-    environment:
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://localhost,http://localhost:80,http://localhost:3000,http://127.0.0.1:80,http://127.0.0.1:3000}
     depends_on:
       backend:
         condition: service_healthy
