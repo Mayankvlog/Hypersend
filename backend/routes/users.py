@@ -1152,9 +1152,9 @@ async def upload_avatar(
         
         new_file_name = f"{safe_user_id}_{unique_id}{file_ext}"
         
-        # Security: Validate complete filename
+        # Security: Validate complete filename - allow UUID patterns with underscores and hyphens
         import re
-        if not re.match(r'^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$', new_file_name):
+        if not re.match(r'^[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+$', new_file_name):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Filename generation failed"
@@ -1465,7 +1465,31 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
     
     if not file_path.exists():
         logger.warning(f"[AVATAR] File not found: {filename}")
-        raise HTTPException(status_code=404, detail="Avatar not found")
+        
+        # Fallback: Try to find avatar by user ID from filename
+        import re
+        # Extract user ID from patterns like "69564dea8eac4df1_xyz.png" or "69564dea8eac4df1.png"
+        user_id_match = re.match(r'^([a-f0-9]+)', filename)
+        if user_id_match:
+            user_id = user_id_match.group(1)
+            logger.info(f"[AVATAR] Searching for avatar by user_id: {user_id}")
+            
+            # Search for any avatar file for this user
+            import glob
+            avatar_pattern = f"{user_id}_*.*"
+            avatar_dir = settings.DATA_ROOT / "avatars"
+            matching_files = list(glob.glob(str(avatar_dir / avatar_pattern)))
+            
+            if matching_files:
+                # Return the most recent avatar file
+                latest_file = max(matching_files, key=os.path.getctime)
+                file_path = Path(latest_file)
+                logger.info(f"[AVATAR] Found fallback avatar: {file_path.name}")
+            else:
+                logger.warning(f"[AVATAR] No avatar files found for user: {user_id}")
+                raise HTTPException(status_code=404, detail="Avatar not found")
+        else:
+            raise HTTPException(status_code=404, detail="Avatar not found")
     
     # Check if it's actually a file
     if not file_path.is_file():
