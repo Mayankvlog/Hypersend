@@ -36,28 +36,27 @@
 </head>
 <body>
   <script>
-    // Completely bypass CSP and force HTML renderer
-    window.addEventListener('load', function() {
-      // Remove all CSP meta tags
-      document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(tag => tag.remove());
+    // Configure Flutter for proper CanvasKit loading
+    window.flutterConfiguration = {
+      // Enable CanvasKit with proper CDN URL
+      canvasKitBaseUrl: "https://www.gstatic.com/flutter-canvaskit/",
+      renderer: "canvaskit"
+    };
+    
+    // Handle CSP errors gracefully
+    window.addEventListener('error', function(e) {
+      if (e.message.includes('Content-Security-Policy') && e.filename.includes('canvaskit')) {
+        console.warn('CSP blocked CanvasKit, falling back to HTML renderer');
+        // Fallback to HTML renderer if CSP blocks CanvasKit
+        window.flutterConfiguration.renderer = "html";
+        window.flutterConfiguration.canvasKitBaseUrl = "";
+      }
     });
     
-    // Force HTML renderer immediately
-    window.flutterConfiguration = {
-      canvasKitBaseUrl: "",
-      renderer: "html"
-    };
-    
-    // Bypass CSP by intercepting fetch
-    const originalFetch = window.fetch;
-    window.fetch = function(...args) {
-      const url = args[0];
-      if (typeof url === 'string' && (url.includes('gstatic.com') || url.includes('fonts.googleapis.com'))) {
-        // Allow external Flutter resources
-        return originalFetch.apply(this, args);
-      }
-      return originalFetch.apply(this, args);
-    };
+    // Ensure proper loading of external Flutter resources
+    window.addEventListener('load', function() {
+      console.log('Flutter configuration:', window.flutterConfiguration);
+    });
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
