@@ -163,6 +163,33 @@ class Settings:
         if env_allowed_origins:
             origins = [origin.strip() for origin in env_allowed_origins.split(",") if origin.strip()]
             if origins:
+                # SECURITY: Filter out HTTP origins in production mode using self.DEBUG
+                if not self.DEBUG:
+                    # Production mode: Only allow HTTPS origins
+                    https_origins = [origin for origin in origins if origin.startswith("https://")]
+                    http_origins = [origin for origin in origins if origin.startswith("http://")]
+                    
+                    if http_origins:
+                        print(f"[CORS_SECURITY] ⚠️  WARNING: Production mode with HTTP origins detected!")
+                        print(f"[CORS_SECURITY] ⚠️  HTTP origins allow unencrypted traffic - SECURITY RISK!")
+                        print(f"[CORS_SECURITY] ⚠️  HTTP origins found: {http_origins}")
+                        print(f"[CORS_SECURITY] ⚠️  Use HTTPS only in production deployment")
+                    
+                    if https_origins:
+                        print(f"[CORS_SECURITY] ✓ Production CORS origins (HTTPS only): {https_origins}")
+                    
+                    # Validate non-empty origins after filtering
+                    origins = https_origins
+                    if not origins:
+                        print(f"[CORS_SECURITY] ❌ ERROR: No valid HTTPS origins configured!")
+                        print(f"[CORS_SECURITY] ❌ Please set ALLOWED_ORIGINS with HTTPS URLs in production")
+                        # Fallback to default HTTPS origins to prevent complete CORS failure
+                        origins = [
+                            "https://zaply.in.net",
+                            "https://www.zaply.in.net",
+                        ]
+                        print(f"[CORS_SECURITY] 🔧 Using fallback HTTPS origins: {origins}")
+                
                 print(f"[CONFIG] Using ALLOWED_ORIGINS from environment (highest priority): {len(origins)} origins")
                 return origins
         
@@ -185,9 +212,8 @@ class Settings:
                         # Production: Only HTTPS for the configured domain
                         # Docker internal: HTTP only (secure network within Docker)
                         # Development: Separate conditional logic below
-                        debug_mode = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
                         
-                        if not debug_mode:
+                        if not self.DEBUG:
                             # PRODUCTION MODE: HTTPS only, no HTTP variants
                             # This prevents man-in-the-middle attacks via unencrypted HTTP
                             origins = [
@@ -320,10 +346,14 @@ class Settings:
             
             print("[EMAIL] Email service ready for use")
         else:
-            print("[EMAIL] X Email service NOT configured - password reset emails will not be sent")
-            print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
+            # Only show email warning in debug mode to reduce log noise in production
+            if self.DEBUG:
+                print("[EMAIL] X Email service NOT configured - password reset emails will not be sent")
+                print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
+            else:
+                print("[EMAIL] Email service disabled (optional - configure SMTP for password reset)")
             
-            if self.EMAIL_FALLBACK_ENABLED:
+            if self.EMAIL_FALLBACK_ENABLED and self.DEBUG:
                 print("[EMAIL] Fallback mode: Tokens returned in debug mode for testing")
             
             if self.EMAIL_AUTO_CONFIGURE:

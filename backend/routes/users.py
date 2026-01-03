@@ -1434,7 +1434,7 @@ async def avatar_options():
     )
 
 @router.get("/avatar/{filename}")
-async def get_avatar(filename: str, current_user: str = Depends(get_current_user)):
+async def get_avatar(filename: str, current_user: str = Depends(get_current_user_optional)):
     """Get user avatar - authenticated access only"""
     from fastapi.responses import FileResponse
     import os
@@ -1455,7 +1455,8 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
     
     # Security: Ensure filename is alphanumeric with safe characters only
     import re
-    if not re.match(r'^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$', filename):
+    # Allow UUID-style patterns with underscores, hyphens, and periods
+    if not re.match(r'^[a-zA-Z0-9_.-]+\.([a-zA-Z0-9]+)$', filename):
         logger.warning(f"[AVATAR] Invalid filename format: {filename}")
         raise HTTPException(status_code=400, detail="Invalid filename format")
     

@@ -338,19 +338,41 @@ async def upload_chunk(
                 
                 await asyncio.sleep(1)  # Wait 1 second between retries
     
-    # Update manifest
-    upload_dir = settings.DATA_ROOT / "tmp" / upload_id
+    # Update manifest - use same path as chunk storage
+    upload_dir = Path(settings.UPLOAD_DIR) / upload_id
     manifest_path = upload_dir / "manifest.json"
-    async with aiofiles.open(manifest_path, "r") as f:
-        manifest = json.loads(await f.read())
-
+    try:
+        async with aiofiles.open(manifest_path, "r") as f:
+            manifest = json.loads(await f.read())
+    except FileNotFoundError:
+        _log("error", f"[UPLOAD] Manifest file not found: {manifest_path}", 
+               {"user_id": current_user, "operation": "manifest_not_found"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Upload session corrupted. Please restart upload."
+        )
+    except Exception as e:
+        _log("error", f"[UPLOAD] Failed to read manifest: {str(e)}", 
+               {"user_id": current_user, "operation": "manifest_read_error"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Upload session error. Please restart upload."
+        )
     
     if chunk_index not in manifest["received_chunks"]:
         manifest["received_chunks"].append(chunk_index)
         manifest["received_chunks"].sort()
     
-    async with aiofiles.open(manifest_path, "w") as f:
-        await f.write(json.dumps(manifest, indent=2))
+    try:
+        async with aiofiles.open(manifest_path, "w") as f:
+            await f.write(json.dumps(manifest, indent=2))
+    except Exception as e:
+        _log("error", f"[UPLOAD] Failed to update manifest: {str(e)}", 
+               {"user_id": current_user, "operation": "manifest_update_error"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save upload progress. Please retry."
+        )
     
     return ChunkUploadResponse(upload_id=upload_id, chunk_index=chunk_index)
 
