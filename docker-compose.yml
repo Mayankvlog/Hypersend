@@ -24,6 +24,9 @@ services:
     networks:
       - hypersend_network
     healthcheck:
+      # LOGIC FIX: Check nginx health on container's internal port 80 (mapped from 8080)
+      # The 127.0.0.1:80 endpoint is internal to the container
+      # Docker translates external 8080:80 mapping - container still uses :80 internally
       test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 10s
@@ -149,10 +152,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # LOGIC FIX: Always use HTTPS for production, disable cert validation only in development
+        # SECURITY: Always use HTTPS for production API calls
         API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
-        # SECURITY: Only set VALIDATE_CERTIFICATES=false in development environments
-        # Production: Omit this or set to true to enforce valid SSL certificates
+        # SECURITY: SSL certificate validation default = true (PRODUCTION SECURE)
+        # DEVELOPMENT: Override with VALIDATE_CERTIFICATES=false for self-signed certs
+        # WARNING: Allowing SSL bypass in production exposes to MITM attacks!
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     container_name: hypersend_frontend
     restart: unless-stopped

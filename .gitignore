@@ -78,3 +78,4 @@ frontend/.flet/
 *.apk
 *.aab
 android/
+.aider*

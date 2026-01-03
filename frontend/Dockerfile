@@ -5,7 +5,10 @@ FROM debian:bookworm AS build
 # Development: override with API_BASE_URL=http://localhost:8080/api/v1 in docker-compose build args
 ARG API_BASE_URL=https://zaply.in.net/api/v1
 
-# ✅ SECURITY FIX: Apply comprehensive security updates to patch all base image vulnerabilities
+# LOGIC FIX: Add VALIDATE_CERTIFICATES build arg for flexible SSL configuration
+# Production default: true (enforce valid SSL certificates)
+# Development: set to false to allow self-signed certs
+ARG VALIDATE_CERTIFICATES=true
 # dist-upgrade ensures all security patches including critical/high severity CVEs are applied
 # This ensures all CVEs in the base image layers are remediated before Flutter installation
 RUN apt-get update && \
@@ -35,6 +38,7 @@ RUN rm -rf build/ && flutter clean
 RUN flutter build web --release \
     --no-tree-shake-icons \
     --dart-define=API_BASE_URL=${API_BASE_URL} \
+    --dart-define=VALIDATE_CERTIFICATES=${VALIDATE_CERTIFICATES} \
     --dart-define=ENVIRONMENT=production
 
 # ==============================

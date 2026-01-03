@@ -181,28 +181,49 @@ class Settings:
                 if '://' in base_url:
                     domain = base_url.split('://')[1].split(':')[0]  # Extract domain
                     if domain and domain != 'localhost' and not domain.startswith('127.') and '.' in domain:
-                        # PRODUCTION: Production HTTPS must be primary
-                        # DOCKER: Internal HTTP hostnames for inter-container communication
-                        # DEV: Localhost for testing
-                        origins = [
-                            # ===== PRODUCTION (HTTPS) =====
-                            f"https://{domain}",                  # Production HTTPS primary
-                            f"https://www.{domain}",              # Production HTTPS with www
-                            # ===== DOCKER INTERNAL (HTTP only) =====
-                            "http://hypersend_frontend:80",       # Docker: frontend by container name
-                            "http://hypersend_frontend",          # Docker: frontend (no port)
-                            "http://frontend:80",                 # Docker: frontend by service name
-                            "http://frontend",                    # Docker: frontend (no port)
-                            "http://hypersend_backend:8000",      # Docker: backend by container name
-                            "http://backend:8000",                # Docker: backend by service name
-                            # ===== DEVELOPMENT (HTTP localhost) =====
-                            "http://localhost:3000",              # Dev: frontend
-                            "http://localhost:8000",              # Dev: backend
-                            "http://127.0.0.1:3000",             # Dev: localhost alias
-                            "http://127.0.0.1:8000",             # Dev: localhost alias
-                        ]
-                        print(f"[CONFIG] PRODUCTION mode: {len(origins)} origins (HTTPS + Docker + Dev)")
-                        return origins
+                        # SECURITY: Separate production HTTPS origins from dev/docker origins
+                        # Production: Only HTTPS for the configured domain
+                        # Docker internal: HTTP only (secure network within Docker)
+                        # Development: Separate conditional logic below
+                        debug_mode = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+                        
+                        if not debug_mode:
+                            # PRODUCTION MODE: HTTPS only, no HTTP variants
+                            # This prevents man-in-the-middle attacks via unencrypted HTTP
+                            origins = [
+                                f"https://{domain}",          # Production HTTPS primary (https://zaply.in.net)
+                                f"https://www.{domain}",      # Production HTTPS with www
+                            ]
+                            print(f"[CONFIG] PRODUCTION mode: {len(origins)} origins (HTTPS ONLY - secure)")
+                            return origins
+                        else:
+                            # DEVELOPMENT MODE: Include HTTP variants and Docker internal
+                            # NOTE: Docker internal communication is on private network (safe)
+                            # HTTP variants only for local development setup
+                            origins = [
+                                # ===== PRODUCTION (HTTPS) - Primary even in dev =====
+                                f"https://{domain}",          # HTTPS primary
+                                f"https://www.{domain}",      # HTTPS with www
+                                # ===== HTTP DEVELOPMENT FALLBACK (dev setup only) =====
+                                f"http://{domain}",           # HTTP fallback for initial setup
+                                f"http://www.{domain}",       # HTTP fallback with www
+                                # ===== DOCKER INTERNAL (HTTP only - private network) =====
+                                "http://hypersend_frontend:80",       # Docker: frontend by container name
+                                "http://hypersend_frontend",          # Docker: frontend (no port)
+                                "http://frontend:80",                 # Docker: frontend by service name
+                                "http://frontend",                    # Docker: frontend (no port)
+                                "http://hypersend_backend:8000",      # Docker: backend by container name
+                                "http://backend:8000",                # Docker: backend by service name
+                                # ===== LOCAL DEVELOPMENT (HTTP localhost) =====
+                                "http://localhost:3000",              # Dev: frontend port
+                                "http://localhost:8000",              # Dev: backend port
+                                "http://localhost:8080",              # Dev: nginx fallback port
+                                "http://127.0.0.1:3000",             # Dev: localhost alias frontend
+                                "http://127.0.0.1:8000",             # Dev: localhost alias backend
+                                "http://127.0.0.1:8080",             # Dev: localhost alias nginx
+                            ]
+                            print(f"[CONFIG] DEVELOPMENT mode: {len(origins)} origins (HTTPS + HTTP + Docker + Dev)")
+                            return origins
         
         # Fallback to DEBUG/Production defaults if no environment variable
         debug_mode = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
@@ -252,8 +273,36 @@ class Settings:
         if len(self.SECRET_KEY) < 32:
             self.SECRET_KEY = secrets.token_urlsafe(64)
         
+        # SECURITY: Validate CORS configuration
+        self.validate_cors_security()
+        
         # Validate email configuration
         self.validate_email_config()
+    
+    def validate_cors_security(self):
+        """Validate CORS origins for security issues"""
+        # SECURITY: Check for HTTP origins in production
+        if not self.DEBUG:
+            http_origins = [o for o in self.CORS_ORIGINS if o.startswith('http://')]
+            https_origins = [o for o in self.CORS_ORIGINS if o.startswith('https://')]
+            
+            if http_origins:
+                # WARNING: HTTP origins are a security risk in production
+                print(f"[CORS_SECURITY] ⚠️  WARNING: Production mode with HTTP origins detected!")
+                print(f"[CORS_SECURITY] ⚠️  HTTP origins allow unencrypted traffic - SECURITY RISK!")
+                print(f"[CORS_SECURITY] ⚠️  HTTP origins found: {http_origins}")
+                print(f"[CORS_SECURITY] ⚠️  Use HTTPS only in production deployment")
+            
+            if https_origins:
+                print(f"[CORS_SECURITY] ✓ Production CORS origins (HTTPS only): {https_origins}")
+            
+            if not https_origins:
+                print(f"[CORS_SECURITY] ✗ ERROR: No HTTPS origins configured in production!")
+                print(f"[CORS_SECURITY] ✗ Set API_BASE_URL=https://yourdomain.com/api/v1")
+        else:
+            # Development mode: allow mixed protocols for local testing
+            print(f"[CORS_SECURITY] ℹ️  Development mode: Mixed HTTP/HTTPS origins allowed for testing")
+            print(f"[CORS_SECURITY] ℹ️  Total CORS origins: {len(self.CORS_ORIGINS)}")
     
     def validate_email_config(self):
         """Validate email service configuration with enhanced checking"""

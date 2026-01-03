@@ -58,29 +58,34 @@ class ApiService {
     );
 
     // SSL validation - platform-specific handling
-    // LOGIC FIX: Enable HTTPS validation by default in production
-    // Only disable for self-signed certs in development
-    if (!ApiConstants.validateCertificates && kDebugMode) {
-      // LOGIC: Only mobile platforms support onHttpClientCreate
+    // SECURITY: SSL validation enabled by default to prevent MITM attacks
+    // Only disabled for self-signed development certificates
+    
+    // LOGIC: Check both kDebugMode AND !validateCertificates 
+    // to prevent accidental insecure production deployments
+    if (kDebugMode && !ApiConstants.validateCertificates) {
+      // Development mode: allow self-signed certs on mobile only
       if (!kIsWeb) {
-        // Mobile development: allow self-signed certificates
+        // Mobile development: allow self-signed certificates (development only)
         (_dio.httpClientAdapter as dynamic).onHttpClientCreate = (client) {
           client.badCertificateCallback = (cert, host, port) => true;
           return client;
         };
-        _log('[API_SECURITY] ⚠️ SSL validation disabled - DEBUG MODE (mobile only)');
+        _log('[API_SECURITY] ⚠️  SSL validation disabled - DEBUG MODE (mobile development only)');
+        _log('[API_SECURITY] ⚠️  WARNING: This should NEVER be enabled in production!');
       } else if (kIsWeb) {
-        // Web platform: SSL validation CANNOT be disabled programmatically
-        // Browser enforces certificate validation - this is a security boundary
-        _log('[API_SECURITY] 🔒 SSL validation ENFORCED on Flutter Web');
-        _log('[API_SECURITY] 🔒 Browser controls SSL certificates - cannot be disabled');
+        // Web platform: SSL validation CANNOT be disabled - browser enforces it
+        // This is intentional security boundary - Flutter Web always validates SSL
+        _log('[API_SECURITY] 🔒 SSL validation ENFORCED (Flutter Web - browser controls)');
+        _log('[API_SECURITY] 🔒 Browsers enforce certificate validation - cannot be disabled');
         _log('[API_SECURITY] 💡 Use valid SSL certificates for zaply.in.net');
       }
     } else {
-      // Production: SSL validation always enabled
+      // Production or release mode: SSL validation ALWAYS enabled
       _log('[API_SECURITY] 🔒 SSL validation ENABLED - SECURE');
-      if (ApiConstants.validateCertificates) {
-        _log('[API_SECURITY] ✓ Using valid SSL certificates');
+      _log('[API_SECURITY] ✓ Protected against man-in-the-middle (MITM) attacks');
+      if (!kDebugMode) {
+        _log('[API_SECURITY] ✓ Running in PRODUCTION mode - maximum security');
       }
     }
 
