@@ -135,11 +135,11 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "-s", "http://127.0.0.1:8000/health", "||" , "exit", "1"]
+      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 180s
     logging:
       driver: "json-file"
       options:
