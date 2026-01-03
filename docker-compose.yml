@@ -48,13 +48,6 @@ services:
       retries: 3
       start_period: 15s
     environment:
-      # ⚠️ IMPORTANT: NGINX_ALLOW_UNSAFE_SSL is for development/self-signed certs ONLY
-      # After obtaining real Let's Encrypt certificate, REMOVE this line:
-      # 1. docker compose exec certbot certbot certonly --webroot ...
-      # 2. Verify cert works: docker compose exec nginx nginx -t
-      # 3. Remove NGINX_ALLOW_UNSAFE_SSL environment variable below
-      # 4. docker compose restart nginx
-      # Without this change after real cert installation, you lose browser trust benefits
       - NGINX_ALLOW_UNSAFE_SSL=true
       - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
 
