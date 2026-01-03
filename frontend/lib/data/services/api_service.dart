@@ -143,14 +143,18 @@ class ApiService {
     } catch (e) {
       // Fallback: create basic Dio instance if initialization fails
       _log('[API_ERROR] ApiService initialization failed: $e');
+      String fallbackUrl = ApiConstants.baseUrl;
+      if (!fallbackUrl.endsWith('/')) {
+        fallbackUrl += '/';
+      }
       _dio = Dio(
         BaseOptions(
-          baseUrl: 'https://zaply.in.net/api/v1/',
+          baseUrl: fallbackUrl,
           connectTimeout: const Duration(minutes: 5),
           receiveTimeout: const Duration(hours: 2),
         ),
       );
-      _log('[API_WARN] Using fallback API configuration');
+      _log('[API_WARN] Using fallback API configuration: $fallbackUrl');
     }
   }
 
@@ -338,7 +342,7 @@ class ApiService {
         '6. Platform: ${kIsWeb ? "Flutter Web (browser controls SSL)" : "Mobile"}\n\n'
         'Debug info: $message\n\n'
         'If you continue seeing this error:\n'
-        '• Verify: https://zaply.in.net/health\n'
+        '• Verify: ${ApiConstants.serverBaseUrl}/health\n'
         '• Check backend container logs: docker compose logs backend\n'
         '• Ensure nginx is proxying requests correctly';
   }

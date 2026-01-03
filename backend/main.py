@@ -427,10 +427,10 @@ async def handle_options_request(full_path: str, request: Request):
                 break
     
     return Response(
-        status_code=204,
+        status_code=200,
         headers={
             "Access-Control-Allow-Origin": allowed_origin,
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
             "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With",
             "Access-Control-Allow-Credentials": "true" if allowed_origin != "null" else "false",
             "Access-Control-Max-Age": "86400",
@@ -585,13 +585,44 @@ from auth.utils import get_current_user
 @app.options("/api/v1/register") 
 @app.options("/api/v1/refresh")
 @app.options("/api/v1/logout")
-async def preflight_alias_endpoints():
+async def preflight_alias_endpoints(request: Request):
     """Handle CORS preflight for alias endpoints"""
-    return Response(status_code=204, headers={
-        "Access-Control-Allow-Origin": "https://zaply.in.net",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    })
+    import re
+    origin = request.headers.get("Origin", "null")
+    
+    # SECURITY FIX: Use regex instead of substring matching to prevent bypasses
+    allowed_origin = "null"
+    
+    if origin and origin != "null":
+        # Whitelist patterns with proper boundary matching
+        allowed_patterns = [
+            # Production domains
+            r'^https?://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',  # Production domain
+            # Development/Testing
+            r'^http://localhost(:[0-9]+)?$',             # localhost with optional port
+            r'^http://127\.0\.0\.1(:[0-9]+)?$',        # 127.0.0.1 with optional port
+            # Docker internal hostnames
+            r'^http://hypersend_frontend(:[0-9]+)?$',    # Docker container name
+            r'^http://hypersend_backend(:[0-9]+)?$',     # Docker container name
+            r'^http://frontend(:[0-9]+)?$',              # Docker service name
+            r'^http://backend(:[0-9]+)?$',               # Docker service name
+        ]
+        
+        for pattern in allowed_patterns:
+            if re.match(pattern, origin):
+                allowed_origin = origin
+                break
+    
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": allowed_origin,
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With",
+            "Access-Control-Allow-Credentials": "true" if allowed_origin != "null" else "false",
+            "Access-Control-Max-Age": "86400",
+        }
+    )
 
 # Create redirect aliases - forward to auth handlers
 @app.post("/api/v1/login", response_model=Token)
