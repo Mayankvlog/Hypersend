@@ -6,15 +6,29 @@ services:
     container_name: hypersend_nginx
     restart: unless-stopped
     ports:
-      # PRODUCTION: Use "80:80" and "443:443" (current setup)
-      # DEVELOPMENT: Use "8080:80" and "8443:443" if ports 80/443 are taken locally
-      # CURRENT: Production ports enabled
+      # PRODUCTION: Both HTTP and HTTPS
+      # HTTP (80): For ACME challenge and automatic HTTPS redirect
+      # HTTPS (443): Primary encrypted connection (uses self-signed cert until certbot provisions real one)
       - "${NGINX_HTTP_PORT:-80}:80"
       - "${NGINX_HTTPS_PORT:-443}:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - nginx_cache:/var/cache/nginx
+    # CRITICAL FIX: Generate self-signed certificate on startup if one doesn't exist
+    # This allows HTTPS to work immediately without waiting for certbot
+    # Real certificates from certbot will automatically replace these
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
+          echo '[NGINX] Creating self-signed certificate for initial deployment...';
+          mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
+          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
+          echo '[NGINX] Self-signed certificate created';
+        fi;
+        nginx -g 'daemon off;'
     depends_on:
       backend:
         condition: service_healthy
