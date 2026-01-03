@@ -58,21 +58,30 @@ class ApiService {
     );
 
     // SSL validation - platform-specific handling
+    // LOGIC FIX: Enable HTTPS validation by default in production
+    // Only disable for self-signed certs in development
     if (!ApiConstants.validateCertificates && kDebugMode) {
-      // Only mobile platforms support onHttpClientCreate
+      // LOGIC: Only mobile platforms support onHttpClientCreate
       if (!kIsWeb) {
+        // Mobile development: allow self-signed certificates
         (_dio.httpClientAdapter as dynamic).onHttpClientCreate = (client) {
           client.badCertificateCallback = (cert, host, port) => true;
           return client;
         };
-        _log('[API_SECURITY] ⚠️ SSL validation disabled - DEBUG MODE ONLY');
+        _log('[API_SECURITY] ⚠️ SSL validation disabled - DEBUG MODE (mobile only)');
       } else if (kIsWeb) {
-        // Flutter Web: SSL validation cannot be disabled programmatically
-        _log('[API_SECURITY] ⚠️ SSL validation forced on - Flutter Web limitation');
-        _log('[API_SECURITY] 🔒 Browser controls SSL certificates');
+        // Web platform: SSL validation CANNOT be disabled programmatically
+        // Browser enforces certificate validation - this is a security boundary
+        _log('[API_SECURITY] 🔒 SSL validation ENFORCED on Flutter Web');
+        _log('[API_SECURITY] 🔒 Browser controls SSL certificates - cannot be disabled');
+        _log('[API_SECURITY] 💡 Use valid SSL certificates for zaply.in.net');
       }
     } else {
-      _log('[API_SECURITY] 🔒 SSL validation enabled - SECURE');
+      // Production: SSL validation always enabled
+      _log('[API_SECURITY] 🔒 SSL validation ENABLED - SECURE');
+      if (ApiConstants.validateCertificates) {
+        _log('[API_SECURITY] ✓ Using valid SSL certificates');
+      }
     }
 
     // Add interceptor for logging (disabled print to avoid leaking secrets)

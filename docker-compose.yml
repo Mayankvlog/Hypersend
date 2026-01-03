@@ -149,8 +149,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
+        # LOGIC FIX: Always use HTTPS for production, disable cert validation only in development
         API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
-        VALIDATE_CERTIFICATES: "false"
+        # SECURITY: Only set VALIDATE_CERTIFICATES=false in development environments
+        # Production: Omit this or set to true to enforce valid SSL certificates
+        VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:

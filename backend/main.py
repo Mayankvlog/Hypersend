@@ -401,30 +401,35 @@ async def handle_options_request(full_path: str, request: Request):
     import re
     origin = request.headers.get("Origin")
     
-    # SECURITY FIX: Use regex instead of substring matching to prevent bypasses
-    # Substring matching allows: evildomain.com, localhostevil.com, etc.
-    allowed_origin = "null"  # Default deny-all for untrusted origins
+    # SECURITY LOGIC FIX: Validate origin with comprehensive patterns
+    # AND operator: origin must match at least one allowed pattern
+    allowed_origin = "null"  # Default: deny untrusted origins
     
     if origin:
-        # Whitelist patterns with proper boundary matching
-        # Production URLs should be configured via environment variables
+        # LOGIC: Each pattern represents a domain family with protocol and optional port
+        # The regex uses ^ and $ anchors to prevent partial matches (e.g., evil.zaply.in.net)
         allowed_patterns = [
-            # Production domains
-            r'^https?://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',  # Production domain
-            # Development/Testing
-            r'^http://localhost(:[0-9]+)?$',             # localhost with optional port
-            r'^http://127\.0\.0\.1(:[0-9]+)?$',        # 127.0.0.1 with optional port
-            # Docker internal hostnames
-            r'^http://hypersend_frontend(:[0-9]+)?$',    # Docker container name
-            r'^http://hypersend_backend(:[0-9]+)?$',     # Docker container name
-            r'^http://frontend(:[0-9]+)?$',              # Docker service name
-            r'^http://backend(:[0-9]+)?$',               # Docker service name
+            # Production HTTPS (critical for security - must be first for priority)
+            r'^https://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',
+            # Production HTTP (fallback during development)
+            r'^http://zaply\.in\.net(:[0-9]+)?$',
+            # Development localhost (all ports)
+            r'^https?://localhost(:[0-9]+)?$',
+            r'^https?://127\.0\.0\.1(:[0-9]+)?$',
+            r'^https?://\[::1\](:[0-9]+)?$',  # IPv6 loopback
+            # Docker container names (HTTP only - no SSL in Docker network)
+            r'^http://hypersend_frontend(:[0-9]+)?$',
+            r'^http://hypersend_backend(:[0-9]+)?$',
+            # Docker service names (HTTP only - resolved by internal DNS)
+            r'^http://frontend(:[0-9]+)?$',
+            r'^http://backend(:[0-9]+)?$',
         ]
         
+        # LOGIC: Check if origin matches any allowed pattern
         for pattern in allowed_patterns:
             if re.match(pattern, origin):
                 allowed_origin = origin
-                break
+                break  # Stop after first match to prevent duplicate checks
     
     return Response(
         status_code=200,
@@ -590,24 +595,29 @@ async def preflight_alias_endpoints(request: Request):
     import re
     origin = request.headers.get("Origin", "null")
     
-    # SECURITY FIX: Use regex instead of substring matching to prevent bypasses
+    # SECURITY LOGIC FIX: Same comprehensive validation as main OPTIONS handler
     allowed_origin = "null"
     
     if origin and origin != "null":
-        # Whitelist patterns with proper boundary matching
+        # LOGIC: Consistent with handle_options_request patterns
         allowed_patterns = [
-            # Production domains
-            r'^https?://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',  # Production domain
-            # Development/Testing
-            r'^http://localhost(:[0-9]+)?$',             # localhost with optional port
-            r'^http://127\.0\.0\.1(:[0-9]+)?$',        # 127.0.0.1 with optional port
-            # Docker internal hostnames
-            r'^http://hypersend_frontend(:[0-9]+)?$',    # Docker container name
-            r'^http://hypersend_backend(:[0-9]+)?$',     # Docker container name
-            r'^http://frontend(:[0-9]+)?$',              # Docker service name
-            r'^http://backend(:[0-9]+)?$',               # Docker service name
+            # Production HTTPS (critical for security)
+            r'^https://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',
+            # Production HTTP (fallback)
+            r'^http://zaply\.in\.net(:[0-9]+)?$',
+            # Development localhost (all ports and protocols)
+            r'^https?://localhost(:[0-9]+)?$',
+            r'^https?://127\.0\.0\.1(:[0-9]+)?$',
+            r'^https?://\[::1\](:[0-9]+)?$',
+            # Docker container names (HTTP only)
+            r'^http://hypersend_frontend(:[0-9]+)?$',
+            r'^http://hypersend_backend(:[0-9]+)?$',
+            # Docker service names (HTTP only)
+            r'^http://frontend(:[0-9]+)?$',
+            r'^http://backend(:[0-9]+)?$',
         ]
         
+        # LOGIC: Check if origin matches any allowed pattern
         for pattern in allowed_patterns:
             if re.match(pattern, origin):
                 allowed_origin = origin

@@ -13,19 +13,15 @@ class ApiConstants {
     final uri = Uri.tryParse(baseUrl);
     if (uri == null) return 'https://zaply.in.net';
     
-    // Reconstruct URL without /api/v1 path
-    final pathSegments = uri.pathSegments;
-    // Remove 'api' and 'v1' from path if present
-    final cleanPath = pathSegments
-        .where((segment) => segment.isNotEmpty && segment != 'api' && segment != 'v1')
-        .toList();
+    // Logic: Extract scheme, host, and port only (no /api/v1 path)
+    final scheme = uri.scheme;
+    final host = uri.host;
     
-    return Uri(
-      scheme: uri.scheme,
-      host: uri.host,
-      port: uri.hasPort ? uri.port : null,
-      pathSegments: cleanPath,
-    ).toString();
+    // Build URL: scheme://host:port (no trailing slash, no path)
+    if (uri.hasPort) {
+      return '$scheme://$host:${uri.port}';
+    }
+    return '$scheme://$host';
   }
   
   // Effective base URL - uses const baseUrl value with runtime safety
