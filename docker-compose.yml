@@ -45,9 +45,7 @@ services:
       # Suppress SSL verification warnings for self-signed certs in dev
       - NGINX_ALLOW_UNSAFE_SSL=true
       - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
-      - NGINX_API_HOST=${API_HOST:-0.0.0.0}
-      - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
-      - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
+
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
