@@ -1468,6 +1468,8 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
         
         # Fallback: Try to find avatar by user ID from filename
         import re
+        from pathlib import Path
+        import glob
         # Extract user ID from patterns like "69564dea8eac4df1_xyz.png" or "69564dea8eac4df1.png"
         user_id_match = re.match(r'^([a-f0-9]+)', filename)
         if user_id_match:
@@ -1475,7 +1477,6 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
             logger.info(f"[AVATAR] Searching for avatar by user_id: {user_id}")
             
             # Search for any avatar file for this user
-            import glob
             avatar_pattern = f"{user_id}_*.*"
             avatar_dir = settings.DATA_ROOT / "avatars"
             matching_files = list(glob.glob(str(avatar_dir / avatar_pattern)))
