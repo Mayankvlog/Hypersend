@@ -202,8 +202,8 @@ async def initialize_upload(
     
     await uploads_collection().insert_one(upload_doc)
     
-    # Create temp directory for chunks
-    upload_dir = settings.DATA_ROOT / "tmp" / upload_id
+    # Create temp directory for chunks - use same path as UPLOAD_DIR
+    upload_dir = Path(settings.UPLOAD_DIR) / upload_id
     upload_dir.mkdir(parents=True, exist_ok=True)
     
     # Create manifest
@@ -288,8 +288,8 @@ async def upload_chunk(
     # NOTE: Removed overly strict binary content detection - this is a file upload system
     # and should accept all binary formats (PDFs, images, videos, etc.)
     try:
-        chunk_path = os.path.join(settings.UPLOAD_DIR, upload_id, f"{chunk_index}.part")
-        os.makedirs(os.path.dirname(chunk_path), exist_ok=True)
+        chunk_path = Path(settings.UPLOAD_DIR) / upload_id / f"{chunk_index}.part"
+        chunk_path.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(chunk_path, 'wb') as f:
             await f.write(chunk_data)
     except Exception as e:
@@ -443,7 +443,7 @@ async def complete_upload(upload_id: str, current_user: str = Depends(get_curren
                 )
     
     final_path = settings.DATA_ROOT / "files" / f"{file_uuid}{file_ext}"
-    upload_dir = settings.DATA_ROOT / "tmp" / upload_id
+    upload_dir = Path(settings.UPLOAD_DIR) / upload_id
     
     # Stream-concatenate chunks with memory efficiency for 40GB files
     hasher = hashlib.sha256()
