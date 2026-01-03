@@ -334,9 +334,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       );
 
       final uploadId = init['upload_id'];
-      
-      // Upload in 1MB chunks
-      const chunkSize = 1024 * 1024; // 1MB
+      final chunkSize = (init['chunk_size'] as num).toInt(); // Use server-provided chunk size (4MB default)
       int offset = 0;
       int chunkIndex = 0;
       
