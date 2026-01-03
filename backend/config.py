@@ -169,17 +169,34 @@ class Settings:
                     https_origins = [origin for origin in origins if origin.startswith("https://")]
                     http_origins = [origin for origin in origins if origin.startswith("http://")]
                     
-                    if http_origins:
-                        print(f"[CORS_SECURITY] ⚠️  WARNING: Production mode with HTTP origins detected!")
-                        print(f"[CORS_SECURITY] ⚠️  HTTP origins allow unencrypted traffic - SECURITY RISK!")
-                        print(f"[CORS_SECURITY] ⚠️  HTTP origins found: {http_origins}")
+                    # Check if HTTP origins are Docker internal (safe) vs external (security risk)
+                    external_http_origins = []
+                    docker_http_origins = []
+                    
+                    for origin in http_origins:
+                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'localhost:3000', '127.0.0.1:']):
+                            docker_http_origins.append(origin)
+                        else:
+                            external_http_origins.append(origin)
+                    
+                    if external_http_origins:
+                        # Only warn about external HTTP origins (security risk)
+                        print(f"[CORS_SECURITY] ⚠️  WARNING: Production mode with EXTERNAL HTTP origins detected!")
+                        print(f"[CORS_SECURITY] ⚠️  External HTTP origins allow unencrypted traffic - SECURITY RISK!")
+                        print(f"[CORS_SECURITY] ⚠️  External HTTP origins found: {external_http_origins}")
                         print(f"[CORS_SECURITY] ⚠️  Use HTTPS only in production deployment")
+                    
+                    if docker_http_origins:
+                        print(f"[CORS_SECURITY] ℹ️  Docker internal HTTP origins (safe): {docker_http_origins}")
                     
                     if https_origins:
                         print(f"[CORS_SECURITY] ✓ Production CORS origins (HTTPS only): {https_origins}")
                     
+                    # In production, allow both HTTPS and Docker internal HTTP origins
+                    # Docker HTTP origins are safe (internal network only)
+                    origins = https_origins + docker_http_origins
+                    
                     # Validate non-empty origins after filtering
-                    origins = https_origins
                     if not origins:
                         print(f"[CORS_SECURITY] ❌ ERROR: No valid HTTPS origins configured!")
                         print(f"[CORS_SECURITY] ❌ Please set ALLOWED_ORIGINS with HTTPS URLs in production")
