@@ -136,11 +136,11 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; import socket; sock = socket.socket(); sock.connect(('127.0.0.1', 8000)); sock.close(); sys.exit(0)"]
+      test: ["CMD", "curl", "-f", "-s", "http://127.0.0.1:8000/health", "||" , "exit", "1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
