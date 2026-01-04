@@ -62,7 +62,7 @@ class UserCreate(BaseModel):
         v = v.lower().strip()
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format. Use format: user@example.com')
+            raise ValueError('Invalid email format. Use format: user@zaply.in.net')
         return v
     
     @field_validator('password')
@@ -86,7 +86,7 @@ class UserLogin(BaseModel):
         # SECURITY: Strict email validation for all environments
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
+            raise ValueError('Invalid email format. Use format: user@zaply.in.net')
         return v
     
     @field_validator('password')
@@ -258,7 +258,7 @@ class ForgotPasswordRequest(BaseModel):
         v = v.lower().strip()
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
+            raise ValueError('Invalid email format. Use format: user@zaply.in.net')
         return v
 
 
@@ -683,7 +683,7 @@ class EmailChangeRequest(BaseModel):
         v = v.lower().strip()
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
+            raise ValueError('Invalid email format. Use format: user@zaply.in.net')
         return v
 
 

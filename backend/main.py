@@ -121,8 +121,8 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         if body and not content_length_header:
                             # Log but allow (fastapi might handle)
                             logger.warning(f"[411] Missing Content-Length for {request.method} {request.url.path}")
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"[MIDDLEWARE_ERROR] Content-Length header parsing error: {str(e)}")
                 
                 # Check payload size (413)
                 if content_length_header:
@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI):
         for db_attempt in range(max_db_retries):
             try:
                 await connect_db()
-                print("[DB] ✓ Database connection established successfully")
+                print("[DB] SUCCESS Database connection established successfully")
                 db_connected = True
                 break
             except Exception as e:
@@ -254,7 +254,7 @@ async def lifespan(app: FastAPI):
                     await asyncio.sleep(2)
                 else:
                     if settings.USE_MOCK_DB:
-                        print("[DB] ✓ Mock database initialized (no real DB needed)")
+                        print("[DB] SUCCESS Mock database initialized (no real DB needed)")
                         db_connected = True
                     else:
                         print(f"[ERROR] Database connection failed after {max_db_retries} attempts")
@@ -264,7 +264,7 @@ async def lifespan(app: FastAPI):
                         raise
         
         if db_connected:
-            print("[START] ✓ Server startup complete - Ready to accept requests")
+            print("[START] SUCCESS Server startup complete - Ready to accept requests")
         
         if settings.DEBUG:
             print(f"[START] Zaply API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
@@ -387,7 +387,7 @@ app.add_middleware(
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
-# ✅ CRITICAL FIX: Handle CORS preflight requests (OPTIONS) without requiring authentication
+# CRITICAL FIX: Handle CORS preflight requests (OPTIONS) without requiring authentication
 # Browser CORS preflight requests don't have auth headers, so they would fail 401 without this
 # NOTE: FastAPI automatically handles OPTIONS for registered routes, this is fallback only
 @app.options("/{full_path:path}")
@@ -396,7 +396,7 @@ async def handle_options_request(full_path: str, request: Request):
     Handle CORS preflight OPTIONS requests.
     These must succeed without authentication for CORS to work in browsers.
     SECURITY: Use exact regex matching to prevent origin bypass attacks
-    (e.g., https://evildomain.yourdomain.com would bypass substring matching)
+    (e.g., https://evildomain.zaply.in.net would bypass substring matching)
     """
     import re
     origin = request.headers.get("Origin")

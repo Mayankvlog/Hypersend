@@ -133,19 +133,19 @@ def log_validation_error(request_path: str, method: str, body: Any, errors: List
     error_details = ValidationErrorDetail.extract_error_details(errors)
     
     logger.error(f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║ VALIDATION ERROR - {method} {request_path}
-╚══════════════════════════════════════════════════════════════════════════════╝
+===============================================================================╗
+= VALIDATION ERROR - {method} {request_path}
+===============================================================================╝
 
-📋 REQUEST DETAILS:
+REQUEST DETAILS:
   Method: {method}
   Path: {request_path}
   Timestamp: {error_details['timestamp']}
 
-📊 ERROR SUMMARY:
+ERROR SUMMARY:
   Total Validation Errors: {error_details['error_count']}
 
-🔍 DETAILED ERRORS:
+DETAILED ERRORS:
 """)
     
     for idx, error in enumerate(error_details["validation_errors"], 1):
@@ -169,13 +169,13 @@ def log_validation_error(request_path: str, method: str, body: Any, errors: List
             body_str = str(body)
         
         logger.error(f"""
-📝 REQUEST BODY:
+REQUEST BODY:
 {chr(10).join('  ' + line for line in body_str.split(chr(10)))}
 """)
     except Exception as e:
         logger.error(f"    Could not parse request body: {e}")
     
-    logger.error("═" * 80)
+    logger.error("=" * 80)
 
 
 async def validation_exception_handler(request: Request, exc: ValidationError):

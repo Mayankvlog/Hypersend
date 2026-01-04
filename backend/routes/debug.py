@@ -43,10 +43,10 @@ async def get_profile_update_schema(
         "example": {
             "name": "John Doe",
             "username": "johndoe",
-            "email": "john@example.com",
+            "email": "john@zaply.in.net",
             "bio": "Software developer",
             "avatar": "JD",
-            "avatar_url": "https://example.com/avatar.jpg"
+            "avatar_url": "https://zaply.in.net/avatar.jpg"
         },
         "notes": [
             "All fields are optional - at least one must be provided",
@@ -106,7 +106,7 @@ async def get_email_change_schema(
         "description": "Email change request model",
         "schema": schema,
         "example": {
-            "email": "newemail@example.com",
+            "email": "newemail@zaply.in.net",
             "password": "CurrentPassword123"
         },
         "requirements": [
@@ -141,7 +141,7 @@ async def get_validation_examples(
             {
                 "error": "email must be at least 5 characters",
                 "received": {"email": "a@b"},
-                "fix": "Provide a valid email like user@example.com"
+                "fix": "Provide a valid email like user@zaply.in.net"
             },
             {
                 "error": "email does not match pattern",

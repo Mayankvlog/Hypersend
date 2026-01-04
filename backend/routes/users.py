@@ -200,7 +200,7 @@ async def update_profile(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Name must be at least 2 characters"
                 )
-            logger.info(f"✓ Name validation passed: {name}")
+            logger.info(f"SUCCESS: Name validation passed: {name}")
             update_data["name"] = name
         
         # Process username
@@ -224,7 +224,7 @@ async def update_profile(
                         status_code=status.HTTP_409_CONFLICT,
                         detail="Username already taken"
                     )
-            logger.info(f"✓ Username validation passed: {username}")
+            logger.info(f"SUCCESS: Username validation passed: {username}")
             update_data["username"] = username
         
 # Process the bio and phone
@@ -243,18 +243,18 @@ async def update_profile(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Bio/Status contains invalid characters. Please use plain text only."
                 )
-            logger.info(f"✓ Bio set: [REDACTED_FOR_PRIVACY]")
+            logger.info(f"SUCCESS: Bio set: [REDACTED_FOR_PRIVACY]")
             update_data["bio"] = sanitized_bio
         
 
         
         # Process the avatar
         if profile_data.avatar_url is not None:
-            logger.info(f"✓ Avatar URL set: {profile_data.avatar_url}")
+            logger.info(f"SUCCESS: Avatar URL set: {profile_data.avatar_url}")
             update_data["avatar_url"] = profile_data.avatar_url
         
         if profile_data.avatar is not None:
-            logger.info(f"✓ Avatar initials set: {profile_data.avatar}")
+            logger.info(f"SUCCESS: Avatar initials set: {profile_data.avatar}")
             update_data["avatar"] = profile_data.avatar  # Store avatar initials in the avatar field
         
         # Process email (enforce uniqueness)
@@ -266,7 +266,7 @@ async def update_profile(
                 logger.warning(f"Email validation failed: invalid format")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid email format. Use format: user@example.com"
+                    detail="Invalid email format. Use format: user@zaply.in.net"
                 )
             
             # Normalize the email
@@ -284,7 +284,7 @@ async def update_profile(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Email already in use"
                 )
-            logger.info(f"✓ Email field validation passed")
+            logger.info(f"SUCCESS: Email field validation passed")
             update_data["email"] = new_email
         
         # Add updated timestamp
@@ -331,7 +331,7 @@ async def update_profile(
                 detail="User not found after update"
             )
         
-        logger.info(f"✓ Profile update successful!")
+        logger.info(f"SUCCESS: Profile update successful!")
         logger.info(f"Updated user profile:")
         logger.info(f"  - ID: {updated_user.get('_id')}")
         logger.info(f"  - Name: {updated_user.get('name')}")
@@ -1063,8 +1063,8 @@ async def delete_account(
                 detail="User not found"
             )
         
-        print(f"[ACCOUNT_DELETE] ✓ Successfully deleted account for user: {current_user}")
-        logger.info(f"✓ Account deleted successfully for user: {current_user}")
+        print(f"[ACCOUNT_DELETE] SUCCESS: Successfully deleted account for user: {current_user}")
+        logger.info(f"SUCCESS: Account deleted successfully for user: {current_user}")
         
         return {"message": "Account deleted successfully"}
         
@@ -1250,7 +1250,7 @@ async def upload_avatar(
         # Frontend specifically looks for 'avatar_url' field in profile_service.dart:178-182
         current_avatar = updated_user.get("avatar") if updated_user else None
         response_data = {
-            "avatar_url": avatar_url,  # ✅ REQUIRED: Frontend expects this field
+            "avatar_url": avatar_url,  # REQUIRED: Frontend expects this field
             # Keep avatar field for frontend compatibility
             "avatar": current_avatar if current_avatar else "",
             "success": True,
@@ -1358,8 +1358,8 @@ async def upload_avatar_alt(
         # Both fields are required for frontend validation to pass
         current_avatar = updated_user.get("avatar") if updated_user else None
         response_data = {
-            "avatar_url": avatar_url,  # ✅ Image URL (REQUIRED)
-            "avatar": current_avatar if current_avatar else "",  # ✅ Initials (REQUIRED - defaults to empty string)
+            "avatar_url": avatar_url,  # Image URL (REQUIRED)
+            "avatar": current_avatar if current_avatar else "",  # Initials (REQUIRED - defaults to empty string)
             "success": True,
             "filename": new_file_name,
             "message": "Avatar uploaded successfully"

@@ -157,53 +157,120 @@ class Settings:
     ]
     
     # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production
-    def _get_cors_origins(self) -> list:
+    # For subdomains, explicitly list them: https://api.zaply.in.net, https://app.zaply.in.net
+    @property
+    def CORS_ORIGINS(self) -> list:
         """Get CORS origins based on environment"""
         # Priority: ALLOWED_ORIGINS > CORS_ORIGINS > API_BASE_URL-derived > defaults
         env_allowed_origins = os.getenv("ALLOWED_ORIGINS")  # Highest priority: docker-compose
         env_cors_origins = os.getenv("CORS_ORIGINS")        # Alternative name
         env_api_base_url = os.getenv("API_BASE_URL")        # Used to derive domain
         
+        origins = []
+        
         # FIRST: Use ALLOWED_ORIGINS if explicitly provided (takes precedence)
         if env_allowed_origins:
             origins = [origin.strip() for origin in env_allowed_origins.split(",") if origin.strip()]
-            if origins:
-                # SECURITY: Filter out HTTP origins in production mode using self.DEBUG
-                if not self.DEBUG:
-                    # Production mode: Only allow HTTPS origins
-                    https_origins = [origin for origin in origins if origin.startswith("https://")]
-                    http_origins = [origin for origin in origins if origin.startswith("http://")]
-                    
-                    # Check if HTTP origins are Docker internal (safe) vs external (security risk)
-                    external_http_origins = []
-                    docker_http_origins = []
-                    
-                    for origin in http_origins:
-                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'localhost:3000', '127.0.0.1:']):
-                            docker_http_origins.append(origin)
-                        else:
-                            external_http_origins.append(origin)
-                    
-                    if external_http_origins:
-                        # Only warn about external HTTP origins (security risk)
-                        print(f"[CORS_SECURITY] ⚠️  WARNING: Production mode with EXTERNAL HTTP origins detected!")
-                        print(f"[CORS_SECURITY] ⚠️  External HTTP origins allow unencrypted traffic - SECURITY RISK!")
-                        print(f"[CORS_SECURITY] ⚠️  External HTTP origins found: {external_http_origins}")
-                        print(f"[CORS_SECURITY] ⚠️  Use HTTPS only in production deployment")
-                    
-                    if docker_http_origins:
-                         print(f"[CORS_SECURITY] Docker internal HTTP origins (safe): {docker_http_origins}")
-                     
-                    if https_origins:
-                        print(f"[CORS_SECURITY] OK Production CORS origins (HTTPS only): {https_origins}")
-            
-            if not https_origins:
-                print(f"[CORS_SECURITY] ✗ ERROR: No HTTPS origins configured in production!")
-                print(f"[CORS_SECURITY] ✗ Set API_BASE_URL=https://yourdomain.com/api/v1")
+        
+        # SECOND: Use CORS_ORIGINS if ALLOWED_ORIGINS not provided
+        elif env_cors_origins:
+            origins = [origin.strip() for origin in env_cors_origins.split(",") if origin.strip()]
+        
+        # THIRD: Derive from API_BASE_URL if neither env var is provided
+        elif env_api_base_url:
+            # Extract base URL from API_BASE_URL (remove /api/v1 suffix)
+            base_url = env_api_base_url
+            if "/api/" in base_url:
+                base_url = base_url.split("/api/")[0]
+            origins = [base_url]
+        
+        # FALLBACK: Use defaults if no environment configuration
         else:
-            # Development mode: allow mixed protocols for local testing
-            print(f"[CORS_SECURITY] Development mode: Mixed HTTP/HTTPS origins allowed for testing")
-            print(f"[CORS_SECURITY] Total CORS origins: {len(self.CORS_ORIGINS)}")
+            if self.DEBUG:
+                # Development defaults
+                origins = [
+                    "http://localhost:3000",
+                    "http://localhost:8000", 
+                    "http://127.0.0.1:3000",
+                    "http://127.0.0.1:8000",
+                    "http://localhost:5000",
+                    "http://127.0.0.1:5000"
+                ]
+                print(f"[CORS_SECURITY] Development mode: Mixed HTTP/HTTPS origins allowed for testing")
+                print(f"[CORS_SECURITY] Total CORS origins: {len(origins)}")
+                return origins
+            else:
+                # Production - NO WILDCARD - use secure defaults
+                origins = [
+                    "https://zaply.in.net",
+                    "https://www.zaply.in.net",
+                    "https://direct.zaply.in.net",
+                    "https://www.direct.zaply.in.net"
+                ]
+                print(f"[CORS_SECURITY] PRODUCTION: Using secure default origins for zaply.in.net")
+                print(f"[CORS_SECURITY] Configure ALLOWED_ORIGINS env var to override")
+                return origins
+        
+        if not origins:
+            # Production - NO WILDCARD - use secure defaults
+            origins = [
+                "https://zaply.in.net",
+                "https://www.zaply.in.net", 
+                "https://direct.zaply.in.net",
+                "https://www.direct.zaply.in.net"
+            ]
+            print(f"[CORS_SECURITY] PRODUCTION: Empty origins list, using secure zaply.in.net defaults")
+            return origins
+        
+        # SECURITY: Filter origins based on production vs development mode
+        if not self.DEBUG:
+            # Production mode: Only allow HTTPS origins
+            https_origins = [origin for origin in origins if origin.startswith("https://")]
+            http_origins = [origin for origin in origins if origin.startswith("http://")]
+            
+            # Check if HTTP origins are Docker internal (safe) vs external (security risk)
+            external_http_origins = []
+            docker_http_origins = []
+            
+            for origin in http_origins:
+                # Only actual Docker service names are considered safe in production
+                if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:']):
+                    docker_http_origins.append(origin)
+                else:
+                    # All localhost/127.0.0.1 are EXTERNAL security risks in production
+                    external_http_origins.append(origin)
+            
+            if external_http_origins:
+                # Only warn about external HTTP origins (security risk)
+                print(f"[CORS_SECURITY] WARNING: Production mode with EXTERNAL HTTP origins detected!")
+                print(f"[CORS_SECURITY] WARNING: External HTTP origins allow unencrypted traffic - SECURITY RISK!")
+                print(f"[CORS_SECURITY] WARNING: External HTTP origins found: {external_http_origins}")
+                print(f"[CORS_SECURITY] WARNING: Use HTTPS only in production deployment")
+            
+            if docker_http_origins:
+                print(f"[CORS_SECURITY] Docker internal HTTP origins (safe): {docker_http_origins}")
+            
+            if https_origins:
+                print(f"[CORS_SECURITY] OK Production CORS origins (HTTPS only): {https_origins}")
+            
+            # Return HTTPS origins + safe Docker HTTP origins
+            safe_origins = https_origins + docker_http_origins
+            if not safe_origins:
+                print(f"[CORS_SECURITY] ERROR: No HTTPS origins configured in production!")
+                print(f"[CORS_SECURITY] ERROR: Set API_BASE_URL=https://zaply.in.net/api/v1")
+                # SECURE FALLBACK - use zaply.in.net defaults instead of wildcard
+                return [
+                    "https://zaply.in.net",
+                    "https://www.zaply.in.net", 
+                    "https://direct.zaply.in.net",
+                    "https://www.direct.zaply.in.net"
+                ]
+            
+            return safe_origins
+        else:
+            # Development mode: allow all configured origins
+            print(f"[CORS_SECURITY] Development mode: Total CORS origins: {len(origins)}")
+            return origins
     
     def validate_email_config(self):
         """Validate email service configuration with enhanced checking"""

@@ -222,7 +222,7 @@ async def auth_options(request: Request):
         }
     )
 
-# ✅ CORE AUTH FUNCTIONS - Handle user registration and login
+# CORE AUTH FUNCTIONS - Handle user registration and login
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate) -> UserResponse:
     """Register a new user account"""
@@ -233,7 +233,7 @@ async def register(user: UserCreate) -> UserResponse:
         if not user.email or '@' not in user.email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format"
+                detail="Invalid email format. Use format: user@zaply.in.net"
             )
         
         if not user.password or len(user.password) < 6:
@@ -303,7 +303,7 @@ async def register(user: UserCreate) -> UserResponse:
         try:
             users_col = users_collection()
             result = await users_col.insert_one(user_doc)
-            auth_log(f"✓ User registered successfully: {user.email} (ID: {result.inserted_id})")
+            auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
         except Exception as db_error:
             auth_log(f"Database error during user insertion: {type(db_error).__name__}: {str(db_error)}")
             raise HTTPException(
@@ -348,7 +348,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         if not credentials.email or '@' not in credentials.email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format"
+                detail="Invalid email format. Use format: user@zaply.in.net"
             )
         
         if not credentials.password:
@@ -405,7 +405,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             }}
         )
         
-        auth_log(f"✓ Login successful: {credentials.email}")
+        auth_log(f"SUCCESS: Login successful: {credentials.email}")
         
         return Token(
             access_token=access_token,
@@ -476,7 +476,7 @@ async def refresh_access_token(request: RefreshTokenRequest) -> Token:
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         )
         
-        auth_log(f"✓ Token refreshed successfully for user: {token_data.user_id}")
+        auth_log(f"SUCCESS: Token refreshed successfully for user: {token_data.user_id}")
         
         return Token(
             access_token=new_access_token,
@@ -515,7 +515,7 @@ async def logout(current_user: str = Depends(get_current_user)):
             }}
         )
         
-        auth_log(f"✓ Logout successful for user: {current_user}")
+        auth_log(f"SUCCESS: Logout successful for user: {current_user}")
         
         return {"message": "Logged out successfully"}
         
@@ -535,7 +535,7 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
         if not request.email or '@' not in request.email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format"
+                detail="Invalid email format. Use format: user@zaply.in.net"
             )
         
         auth_log(f"Password reset request for email: {request.email}")
@@ -612,7 +612,7 @@ Zaply Team
                     server.send_message(email_message)
                 
                 email_sent = True
-                auth_log(f"✓ Password reset email sent to: {request.email}")
+                auth_log(f"SUCCESS: Password reset email sent to: {request.email}")
                 
             except Exception as e:
                 email_error = str(e)
