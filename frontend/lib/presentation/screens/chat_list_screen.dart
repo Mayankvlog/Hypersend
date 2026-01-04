@@ -41,8 +41,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Future<void> _showAddContactDialog() async {
     final emailController = TextEditingController();
     final usernameController = TextEditingController();
+    final phoneController = TextEditingController();
     final nameController = TextEditingController();
-    int selectedTab = 0; // 0 = Gmail, 1 = Username
+    int selectedTab = 0; // 0 = Gmail, 1 = Username, 2 = Phone
     
     try {
       final result = await showDialog<Map<String, dynamic>>(
@@ -116,42 +117,78 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             ),
                           ),
                         ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => setState(() => selectedTab = 1),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color: selectedTab == 1 
-                                      ? AppTheme.primaryCyan 
-                                      : AppTheme.dividerColor,
-                                    width: selectedTab == 1 ? 2 : 1,
-                                  ),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.alternate_email, size: 18),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '@Username',
-                                    style: TextStyle(
-                                      fontWeight: selectedTab == 1 
-                                        ? FontWeight.w600 
-                                        : FontWeight.w400,
-                                      color: selectedTab == 1 
-                                        ? AppTheme.primaryCyan 
-                                        : AppTheme.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                         Expanded(
+                           child: GestureDetector(
+                             onTap: () => setState(() => selectedTab = 1),
+                             child: Container(
+                               padding: const EdgeInsets.symmetric(vertical: 12),
+                               decoration: BoxDecoration(
+                                 border: Border(
+                                   bottom: BorderSide(
+                                     color: selectedTab == 1 
+                                       ? AppTheme.primaryCyan 
+                                       : AppTheme.dividerColor,
+                                     width: selectedTab == 1 ? 2 :1,
+                                   ),
+                                 ),
+                               ),
+                               child: Row(
+                                 mainAxisAlignment: MainAxisAlignment.center,
+                                 children: [
+                                   const Icon(Icons.alternate_email, size: 18),
+                                   const SizedBox(width: 6),
+                                   Text(
+                                     '@Username',
+                                     style: TextStyle(
+                                       fontWeight: selectedTab == 1 
+                                         ? FontWeight.w600 
+                                         : FontWeight.w400,
+                                       color: selectedTab == 1 
+                                         ? AppTheme.primaryCyan 
+                                         : AppTheme.textSecondary,
+                                     ),
+                                   ),
+                                 ],
+                               ),
+                             ),
+                           ),
+                         ),
+                         Expanded(
+                           child: GestureDetector(
+                             onTap: () => setState(() => selectedTab = 2),
+                             child: Container(
+                               padding: const EdgeInsets.symmetric(vertical: 12),
+                               decoration: BoxDecoration(
+                                 border: Border(
+                                   bottom: BorderSide(
+                                     color: selectedTab == 2 
+                                       ? AppTheme.primaryCyan 
+                                       : AppTheme.dividerColor,
+                                     width: selectedTab == 2 ? 2 :1,
+                                   ),
+                                 ),
+                               ),
+                               child: Row(
+                                 mainAxisAlignment: MainAxisAlignment.center,
+                                 children: [
+                                   const Icon(Icons.phone_outlined, size: 18),
+                                   const SizedBox(width: 6),
+                                   Text(
+                                     'Phone',
+                                     style: TextStyle(
+                                       fontWeight: selectedTab == 2 
+                                         ? FontWeight.w600 
+                                         : FontWeight.w400,
+                                       color: selectedTab == 2 
+                                         ? AppTheme.primaryCyan 
+                                         : AppTheme.textSecondary,
+                                     ),
+                                   ),
+                                 ],
+                               ),
+                             ),
+                           ),
+                         ),
                         
                       ],
                     ),
@@ -171,20 +208,33 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       ),
                       keyboardType: TextInputType.emailAddress,
                     ),
-                  ] else if (selectedTab == 1) ...[
-                    TextField(
-                      controller: usernameController,
-                      decoration: InputDecoration(
-                        hintText: 'Username',
-                        prefixIcon: const Icon(Icons.alternate_email),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                      keyboardType: TextInputType.text,
-                    ),
-                  ],
+                   ] else if (selectedTab == 1) ...[
+                     TextField(
+                       controller: usernameController,
+                       decoration: InputDecoration(
+                         hintText: 'Username',
+                         prefixIcon: const Icon(Icons.alternate_email),
+                         border: OutlineInputBorder(
+                           borderRadius: BorderRadius.circular(8),
+                         ),
+                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                       ),
+                       keyboardType: TextInputType.text,
+                     ),
+                   ] else if (selectedTab == 2) ...[
+                     TextField(
+                       controller: phoneController,
+                       decoration: InputDecoration(
+                         hintText: 'Phone number',
+                         prefixIcon: const Icon(Icons.phone_outlined),
+                         border: OutlineInputBorder(
+                           borderRadius: BorderRadius.circular(8),
+                         ),
+                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                       ),
+                       keyboardType: TextInputType.phone,
+                     ),
+                   ],
                 ],
               ),
             ),
@@ -194,21 +244,27 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: () async {
-                  final name = nameController.text.trim();
-                  final email = emailController.text.trim();
-                  final username = usernameController.text.trim();
+                 onPressed: () async {
+                   final name = nameController.text.trim();
+                   final email = emailController.text.trim();
+                   final username = usernameController.text.trim();
+                   final phone = phoneController.text.trim();
                   
-                  // Validation
-                  if (selectedTab == 0 && email.isEmpty) {
-                    _showErrorSnackBar('Please enter email address');
-                    return;
-                  }
-                  
-                  if (selectedTab == 1 && username.isEmpty) {
-                    _showErrorSnackBar('Please enter username');
-                    return;
-                  }
+                   // Validation
+                   if (selectedTab == 0 && email.isEmpty) {
+                     _showErrorSnackBar('Please enter email address');
+                     return;
+                   }
+                   
+                   if (selectedTab == 1 && username.isEmpty) {
+                     _showErrorSnackBar('Please enter username');
+                     return;
+                   }
+                   
+                   if (selectedTab == 2 && phone.isEmpty) {
+                     _showErrorSnackBar('Please enter phone number');
+                     return;
+                   }
                   
                   
                   
@@ -221,41 +277,66 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     }
                   }
                   
-                  // Username validation
-                  if (selectedTab == 1) {
-                    // Remove @ if user added it
-                    final cleanUsername = username.startsWith('@') ? username.substring(1) : username;
-                    
-                    // Validate: 3+ characters, alphanumeric + underscore only
-                    final usernameRegex = RegExp(r'^[a-zA-Z0-9_]{3,}$');
-                    if (!usernameRegex.hasMatch(cleanUsername)) {
-                      _showErrorSnackBar('Username must be 3+ characters with only letters, numbers, and underscore');
-                      return;
-                    }
-                    usernameController.text = cleanUsername;
-                  }
+                   // Username validation
+                   if (selectedTab == 1) {
+                     // Remove @ if user added it
+                     final cleanUsername = username.startsWith('@') ? username.substring(1) : username;
+                     
+                     // Validate: 3+ characters, alphanumeric + underscore only
+                     final usernameRegex = RegExp(r'^[a-zA-Z0-9_]{3,}$');
+                     if (!usernameRegex.hasMatch(cleanUsername)) {
+                       _showErrorSnackBar('Username must be 3+ characters with only letters, numbers, and underscore');
+                       return;
+                     }
+                     usernameController.text = cleanUsername;
+                   }
+                   
+                   // Phone validation
+                   if (selectedTab == 2) {
+                     // Remove all non-digit characters except + for validation
+                     final cleanPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+                     
+                      // Validate: 10-15 digits, optional + prefix
+                      // Must start with optional + followed by 10-15 digits
+                      final phoneRegex = RegExp(r'^\+?[0-9]{10,15}$');
+                     if (!phoneRegex.hasMatch(cleanPhone)) {
+                       _showErrorSnackBar('Please enter a valid phone number (e.g., +1234567890)');
+                       return;
+                     }
+                   }
                   
 
                   
-                  try {
-// Search for user
-                     List<dynamic> users;
-                     if (selectedTab == 0) {
-                       // Search by email
-                       users = await serviceProvider.apiService.searchUsersByEmail(email);
-                     } else {
-                       // Search by username
-                       users = await serviceProvider.apiService.searchUsersByUsername(username);
+                   try {
+ // Search for user
+                      List<dynamic> users;
+                      if (selectedTab == 0) {
+                        // Search by email
+                        users = await serviceProvider.apiService.searchUsersByEmail(email);
+                      } else if (selectedTab == 1) {
+                        // Search by username
+                        users = await serviceProvider.apiService.searchUsersByUsername(username);
+                      } else {
+                        // Search by phone
+                        final cleanPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+                        users = await serviceProvider.apiService.searchUsersByPhone(cleanPhone);
+                      }
+                     
+                     if (!mounted) return;
+                     
+                     if (users.isEmpty) {
+                       Navigator.pop(context);
+                       String searchType;
+                       if (selectedTab == 0) {
+                         searchType = 'email';
+                       } else if (selectedTab == 1) {
+                         searchType = 'username';
+                       } else {
+                         searchType = 'phone';
+                       }
+                       _showErrorSnackBar('User with this $searchType not found. Please check and try again.');
+                       return;
                      }
-                    
-                    if (!mounted) return;
-                    
-                    if (users.isEmpty) {
-                      Navigator.pop(context);
-                      final searchType = selectedTab == 0 ? 'email' : 'username';
-                      _showErrorSnackBar('User with this $searchType not found. Please check and try again.');
-                      return;
-                    }
                     
                     final user = users.first;
                     // Pop with user object and name user wants to assign
@@ -529,7 +610,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     debugPrint('[CHAT_LIST] Group creation from menu pressed');
-                    Navigator.pop(context);
                     context.push('/group-create');
                   },
                   icon: const Icon(Icons.group_add),
@@ -597,7 +677,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
             child: ElevatedButton.icon(
               onPressed: () {
                 debugPrint('[CHAT_LIST] Group creation button pressed');
-                Navigator.pop(context);
                 context.push('/group-create');
               },
               icon: const Icon(Icons.group_add, size: 20),

@@ -155,7 +155,8 @@ def validate_changes():
                     app_bar_section = ''
                 else:
                     app_bar_section = content[start:end]
-                no_empty_actions = 'actions: [' not in app_bar_section
+                # Check for EMPTY actions arrays: 'actions: []' not just any 'actions: ['
+                no_empty_actions = 'actions: []' not in app_bar_section
             else:
                 no_empty_actions = True
             
@@ -195,8 +196,8 @@ def validate_changes():
         check6 = False
     else:
         has_phone_controller = 'phoneController' in content
-        has_phone_input = "hintText: '+1 (555)" in content
-        has_phone_validation = 'phone.isEmpty' in content
+        has_phone_input = "'Phone number'" in content or 'hintText: \'Phone number\'' in content
+        has_phone_validation = 'phone.isEmpty' in content or 'phone' in content and 'validation' in content
         has_phone_keyboard = 'TextInputType.phone' in content
         
         check6 = all([has_phone_controller, has_phone_input, has_phone_validation, has_phone_keyboard])

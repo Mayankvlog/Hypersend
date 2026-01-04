@@ -472,7 +472,7 @@ class MessageReactionRequest(BaseModel):
 class FileInitRequest(BaseModel):
     filename: str
     size: int
-    mime: str
+    mime_type: str
     chat_id: str
     checksum: Optional[str] = None
 
@@ -481,8 +481,8 @@ class FileInitResponse(BaseModel):
     upload_id: str
     chunk_size: int
     total_chunks: int
-    max_parallel: int
-    expires_at: datetime
+    expires_in: int  # Duration in seconds
+    max_parallel: int = 4  # Default max parallel chunks
     upload_token: Optional[str] = None  # Long-lived token for large file uploads
 
 

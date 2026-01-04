@@ -67,6 +67,13 @@ class Settings:
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
     UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "2"))  # Extended tokens for large uploads
     
+    # File upload chunk settings  
+    UPLOAD_CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB - Alias for backward compatibility
+    
+    # Upload token duration settings (in seconds)
+    UPLOAD_TOKEN_DURATION: int = UPLOAD_TOKEN_EXPIRE_HOURS * 3600  # Convert hours to seconds
+    UPLOAD_TOKEN_DURATION_LARGE: int = int(os.getenv("UPLOAD_TOKEN_DURATION_LARGE", "259200"))  # 72 hours for large files (3 days)
+    
     # QR Code session expiration
     QR_CODE_SESSION_EXPIRE_MINUTES: int = int(os.getenv("QR_CODE_SESSION_EXPIRE_MINUTES", "5"))
     PASSWORD_RESET_EXPIRE_MINUTES: int = int(os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "30"))
@@ -89,6 +96,7 @@ class Settings:
     # Large file handling optimizations
     LARGE_FILE_THRESHOLD_GB: int = int(os.getenv("LARGE_FILE_THRESHOLD_GB", "1"))  # Files > 1GB get special handling
     LARGE_FILE_CHUNK_TIMEOUT_SECONDS: int = int(os.getenv("LARGE_FILE_CHUNK_TIMEOUT_SECONDS", "900"))  # 15 minutes for large file chunks
+    LARGE_FILE_THRESHOLD: int = LARGE_FILE_THRESHOLD_GB * 1024 * 1024 * 1024  # Convert GB to bytes
     
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
@@ -97,6 +105,8 @@ class Settings:
     # PROD: https://zaply.in.net/api/v1 (requires DNS + SSL setup + certbot)
     # DEV: Set API_BASE_URL=http://localhost:8080/api/v1 when port 80 unavailable
     API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
+    # Server URL for QR code and other features
+    SERVER_URL: str = os.getenv("SERVER_URL", API_BASE_URL.replace("/api/v1", ""))
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))

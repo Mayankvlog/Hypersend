@@ -223,5 +223,8 @@ def reset_tokens_collection():
 def uploads_collection():
     return MockCollection("uploads")
 
+def group_activity_collection():
+    return MockCollection("group_activity")
+
 def get_db():
     return None

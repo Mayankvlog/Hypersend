@@ -72,19 +72,26 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 children: [
-                  _buildContactTile(
-                    icon: Icons.email_outlined,
-                    title: 'Email',
-                    subtitle: 'support@hypersend.com',
-                    onTap: () => _launchEmail(context, 'support@hypersend.com'),
-                   ),
+                   _buildContactTile(
+                     icon: Icons.email_outlined,
+                     title: 'Email',
+                     subtitle: 'support@hypersend.com',
+                     onTap: () => _launchEmail(context, 'support@hypersend.com'),
+                    ),
                    const SizedBox(height: 12),
                    _buildContactTile(
-                     icon: Icons.language_outlined,
-                     title: 'Community Forum',
-                     subtitle: 'discuss.hypersend.com',
-                     onTap: () => _launchUrl(context, 'https://discuss.hypersend.com'),
-                   ),
+                      icon: Icons.phone_outlined,
+                      title: 'Phone',
+                      subtitle: '+1 (555) 123-4567',
+                      onTap: () => _launchPhone(context, '+15551234567'),
+                    ),
+                   const SizedBox(height: 12),
+                   _buildContactTile(
+                      icon: Icons.language_outlined,
+                      title: 'Community Forum',
+                      subtitle: 'discuss.hypersend.com',
+                      onTap: () => _launchUrl(context, 'https://discuss.hypersend.com'),
+                    ),
                  ],
               ),
             ),
@@ -261,14 +268,43 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
 
   Future<void> _launchUrl(BuildContext context, String urlString) async {
     try {
-      final Uri url = Uri.parse(urlString);
+      final url = Uri.parse(urlString);
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
       } else {
-        _showErrorSnackBar(context, 'Could not open browser');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not launch URL')),
+          );
+        }
       }
     } catch (e) {
-      _showErrorSnackBar(context, 'Error launching URL: ${e.toString()}');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error launching URL: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _launchPhone(BuildContext context, String phoneNumber) async {
+    try {
+      final phoneUri = Uri.parse('tel:$phoneNumber');
+      if (await canLaunchUrl(phoneUri)) {
+        await launchUrl(phoneUri, mode: LaunchMode.externalApplication);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not launch phone app')),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error launching phone: $e')),
+        );
+      }
     }
   }
 }

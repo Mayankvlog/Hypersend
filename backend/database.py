@@ -111,3 +111,8 @@ def reset_tokens_collection():
     database = get_db()
     return database.reset_tokens
 
+
+def group_activity_collection():
+    database = get_db()
+    return database.group_activity
+

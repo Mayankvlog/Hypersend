@@ -12,7 +12,6 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional, List
-import aiofiles
 from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
@@ -235,7 +234,8 @@ async def initialize_upload(
             upload_id=upload_id,
             chunk_size=chunk_size,
             total_chunks=total_chunks,
-            expires_in=int(upload_duration)
+            expires_in=int(upload_duration),
+            max_parallel=settings.MAX_PARALLEL_CHUNKS
         )
         
     except Exception as e:
