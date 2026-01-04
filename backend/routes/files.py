@@ -297,25 +297,7 @@ async def initialize_upload(
             "mime_type": mime_type
         })
         
-        # CRITICAL SECURITY: Enhanced logging with compliance
-        _log("info", f"Upload initialized successfully", {
-            "user_id": current_user,
-            "operation": "upload_init",
-            "upload_id": upload_id,
-            "filename_hash": hash(filename) if filename else None,  # Hash for compliance
-            "size": size,
-            "total_chunks": total_chunks,
-            "compliance": "GDPR_READY"  # Compliance flag
-        })
-        
-        # CRITICAL SECURITY: Generate unique upload ID and create upload record
-        import uuid
-        upload_id = f"upload_{uuid.uuid4().hex[:16]}"
-        
-        # Calculate chunk configuration for 40GB files
-        chunk_size = settings.UPLOAD_CHUNK_SIZE  # From config (default 50MB)
-        total_chunks = (size + chunk_size - 1) // chunk_size
-        import uuid
+        # CRITICAL SECURITY: Generate unique upload ID and create upload record BEFORE using it
         upload_id = f"upload_{uuid.uuid4().hex[:16]}"
         
         # Calculate chunk configuration for 40GB files
@@ -352,8 +334,8 @@ async def initialize_upload(
         }
         
         # Insert upload record
-        from db_proxy import uploads_collection
-        await uploads_collection().insert_one(upload_record)
+        uploads_col = uploads_collection()
+        result = await uploads_col.insert_one(upload_record)
         
         # CRITICAL SECURITY: Log only essential information
         _log("info", f"Upload initialized successfully", {
