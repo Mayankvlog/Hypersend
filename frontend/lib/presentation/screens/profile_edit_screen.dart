@@ -222,7 +222,9 @@ Future<void> _saveProfile() async {
         errorMessage = 'Invalid email format. Use: user@example.com';
       } else if (errorString.contains('at least')) {
         errorMessage = e.toString();
-      } else if (errorString.contains('avatar') && (errorString.contains('upload') || errorString.contains('image'))) {
+      } else if (errorString.contains('avatar') && 
+                 (errorString.contains('upload') || errorString.contains('image'))) {
+        // Operator precedence: check avatar first, then upload OR image
         // Specific avatar upload errors
         errorMessage = 'Profile picture upload failed. Please try again.';
       } else if (_avatarChanged && !_nameChanged && !_usernameChanged && !_emailChanged) {

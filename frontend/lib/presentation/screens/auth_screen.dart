@@ -34,7 +34,13 @@ class _AuthScreenState extends State<AuthScreen> {
     final email = _email.text.trim();
     final password = _password.text;
     final name = _name.text.trim();
-    if (email.isEmpty || password.isEmpty || (!_isLogin && name.isEmpty)) {
+    
+    // Operator precedence: explicitly check each condition
+    final isEmailEmpty = email.isEmpty;
+    final isPasswordEmpty = password.isEmpty;
+    final isNameRequired = !_isLogin && name.isEmpty;
+    
+    if (isEmailEmpty || isPasswordEmpty || isNameRequired) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all required fields')),
       );

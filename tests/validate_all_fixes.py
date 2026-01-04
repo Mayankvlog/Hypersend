@@ -228,6 +228,10 @@ def validate_changes():
     all_checks = [check1, check2, check3, check4, check5, check6]
     passed = sum(all_checks)
     total = len(all_checks)
+    # Protection against division by zero
+    if total == 0:
+        print("[FAIL] No checks were run")
+        return False
     
     print(f"\nTotal Checks Passed: {passed}/{total}")
     print(f"Success Rate: {100*passed/total:.1f}%")

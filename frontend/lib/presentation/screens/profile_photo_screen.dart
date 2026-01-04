@@ -85,7 +85,11 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
               debugPrint('[PROFILE_PHOTO] _isUploading=$_isUploading');
               debugPrint('[PROFILE_PHOTO] Button enabled: ${(_selectedPhoto != widget.currentAvatar || _pickedFileBytes != null) && !_isUploading}');
               
-              if ((_selectedPhoto != widget.currentAvatar || _pickedFileBytes != null) && !_isUploading) {
+              // Operator precedence: check selection/change first, then not uploading
+              final photoChanged = (_selectedPhoto != widget.currentAvatar || _pickedFileBytes != null);
+              final notUploading = !_isUploading;
+              
+              if (photoChanged && notUploading) {
                 _handleSave();
               }
             },

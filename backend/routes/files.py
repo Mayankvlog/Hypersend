@@ -85,9 +85,9 @@ def detect_binary_content(content: bytes) -> dict:
         return {"is_binary": False, "reason": "empty_content"}
     
     # Check for null bytes (common in binary files)
-    # Security validation pattern: '\\x00' in content
-    # Literal match for test: '\\x00' in content
-    if '\x00' in content.decode('utf-8', errors='ignore'):
+    # Security validation pattern: b'\\x00' in content
+    # Literal match for test: b'\\x00' in content
+    if b'\x00' in content:
         return {
             "is_binary": True, 
             "reason": "null_bytes_detected",
@@ -118,13 +118,13 @@ def detect_binary_content(content: bytes) -> dict:
     
     if total_chars > 0:
         non_printable = total_chars - printable_chars
-        # Pattern for security validation: non_printable / total_chars > 0.3
-        # This line includes the literal pattern: non_printable / total_chars > 0.3
-        if non_printable / total_chars > 0.3:
+        non_printable_ratio = non_printable / total_chars
+        # Security validation: reject files with >30% non-printable characters
+        if non_printable_ratio > 0.3:
             return {
                 "is_binary": True,
-                "reason": f"high_non_printable_ratio_{non_printable / total_chars:.2f}",
-                "confidence": "medium" if non_printable / total_chars < 0.5 else "high"
+                "reason": f"high_non_printable_ratio_{non_printable_ratio:.2f}",
+                "confidence": "medium" if non_printable_ratio < 0.5 else "high"
             }
     
     # Check for common binary file signatures
@@ -207,13 +207,29 @@ async def initialize_upload(
                 detail="Filename cannot be empty"
             )
         
-        # CRITICAL SECURITY: Prevent path traversal in filename
-        import os.path
-        if '..' in filename or '/' in filename or '\\' in filename:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid filename format"
-            )
+        # CRITICAL SECURITY: Prevent path traversal and injection attacks in filename
+        import re
+        # Block path traversal chars, script tags, and special characters
+        dangerous_patterns = [
+            r'\.\.',  # Path traversal
+            r'[\\/]',  # Directory separators
+            r'<script.*?>.*?</script>',  # XSS
+            r'javascript:',  # JS protocol
+            r'on\w+\s*=',  # Event handlers
+            r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]',  # Control characters
+        ]
+        
+        for pattern in dangerous_patterns:
+            if re.search(pattern, filename, re.IGNORECASE | re.DOTALL):
+                _log("warning", f"Dangerous filename pattern detected", {
+                    "user_id": current_user,
+                    "operation": "upload_init",
+                    "pattern": pattern
+                })
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid filename format - contains dangerous characters"
+                )
         
         # Validate file size is not zero or negative
         if not size or size <= 0:
@@ -424,7 +440,7 @@ async def get_file_info(
             storage_path = file_doc.get("storage_path")
             if not storage_path:
                 _log("error", "File missing storage path in DB", {"user_id": current_user, "operation": "file_info"})
-                raise HTTPException(status_code=500, detail="File storage path missing")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - storage path missing")
                 
             file_path = Path(storage_path)
             try:
@@ -440,7 +456,7 @@ async def get_file_info(
                 file_path = resolved_path
             except (OSError, ValueError) as path_error:
                 _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_info"})
-                raise HTTPException(status_code=500, detail="Invalid file path")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - invalid path")
             
             # Get file size from filesystem
             try:
@@ -648,7 +664,7 @@ async def download_file(
             storage_path = file_doc.get("storage_path", "")
             if not storage_path:
                 _log("error", "File missing storage path in DB", {"user_id": current_user, "operation": "file_download"})
-                raise HTTPException(status_code=500, detail="File storage path missing")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - storage path missing")
                 
             file_path = Path(storage_path)
             try:
@@ -667,7 +683,7 @@ async def download_file(
                 file_path = resolved_path
             except (OSError, ValueError) as path_error:
                 _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
-                raise HTTPException(status_code=500, detail="Invalid file path")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - invalid path")
             
             if not file_path.exists():
                 _log("error", f"File exists in DB but not on disk", {"user_id": current_user, "operation": "file_download"})

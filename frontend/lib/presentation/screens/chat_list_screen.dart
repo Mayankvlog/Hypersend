@@ -296,10 +296,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
                      // Remove all non-digit characters except + for validation
                      final cleanPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
                      
-                      // Validate: 10-15 digits, optional + prefix
-                      // Must start with optional + followed by 10-15 digits
-                      final phoneRegex = RegExp(r'^\+?[0-9]{10,15}$');
-                     if (!phoneRegex.hasMatch(cleanPhone)) {
+                     // Validate: 10-15 digits, optional + prefix
+                     // Must start with optional + followed by 10-15 digits
+                     // Operator precedence: explicit grouping for clarity
+                     final phoneRegex = RegExp(r'^\+?[0-9]{10,15}$');
+                     final isValidPhone = phoneRegex.hasMatch(cleanPhone);
+                     
+                     if (!isValidPhone) {
                        _showErrorSnackBar('Please enter a valid phone number (e.g., +1234567890)');
                        return;
                      }

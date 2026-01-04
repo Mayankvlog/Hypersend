@@ -267,6 +267,11 @@ def generate_test_report(results: dict) -> None:
     passed_tests = sum(1 for v in results.values() if v is True)
     failed_tests = sum(1 for v in results.values() if v is False)
     
+    # Protection against division by zero
+    if total_tests == 0:
+        print_status("No tests were executed", "WARN")
+        return
+    
     print_status(f"Total Tests: {total_tests}", "INFO")
     print_status(f"Passed: {passed_tests}", "PASS" if passed_tests > 0 else "INFO")
     print_status(f"Failed: {failed_tests}", "FAIL" if failed_tests > 0 else "INFO")
@@ -277,6 +282,9 @@ def generate_test_report(results: dict) -> None:
                     "PASS" if success_rate >= 80 else "WARN")
     
     # Save report to file
+    # Protection against division by zero in format string
+    success_rate_str = f"{(passed_tests / total_tests * 100):.1f}%" if total_tests > 0 else "N/A"
+    
     report_content = f"""# Forgot Password Feature Test Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
@@ -284,7 +292,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 - Total Tests: {total_tests}
 - Passed: {passed_tests}
 - Failed: {failed_tests}
-- Success Rate: {(passed_tests / total_tests * 100):.1f()}% if total_tests > 0 else 'N/A'
+- Success Rate: {success_rate_str}
 
 ## Test Results
 """

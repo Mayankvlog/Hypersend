@@ -128,12 +128,16 @@ def main():
     total = len(results)
     print(f"Results: {passed}/{total} security validation tests passed")
     
+    # Protection against division by zero
+    if total == 0:
+        print("[FAIL] No security tests were run")
+        return False
+    
     if passed == total:
         print("[SUCCESS] ALL SECURITY VALIDATIONS PASSED")
         print("[PASS] File upload security hardened")
         print("[PASS] Path traversal protection enhanced") 
         print("[PASS] Binary detection improved")
-        print("[PASS] Test validation logic fixed")
         return True
     else:
         print(f"[FAIL] {total - passed} VALIDATION(S) FAILED")

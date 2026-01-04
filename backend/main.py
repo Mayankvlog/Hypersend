@@ -120,7 +120,8 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         body = await request.body()
                         if body and not content_length_header:
                             # Log but allow (fastapi might handle)
-                            logger.warning(f"[411] Missing Content-Length for {request.method} {request.url.path}")
+                            import logging
+                        logging.getLogger(__name__).warning(f"[411] Missing Content-Length for {request.method} {request.url.path}")
                     except Exception as e:
                         logger.warning(f"[MIDDLEWARE_ERROR] Content-Length header parsing error: {str(e)}")
                 
@@ -182,8 +183,24 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             return response
             
+        except HTTPException:
+            # Re-raise HTTPException to be handled by specific handlers
+            raise
         except Exception as e:
             logger.error(f"[MIDDLEWARE_ERROR] {request.method} {request.url.path}: {str(e)}", exc_info=True)
+            # For debugging, check if this is a validation error that should be 422
+            if "validation" in str(e).lower() or "json" in str(e).lower():
+                return JSONResponse(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    content={
+                        "status_code": 422,
+                        "error": "Unprocessable Entity - Invalid input data",
+                        "detail": str(e) if settings.DEBUG else "Invalid input data",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "path": str(request.url.path),
+                        "method": request.method,
+                    }
+                )
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={
@@ -329,6 +346,62 @@ async def general_exception_handler(request: Request, exc: Exception):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "path": str(request.url.path),
             "method": request.method,
+        }
+    )
+
+# Add 404 handler for non-existent endpoints
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc: HTTPException):
+    """Handle 404 Not Found errors"""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "status_code": 404,
+            "error": "Not Found - The requested resource doesn't exist",
+            "detail": exc.detail,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "path": str(request.url.path),
+            "method": request.method,
+            "hints": ["Check the URL spelling", "Verify the resource exists", "Check API documentation"]
+        }
+    )
+
+# Add 405 handler for method not allowed
+@app.exception_handler(405)
+async def method_not_allowed_handler(request: Request, exc: HTTPException):
+    """Handle 405 Method Not Allowed errors"""
+    # Check if this is actually a 404 (endpoint doesn't exist)
+    path = str(request.url.path)
+    
+    # Common patterns that should be 404, not 405
+    # Operator precedence: check trailing slash first, then route matching
+    has_trailing_slash = path.endswith('/')
+    has_matching_route = any(route.path in path for route in app.routes if hasattr(route, 'path'))
+    
+    if has_trailing_slash or not has_matching_route:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "status_code": 404,
+                "error": "Not Found - The requested resource doesn't exist",
+                "detail": "No endpoint found at this path",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "path": path,
+                "method": request.method,
+                "hints": ["Check URL spelling", "Verify resource exists", "Check API documentation"]
+            }
+        )
+    
+    return JSONResponse(
+        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        content={
+            "status_code": 405,
+            "error": "Method Not Allowed - This HTTP method is not supported for this endpoint",
+            "detail": exc.detail,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "path": path,
+            "method": request.method,
+            "hints": ["Check API documentation for allowed methods", "Use GET, POST, PUT, DELETE as appropriate"]
         }
     )
 

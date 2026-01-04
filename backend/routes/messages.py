@@ -220,7 +220,13 @@ async def mark_read(message_id: str, current_user: str = Depends(get_current_use
     await _get_chat_for_message_or_403(msg, current_user)
 
     read_by = msg.get("read_by") or []
-    if any(x.get("user_id") == current_user for x in read_by if isinstance(x, dict)):
+    
+    # Operator precedence: check isinstance first, then get user_id
+    is_already_read = any(
+        isinstance(x, dict) and x.get("user_id") == current_user 
+        for x in read_by
+    )
+    if is_already_read:
         return {"status": "read", "message_id": message_id}
 
     read_by.append({"user_id": current_user, "read_at": _utcnow()})

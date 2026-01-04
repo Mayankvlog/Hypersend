@@ -229,11 +229,18 @@ async def register(user: UserCreate) -> UserResponse:
     try:
         auth_log(f"Registration attempt for email: {user.email}")
         
-        # Validate email and password
-        if not user.email or '@' not in user.email:
+        # Validate email and password with security checks
+        import re
+        
+        # Security: Use standard email format validation instead of multiple regex patterns
+        # Remove inconsistent and ineffective pattern matching
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, user.email):
+            auth_log(f"Invalid email format: {user.email[:50]}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format. Use format: user@zaply.in.net"
+                detail="Invalid email format"
+
             )
         
         if not user.password or len(user.password) < 6:
@@ -344,11 +351,16 @@ async def register(user: UserCreate) -> UserResponse:
 async def login(credentials: UserLogin, request: Request) -> Token:
     """Login user and return access/refresh tokens"""
     try:
-        # Validate input
-        if not credentials.email or '@' not in credentials.email:
+        # Validate input with security checks
+        import re
+        
+        # Security: Use standard email format validation
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, credentials.email):
+            auth_log(f"Invalid email format in login attempt: {credentials.email[:50]}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format. Use format: user@zaply.in.net"
+                detail="Invalid email format"
             )
         
         if not credentials.password:
@@ -417,11 +429,10 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         raise
     except Exception as e:
         auth_log(f"Login error: {type(e).__name__}: {str(e)}")
-        auth_log(f"Token refresh error: {type(e).__name__}: {str(e)}")
-        auth_log(f"Logout error: {type(e).__name__}: {str(e)}")
+        # Return generic error for security, don't expose internal details
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Logout failed: {str(e)}"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed"
         )
 
 # Token Refresh Endpoint

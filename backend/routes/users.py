@@ -1744,7 +1744,10 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         
         # Check if already in contacts (support both old format and new format)
         if isinstance(contacts, list):
-            if any(isinstance(c, dict) and c.get("user_id") == request.user_id for c in contacts) or (request.user_id in contacts):
+            # Operator precedence: check dict format first, then fallback to direct format
+            is_dict_contact = any(isinstance(c, dict) and c.get("user_id") == request.user_id for c in contacts)
+            is_direct_contact = request.user_id in contacts
+            if is_dict_contact or is_direct_contact:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="User is already in your contacts"
@@ -1833,7 +1836,13 @@ async def clear_location(current_user: str = Depends(get_current_user)):
             }
         
         # Add phone search as fallback for general searches if numeric
-        if search_type == "general" and clean_phone and len(clean_phone) >= 3 and any(c.isdigit() for c in clean_phone):
+        # Operator precedence: check search_type first, then conditions in order
+        is_general_search = search_type == "general"
+        has_clean_phone = clean_phone is not None and len(clean_phone) > 0
+        is_long_enough = len(clean_phone) >= 3 if has_clean_phone else False
+        has_digits = any(c.isdigit() for c in clean_phone) if has_clean_phone else False
+        
+        if is_general_search and has_clean_phone and is_long_enough and has_digits:
             search_query["$or"].append({
                 "phone": {"$regex": re.escape(clean_phone), "$options": "i"}
             })

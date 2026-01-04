@@ -60,9 +60,10 @@ class UserCreate(BaseModel):
         if not v or not v.strip():
             raise ValueError('Email cannot be empty')
         v = v.lower().strip()
+        # Standard email validation pattern - RFC 5322 simplified
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format. Use format: user@zaply.in.net')
+            raise ValueError('Invalid email format')
         return v
     
     @field_validator('password')
@@ -83,10 +84,10 @@ class UserLogin(BaseModel):
         if not v or not v.strip():
             raise ValueError('Email cannot be empty')
         v = v.lower().strip()
-        # SECURITY: Strict email validation for all environments
+        # Standard email validation pattern
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format. Use format: user@zaply.in.net')
+            raise ValueError('Invalid email format')
         return v
     
     @field_validator('password')

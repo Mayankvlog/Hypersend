@@ -307,14 +307,19 @@ def main():
     print("VALIDATION RESULTS")
     print("=" * 70)
     print(f"Tests Passed: {passed}/{total}")
-    print(f"Success Rate: {(passed/total)*100:.1f}%")
-    
-    if passed == total:
-        print("\n*** ALL SYSTEMS READY FOR PRODUCTION! ***")
-        print("HyperSend is fully operational with all critical fixes applied.")
+    # Protection against division by zero
+    if total > 0:
+        print(f"Success Rate: {(passed/total)*100:.1f}%")
+        
+        if passed == total:
+            print("\n*** ALL SYSTEMS READY FOR PRODUCTION! ***")
+            print("HyperSend is fully operational with all critical fixes applied.")
+        else:
+            print(f"\n*** {total - passed} issues still need attention. ***")
+            print("Some systems may not be production-ready.")
     else:
-        print(f"\n*** {total - passed} issues still need attention. ***")
-        print("Some systems may not be production-ready.")
+        print("Success Rate: N/A (no checks run)")
+        print("\n*** NO VALIDATION TESTS RAN ***")
     
     print("=" * 70)
     return passed == total
