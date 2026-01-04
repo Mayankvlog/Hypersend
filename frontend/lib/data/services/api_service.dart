@@ -1324,7 +1324,7 @@ Future<void> postToChannel(String channelId, String text) async {
   Future<Map<String, dynamic>> initUpload({
     required String filename,
     required int size,
-    required String mime,
+    required String mime,  // Parameter name stays 'mime' for compatibility
     required String chatId,
     String? checksum,
   }) async {
@@ -1333,7 +1333,7 @@ Future<void> postToChannel(String channelId, String text) async {
       data: {
         'filename': filename,
         'size': size,
-        'mime': mime,
+        'mime_type': mime,
         'chat_id': chatId,
         if (checksum != null) 'checksum': checksum,
       },

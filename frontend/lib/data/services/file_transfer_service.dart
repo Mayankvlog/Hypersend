@@ -112,7 +112,7 @@ class FileTransferService {
       final init = await _api.initUpload(
         filename: fileName,
         size: fileSize,
-        mime: mime,
+        mime: mime,  // API service converts this to mime_type
         chatId: chatId,
       );
 

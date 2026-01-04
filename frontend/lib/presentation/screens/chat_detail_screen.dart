@@ -329,7 +329,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final init = await serviceProvider.apiService.initUpload(
         filename: name,
         size: size,
-        mime: mime,
+        mime: mime,  // API service converts this to mime_type
         chatId: widget.chatId,
       );
 

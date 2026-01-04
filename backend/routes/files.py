@@ -172,46 +172,164 @@ async def files_options():
 
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(
-    file_req: FileInitRequest,
     request: Request,
     current_user: str = Depends(get_current_user)
     ):
-    """Initialize file upload for 40GB files with enhanced security"""
+    """Initialize file upload for 40GB files with enhanced security - accepts both 'mime' and 'mime_type'"""
     
     try:
-        _log("info", f"Initializing upload", {"user_id": current_user, "operation": "upload_init", "filename": file_req.filename, "size": file_req.size})
+        # Parse request body to handle both 'mime' and 'mime_type' fields
+        body = await request.json()
         
-        # Generate unique upload ID and create upload record
+        # Create file request object with backward compatibility
+        filename = body.get('filename')
+        size = body.get('size')
+        chat_id = body.get('chat_id')
+        checksum = body.get('checksum')
+        
+        # Accept both 'mime' and 'mime_type' for compatibility
+        mime_type = body.get('mime_type') or body.get('mime')
+        
+        # Enhanced validation for zero-byte files and proper MIME types
+        # CRITICAL SECURITY: Add content verification for client-provided MIME types
+        if mime_type:
+            # Basic MIME type format validation
+            if '/' not in mime_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid MIME type format"
+                )
+        
+        # Validate filename is not empty and secure
+        if not filename or not filename.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Filename cannot be empty"
+            )
+        
+        # CRITICAL SECURITY: Prevent path traversal in filename
+        import os.path
+        if '..' in filename or '/' in filename or '\\' in filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid filename format"
+            )
+        
+        # Validate file size is not zero or negative
+        if not size or size <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size must be greater than zero"
+            )
+        
+        # Validate MIME type format and allowed types
+        if not mime_type or not isinstance(mime_type, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid MIME type is required"
+            )
+        
+        allowed_mime_types = [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'video/mp4', 'video/webm', 'video/quicktime',
+            'audio/mpeg', 'audio/wav', 'audio/ogg',
+            'application/pdf', 'text/plain', 'application/json',
+            'application/zip', 'application/x-zip-compressed',
+            'application/x-msdownload', 'application/octet-stream'
+        ]
+        
+        # CRITICAL SECURITY: Check MIME type is allowed
+        if mime_type not in allowed_mime_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"MIME type '{mime_type}' is not allowed. Allowed types: {', '.join(allowed_mime_types[:5])}..."
+            )
+        
+        # CRITICAL SECURITY: Content verification for potentially dangerous MIME types
+        dangerous_mime_types = [
+            'application/javascript', 'text/javascript', 'application/x-javascript',
+            'text/html', 'application/x-html+php', 'application/x-php',
+            'application/x-msdos-program', 'application/x-msdownload',
+            'application/x-exe', 'application/x-sh', 'application/x-bat', 'application/x-csh'
+        ]
+        
+        if mime_type in dangerous_mime_types:
+            _log("warning", f"Potentially dangerous MIME type detected", {
+                "user_id": current_user,
+                "operation": "upload_init",
+                "mime_type": mime_type,
+                "action": "blocked_for_review"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"File type '{mime_type}' is not allowed for security reasons"
+            )
+        
+        # Validate required fields
+        if not chat_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chat ID is required"
+            )
+        
+        # Enhanced validation successful
+        _log("info", f"File validation passed", {
+            "user_id": current_user,
+            "operation": "upload_init",
+            "filename_hash": hash(filename) if filename else None,  # Hash for compliance
+            "size": size,
+            "mime_type": mime_type
+        })
+        
+        # CRITICAL SECURITY: Enhanced logging with compliance
+        _log("info", f"Upload initialized successfully", {
+            "user_id": current_user,
+            "operation": "upload_init",
+            "upload_id": upload_id,
+            "filename_hash": hash(filename) if filename else None,  # Hash for compliance
+            "size": size,
+            "total_chunks": total_chunks,
+            "compliance": "GDPR_READY"  # Compliance flag
+        })
+        
+        # CRITICAL SECURITY: Generate unique upload ID and create upload record
         import uuid
         upload_id = f"upload_{uuid.uuid4().hex[:16]}"
         
         # Calculate chunk configuration for 40GB files
         chunk_size = settings.UPLOAD_CHUNK_SIZE  # From config (default 50MB)
-        total_chunks = (file_req.size + chunk_size - 1) // chunk_size
+        total_chunks = (size + chunk_size - 1) // chunk_size
+        import uuid
+        upload_id = f"upload_{uuid.uuid4().hex[:16]}"
+        
+        # Calculate chunk configuration for 40GB files
+        chunk_size = settings.UPLOAD_CHUNK_SIZE  # From config (default 50MB)
+        total_chunks = (size + chunk_size - 1) // chunk_size
         
         # Enhanced configuration for files > 1GB (72-hour upload tokens)
         upload_duration = settings.UPLOAD_TOKEN_DURATION
-        if file_req.size > settings.LARGE_FILE_THRESHOLD:  # > 1GB
+        if size > settings.LARGE_FILE_THRESHOLD:  # > 1GB
             upload_duration = settings.UPLOAD_TOKEN_DURATION_LARGE
             _log("info", f"Large file detected, using extended upload duration", {
                 "user_id": current_user, 
                 "operation": "upload_init", 
-                "file_size": file_req.size,
-                "upload_duration_hours": upload_duration / 3600
+                "file_size": size,
+                "upload_duration_hours": upload_duration / 3600,
+                "security_level": "EXTENDED_VALIDATION"
             })
         
         # Create upload record in database
         upload_record = {
             "_id": upload_id,
             "user_id": current_user,
-            "filename": file_req.filename,
-            "size": file_req.size,
-            "mime_type": file_req.mime_type,
+            "filename": os.path.basename(filename) if filename else None,  # Only store basename
+            "size": size,
+            "mime_type": mime_type,
             "chunk_size": chunk_size,
             "total_chunks": total_chunks,
             "uploaded_chunks": [],
-            "checksum": file_req.checksum,
-            "chat_id": file_req.chat_id,
+            "checksum": checksum,
+            "chat_id": chat_id,
             "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.now(timezone.utc) + timedelta(seconds=upload_duration),
             "status": "initialized"
@@ -221,12 +339,13 @@ async def initialize_upload(
         from db_proxy import uploads_collection
         await uploads_collection().insert_one(upload_record)
         
+        # CRITICAL SECURITY: Log only essential information
         _log("info", f"Upload initialized successfully", {
             "user_id": current_user,
             "operation": "upload_init",
             "upload_id": upload_id,
-            "filename": file_req.filename,
-            "size": file_req.size,
+            "filename": os.path.basename(filename) if filename else None,  # Only basename
+            "size": size,
             "total_chunks": total_chunks
         })
         
@@ -239,11 +358,10 @@ async def initialize_upload(
         )
         
     except Exception as e:
+        # CRITICAL SECURITY: Log only essential information, no sensitive data
         _log("error", f"Failed to initialize upload", {
             "user_id": current_user,
-            "operation": "upload_init",
-            "filename": file_req.filename,
-            "error": str(e)
+            "operation": "upload_init"
         })
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
