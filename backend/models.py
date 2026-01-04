@@ -483,6 +483,7 @@ class FileInitResponse(BaseModel):
     total_chunks: int
     max_parallel: int
     expires_at: datetime
+    upload_token: Optional[str] = None  # Long-lived token for large file uploads
 
 
 class ChunkUploadResponse(BaseModel):
@@ -690,3 +691,4 @@ class TokenData(BaseModel):
     """Token data extracted from JWT payload"""
     user_id: str
     token_type: str
+    payload: dict = Field(default_factory=dict)  # Full JWT payload for additional token validation

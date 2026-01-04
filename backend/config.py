@@ -65,6 +65,7 @@ class Settings:
     # Token expiration constants
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+    UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "2"))  # Extended tokens for large uploads
     
     # QR Code session expiration
     QR_CODE_SESSION_EXPIRE_MINUTES: int = int(os.getenv("QR_CODE_SESSION_EXPIRE_MINUTES", "5"))
@@ -78,12 +79,16 @@ class Settings:
     MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", "42949672960"))  # 40 GiB
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
     FILE_RETENTION_HOURS: int = int(os.getenv("FILE_RETENTION_HOURS", "0"))  # 0 = no server storage
-    UPLOAD_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_EXPIRE_HOURS", "48"))  # Extended to 48 hours for large files
+    UPLOAD_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_EXPIRE_HOURS", "72"))  # Extended to 72 hours (3 days) for very large files
     
     # Enhanced timeout settings for large file transfers
-    CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(os.getenv("CHUNK_UPLOAD_TIMEOUT_SECONDS", "300"))  # 5 minutes per chunk
-    FILE_ASSEMBLY_TIMEOUT_MINUTES: int = int(os.getenv("FILE_ASSEMBLY_TIMEOUT_MINUTES", "10"))  # 10 minutes for assembly
-    MAX_UPLOAD_RETRY_ATTEMPTS: int = int(os.getenv("MAX_UPLOAD_RETRY_ATTEMPTS", "3"))  # Retry failed chunks
+    CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(os.getenv("CHUNK_UPLOAD_TIMEOUT_SECONDS", "600"))  # 10 minutes per chunk (for 40GB files)
+    FILE_ASSEMBLY_TIMEOUT_MINUTES: int = int(os.getenv("FILE_ASSEMBLY_TIMEOUT_MINUTES", "30"))  # 30 minutes for assembly (40GB)
+    MAX_UPLOAD_RETRY_ATTEMPTS: int = int(os.getenv("MAX_UPLOAD_RETRY_ATTEMPTS", "5"))  # More retries for large files
+    
+    # Large file handling optimizations
+    LARGE_FILE_THRESHOLD_GB: int = int(os.getenv("LARGE_FILE_THRESHOLD_GB", "1"))  # Files > 1GB get special handling
+    LARGE_FILE_CHUNK_TIMEOUT_SECONDS: int = int(os.getenv("LARGE_FILE_CHUNK_TIMEOUT_SECONDS", "900"))  # 15 minutes for large file chunks
     
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
@@ -187,165 +192,18 @@ class Settings:
                         print(f"[CORS_SECURITY] ⚠️  Use HTTPS only in production deployment")
                     
                     if docker_http_origins:
-                        print(f"[CORS_SECURITY] ℹ️  Docker internal HTTP origins (safe): {docker_http_origins}")
-                    
+                         print(f"[CORS_SECURITY] Docker internal HTTP origins (safe): {docker_http_origins}")
+                     
                     if https_origins:
-                        print(f"[CORS_SECURITY] ✓ Production CORS origins (HTTPS only): {https_origins}")
-                    
-                    # In production, allow both HTTPS and Docker internal HTTP origins
-                    # Docker HTTP origins are safe (internal network only)
-                    origins = https_origins + docker_http_origins
-                    
-                    # Validate non-empty origins after filtering
-                    if not origins:
-                        print(f"[CORS_SECURITY] ❌ ERROR: No valid HTTPS origins configured!")
-                        print(f"[CORS_SECURITY] ❌ Please set ALLOWED_ORIGINS with HTTPS URLs in production")
-                        # Fallback to default HTTPS origins to prevent complete CORS failure
-                        origins = [
-                            "https://zaply.in.net",
-                            "https://www.zaply.in.net",
-                        ]
-                        print(f"[CORS_SECURITY] 🔧 Using fallback HTTPS origins: {origins}")
-                
-                print(f"[CONFIG] Using ALLOWED_ORIGINS from environment (highest priority): {len(origins)} origins")
-                return origins
-        
-        # SECOND: Use CORS_ORIGINS if available (legacy, second priority)
-        if env_cors_origins:
-            origins = [origin.strip() for origin in env_cors_origins.split(",") if origin.strip()]
-            if origins:
-                print(f"[CONFIG] Using CORS_ORIGINS from environment (legacy): {len(origins)} origins")
-                return origins
-        
-        # THIRD: Derive production domain from API_BASE_URL and add Docker hostnames
-        if env_api_base_url:
-            api_url = env_api_base_url.rstrip('/')
-            if api_url.endswith('/api/v1'):
-                base_url = api_url[:-7]  # Remove '/api/v1'
-                if '://' in base_url:
-                    domain = base_url.split('://')[1].split(':')[0]  # Extract domain
-                    if domain and domain != 'localhost' and not domain.startswith('127.') and '.' in domain:
-                        # SECURITY: Separate production HTTPS origins from dev/docker origins
-                        # Production: Only HTTPS for the configured domain
-                        # Docker internal: HTTP only (secure network within Docker)
-                        # Development: Separate conditional logic below
-                        
-                        if not self.DEBUG:
-                            # PRODUCTION MODE: HTTPS only, no HTTP variants
-                            # This prevents man-in-the-middle attacks via unencrypted HTTP
-                            origins = [
-                                f"https://{domain}",          # Production HTTPS primary (https://zaply.in.net)
-                                f"https://www.{domain}",      # Production HTTPS with www
-                            ]
-                            print(f"[CONFIG] PRODUCTION mode: {len(origins)} origins (HTTPS ONLY - secure)")
-                            return origins
-                        else:
-                            # DEVELOPMENT MODE: Include HTTP variants and Docker internal
-                            # NOTE: Docker internal communication is on private network (safe)
-                            # HTTP variants only for local development setup
-                            origins = [
-                                # ===== PRODUCTION (HTTPS) - Primary even in dev =====
-                                f"https://{domain}",          # HTTPS primary
-                                f"https://www.{domain}",      # HTTPS with www
-                                # ===== HTTP DEVELOPMENT FALLBACK (dev setup only) =====
-                                f"http://{domain}",           # HTTP fallback for initial setup
-                                f"http://www.{domain}",       # HTTP fallback with www
-                                # ===== DOCKER INTERNAL (HTTP only - private network) =====
-                                "http://hypersend_frontend:80",       # Docker: frontend by container name
-                                "http://hypersend_frontend",          # Docker: frontend (no port)
-                                "http://frontend:80",                 # Docker: frontend by service name
-                                "http://frontend",                    # Docker: frontend (no port)
-                                "http://hypersend_backend:8000",      # Docker: backend by container name
-                                "http://backend:8000",                # Docker: backend by service name
-                                # ===== LOCAL DEVELOPMENT (HTTP localhost) =====
-                                "http://localhost:3000",              # Dev: frontend port
-                                "http://localhost:8000",              # Dev: backend port
-                                "http://localhost:8080",              # Dev: nginx fallback port
-                                "http://127.0.0.1:3000",             # Dev: localhost alias frontend
-                                "http://127.0.0.1:8000",             # Dev: localhost alias backend
-                                "http://127.0.0.1:8080",             # Dev: localhost alias nginx
-                            ]
-                            print(f"[CONFIG] DEVELOPMENT mode: {len(origins)} origins (HTTPS + HTTP + Docker + Dev)")
-                            return origins
-        
-        # Fallback to DEBUG/Production defaults if no environment variable
-        debug_mode = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
-        
-        if debug_mode:
-            # Development: Allow specific localhost origins only
-            print(f"[CONFIG] Using DEBUG mode CORS origins")
-            return [
-                "http://localhost",
-                "http://localhost:8000",
-                "http://localhost:3000",
-                "http://127.0.0.1",
-                "http://127.0.0.1:8000",
-                "http://127.0.0.1:3000",
-                "http://0.0.0.0:8000",
-                "http://0.0.0.0:8080",
-                "http://backend:8000",
-                "http://frontend",
-            ]
-        else:
-            # Production: Only allow specific domains
-            print(f"[CONFIG] Using PRODUCTION mode CORS origins: {self.PRODUCTION_DOMAINS}")
-            return self.PRODUCTION_DOMAINS
-    
-    CORS_ORIGINS: list = None  # Will be set in __init__ method
-    
-    # Production domain configuration
-    PRODUCTION_DOMAINS: list = [
-        "https://zaply.in.net",
-        "https://www.zaply.in.net",
-    ]
-    
-    def __init__(self):
-        """Initialize settings and validate critical configuration"""
-        self.CORS_ORIGINS = self._get_cors_origins()
-        self.validate_config()
-    
-    def validate_config(self):
-        """Validate critical configuration"""
-        # SECRET_KEY must be explicitly set in production
-        if not self.SECRET_KEY:
-            raise ValueError("SECRET_KEY environment variable must be set in production")
-        
-        if not os.getenv("SECRET_KEY"):
-            raise ValueError("SECRET_KEY must be set as environment variable in production")
-        
-        if len(self.SECRET_KEY) < 32:
-            self.SECRET_KEY = secrets.token_urlsafe(64)
-        
-        # SECURITY: Validate CORS configuration
-        self.validate_cors_security()
-        
-        # Validate email configuration
-        self.validate_email_config()
-    
-    def validate_cors_security(self):
-        """Validate CORS origins for security issues"""
-        # SECURITY: Check for HTTP origins in production
-        if not self.DEBUG:
-            http_origins = [o for o in self.CORS_ORIGINS if o.startswith('http://')]
-            https_origins = [o for o in self.CORS_ORIGINS if o.startswith('https://')]
-            
-            if http_origins:
-                # WARNING: HTTP origins are a security risk in production
-                print(f"[CORS_SECURITY] ⚠️  WARNING: Production mode with HTTP origins detected!")
-                print(f"[CORS_SECURITY] ⚠️  HTTP origins allow unencrypted traffic - SECURITY RISK!")
-                print(f"[CORS_SECURITY] ⚠️  HTTP origins found: {http_origins}")
-                print(f"[CORS_SECURITY] ⚠️  Use HTTPS only in production deployment")
-            
-            if https_origins:
-                print(f"[CORS_SECURITY] ✓ Production CORS origins (HTTPS only): {https_origins}")
+                        print(f"[CORS_SECURITY] OK Production CORS origins (HTTPS only): {https_origins}")
             
             if not https_origins:
                 print(f"[CORS_SECURITY] ✗ ERROR: No HTTPS origins configured in production!")
                 print(f"[CORS_SECURITY] ✗ Set API_BASE_URL=https://yourdomain.com/api/v1")
         else:
             # Development mode: allow mixed protocols for local testing
-            print(f"[CORS_SECURITY] ℹ️  Development mode: Mixed HTTP/HTTPS origins allowed for testing")
-            print(f"[CORS_SECURITY] ℹ️  Total CORS origins: {len(self.CORS_ORIGINS)}")
+            print(f"[CORS_SECURITY] Development mode: Mixed HTTP/HTTPS origins allowed for testing")
+            print(f"[CORS_SECURITY] Total CORS origins: {len(self.CORS_ORIGINS)}")
     
     def validate_email_config(self):
         """Validate email service configuration with enhanced checking"""
@@ -365,7 +223,7 @@ class Settings:
         else:
             # Only show email warning in debug mode to reduce log noise in production
             if self.DEBUG:
-                print("[EMAIL] X Email service NOT configured - password reset emails will not be sent")
+                print("[EMAIL] Email service NOT configured - password reset emails will not be sent")
                 print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
             else:
                 print("[EMAIL] Email service disabled (optional - configure SMTP for password reset)")

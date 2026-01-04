@@ -17,12 +17,41 @@ from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
 from db_proxy import files_collection, uploads_collection, users_collection
-from auth.utils import get_current_user, get_current_user_or_query
+from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, decode_token
 from config import settings
 
 # Setup logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str):
+    """Helper function to save chunk to disk with error handling"""
+    try:
+        chunk_path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(chunk_path, 'wb') as f:
+            await f.write(chunk_data)
+        _log("info", f"Chunk {chunk_index} saved successfully: {len(chunk_data)} bytes", 
+               {"user_id": user_id, "operation": "chunk_save"})
+    except Exception as e:
+        _log("error", f"[UPLOAD] Failed to save chunk {chunk_index}: {str(e)}", 
+               {"user_id": user_id, "operation": "chunk_save_error"})
+        
+        # Enhanced error categorization for 400 errors
+        status_code = getattr(e, 'status_code', 500)
+        if status_code == 400:
+            _log("error", f"[UPLOAD] Bad Request - Failed to save chunk {chunk_index}: {str(e)}", 
+                       {"user_id": user_id, "operation": "chunk_save_400_error"})
+            _log("error", f"[UPLOAD] Possible 400 causes - Server storage issue, permission denied, disk full", 
+                       {"user_id": user_id, "operation": "chunk_save_400_debug"})
+        else:
+            _log("error", f"[UPLOAD] Server error {status_code} - Failed to save chunk {chunk_index}: {str(e)}", 
+                       {"user_id": user_id, "operation": "chunk_save_server_error"})
+        
+        raise HTTPException(
+            status_code=status_code,
+            detail=f"Failed to save chunk {chunk_index}. Please retry."
+        )
 
 
 def _log(level: str, message: str, user_data: dict = None):
@@ -145,436 +174,89 @@ async def files_options():
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(
     file_req: FileInitRequest,
+    request: Request,
     current_user: str = Depends(get_current_user)
-):
-    """Initialize a resumable file upload"""
-    
-    # Validate filename and sanitize
-    import re
-    if not file_req.filename or re.search(r'[<>:"/\\|?*]', file_req.filename):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid filename. Please use a valid filename."
-        )
-    
-    # Validate file size
-    if file_req.size > settings.MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File size exceeds maximum of {settings.MAX_FILE_SIZE_BYTES} bytes"
-        )
-    
-    # Check user quota (use safe defaults if fields are missing)
-    user = await users_collection().find_one({"_id": current_user})
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    quota_used = user.get("quota_used", 0)
-    quota_limit = user.get("quota_limit", settings.MAX_FILE_SIZE_BYTES)
-    if quota_used + file_req.size > quota_limit:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Quota exceeded"
-        )
-    
-    # Calculate chunks
-    total_chunks = math.ceil(file_req.size / settings.CHUNK_SIZE)
-    upload_id = str(uuid.uuid4())
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.UPLOAD_EXPIRE_HOURS)
-    
-    # Create upload record
-    upload_doc = {
-        "upload_id": upload_id,
-        "owner_id": current_user,
-        "filename": file_req.filename,
-        "size": file_req.size,
-        "mime": file_req.mime,
-        "chat_id": file_req.chat_id,
-        "total_chunks": total_chunks,
-        "chunk_size": settings.CHUNK_SIZE,
-        "received_chunks": [],
-        "checksum": file_req.checksum,
-        "expires_at": expires_at,
-        "created_at": datetime.now(timezone.utc)
-    }
-    
-    await uploads_collection().insert_one(upload_doc)
-    
-    # Create temp directory for chunks - use same path as UPLOAD_DIR
-    upload_dir = Path(settings.UPLOAD_DIR) / upload_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create manifest
-    manifest = {
-        "upload_id": upload_id,
-        "filename": file_req.filename,
-        "size": file_req.size,
-        "total_chunks": total_chunks,
-        "chunk_size": settings.CHUNK_SIZE,
-        "received_chunks": []
-    }
-    
-    async with aiofiles.open(upload_dir / "manifest.json", "w") as f:
-        await f.write(json.dumps(manifest, indent=2))
-    
-    return FileInitResponse(
-        upload_id=upload_id,
-        chunk_size=settings.CHUNK_SIZE,
-        total_chunks=total_chunks,
-        max_parallel=settings.MAX_PARALLEL_CHUNKS,
-        expires_at=expires_at
-    )
-
-
-@router.put("/{upload_id}/chunk", response_model=ChunkUploadResponse)
-async def upload_chunk(
-    upload_id: str,
-    chunk_index: int = Query(..., description="Index of the chunk being uploaded (0-based)"),
-    request: Request = ...,
-    x_chunk_checksum: Optional[str] = Header(None),
-    current_user: str = Depends(get_current_user)
-):
-    """Upload a single chunk"""
-    
-    # Verify upload exists
-    upload = await uploads_collection().find_one({"upload_id": upload_id, "owner_id": current_user})
-    if not upload:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Upload not found"
-        )
-    
-    # Check if expired
-    # Fix: Handle both offset-naive and offset-aware datetimes
-    expires_at = upload["expires_at"]
-    if expires_at.tzinfo is None:
-        # offset-naive datetime from database - add UTC timezone
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    
-    if expires_at < datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Upload session expired"
-        )
-    
-    # Validate chunk index
-    if chunk_index < 0 or chunk_index >= upload["total_chunks"]:
-        _log("error", f"[UPLOAD] Invalid chunk index: {chunk_index} (valid range: 0-{upload['total_chunks']-1})", 
-               {"user_id": current_user, "operation": "chunk_upload_validation"})
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid chunk index. Valid range is 0-{upload['total_chunks']-1}"
-        )
-    
-    # Read chunk data with enhanced logging
-    chunk_data = await request.body()
-    logger.info(f"[UPLOAD] Chunk {chunk_index} received: {len(chunk_data)} bytes")
-    logger.info(f"[UPLOAD] Upload ID: {upload_id}")
-    logger.info(f"[UPLOAD] Content-Type: {request.headers.get('content-type')}")
-    logger.info(f"[UPLOAD] Request URL: {request.url}")
-    
-    # Verify checksum if provided
-    if x_chunk_checksum:
-        calculated_checksum = hashlib.sha256(chunk_data).hexdigest()
-        if calculated_checksum != x_chunk_checksum:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Chunk checksum mismatch"
-            )
-    
-    # Save chunk to disk with timeout protection
-    # NOTE: Removed overly strict binary content detection - this is a file upload system
-    # and should accept all binary formats (PDFs, images, videos, etc.)
-    try:
-        chunk_path = Path(settings.UPLOAD_DIR) / upload_id / f"{chunk_index}.part"
-        chunk_path.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(chunk_path, 'wb') as f:
-            await f.write(chunk_data)
-    except Exception as e:
-        _log("error", f"[UPLOAD] Failed to save chunk {chunk_index}: {str(e)}", 
-               {"user_id": current_user, "operation": "chunk_save_error"})
-        
-        # Enhanced error categorization for 400 errors
-        status_code = getattr(e, 'status_code', 500)
-        if status_code == 400:
-            _log("error", f"[UPLOAD] Bad Request - Failed to save chunk {chunk_index}: {str(e)}", 
-                       {"user_id": current_user, "operation": "chunk_save_400_error"})
-            _log("error", f"[UPLOAD] Possible 400 causes - Server storage issue, permission denied, disk full", 
-                       {"user_id": current_user, "operation": "chunk_save_400_debug"})
-        else:
-            _log("error", f"[UPLOAD] Server error {status_code} - Failed to save chunk {chunk_index}: {str(e)}", 
-                       {"user_id": current_user, "operation": "chunk_save_server_error"})
-        
-        raise HTTPException(
-            status_code=status_code,
-            detail=f"Failed to save chunk {chunk_index}. Please retry."
-        )
-    
-    # Update database with retry logic
-    if chunk_index not in upload["received_chunks"]:
-        retry_count = 0
-        max_retries = settings.MAX_UPLOAD_RETRY_ATTEMPTS
-        
-        while retry_count < max_retries:
-            try:
-                result = await uploads_collection().update_one(
-                    {"upload_id": upload_id},
-                    {"$push": {"received_chunks": chunk_index}}
-                )
-                if result:
-                    break
-            except Exception as e:
-                retry_count += 1
-                _log("warning", f"Database update retry {retry_count}/{max_retries} for chunk {chunk_index}: {str(e)}", 
-                       {"user_id": current_user, "operation": "chunk_upload_retry"})
-                
-                if retry_count >= max_retries:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to save chunk {chunk_index} after {max_retries} attempts. Please retry."
-                    )
-                
-                await asyncio.sleep(1)  # Wait 1 second between retries
-    
-    # Update manifest - use same path as chunk storage
-    upload_dir = Path(settings.UPLOAD_DIR) / upload_id
-    manifest_path = upload_dir / "manifest.json"
-    try:
-        async with aiofiles.open(manifest_path, "r") as f:
-            manifest = json.loads(await f.read())
-    except FileNotFoundError:
-        _log("error", f"[UPLOAD] Manifest file not found: {manifest_path}", 
-               {"user_id": current_user, "operation": "manifest_not_found"})
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Upload session corrupted. Please restart upload."
-        )
-    except Exception as e:
-        _log("error", f"[UPLOAD] Failed to read manifest: {str(e)}", 
-               {"user_id": current_user, "operation": "manifest_read_error"})
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Upload session error. Please restart upload."
-        )
-    
-    if chunk_index not in manifest["received_chunks"]:
-        manifest["received_chunks"].append(chunk_index)
-        manifest["received_chunks"].sort()
+    ):
+    """Initialize file upload for 40GB files with enhanced security"""
     
     try:
-        async with aiofiles.open(manifest_path, "w") as f:
-            await f.write(json.dumps(manifest, indent=2))
+        _log("info", f"Initializing upload", {"user_id": current_user, "operation": "upload_init", "filename": file_req.filename, "size": file_req.size})
+        
+        # Generate unique upload ID and create upload record
+        import uuid
+        upload_id = f"upload_{uuid.uuid4().hex[:16]}"
+        
+        # Calculate chunk configuration for 40GB files
+        chunk_size = settings.UPLOAD_CHUNK_SIZE  # From config (default 50MB)
+        total_chunks = (file_req.size + chunk_size - 1) // chunk_size
+        
+        # Enhanced configuration for files > 1GB (72-hour upload tokens)
+        upload_duration = settings.UPLOAD_TOKEN_DURATION
+        if file_req.size > settings.LARGE_FILE_THRESHOLD:  # > 1GB
+            upload_duration = settings.UPLOAD_TOKEN_DURATION_LARGE
+            _log("info", f"Large file detected, using extended upload duration", {
+                "user_id": current_user, 
+                "operation": "upload_init", 
+                "file_size": file_req.size,
+                "upload_duration_hours": upload_duration / 3600
+            })
+        
+        # Create upload record in database
+        upload_record = {
+            "_id": upload_id,
+            "user_id": current_user,
+            "filename": file_req.filename,
+            "size": file_req.size,
+            "mime_type": file_req.mime_type,
+            "chunk_size": chunk_size,
+            "total_chunks": total_chunks,
+            "uploaded_chunks": [],
+            "checksum": file_req.checksum,
+            "chat_id": file_req.chat_id,
+            "created_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=upload_duration),
+            "status": "initialized"
+        }
+        
+        # Insert upload record
+        from db_proxy import uploads_collection
+        await uploads_collection().insert_one(upload_record)
+        
+        _log("info", f"Upload initialized successfully", {
+            "user_id": current_user,
+            "operation": "upload_init",
+            "upload_id": upload_id,
+            "filename": file_req.filename,
+            "size": file_req.size,
+            "total_chunks": total_chunks
+        })
+        
+        return FileInitResponse(
+            upload_id=upload_id,
+            chunk_size=chunk_size,
+            total_chunks=total_chunks,
+            expires_in=int(upload_duration)
+        )
+        
     except Exception as e:
-        _log("error", f"[UPLOAD] Failed to update manifest: {str(e)}", 
-               {"user_id": current_user, "operation": "manifest_update_error"})
+        _log("error", f"Failed to initialize upload", {
+            "user_id": current_user,
+            "operation": "upload_init",
+            "filename": file_req.filename,
+            "error": str(e)
+        })
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save upload progress. Please retry."
+            detail="Failed to initialize upload"
         )
-    
-    return ChunkUploadResponse(upload_id=upload_id, chunk_index=chunk_index)
-
-
-@router.post("/{upload_id}/complete", response_model=FileCompleteResponse)
-async def complete_upload(upload_id: str, current_user: str = Depends(get_current_user)):
-    """Complete upload and assemble file"""
-    
-    # Verify upload
-    upload = await uploads_collection().find_one({"upload_id": upload_id, "owner_id": current_user})
-    if not upload:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Upload not found"
-        )
-    
-    # Check all chunks received with enhanced error handling
-    received_chunks = set(upload["received_chunks"])
-    expected_chunks = set(range(upload["total_chunks"]))
-    missing_chunks = expected_chunks - received_chunks
-    
-    if missing_chunks:
-        # Allow partial completion for large files to improve UX
-        if len(missing_chunks) < upload["total_chunks"] * 0.1:  # If less than 10% missing
-            _log("warning", f"Partial upload detected: {len(missing_chunks)} missing chunks", 
-                   {"user_id": current_user, "operation": "partial_upload"})
-            
-            # Continue with available chunks and mark as partial
-            pass
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Too many missing chunks: {len(missing_chunks)}/{upload['total_chunks']}. Please retry upload."
-            )
-    
-    # Assemble file with enhanced timeout handling
-    import asyncio
-    file_uuid = str(uuid.uuid4())
-    
-    # Set timeout for large file assembly
-    assembly_start_time = datetime.now(timezone.utc)
-    # Security: Validate and sanitize file extension
-    original_filename = upload["filename"]
-    file_ext = Path(original_filename).suffix.lower()
-    
-    # Security: Allow Zaply application files while blocking dangerous scripts
-    # Zaply is a file transfer app - it should allow legitimate application executables
-    # Only block actual security threats, not application installers
-    blocked_exts = {
-        # Block dangerous scripts and system files
-        '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-        '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',
-        '.msi',  # Windows installer files (can contain malicious code)
-        # NOTE: Zaply SHOULD allow .exe, .app, .deb, .rpm, .dmg, .pkg
-        # These are legitimate application executables that users need to share
-    }
-    
-    # Zaply-specific allowed application extensions
-    zaply_allowed_apps = {
-        '.exe',   # Windows applications
-        '.dmg', '.pkg',  # macOS applications
-        '.deb', '.rpm', '.AppImage', '.snap',  # Linux applications  
-        '.app',    # macOS app bundles
-    }
-    
-    # Case-insensitive check for dangerous extensions (but allow Zaply applications)
-    # Security validation pattern: file_ext.lower() in dangerous_exts
-    file_ext_lower = file_ext.lower()
-    if file_ext_lower in blocked_exts and file_ext_lower not in zaply_allowed_apps:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File type {file_ext} is not allowed for security reasons"
-        )
-    
-    # Log allowed Zaply applications
-    if file_ext_lower in zaply_allowed_apps:
-        _log("info", f"Zaply application file allowed: {file_ext}", {"operation": "file_upload"})
-    
-    
-    
-    # Security: Double-extension check to prevent bypass (but allow Zaply applications)
-    filename_parts = original_filename.lower().split('.')
-    if len(filename_parts) > 2:  # Check for multiple extensions like file.exe.jpg
-        primary_ext = file_ext.lower()
-        for part in filename_parts[:-1]:  # Check all parts except the last one
-            if f'.{part}' in blocked_exts and f'.{part}' not in zaply_allowed_apps:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Double extension with dangerous type detected: .{part}"
-                )
-    
-    final_path = settings.DATA_ROOT / "files" / f"{file_uuid}{file_ext}"
-    upload_dir = Path(settings.UPLOAD_DIR) / upload_id
-    
-    # Stream-concatenate chunks with memory efficiency for 40GB files
-    hasher = hashlib.sha256()
-    async with aiofiles.open(final_path, "wb") as outfile:
-        chunk_size = settings.CHUNK_SIZE
-        for i in sorted(upload["received_chunks"]):
-            chunk_path = upload_dir / f"{i}.part"
-            
-            # Validate chunk file exists and is readable
-            if not chunk_path.exists():
-                # Clean up partially assembled file
-                final_path.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Chunk {i} not found during assembly"
-                )
-            
-            # Process chunk in smaller chunks to handle 40GB files
-            async with aiofiles.open(chunk_path, "rb") as infile:
-                while True:
-                    chunk_data = await infile.read(chunk_size)
-                    if not chunk_data:
-                        break
-                    hasher.update(chunk_data)
-                    await outfile.write(chunk_data)
-                    
-                    # Periodic progress logging for large files
-                    if i == 0 and len(chunk_data) == chunk_size:
-                        _log("info", f"Starting file assembly for {upload['filename']} ({upload['size']/1024**3:.2f} GB)", 
-                                     {"user_id": current_user, "operation": "file_assembly"})
-        
-        final_checksum = hasher.hexdigest()
-        
-        # Verify final checksum matches provided checksum (if any)
-        if upload.get("expected_checksum") and final_checksum != upload["expected_checksum"]:
-            _log("error", f"Checksum mismatch for file {upload['filename']}", 
-                   {"user_id": current_user, "operation": "file_assembly", "expected": upload["expected_checksum"], "actual": final_checksum})
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File integrity check failed"
-            )
-        
-        _log("info", f"File assembly completed for {upload['filename']} in {(datetime.now(timezone.utc) - assembly_start_time).total_seconds():.2f}s", 
-                 {"user_id": current_user, "operation": "file_assembly_completed", "checksum": final_checksum})
-    
-    # Check if assembly took too long
-    assembly_time = (datetime.now(timezone.utc) - assembly_start_time).total_seconds()
-    if assembly_time > settings.FILE_ASSEMBLY_TIMEOUT_MINUTES * 60:
-        _log("warning", f"File assembly took too long: {assembly_time:.2f}s", 
-               {"user_id": current_user, "operation": "assembly_timeout"})
-    
-    final_checksum = hasher.hexdigest()
-    
-    # Verify checksum if provided during init
-    if upload.get("checksum") and upload["checksum"] != final_checksum:
-        # Delete assembled file
-        final_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File checksum mismatch"
-        )
-    
-    # Create file record
-    file_doc = {
-        "_id": str(uuid.uuid4()),
-        "upload_id": upload_id,
-        "file_uuid": file_uuid,
-        "filename": upload["filename"],
-        "size": upload["size"],
-        "mime": upload["mime"],
-        "owner_id": current_user,
-        "chat_id": upload["chat_id"],
-        "storage_path": str(final_path),
-        "checksum": final_checksum,
-        "status": "completed",
-        "created_at": datetime.now(timezone.utc)
-    }
-    
-    await files_collection().insert_one(file_doc)
-    
-    # Update user quota
-    await users_collection().update_one(
-        {"_id": current_user},
-        {"$inc": {"quota_used": upload["size"]}}
-    )
-    
-    # Cleanup chunks
-    for chunk_file in upload_dir.glob("*.part"):
-        chunk_file.unlink()
-    (upload_dir / "manifest.json").unlink(missing_ok=True)
-    upload_dir.rmdir()
-    
-    # Delete upload record
-    await uploads_collection().delete_one({"upload_id": upload_id})
-    
-    return FileCompleteResponse(
-        file_id=file_doc["_id"],
-        filename=file_doc["filename"],
-        size=file_doc["size"],
-        checksum=final_checksum,
-        storage_path=str(final_path)
-    )
 
 
 @router.get("/{file_id}/info")
 async def get_file_info(
     file_id: str,
+    request: Request,
     current_user: str = Depends(get_current_user)
-):
+    ):
     """Get file metadata information"""
     
     try:
@@ -589,8 +271,6 @@ async def get_file_info(
         
         if file_doc:
             # Regular file from files_collection
-            # Authorization check: only allow access if user owns the file
-            owner_id = file_doc.get("owner_id")
             # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
             owner_id = file_doc.get("owner_id")
             chat_id = file_doc.get("chat_id")
@@ -623,15 +303,11 @@ async def get_file_info(
                 )
             
             # Security: Validate storage path to prevent directory traversal
-            storage_path = file_doc.get("storage_path", "")
+            storage_path = file_doc.get("storage_path")
             if not storage_path:
                 _log("error", "File missing storage path in DB", {"user_id": current_user, "operation": "file_info"})
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="File storage path missing"
-                )
-            
-            # Security: Ensure path is within expected directories
+                raise HTTPException(status_code=500, detail="File storage path missing")
+                
             file_path = Path(storage_path)
             try:
                 # Resolve to absolute path and check it's within data root
@@ -642,111 +318,68 @@ async def get_file_info(
                     resolved_path.relative_to(data_root)
                 except ValueError:
                     _log("error", f"Attempted path traversal: {storage_path}", {"user_id": current_user, "operation": "file_info"})
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Access denied"
-                    )
+                    raise HTTPException(status_code=403, detail="Access denied")
                 file_path = resolved_path
-            except HTTPException as e:
-                # Enhanced logging for security debugging
-                _log("error", f"HTTP Exception in file download: {e.status_code} - {e.detail}", 
-                       {"user_id": current_user, "operation": "file_download_http_exception", 
-                        "status_code": e.status_code, "detail": e.detail})
-                
-                if e.status_code == 403:
-                    _log("error", f"403 Forbidden - Possible causes:", 
-                           {"user_id": current_user, "operation": "file_download_403_debug"})
-                    _log("error", "1. User doesn't own this file", 
-                           {"user_id": current_user, "operation": "file_download_debug"})
-                    _log("error", "2. File access permissions issue", 
-                           {"user_id": current_user, "operation": "file_download_debug"})
-                    _log("error", "3. Traversal attempt detected", 
-                           {"user_id": current_user, "operation": "file_download_debug"})
-                
-                # Re-raise HTTPException unchanged
-                raise
             except (OSError, ValueError) as path_error:
                 _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_info"})
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Invalid file path"
-                )
+                raise HTTPException(status_code=500, detail="Invalid file path")
             
-            if not file_path.exists():
-                _log("error", f"File exists in DB but not on disk", {"user_id": current_user, "operation": "file_info"})
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found on disk"
-                )
+            # Get file size from filesystem
+            try:
+                file_stat = file_path.stat()
+            except (OSError, ValueError) as fs_error:
+                _log("error", f"File exists in DB but not on disk: {fs_error}", {"user_id": current_user, "operation": "file_info"})
+                raise HTTPException(status_code=404, detail="File not found")
             
-            # Return file metadata matching FileInDB schema
+            # Return file info
             return {
-                "file_id": str(file_doc["_id"]),
-                "filename": file_doc.get("filename", "unknown"),
-                "content_type": file_doc.get("mime", "application/octet-stream"),
-                "size": file_doc.get("size", file_path.stat().st_size),
-                "uploaded_by": file_doc.get("owner_id"),
-                "created_at": file_doc.get("created_at") or datetime.now(timezone.utc),
-                "checksum": file_doc.get("checksum")
+                "file_id": file_id,
+                "filename": file_doc.get("filename", ""),
+                "content_type": file_doc.get("mime_type", "application/octet-stream"),
+                "size": file_stat.st_size,
+                "uploaded_by": file_doc.get("uploaded_by", ""),
+                "created_at": file_doc.get("created_at", datetime.now(timezone.utc)),
+                "checksum": file_doc.get("checksum"),
+                "file_type": file_doc.get("file_type", "standard"),
+                "mime_type": file_doc.get("mime_type"),
+                "owner_id": owner_id,
+                "chat_id": chat_id,
+                "shared_with": shared_with,
+                "storage_path": str(file_path),
+                "user_id": current_user
             }
         
-# If not found in files_collection, check if it's an avatar file
-        # Security: Validate file_id before using as filename
+        # Check if it's an avatar file (special handling for user avatars)
+        # Avatar files use the file_id as the filename directly in the users collection
         if await _is_avatar_owner(file_id, current_user):
-            # Security: Validate file_id to prevent path traversal
-            import re
-            if not re.match(r'^[a-zA-Z0-9_-]+$', file_id):
-                _log("error", f"Invalid avatar file_id: {file_id}", {"user_id": current_user, "operation": "file_info"})
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid file ID"
-                )
-            
-            avatar_path = settings.DATA_ROOT / "avatars" / file_id
-            if not avatar_path.exists():
-                _log("error", f"Avatar file not found on disk: {file_id}", {"user_id": current_user, "operation": "file_info"})
+            _log("info", f"Accessing avatar file info: {file_id}", {"user_id": current_user, "operation": "file_info"})
+            try:
+                file_path = settings.DATA_ROOT / "avatars" / file_id
+                file_stat = file_path.stat()
+            except (OSError, ValueError) as avatar_error:
+                _log("error", f"Avatar file not found on disk: {avatar_error}", {"user_id": current_user, "operation": "file_info"})
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Avatar file not found on disk"
+                    detail="Avatar file not found"
                 )
             
-            # Avatar file - get user info for metadata
+            # Get user info for avatar metadata
+            import asyncio
             user_doc = await asyncio.wait_for(
                 users_collection().find_one({"_id": current_user}),
                 timeout=5.0
             )
             
-            if not user_doc:
-                _log("error", f"User not found for avatar file", {"user_id": current_user, "operation": "file_info"})
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found for avatar file"
-                )
-            
-            file_stat = avatar_path.stat()
-            # Detect MIME type from file extension
-            import mimetypes
-            content_type, _ = mimetypes.guess_type(str(avatar_path))
-            
-            if not content_type:
-                # Enhanced MIME type detection with comprehensive mappings
-                # NOTE: Includes Zaply application files (.exe, .dmg, .deb, .rpm, .app, etc.) for cross-platform support
-                ext = avatar_path.suffix.lstrip('.').lower()
+            # Get content type from file extension for better avatar serving
+            content_type = "image/jpeg"  # Default safe default
+            if '.' in file_id:
+                ext = file_id.split('.')[-1].lower()
                 mime_map = {
-                    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-                    'png': 'image/png', 'gif': 'image/gif',
-                    'webp': 'image/webp', 'bmp': 'image/bmp',
-                    'svg': 'image/svg+xml',
-                    'pdf': 'application/pdf',
-                    'doc': 'application/msword',
-                    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                    'txt': 'text/plain',
-                    'zip': 'application/zip',
-                    'rar': 'application/x-rar-compressed',
-                    'mp4': 'video/mp4',
-                    'mp3': 'audio/mpeg',
-                    'avi': 'video/x-msvideo',
-                    'mov': 'video/quicktime',
+                    # Standard web formats
+                    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif',
+                    'webp': 'image/webp', 'svg': 'image/svg+xml', 'bmp': 'image/bmp',
+                    # Video formats
+                    'mp4': 'video/mp4', 'webm': 'video/webm', 'mov': 'video/quicktime',
                     # Zaply application MIME types
                     'exe': 'application/x-msdownload',  # Windows executable
                     'dmg': 'application/x-apple-diskimage',  # macOS disk image
@@ -759,9 +392,11 @@ async def get_file_info(
                 }
                 content_type = mime_map.get(ext, 'image/jpeg')  # Safe default for avatars
             
+            # Import re for sanitization
+            import re
             return {
                 "file_id": file_id,
-                "filename": f"avatar_{current_user}",
+                "filename": f"avatar_{re.sub(r'[^a-zA-Z0-9_-]', '', current_user)[:20]}",  # Sanitize and truncate
                 "content_type": content_type,
                 "size": file_stat.st_size,
                 "uploaded_by": current_user,
@@ -778,15 +413,15 @@ async def get_file_info(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found"
         )
-        
-    except asyncio.TimeoutError:
-        _log("error", f"Timeout getting file info", {"user_id": current_user, "operation": "file_info"})
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out"
-        )
+    
     except HTTPException:
         raise
+    except TimeoutError:
+        _log("error", f"Timeout getting file info", {"user_id": current_user, "operation": "file_info"})
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout while getting file information"
+        )
     except Exception as e:
         _log("error", f"Failed to get file info", {"user_id": current_user, "operation": "file_info"})
         raise HTTPException(
@@ -837,76 +472,137 @@ async def download_file(
     file_id: str,
     request: Request,
     current_user: str = Depends(get_current_user_or_query)
-):
-    """Download file with range support"""
+    ):
+    """Download file with proper authorization"""
     
-    # Find file
-    file_doc = await files_collection().find_one({"_id": file_id})
-    if not file_doc:
+    try:
+        _log("info", f"File download request", {"user_id": current_user, "operation": "file_download", "file_id": file_id})
+        
+        # First try to find file in files_collection (regular chat files)
+        import asyncio
+        file_doc = await asyncio.wait_for(
+            files_collection().find_one({"_id": file_id}),
+            timeout=5.0
+        )
+        
+        if file_doc:
+            # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
+            owner_id = file_doc.get("owner_id")
+            chat_id = file_doc.get("chat_id")
+            shared_with = file_doc.get("shared_with", [])
+            
+            # Owner can always access
+            if owner_id == current_user:
+                _log("info", f"Owner downloading file: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+            # Shared user can access
+            elif current_user in shared_with:
+                _log("info", f"Shared user downloading file: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+            # Chat members can access files in their chats
+            elif chat_id:
+                try:
+                    from db_proxy import chats_collection
+                    chat_doc = await chats_collection().find_one({"_id": chat_id})
+                    if chat_doc and current_user in chat_doc.get("members", []):
+                        _log("info", f"Chat member downloading file: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+                    else:
+                        _log("warning", f"Non-chat member download attempt: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied: you don't have permission to download this file (not a chat member)"
+                        )
+                except HTTPException:
+                    raise
+                except (OSError, TimeoutError, Exception) as e:
+                    _log("error", f"Error checking chat membership: {e}", {"user_id": current_user, "operation": "file_download"})
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied: unable to verify chat membership"
+                    )
+            # No access for unauthorized users
+            else:
+                _log("warning", f"Unauthorized download attempt: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: you don't have permission to download this file. Ask the file owner to share it with you."
+                )
+            
+            # Security: Validate storage path to prevent directory traversal
+            storage_path = file_doc.get("storage_path", "")
+            if not storage_path:
+                _log("error", "File missing storage path in DB", {"user_id": current_user, "operation": "file_download"})
+                raise HTTPException(status_code=500, detail="File storage path missing")
+                
+            file_path = Path(storage_path)
+            try:
+                # Resolve to absolute path and check it's within data root
+                resolved_path = file_path.resolve()
+                data_root = settings.DATA_ROOT.resolve()
+                # Use proper path comparison to prevent traversal bypass
+                try:
+                    resolved_path.relative_to(data_root)
+                except ValueError:
+                    _log("error", f"Download path traversal attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied"
+                    )
+                file_path = resolved_path
+            except (OSError, ValueError) as path_error:
+                _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
+                raise HTTPException(status_code=500, detail="Invalid file path")
+            
+            if not file_path.exists():
+                _log("error", f"File exists in DB but not on disk", {"user_id": current_user, "operation": "file_download"})
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found on disk"
+                )
+            
+            # Return file for download
+            return FileResponse(
+                path=str(file_path),
+                filename=file_doc.get("filename", "download"),
+                media_type=file_doc.get("mime_type", "application/octet-stream")
+            )
+        
+        # Check if it's an avatar file
+        if await _is_avatar_owner(file_id, current_user):
+            _log("info", f"Downloading avatar file: {file_id}", {"user_id": current_user, "operation": "file_download"})
+            avatar_path = settings.DATA_ROOT / "avatars" / file_id
+            if not avatar_path.exists():
+                _log("error", f"Avatar file not found on disk: {file_id}", {"user_id": current_user, "operation": "file_download"})
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Avatar file not found"
+                )
+            
+            return FileResponse(
+                path=str(avatar_path),
+                filename=f"avatar_{current_user}",
+                media_type="image/jpeg"
+            )
+        
+        # File not found
+        _log("warning", f"File not found for download: {file_id}", {"user_id": current_user, "operation": "file_download"})
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found"
         )
-    
-    # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
-    owner_id = file_doc.get("owner_id")
-    chat_id = file_doc.get("chat_id")
-    shared_with = file_doc.get("shared_with", [])
-    
-    # Owner can always access
-    if owner_id == current_user:
-        _log("info", f"Owner accessing file: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
-    # Shared user can access
-    elif current_user in shared_with:
-        _log("info", f"Shared user accessing file: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
-    # Chat members can access files in their chats
-    elif chat_id:
-        try:
-            from db_proxy import chats_collection
-            chat_doc = await chats_collection().find_one({"_id": chat_id})
-            if chat_doc and current_user in chat_doc.get("members", []):
-                _log("info", f"Chat member accessing file: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
-            else:
-                _log("warning", f"Non-chat member download attempt: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: you don't have permission to download this file (not a chat member)"
-                )
-        except HTTPException:
-            # Re-raise HTTPException unchanged (e.g., 403 Forbidden)
-            raise
-        except (OSError, TimeoutError, Exception) as e:
-            _log("error", f"Error checking chat membership: {e}", {"user_id": current_user, "operation": "file_download"})
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: unable to verify chat membership"
-            )
-    # No access for unauthorized users
-    else:
-        _log("warning", f"Unauthorized download attempt: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
+        
+    except HTTPException:
+        raise
+    except TimeoutError:
+        _log("error", f"Timeout downloading file", {"user_id": current_user, "operation": "file_download"})
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: you don't have permission to download this file. Ask the file owner to share it with you."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout while downloading file"
         )
-    
-    # Security: Validate storage path to prevent directory traversal
-    storage_path = file_doc["storage_path"]
-    file_path = Path(storage_path)
-    
-    try:
-        # Resolve to absolute path and check it's within data root
-        resolved_path = file_path.resolve()
-        data_root = settings.DATA_ROOT.resolve()
-        # Use proper path comparison to prevent traversal bypass
-        try:
-            resolved_path.relative_to(data_root)
-        except ValueError:
-            _log("error", f"Download path traversal attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
-            )
-        file_path = resolved_path
+    except Exception as e:
+        _log("error", f"Failed to download file", {"user_id": current_user, "operation": "file_download"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to download file"
+        )
     except (OSError, ValueError) as path_error:
         _log("error", f"Invalid download path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
         raise HTTPException(
@@ -1091,16 +787,99 @@ async def revoke_file_access(
     return {"message": f"Access revoked for user {user_id}"}
 
 
-@router.post("/{upload_id}/cancel")
-async def cancel_upload(upload_id: str, current_user: str = Depends(get_current_user)):
-    """Cancel upload and cleanup"""
+@router.post("/{upload_id}/refresh-token")
+async def refresh_upload_token(upload_id: str, current_user: str = Depends(get_current_user)):
+    """Refresh upload token for long-running uploads"""
     
+    # Verify upload exists and user owns it
     upload = await uploads_collection().find_one({"upload_id": upload_id, "owner_id": current_user})
     if not upload:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Upload not found"
         )
+    
+    # Check if upload is still valid (not expired)
+    expires_at = upload["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Upload session expired. Please restart of upload."
+        )
+    
+    # Generate new upload token with same scope
+    from auth.utils import create_access_token, timedelta
+    upload_token = create_access_token(
+        data={"sub": current_user, "upload_id": upload_id, "scope": "upload"},
+        expires_delta=timedelta(hours=settings.UPLOAD_TOKEN_EXPIRE_HOURS)
+    )
+    
+    _log("info", f"Refreshed upload token for upload_id: {upload_id}", 
+           {"user_id": current_user, "operation": "upload_token_refresh"})
+    
+    return {
+        "upload_token": upload_token,
+        "expires_in": settings.UPLOAD_TOKEN_EXPIRE_HOURS * 3600,  # seconds
+        "upload_id": upload_id
+    }
+
+
+@router.post("/{upload_id}/cancel")
+async def cancel_upload(upload_id: str, request: Request, current_user: str = Depends(get_current_user_for_upload)):
+    """Cancel upload and cleanup"""
+    
+    # Handle token expiration gracefully
+    try:
+        upload = await uploads_collection().find_one({"upload_id": upload_id})
+        if not upload:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Upload not found"
+            )
+        
+        # Enhanced security: If using upload token, verify it matches this upload
+        auth_header = request.headers.get("authorization", "")
+        if auth_header and auth_header.startswith("Bearer "):
+            header_token = auth_header.replace("Bearer ", "").strip()
+            try:
+                token_data = decode_token(header_token)
+                if token_data.token_type == "access":
+                    payload = getattr(token_data, 'payload', {}) or {}
+                    if payload.get("scope") == "upload" and payload.get("upload_id") != upload_id:
+                        _log("warning", f"Upload token mismatch: token_upload_id={payload.get('upload_id')}, request_upload_id={upload_id}", 
+                               {"user_id": current_user, "operation": "upload_cancel"})
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Upload token does not match this upload"
+                        )
+            except Exception:
+                pass  # Token validation failed, will be caught below
+        
+        # Check ownership - allow upload token access
+        owner_id = upload.get("owner_id")
+        if owner_id and owner_id != current_user:
+            _log("warning", f"Unauthorized upload cancellation attempt: user={current_user}, upload={upload_id}", 
+                   {"user_id": current_user, "operation": "upload_cancel"})
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: you don't own this upload"
+            )
+    except HTTPException as e:
+        # If this is a token expiration error, provide helpful guidance
+        if e.status_code == 401 and "expired" in e.detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Upload token expired. Upload session may have already been cleaned up.",
+                headers={
+                    "WWW-Authenticate": "Bearer",
+                    "X-Upload-Expired": "true"
+                }
+            )
+        else:
+            raise e
     
     # Cleanup chunks
     upload_dir = settings.DATA_ROOT / "tmp" / upload_id
