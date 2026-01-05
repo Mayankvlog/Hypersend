@@ -8,8 +8,8 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./certs/letsencrypt:/etc/letsencrypt  # Read-write for certificate creation
-      - ./certs/lib-letsencrypt:/var/lib/letsencrypt  # Read-write for certificate management
+      - ./certs/letsencrypt:/etc/letsencrypt:rw
+      - ./certs/lib-letsencrypt:/var/lib/letsencrypt:rw
       - nginx_cache:/var/cache/nginx
     logging:
       driver: "json-file"
@@ -33,6 +33,7 @@ services:
         else
           echo '[NGINX] Using existing Let'\''s Encrypt certificate';
         fi;
+        echo '[NGINX] Starting nginx...';
         nginx -g 'daemon off;'
     depends_on:
       backend:
@@ -50,14 +51,14 @@ services:
     environment:
       - NGINX_ALLOW_UNSAFE_SSL=true
       - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
+      - TZ=UTC
 
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
     restart: unless-stopped
-    # Commented out for security - expose only if external access needed
-    # ports:
-    #   - "27018:27017"
+    ports:
+      - "27018:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
@@ -98,12 +99,13 @@ services:
       MONGO_PASSWORD: ${MONGO_PASSWORD}
       MONGO_HOST: mongodb
       MONGO_PORT: 27017
-      MONGODB_URI: ""
+      MONGODB_URI: mongodb://${MONGO_USER:-hypersend}:${MONGO_PASSWORD}@mongodb:27017/${MONGO_INITDB_DATABASE:-hypersend}?authSource=admin&retryWrites=true&w=majority
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
       SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30
+      UPLOAD_TOKEN_EXPIRE_HOURS: 2
       DATA_ROOT: /data
       UPLOADS_PATH: /app/uploads
       MAX_FILE_SIZE_BYTES: 42949672960
@@ -114,7 +116,9 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+      SERVER_URL: ${SERVER_URL:-https://zaply.in.net}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://hypersend_frontend:80,http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://localhost:3000,http://localhost:3001}
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       DEBUG: "False"
@@ -125,6 +129,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
+      TZ: UTC
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
@@ -150,14 +155,16 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-      # SECURITY: Always use HTTPS for production API calls
-
+        # SECURITY: Always use HTTPS for production API calls
         API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
       - "3000:80"
+    environment:
+      - TZ=UTC
+      - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
     depends_on:
       backend:
         condition: service_healthy
