@@ -350,7 +350,7 @@ async def register(user: UserCreate) -> UserResponse:
 
 @router.post("/login", response_model=Token)
 async def login(credentials: UserLogin, request: Request) -> Token:
-    """Login user and return access/refresh tokens"""
+    """Login user and return access/refresh tokens with rate limiting"""
     try:
         # Validate input with security checks
         import re
@@ -374,14 +374,68 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         
         auth_log(f"Login attempt for email: {credentials.email}")
         
-        # Check rate limit
+        # Check rate limit by IP
         client_ip = request.client.host if request and request.client else "unknown"
         auth_log(f"Login from IP: {client_ip}")
+        
+        # SECURITY FIX: Enforce IP-based rate limiting with proper timeout handling
+        current_time = datetime.now(timezone.utc)
+        
+        # Check if IP is temporarily locked out (429 Too Many Requests)
+        if client_ip in persistent_login_lockouts:
+            lockout_expiry = persistent_login_lockouts[client_ip]
+            if current_time < lockout_expiry:
+                remaining_seconds = int((lockout_expiry - current_time).total_seconds())
+                auth_log(f"IP {client_ip} is locked out for {remaining_seconds} more seconds")
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Too many login attempts. Please try again in {remaining_seconds} seconds.",
+                    headers={"Retry-After": str(remaining_seconds)}
+                )
+            else:
+                # Lockout expired, remove it
+                del persistent_login_lockouts[client_ip]
+        
+        # Clean up old attempts (older than LOGIN_ATTEMPT_WINDOW)
+        cutoff_time = current_time - timedelta(seconds=LOGIN_ATTEMPT_WINDOW)
+        login_attempts[client_ip] = [
+            ts for ts in login_attempts[client_ip] if ts > cutoff_time
+        ]
+        
+        # SECURITY FIX: Track login attempts by both IP and email for proper rate limiting
+        email_lockout_key = f"email:{credentials.email}"
+        if email_lockout_key in persistent_login_lockouts:
+            lockout_expiry = persistent_login_lockouts[email_lockout_key]
+            if current_time < lockout_expiry:
+                remaining_seconds = int((lockout_expiry - current_time).total_seconds())
+                auth_log(f"Email {credentials.email} is locked out for {remaining_seconds} more seconds")
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Too many failed login attempts for this account. Please try again in {remaining_seconds} seconds.",
+                    headers={"Retry-After": str(remaining_seconds)}
+                )
+            else:
+                del persistent_login_lockouts[email_lockout_key]
+        
+        # Check IP-based rate limit (prevent brute force from single IP)
+        if len(login_attempts[client_ip]) >= MAX_LOGIN_ATTEMPTS_PER_IP:
+            auth_log(f"IP {client_ip} exceeded max login attempts ({MAX_LOGIN_ATTEMPTS_PER_IP})")
+            lockout_time = current_time + timedelta(seconds=ACCOUNT_LOCKOUT_DURATION)
+            persistent_login_lockouts[client_ip] = lockout_time
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many login attempts from this IP. Please try again in {ACCOUNT_LOCKOUT_DURATION} seconds.",
+                headers={"Retry-After": str(ACCOUNT_LOCKOUT_DURATION)}
+            )
+        
+        # Record this login attempt
+        login_attempts[client_ip].append(current_time)
         
         # Find user by email
         user = await users_collection().find_one({"email": credentials.email})
         if not user:
             auth_log(f"Login failed: User not found: {credentials.email}")
+            # SECURITY: Don't increase per-email lockout for non-existent users (prevents enumeration)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
@@ -390,6 +444,29 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # Verify password
         if not verify_password(credentials.password, user["password_hash"], user.get("_id")):
             auth_log(f"Login failed: Invalid password for: {credentials.email}")
+            
+            # SECURITY FIX: Track failed attempts per email for progressive lockout
+            user_id_str = str(user["_id"])
+            if user_id_str not in failed_login_attempts:
+                failed_login_attempts[user_id_str] = (0, current_time)
+            
+            attempt_count, first_attempt_time = failed_login_attempts[user_id_str]
+            attempt_count += 1
+            failed_login_attempts[user_id_str] = (attempt_count, first_attempt_time)
+            
+            # SECURITY: Progressive lockout based on number of failed attempts
+            if attempt_count >= MAX_FAILED_ATTEMPTS_PER_ACCOUNT:
+                lockout_seconds = PROGRESSIVE_LOCKOUTS.get(attempt_count, 1800)  # Max 30 min
+                lockout_time = current_time + timedelta(seconds=lockout_seconds)
+                persistent_login_lockouts[email_lockout_key] = lockout_time
+                auth_log(f"Account {credentials.email} locked out for {lockout_seconds} seconds after {attempt_count} failed attempts")
+                
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Too many failed login attempts. Account locked for {lockout_seconds} seconds.",
+                    headers={"Retry-After": str(lockout_seconds)}
+                )
+            
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"

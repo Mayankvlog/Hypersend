@@ -328,21 +328,44 @@ app.add_middleware(RequestValidationMiddleware)
 # Add a catch-all exception handler for any unhandled exceptions
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """Catch-all exception handler for any unhandled exceptions except HTTPException"""
+    """
+    Catch-all exception handler for unhandled exceptions
+    
+    LOGIC:
+    - HTTPException: Already handled by specific handlers, re-raise
+    - Timeout/Connection errors: 503 Service Unavailable
+    - Database errors: 503 Service Unavailable
+    - Other errors: 500 Internal Server Error
+    
+    SECURITY: Don't expose internal details in production
+    """
     # Don't catch HTTPException - let the specific handler deal with those
     if isinstance(exc, HTTPException):
         raise exc  # Re-raise HTTPException to be handled by its specific handler
     
     import traceback
-    logger.error(f"[UNCAUGHT_EXCEPTION] {type(exc).__name__}: {str(exc)}")
-    if settings.DEBUG:
-        traceback.print_exc()
+    logger.error(f"[UNCAUGHT_EXCEPTION] {type(exc).__name__}: {str(exc)}", exc_info=True)
+    
+    # Determine status code based on exception type
+    if isinstance(exc, TimeoutError):
+        status_code = status.HTTP_504_GATEWAY_TIMEOUT
+        error_msg = "Request timeout - please try again"
+    elif isinstance(exc, ConnectionError):
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        error_msg = "Service temporarily unavailable - please try again"
+    elif "database" in str(exc).lower() or "mongodb" in str(exc).lower():
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        error_msg = "Database service unavailable - please try again"
+    else:
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        error_msg = "Internal server error"
+    
     return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        status_code=status_code,
         content={
-            "status_code": 500,
-            "error": "Internal Server Error",
-            "detail": "An unexpected error occurred" if not settings.DEBUG else str(exc),
+            "status_code": status_code,
+            "error": error_msg.title() if not settings.DEBUG else type(exc).__name__,
+            "detail": error_msg if not settings.DEBUG else str(exc),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "path": str(request.url.path),
             "method": request.method,
@@ -352,86 +375,130 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Add 404 handler for non-existent endpoints
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc: HTTPException):
-    """Handle 404 Not Found errors"""
+    """Handle 404 Not Found errors - resource or endpoint doesn't exist"""
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content={
             "status_code": 404,
-            "error": "Not Found - The requested resource doesn't exist",
-            "detail": exc.detail,
+            "error": "Not Found",
+            "detail": "The requested resource doesn't exist. Check the URL path.",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "path": str(request.url.path),
             "method": request.method,
-            "hints": ["Check the URL spelling", "Verify the resource exists", "Check API documentation"]
+            "hints": ["Check the URL spelling", "Verify the endpoint exists", "Review API documentation"]
         }
     )
 
 # Add 405 handler for method not allowed
 @app.exception_handler(405)
 async def method_not_allowed_handler(request: Request, exc: HTTPException):
-    """Handle 405 Method Not Allowed errors"""
-    # Check if this is actually a 404 (endpoint doesn't exist)
+    """
+    Handle 405 Method Not Allowed errors - endpoint exists but HTTP method not supported
+    
+    SECURITY: Use strict HTTP method validation to prevent bypass attacks
+    LOGIC: Only return 405 if endpoint exists with different method
+    """
     path = str(request.url.path)
+    method = request.method
     
-    # Common patterns that should be 404, not 405
-    # SECURITY FIX: More precise route matching to prevent bypass attacks
-    has_trailing_slash = path.endswith('/')
-    has_matching_route = any(
-        route.path == path.rstrip('/') or route.path == path 
-        for route in app.routes 
-        if hasattr(route, 'path')
-    )
-    
-    # Additional security: Check for path traversal attempts
-    if '..' in path or path.startswith('//') or '%' in path:
+    # SECURITY FIX: Check for path traversal attempts and suspicious patterns
+    # Reject paths with parent directory traversal (..), double slashes (//) or other bypass attempts
+    if '..' in path or path.startswith('//') or '%2e%2e' in path.lower():
+        # These are clearly malicious paths - return 404 instead of 405
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={
                 "status_code": 404,
-                "error": "Not Found - The requested resource doesn't exist",
-                "detail": "Invalid path format",
+                "error": "Not Found",
+                "detail": "Invalid path format - the requested resource doesn't exist.",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "path": path,
-                "method": request.method,
-                "hints": ["Check URL spelling", "Verify resource exists", "Check API documentation"]
+                "method": method,
+                "hints": ["Verify the correct endpoint path", "Check for special characters", "Review API documentation"]
             }
         )
     
-    if has_trailing_slash or not has_matching_route:
+    # LOGIC FIX: Check if ANY route exists at this path with a different method
+    matching_routes = [
+        route for route in app.routes 
+        if hasattr(route, 'path') and (route.path == path.rstrip('/') or route.path == path)
+    ]
+    
+    # If no routes match this path, it's 404 not 405
+    if not matching_routes:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={
                 "status_code": 404,
-                "error": "Not Found - The requested resource doesn't exist",
-                "detail": "No endpoint found at this path",
+                "error": "Not Found",
+                "detail": "The requested endpoint doesn't exist.",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "path": path,
-                "method": request.method,
-                "hints": ["Check URL spelling", "Verify resource exists", "Check API documentation"]
+                "method": method,
+                "hints": ["Check the URL spelling", "Verify the endpoint exists", "Review API documentation"]
             }
         )
+    
+    # If route exists but method is wrong, return 405 with allowed methods
+    allowed_methods = set()
+    for route in matching_routes:
+        if hasattr(route, 'methods'):
+            allowed_methods.update(route.methods)
+    
+    # Always add OPTIONS for CORS
+    allowed_methods.add("OPTIONS")
     
     return JSONResponse(
         status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
         content={
             "status_code": 405,
-            "error": "Method Not Allowed - This HTTP method is not supported for this endpoint",
-            "detail": exc.detail,
+            "error": "Method Not Allowed",
+            "detail": f"The HTTP {method} method is not supported for this endpoint.",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "path": path,
-            "method": request.method,
-            "hints": ["Check API documentation for allowed methods", "Use GET, POST, PUT, DELETE as appropriate"]
+            "method": method,
+            "allowed_methods": sorted(list(allowed_methods)),
+            "hints": ["Use one of the allowed HTTP methods", "Check API documentation for correct method"]
         }
     )
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Log detailed validation errors"""
+    """
+    Handle 422 Unprocessable Entity validation errors
+    
+    LOGIC: 422 is correct for semantic validation errors (e.g., field constraints)
+    vs 400 for malformed requests (e.g., invalid JSON syntax)
+    
+    Extract detailed error information for client debugging
+    """
     errors = exc.errors()
-    logger.error(f"[VALIDATION_ERROR] Path: {request.url.path} - Errors: {errors}")
+    
+    # Format errors in a user-friendly way
+    formatted_errors = []
+    for error in errors:
+        field = ".".join(str(x) for x in error.get("loc", []))
+        msg = error.get("msg", "Validation error")
+        formatted_errors.append({
+            "field": field,
+            "error": msg,
+            "type": error.get("type", "unknown")
+        })
+    
+    logger.warning(f"[VALIDATION_ERROR] {request.method} {request.url.path} - {len(errors)} errors")
+    
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": errors},
+        content={
+            "status_code": 422,
+            "error": "Unprocessable Entity",
+            "detail": "Request data validation failed",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "path": str(request.url.path),
+            "method": request.method,
+            "errors": formatted_errors,
+            "hints": ["Check field types and constraints", "Verify required fields are present", "Review API documentation"]
+        }
     )
 
 # TrustedHost middleware for additional security
