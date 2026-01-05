@@ -16,23 +16,23 @@ class RateLimiter:
             now = time.time()
             
             with self.lock:
-                # CRITICAL FIX: Operate directly on stored list under lock
-                # No copy needed since we're under lock protection
-                current_requests = self.requests.get(identifier, [])
+                # CRITICAL FIX: Use atomic operations for thread safety
+                # Operate on copy to avoid in-place modifications during iteration
+                current_requests = self.requests.get(identifier, []).copy()
                 
-                # Filter old requests in-place under lock
+                # Filter old requests
+                cutoff_time = now - self.window_seconds
                 valid_requests = [
                     req_time for req_time in current_requests
-                    if now - req_time < self.window_seconds
+                    if req_time > cutoff_time
                 ]
                 
-                # Check limit
+                # Check limit with atomic replacement
                 if len(valid_requests) >= self.max_requests:
-                    # Store cleaned list back
                     self.requests[identifier] = valid_requests
                     return False
                 
-                # Add current request and store
+                # Add current request and store atomically
                 valid_requests.append(now)
                 self.requests[identifier] = valid_requests
                 return True

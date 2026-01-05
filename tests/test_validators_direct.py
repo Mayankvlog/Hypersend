@@ -7,9 +7,9 @@ import sys
 import os
 
 # Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from validators import validate_command_injection, validate_path_injection
+from backend.validators import validate_command_injection, validate_path_injection
 
 print('='*70)
 print('SECURITY VALIDATORS - DIRECT TEST')

@@ -21,6 +21,30 @@ from bson import ObjectId
 from routes.groups import create_group
 
 
+def get_secure_cors_origin(request_origin: Optional[str]) -> str:
+    """Get secure CORS origin based on configuration and security"""
+    # In production, use strict origin validation
+    if not settings.DEBUG:
+        if request_origin and request_origin in settings.CORS_ORIGINS:
+            return request_origin
+        elif settings.CORS_ORIGINS:
+            return settings.CORS_ORIGINS[0]  # Return first allowed origin
+        else:
+            return "https://zaply.in.net"  # Secure default
+    
+    # In debug mode, allow localhost with validation
+    if request_origin:
+        if (request_origin.startswith("http://localhost:") or 
+            request_origin.startswith("http://127.0.0.1:") or
+            request_origin.startswith("https://localhost:") or
+            request_origin.startswith("https://127.0.0.1:")):
+            return request_origin
+        elif request_origin in settings.CORS_ORIGINS:
+            return request_origin
+    
+    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:3000"
+
+
 async def _log_group_activity(group_id: str, actor_id: str, event: str, meta: Optional[dict] = None):
     """Log group activity for auditing"""
     try:
@@ -1420,13 +1444,17 @@ async def upload_avatar_with_slash(
 
 @router.options("/avatar")
 @router.options("/avatar-upload")
-async def avatar_options():
-    """Handle CORS preflight for avatar endpoint"""
+async def avatar_options(request: Request):
+    """Handle CORS preflight for avatar endpoints with secure origin validation"""
     from fastapi.responses import Response
+    
+    origin = request.headers.get("origin", "")
+    secure_origin = get_secure_cors_origin(origin)
+    
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": secure_origin,
             "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "86400"
@@ -1472,7 +1500,7 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
         import glob
         # Extract user ID from patterns like "69564dea8eac4df1_xyz.png" or "69564dea8eac4df1.png"
         user_id_match = re.match(r'^([a-f0-9]+)', filename)
-        if user_id_match:
+        if user_id_match and user_id_match.groups():
             user_id = user_id_match.group(1)
             logger.info(f"[AVATAR] Searching for avatar by user_id: {user_id}")
             

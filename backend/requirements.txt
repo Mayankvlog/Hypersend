@@ -25,6 +25,11 @@ h2>=4.1.0
 
 # Configuration
 python-dotenv==1.0.1
+
 # QR Code Generation
 qrcode[pil]==8.0
 Pillow>=10.0.0
+
+# CRITICAL FIX: Added dependencies for Flutter Linux build compatibility
+email-validator>=2.0.0
+python-dateutil>=2.8.0

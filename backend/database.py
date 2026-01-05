@@ -1,5 +1,7 @@
 import os
-
+import random
+import secrets
+import threading
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import settings
 
@@ -8,10 +10,10 @@ db = None
 
 
 async def connect_db():
-    """Connect to MongoDB with improved retry logic for VPS"""
+    """Connect to MongoDB with improved retry logic and exponential backoff for VPS"""
     global client, db
-    max_retries = 3
-    retry_delay = 2
+    max_retries = 5
+    initial_retry_delay = 2
     
     for attempt in range(max_retries):
         try:
@@ -46,7 +48,16 @@ async def connect_db():
             
             if attempt < max_retries - 1:
                 import asyncio
-                print(f"[ERROR] Retrying in {retry_delay} seconds...")
+import math
+import random
+import secrets
+# ENHANCED: Better exponential backoff with proper jitter
+                retry_delay = initial_retry_delay * (2 ** attempt)
+# Add cryptographic jitter using secrets for better distribution
+                jitter = secrets.randbelow(0.1, 0.5) * retry_delay
+                retry_delay = min(retry_delay + jitter, 60)  # Cap at 60 seconds
+                # Single error message per retry attempt
+                print(f"[ERROR] Retrying in {retry_delay:.1f} seconds...")
                 await asyncio.sleep(retry_delay)
                 continue
             else:
@@ -61,12 +72,23 @@ async def connect_db():
 
 
 async def close_db():
-    """Close MongoDB connection"""
+    """Close MongoDB connection with proper error handling"""
     global client
     if client:
-        client.close()
-        if settings.DEBUG:
-            print("[CLOSE] MongoDB connection closed")
+        try:
+            client.close()
+            if settings.DEBUG:
+                print("[CLOSE] MongoDB connection closed")
+        except Exception as e:
+            # Log error but don't raise - cleanup should continue
+            if settings.DEBUG:
+                print(f"[ERROR] Failed to close MongoDB connection: {str(e)}")
+            else:
+                # In production, log to proper logging system
+                import logging
+                logging.getLogger(__name__).error(f"Database connection close error: {str(e)}")
+    # Always clear the global reference
+    client = None
 
 
 def get_db():

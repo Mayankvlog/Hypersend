@@ -60,10 +60,24 @@ class UserCreate(BaseModel):
         if not v or not v.strip():
             raise ValueError('Email cannot be empty')
         v = v.lower().strip()
-        # Standard email validation pattern - RFC 5322 simplified
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        
+        # CRITICAL SECURITY: Enhanced email validation with RFC 5322 compliance
+        # Prevent consecutive dots and dangerous patterns
+        if '..' in v:
+            raise ValueError('Email cannot contain consecutive dots')
+        
+        if v.startswith('.') or v.endswith('.'):
+            raise ValueError('Email cannot start or end with a dot')
+        
+        # Enhanced email pattern with better security
+        email_pattern = r'^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]{0,61}[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$'
         if not re.match(email_pattern, v):
             raise ValueError('Invalid email format')
+        
+        # Additional security checks
+        if len(v) > 254:  # RFC 5322 limit
+            raise ValueError('Email address too long (max 254 characters)')
+        
         return v
     
     @field_validator('password')

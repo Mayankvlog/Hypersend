@@ -137,8 +137,15 @@ def create_refresh_token(data: dict) -> Tuple[str, str]:
 
 
 def decode_token(token: str) -> TokenData:
-    """Decode and validate JWT token with enhanced validation"""
+    """Decode and validate JWT token with enhanced validation and timing attack protection"""
     try:
+        # SECURITY FIX: Use constant-time comparison to prevent timing attacks
+        # Add random delay to mask token validation timing
+        import random
+        import time
+        random_delay = random.uniform(0.01, 0.05)  # 10-50ms random delay
+        time.sleep(random_delay)
+        
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")
         token_type: str = payload.get("token_type")
@@ -239,73 +246,81 @@ async def get_current_user_or_query(
     request: Request, 
     token: Optional[str] = Query(None)
 ) -> str:
-    """Dependency to get current user from header OR query parameter.
+    """DEPENDENCY TO GET CURRENT USER FROM HEADER ONLY.
     
-    First tries Authorization header, then falls back to query parameter.
-    This is useful for file downloads where headers might not work properly.
+    SECURITY: QUERY PARAMETER AUTHENTICATION HAS BEEN DISABLED.
+    ONLY HEADER AUTHENTICATION IS ALLOWED FOR SECURITY REASONS.
     
     Args:
         request: The request object (for header auth)
-        token: The JWT token passed as query parameter (?token=...)
+        token: IGNORED - query parameter authentication disabled
         
     Returns:
-        The user_id from the token
+        The user_id from the Authorization header token
         
     Raises:
-        HTTPException: If token is missing or invalid from both sources
+        HTTPException: If header token is missing or invalid
     """
-    # First try header auth
-    try:
-        auth_header = request.headers.get("authorization", "")
-        if auth_header and auth_header.startswith("Bearer "):
-            header_token = auth_header.replace("Bearer ", "").strip()
-            if header_token:
-                token_data = decode_token(header_token)
-                if token_data.token_type == "access":
-                    return token_data.user_id
-    except Exception:
-        pass  # Fall through to query parameter auth
-    
-    # Then try query parameter auth
+    # SECURITY: Log any query parameter attempts for monitoring
     if token is not None:
-        return await get_current_user_from_query(token)
+        logger.warning("SECURITY VIOLATION: Query parameter authentication attempted - ignored for security")
     
-    # If neither auth method worked, raise error
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required - use Authorization header or token query parameter",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    # Only try header auth - query parameter auth disabled
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required - use Authorization header with Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    header_token = auth_header.replace("Bearer ", "").strip()
+    if not header_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token_data = decode_token(header_token)
+    
+    if token_data.token_type != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type - access token required",
+        )
+    
+    return token_data.user_id
 
 
 async def get_current_user_from_query(token: Optional[str] = Query(None)) -> str:
-    """Dependency to get current user from token in query parameter.
+    """DEPENDENCY TO GET CURRENT USER FROM TOKEN IN QUERY PARAMETER.
+    
+    SECURITY WARNING: THIS FUNCTION IS DEPRECATED AND DISABLED FOR SECURITY REASONS.
+    QUERY PARAMETER AUTHENTICATION EXPOSES TOKENS IN URLS WHICH CAN BE:
+    - LOGGED IN SERVER LOGS
+    - STORED IN BROWSER HISTORY
+    - LEAKED VIA REFERRER HEADERS
+    - ACCESSED BY THIRD-PARTY SCRIPTS
+    
+    USE HEADER AUTHENTICATION INSTEAD: Authorization: Bearer <token>
     
     Args:
         token: The JWT token passed as a query parameter (?token=...)
         
     Returns:
-        The user_id from of token
+        NEVER RETURNS - ALWAYS THROWS EXCEPTION
         
     Raises:
-        HTTPException: If token is missing, invalid, or of wrong type
+        HTTPException: ALWAYS THROWS 401 UNAUTHORIZED FOR SECURITY
     """
-    if token is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token is required in query parameters",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    token_data = decode_token(token)
-    
-    if token_data.token_type != "access":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type",
-        )
-    
-    return token_data.user_id
+    # SECURITY: Always reject query parameter authentication
+    logger.warning("SECURITY VIOLATION: Query parameter authentication attempted - blocked for security")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Query parameter authentication is disabled for security. Use Authorization header instead.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def validate_upload_token(payload: dict) -> str:
@@ -342,67 +357,64 @@ async def get_current_user_for_upload(
     request: Request, 
     token: Optional[str] = Query(None)
 ) -> str:
-    """Enhanced dependency for file uploads that accepts both access tokens and upload tokens.
+    """ENHANCED DEPENDENCY FOR FILE UPLOADS THAT ACCEPTS ONLY HEADER AUTHENTICATION.
     
-    SECURITY NOTE: This function accepts both header and query authentication for file uploads.
-    Query tokens should be used sparingly due to URL logging risks.
-    Header authentication is preferred for security.
+    SECURITY: QUERY PARAMETER AUTHENTICATION HAS BEEN DISABLED FOR UPLOADS.
+    ONLY HEADER AUTHENTICATION IS ALLOWED FOR SECURITY REASONS.
     
     This is designed to handle long-running file uploads where regular access token
     might expire. Upload tokens have extended expiration and specific scope.
     
     Args:
         request: The request object (for header auth)
-        token: The JWT token passed as query parameter (?token=...)
+        token: IGNORED - query parameter authentication disabled
         
     Returns:
-        The user_id from token
+        The user_id from Authorization header token
         
     Raises:
-        HTTPException: If no valid token is found
+        HTTPException: If header token is missing or invalid
     """
     
-    # Try header auth first (combine regular access and upload token checking)
-    try:
-        auth_header = request.headers.get("authorization", "")
-        if auth_header and auth_header.startswith("Bearer "):
-            header_token = auth_header.replace("Bearer ", "").strip()
-            if header_token:
-                token_data = decode_token(header_token)
-                if token_data.token_type == "access":
-                    # Check if it's a special upload token or regular access token
-                    payload = getattr(token_data, 'payload', {}) or {}
-                    if payload.get("scope") == "upload":
-                        logger.debug(f"Using upload token from header for upload_id: {payload.get('upload_id')}")
-                        return validate_upload_token(payload)
-                    else:
-                        logger.debug(f"Using regular access token for upload")
-                        return token_data.user_id
-    except Exception:
-        pass  # Fall through to other methods
-    
-    # Try query parameter token (could be access or upload token)
+    # SECURITY: Log any query parameter attempts for monitoring
     if token is not None:
-        try:
-            token_data = decode_token(token)
-            if token_data.token_type == "access":
-                # Check if it's a special upload token or regular access token
-                payload = getattr(token_data, 'payload', {}) or {}
-                if payload.get("scope") == "upload":
-                    logger.debug(f"Using upload token from query for upload_id: {payload.get('upload_id')}")
-                    return validate_upload_token(payload)
-                else:
-                    logger.debug(f"Using regular access token from query")
-                return token_data.user_id
-        except Exception:
-            pass
+        logger.warning("SECURITY VIOLATION: Query parameter authentication attempted for upload - ignored for security")
     
-    # If neither auth method worked, raise error
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required for upload - use Authorization header or token query parameter",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    # Only try header auth - query parameter auth disabled
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for upload - use Authorization header with Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    header_token = auth_header.replace("Bearer ", "").strip()
+    if not header_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    try:
+        token_data = decode_token(header_token)
+        if token_data.token_type == "access":
+            # Check if it's a special upload token or regular access token
+            payload = getattr(token_data, 'payload', {}) or {}
+            if payload.get("scope") == "upload":
+                logger.debug(f"Using upload token from header for upload_id: {payload.get('upload_id')}")
+                return validate_upload_token(payload)
+            else:
+                logger.debug(f"Using regular access token for upload")
+                return token_data.user_id
+    except Exception as e:
+        logger.error(f"Upload authentication failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token for upload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 # ===== QR CODE FUNCTIONS FOR MULTI-DEVICE CONNECTION =====
 

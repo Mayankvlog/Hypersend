@@ -273,13 +273,29 @@ async def search_messages(
     if not q and not has_media and not has_link:
         raise HTTPException(status_code=400, detail="Search query or filter required")
     
-    # Validate and sanitize search query
+    # CRITICAL SECURITY: Enhanced search query validation
     if q:
-        # Limit search query length
-        if len(q) > 1000:
-            raise HTTPException(status_code=400, detail="Search query too long (max 1000 characters)")
-        # Prevent regex injection by escaping special characters
+        # Limit search query length to prevent DoS
+        if len(q) > 100:
+            raise HTTPException(status_code=400, detail="Search query too long (max 100 characters)")
+        
+        # CRITICAL SECURITY: Remove dangerous characters that could cause injection
         import re
+        # Remove characters that could break MongoDB queries or cause injection
+        dangerous_chars = r'[$\\]'
+        cleaned_query = re.sub(dangerous_chars, '', q)
+        if cleaned_query != q:
+            _log("warning", f"Potentially dangerous characters in search query", {
+                "user_id": current_user,
+                "operation": "message_search",
+                "query_length": len(q)
+            })
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid search query format"
+            )
+        
+        # Prevent regex injection by escaping special characters
         q_escaped = re.escape(q)
     
     # Base filter

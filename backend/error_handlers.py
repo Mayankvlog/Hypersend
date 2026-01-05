@@ -36,7 +36,10 @@ MIDDLEWARE VALIDATION (RequestValidationMiddleware in main.py):
 
 EXCEPTION HANDLERS (error_handlers.py):
 - validation_exception_handler: Handles 422 with detailed field errors
-- http_exception_handler: Handles all HTTPException (400-599 range)
+- http_exception_handler: Handles all HTTPException (300-599 range) with specific logic
+- redirect_error_handler: Handles 3xx redirection codes
+- client_error_handler: Handles 4xx client errors with specific categorization
+- server_error_handler: Handles 5xx server errors with recovery suggestions
 - Both include helpful hints and structured error responses
 """
 
@@ -276,22 +279,35 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """
-    Comprehensive HTTP exception handler for all 4xx/5xx errors
-    
-    Handles:
-    400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found,
-    405 Method Not Allowed, 406 Not Acceptable, 407 Proxy Auth Required,
-    408 Request Timeout, 409 Conflict, 410 Gone, 411 Length Required,
-    412 Precondition Failed, 413 Payload Too Large, 414 URI Too Long,
-    415 Unsupported Media Type, 416 Range Not Satisfiable, 417 Expectation Failed,
-    422 Unprocessable Entity, 429 Too Many Requests, 431 Headers Too Large,
-    451 Unavailable For Legal Reasons, 499 Client Closed Request
+    Handle HTTPException with specific logic for different status code ranges:
+    - 3xx: Redirection responses with proper handling
+    - 4xx: Client errors with detailed guidance
+    - 5xx: Server errors with recovery suggestions
     """
-    
     status_code = exc.status_code
     detail = exc.detail
     
-    error_descriptions = {
+    # 3xx Redirection codes
+    if 300 <= status_code < 400:
+        error_descriptions = {
+            300: "Multiple Choices - The request has multiple possible responses",
+            301: "Moved Permanently - Resource has permanently moved to a new URL",
+            302: "Found - Resource temporarily moved to a different URL",
+            303: "See Other - Response can be found at another URI using GET method",
+            304: "Not Modified - Resource has not been modified since last request",
+            305: "Use Proxy - Must use a proxy to access this resource",
+            307: "Temporary Redirect - Resource temporarily located at different URI",
+            308: "Permanent Redirect - Resource permanently located at different URI",
+        }
+        hints = [
+            "This is a redirect response",
+            "Your client should follow the redirect location",
+            "Check the Location header for the new URL",
+        ]
+    
+    # 4xx Client errors
+    elif 400 <= status_code < 500:
+        error_descriptions = {
             400: "Bad Request - Invalid request syntax or parameters",
             401: "Unauthorized - Authentication required or invalid credentials",
             403: "Forbidden - You lack permission to access this resource",
@@ -314,11 +330,33 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             431: "Request Header Fields Too Large - Headers exceed the maximum size",
             451: "Unavailable For Legal Reasons - Content blocked due to legal compliance",
             499: "Client Closed Request - Client closed the connection prematurely",
+        }
+        hints = [
+            "This is a client error - the request needs to be fixed",
+            "Check the request parameters and try again",
+            "Verify authentication and authorization credentials",
+        ]
+    
+    # 5xx Server errors
+    elif 500 <= status_code < 600:
+        error_descriptions = {
             500: "Internal Server Error - An unexpected server error occurred",
             502: "Bad Gateway - Invalid response from upstream server",
             503: "Service Unavailable - Server is temporarily unavailable",
             504: "Gateway Timeout - Upstream server took too long to respond",
+            507: "Insufficient Storage - Server cannot store the representation",
+            508: "Loop Detected - Server detected an infinite loop while processing",
+            510: "Not Extended - Further extensions required for the request",
+            511: "Network Authentication Required - Client needs to authenticate",
         }
+        hints = [
+            "This is a server error - not your fault",
+            "Try again in a few moments",
+            "Contact support if the problem persists",
+        ]
+    else:
+        error_descriptions = {}
+        hints = ["Unknown error occurred"]
         
     error_description = error_descriptions.get(
         status_code,

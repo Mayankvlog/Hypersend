@@ -42,8 +42,9 @@ def validate_command_injection(input_string: str) -> bool:
     if not input_string or not isinstance(input_string, str):
         return True  # Empty/null is not a threat, just invalid input
     
-    # Command execution metacharacters - CRITICAL SECURITY PATTERNS
+# Command execution metacharacters - PRECISE SECURITY PATTERNS
     # These are shell metacharacters that enable command chaining/execution
+    # More specific patterns to reduce false positives
     shell_metacharacters = [
         ';',   # Command separator
         '|',   # Pipe operator
@@ -52,11 +53,39 @@ def validate_command_injection(input_string: str) -> bool:
         '<',   # Input redirection
         '`',   # Backtick execution
         '$(',  # Command substitution
+        '${',  # Parameter expansion (bracket form)
+        '&&',  # Command chaining
+        '||',  # OR command execution
+        '>>',  # Append redirection
+        '<<',  # Here document
+        '&>',  # Output to file
+        '<()',  # Process substitution
+        '(',   # Subshell execution
+        ')',   # End subshell
+    ]
+    
+    # SQL injection patterns - separate from command injection
+    sql_injection_patterns = [
+        'DROP', # SQL keyword
+        'DELETE', # SQL keyword
+        'INSERT', # SQL keyword
+        'UPDATE', # SQL keyword
+        'SELECT', # SQL keyword
+        'UNION', # SQL keyword
+        '--',   # SQL comment
+        '/*',    # SQL comment start
+        '*/',    # SQL comment end
     ]
     
     # Check for shell metacharacters that could enable command injection
     for char_sequence in shell_metacharacters:
         if char_sequence in input_string:
+            return False
+    
+    # Check for SQL injection patterns
+    input_lower = input_string.lower()
+    for sql_pattern in sql_injection_patterns:
+        if sql_pattern.lower() in input_lower:
             return False
     
     # Block dangerous code execution functions/keywords
@@ -122,18 +151,38 @@ def validate_path_injection(file_path: str) -> bool:
     if len(file_path) > 1024:
         return False
     
-    # Check for path traversal patterns
-    # Block patterns like: ../ ..\  or /../\ combinations
+    # Check for path traversal patterns - ZERO TOLERANCE FOR SECURITY
+    # Block any ../ patterns regardless of count
     if re.search(r'\.\.[/\\]', file_path):
-        # Allow up to 1 level of traversal for legitimate use
-        # Block excessive traversal attempts
-        traversal_count = len(re.findall(r'\.\.[/\\]', file_path))
-        if traversal_count > 1:
-            return False
+        return False
+    
+    # Block Windows-specific traversal patterns
+    if re.search(r'\.\.\\', file_path) or re.search(r'\\\.\\', file_path):
+        return False
     
     # Additional checks for absolute paths or drive letters
     if file_path.startswith('/') or (len(file_path) > 1 and file_path[1] == ':'):
         return False
+    
+    # Block home directory traversal attempts
+    if file_path.startswith('~') or re.search(r'~[^/\\]', file_path):
+        return False
+    
+    # CONSOLIDATED UNC path and absolute path blocking
+    # Combines multiple checks into single logical block for efficiency
+    dangerous_path_patterns = [
+        r'^\\\\',  # UNC path start
+        r'^[a-zA-Z]:',  # Windows drive letter
+    ]
+    
+    # Primary UNC detection - any double backslash sequence
+    if '\\\\' in file_path:
+        return False
+    
+    # Secondary pattern-based checks
+    for pattern in dangerous_path_patterns:
+        if re.match(pattern, file_path):
+            return False
     
     # Verify path doesn't escape boundaries using pathlib
     import pathlib
@@ -171,8 +220,17 @@ def sanitize_input(input_string: str, max_length: int = 1000) -> str:
     # Remove null bytes
     sanitized = input_string.replace('\x00', '')
     
+    # Remove HTML tags and content
+    sanitized = re.sub(r'<[^>]*>', '', sanitized)
+    
     # Remove control characters except newlines and tabs
     sanitized = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', sanitized)
+    
+    # Remove potentially dangerous characters
+    sanitized = re.sub(r'[<>"\'`]', '', sanitized)
+    
+    # Normalize whitespace
+    sanitized = re.sub(r'\s+', ' ', sanitized)
     
     # Limit length
     if len(sanitized) > max_length:

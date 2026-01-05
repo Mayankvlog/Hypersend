@@ -195,11 +195,12 @@ class ChatListItem extends StatelessWidget {
 
     // Handle avatar URL safely - prevent GET requests to POST endpoints
     String? fullUrl;
-    if (chat.avatar != null && chat.avatar.isNotEmpty) {
-      if (chat.avatar.startsWith('/')) {
-        fullUrl = '${ApiConstants.serverBaseUrl}${chat.avatar}';
+    final avatar = chat.avatar;
+    if (avatar != null && avatar.isNotEmpty) {
+      if (avatar.startsWith('/')) {
+        fullUrl = '${ApiConstants.serverBaseUrl}$avatar';
       } else {
-        fullUrl = chat.avatar;
+        fullUrl = avatar;
       }
     } else {
       // No avatar URL - don't make any request
@@ -214,7 +215,7 @@ class ChatListItem extends StatelessWidget {
     return CircleAvatar(
       radius: 28,
       backgroundColor: AppTheme.cardDark,
-      backgroundImage: fullUrl != null ? NetworkImage(fullUrl!) : null,
+      backgroundImage: fullUrl != null ? NetworkImage(fullUrl) : null,
       onBackgroundImageError: (exception, stackTrace) {
         debugPrint('Error loading avatar: $exception');
       },

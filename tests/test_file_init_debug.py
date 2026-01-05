@@ -40,11 +40,11 @@ def test_files_init_endpoint():
     
     # Test with valid request
     payload = {
-        "filename": "test_file.pdf",
+        "filename": "unknown_file.bin",
         "size": 1024 * 1024 * 100,  # 100MB
         "chat_id": "test_chat_123",
         "checksum": "abc123def456",
-        "mime_type": "application/pdf"
+        "mime_type": "application/octet-stream"  # Test the problematic MIME type
     }
     
     print(f"[TEST] Request payload: {json.dumps(payload, indent=2)}")

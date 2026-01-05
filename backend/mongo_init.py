@@ -19,7 +19,7 @@ async def init_mongodb():
         
         # Extract username and password from URI
         username = parsed.username or 'hypersend'
-        password = parsed.password or 'hypersend_secure_password'
+        password = parsed.password or os.getenv('MONGO_PASSWORD', 'change_me_in_production')
         
         client = None
         

@@ -121,7 +121,7 @@ def detect_binary_content(content: bytes) -> dict:
         non_printable = total_chars - printable_chars
         non_printable_ratio = non_printable / total_chars
         # Security validation: reject files with >30% non-printable characters (but allow valid binary files)
-        if non_printable_ratio > 0.7:  # Increased threshold to avoid false positives with legitimate binary files
+        if non_printable_ratio > 0.85:  # Further increased threshold to reduce false positives with legitimate binary files
             return {
                 "is_binary": True,
                 "reason": f"high_non_printable_ratio_{non_printable_ratio:.2f}",
@@ -150,6 +150,31 @@ def detect_binary_content(content: bytes) -> dict:
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
+def get_secure_cors_origin(request_origin: Optional[str]) -> str:
+    """Get secure CORS origin based on configuration and security"""
+    from config import settings
+    
+    # In production, use strict origin validation
+    if not settings.DEBUG:
+        if request_origin and request_origin in settings.CORS_ORIGINS:
+            return request_origin
+        elif settings.CORS_ORIGINS:
+            return settings.CORS_ORIGINS[0]  # Return first allowed origin
+        else:
+            return "https://zaply.in.net"  # Secure default
+    
+    # In debug mode, allow localhost with validation
+    if request_origin:
+        if (request_origin.startswith("http://localhost:") or 
+            request_origin.startswith("http://127.0.0.1:") or
+            request_origin.startswith("https://localhost:") or
+            request_origin.startswith("https://127.0.0.1:")):
+            return request_origin
+        elif request_origin in settings.CORS_ORIGINS:
+            return request_origin
+    
+    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:3000"
+
 # OPTIONS handlers for CORS preflight requests
 @router.options("/init")
 @router.options("/{upload_id}/chunk")
@@ -157,13 +182,17 @@ router = APIRouter(prefix="/files", tags=["Files"])
 @router.options("/{upload_id}/info")
 @router.options("/{upload_id}/download")
 @router.options("/{upload_id}/cancel")
-async def files_options():
-    """Handle CORS preflight for files endpoints"""
+async def files_options(request: Request):
+    """Handle CORS preflight for files endpoints with secure origin validation"""
     from fastapi.responses import Response
+    
+    origin = request.headers.get("origin", "")
+    secure_origin = get_secure_cors_origin(origin)
+    
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": secure_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Disposition",
             "Access-Control-Max-Age": "86400"
@@ -180,7 +209,26 @@ async def initialize_upload(
     
     try:
         # Parse request body to handle both 'mime' and 'mime_type' fields
-        body = await request.json()
+        try:
+            body = await request.json()
+        except ValueError as json_error:
+            _log("error", f"Invalid JSON in upload init request: {str(json_error)}", {
+                "user_id": current_user,
+                "operation": "upload_init",
+                "error_type": "json_parse_error"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON in request body: {str(json_error)}"
+            )
+        
+        # CRITICAL DEBUG: Log the raw request for debugging 400 errors
+        _log("info", f"File upload init request received", {
+            "user_id": current_user,
+            "operation": "upload_init",
+            "request_keys": list(body.keys()) if isinstance(body, dict) else "not_dict",
+            "request_body_types": {k: type(v).__name__ for k, v in body.items()} if isinstance(body, dict) else "not_dict"
+        })
         
         # Create file request object with backward compatibility
         filename = body.get('filename')
@@ -208,6 +256,20 @@ async def initialize_upload(
         filename = sanitize_input(filename, 255) if filename else None
         chat_id = sanitize_input(chat_id, 100) if chat_id else None
         
+        # CRITICAL FIX: Normalize MIME type FIRST, then validate
+        if mime_type is None or not isinstance(mime_type, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid MIME type is required"
+            )
+        
+        # Normalize MIME type (lowercase, strip whitespace) BEFORE validation
+        mime_type = mime_type.lower().strip()
+        
+        # CRITICAL FIX: Handle empty MIME type by setting default BEFORE format validation
+        if not mime_type:
+            mime_type = 'application/octet-stream'
+        
         # Enhanced validation for zero-byte files and proper MIME types
         # CRITICAL SECURITY: Add content verification for client-provided MIME types
         if mime_type:
@@ -225,6 +287,46 @@ async def initialize_upload(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Filename cannot be empty"
+            )
+        
+        # CRITICAL SECURITY: Enhanced file size validation with type checking
+        if size is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size is required"
+            )
+        
+        # CRITICAL FIX: Validate size type to prevent bypass attempts
+        if not isinstance(size, (int, float)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file size format - must be a number"
+            )
+        
+        try:
+            # Convert to int and validate range
+            size_int = int(float(size))  # Handle both int and float inputs
+            if size_int <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="File size must be greater than 0"
+                )
+            
+            # CRITICAL SECURITY: Add maximum file size check
+            max_size = 40 * 1024 * 1024 * 1024  # 40GB in bytes
+            if size_int > max_size:
+                max_size_gb = max_size / (1024 * 1024 * 1024)
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File size exceeds maximum allowed size of {max_size_gb}GB"
+                )
+            
+            size = size_int
+            
+        except (ValueError, TypeError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file size format - must be a number: {str(e)}"
             )
         
         # CRITICAL SECURITY: Prevent path traversal and injection attacks in filename
@@ -298,36 +400,50 @@ async def initialize_upload(
                 detail="File size must be greater than zero"
             )
         
-        # Validate MIME type format and allowed types
-        if not mime_type or not isinstance(mime_type, str):
+        # CRITICAL FIX: Normalize MIME type FIRST, then validate
+        if mime_type is None or not isinstance(mime_type, str):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Valid MIME type is required"
             )
+        
+        # Normalize MIME type (lowercase, strip whitespace) BEFORE validation
+        mime_type = mime_type.lower().strip()
+        
+        # CRITICAL FIX: Handle empty MIME type by setting default BEFORE format validation
+        if not mime_type:
+            mime_type = 'application/octet-stream'
         
         allowed_mime_types = [
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
             'video/mp4', 'video/webm', 'video/quicktime',
             'audio/mpeg', 'audio/wav', 'audio/ogg',
             'application/pdf', 'text/plain', 'application/json',
-            'application/zip', 'application/x-zip-compressed'
+            'application/zip', 'application/x-zip-compressed',
+            'application/octet-stream'  # CRITICAL FIX: Allow default binary type
         ]
         
-        # CRITICAL SECURITY: Check MIME type is allowed
+# ENHANCED SECURITY: Intelligent MIME validation
         if mime_type not in allowed_mime_types:
+            # CRITICAL SECURITY: Check for MIME spoofing attempts
+            if any(dangerous in mime_type.lower() for dangerous in 
+                   ['javascript', 'script', 'html', 'php', 'exe', 'bat', 'sh']):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Potentially dangerous or spoofed MIME type '{mime_type}'. Use standard file types."
+                )
+            
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"MIME type '{mime_type}' is not allowed. Allowed types: {', '.join(allowed_mime_types[:5])}..."
             )
         
-        # CRITICAL SECURITY: Content verification for potentially dangerous MIME types
-        dangerous_mime_types = [
-            'application/javascript', 'text/javascript', 'application/x-javascript',
-            'text/html', 'application/x-html+php', 'application/x-php',
-            'application/x-msdos-program', 'application/x-msdownload',
-            'application/x-exe', 'application/x-sh', 'application/x-bat', 'application/x-csh',
-            'application/x-executable', 'application/x-shellscript', 'application/vnd.ms-cab-compressed'
-        ]
+        # ENHANCED SECURITY: Content verification for specific file types
+        if mime_type.startswith('text/') and len(filename) > 1000:  # Large text files could be scripts
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Large text files are not allowed for security reasons"
+            )
         
         # Block any MIME type containing executable or script patterns
         dangerous_patterns = [
@@ -354,10 +470,16 @@ async def initialize_upload(
             )
         
         # Enhanced validation successful
+        import hashlib
+        filename_hash = None
+        if filename:
+            # Use SHA-256 for consistent hashing instead of Python's hash()
+            filename_hash = hashlib.sha256(filename.encode('utf-8')).hexdigest()[:16]
+        
         _log("info", f"File validation passed", {
             "user_id": current_user,
             "operation": "upload_init",
-            "filename_hash": hash(filename) if filename else None,  # Hash for compliance
+            "filename_hash": filename_hash,  # Secure SHA-256 hash for compliance
             "size": size,
             "mime_type": mime_type
         })
@@ -610,15 +732,20 @@ async def complete_upload(
         file_id = hashlib.sha256(f"{uuid.uuid4()}".encode()).hexdigest()[:16]
         final_path = Path(settings.DATA_ROOT) / "files" / file_id
         
-        # Assemble file from chunks
+        # SECURITY FIX: Atomic file assembly with proper cleanup
+        temp_path = final_path.with_suffix('.tmp')
         try:
             final_path.parent.mkdir(parents=True, exist_ok=True)
             
-            with open(final_path, 'wb') as final_file:
+            # Write to temporary file first (atomic operation)
+            with open(temp_path, 'wb') as final_file:
                 for chunk_idx in range(total_chunks):
                     chunk_path = upload_dir / f"chunk_{chunk_idx}.part"
                     
                     if not chunk_path.exists():
+                        # CRITICAL SECURITY: Clean up temp file on failure
+                        if temp_path.exists():
+                            temp_path.unlink()
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"Chunk {chunk_idx} not found during assembly"
@@ -627,14 +754,19 @@ async def complete_upload(
                     with open(chunk_path, 'rb') as chunk_file:
                         final_file.write(chunk_file.read())
             
-            # Verify file integrity
-            actual_size = final_path.stat().st_size
+            # CRITICAL SECURITY: Verify temp file integrity before making it permanent
+            actual_size = temp_path.stat().st_size
             if actual_size != size:
-                final_path.unlink()
+                # SECURITY: Clean up temp file on size mismatch
+                temp_path.unlink()
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"File size mismatch: expected {size}, got {actual_size}"
                 )
+            
+            # SECURITY: Atomic move from temp to final location
+            import shutil
+            shutil.move(str(temp_path), str(final_path))
             
             # Store file metadata
             file_record = {
@@ -651,12 +783,20 @@ async def complete_upload(
                 "checksum": upload_doc.get("checksum")
             }
             
+            # SECURITY: Insert file record only after successful file creation
             await files_collection().insert_one(file_record)
             
-            # Clean up chunks and upload record
+            # CRITICAL SECURITY: Clean up chunks and upload record
             import shutil
-            if upload_dir.exists():
-                shutil.rmtree(upload_dir)
+            try:
+                if upload_dir.exists():
+                    shutil.rmtree(upload_dir)
+            except Exception as cleanup_error:
+                _log("warning", f"Failed to cleanup upload directory: {cleanup_error}", {
+                    "user_id": current_user,
+                    "operation": "upload_cleanup_failed",
+                    "upload_id": upload_id
+                })
             
             await uploads_collection().delete_one({"_id": upload_id})
             
@@ -758,21 +898,34 @@ async def get_file_info(
             # Security: Validate storage path to prevent directory traversal
             storage_path = file_doc.get("storage_path")
             if not storage_path:
-                _log("error", "File missing storage path in DB", {"user_id": current_user, "operation": "file_info"})
+                _log("error", "File missing storage path in DB", {"user_id": current_user, "operation": "file_download"})
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - storage path missing")
                 
             file_path = Path(storage_path)
             try:
-                # Resolve to absolute path and check it's within data root
-                resolved_path = file_path.resolve()
+                # CRITICAL SECURITY: Multiple path validation layers
+                # 1. Normalize path to remove any relative components
+                normalized_path = file_path.resolve()
                 data_root = settings.DATA_ROOT.resolve()
-                # Use proper path comparison to prevent traversal bypass
+                
+                # 2. Check for obvious traversal attempts
+                if '..' in str(file_path) or str(file_path).startswith('..'):
+                    _log("error", f"Parent directory traversal in path: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied - invalid file path"
+                    )
+                
+                # 3. Use proper path comparison to prevent traversal bypass
                 try:
-                    resolved_path.relative_to(data_root)
+                    normalized_path.relative_to(data_root)
                 except ValueError:
-                    _log("error", f"Attempted path traversal: {storage_path}", {"user_id": current_user, "operation": "file_info"})
-                    raise HTTPException(status_code=403, detail="Access denied")
-                file_path = resolved_path
+                    _log("error", f"Download path traversal attempt: {storage_path} -> {normalized_path}", {"user_id": current_user, "operation": "file_download"})
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied - invalid file path"
+                    )
+                file_path = normalized_path
             except (OSError, ValueError) as path_error:
                 _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_info"})
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - invalid path")

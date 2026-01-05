@@ -8,16 +8,14 @@ from models import (
 from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
 from auth.utils import (
     hash_password, verify_password, create_access_token, 
-    create_refresh_token, decode_token, get_current_user, get_current_user_from_query,
-    generate_session_code, generate_qr_code, create_qr_session_payload, validate_session_code
+    create_refresh_token, decode_token, get_current_user
 )
 from config import settings
-from rate_limiter import auth_rate_limiter, password_reset_limiter, qr_code_limiter
-from validators import validate_user_id, safe_object_id_conversion
+from rate_limiter import password_reset_limiter
+from validators import validate_user_id
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
-import jwt
 import smtplib
 from email.message import EmailMessage
 from collections import defaultdict
@@ -149,32 +147,34 @@ def _is_valid_domain_format(domain: str) -> bool:
     return bool(re.match(domain_pattern, domain))
 
 def _is_valid_origin_format(origin: str) -> bool:
-    """Validate full origin URL format"""
+    """Validate full origin URL format with strict HTTPS enforcement in production"""
     # Parse URL to validate components separately
     try:
-        parsed = re.match(r'^(https?):\/\/([a-zA-Z0-9.-]+)(?::\d+)?(?:\/.*)?$', origin)
-        if not parsed:
+        parsed = re.match(r'^(https?):\/\/([a-zA-Z0-9.-]+)(?::(\d+))?(?:\/.*)?$', origin)
+        if not parsed or not parsed.groups():
             return False
         
-        scheme, domain, port, path = parsed.groups()
+        scheme = parsed.group(1)
+        domain = parsed.group(2)
+        port = parsed.group(3) if len(parsed.groups()) >= 3 and parsed.group(3) else None
         
-        # For localhost, allow HTTP regardless of DEBUG mode
-        if domain.startswith('localhost') or domain.startswith('127.0.0.1'):
-            return True
-        
-        # Only allow HTTPS in production for non-localhost domains
-        if not settings.DEBUG and scheme != 'https':
-            return False
-        
-        # For other domains, require HTTPS and validate domain format
+# SECURITY: ALWAYS require HTTPS, even in debug mode  
+        # Allow HTTP only for exact localhost in development
         if scheme != 'https':
+            if settings.DEBUG and (domain == 'localhost' or domain == '127.0.0.1'):
+                return True  # Allow HTTP for localhost in debug
+            else:
+                return False
+        
+        # HTTPS is always allowed for valid domains (including localhost)
+        return True
             return False
         
         # Validate domain part separately
         return _is_valid_domain_format(domain)
         
-    except Exception:
-        return False
+    # Remove unreachable code - this was causing issues after the fix above
+    # This line is unreachable due to the True return above
 
 def get_safe_cors_origin(request_origin: Optional[str]) -> str:
     """Get safe CORS origin with validation - NO code duplication"""

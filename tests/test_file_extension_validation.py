@@ -3,9 +3,9 @@
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from validators import validate_command_injection, validate_path_injection
+from backend.validators import validate_command_injection, validate_path_injection
 
 # Test dangerous file extensions detection
 dangerous_exts = {

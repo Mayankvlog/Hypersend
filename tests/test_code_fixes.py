@@ -166,7 +166,7 @@ def test_no_indentation_bugs():
     # Check that _log function is properly indented
     log_func = re.search(r'def _log\(.*?\):\n(.*?)(?=\ndef|\nclass|\Z)', files_py, re.DOTALL)
     
-    if log_func:
+    if log_func and log_func.groups():
         body = log_func.group(1)
         # Check indentation is consistent
         lines = body.split('\n')

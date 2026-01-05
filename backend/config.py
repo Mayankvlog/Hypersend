@@ -1,4 +1,5 @@
 import os
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
@@ -44,7 +45,15 @@ class Settings:
         encoded_password = quote_plus(_MONGO_PASSWORD)
         # Connect directly to target database with admin authentication
         # Include replicaSet and retry logic for VPS deployments
-        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&retryWrites=true&w=majority"
+        # Use environment variable for MONGODB_URI when available (more secure)
+        _MONGO_URI = os.getenv('MONGODB_URI')
+        if _MONGO_URI:
+            MONGODB_URI: str = _MONGO_URI
+        else:
+            # In production, environment variables must be set
+            if not _MONGO_USER or not _MONGO_HOST or not os.getenv('MONGO_PASSWORD'):
+                raise ValueError("MongoDB credentials must be set via environment variables in production")
+            MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&retryWrites=true&w=majority"
         print(f"[CONFIG] MongoDB connection: authenticated with retries")
     
     # Log connection info without exposing credentials
@@ -59,6 +68,42 @@ class Settings:
     _env_secret = os.getenv("SECRET_KEY")
     if not _env_secret:
         raise ValueError("SECRET_KEY environment variable must be set in production")
+    
+    # ENHANCED: Reject placeholder secrets for security
+    placeholder_patterns = {
+        "dev-secret-key",
+        "change-this-secret-key-in-production",
+        "your-secret-key-change-in-production", 
+        "your-secret-key",
+        "test-secret-key",
+        "Prod_Secret_Key_For_Zaply_Hypersend_2025_Secure_Fixed",  # Previous hardcoded value
+        "hypersend_secure_password",  # Default MongoDB password
+        "secret",
+        "password",
+        "key",
+        "123456",
+        "qwerty"
+    }
+    
+    # CASE-INSENSITIVE placeholder detection
+    if _env_secret.lower() in (p.lower() for p in placeholder_patterns):
+        raise ValueError(f"SECURITY ERROR: SECRET_KEY appears to be a placeholder. Set a secure, random secret key in environment variables.")
+    
+    # BALANCED validation: ensure minimum length with reasonable complexity
+    if len(_env_secret) < 32:
+        raise ValueError("SECURITY ERROR: SECRET_KEY must be at least 32 characters long")
+    
+    # More flexible complexity validation - accepts various secure patterns
+    has_upper = any(c.isupper() for c in _env_secret)
+    has_lower = any(c.islower() for c in _env_secret)
+    has_digit = any(c.isdigit() for c in _env_secret)
+    has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in _env_secret)
+    
+    # Require at least 3 of 4 character types for good security
+    char_types = sum([has_upper, has_lower, has_digit, has_special])
+    if char_types < 3:
+        raise ValueError(f"SECURITY ERROR: SECRET_KEY lacks complexity (only {char_types}/4 character types). Mix uppercase, lowercase, digits, and special characters.")
+    
     SECRET_KEY: str = _env_secret
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     
@@ -134,8 +179,13 @@ class Settings:
     EMAIL_FALLBACK_ENABLED: bool = os.getenv("EMAIL_FALLBACK_ENABLED", "True").lower() in ("true", "1", "yes")
     
     # Development
-    # Default DEBUG to True for development; set to False in production with proper SECRET_KEY
-    DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+    # SECURITY: Default DEBUG to False for production security
+    # Only enable DEBUG explicitly in development environment
+    debug_env = os.getenv("DEBUG", "")
+    if debug_env.lower() in ("true", "1", "yes"):
+        DEBUG: bool = True
+    else:
+        DEBUG: bool = False
     
     # Mock mode for testing without MongoDB - CRITICAL: Default to False for production
     use_mock_db_env = os.getenv("USE_MOCK_DB", "False")
@@ -156,14 +206,13 @@ class Settings:
         "https://zaply.in.net",       # Production domain (primary)
         "https://www.zaply.in.net",   # Production domain with www
         "http://hypersend_frontend:80",  # Docker internal: frontend container
-        "http://hypersend_frontend",     # Docker internal: frontend (port 80 default)
-        "http://frontend:80",            # Docker internal: frontend service
-        "http://frontend",               # Docker internal: frontend (port 80 default)
-        "http://hypersend_backend:8000", # Docker internal: backend for testing
-        "http://localhost:3000",         # Frontend development
-        "http://localhost:8000",         # Backend direct access
-        "http://127.0.0.1:3000",        # Alternative localhost
-        "http://127.0.0.1:8000",        # Alternative localhost
+        "https://hypersend_frontend",    # Docker internal: frontend (HTTPS required)
+        "https://frontend:443",           # Docker internal: frontend service (HTTPS)
+        "https://frontend",              # Docker internal: frontend (HTTPS required)
+        "https://hypersend_backend:8443", # Docker internal: backend for testing (HTTPS)
+        # Development should use HTTPS: Configure SSL certificates locally
+        # "https://localhost:3000",        # Frontend development (with HTTPS)
+        # "https://localhost:8443",        # Backend direct access (with HTTPS)
     ]
     
     # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production

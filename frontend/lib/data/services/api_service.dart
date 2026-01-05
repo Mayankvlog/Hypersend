@@ -41,11 +41,12 @@ class ApiService {
       _log('[API_INIT] SSL validation: ${ApiConstants.validateCertificates}');
 
       _dio = Dio(
-        BaseOptions(
-          baseUrl: url,
-          connectTimeout: const Duration(minutes: 5),
-          receiveTimeout: const Duration(hours: 2),
-          sendTimeout: const Duration(minutes: 5),
+      BaseOptions(
+        baseUrl: url,
+        // CRITICAL FIX: Adaptive timeouts for large file operations
+        connectTimeout: const Duration(minutes: 10),  // Increased for 40GB files
+        receiveTimeout: const Duration(hours: 4),    // Increased for slow networks
+        sendTimeout: const Duration(minutes: 10),     // Increased for large uploads
           contentType: 'application/json',
           // Allow only 2xx and 3xx status codes - treat 4xx as errors
           validateStatus: (status) => status != null && (status >= 200 && status < 400),
@@ -203,11 +204,11 @@ class ApiService {
                      responseData['message'] as String?;
     }
     
-    // Handle specific HTTP status codes
-    switch (statusCode) {
-      // 3xx Redirection
-      case 300:
-        return customMessage ?? 'Multiple choices available. Please select a specific option.';
+  // Handle specific HTTP status codes - BACKEND CONSISTENT FIX
+  switch (statusCode) {
+    // 3xx Redirection
+    case 300:
+      return customMessage ?? 'Multiple choices available. Please select a specific option.';
       case 301:
         return customMessage ?? 'Resource permanently moved. Please update your bookmarks.';
       case 302:
@@ -433,14 +434,16 @@ class ApiService {
     throw Exception(errorMessage);
   }
 
-  // Get specific registration error messages
+  // Get specific registration error messages - BACKEND CONSISTENCY FIX
   String _getRegisterErrorMessage(int statusCode, dynamic responseData) {
-    // Extract custom message from response if available
+    // CRITICAL FIX: Prioritize backend error messages over hardcoded ones
     String? customMessage;
     if (responseData is Map) {
-      customMessage = responseData['detail'] as String? ?? 
+      // Extract custom message with fallback hierarchy
+      customMessage = responseData['detail'] as String? ??
                      responseData['error'] as String? ??
-                     responseData['message'] as String?;
+                     responseData['message'] as String? ??
+                     responseData['reason'] as String?;  // Additional fallback
     }
     
     // Return custom message if available, otherwise use defaults
@@ -644,7 +647,7 @@ class ApiService {
 
   // Token refresh is handled via interceptor when 401 is encountered
   // This method should not be called directly
-  @deprecated
+  @Deprecated('Token refresh should be handled by AuthService')
   Future<bool> refreshAccessToken() async {
     try {
       debugPrint('[API_REFRESH] Token refresh should be handled by interceptor');
@@ -1328,17 +1331,101 @@ Future<void> postToChannel(String channelId, String text) async {
     required String chatId,
     String? checksum,
   }) async {
-    final response = await _dio.post(
-      '${ApiConstants.filesEndpoint}/init',
-      data: {
-        'filename': filename,
-        'size': size,
-        'mime_type': mime,
-        'chat_id': chatId,
-        if (checksum != null) 'checksum': checksum,
-      },
-    );
-    return response.data;
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.filesEndpoint}/init',
+        data: {
+          'filename': filename,
+          'size': size,
+          'mime_type': mime,
+          'chat_id': chatId,
+          if (checksum != null) 'checksum': checksum,
+        },
+      );
+      return response.data ?? {};
+    } on DioException catch (e) {
+      _log('[API_INIT_ERROR] Failed to initialize upload: ${e.toString()}');
+      
+      // CRITICAL FIX: Enhanced error handling with retry logic
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        // Retry for timeout errors
+        return await _retryUpload(filename, size, mime, chatId, checksum);
+      }
+      
+      // CRITICAL FIX: Throw exception instead of returning error object
+      // This prevents KeyError in calling code when trying to access response['upload_id']
+      final errorMessage = _getInitUploadErrorMessage(e);
+      _log('[API_INIT_ERROR] Throwing error: $errorMessage');
+      throw Exception(errorMessage);
+    }
+  }
+
+  Future<Map<String, dynamic>> _retryUpload(
+    String filename,
+    int size, 
+    String mime,
+    String chatId,
+    String? checksum,
+  ) async {
+    int retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        final response = await _dio.post(
+          '${ApiConstants.filesEndpoint}/init',
+          data: {
+            'filename': filename,
+            'size': size,
+            'mime_type': mime,
+            'chat_id': chatId,
+            if (checksum != null) 'checksum': checksum,
+          },
+        );
+        return response.data ?? {};
+      } on DioException catch (e) {
+        retryCount++;
+        if (retryCount >= maxRetries) rethrow;
+        
+        _log('[API_INIT_RETRY] Attempt $retryCount failed: ${e.toString()}');
+        await Future.delayed(Duration(seconds: 2 * retryCount)); // Exponential backoff
+      }
+    }
+    
+    throw Exception('Upload initialization failed after $maxRetries retries');
+  }
+
+  String _getInitUploadErrorMessage(DioException e) {
+    switch (e.response?.statusCode) {
+      case 400:
+        return 'Invalid file data. Please check file size, type, and format.';
+      case 401:
+        return 'Authentication required. Please login again.';
+      case 403:
+        return 'Access denied. You do not have permission to upload files.';
+      case 413:
+        return 'File too large. Maximum file size is 40GB.';
+      case 429:
+        return 'Too many upload attempts. Please wait before trying again.';
+      case 500:
+        return 'Server error. Please try again later.';
+      case 503:
+        return 'Service temporarily unavailable. Please try again later.';
+      default:
+        return e.message ?? 'Unknown error occurred during upload initialization.';
+    }
+  }
+
+  bool _isRetryableError(DioException e) {
+    final statusCode = e.response?.statusCode;
+    // Retry on network errors and 5xx server errors
+    return e.type == DioExceptionType.connectionError ||
+           e.type == DioExceptionType.connectionTimeout ||
+           e.type == DioExceptionType.receiveTimeout ||
+           e.type == DioExceptionType.sendTimeout ||
+           (statusCode != null && statusCode >= 500 && statusCode < 600);
   }
 
   Future<void> uploadChunk({
