@@ -4,6 +4,8 @@ MongoDB Seed Script - Hypersend Database
 Populates MongoDB with realistic sample data for testing
 """
 
+import os
+
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from datetime import datetime, timedelta
@@ -11,8 +13,8 @@ import hashlib
 import secrets
 import sys
 
-# Configuration (points directly to your DigitalOcean VPS MongoDB)
-MONGO_URI = "mongodb://hypersend:Mayank@#03@139.59.82.105:27017/hypersend?authSource=admin&replicaSet=admin"
+# Configuration - use environment variables for security
+MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/hypersend")
 DB_NAME = "hypersend"
 
 # Sample data
@@ -77,8 +79,10 @@ class HypersendSeeder:
             print("✅ Disconnected from MongoDB")
     
     def hash_password(self, password):
-        """Hash password using SHA256 (use bcrypt in production)"""
-        return hashlib.sha256(password.encode()).hexdigest()
+        """Hash password using PBKDF2 with SHA-256 (same as auth/utils.py)"""
+        # Use the same hashing method as auth/utils.py to ensure compatibility
+        from backend.auth.utils import hash_password as secure_hash_password
+        return secure_hash_password(password)
     
     def clear_database(self):
         """Clear all collections"""

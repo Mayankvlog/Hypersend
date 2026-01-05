@@ -498,33 +498,43 @@ async def handle_options_request(full_path: str, request: Request):
     allowed_origin = "null"  # Default: deny untrusted origins
     
     if origin:
-        # LOGIC: Each pattern represents a domain family with protocol and optional port
-        # The regex uses ^ and $ anchors to prevent partial matches (e.g., evil.zaply.in.net)
-        allowed_patterns = [
-            # Production HTTPS (critical for security - must be first for priority)
-            r'^https://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',
-            # Production HTTP (fallback during development - NEVER in production)
-            r'^http://zaply\.in\.net(:[0-9]+)?$' if settings.DEBUG else None,
-            # Development localhost (all ports)
-            r'^https?://localhost(:[0-9]+)?$',
-            r'^https?://127\.0\.0\.1(:[0-9]+)?$',
-            r'^https?://\[::1\](:[0-9]+)?$',  # IPv6 loopback
-            # Docker container names (HTTP only - no SSL in Docker network)
-            r'^http://hypersend_frontend(:[0-9]+)?$',
-            r'^http://hypersend_backend(:[0-9]+)?$',
-            # Docker service names (HTTP only - resolved by internal DNS)
-            r'^http://frontend(:[0-9]+)?$',
-            r'^http://backend(:[0-9]+)?$',
-        ]
+        # SECURITY: Use exact whitelist matching to prevent subdomain bypass attacks
+        # No regex patterns - exact string matching only
+        allowed_origins = []
         
-        # Filter out None patterns (production mode removes HTTP for main domain)
-        allowed_patterns = [p for p in allowed_patterns if p]
+        # Production domains - exact matches only
+        if not settings.DEBUG:
+            allowed_origins.extend([
+                "https://zaply.in.net",
+                "https://www.zaply.in.net",
+            ])
         
-        # LOGIC: Check if origin matches any allowed pattern
-        for pattern in allowed_patterns:
-            if re.match(pattern, origin):
-                allowed_origin = origin
-                break  # Stop after first match to prevent duplicate checks
+        # Development environments
+        if settings.DEBUG:
+            allowed_origins.extend([
+                "http://zaply.in.net",
+                "https://zaply.in.net",
+                "http://localhost:3000",
+                "https://localhost:3000",
+                "http://localhost:8000",
+                "https://localhost:8000",
+                "http://127.0.0.1:3000",
+                "https://127.0.0.1:3000",
+                "http://127.0.0.1:8000", 
+                "https://127.0.0.1:8000",
+                "http://[::1]:3000",
+                "https://[::1]:3000",
+                "http://[::1]:8000",
+                "https://[::1]:8000",
+                # Docker environments
+                "http://hypersend_frontend:3000",
+                "http://hypersend_backend:8000",
+                "http://frontend:3000",
+                "http://backend:8000",
+            ])
+        
+        # SECURITY: Exact match only - no pattern matching to prevent bypass
+        allowed_origin = origin if origin in allowed_origins else None
     
     return Response(
         status_code=200,

@@ -72,55 +72,14 @@ else()
         PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
     )
     
-    # Verify packages were found
+    # Verify packages were found (only warn on Linux where they should exist)
     if(NOT GTK_LIBRARY OR NOT GLIB_LIBRARY OR NOT GIO_LIBRARY)
-        message(FATAL_ERROR "Required GTK/GLIB packages not found. Install libgtk-3-dev, libglib2.0-dev, libgio2.0-dev")
-    endif()
-else()
-    # Fallback when pkg-config is not available (common on Windows)
-    message(STATUS "pkg-config not found - using direct package detection")
-    
-    # Try to find GTK3 directly
-    find_path(GTK_INCLUDE_DIR gtk/gtk.h
-        PATHS
-            /usr/include/gtk-3.0
-            /usr/local/include/gtk-3.0
-            /usr/include/gtk-3.0/gtk
-            /usr/local/include/gtk-3.0/gtk
-    )
-    find_library(GTK_LIBRARY
-        NAMES gtk-3 gtk3 gtk
-        PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
-    )
-    
-    # Try to find GLib2 directly
-    find_path(GLIB_INCLUDE_DIR glib.h
-        PATHS
-            /usr/include/glib-2.0
-            /usr/local/include/glib-2.0
-    )
-    find_library(GLIB_LIBRARY
-        NAMES glib-2.0 glib2
-        PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
-    )
-    
-    # Try to find GIO directly
-    find_path(GIO_INCLUDE_DIR gio/gio.h
-        PATHS
-            /usr/include/glib-2.0
-            /usr/local/include/glib-2.0
-    )
-    find_library(GIO_LIBRARY
-        NAMES gio-2.0 gio2
-        PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
-    )
-    
-    # Verify all packages were found
-    if(NOT GTK_LIBRARY OR NOT GLIB_LIBRARY OR NOT GIO_LIBRARY)
-        message(FATAL_ERROR "Required GTK/GLIB packages not found. Install libgtk-3-dev, libglib2.0-dev, libgio2.0-dev")
+        if(UNIX AND NOT APPLE)
+            message(WARNING "GTK/GLIB packages not found. Some features may not be available. Install libgtk-3-dev, libglib2.0-dev, libgio2.0-dev")
+        endif()
     endif()
     
-    # Create imported targets manually
+    # Create imported targets manually when pkg-config is not available
     if(GTK_INCLUDE_DIR AND GTK_LIBRARY)
         add_library(GTK::GTK INTERFACE IMPORTED)
         set_target_properties(GTK::GTK PROPERTIES
@@ -185,19 +144,25 @@ target_link_libraries(flutter INTERFACE "${FLUTTER_LIBRARY}")
 # ENHANCED: Link libraries conditionally based on what was found
 # Link packages based on availability
 if(PkgConfig_FOUND)
-    target_link_libraries(flutter INTERFACE
-      PkgConfig::GTK
-      PkgConfig::GLIB
-      PkgConfig::GIO
-    )
-    # Use pre-stored results from individual checks
-    if(GTK_FOUND AND GTK_LIBRARY)
+    # Only link if targets were actually found
+    if(GTK_FOUND)
+        target_link_libraries(flutter INTERFACE PkgConfig::GTK)
+    endif()
+    if(GLIB_FOUND)
+        target_link_libraries(flutter INTERFACE PkgConfig::GLIB)
+    endif()
+    if(GIO_FOUND)
+        target_link_libraries(flutter INTERFACE PkgConfig::GIO)
+    endif()
+else()
+    # Use manually created targets when pkg-config is not available
+    if(GTK_INCLUDE_DIR AND GTK_LIBRARY)
         target_link_libraries(flutter INTERFACE GTK::GTK)
     endif()
-    if(GLIB_FOUND AND GLIB_LIBRARY)
+    if(GLIB_INCLUDE_DIR AND GLIB_LIBRARY)
         target_link_libraries(flutter INTERFACE GTK::GLIB)
     endif()
-    if(GIO_FOUND AND GIO_LIBRARY)
+    if(GIO_INCLUDE_DIR AND GIO_LIBRARY)
         target_link_libraries(flutter INTERFACE GTK::GIO)
     endif()
 endif()

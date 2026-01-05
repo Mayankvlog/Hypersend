@@ -237,13 +237,19 @@ class TestAllFixesIntegration:
             upload_expired = False
         assert upload_expired
         
-        # Token expiration
-        token_expiry = now - timedelta(hours=1)
-        if now > token_expiry:
-            token_expired = True
-        else:
-            token_expired = False
-        assert token_expired
+        # Token expiration - test actual JWT logic
+        from backend.auth.utils import create_access_token, verify_token
+        import jwt
+        
+        # Create expired token
+        expired_token = create_access_token(
+            data={"sub": "test_user"},
+            expires_delta=timedelta(seconds=-1)
+        )
+        
+        # Verify it raises expired signature error
+        with pytest.raises(jwt.ExpiredSignatureError):
+            verify_token(expired_token)
         
         # Operation timeout (simulated)
         operation_time = 6  # seconds

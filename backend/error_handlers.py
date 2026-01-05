@@ -279,13 +279,26 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """
-    Handle HTTPException with specific logic for different status code ranges:
+    Handle HTTPException with production-safe error responses:
     - 3xx: Redirection responses with proper handling
     - 4xx: Client errors with detailed guidance
-    - 5xx: Server errors with recovery suggestions
+    - 5xx: Server errors with minimal information disclosure in production
     """
     status_code = exc.status_code
     detail = exc.detail
+    
+    # CRITICAL FIX: Prevent information disclosure in production
+    if not settings.DEBUG:
+        # In production, sanitize error messages to prevent leaking internal details
+        if 500 <= status_code < 600:
+            # Server errors - use generic messages in production
+            detail = "Internal server error. Please try again later."
+        elif status_code == 404:
+            # 404 errors - don't leak internal path information
+            detail = "Resource not found."
+        elif status_code == 403:
+            # 403 errors - don't reveal authorization details
+            detail = "Access denied."
     
     # 3xx Redirection codes
     if 300 <= status_code < 400:

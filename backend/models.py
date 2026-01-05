@@ -493,7 +493,7 @@ class FileInitRequest(BaseModel):
 
 
 class FileInitResponse(BaseModel):
-    upload_id: str
+    uploadId: str  # camelCase for frontend consistency
     chunk_size: int
     total_chunks: int
     expires_in: int  # Duration in seconds

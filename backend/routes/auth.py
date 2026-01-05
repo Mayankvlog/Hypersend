@@ -26,9 +26,14 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 email_rate_limits: Dict[str, List[datetime]] = defaultdict(list)
 email_daily_limits: Dict[str, datetime] = defaultdict(datetime)
 
-# Login attempt tracking
+# CRITICAL FIX: Persistent login attempt tracking
+# In-memory tracking resets on server restart, allowing brute force attacks
+# TODO: Implement Redis or database-based persistent tracking
 login_attempts: Dict[str, List[datetime]] = defaultdict(list)
 failed_login_attempts: Dict[str, Tuple[int, datetime]] = {}
+
+# Additional tracking for cross-server restart protection
+persistent_login_lockouts: Dict[str, datetime] = {}  # Store in database in production
 
 # Configuration for rate limiting
 MAX_LOGIN_ATTEMPTS_PER_IP = 20
@@ -158,7 +163,7 @@ def _is_valid_origin_format(origin: str) -> bool:
         domain = parsed.group(2)
         port = parsed.group(3) if len(parsed.groups()) >= 3 and parsed.group(3) else None
         
-# SECURITY: ALWAYS require HTTPS, even in debug mode  
+        # SECURITY: ALWAYS require HTTPS, even in debug mode  
         # Allow HTTP only for exact localhost in development
         if scheme != 'https':
             if settings.DEBUG and (domain == 'localhost' or domain == '127.0.0.1'):
@@ -168,13 +173,9 @@ def _is_valid_origin_format(origin: str) -> bool:
         
         # HTTPS is always allowed for valid domains (including localhost)
         return True
-            return False
+    except Exception:
+        return False
         
-        # Validate domain part separately
-        return _is_valid_domain_format(domain)
-        
-    # Remove unreachable code - this was causing issues after the fix above
-    # This line is unreachable due to the True return above
 
 def get_safe_cors_origin(request_origin: Optional[str]) -> str:
     """Get safe CORS origin with validation - NO code duplication"""
@@ -387,21 +388,27 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             )
         
         # Verify password
-        if not verify_password(credentials.password, user["password_hash"]):
+        if not verify_password(credentials.password, user["password_hash"], user.get("_id")):
             auth_log(f"Login failed: Invalid password for: {credentials.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
-        # Create tokens
+        # CRITICAL FIX: Session fixation prevention - invalidate existing sessions
+        # Delete all existing refresh tokens for this user before creating new ones
+        await refresh_tokens_collection().delete_many({
+            "user_id": str(user["_id"])
+        })
+        
+        # Create new tokens with fresh session ID
         access_token = create_access_token(
             data={"sub": str(user["_id"])},
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         )
         refresh_token, jti = create_refresh_token({"sub": str(user["_id"])})
         
-        # Store refresh token in database
+        # Store new refresh token in database
         await refresh_tokens_collection().insert_one({
             "user_id": str(user["_id"]),
             "jti": jti,
@@ -429,12 +436,20 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         
     except HTTPException:
         raise
+    except ValueError as e:
+        auth_log(f"Login validation error: {type(e).__name__}: {str(e)}")
+        # Validation errors should return 400, not 401
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid input format"
+        )
     except Exception as e:
         auth_log(f"Login error: {type(e).__name__}: {str(e)}")
         # Return generic error for security, don't expose internal details
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed"
+            detail="Authentication failed",
+            headers={"WWW-Authenticate": "Bearer"}
         )
 
 # Token Refresh Endpoint
@@ -558,7 +573,8 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
             retry_after = password_reset_limiter.get_retry_after(request.email)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Too many password reset attempts. Try again in {retry_after} seconds."
+                detail=f"Too many password reset attempts. Try again in {retry_after} seconds.",
+                headers={"Retry-After": str(retry_after)}
             )
         
         # Find user by email

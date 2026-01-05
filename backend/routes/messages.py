@@ -271,13 +271,13 @@ async def search_messages(
     Filters: text query (q), has_media, has_link.
     """
     if not q and not has_media and not has_link:
-        raise HTTPException(status_code=400, detail="Search query or filter required")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Search query or filter required")
     
     # CRITICAL SECURITY: Enhanced search query validation
     if q:
         # Limit search query length to prevent DoS
         if len(q) > 100:
-            raise HTTPException(status_code=400, detail="Search query too long (max 100 characters)")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Search query too long (max 100 characters)")
         
         # CRITICAL SECURITY: Remove dangerous characters that could cause injection
         import re

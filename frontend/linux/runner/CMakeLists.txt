@@ -22,7 +22,11 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 # Add dependency libraries. Add any application-specific dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 
-# Link PkgConfig if available, otherwise fall back to manual detection
-target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
+# Link GTK only if the target exists
+if(TARGET PkgConfig::GTK)
+    target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
+elseif(TARGET GTK::GTK)
+    target_link_libraries(${BINARY_NAME} PRIVATE GTK::GTK)
+endif()
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")

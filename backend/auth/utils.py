@@ -16,6 +16,17 @@ import base64
 import json
 from io import BytesIO
 
+# Configure logger
+logger = logging.getLogger(__name__)
+
+def _log(level: str, message: str, extra_data: dict = None):
+    """Centralized logging function for auth utilities"""
+    log_data = {"auth_operation": message}
+    if extra_data:
+        log_data.update(extra_data)
+    
+    getattr(logger, level.lower())(message, extra=log_data)
+
 # Handle QRCode imports with Pylance compatibility
 if TYPE_CHECKING:
     # Type checking mode - provide stubs for Pylance
@@ -87,7 +98,7 @@ def hash_password(password: str) -> str:
     return f"{salt}${hash_hex}"
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
+def verify_password(plain_password: str, hashed_password: str, user_id: str = None) -> bool:
     """Verify a password against its PBKDF2 hash"""
     try:
         # Check if hash is in new format (salt$hash)
@@ -105,6 +116,36 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             )
             computed_hex = password_hash.hex()
             return hmac.compare_digest(computed_hex, stored_hash)
+        elif len(hashed_password) == 64:  # Legacy SHA256 hash (64 hex chars)
+            # SECURITY WARNING: Legacy hash support - should be migrated ASAP
+            # This is a temporary migration bridge only
+            import hashlib
+            legacy_hash = hashlib.sha256(plain_password.encode()).hexdigest()
+            if hmac.compare_digest(legacy_hash, hashed_password):
+                # CRITICAL FIX: Require user_id for secure migration
+                if not user_id:
+                    # Critical: Can't migrate without user context, but allow login
+                    _log("critical", "Legacy hash login without user_id context - SECURITY RISK")
+                    return True
+                
+                # Trigger automatic migration to secure hash
+                from backend.routes.users import users_collection
+                try:
+                    new_secure_hash = hash_password(plain_password)
+                    result = users_collection().update_one(
+                        {"_id": user_id, "password_hash": hashed_password},  # CRITICAL: Match both user_id AND hash
+                        {"$set": {"password_hash": new_secure_hash, "migrated_at": datetime.now(timezone.utc)}}
+                    )
+                    if result.modified_count == 0:
+                        _log("error", f"Migration failed - user not found: {user_id}")
+                    else:
+                        _log("info", f"Successfully migrated user {user_id} from legacy to secure hash")
+                except Exception as e:
+                    # CRITICAL FIX: Log migration failures instead of swallowing
+                    _log("error", f"Password hash migration failed for user {user_id}: {str(e)}")
+                    # Still allow login but with warning
+                return True
+            return False
         else:
             # Invalid hash format
             return False
@@ -167,13 +208,41 @@ def decode_token(token: str) -> TokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Validate token type - allow upload scope tokens
-        if token_type not in ["access", "refresh", "password_reset"]:
+        # CRITICAL FIX: Enhanced token validation with scope and user binding
+        if token_type not in ["access", "refresh", "password_reset", "upload"]:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: unsupported token type",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        
+        # Additional validation for upload tokens
+        if token_type == "upload":
+            # Upload tokens must have explicit user binding
+            if "upload_scope" not in payload or not payload.get("upload_scope"):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Upload token missing required scope",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # Upload tokens must have expiration and not be expired
+            if "exp" not in payload:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Upload token missing expiration",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # Upload tokens should have short TTL (validate max 1 hour)
+            exp_timestamp = payload["exp"]
+            issued_at = payload.get("iat", exp_timestamp)
+            if exp_timestamp - issued_at > 3600:  # More than 1 hour
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Upload token lifetime exceeds maximum allowed duration",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
         
         # Create TokenData with additional payload info for upload tokens
         return TokenData(

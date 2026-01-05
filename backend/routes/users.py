@@ -145,9 +145,10 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             is_contact=False  # Current user can't be a contact of themselves
         )
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
@@ -441,14 +442,15 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
             "files_shared": file_count,
             "storage_used_mb": round(quota_used / (1024 * 1024), 2),
             "storage_limit_mb": round(quota_limit / (1024 * 1024), 2),
-            "storage_percentage": round((quota_used / quota_limit) * 100, 1) if quota_limit > 0 else 0,
+            "storage_percentage": round((quota_used / quota_limit) * 100, 1) if quota_limit and quota_limit > 0 else 0,
             "account_created": user.get("created_at"),
             "last_active": user.get("last_active", datetime.now(timezone.utc))
         }
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
@@ -617,7 +619,7 @@ async def get_nearby_users(
         radius_radians = radius / EARTH_RADIUS
         
         # Validate coordinates
-        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        if lat < -90 or lat > 90 or lng < -180 or lng > 180:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid coordinates. Latitude must be -90 to 90, Longitude must be -180 to 180"
@@ -690,9 +692,10 @@ async def get_nearby_users(
         }
         
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except (ValueError, TypeError) as e:
         raise HTTPException(
@@ -734,9 +737,10 @@ async def get_permissions(current_user: str = Depends(get_current_user)):
         
         return permissions
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
@@ -780,9 +784,10 @@ async def update_permissions(
             "permissions": permissions
         }
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except (ValueError, TypeError, KeyError, OSError) as e:
         raise HTTPException(
@@ -866,7 +871,7 @@ async def change_password(
         # Verify old password
         from auth.utils import verify_password, hash_password
         
-        if not verify_password(request.old_password, user.get("password_hash", "")):
+        if not verify_password(request.old_password, user.get("password_hash", ""), current_user):
             print(f"[PASSWORD_CHANGE] Old password verification failed for {current_user}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -894,9 +899,10 @@ async def change_password(
         print(f"[PASSWORD_CHANGE] Successfully updated password for {current_user}")
         return {"message": "Password changed successfully"}
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except Exception as e:
         raise HTTPException(
@@ -931,7 +937,7 @@ async def change_email(
         
         # Verify password
         from auth.utils import verify_password
-        if not verify_password(request.password, user.get("password_hash", "")):
+        if not verify_password(request.password, user.get("password_hash", ""), current_user):
             print(f"[EMAIL_CHANGE] Password verification failed for {current_user}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -970,9 +976,10 @@ async def change_email(
         print(f"[EMAIL_CHANGE] Successfully updated email for {current_user} to {new_email}")
         return {"message": "Email changed successfully", "email": new_email}
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except Exception as e:
         raise HTTPException(
@@ -1004,8 +1011,9 @@ async def delete_account(
         
         # Delete user avatar file if exists
         try:
-            if user.get("avatar_url") and user["avatar_url"].startswith("/api/v1/users/avatar/"):
-                avatar_filename = user["avatar_url"].split("/")[-1]
+            avatar_url = user.get("avatar_url")
+            if avatar_url and avatar_url.startswith("/api/v1/users/avatar/"):
+                avatar_filename = avatar_url.split("/")[-1]
                 avatar_path = settings.DATA_ROOT / "avatars" / avatar_filename
                 if avatar_path.exists():
                     avatar_path.unlink()
@@ -1093,9 +1101,10 @@ async def delete_account(
         return {"message": "Account deleted successfully"}
         
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except HTTPException:
         raise
@@ -1538,7 +1547,7 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
         media_type = 'image/webp'
     else:
         logger.warning(f"[AVATAR] Unsupported file type: {filename}")
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported file type")
     
     try:
         file_size = os.path.getsize(file_path)
@@ -1571,7 +1580,7 @@ async def update_location(
     """
     try:
         # Validate coordinates
-        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        if lat < -90 or lat > 90 or lng < -180 or lng > 180:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid coordinates. Latitude must be -90 to 90, Longitude must be -180 to 180"
@@ -1608,9 +1617,10 @@ async def update_location(
         }
         
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except (ValueError, TypeError) as e:
         raise HTTPException(
@@ -1650,9 +1660,10 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         return {"message": "Location cleared successfully"}
         
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except HTTPException:
         raise
@@ -1728,9 +1739,10 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         }
         
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except HTTPException:
         raise
@@ -1793,9 +1805,10 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         }
         
     except asyncio.TimeoutError:
+        # Database timeouts should return 504 Gateway Timeout, not 503
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except HTTPException:
         raise

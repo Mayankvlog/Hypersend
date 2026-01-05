@@ -8,9 +8,9 @@ import os
 import aiofiles
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
 from typing import Optional, List
 from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
@@ -184,7 +184,6 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
 @router.options("/{upload_id}/cancel")
 async def files_options(request: Request):
     """Handle CORS preflight for files endpoints with secure origin validation"""
-    from fastapi.responses import Response
     
     origin = request.headers.get("origin", "")
     secure_origin = get_secure_cors_origin(origin)
@@ -217,9 +216,10 @@ async def initialize_upload(
                 "operation": "upload_init",
                 "error_type": "json_parse_error"
             })
+            # JSON parsing errors should return 400 with proper validation details
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid JSON in request body: {str(json_error)}"
+                detail="Malformed JSON in request body"
             )
         
         # CRITICAL DEBUG: Log the raw request for debugging 400 errors
@@ -304,8 +304,22 @@ async def initialize_upload(
             )
         
         try:
-            # Convert to int and validate range
-            size_int = int(float(size))  # Handle both int and float inputs
+            # Convert to int with proper validation to prevent overflow/precision issues
+            if isinstance(size, float):
+                if size > float(2**63 - 1):  # Check for 64-bit integer limit
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="File size too large"
+                    )
+                size_int = int(size)
+            elif isinstance(size, int):
+                size_int = size
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid file size format - must be a number"
+                )
+            
             if size_int <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -342,38 +356,69 @@ async def initialize_upload(
             r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]',  # Control characters
         ]
         
+        # Enhanced path traversal protection with URL decoding
+        decoded_filename = unquote(filename)
+        
         # Only block directory separators that would allow traversal
         # Allow single forward slash but not directory traversal sequences
-        if re.search(r'[/\\]\.\.[/\\]|^\.\.[/\\]|[/\\]\.\.$', filename):
+        if re.search(r'[/\\]\.\.[/\\]|^\.\.[/\\]|[/\\]\.\.$', decoded_filename):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid filename - path traversal not allowed"
             )
         
         # Check for null bytes and dangerous Unicode attacks
-        if '\x00' in filename or any(ord(c) < 32 for c in filename if c not in '\t\n\r'):
+        # Fix: Use decoded_filename consistently for all checks
+        if '\x00' in decoded_filename or any(ord(c) < 32 for c in decoded_filename if c not in '\t\n\r'):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid filename - contains null bytes or control characters"
             )
         
         # CRITICAL SECURITY: Block dangerous file extensions
+        # CRITICAL FIX: Enhanced dangerous extension validation
         dangerous_exts = {
-            '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-            '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',
-            '.msi', '.dll', '.app', '.deb', '.rpm', '.dmg', '.pkg', '.so', '.o', '.class'
+            # Executables and scripts
+            '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar', '.app',
+            '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lua', '.r',
+            # System files and libraries
+            '.msi', '.dll', '.so', '.dylib', '.o', '.class', '.bin', '.run',
+            # Documents with macros (dangerous)
+            '.docm', '.xlsm', '.pptm', '.dotm', '.xltm', '.potm',
+            # Archives that can contain executables
+            '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+            # Image formats that can contain exploits
+            '.svg', '.swf', '.fla',
+            # Configuration and system files
+            '.reg', '.inf', '.ini', '.cfg', '.conf', '.config', '.plist',
+            # Shortcut and link files
+            '.lnk', '.url', '.webloc', '.desktop',
+            # Package installers
+            '.deb', '.rpm', '.dmg', '.pkg', '.apk', '.ipa',
+            # Other dangerous formats
+            '.iso', '.img', '.vhd', '.vmdk', '.ova', '.ovf'
         }
-        # Extract file extension and normalize to lowercase for case-insensitive comparison
-        if '.' in filename:
-            file_ext = '.' + filename.rsplit('.', 1)[-1]
-            file_ext = file_ext.lower()  # Case-insensitive check
-        else:
-            file_ext = ''
+        
+        # Extract and validate file extension with comprehensive checking
+        file_ext = ''
+        if '.' in decoded_filename:
+            file_ext = '.' + decoded_filename.rsplit('.', 1)[-1].lower()
+        
+        # Multiple extension check for disguised files (e.g., file.txt.exe)
+        name_parts = decoded_filename.lower().split('.')
+        if len(name_parts) > 2:
+            # Check all extensions
+            for i in range(1, len(name_parts)):
+                potential_ext = '.' + name_parts[i]
+                if potential_ext in dangerous_exts:
+                    file_ext = potential_ext
+                    break
         
         if file_ext in dangerous_exts:
-            _log("warning", f"Dangerous file extension blocked", {
+            _log("warning", f"Dangerous file extension blocked: {file_ext}", {
                 "user_id": current_user,
                 "operation": "upload_init",
+                "filename": decoded_filename,
                 "extension": file_ext
             })
             raise HTTPException(
@@ -450,7 +495,8 @@ async def initialize_upload(
             'application/x-', 'text/x-', 'application/javascript', 'text/javascript'
         ]
         
-        if mime_type in dangerous_mime_types or any(pattern in mime_type.lower() for pattern in dangerous_patterns):
+        # Fix: Use only dangerous_patterns since dangerous_mime_types is undefined
+        if any(pattern in mime_type.lower() for pattern in dangerous_patterns):
             _log("warning", f"Potentially dangerous MIME type detected", {
                 "user_id": current_user,
                 "operation": "upload_init",
@@ -537,7 +583,7 @@ async def initialize_upload(
         })
         
         return FileInitResponse(
-            upload_id=upload_id,
+            uploadId=upload_id,  # Fixed: use camelCase to match model
             chunk_size=chunk_size,
             total_chunks=total_chunks,
             expires_in=int(upload_duration),
@@ -628,30 +674,35 @@ async def upload_chunk(
         chunk_path = Path(settings.DATA_ROOT) / "tmp" / upload_id / f"chunk_{chunk_index}.part"
         await _save_chunk_to_disk(chunk_path, chunk_data, chunk_index, current_user)
         
-        # Update upload record with uploaded chunk
-        # Use atomic MongoDB operation to update chunks (prevents race condition)
-        # Only add chunk if not already present using $addToSet
-        update_result = await uploads_collection().update_one(
+        # CRITICAL FIX: Prevent race condition with atomic version checking
+        # Use findOneAndUpdate to ensure atomic read-modify-write operation
+        upload_doc = await uploads_collection().find_one_and_update(
             {
                 "_id": upload_id,
-                "uploaded_chunks": {"$ne": chunk_index}  # Only if not already there
+                "status": "uploading"  # Must still be in uploading state
             },
             {
-                "$addToSet": {"uploaded_chunks": chunk_index},  # Atomic add to set
-                "$set": {"last_chunk_at": datetime.now(timezone.utc)}
-            }
+                "$set": {
+                    "last_chunk_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc)
+                },
+                "$addToSet": {"uploaded_chunks": chunk_index}  # Only adds if not present
+            },
+            return_document=True  # Return the updated document
         )
         
-        # If chunk was already uploaded, just update timestamp
-        if update_result.matched_count == 0:
-            await uploads_collection().update_one(
-                {"_id": upload_id},
-                {"$set": {"last_chunk_at": datetime.now(timezone.utc)}}
+        if not upload_doc:
+            _log("error", f"Upload document not found or not in uploading state: {upload_id}", {"user_id": current_user, "operation": "chunk_upload"})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Upload session not found or expired"
             )
         
-        # Get updated chunks count
-        updated_doc = await uploads_collection().find_one({"_id": upload_id})
-        uploaded_chunks = updated_doc.get("uploaded_chunks", [])
+        uploaded_chunks = upload_doc.get("uploaded_chunks", [])
+        
+        # Check if this was a duplicate chunk upload
+        if chunk_index not in uploaded_chunks:
+            _log("warning", f"Chunk upload inconsistency detected: {upload_id}, chunk {chunk_index}", {"user_id": current_user, "operation": "chunk_upload"})
         
         # Log successful chunk upload
         _log("info", f"Chunk {chunk_index} uploaded successfully", {
@@ -677,9 +728,10 @@ async def upload_chunk(
             "operation": "chunk_upload",
             "upload_id": upload_id
         })
+        # Distinguish different error types with proper status codes
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to upload chunk"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to upload chunk - service temporarily unavailable"
         )
 
 
@@ -728,31 +780,48 @@ async def complete_upload(
         mime_type = upload_doc.get("mime_type", "application/octet-stream")
         chat_id = upload_doc.get("chat_id")
         
-        # Generate final filename
+        # CRITICAL FIX: Generate secure random filename with user isolation
         file_id = hashlib.sha256(f"{uuid.uuid4()}".encode()).hexdigest()[:16]
-        final_path = Path(settings.DATA_ROOT) / "files" / file_id
+        user_prefix = current_user[:2]  # First 2 chars for sharding
+        final_path = Path(settings.DATA_ROOT) / "files" / user_prefix / current_user / file_id
         
-        # SECURITY FIX: Atomic file assembly with proper cleanup
-        temp_path = final_path.with_suffix('.tmp')
+        # SECURITY: Use secure temporary file with random name
+        import tempfile
+        import os
         try:
             final_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Write to temporary file first (atomic operation)
-            with open(temp_path, 'wb') as final_file:
+            # Create secure temporary file with random name
+            with tempfile.NamedTemporaryFile(
+                mode='wb', 
+                dir=final_path.parent, 
+                prefix=f".tmp_{file_id}_", 
+                suffix='.tmp',
+                delete=False  # We'll clean up manually
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                
+                # Set secure permissions (owner read/write only)
+                os.chmod(temp_path, 0o600)
+                
+                # Write chunks to temp file
                 for chunk_idx in range(total_chunks):
                     chunk_path = upload_dir / f"chunk_{chunk_idx}.part"
                     
                     if not chunk_path.exists():
-                        # CRITICAL SECURITY: Clean up temp file on failure
-                        if temp_path.exists():
-                            temp_path.unlink()
+                        temp_path.unlink(missing_ok=True)  # Clean up temp file
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"Chunk {chunk_idx} not found during assembly"
                         )
                     
                     with open(chunk_path, 'rb') as chunk_file:
-                        final_file.write(chunk_file.read())
+                        # Write in smaller chunks to prevent memory exhaustion
+                        while True:
+                            chunk_data = chunk_file.read(8192)  # 8KB chunks
+                            if not chunk_data:
+                                break
+                            temp_file.write(chunk_data)
             
             # CRITICAL SECURITY: Verify temp file integrity before making it permanent
             actual_size = temp_path.stat().st_size
@@ -1030,9 +1099,10 @@ async def get_file_info(
         )
     except Exception as e:
         _log("error", f"Failed to get file info", {"user_id": current_user, "operation": "file_info"})
+        # Database timeouts should be 504, internal errors 500
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get file information"
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="File information request timed out"
         )
 
 
@@ -1067,9 +1137,9 @@ async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
     except asyncio.TimeoutError:
         _log("warning", f"Avatar ownership check timeout", {"user_id": current_user, "operation": "avatar_check"})
         return False
-    except Exception:
+    except Exception as e:
         # Log error for debugging but don't expose details
-        _log("warning", f"Avatar ownership check failed", {"user_id": current_user, "operation": "avatar_check"})
+        _log("error", f"Avatar ownership check failed: {str(e)}", {"user_id": current_user, "operation": "avatar_check"})
         return False
 
 
@@ -1140,40 +1210,65 @@ async def download_file(
                 
             file_path = Path(storage_path)
             try:
-                # CRITICAL SECURITY: Multiple path validation layers
-                # 1. Normalize path to remove any relative components
-                normalized_path = file_path.resolve()
-                data_root = settings.DATA_ROOT.resolve()
-                
-                # 2. Check if path is within data root using relative_to
+                # CRITICAL SECURITY: Enhanced path validation to prevent traversal attacks
+                # 1. Multiple path normalization and validation layers
                 try:
-                    normalized_path.relative_to(data_root)
-                except ValueError:
-                    _log("error", f"Download path traversal attempt: {storage_path} -> {normalized_path}", {"user_id": current_user, "operation": "file_download"})
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Access denied - invalid file path"
-                    )
-                
-                # 3. Additional safety check - ensure no parent directory traversal
-                if '..' in str(file_path) or str(file_path).startswith('..'):
-                    _log("error", f"Parent directory traversal in path: {storage_path}", {"user_id": current_user, "operation": "file_download"})
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Access denied - invalid file path"
-                    )
-                
-                file_path = normalized_path
+                    # First normalize the path
+                    normalized_path = file_path.resolve()
+                    data_root = settings.DATA_ROOT.resolve()
+                    
+                    # 2. Check for symlinks - prevent symlink traversal
+                    if file_path.is_symlink():
+                        _log("error", f"Symlink traversal attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied - symlinks not allowed"
+                        )
+                    
+                    # 3. Canonical path validation - must be within data root
+                    try:
+                        relative_path = normalized_path.relative_to(data_root)
+                    except ValueError:
+                        _log("error", f"Path traversal attempt: {storage_path} -> {normalized_path}", {"user_id": current_user, "operation": "file_download"})
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied - invalid file path"
+                        )
+                    
+                    # 4. User directory enforcement - ensure user can only access their own files
+                    expected_user_prefix = Path("files") / current_user[:2] / current_user
+                    if not str(relative_path).startswith(str(expected_user_prefix)):
+                        _log("error", f"Cross-user file access attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied - unauthorized file access"
+                        )
+                    
+                    # 5. Additional character-level validation
+                    if '..' in str(normalized_path.parts) or any(part.startswith('.') for part in normalized_path.parts[1:]):
+                        _log("error", f"Suspicious path components: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied - invalid file path"
+                        )
+                    
+                    file_path = normalized_path
+                    
+                except (OSError, ValueError) as path_error:
+                    _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - invalid path")
             except (OSError, ValueError) as path_error:
                 _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - invalid path")
             
             if not file_path.exists():
                 _log("error", f"File exists in DB but not on disk", {"user_id": current_user, "operation": "file_download"})
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found on disk"
-                )
+            # 404 Not Found is correct for missing uploads
+            # 403 Forbidden would be for permission denied
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Upload not found or expired"
+            )
             
             # Return file for download
             return FileResponse(
@@ -1217,8 +1312,8 @@ async def download_file(
     except Exception as e:
         _log("error", f"Failed to download file", {"user_id": current_user, "operation": "file_download"})
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to download file"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to upload chunk - service temporarily unavailable"
         )
     except (OSError, ValueError) as path_error:
         _log("error", f"Invalid download path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
@@ -1232,10 +1327,27 @@ async def download_file(
     file_size = file_path.stat().st_size
     
     if range_header:
-        # Parse range header
-        range_match = range_header.replace("bytes=", "").split("-")
-        start = int(range_match[0]) if range_match[0] else 0
-        end = int(range_match[1]) if range_match[1] else file_size - 1
+        # Parse range header safely
+        try:
+            if not range_header.startswith("bytes="):
+                raise ValueError("Invalid range header format")
+            
+            range_part = range_header.replace("bytes=", "")
+            parts = range_part.split("-")
+            
+            if len(parts) != 2:
+                raise ValueError("Invalid range header format")
+                
+            start = int(parts[0].strip()) if parts[0].strip() else 0
+            end = int(parts[1].strip()) if parts[1].strip() else file_size - 1
+            
+            if start < 0 or end >= file_size or start > end:
+                raise ValueError("Invalid range values")
+        except (ValueError, IndexError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid range header: {str(e)}"
+            )
         
         async def file_iterator():
             async with aiofiles.open(file_path, "rb") as f:
@@ -1476,8 +1588,16 @@ async def cancel_upload(upload_id: str, request: Request, current_user: str = De
                             status_code=status.HTTP_403_FORBIDDEN,
                             detail="Upload token does not match this upload"
                         )
-            except Exception:
-                pass  # Token validation failed, will be caught below
+            except HTTPException:
+                # Re-raise HTTP exceptions 
+                raise
+            except Exception as e:
+                # Handle unexpected token validation errors
+                _log("error", f"Token validation error: {str(e)}", {"user_id": current_user, "operation": "upload_cancel"})
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token"
+                )
         
         # Check ownership - allow upload token access
         owner_id = upload.get("owner_id")

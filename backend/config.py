@@ -69,7 +69,7 @@ class Settings:
     if not _env_secret:
         raise ValueError("SECRET_KEY environment variable must be set in production")
     
-    # ENHANCED: Reject placeholder secrets for security
+    # CRITICAL FIX: Enhanced secret key validation with entropy requirements
     placeholder_patterns = {
         "dev-secret-key",
         "change-this-secret-key-in-production",
@@ -82,12 +82,34 @@ class Settings:
         "password",
         "key",
         "123456",
-        "qwerty"
+        "qwerty",
+        "admin",
+        "root",
+        "test",
+        "default"
     }
     
-    # CASE-INSENSITIVE placeholder detection
-    if _env_secret.lower() in (p.lower() for p in placeholder_patterns):
-        raise ValueError(f"SECURITY ERROR: SECRET_KEY appears to be a placeholder. Set a secure, random secret key in environment variables.")
+    # CRITICAL: Entropy validation for production secrets
+    if not self.DEBUG:
+        # Check minimum entropy (at least 3 character types and 32 chars)
+        has_upper = any(c.isupper() for c in secret_key)
+        has_lower = any(c.islower() for c in secret_key)
+        has_digit = any(c.isdigit() for c in secret_key)
+        has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in secret_key)
+        char_types = sum([has_upper, has_lower, has_digit, has_special])
+        
+        if len(secret_key) < 32 or char_types < 3:
+            raise ValueError(
+                "Production SECRET_KEY must be at least 32 characters with 3+ character types "
+                "(uppercase, lowercase, digits, special characters) for security"
+            )
+    
+    # CASE-INSENSITIVE placeholder detection - check if secret is exactly a placeholder
+    # Store lowercase version to avoid name resolution in generator
+    _secret_lower = _env_secret.lower()
+    for p in placeholder_patterns:
+        if _secret_lower == p.lower():
+            raise ValueError(f"SECURITY ERROR: SECRET_KEY appears to be a placeholder. Set a secure, random secret key in environment variables.")
     
     # BALANCED validation: ensure minimum length with reasonable complexity
     if len(_env_secret) < 32:
@@ -109,7 +131,7 @@ class Settings:
     
     # Token expiration constants
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "2"))  # Extended tokens for large uploads
     
     # File upload chunk settings  
@@ -125,8 +147,8 @@ class Settings:
     
     # File Storage (WhatsApp-style: Local only)
     STORAGE_MODE: str = os.getenv("STORAGE_MODE", "local")  # local, server, or hybrid
-    DATA_ROOT: Path = Path(os.getenv("DATA_ROOT", "./data"))  # Only for metadata/temp
-    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./uploads")  # Upload directory for chunks
+    DATA_ROOT: Path = Path(os.getenv("DATA_ROOT", "./data")).resolve()  # Only for metadata/temp - normalized for cross-platform
+    UPLOAD_DIR: str = os.path.normpath(os.getenv("UPLOAD_DIR", "./uploads"))  # Upload directory for chunks - cross-platform paths
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB
     MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", "42949672960"))  # 40 GiB
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
@@ -411,11 +433,20 @@ class Settings:
     def init_directories(self):
         """Create necessary directories"""
         try:
-            self.DATA_ROOT.mkdir(exist_ok=True, parents=True)
-            (self.DATA_ROOT / "tmp").mkdir(exist_ok=True, parents=True)
-            (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True)
-            (self.DATA_ROOT / "avatars").mkdir(exist_ok=True, parents=True)
-            print(f"[OK] Data directories initialized at {self.DATA_ROOT}")
+            # Ensure proper permissions for Linux compatibility
+            old_umask = os.umask(0o022)  # Set proper umask for shared directories
+            try:
+                self.DATA_ROOT.mkdir(exist_ok=True, parents=True, mode=0o755)
+                (self.DATA_ROOT / "tmp").mkdir(exist_ok=True, parents=True, mode=0o755)
+                (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True, mode=0o755)
+                (self.DATA_ROOT / "avatars").mkdir(exist_ok=True, parents=True, mode=0o755)
+                print(f"[OK] Data directories initialized at {self.DATA_ROOT}")
+            finally:
+                os.umask(old_umask)  # Restore original umask
+        except PermissionError as e:
+            print(f"[ERROR] Permission denied creating directories: {str(e)}")
+            print("[ERROR] Check file permissions and user rights - this will cause runtime failures")
+            raise
         except Exception as e:
             print(f"[WARN] Failed to initialize directories: {str(e)}")
             print("[WARN] Continuing with startup - check file permissions if this is critical")

@@ -77,16 +77,15 @@ def validate_command_injection(input_string: str) -> bool:
         '*/',    # SQL comment end
     ]
     
-    # Check for shell metacharacters that could enable command injection
+    # CRITICAL FIX: Separate command injection from SQL validation
+    # Command injection validation - check for dangerous shell metacharacters
     for char_sequence in shell_metacharacters:
         if char_sequence in input_string:
             return False
     
-    # Check for SQL injection patterns
-    input_lower = input_string.lower()
-    for sql_pattern in sql_injection_patterns:
-        if sql_pattern.lower() in input_lower:
-            return False
+    # SQL injection validation should only apply to database contexts
+    # This function should focus on command injection prevention
+    # SQL keywords like 'SELECT', 'DROP' are legitimate in normal text content
     
     # Block dangerous code execution functions/keywords
     dangerous_keywords = [

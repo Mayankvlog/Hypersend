@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """
-Comprehensive test for Login and Password Reset functionality
-Tests authentication flow and password recovery
+Test Login and Password Reset Functionality
+
+This script tests:
+1. User login with correct credentials
+2. Login failure with incorrect credentials  
+3. Password reset request
+4. Password reset confirmation
 """
+
+import os
 import requests
 import json
 import sys
@@ -10,8 +17,8 @@ from datetime import datetime
 from typing import Dict, Any
 
 API_URL = "http://localhost:8000/api/v1"
-TEST_USER_EMAIL = "mobimix33@gmail.com"
-TEST_USER_PASSWORD = "Mayank@#03"
+TEST_USER_EMAIL = os.getenv("TEST_USER_EMAIL", "test@example.com")
+TEST_USER_PASSWORD = os.getenv("TEST_USER_PASSWORD", "TestPassword123!")
 
 class TestRunner:
     def __init__(self):
