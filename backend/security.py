@@ -233,7 +233,8 @@ class SecurityLogger:
     @staticmethod
     def log_security_event(event_type: str, details: Dict[str, Any], severity: str = "INFO"):
         """Log security events"""
-        timestamp = os.times()[4]  # Get current time
+        import time
+        timestamp = time.time()  # Get current time
         log_entry = {
             "timestamp": timestamp,
             "event_type": event_type,

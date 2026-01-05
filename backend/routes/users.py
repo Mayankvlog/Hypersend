@@ -1728,45 +1728,35 @@ async def clear_location(current_user: str = Depends(get_current_user)):
                 detail="Cannot add yourself as a contact"
             )
         
-        # Check if already in contacts
-        current_user_data = await asyncio.wait_for(
-            users_collection().find_one({"_id": current_user}),
-            timeout=5.0
-        )
-        
-        if not current_user_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Current user not found"
-            )
-        
-        contacts = current_user_data.get("contacts", [])
-        
-        # Check if already in contacts (support both old format and new format)
-        if isinstance(contacts, list):
-            # Operator precedence: check dict format first, then fallback to direct format
-            is_dict_contact = any(isinstance(c, dict) and c.get("user_id") == request.user_id for c in contacts)
-            is_direct_contact = request.user_id in contacts
-            if is_dict_contact or is_direct_contact:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="User is already in your contacts"
-                )
-        
-        # Add to contacts in new format: {user_id, display_name}
+        # Check if already in contacts - use atomic operation to avoid race condition
+        # Use $pull with $addToSet for safe concurrent access
         contact_entry = {
             "user_id": request.user_id,
             "display_name": request.display_name or target_user.get("name", target_user.get("username", ""))
         }
-        contacts.append(contact_entry)
         
-        await asyncio.wait_for(
+        # Try atomic add with condition check
+        # This prevents race condition where another request might add simultaneously
+        update_result = await asyncio.wait_for(
             users_collection().update_one(
-                {"_id": current_user},
-                {"$set": {"contacts": contacts, "updated_at": datetime.now(timezone.utc)}}
+                {
+                    "_id": current_user,
+                    "contacts": {"$not": {"$elemMatch": {"user_id": request.user_id}}}  # Only if not already there
+                },
+                {
+                    "$push": {"contacts": contact_entry},  # Atomic push to array
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
+                }
             ),
             timeout=5.0
         )
+        
+        # If no update occurred, contact already exists
+        if update_result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is already in your contacts"
+            )
         
         return {
             "message": "Contact added successfully",

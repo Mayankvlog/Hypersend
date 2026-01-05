@@ -292,38 +292,41 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     detail = exc.detail
     
     error_descriptions = {
-        400: "Bad Request - Invalid request syntax or parameters",
-        401: "Unauthorized - Authentication required or invalid credentials",
-        403: "Forbidden - You lack permission to access this resource",
-        404: "Not Found - The requested resource doesn't exist",
-        405: "Method Not Allowed - This HTTP method is not supported for this endpoint",
-        406: "Not Acceptable - Server cannot produce the requested content type",
-        407: "Proxy Authentication Required - Proxy requires authentication",
-        408: "Request Timeout - Client took too long to send the request",
-        409: "Conflict - Request conflicts with the server's current state",
-        410: "Gone - The requested resource is permanently deleted",
-        411: "Length Required - Content-Length header is missing",
-        412: "Precondition Failed - A precondition header requirement was not met",
-        413: "Payload Too Large - Request body exceeds the maximum allowed size",
-        414: "URI Too Long - The requested URL is too long",
-        415: "Unsupported Media Type - Request content type is not supported",
-        416: "Range Not Satisfiable - Cannot fulfill the requested byte range",
-        417: "Expectation Failed - Server cannot meet Expect header requirements",
-        422: "Unprocessable Entity - Semantic validation error (valid syntax but invalid data)",
-        429: "Too Many Requests - Rate limit exceeded, too many requests received",
-        431: "Request Header Fields Too Large - Headers exceed the maximum size",
-        451: "Unavailable For Legal Reasons - Content blocked due to legal compliance",
-        499: "Client Closed Request - Client closed the connection prematurely",
-        500: "Internal Server Error - An unexpected server error occurred",
-        502: "Bad Gateway - Invalid response from upstream server",
-        503: "Service Unavailable - Server is temporarily unavailable",
-        504: "Gateway Timeout - Upstream server took too long to respond",
-    }
-    
+            400: "Bad Request - Invalid request syntax or parameters",
+            401: "Unauthorized - Authentication required or invalid credentials",
+            403: "Forbidden - You lack permission to access this resource",
+            404: "Not Found - The requested resource doesn't exist",
+            405: "Method Not Allowed - This HTTP method is not supported for this endpoint",
+            406: "Not Acceptable - Server cannot produce the requested content type",
+            407: "Proxy Authentication Required - Proxy requires authentication",
+            408: "Request Timeout - Client took too long to send the request",
+            409: "Conflict - Request conflicts with the server's current state",
+            410: "Gone - The requested resource is permanently deleted",
+            411: "Length Required - Content-Length header is missing",
+            412: "Precondition Failed - A precondition header requirement was not met",
+            413: "Payload Too Large - Request body exceeds the maximum allowed size",
+            414: "URI Too Long - The requested URL is too long",
+            415: "Unsupported Media Type - Request content type is not supported",
+            416: "Range Not Satisfiable - Cannot fulfill the requested byte range",
+            417: "Expectation Failed - Server cannot meet Expect header requirements",
+            422: "Unprocessable Entity - Semantic validation error (valid syntax but invalid data)",
+            429: "Too Many Requests - Rate limit exceeded, too many requests received",
+            431: "Request Header Fields Too Large - Headers exceed the maximum size",
+            451: "Unavailable For Legal Reasons - Content blocked due to legal compliance",
+            499: "Client Closed Request - Client closed the connection prematurely",
+            500: "Internal Server Error - An unexpected server error occurred",
+            502: "Bad Gateway - Invalid response from upstream server",
+            503: "Service Unavailable - Server is temporarily unavailable",
+            504: "Gateway Timeout - Upstream server took too long to respond",
+        }
+        
     error_description = error_descriptions.get(
         status_code,
         f"HTTP Error {status_code}"
     )
+    
+    # Custom 5xx exception classes for better error handling (defined outside function)
+    # Note: These can be used for raising specific HTTP exceptions
     
     # Log error with full context
     logger.warning(

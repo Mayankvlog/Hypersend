@@ -18,9 +18,7 @@ router = APIRouter(prefix="/groups", tags=["Groups"])
 @router.options("/{group_id}/members/{member_id}")
 @router.options("/{group_id}/members/{member_id}/role")
 @router.options("/{group_id}/members/{member_id}/restrict")
-@router.options("/{group_id}/members")
-@router.options("/{group_id}/members/{member_id}/role")
-async def groups_options():
+async def groups_options(request):
     """Handle CORS preflight for groups endpoints"""
     from fastapi.responses import Response
     # SECURITY: Restrict CORS origins in production for authenticated endpoints
@@ -187,10 +185,13 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
     if not _is_admin(group, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can add members")
 
-    add_ids = [uid for uid in (payload.user_ids or []) if uid and uid not in group.get("members", [])]
+    # Use atomic operation to avoid race condition with concurrent member additions
+    # $addToSet ensures each member is only added once, even with concurrent requests
+    add_ids = [uid for uid in (payload.user_ids or []) if uid]
     if not add_ids:
         return {"added": 0}
 
+    # Atomic operation: add members not already present
     await chats_collection().update_one({"_id": group_id}, {"$addToSet": {"members": {"$each": add_ids}}})
     for uid in add_ids:
         await _log_activity(group_id, current_user, "member_added", {"user_id": uid})

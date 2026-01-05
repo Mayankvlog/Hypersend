@@ -156,23 +156,40 @@ async def toggle_reaction(
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
 
+    # Use atomic operations to prevent race condition with concurrent reactions
+    # First, check if user already has this reaction
     reactions: Dict[str, list] = msg.get("reactions") or {}
     users = reactions.get(emoji) or []
-
-    action = "added"
+    
     if current_user in users:
-        users = [u for u in users if u != current_user]
+        # Remove the reaction atomically
+        await messages_collection().update_one(
+            {"_id": message_id},
+            {
+                "$pull": {f"reactions.{emoji}": current_user},
+                "$set": {"updated_at": _utcnow()}
+            }
+        )
+        # Clean up empty emoji entries
+        await messages_collection().update_one(
+            {"_id": message_id, f"reactions.{emoji}": {"$size": 0}},
+            {"$unset": {f"reactions.{emoji}": ""}}
+        )
         action = "removed"
     else:
-        users.append(current_user)
+        # Add the reaction atomically
+        await messages_collection().update_one(
+            {"_id": message_id},
+            {
+                "$addToSet": {f"reactions.{emoji}": current_user},
+                "$set": {"updated_at": _utcnow()}
+            }
+        )
+        action = "added"
 
-    if users:
-        reactions[emoji] = users
-    else:
-        reactions.pop(emoji, None)
-
-    await messages_collection().update_one({"_id": message_id}, {"$set": {"reactions": reactions}})
-    return {"status": "success", "action": action, "message_id": message_id, "reactions": reactions}
+    # Fetch updated message for response
+    updated_msg = await messages_collection().find_one({"_id": message_id})
+    return {"status": "success", "action": action, "message_id": message_id, "reactions": updated_msg.get("reactions") or {}}
 
 
 @router.get("/{message_id}/reactions")
@@ -219,18 +236,23 @@ async def mark_read(message_id: str, current_user: str = Depends(get_current_use
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
 
-    read_by = msg.get("read_by") or []
-    
-    # Operator precedence: check isinstance first, then get user_id
-    is_already_read = any(
-        isinstance(x, dict) and x.get("user_id") == current_user 
-        for x in read_by
+    # Use atomic operation to prevent race condition with concurrent read receipts
+    # Only add read receipt if user hasn't already marked it as read
+    result = await messages_collection().update_one(
+        {
+            "_id": message_id,
+            "read_by": {"$not": {"$elemMatch": {"user_id": current_user}}}  # Only if not already there
+        },
+        {
+            "$push": {"read_by": {"user_id": current_user, "read_at": _utcnow()}},
+            "$set": {"updated_at": _utcnow()}
+        }
     )
-    if is_already_read:
+    
+    # If user already marked as read, just return success
+    if result.matched_count == 0:
         return {"status": "read", "message_id": message_id}
-
-    read_by.append({"user_id": current_user, "read_at": _utcnow()})
-    await messages_collection().update_one({"_id": message_id}, {"$set": {"read_by": read_by}})
+    
     return {"status": "read", "message_id": message_id}
 
 

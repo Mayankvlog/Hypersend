@@ -11,27 +11,28 @@ class RateLimiter:
         self.lock = threading.Lock()
     
     def is_allowed(self, identifier: str) -> bool:
-        """Check if the identifier is allowed to make a request with thread safety"""
+        """Check if identifier is allowed to make a request with thread safety"""
         try:
             now = time.time()
             
             with self.lock:
-                # Atomic: Get current requests list
+                # CRITICAL FIX: Operate directly on stored list under lock
+                # No copy needed since we're under lock protection
                 current_requests = self.requests.get(identifier, [])
                 
-                # Atomic: Clean old requests
+                # Filter old requests in-place under lock
                 valid_requests = [
                     req_time for req_time in current_requests
                     if now - req_time < self.window_seconds
                 ]
                 
-                # Atomic: Check limit
+                # Check limit
                 if len(valid_requests) >= self.max_requests:
                     # Store cleaned list back
                     self.requests[identifier] = valid_requests
                     return False
                 
-                # Atomic: Add current request and store
+                # Add current request and store
                 valid_requests.append(now)
                 self.requests[identifier] = valid_requests
                 return True

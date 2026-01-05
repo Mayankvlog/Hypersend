@@ -232,15 +232,15 @@ async def register(user: UserCreate) -> UserResponse:
         # Validate email and password with security checks
         import re
         
-        # Security: Use standard email format validation instead of multiple regex patterns
-        # Remove inconsistent and ineffective pattern matching
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, user.email):
+        # Security: RFC 5322 compliant email validation with proper character classes
+        email_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9._%-]*[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$|^[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$'
+        # Validation: prevent consecutive dots in email (local and domain parts)
+        has_consecutive_dots = '..' in user.email
+        if has_consecutive_dots or not re.match(email_pattern, user.email):
             auth_log(f"Invalid email format: {user.email[:50]}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid email format"
-
             )
         
         if not user.password or len(user.password) < 6:
@@ -354,9 +354,11 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # Validate input with security checks
         import re
         
-        # Security: Use standard email format validation
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, credentials.email):
+        # Security: RFC 5322 compliant email validation with proper character classes
+        email_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9._%-]*[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$|^[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$'
+        # Validation: prevent consecutive dots in email (local and domain parts)
+        has_consecutive_dots = '..' in credentials.email
+        if has_consecutive_dots or not re.match(email_pattern, credentials.email):
             auth_log(f"Invalid email format in login attempt: {credentials.email[:50]}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

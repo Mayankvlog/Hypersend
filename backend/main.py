@@ -374,9 +374,28 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
     path = str(request.url.path)
     
     # Common patterns that should be 404, not 405
-    # Operator precedence: check trailing slash first, then route matching
+    # SECURITY FIX: More precise route matching to prevent bypass attacks
     has_trailing_slash = path.endswith('/')
-    has_matching_route = any(route.path in path for route in app.routes if hasattr(route, 'path'))
+    has_matching_route = any(
+        route.path == path.rstrip('/') or route.path == path 
+        for route in app.routes 
+        if hasattr(route, 'path')
+    )
+    
+    # Additional security: Check for path traversal attempts
+    if '..' in path or path.startswith('//') or '%' in path:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "status_code": 404,
+                "error": "Not Found - The requested resource doesn't exist",
+                "detail": "Invalid path format",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "path": path,
+                "method": request.method,
+                "hints": ["Check URL spelling", "Verify resource exists", "Check API documentation"]
+            }
+        )
     
     if has_trailing_slash or not has_matching_route:
         return JSONResponse(
@@ -484,8 +503,8 @@ async def handle_options_request(full_path: str, request: Request):
         allowed_patterns = [
             # Production HTTPS (critical for security - must be first for priority)
             r'^https://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',
-            # Production HTTP (fallback during development)
-            r'^http://zaply\.in\.net(:[0-9]+)?$',
+            # Production HTTP (fallback during development - NEVER in production)
+            r'^http://zaply\.in\.net(:[0-9]+)?$' if settings.DEBUG else None,
             # Development localhost (all ports)
             r'^https?://localhost(:[0-9]+)?$',
             r'^https?://127\.0\.0\.1(:[0-9]+)?$',
@@ -497,6 +516,9 @@ async def handle_options_request(full_path: str, request: Request):
             r'^http://frontend(:[0-9]+)?$',
             r'^http://backend(:[0-9]+)?$',
         ]
+        
+        # Filter out None patterns (production mode removes HTTP for main domain)
+        allowed_patterns = [p for p in allowed_patterns if p]
         
         # LOGIC: Check if origin matches any allowed pattern
         for pattern in allowed_patterns:
@@ -676,12 +698,12 @@ async def preflight_alias_endpoints(request: Request):
         allowed_patterns = [
             # Production HTTPS (critical for security)
             r'^https://([a-zA-Z0-9-]+\.)?zaply\.in\.net(:[0-9]+)?$',
-            # Production HTTP (fallback)
-            r'^http://zaply\.in\.net(:[0-9]+)?$',
+            # Production HTTP (fallback - only in debug)
+            r'^http://zaply\.in\.net(:[0-9]+)?$' if settings.DEBUG else None,
             # Development localhost (all ports and protocols)
             r'^https?://localhost(:[0-9]+)?$',
             r'^https?://127\.0\.0\.1(:[0-9]+)?$',
-            r'^https?://\[::1\](:[0-9]+)?$',
+            r'^https?://\[::1\](:[0-9]+)?$',  # IPv6 loopback
             # Docker container names (HTTP only)
             r'^http://hypersend_frontend(:[0-9]+)?$',
             r'^http://hypersend_backend(:[0-9]+)?$',
@@ -689,6 +711,9 @@ async def preflight_alias_endpoints(request: Request):
             r'^http://frontend(:[0-9]+)?$',
             r'^http://backend(:[0-9]+)?$',
         ]
+        
+        # Filter out None patterns (production mode removes HTTP for main domain)
+        allowed_patterns = [p for p in allowed_patterns if p]
         
         # LOGIC: Check if origin matches any allowed pattern
         for pattern in allowed_patterns:

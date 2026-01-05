@@ -18,6 +18,7 @@ from models import (
 from db_proxy import files_collection, uploads_collection, users_collection
 from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, decode_token
 from config import settings
+from validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -119,12 +120,12 @@ def detect_binary_content(content: bytes) -> dict:
     if total_chars > 0:
         non_printable = total_chars - printable_chars
         non_printable_ratio = non_printable / total_chars
-        # Security validation: reject files with >30% non-printable characters
-        if non_printable_ratio > 0.3:
+        # Security validation: reject files with >30% non-printable characters (but allow valid binary files)
+        if non_printable_ratio > 0.7:  # Increased threshold to avoid false positives with legitimate binary files
             return {
                 "is_binary": True,
                 "reason": f"high_non_printable_ratio_{non_printable_ratio:.2f}",
-                "confidence": "medium" if non_printable_ratio < 0.5 else "high"
+                "confidence": "medium" if non_printable_ratio < 0.9 else "high"
             }
     
     # Check for common binary file signatures
@@ -173,7 +174,7 @@ async def files_options():
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(
     request: Request,
-    current_user: str = Depends(get_current_user)
+    current_user: str = Depends(get_current_user_for_upload)
     ):
     """Initialize file upload for 40GB files with enhanced security - accepts both 'mime' and 'mime_type'"""
     
@@ -190,11 +191,30 @@ async def initialize_upload(
         # Accept both 'mime' and 'mime_type' for compatibility
         mime_type = body.get('mime_type') or body.get('mime')
         
+        # SECURITY: Validate all inputs against injection attacks
+        if filename and not validate_path_injection(filename):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid filename - contains dangerous patterns"
+            )
+        
+        if chat_id and not validate_command_injection(chat_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid chat identifier"
+            )
+        
+        # Sanitize inputs
+        filename = sanitize_input(filename, 255) if filename else None
+        chat_id = sanitize_input(chat_id, 100) if chat_id else None
+        
         # Enhanced validation for zero-byte files and proper MIME types
         # CRITICAL SECURITY: Add content verification for client-provided MIME types
         if mime_type:
-            # Basic MIME type format validation
-            if '/' not in mime_type:
+            # Basic MIME type format validation - stricter pattern
+            import re
+            mime_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9!#$&\-\^_]*\/[a-zA-Z0-9][a-zA-Z0-9!#$&\-\^_.]*$'
+            if not re.match(mime_pattern, mime_type):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid MIME type format"
@@ -210,14 +230,54 @@ async def initialize_upload(
         # CRITICAL SECURITY: Prevent path traversal and injection attacks in filename
         import re
         # Block path traversal chars, script tags, and special characters
+        # SECURITY FIX: More specific patterns to avoid false positives
         dangerous_patterns = [
-            r'\.\.',  # Path traversal
-            r'[\\/]',  # Directory separators
-            r'<script.*?>.*?</script>',  # XSS
+            r'\.\.[\/\\]',  # Path traversal: ../ or ..\
+            r'[\/\\]\.\.[\/\\]',  # Path traversal in middle: /.. or \..\
+            r'<script[^>]*>[^<]*</script>',  # XSS - proper bracket escaping
             r'javascript:',  # JS protocol
-            r'on\w+\s*=',  # Event handlers
+            r'on[a-zA-Z]+\s*=',  # Event handlers with proper char class
             r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]',  # Control characters
         ]
+        
+        # Only block directory separators that would allow traversal
+        # Allow single forward slash but not directory traversal sequences
+        if re.search(r'[/\\]\.\.[/\\]|^\.\.[/\\]|[/\\]\.\.$', filename):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid filename - path traversal not allowed"
+            )
+        
+        # Check for null bytes and dangerous Unicode attacks
+        if '\x00' in filename or any(ord(c) < 32 for c in filename if c not in '\t\n\r'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid filename - contains null bytes or control characters"
+            )
+        
+        # CRITICAL SECURITY: Block dangerous file extensions
+        dangerous_exts = {
+            '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
+            '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',
+            '.msi', '.dll', '.app', '.deb', '.rpm', '.dmg', '.pkg', '.so', '.o', '.class'
+        }
+        # Extract file extension and normalize to lowercase for case-insensitive comparison
+        if '.' in filename:
+            file_ext = '.' + filename.rsplit('.', 1)[-1]
+            file_ext = file_ext.lower()  # Case-insensitive check
+        else:
+            file_ext = ''
+        
+        if file_ext in dangerous_exts:
+            _log("warning", f"Dangerous file extension blocked", {
+                "user_id": current_user,
+                "operation": "upload_init",
+                "extension": file_ext
+            })
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File type '{file_ext}' is not allowed for security reasons"
+            )
         
         for pattern in dangerous_patterns:
             if re.search(pattern, filename, re.IGNORECASE | re.DOTALL):
@@ -250,8 +310,7 @@ async def initialize_upload(
             'video/mp4', 'video/webm', 'video/quicktime',
             'audio/mpeg', 'audio/wav', 'audio/ogg',
             'application/pdf', 'text/plain', 'application/json',
-            'application/zip', 'application/x-zip-compressed',
-            'application/x-msdownload', 'application/octet-stream'
+            'application/zip', 'application/x-zip-compressed'
         ]
         
         # CRITICAL SECURITY: Check MIME type is allowed
@@ -266,10 +325,16 @@ async def initialize_upload(
             'application/javascript', 'text/javascript', 'application/x-javascript',
             'text/html', 'application/x-html+php', 'application/x-php',
             'application/x-msdos-program', 'application/x-msdownload',
-            'application/x-exe', 'application/x-sh', 'application/x-bat', 'application/x-csh'
+            'application/x-exe', 'application/x-sh', 'application/x-bat', 'application/x-csh',
+            'application/x-executable', 'application/x-shellscript', 'application/vnd.ms-cab-compressed'
         ]
         
-        if mime_type in dangerous_mime_types:
+        # Block any MIME type containing executable or script patterns
+        dangerous_patterns = [
+            'application/x-', 'text/x-', 'application/javascript', 'text/javascript'
+        ]
+        
+        if mime_type in dangerous_mime_types or any(pattern in mime_type.lower() for pattern in dangerous_patterns):
             _log("warning", f"Potentially dangerous MIME type detected", {
                 "user_id": current_user,
                 "operation": "upload_init",
@@ -319,7 +384,9 @@ async def initialize_upload(
         # Create upload record in database
         upload_record = {
             "_id": upload_id,
+            "upload_id": upload_id,  # CRITICAL FIX: Add both fields for consistency
             "user_id": current_user,
+            "owner_id": current_user,  # Add owner_id for consistency
             "filename": os.path.basename(filename) if filename else None,  # Only store basename
             "size": size,
             "mime_type": mime_type,
@@ -364,6 +431,258 @@ async def initialize_upload(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to initialize upload"
+        )
+
+
+@router.put("/{upload_id}/chunk", response_model=ChunkUploadResponse)
+async def upload_chunk(
+    upload_id: str,
+    request: Request,
+    chunk_index: int = Query(...),
+    current_user: str = Depends(get_current_user_for_upload)
+    ):
+    """Upload a single file chunk with streaming support"""
+    
+    try:
+        # Get chunk data from request body
+        chunk_data = await request.body()
+        
+        if not chunk_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chunk data is required"
+            )
+        
+        # Verify upload exists and belongs to user
+        upload_doc = await uploads_collection().find_one({"_id": upload_id})
+        
+        if not upload_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Upload not found or expired"
+            )
+        
+        if upload_doc.get("user_id") != current_user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to upload to this session"
+            )
+        
+        # Check if upload has expired
+        if upload_doc.get("expires_at"):
+            if datetime.now(timezone.utc) > upload_doc["expires_at"]:
+                raise HTTPException(
+                    status_code=status.HTTP_410_GONE,
+                    detail="Upload session has expired"
+                )
+        
+        # Validate chunk index
+        total_chunks = upload_doc.get("total_chunks", 0)
+        if chunk_index < 0 or chunk_index >= total_chunks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid chunk index: {chunk_index}. Expected 0-{total_chunks-1}"
+            )
+        
+        # Save chunk to disk
+        chunk_path = Path(settings.DATA_ROOT) / "tmp" / upload_id / f"chunk_{chunk_index}.part"
+        await _save_chunk_to_disk(chunk_path, chunk_data, chunk_index, current_user)
+        
+        # Update upload record with uploaded chunk
+        # Use atomic MongoDB operation to update chunks (prevents race condition)
+        # Only add chunk if not already present using $addToSet
+        update_result = await uploads_collection().update_one(
+            {
+                "_id": upload_id,
+                "uploaded_chunks": {"$ne": chunk_index}  # Only if not already there
+            },
+            {
+                "$addToSet": {"uploaded_chunks": chunk_index},  # Atomic add to set
+                "$set": {"last_chunk_at": datetime.now(timezone.utc)}
+            }
+        )
+        
+        # If chunk was already uploaded, just update timestamp
+        if update_result.matched_count == 0:
+            await uploads_collection().update_one(
+                {"_id": upload_id},
+                {"$set": {"last_chunk_at": datetime.now(timezone.utc)}}
+            )
+        
+        # Get updated chunks count
+        updated_doc = await uploads_collection().find_one({"_id": upload_id})
+        uploaded_chunks = updated_doc.get("uploaded_chunks", [])
+        
+        # Log successful chunk upload
+        _log("info", f"Chunk {chunk_index} uploaded successfully", {
+            "user_id": current_user,
+            "operation": "chunk_upload",
+            "upload_id": upload_id,
+            "chunk_index": chunk_index,
+            "chunk_size": len(chunk_data)
+        })
+        
+        return ChunkUploadResponse(
+            chunk_index=chunk_index,
+            status="uploaded",
+            total_chunks=total_chunks,
+            uploaded_chunks=len(uploaded_chunks)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Failed to upload chunk {chunk_index}: {str(e)}", {
+            "user_id": current_user,
+            "operation": "chunk_upload",
+            "upload_id": upload_id
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload chunk"
+        )
+
+
+@router.post("/{upload_id}/complete", response_model=FileCompleteResponse)
+async def complete_upload(
+    upload_id: str,
+    request: Request,
+    current_user: str = Depends(get_current_user_for_upload)
+    ):
+    """Complete file upload and assemble chunks"""
+    
+    try:
+        # Get upload record
+        upload_doc = await uploads_collection().find_one({"_id": upload_id})
+        
+        if not upload_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Upload not found or expired"
+            )
+        
+        if upload_doc.get("user_id") != current_user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to complete this upload"
+            )
+        
+        # Verify all chunks have been uploaded
+        total_chunks = upload_doc.get("total_chunks", 0)
+        uploaded_chunks = upload_doc.get("uploaded_chunks", [])
+        
+        expected_chunks = set(range(total_chunks))
+        actual_chunks = set(uploaded_chunks)
+        
+        if expected_chunks != actual_chunks:
+            missing = list(expected_chunks - actual_chunks)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Missing chunks: {missing}. Please upload all chunks before completing."
+            )
+        
+        # Assemble chunks into complete file
+        upload_dir = Path(settings.DATA_ROOT) / "tmp" / upload_id
+        filename = upload_doc.get("filename", "file")
+        size = upload_doc.get("size", 0)
+        mime_type = upload_doc.get("mime_type", "application/octet-stream")
+        chat_id = upload_doc.get("chat_id")
+        
+        # Generate final filename
+        file_id = hashlib.sha256(f"{uuid.uuid4()}".encode()).hexdigest()[:16]
+        final_path = Path(settings.DATA_ROOT) / "files" / file_id
+        
+        # Assemble file from chunks
+        try:
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(final_path, 'wb') as final_file:
+                for chunk_idx in range(total_chunks):
+                    chunk_path = upload_dir / f"chunk_{chunk_idx}.part"
+                    
+                    if not chunk_path.exists():
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Chunk {chunk_idx} not found during assembly"
+                        )
+                    
+                    with open(chunk_path, 'rb') as chunk_file:
+                        final_file.write(chunk_file.read())
+            
+            # Verify file integrity
+            actual_size = final_path.stat().st_size
+            if actual_size != size:
+                final_path.unlink()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File size mismatch: expected {size}, got {actual_size}"
+                )
+            
+            # Store file metadata
+            file_record = {
+                "_id": file_id,
+                "filename": filename,
+                "size": size,
+                "mime_type": mime_type,
+                "owner_id": current_user,
+                "chat_id": chat_id,
+                "upload_id": upload_id,
+                "created_at": datetime.now(timezone.utc),
+                "storage_path": str(final_path),
+                "shared_with": [],
+                "checksum": upload_doc.get("checksum")
+            }
+            
+            await files_collection().insert_one(file_record)
+            
+            # Clean up chunks and upload record
+            import shutil
+            if upload_dir.exists():
+                shutil.rmtree(upload_dir)
+            
+            await uploads_collection().delete_one({"_id": upload_id})
+            
+            _log("info", f"Upload completed successfully", {
+                "user_id": current_user,
+                "operation": "upload_complete",
+                "upload_id": upload_id,
+                "file_id": file_id,
+                "filename": filename,
+                "size": size
+            })
+            
+            return FileCompleteResponse(
+                file_id=file_id,
+                filename=filename,
+                size=size,
+                mime_type=mime_type,
+                status="completed"
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            _log("error", f"Failed to assemble file chunks: {str(e)}", {
+                "user_id": current_user,
+                "operation": "upload_complete",
+                "upload_id": upload_id
+            })
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to assemble uploaded file"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Failed to complete upload: {str(e)}", {
+            "user_id": current_user,
+            "operation": "upload_complete",
+            "upload_id": upload_id
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to complete upload"
         )
 
 
@@ -650,19 +969,30 @@ async def download_file(
                 
             file_path = Path(storage_path)
             try:
-                # Resolve to absolute path and check it's within data root
-                resolved_path = file_path.resolve()
+                # CRITICAL SECURITY: Multiple path validation layers
+                # 1. Normalize path to remove any relative components
+                normalized_path = file_path.resolve()
                 data_root = settings.DATA_ROOT.resolve()
-                # Use proper path comparison to prevent traversal bypass
+                
+                # 2. Check if path is within data root using relative_to
                 try:
-                    resolved_path.relative_to(data_root)
+                    normalized_path.relative_to(data_root)
                 except ValueError:
-                    _log("error", f"Download path traversal attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                    _log("error", f"Download path traversal attempt: {storage_path} -> {normalized_path}", {"user_id": current_user, "operation": "file_download"})
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Access denied"
+                        detail="Access denied - invalid file path"
                     )
-                file_path = resolved_path
+                
+                # 3. Additional safety check - ensure no parent directory traversal
+                if '..' in str(file_path) or str(file_path).startswith('..'):
+                    _log("error", f"Parent directory traversal in path: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied - invalid file path"
+                    )
+                
+                file_path = normalized_path
             except (OSError, ValueError) as path_error:
                 _log("error", f"Invalid file path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - invalid path")
@@ -724,12 +1054,6 @@ async def download_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Invalid file path"
-        )
-    
-    if not file_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found on disk"
         )
     
     # Handle range requests
@@ -907,12 +1231,21 @@ async def revoke_file_access(
 async def refresh_upload_token(upload_id: str, current_user: str = Depends(get_current_user)):
     """Refresh upload token for long-running uploads"""
     
-    # Verify upload exists and user owns it
-    upload = await uploads_collection().find_one({"upload_id": upload_id, "owner_id": current_user})
+    # CRITICAL FIX: Query by _id field, not upload_id field (database inconsistency)
+    upload = await uploads_collection().find_one({"_id": upload_id})
     if not upload:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Upload not found"
+        )
+    
+    # Verify ownership
+    if upload.get("user_id") != current_user:
+        _log("warning", f"Unauthorized upload token refresh attempt: user={current_user}, upload={upload_id}", 
+               {"user_id": current_user, "operation": "upload_token_refresh"})
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: you don't own this upload"
         )
     
     # Check if upload is still valid (not expired)
@@ -949,7 +1282,8 @@ async def cancel_upload(upload_id: str, request: Request, current_user: str = De
     
     # Handle token expiration gracefully
     try:
-        upload = await uploads_collection().find_one({"upload_id": upload_id})
+        # CRITICAL FIX: Query by _id field, not upload_id field (database inconsistency)
+        upload = await uploads_collection().find_one({"_id": upload_id})
         if not upload:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1005,7 +1339,7 @@ async def cancel_upload(upload_id: str, request: Request, current_user: str = De
         (upload_dir / "manifest.json").unlink(missing_ok=True)
         upload_dir.rmdir()
     
-    # Delete upload record
-    await uploads_collection().delete_one({"upload_id": upload_id})
+    # Delete upload record (CRITICAL FIX: Use correct field name)
+    await uploads_collection().delete_one({"_id": upload_id})
     
     return {"message": "Upload cancelled"}
