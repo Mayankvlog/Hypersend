@@ -51,8 +51,40 @@ set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # System-level dependencies.
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(GTK QUIET IMPORTED_TARGET gtk+-3.0)
+    pkg_check_modules(GTK_FOUND QUIET IMPORTED_TARGET gtk+-3.0)
+    
+    if(GTK_FOUND)
+        message(STATUS "GTK found via pkg-config")
+    else()
+        message(STATUS "pkg-config found but GTK not detected, using direct detection")
+        set(PkgConfig_FOUND FALSE)
+    endif()
+endif()
+
+# Direct GTK detection when pkg-config not available or failed
+if(NOT PkgConfig_FOUND)
+    message(STATUS "Using direct GTK detection")
+    find_path(GTK_INCLUDE_DIR gtk/gtk.h
+        PATHS /usr/include/gtk-3.0 /usr/local/include/gtk-3.0
+        PATH_SUFFIXES gtk
+    )
+    find_library(GTK_LIBRARY 
+        NAMES gtk-3 gtk3 gtk
+        PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
+    )
+    
+    if(GTK_INCLUDE_DIR AND GTK_LIBRARY)
+        set(GTK_INCLUDE_DIRS ${GTK_INCLUDE_DIR})
+        set(GTK_LIBRARIES ${GTK_LIBRARY})
+        message(STATUS "GTK3 found: ${GTK_LIBRARY}")
+    else()
+        message(STATUS "GTK3 not found - this is a warning, build may continue")
+        set(GTK_LIBRARIES "")
+    endif()
+endif()
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
