@@ -8,8 +8,8 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt
-      - /var/lib/letsencrypt:/var/lib/letsencrypt
+      - ./certs/letsencrypt:/etc/letsencrypt:rw
+      - ./certs/lib-letsencrypt:/var/lib/letsencrypt:rw
       - nginx_cache:/var/cache/nginx
     logging:
       driver: "json-file"
@@ -20,13 +20,20 @@ services:
       - sh
       - -c
       - |
-        if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
+        if [ ! -f '/etc/letsencrypt/live/zaply.in.net/privkey.pem' ]; then
           echo '[NGINX] Creating self-signed certificate for initial deployment...';
-          mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
-          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
-          cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
-          echo '[NGINX] Self-signed certificate created';
+          mkdir -p /etc/letsencrypt/live/zaply.in.net;
+          openssl req -x509 -newkey rsa:2048 \
+            -keyout /etc/letsencrypt/live/zaply.in.net/privkey.pem \
+            -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem \
+            -days 365 -nodes -subj '/CN=zaply.in.net';
+          cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem \
+             /etc/letsencrypt/live/zaply.in.net/chain.pem;
+          echo '[NGINX] Self-signed certificate created at /etc/letsencrypt/live/zaply.in.net/';
+        else
+          echo '[NGINX] Using existing Let'\''s Encrypt certificate';
         fi;
+        echo '[NGINX] Starting nginx...';
         nginx -g 'daemon off;'
     depends_on:
       backend:
@@ -42,12 +49,10 @@ services:
       retries: 3
       start_period: 15s
     environment:
-      # Suppress SSL verification warnings for self-signed certs in dev
       - NGINX_ALLOW_UNSAFE_SSL=true
       - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
-      - NGINX_API_HOST=${API_HOST:-0.0.0.0}
-      - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
-      - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
+      - TZ=UTC
+
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
@@ -90,21 +95,17 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
-      # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
       MONGO_USER: ${MONGO_USER:-hypersend}
       MONGO_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
       MONGO_HOST: mongodb
       MONGO_PORT: 27017
-      # Force empty MONGODB_URI in Docker so it constructs one using MONGO_* vars above
-      MONGODB_URI: ""
+      MONGODB_URI: mongodb://${MONGO_USER:-hypersend}:${MONGO_PASSWORD:-hypersend_secure_password}@mongodb:27017/${MONGO_INITDB_DATABASE:-hypersend}?authSource=admin&retryWrites=true&w=majority
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
-      
-      # ===== API CONFIGURATION =====
-      SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Zaply_Hypersend_2025_Secure_Fixed}
+      SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_DAYS: 30
+      UPLOAD_TOKEN_EXPIRE_HOURS: 2
       DATA_ROOT: /data
       UPLOADS_PATH: /app/uploads
       MAX_FILE_SIZE_BYTES: 42949672960
@@ -115,25 +116,20 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
-      
-      # ===== CORS CONFIGURATION =====
-      # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
-      # Structure: HTTPS production first, then Docker HTTP, then Dev HTTP
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://hypersend_frontend:80,http://hypersend_frontend,http://frontend:80,http://frontend,http://hypersend_backend:8000,http://backend:8000,http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000}
-      
-      # ===== RATE LIMITING & SECURITY =====
+      SERVER_URL: ${SERVER_URL:-https://zaply.in.net}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://hypersend_frontend:80,http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://localhost:3000,http://localhost:3001}
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       DEBUG: "False"
       USE_MOCK_DB: "False"
-      
-      # ===== EMAIL CONFIGURATION =====
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
+      TZ: UTC
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
@@ -144,10 +140,10 @@ services:
       - hypersend_network
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
+      interval: 15s
+      timeout: 5s
       retries: 5
-      start_period: 180s
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -161,17 +157,14 @@ services:
       args:
         # SECURITY: Always use HTTPS for production API calls
         API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
-        # SECURITY: SSL certificate validation default = true (PRODUCTION SECURE)
-        # DEVELOPMENT: Override with VALIDATE_CERTIFICATES=false for self-signed certs
-        # WARNING: Allowing SSL bypass in production exposes to MITM attacks!
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
       - "3000:80"
-    depends_on:
-      backend:
-        condition: service_healthy
+    environment:
+      - TZ=UTC
+      - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
     networks:
       - hypersend_network
     healthcheck:
