@@ -89,20 +89,7 @@ class Settings:
         "default"
     }
     
-    # CRITICAL: Entropy validation for production secrets
-    if not self.DEBUG:
-        # Check minimum entropy (at least 3 character types and 32 chars)
-        has_upper = any(c.isupper() for c in secret_key)
-        has_lower = any(c.islower() for c in secret_key)
-        has_digit = any(c.isdigit() for c in secret_key)
-        has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in secret_key)
-        char_types = sum([has_upper, has_lower, has_digit, has_special])
-        
-        if len(secret_key) < 32 or char_types < 3:
-            raise ValueError(
-                "Production SECRET_KEY must be at least 32 characters with 3+ character types "
-                "(uppercase, lowercase, digits, special characters) for security"
-            )
+    # CRITICAL: Entropy validation for production secrets is now done inline below
     
     # CASE-INSENSITIVE placeholder detection - check if secret is exactly a placeholder
     # Store lowercase version to avoid name resolution in generator

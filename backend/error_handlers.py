@@ -52,6 +52,15 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from datetime import datetime, timezone
 
+# Import settings with fallback for circular dependency scenarios
+try:
+    from config import settings
+except (ImportError, RuntimeError):
+    # Create a minimal settings object if config cannot be imported
+    class MinimalSettings:
+        DEBUG = False
+    settings = MinimalSettings()
+
 # Configure logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
