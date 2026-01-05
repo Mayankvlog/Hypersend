@@ -422,15 +422,33 @@ async def initialize_upload(
             max_parallel=settings.MAX_PARALLEL_CHUNKS
         )
         
-    except Exception as e:
-        # CRITICAL SECURITY: Log only essential information, no sensitive data
-        _log("error", f"Failed to initialize upload", {
+    except HTTPException:
+        # Re-raise HTTP exceptions (validation errors already raised with proper status)
+        raise
+    except ValueError as e:
+        # Validation errors
+        _log("error", f"Validation error in upload initialization: {str(e)}", {
             "user_id": current_user,
-            "operation": "upload_init"
+            "operation": "upload_init",
+            "error_type": "validation"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid upload data: {str(e)}"
+        )
+    except Exception as e:
+        # Log the actual exception for debugging
+        import traceback
+        _log("error", f"Failed to initialize upload: {str(e)}", {
+            "user_id": current_user,
+            "operation": "upload_init",
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "traceback": traceback.format_exc()
         })
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to initialize upload"
+            detail="Failed to initialize upload. Please check your request and try again."
         )
 
 
