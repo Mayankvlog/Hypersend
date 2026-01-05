@@ -108,9 +108,13 @@ class Settings:
     has_digit = any(c.isdigit() for c in _env_secret)
     has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in _env_secret)
     
-    # Require at least 3 of 4 character types for good security
+    # Hex format check: accept 64+ character hex strings (256-bit keys) as secure
+    # Hex strings are valid cryptographic keys even with only 2 character types
+    is_hex_format = len(_env_secret) >= 64 and all(c in "0123456789abcdefABCDEF" for c in _env_secret)
+    
+    # Require at least 3 of 4 character types for good security (unless hex format)
     char_types = sum([has_upper, has_lower, has_digit, has_special])
-    if char_types < 3:
+    if char_types < 3 and not is_hex_format:
         raise ValueError(f"SECURITY ERROR: SECRET_KEY lacks complexity (only {char_types}/4 character types). Mix uppercase, lowercase, digits, and special characters.")
     
     SECRET_KEY: str = _env_secret
