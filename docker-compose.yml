@@ -142,8 +142,8 @@ services:
       test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 180s
+      retries: 3
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
@@ -165,9 +165,6 @@ services:
     environment:
       - TZ=UTC
       - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
-    depends_on:
-      backend:
-        condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:
