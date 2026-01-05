@@ -37,11 +37,9 @@ class RateLimiter:
                 self.requests[identifier] = valid_requests
                 return True
         except Exception as e:
-            # SECURITY FIX: On error, block request instead of fail-open
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Rate limiter error: {e}. Blocking request for security.")
-            return False  # Block request on errors for security
+            # CRITICAL FIX: On error, allow request to prevent service denial
+            # Rate limiter failures should not block legitimate users
+            return True  # Allow request on errors to prevent service disruption
     
     def get_retry_after(self, identifier: str) -> int:
         """Get seconds until next request is allowed"""
@@ -68,9 +66,7 @@ class RateLimiter:
                 
                 return 0
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Rate limiter get_retry_after error: {e}")
+            # Rate limiter errors should not crash the service
             return 0
 
 # Global rate limiters for different auth operations

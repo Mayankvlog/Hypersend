@@ -75,18 +75,15 @@ async def connect_db():
                 print(f"  4. Check host:port connectivity: {settings._MONGO_HOST}:{settings._MONGO_PORT}")
                 print("  5. Ensure MongoDB is bound to 0.0.0.0 (check: mongod --bind_ip 0.0.0.0)")
                 print("  6. For VPS, verify firewall allows MongoDB port")
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Database service temporarily unavailable"
-                )
+                # CRITICAL FIX: Don't raise HTTPException from database layer
+                # Let the calling layer handle the HTTP response
+                raise ConnectionError("Database service temporarily unavailable")
         except TimeoutError as e:
             # Database timeout should return 504 Gateway Timeout
             print(f"[ERROR] MongoDB connection timeout on attempt {attempt + 1}")
             if attempt >= max_retries - 1:
-                raise HTTPException(
-                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                    detail="Database connection timeout"
-                )
+                # CRITICAL FIX: Don't raise HTTPException from database layer
+                raise TimeoutError("Database connection timeout")
             else:
                 import asyncio
                 retry_delay = 5.0
@@ -122,7 +119,8 @@ async def connect_db():
                 print(f"  4. Check host:port connectivity: {settings._MONGO_HOST}:{settings._MONGO_PORT}")
                 print("  5. Ensure MongoDB is bound to 0.0.0.0 (check: mongod --bind_ip 0.0.0.0)")
                 print("  6. For VPS, verify firewall allows MongoDB port")
-                raise
+                # CRITICAL FIX: Raise generic connection error, not HTTPException
+                raise ConnectionError("Database service temporarily unavailable")
 
 
 async def close_db():

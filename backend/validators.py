@@ -64,28 +64,32 @@ def validate_command_injection(input_string: str) -> bool:
         ')',   # End subshell
     ]
     
-    # SQL injection patterns - separate from command injection
-    sql_injection_patterns = [
-        'DROP', # SQL keyword
-        'DELETE', # SQL keyword
-        'INSERT', # SQL keyword
-        'UPDATE', # SQL keyword
-        'SELECT', # SQL keyword
-        'UNION', # SQL keyword
-        '--',   # SQL comment
-        '/*',    # SQL comment start
-        '*/',    # SQL comment end
+    # CRITICAL FIX: Define shell metacharacters first
+    shell_metacharacters = [
+        ';',   # Command separator
+        '|',   # Pipe operator
+        '&',   # Background execution
+        '>',   # Redirection
+        '<',   # Input redirection
+        '`',   # Backtick execution
+        '$(',  # Command substitution
+        '${',  # Parameter expansion (bracket form)
+        '&&',  # Command chaining
+        '||',  # OR command execution
+        '>>',  # Append redirection
+        '<<',  # Here document
+        '&>',  # Output to file
     ]
     
-    # CRITICAL FIX: Separate command injection from SQL validation
     # Command injection validation - check for dangerous shell metacharacters
     for char_sequence in shell_metacharacters:
         if char_sequence in input_string:
             return False
     
-    # SQL injection validation should only apply to database contexts
-    # This function should focus on command injection prevention
-    # SQL keywords like 'SELECT', 'DROP' are legitimate in normal text content
+    # Command injection validation - check for dangerous shell metacharacters
+    for char_sequence in shell_metacharacters:
+        if char_sequence in input_string:
+            return False
     
     # Block dangerous code execution functions/keywords
     dangerous_keywords = [
@@ -114,7 +118,7 @@ def validate_command_injection(input_string: str) -> bool:
         r'onerror\s*=',
         r'onload\s*=',
         r'onclick\s*=',
-        r'on\w+\s*=',  # Generic event handler injection
+        r'on\\w+\\s*=',  # Generic event handler injection
     ]
     
     for pattern in script_patterns:

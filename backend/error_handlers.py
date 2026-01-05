@@ -296,6 +296,11 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     status_code = exc.status_code
     detail = exc.detail
     
+    # CRITICAL FIX: Validate status code is valid HTTP status
+    if not isinstance(status_code, int) or status_code < 100 or status_code > 599:
+        status_code = 500
+        detail = "Internal server error"
+    
     # CRITICAL FIX: Prevent information disclosure in production
     if not settings.DEBUG:
         # In production, sanitize error messages to prevent leaking internal details
@@ -308,6 +313,9 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         elif status_code == 403:
             # 403 errors - don't reveal authorization details
             detail = "Access denied."
+        elif status_code == 401:
+            # 401 errors - don't leak which field failed
+            detail = "Authentication required or invalid credentials"
     
     # 3xx Redirection codes
     if 300 <= status_code < 400:
@@ -389,11 +397,15 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     # Note: These can be used for raising specific HTTP exceptions
     
     # Log error with full context
-    logger.warning(
-        f"[HTTP_{status_code}] {request.method} {request.url.path} | "
-        f"Client: {request.client.host if request.client else 'Unknown'} | "
-        f"Detail: {detail}"
-    )
+    try:
+        client_host = request.client.host if request.client else 'Unknown'
+        logger.warning(
+            f"[HTTP_{status_code}] {request.method} {request.url.path} | "
+            f"Client: {client_host} | "
+            f"Detail: {detail}"
+        )
+    except Exception as log_error:
+        logger.error(f"Error logging HTTP exception: {type(log_error).__name__}")
     
     response_data = {
         "status_code": status_code,
@@ -409,9 +421,26 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     if hints:
         response_data["hints"] = hints
     
+    # Add retry-after header for rate limit errors
+    headers = {}
+    if status_code == 429 and exc.headers and "Retry-After" in exc.headers:
+        headers["Retry-After"] = exc.headers["Retry-After"]
+    
+    # Add security headers
+    security_headers = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
+    }
+    
+    if headers:
+        security_headers.update(headers)
+    
     return JSONResponse(
         status_code=status_code,
-        content=response_data
+        content=response_data,
+        headers=security_headers
     )
 
 

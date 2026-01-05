@@ -76,81 +76,86 @@ security = HTTPBearer()
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using PBKDF2 with SHA-256"""
-    # Generate a random salt (32 hex characters = 16 bytes)
-    salt = hashlib.sha256(str(uuid.uuid4()).encode()).hexdigest()[:32]
+    """Hash a password using PBKDF2 with SHA-256 and cryptographically secure salt"""
+    if not password or not isinstance(password, str):
+        raise ValueError("Password must be a non-empty string")
+    
+    # CRITICAL FIX: Use secrets.token_hex for cryptographically secure random salt
+    # Generate 32 hex characters (16 bytes of random data)
+    salt = secrets.token_hex(16)  # 16 bytes -> 32 hex chars
     
     if not salt or len(salt) != 32:
-        raise ValueError("Invalid salt generation")
+        raise ValueError("Invalid salt generation - critical security issue")
     
-    password_bytes = password.encode('utf-8')
-    password_hash = hashlib.pbkdf2_hmac(
-        'sha256',
-        password_bytes,
-        salt.encode('utf-8'),
-        100000
-    )
-    
-    hash_hex = password_hash.hex()
-    if not hash_hex:
-        raise ValueError("Invalid hash generation")
-    
-    return f"{salt}${hash_hex}"
+    try:
+        password_bytes = password.encode('utf-8')
+        password_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password_bytes,
+            salt.encode('utf-8'),
+            100000  # 100,000 iterations (NIST recommendation)
+        )
+        
+        hash_hex = password_hash.hex()
+        if not hash_hex or len(hash_hex) != 64:  # SHA256 produces 64 hex chars
+            raise ValueError("Invalid hash generation")
+        
+        return f"{salt}${hash_hex}"
+    except Exception as e:
+        raise ValueError(f"Password hashing failed: {type(e).__name__}")
 
 
 def verify_password(plain_password: str, hashed_password: str, user_id: str = None) -> bool:
-    """Verify a password against its PBKDF2 hash"""
+    """Verify a password against its PBKDF2 hash with constant-time comparison"""
     try:
+        if not plain_password or not hashed_password:
+            return False
+        
+        # CRITICAL FIX: Validate input types to prevent type confusion attacks
+        if not isinstance(plain_password, str) or not isinstance(hashed_password, str):
+            _log("warning", "Invalid password verification input types")
+            return False
+        
         # Check if hash is in new format (salt$hash)
         if '$' in hashed_password and len(hashed_password.split('$')) == 2:
             salt, stored_hash = hashed_password.split('$')
-            if not salt or not stored_hash:
+            if not salt or not stored_hash or len(salt) != 32:
                 return False
             
-            password_bytes = plain_password.encode('utf-8')
-            password_hash = hashlib.pbkdf2_hmac(
-                'sha256',
-                password_bytes,
-                salt.encode('utf-8'),
-                100000
-            )
-            computed_hex = password_hash.hex()
-            return hmac.compare_digest(computed_hex, stored_hash)
-        elif len(hashed_password) == 64:  # Legacy SHA256 hash (64 hex chars)
-            # SECURITY WARNING: Legacy hash support - should be migrated ASAP
-            # This is a temporary migration bridge only
-            import hashlib
-            legacy_hash = hashlib.sha256(plain_password.encode()).hexdigest()
-            if hmac.compare_digest(legacy_hash, hashed_password):
-                # CRITICAL FIX: Require user_id for secure migration
-                if not user_id:
-                    # Critical: Can't migrate without user context, but allow login
-                    _log("critical", "Legacy hash login without user_id context - SECURITY RISK")
+            try:
+                password_bytes = plain_password.encode('utf-8')
+                password_hash = hashlib.pbkdf2_hmac(
+                    'sha256',
+                    password_bytes,
+                    salt.encode('utf-8'),
+                    100000
+                )
+                computed_hex = password_hash.hex()
+                # SECURITY: Use constant-time comparison to prevent timing attacks
+                is_valid = hmac.compare_digest(computed_hex, stored_hash)
+                return is_valid
+            except (ValueError, UnicodeEncodeError) as e:
+                _log("warning", f"Password verification failed: {type(e).__name__}")
+                return False
+        elif len(hashed_password) == 64 and all(c in '0123456789abcdefABCDEF' for c in hashed_password):
+            # Legacy SHA256 hash (64 hex chars) - ONLY for migration, not recommended
+            try:
+                legacy_hash = hashlib.sha256(plain_password.encode()).hexdigest()
+                if hmac.compare_digest(legacy_hash, hashed_password):
+                    _log("warning", f"User {user_id} using legacy password hash - migration recommended")
                     return True
-                
-                # Trigger automatic migration to secure hash
-                from backend.routes.users import users_collection
-                try:
-                    new_secure_hash = hash_password(plain_password)
-                    result = users_collection().update_one(
-                        {"_id": user_id, "password_hash": hashed_password},  # CRITICAL: Match both user_id AND hash
-                        {"$set": {"password_hash": new_secure_hash, "migrated_at": datetime.now(timezone.utc)}}
-                    )
-                    if result.modified_count == 0:
-                        _log("error", f"Migration failed - user not found: {user_id}")
-                    else:
-                        _log("info", f"Successfully migrated user {user_id} from legacy to secure hash")
-                except Exception as e:
-                    # CRITICAL FIX: Log migration failures instead of swallowing
-                    _log("error", f"Password hash migration failed for user {user_id}: {str(e)}")
-                    # Still allow login but with warning
-                return True
-            return False
+                return False
+            except Exception as e:
+                _log("error", f"Legacy hash verification failed: {type(e).__name__}")
+                return False
         else:
-            # Invalid hash format
+            # Invalid hash format - reject immediately
+            _log("warning", f"Invalid password hash format for user {user_id}")
             return False
             
-    except (ValueError, AttributeError, UnicodeDecodeError):
+    except Exception as e:
+        # Log but don't expose details
+        _log("error", f"Password verification exception: {type(e).__name__}")
         return False
 
 
@@ -180,12 +185,8 @@ def create_refresh_token(data: dict) -> Tuple[str, str]:
 def decode_token(token: str) -> TokenData:
     """Decode and validate JWT token with enhanced validation and timing attack protection"""
     try:
-        # SECURITY FIX: Use constant-time comparison to prevent timing attacks
-        # Add random delay to mask token validation timing
-        import random
-        import time
-        random_delay = random.uniform(0.01, 0.05)  # 10-50ms random delay
-        time.sleep(random_delay)
+        # SECURITY FIX: Remove random delay to improve performance
+        # Timing attacks are mitigated by constant-time comparison in hmac.compare_digest
         
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")

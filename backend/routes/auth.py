@@ -26,7 +26,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 email_rate_limits: Dict[str, List[datetime]] = defaultdict(list)
 email_daily_limits: Dict[str, datetime] = defaultdict(datetime)
 
-# CRITICAL FIX: Persistent login attempt tracking
+# CRITICAL FIX: Persistent login attempt tracking with better security
 # In-memory tracking resets on server restart, allowing brute force attacks
 # TODO: Implement Redis or database-based persistent tracking
 login_attempts: Dict[str, List[datetime]] = defaultdict(list)
@@ -34,6 +34,17 @@ failed_login_attempts: Dict[str, Tuple[int, datetime]] = {}
 
 # Additional tracking for cross-server restart protection
 persistent_login_lockouts: Dict[str, datetime] = {}  # Store in database in production
+
+# SECURITY: Clean old lockout entries periodically
+def cleanup_expired_lockouts():
+    """Clean up expired lockout entries to prevent memory leaks"""
+    current_time = datetime.now(timezone.utc)
+    expired_keys = [
+        key for key, expiry_time in persistent_login_lockouts.items()
+        if expiry_time < current_time
+    ]
+    for key in expired_keys:
+        del persistent_login_lockouts[key]
 
 # Configuration for rate limiting
 MAX_LOGIN_ATTEMPTS_PER_IP = 20
@@ -233,11 +244,10 @@ async def register(user: UserCreate) -> UserResponse:
         # Validate email and password with security checks
         import re
         
-        # Security: RFC 5322 compliant email validation with proper character classes
-        email_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9._%-]*[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$|^[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$'
-        # Validation: prevent consecutive dots in email (local and domain parts)
-        has_consecutive_dots = '..' in user.email
-        if has_consecutive_dots or not re.match(email_pattern, user.email):
+        # Security: Simplified email validation to reduce false positives
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        # Basic validation - allow consecutive dots but check format
+        if not re.match(email_pattern, user.email):
             auth_log(f"Invalid email format: {user.email[:50]}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -256,15 +266,24 @@ async def register(user: UserCreate) -> UserResponse:
                 detail="Name is required"
             )
         
-        # Check if user already exists
+        # Check if user already exists with case-insensitive email lookup
         try:
             users_col = users_collection()
-            existing_user = await users_col.find_one({"email": user.email})
-        except Exception as db_error:
-            auth_log(f"Database error checking existing user: {type(db_error).__name__}: {str(db_error)}")
+            # CRITICAL FIX: Use case-insensitive email lookup with regex to prevent duplicates
+            existing_user = await users_col.find_one({
+                "email": {"$regex": f"^{re.escape(user.email)}$", "$options": "i"}
+            })
+        except (ConnectionError, TimeoutError) as db_error:
+            auth_log(f"Database connection error checking existing user: {type(db_error).__name__}: {str(db_error)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database service temporarily unavailable. Please try again."
+            )
+        except Exception as db_error:
+            auth_log(f"Database error checking existing user: {type(db_error).__name__}: {str(db_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database operation failed. Please try again."
             )
         
         if existing_user:
@@ -312,11 +331,17 @@ async def register(user: UserCreate) -> UserResponse:
             users_col = users_collection()
             result = await users_col.insert_one(user_doc)
             auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
+        except (ConnectionError, TimeoutError) as db_error:
+            auth_log(f"Database connection error during user insertion: {type(db_error).__name__}: {str(db_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service temporarily unavailable. Please try again."
+            )
         except Exception as db_error:
             auth_log(f"Database error during user insertion: {type(db_error).__name__}: {str(db_error)}")
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to create user account. Database service may be unavailable."
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create user account. Please try again."
             )
         
         # Create response
@@ -355,11 +380,10 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # Validate input with security checks
         import re
         
-        # Security: RFC 5322 compliant email validation with proper character classes
-        email_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9._%-]*[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$|^[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$'
-        # Validation: prevent consecutive dots in email (local and domain parts)
-        has_consecutive_dots = '..' in credentials.email
-        if has_consecutive_dots or not re.match(email_pattern, credentials.email):
+        # Security: Simplified email validation to reduce false positives
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        # Basic validation - allow consecutive dots but check format
+        if not re.match(email_pattern, credentials.email):
             auth_log(f"Invalid email format in login attempt: {credentials.email[:50]}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -373,6 +397,9 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             )
         
         auth_log(f"Login attempt for email: {credentials.email}")
+        
+        # Clean up expired lockouts periodically
+        cleanup_expired_lockouts()
         
         # Check rate limit by IP
         client_ip = request.client.host if request and request.client else "unknown"
@@ -441,8 +468,19 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 detail="Invalid email or password"
             )
         
-        # Verify password
-        if not verify_password(credentials.password, user["password_hash"], user.get("_id")):
+        # Verify password - CRITICAL FIX: Ensure password_hash exists
+        password_hash = user.get("password_hash")
+        if not password_hash:
+            auth_log(f"Login failed: User {credentials.email} has no password hash (corrupted record)")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Verify password with constant-time comparison
+        is_password_valid = verify_password(credentials.password, password_hash, str(user.get("_id")))
+        
+        if not is_password_valid:
             auth_log(f"Login failed: Invalid password for: {credentials.email}")
             
             # SECURITY FIX: Track failed attempts per email for progressive lockout
@@ -456,7 +494,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             
             # SECURITY: Progressive lockout based on number of failed attempts
             if attempt_count >= MAX_FAILED_ATTEMPTS_PER_ACCOUNT:
-                lockout_seconds = PROGRESSIVE_LOCKOUTS.get(attempt_count, 1800)  # Max 30 min
+                lockout_seconds = PROGRESSIVE_LOCKOUTS.get(min(attempt_count, 5), 1800)  # Max 30 min
                 lockout_time = current_time + timedelta(seconds=lockout_seconds)
                 persistent_login_lockouts[email_lockout_key] = lockout_time
                 auth_log(f"Account {credentials.email} locked out for {lockout_seconds} seconds after {attempt_count} failed attempts")
@@ -520,13 +558,19 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid input format"
         )
+    except (AttributeError, TypeError) as e:
+        auth_log(f"Login type error: {type(e).__name__}: {str(e)}")
+        # Type errors indicate data corruption or misconfiguration
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server error during authentication"
+        )
     except Exception as e:
         auth_log(f"Login error: {type(e).__name__}: {str(e)}")
         # Return generic error for security, don't expose internal details
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed",
-            headers={"WWW-Authenticate": "Bearer"}
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service error"
         )
 
 # Token Refresh Endpoint
