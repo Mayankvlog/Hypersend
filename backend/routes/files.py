@@ -959,7 +959,8 @@ async def complete_upload(
                 detail="Database timeout - please retry"
             )
         
-        if not upload_doc:
+        # CRITICAL FIX: Handle None result properly (not timeout)
+        if upload_doc is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Upload not found or expired"
@@ -975,11 +976,24 @@ async def complete_upload(
         total_chunks = upload_doc.get("total_chunks", 0)
         uploaded_chunks = upload_doc.get("uploaded_chunks", [])
         
+        # CRITICAL FIX: Validate chunk data integrity
+        if not isinstance(total_chunks, int) or total_chunks <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid total_chunks count in upload record"
+            )
+        
+        if not isinstance(uploaded_chunks, list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid uploaded_chunks format in upload record"
+            )
+        
         expected_chunks = set(range(total_chunks))
         actual_chunks = set(uploaded_chunks)
         
         if expected_chunks != actual_chunks:
-            missing = list(expected_chunks - actual_chunks)
+            missing = sorted(list(expected_chunks - actual_chunks))
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Missing chunks: {missing}. Please upload all chunks before completing."
@@ -994,7 +1008,7 @@ async def complete_upload(
         
         # CRITICAL FIX: Generate secure random filename with user isolation
         file_id = hashlib.sha256(f"{uuid.uuid4()}".encode()).hexdigest()[:16]
-        user_prefix = current_user[:2]  # First 2 chars for sharding
+        user_prefix = current_user[:2] if len(current_user) >= 2 else current_user  # Safe prefix extraction
         final_path = Path(settings.DATA_ROOT) / "files" / user_prefix / current_user / file_id
         
         # SECURITY: Use secure temporary file with random name
@@ -1014,7 +1028,14 @@ async def complete_upload(
                 temp_path = Path(temp_file.name)
                 
                 # Set secure permissions (owner read/write only)
-                os.chmod(temp_path, 0o600)
+                try:
+                    os.chmod(temp_path, 0o600)
+                except OSError as perm_error:
+                    temp_path.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to set secure file permissions"
+                    )
                 
                 # Write chunks to temp file
                 for chunk_idx in range(total_chunks):
@@ -1027,13 +1048,26 @@ async def complete_upload(
                             detail=f"Chunk {chunk_idx} not found during assembly"
                         )
                     
-                    with open(chunk_path, 'rb') as chunk_file:
-                        # Write in smaller chunks to prevent memory exhaustion
-                        while True:
-                            chunk_data = chunk_file.read(8192)  # 8KB chunks
-                            if not chunk_data:
-                                break
-                            temp_file.write(chunk_data)
+                    try:
+                        with open(chunk_path, 'rb') as chunk_file:
+                            # Write in smaller chunks to prevent memory exhaustion
+                            while True:
+                                chunk_data = chunk_file.read(8192)  # 8KB chunks
+                                if not chunk_data:
+                                    break
+                                temp_file.write(chunk_data)
+                    except (OSError, IOError) as chunk_error:
+                        temp_path.unlink(missing_ok=True)
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to read chunk {chunk_idx}: {str(chunk_error)}"
+                        )
+                    except Exception as e:
+                        temp_path.unlink(missing_ok=True)
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Unexpected error processing chunk {chunk_idx}: {str(e)}"
+                        )
             
             # CRITICAL SECURITY: Verify temp file integrity before making it permanent
             actual_size = temp_path.stat().st_size
@@ -1047,7 +1081,22 @@ async def complete_upload(
             
             # SECURITY: Atomic move from temp to final location
             import shutil
-            shutil.move(str(temp_path), str(final_path))
+            try:
+                shutil.move(str(temp_path), str(final_path))
+            except (OSError, IOError) as move_error:
+                # Clean up temp file if move failed
+                temp_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to save assembled file: {str(move_error)}"
+                )
+            except Exception as e:
+                # Clean up temp file if move failed
+                temp_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Unexpected error saving file: {str(e)}"
+                )
             
             # Store file metadata
             file_record = {
@@ -1134,7 +1183,7 @@ async def complete_upload(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to assemble uploaded file"
             )
-        
+    
     except HTTPException:
         raise
     except Exception as e:

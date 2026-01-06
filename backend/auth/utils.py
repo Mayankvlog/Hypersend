@@ -70,8 +70,8 @@ if TYPE_CHECKING:
     
     class ERROR_CORRECT_L: ...
     
-    # In type checking mode, assume QR code is available
-    QR_CODE_AVAILABLE = True
+    # In type checking mode, set to False for consistency with runtime behavior
+    QR_CODE_AVAILABLE = False
 else:
     # Runtime mode - actual imports
     try:
@@ -567,7 +567,8 @@ async def get_current_user_for_upload(
         if token_data.token_type == "access":
             # Check if it's a special upload token or regular access token
             payload = getattr(token_data, 'payload', {}) or {}
-            if payload.get("scope") == "upload":
+            # CRITICAL FIX: Require explicit upload_scope=True, not just truthy
+            if payload.get("upload_scope") is True:
                 logger.debug(f"Using upload token from header for upload_id: {payload.get('upload_id')}")
                 return validate_upload_token(payload)
             else:
