@@ -329,7 +329,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         chatId: widget.chatId,
       );
 
-      final uploadId = init['upload_id'];
+      final uploadId = init['uploadId'] ?? init['upload_id'];  // Support both camelCase and snake_case
       final chunkSize = (init['chunk_size'] as num).toInt(); // Use server-provided chunk size (4MB default)
       int offset = 0;
       int chunkIndex = 0;

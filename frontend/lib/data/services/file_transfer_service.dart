@@ -116,7 +116,7 @@ class FileTransferService {
         chatId: chatId,
       );
 
-      final uploadId = init['upload_id'] as String;
+      final uploadId = (init['uploadId'] ?? init['upload_id']) as String;  // Support both camelCase and snake_case
       final chunkSize = (init['chunk_size'] as num).toInt();
 
       int chunkIndex = 0;
