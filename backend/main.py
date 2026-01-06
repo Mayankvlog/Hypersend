@@ -105,11 +105,41 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from datetime import datetime, timezone
 
 class RequestValidationMiddleware(BaseHTTPMiddleware):
-    """Middleware to validate requests and prevent common 4xx errors"""
+    """Enhanced middleware to validate requests and prevent common 4xx errors with security"""
     
     async def dispatch(self, request, call_next):
-        """Validate request before processing"""
+        """Validate request before processing with enhanced security checks"""
         try:
+            # SECURITY: Check for malicious request patterns
+            url_path = str(request.url.path)
+            
+            # Block suspicious path patterns
+            suspicious_patterns = [
+                '../', '..\\', '%2e%2e', '%2e%2e%2f', '%2e%2e%5c',  # Path traversal
+                '<script', 'javascript:', 'vbscript:', 'data:', 'vbscript:',  # Script injection
+                'union select', 'drop table', 'delete from', 'insert into',  # SQL injection
+                '<?xml', '<!doctype', '<svg',  # XML/XXE injection
+                '../../etc/passwd', '/etc/passwd', '/etc/shadow',  # System file access
+                'cmd.exe', 'powershell', 'bash', 'sh', '/bin/', '/usr/bin/'  # Command execution
+            ]
+            
+            url_lower = url_path.lower()
+            for pattern in suspicious_patterns:
+                if pattern in url_lower:
+                    logger.warning(f"[SECURITY] Suspicious request blocked: {pattern} in {url_path}")
+                    return JSONResponse(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        content={
+                            "status_code": 400,
+                            "error": "Bad Request - Malicious request detected",
+                            "detail": "Request contains potentially malicious content",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "path": url_path,
+                            "method": request.method,
+                            "hints": ["Remove malicious content", "Check request format"]
+                        }
+                    )
+            
             # Check Content-Length for POST/PUT/PATCH (411)
             if request.method in ["POST", "PUT", "PATCH"]:
                 content_length_header = request.headers.get("content-length")
@@ -138,7 +168,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                     "error": "Payload Too Large - Request body is too big",
                                     "detail": f"Request size {content_length} bytes exceeds maximum {max_size} bytes",
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    "path": str(request.url.path),
+                                    "path": url_path,
                                     "method": request.method,
                                     "hints": ["Reduce file size", "Use chunked uploads", "Check server limits"]
                                 }
@@ -151,7 +181,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 "error": "Length Required - Content-Length header is invalid",
                                 "detail": "Content-Length header must be a valid integer",
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                                "path": str(request.url.path),
+                                "path": url_path,
                                 "method": request.method,
                                 "hints": ["Provide valid Content-Length", "Ensure header is a number"]
                             }
@@ -167,7 +197,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "error": "URI Too Long - The requested URL is too long",
                         "detail": f"URL length {url_length} exceeds maximum 8000 characters",
                         "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "path": str(request.url.path),
+                        "path": url_path,
                         "method": request.method,
                         "hints": ["Shorten the URL", "Use POST for complex queries"]
                     }

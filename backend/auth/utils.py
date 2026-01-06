@@ -159,9 +159,20 @@ def verify_password(plain_password: str, hashed_password: str, user_id: str = No
             except Exception as e:
                 _log("error", f"Legacy hash verification failed: {type(e).__name__}")
                 return False
+        elif len(hashed_password) == 32 and '$' not in hashed_password:
+            # Possible MD5 hash (32 hex chars) - INSECURE but handle for migration
+            try:
+                md5_hash = hashlib.md5(plain_password.encode()).hexdigest()
+                if hmac.compare_digest(md5_hash, hashed_password):
+                    _log("warning", f"User {user_id} using INSECURE MD5 password hash - migration required")
+                    return True
+                return False
+            except Exception as e:
+                _log("error", f"MD5 hash verification failed: {type(e).__name__}")
+                return False
         else:
             # Invalid hash format - reject immediately
-            _log("warning", f"Invalid password hash format for user {user_id}")
+            _log("warning", f"Invalid password hash format for user {user_id}: length={len(hashed_password)}, format={hashed_password[:20]}...")
             return False
             
     except Exception as e:

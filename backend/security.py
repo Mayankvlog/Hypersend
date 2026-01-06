@@ -22,11 +22,24 @@ class SecurityConfig:
     REQUIRE_DIGIT = False
     REQUIRE_SPECIAL = False
     
-    # Rate limiting
+    # Enhanced rate limiting with progressive penalties
     MAX_LOGIN_ATTEMPTS = 5
     LOGIN_ATTEMPT_WINDOW = 300  # 5 minutes
     PASSWORD_RESET_ATTEMPTS = 3
     PASSWORD_RESET_WINDOW = 3600  # 1 hour
+    
+    # Progressive lockout durations (in seconds)
+    PROGRESSIVE_LOCKOUTS = {
+        1: 300,   # 5 minutes after 1st failed attempt
+        2: 600,   # 10 minutes after 2nd failed attempt
+        3: 900,   # 15 minutes after 3rd failed attempt
+        4: 1200,  # 20 minutes after 4th failed attempt
+        5: 1800,  # 30 minutes after 5th failed attempt (maximum duration)
+    }
+    
+    # IP-based rate limiting
+    MAX_LOGIN_ATTEMPTS_PER_IP = 20
+    IP_LOCKOUT_DURATION = 900  # 15 minutes for IP-based lockout
     
     # Token security
     TOKEN_LENGTH = 32
@@ -208,15 +221,23 @@ class SecurityConfig:
     
     @staticmethod
     def validate_file_path(file_path: str) -> bool:
-        """Validate file path to prevent directory traversal"""
+        """Enhanced file path validation to prevent directory traversal and injection attacks"""
         if not file_path or not isinstance(file_path, str):
             return False
             
-        # Prevent directory traversal attacks
+        # Prevent directory traversal attacks with comprehensive patterns
         dangerous_patterns = [
             '..', '../', '..\\', '%2e%2e', '%2e%2e%2f', '%2e%2e%5c',
             '....', '....../', '....\\\\', '~/', '~\\', '/etc/', '/var/',
-            'c:\\', 'd:\\', 'e:\\', '/root/', '/home/', '/usr/', '/bin/'
+            'c:\\', 'd:\\', 'e:\\', '/root/', '/home/', '/usr/', '/bin/',
+            # Additional patterns for security
+            '....//', '//', '\\\\.\\', '....\\\\',  # Double slash/backslash
+            '%c0%af', '%c1%9c', '%c1%pc',  # Windows bypass
+            '%252e', '%255c', '%252f',  # URL encoded variations
+            'file://', 'ftp://', 'http://', 'https://',  # Protocol injection
+            'javascript:', 'vbscript:', 'data:text/html',  # Script injection
+            '<script', '</script>', '<iframe', '</iframe>',  # HTML injection
+            'rm -rf', 'del /', 'format c:',  # Command injection
         ]
         
         normalized_path = file_path.lower()
@@ -224,8 +245,16 @@ class SecurityConfig:
             if pattern in normalized_path:
                 return False
                 
-        # Check for null bytes and control characters
+        # Enhanced checks for null bytes and control characters
         if '\x00' in file_path or any(ord(c) < 32 for c in file_path):
+            return False
+        
+        # Check for extremely long paths (potential DoS)
+        if len(file_path) > 4096:  # PATH_MAX on most systems
+            return False
+            
+        # Check for excessive consecutive slashes (path normalization bypass)
+        if '//' in file_path or '\\\\' in file_path:
             return False
             
         return True

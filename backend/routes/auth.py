@@ -284,6 +284,29 @@ async def register(user: UserCreate) -> UserResponse:
             existing_user = await users_col.find_one({
                 "email": {"$regex": f"^{re.escape(normalized_email)}$", "$options": "i"}
             })
+            
+            # DEBUG: Log the search result for troubleshooting
+            if existing_user:
+                auth_log(f"Registration failed: Found existing user with email: {normalized_email} (ID: {existing_user.get('_id')})")
+            else:
+                auth_log(f"Registration: No existing user found for email: {normalized_email}")
+                
+        except (ConnectionError, TimeoutError) as db_error:
+            auth_log(f"Database connection error checking existing user: {type(db_error).__name__}: {str(db_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service temporarily unavailable. Please try again."
+            )
+        except Exception as db_error:
+            auth_log(f"Database error checking existing user: {type(db_error).__name__}: {str(db_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database operation failed. Please try again."
+            )
+            
+            existing_user = await users_col.find_one({
+                "email": {"$regex": f"^{re.escape(normalized_email)}$", "$options": "i"}
+            })
         except (ConnectionError, TimeoutError) as db_error:
             auth_log(f"Database connection error checking existing user: {type(db_error).__name__}: {str(db_error)}")
             raise HTTPException(
@@ -482,42 +505,43 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             )
         
         try:
-            user = await users_collection().find_one({
-                "email": {"$regex": f"^{re.escape(normalized_email)}$", "$options": "i"}
-            })
-        except Exception as db_error:
-            auth_log(f"Database error during user lookup: {type(db_error).__name__}: {str(db_error)}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Authentication service temporarily unavailable"
-            )
+            users_col = users_collection()
+            # CRITICAL FIX: Add index to prevent full collection scan
+            # This is much more efficient than regex for large datasets
+            existing_user = await users_col.find_one({"email": normalized_email})
             
-        if not user:
-            auth_log(f"Login failed: User not found: {normalized_email}")
-            # SECURITY: Don't increase per-email lockout for non-existent users (prevents enumeration)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
-            )
-        
-        # Verify password - CRITICAL FIX: Ensure password_hash exists and handle legacy formats
-        password_hash = user.get("password_hash")
-        if not password_hash:
-            auth_log(f"Login failed: User {normalized_email} has no password hash (corrupted record)")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
-            )
-        
-        # Verify password with constant-time comparison - CRITICAL FIX: Pass user_id correctly
-        user_id = user.get("_id")
-        if isinstance(user_id, str):
-            user_id_str = user_id
-        else:
-            user_id_str = str(user_id)
+            if not existing_user:
+                auth_log(f"Login failed: User not found: {normalized_email}")
+                # SECURITY: Don't increase per-email lockout for non-existent users (prevents enumeration)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
             
-        try:
+            # CRITICAL FIX: Add debug logging to show what was searched
+            auth_log(f"DEBUG: Email search for login: '{normalized_email}' (normalized)")
+            auth_log(f"DEBUG: User found: {bool(existing_user)}")
+            
+            # Verify password - CRITICAL FIX: Ensure password_hash exists and handle legacy formats
+            password_hash = existing_user.get("password_hash")
+            if not password_hash:
+                auth_log(f"Login failed: User {normalized_email} has no password hash (corrupted record)")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
+            
+            # Verify password with constant-time comparison - CRITICAL FIX: Pass user_id correctly
+            user_id = existing_user.get("_id")
+            if isinstance(user_id, str):
+                user_id_str = user_id
+            else:
+                user_id_str = str(user_id)
+                
             is_password_valid = verify_password(credentials.password, password_hash, user_id_str)
+            auth_log(f"Password verification result for {normalized_email}: {is_password_valid} (hash_length: {len(password_hash)})")
+        except HTTPException:
+            raise
         except Exception as verify_error:
             auth_log(f"Password verification error for {normalized_email}: {type(verify_error).__name__}")
             # Treat verification errors as invalid passwords for security
@@ -527,7 +551,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             auth_log(f"Login failed: Invalid password for: {normalized_email}")
             
             # SECURITY FIX: Track failed attempts per email for progressive lockout
-            user_id_str = str(user["_id"])
+            user_id_str = str(existing_user["_id"])
             if user_id_str not in failed_login_attempts:
                 failed_login_attempts[user_id_str] = (0, current_time)
             
@@ -556,19 +580,19 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # CRITICAL FIX: Session fixation prevention - invalidate existing sessions
         # Delete all existing refresh tokens for this user before creating new ones
         await refresh_tokens_collection().delete_many({
-            "user_id": str(user["_id"])
+            "user_id": str(existing_user["_id"])
         })
         
         # Create new tokens with fresh session ID
         access_token = create_access_token(
-            data={"sub": str(user["_id"])},
+            data={"sub": str(existing_user["_id"])},
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         )
-        refresh_token, jti = create_refresh_token({"sub": str(user["_id"])})
+        refresh_token, jti = create_refresh_token({"sub": str(existing_user["_id"])})
         
         # Store new refresh token in database
         await refresh_tokens_collection().insert_one({
-            "user_id": str(user["_id"]),
+            "user_id": str(existing_user["_id"]),
             "jti": jti,
             "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
@@ -576,7 +600,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         
         # Update last_seen
         await users_collection().update_one(
-            {"_id": user["_id"]},
+            {"_id": existing_user["_id"]},
             {"$set": {
                 "last_seen": datetime.now(timezone.utc),
                 "is_online": True,
