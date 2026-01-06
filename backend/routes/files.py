@@ -9,7 +9,7 @@ import aiofiles
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote
-from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body, Query, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from typing import Optional, List
 from models import (
@@ -19,6 +19,7 @@ from db_proxy import files_collection, uploads_collection, users_collection
 from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, decode_token
 from config import settings
 from validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
+from rate_limiter import RateLimiter
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -287,12 +288,25 @@ async def files_options(request: Request):
     )
 
 
+# Rate limiters for different operations
+upload_init_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 uploads per minute
+upload_chunk_limiter = RateLimiter(max_requests=60, window_seconds=60)  # 60 chunks per minute
+upload_complete_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 completes per minute
+
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(
     request: Request,
     current_user: str = Depends(get_current_user_for_upload)
     ):
     """Initialize file upload for 40GB files with enhanced security - accepts both 'mime' and 'mime_type'"""
+    
+    # Rate limiting check
+    if not upload_init_limiter.is_allowed(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many upload initialization requests. Please try again later.",
+            headers={"Retry-After": "60"}
+        )
     
     try:
         # Parse request body to handle both 'mime' and 'mime_type' fields
@@ -760,6 +774,14 @@ async def upload_chunk(
     ):
     """Upload a single file chunk with streaming support"""
     
+    # Rate limiting check
+    if not upload_chunk_limiter.is_allowed(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many chunk upload requests. Please try again later.",
+            headers={"Retry-After": "60"}
+        )
+    
     try:
         # Get chunk data from request body
         chunk_data = await request.body()
@@ -927,6 +949,14 @@ async def complete_upload(
     ):
     """Complete file upload and assemble chunks"""
     
+    # Rate limiting check
+    if not upload_complete_limiter.is_allowed(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many upload completion requests. Please try again later.",
+            headers={"Retry-After": "60"}
+        )
+    
     try:
         # CRITICAL FIX: Validate upload_id before querying database
         if not upload_id or upload_id == "null" or upload_id == "undefined" or upload_id.strip() == "":
@@ -942,8 +972,23 @@ async def complete_upload(
                 detail=f"Invalid upload ID: {upload_id}. Did you call /init first? Check that uploadId was captured correctly."
             )
         
-        # Get upload record
+        # Get upload record with database connection check
         try:
+            # CRITICAL FIX: Ensure database is connected before querying
+            from database import get_db
+            try:
+                get_db()  # This will raise if database is not connected
+            except RuntimeError as db_error:
+                _log("error", f"Database not connected: {str(db_error)}", {
+                    "user_id": current_user,
+                    "operation": "finalize_upload",
+                    "upload_id": upload_id
+                })
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service temporarily unavailable - please retry"
+                )
+            
             upload_doc = await asyncio.wait_for(
                 uploads_collection().find_one({"_id": upload_id}),
                 timeout=5.0
@@ -1115,6 +1160,21 @@ async def complete_upload(
             
             # SECURITY: Insert file record only after successful file creation
             try:
+                # CRITICAL FIX: Ensure database is still connected before inserting
+                try:
+                    get_db()  # This will raise if database is not connected
+                except RuntimeError as db_error:
+                    _log("error", f"Database not connected during file insert: {str(db_error)}", {
+                        "user_id": current_user,
+                        "operation": "file_insert",
+                        "upload_id": upload_id,
+                        "file_id": file_id
+                    })
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Database service temporarily unavailable - please retry"
+                    )
+                
                 await asyncio.wait_for(
                     files_collection().insert_one(file_record),
                     timeout=5.0
@@ -1143,10 +1203,21 @@ async def complete_upload(
                 })
             
             try:
-                await asyncio.wait_for(
-                    uploads_collection().delete_one({"_id": upload_id}),
-                    timeout=5.0
-                )
+                # CRITICAL FIX: Ensure database is still connected before deleting
+                try:
+                    get_db()  # This will raise if database is not connected
+                except RuntimeError as db_error:
+                    _log("warning", f"Database not connected during upload cleanup: {str(db_error)}", {
+                        "user_id": current_user,
+                        "operation": "upload_cleanup",
+                        "upload_id": upload_id
+                    })
+                    # Non-critical - continue without cleanup
+                else:
+                    await asyncio.wait_for(
+                        uploads_collection().delete_one({"_id": upload_id}),
+                        timeout=5.0
+                    )
             except asyncio.TimeoutError:
                 _log("error", f"Database timeout deleting upload record: {upload_id}", {
                     "user_id": current_user,

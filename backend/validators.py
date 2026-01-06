@@ -42,66 +42,41 @@ def validate_command_injection(input_string: str) -> bool:
     if not input_string or not isinstance(input_string, str):
         return True  # Empty/null is not a threat, just invalid input
     
-    # Command execution metacharacters - PRECISE SECURITY PATTERNS
-    # These are shell metacharacters that enable command chaining/execution
-    # More specific patterns to reduce false positives
-    shell_metacharacters = [
-        ';',   # Command separator
-        '|',   # Pipe operator
-        '&',   # Background execution
-        '>',   # Redirection
-        '<',   # Input redirection
-        '`',   # Backtick execution
-        '$(',  # Command substitution
-        '${',  # Parameter expansion (bracket form)
-        '&&',  # Command chaining
-        '||',  # OR command execution
-        '>>',  # Append redirection
-        '<<',  # Here document
-        '&>',  # Output to file
-        '<()',  # Process substitution
-        '(',   # Subshell execution
-        ')',   # End subshell
+    # Command injection patterns - use regex for proper detection
+    dangerous_patterns = [
+        r'[;&|`$<>]',  # Shell metacharacters
+        r'\|\|',       # OR command execution
+        r'&&',         # AND command execution
+        r'>>',         # Append redirection
+        r'<<',         # Here document
+        r'<\(',        # Process substitution
+        r'\$\(',       # Command substitution
+        r'\$\{',       # Parameter expansion
+        r'eval\s*\(',  # eval function
+        r'exec\s*\(',  # exec function
+        r'system\s*\(', # system function
+        r'popen\s*\(', # popen function
+        r'shell\s*=\s*["\']?true["\']?',  # shell=True
+        r'cat\s+/',    # cat system files
+        r'passwd',      # password files
+        r'shadow',     # shadow file
+        r'hosts',       # hosts file
+        r'crontab',     # cron jobs
+        r'wget\s+',     # wget command
+        r'curl\s+',     # curl command
+        r'nc\s+',       # netcat command
+        r'netcat',      # netcat
+        r'chmod\s+',    # chmod command
+        r'chown\s+',    # chown command
+        r'rm\s+',       # rm command
+        r'rmdir\s+',    # rmdir command
+        r'mv\s+',       # mv command
+        r'cp\s+',       # cp command
+        r'dd\s+',       # dd command
     ]
     
-    # Command injection validation - check for dangerous shell metacharacters
-    for char_sequence in shell_metacharacters:
-        if char_sequence in input_string:
-            return False
-    
-    # Block dangerous code execution functions/keywords
-    dangerous_keywords = [
-        'eval(',
-        'exec(',
-        'system(',
-        'os.system',
-        'subprocess.run',
-        'popen(',
-        'shell=true',
-        'shell=True',
-        'cat ',
-        'cat/',
-        'passwd',
-        'etc/passwd',
-        'shadow',
-        'hosts',
-        'crontab',
-        'wget ',
-        'curl ',
-        'nc ',
-        'netcat',
-        'chmod ',
-        'chown ',
-        'rm ',
-        'rmdir ',
-        'mv ',
-        'cp ',
-        'dd ',
-    ]
-    
-    input_lower = input_string.lower()
-    for keyword in dangerous_keywords:
-        if keyword.lower() in input_lower:
+    for pattern in dangerous_patterns:
+        if re.search(pattern, input_string, re.IGNORECASE):
             return False
     
     # Block script injection patterns (XSS and HTML injection)
@@ -114,7 +89,7 @@ def validate_command_injection(input_string: str) -> bool:
         r'onerror\s*=',
         r'onload\s*=',
         r'onclick\s*=',
-        r'on\\w+\\s*=',  # Generic event handler injection
+        r'on\w+\s*=',  # Generic event handler injection
     ]
     
     for pattern in script_patterns:
@@ -132,10 +107,10 @@ def validate_path_injection(file_path: str) -> bool:
     Validate file path to prevent path injection attacks.
     
     Blocks:
-    - Path traversal attempts (../ or ..\)
+    - Path traversal attempts (../ or ..\\)
     - Null byte injection
     - Excessively long paths
-    - Paths that escape the allowed directory
+    - Paths that escape allowed directory
     
     Returns True if safe, False if potentially dangerous.
     """
@@ -162,6 +137,10 @@ def validate_path_injection(file_path: str) -> bool:
         r'%2e%2e%2f%2e%2e%2f',  # ../../ URL encoded
         r'%c0%af',       # Unicode / bypass
         r'%c1%9c',       # Unicode \ bypass
+        r'%252e%252e%252f',  # Double encoded ../
+        r'%252e%252e%255c',  # Double encoded ..\
+        r'..%252f..%252f..%252f',  # Mixed double encoded
+        r'..%255c..%255c..%255c',  # Mixed double encoded backslash
     ]
     
     for pattern in url_encoded_patterns:
@@ -177,7 +156,7 @@ def validate_path_injection(file_path: str) -> bool:
         return False
     
     # Block home directory traversal attempts
-    if file_path.startswith('~') or re.search(r'~[^/\\]', file_path):
+    if file_path.startswith('~') or re.search(r'~[^/\\\\]', file_path):
         return False
     
     # CONSOLIDATED UNC path and absolute path blocking
@@ -244,12 +223,21 @@ def sanitize_input(input_string: str, max_length: int = 1000) -> str:
     sanitized = re.sub(r'data\s*:', '', sanitized, flags=re.IGNORECASE)
     sanitized = re.sub(r'vbscript\s*:', '', sanitized, flags=re.IGNORECASE)
     
+    # Remove JNDI injection patterns
+    sanitized = re.sub(r'\$\{[^}]*\}', '', sanitized, flags=re.IGNORECASE)
+    
+    # Remove template injection patterns
+    sanitized = re.sub(r'\{\{[^}]*\}\}', '', sanitized, flags=re.IGNORECASE)
+    
     # Remove SQL injection patterns
     sanitized = re.sub(r"(\b(union|select|insert|update|delete|drop|create|alter|exec|execute)\b)", '', sanitized, flags=re.IGNORECASE)
     sanitized = re.sub(r"[;'\"]", '', sanitized)
     
     # Remove potentially dangerous characters
     sanitized = re.sub(r'[<>"\'`]', '', sanitized)
+    
+    # Remove null bytes and control characters
+    sanitized = re.sub(r'[\x00-\x1f\x7f]', '', sanitized)
     
     # Normalize whitespace
     sanitized = re.sub(r'\s+', ' ', sanitized)
