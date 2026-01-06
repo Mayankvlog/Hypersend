@@ -79,6 +79,24 @@ def validate_command_injection(input_string: str) -> bool:
         'popen(',
         'shell=true',
         'shell=True',
+        'cat ',
+        'cat/',
+        'passwd',
+        'etc/passwd',
+        'shadow',
+        'hosts',
+        'crontab',
+        'wget ',
+        'curl ',
+        'nc ',
+        'netcat',
+        'chmod ',
+        'chown ',
+        'rm ',
+        'rmdir ',
+        'mv ',
+        'cp ',
+        'dd ',
     ]
     
     input_lower = input_string.lower()
@@ -136,6 +154,19 @@ def validate_path_injection(file_path: str) -> bool:
     # Block any ../ patterns regardless of count
     if re.search(r'\.\.[/\\]', file_path):
         return False
+    
+    # Block URL encoded path traversal attempts
+    url_encoded_patterns = [
+        r'%2e%2e%2f',  # ../ URL encoded
+        r'%2e%2e%5c',  # ..\ URL encoded
+        r'%2e%2e%2f%2e%2e%2f',  # ../../ URL encoded
+        r'%c0%af',       # Unicode / bypass
+        r'%c1%9c',       # Unicode \ bypass
+    ]
+    
+    for pattern in url_encoded_patterns:
+        if re.search(pattern, file_path, re.IGNORECASE):
+            return False
     
     # Block Windows-specific traversal patterns
     if re.search(r'\.\.\\', file_path) or re.search(r'\\\.\\', file_path):
@@ -202,10 +233,20 @@ def sanitize_input(input_string: str, max_length: int = 1000) -> str:
     sanitized = input_string.replace('\x00', '')
     
     # Remove HTML tags and content
+    sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
     sanitized = re.sub(r'<[^>]*>', '', sanitized)
     
-    # Remove control characters except newlines and tabs
+    # Remove potentially dangerous characters and control sequences
     sanitized = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', sanitized)
+    
+    # Remove JavaScript and data URIs - more aggressive
+    sanitized = re.sub(r'javascript\s*:', '', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'data\s*:', '', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'vbscript\s*:', '', sanitized, flags=re.IGNORECASE)
+    
+    # Remove SQL injection patterns
+    sanitized = re.sub(r"(\b(union|select|insert|update|delete|drop|create|alter|exec|execute)\b)", '', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r"[;'\"]", '', sanitized)
     
     # Remove potentially dangerous characters
     sanitized = re.sub(r'[<>"\'`]', '', sanitized)

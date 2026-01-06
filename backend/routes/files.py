@@ -1118,8 +1118,8 @@ async def complete_upload(
                 file_id=file_id,
                 filename=filename,
                 size=size,
-                mime_type=mime_type,
-                status="completed"
+                checksum=upload_doc.get("checksum", ""),
+                storage_path=str(final_path)
             )
             
         except HTTPException:
