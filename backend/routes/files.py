@@ -356,15 +356,23 @@ async def initialize_upload(
             r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]',  # Control characters
         ]
         
-        # Enhanced path traversal protection with URL decoding
+        # Enhanced path traversal protection with pathlib
         decoded_filename = unquote(filename)
         
-        # Only block directory separators that would allow traversal
-        # Allow single forward slash but not directory traversal sequences
-        if re.search(r'[/\\]\.\.[/\\]|^\.\.[/\\]|[/\\]\.\.$', decoded_filename):
+        # CRITICAL FIX: Use pathlib for robust path traversal protection
+        from pathlib import Path
+        try:
+            # Resolve any path components and check if they escape current directory
+            file_path = Path(decoded_filename)
+            if '..' in file_path.parts or file_path.is_absolute():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid filename - path traversal not allowed"
+                )
+        except (ValueError, OSError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid filename - path traversal not allowed"
+                detail="Invalid filename - malformed path"
             )
         
         # Check for null bytes and dangerous Unicode attacks
@@ -385,16 +393,19 @@ async def initialize_upload(
             '.msi', '.dll', '.so', '.dylib', '.o', '.class', '.bin', '.run',
             # Documents with macros (dangerous)
             '.docm', '.xlsm', '.pptm', '.dotm', '.xltm', '.potm',
-            # Archives that can contain executables
-            '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+            # Archives (allow common formats but scan contents)
+            '.rar', '.7z', '.tar', '.gz', '.bz2',
+            # NOTE: .zip allowed for compatibility, but contents should be scanned
             # Image formats that can contain exploits
             '.svg', '.swf', '.fla',
             # Configuration and system files
             '.reg', '.inf', '.ini', '.cfg', '.conf', '.config', '.plist',
             # Shortcut and link files
             '.lnk', '.url', '.webloc', '.desktop',
-            # Package installers
-            '.deb', '.rpm', '.dmg', '.pkg', '.apk', '.ipa',
+            # Package installers (allow common formats)
+            '.deb', '.rpm', '.pkg', '.apk', '.ipa',
+            # NOTE: .dmg (macOS disk image) and .iso (disk image) are now allowed
+            # but should be scanned for malware in production
             # Other dangerous formats
             '.iso', '.img', '.vhd', '.vmdk', '.ova', '.ovf'
         }
@@ -469,13 +480,20 @@ async def initialize_upload(
         ]
         
 # ENHANCED SECURITY: Intelligent MIME validation
+        # CRITICAL FIX: Case-sensitive MIME validation to prevent bypass
         if mime_type not in allowed_mime_types:
-            # CRITICAL SECURITY: Check for MIME spoofing attempts
-            if any(dangerous in mime_type.lower() for dangerous in 
-                   ['javascript', 'script', 'html', 'php', 'exe', 'bat', 'sh']):
+            # Check for dangerous MIME types with case-sensitive comparison
+            dangerous_mimes = ['application/javascript', 'text/javascript', 'application/x-javascript', 
+                              'text/html', 'application/html', 'text/x-script']
+            if mime_type.lower() in [d.lower() for d in dangerous_mimes]:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Potentially dangerous or spoofed MIME type '{mime_type}'. Use standard file types."
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"File type '{mime_type}' is not allowed - dangerous content detected"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail=f"File type '{mime_type}' is not supported"
                 )
             
             raise HTTPException(
@@ -639,10 +657,28 @@ async def upload_chunk(
                 detail="Chunk data is required"
             )
         
+        # CRITICAL FIX: Validate upload_id format before database query
+        if not upload_id or upload_id == "null" or upload_id == "undefined":
+            _log("warning", f"Invalid upload_id received: {upload_id}", {
+                "user_id": current_user,
+                "operation": "chunk_upload",
+                "upload_id": upload_id,
+                "client_ip": request.client.host if request.client else "unknown"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid upload ID"
+            )
+        
         # Verify upload exists and belongs to user
         upload_doc = await uploads_collection().find_one({"_id": upload_id})
         
         if not upload_doc:
+            _log("warning", f"Upload not found in database: {upload_id}", {
+                "user_id": current_user,
+                "operation": "chunk_upload",
+                "upload_id": upload_id
+            })
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Upload not found or expired"

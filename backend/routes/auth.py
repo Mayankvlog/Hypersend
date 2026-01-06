@@ -270,8 +270,19 @@ async def register(user: UserCreate) -> UserResponse:
         try:
             users_col = users_collection()
             # CRITICAL FIX: Use case-insensitive email lookup with regex to prevent duplicates
+            # Also normalize email to lowercase for consistent lookup
+            normalized_email = user.email.lower().strip()
+            
+            # SECURITY: Validate email format before database operations
+            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', normalized_email):
+                auth_log(f"Registration failed: Invalid email format: {user.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid email format"
+                )
+            
             existing_user = await users_col.find_one({
-                "email": {"$regex": f"^{re.escape(user.email)}$", "$options": "i"}
+                "email": {"$regex": f"^{re.escape(normalized_email)}$", "$options": "i"}
             })
         except (ConnectionError, TimeoutError) as db_error:
             auth_log(f"Database connection error checking existing user: {type(db_error).__name__}: {str(db_error)}")
@@ -303,7 +314,7 @@ async def register(user: UserCreate) -> UserResponse:
         user_doc = {
             "_id": str(ObjectId()),
             "name": user.name,
-            "email": user.email,
+            "email": user.email.lower().strip(),  # CRITICAL FIX: Store email in lowercase for consistency
             "password_hash": password_hash,
             "avatar": initials,
             "avatar_url": None,
@@ -458,30 +469,62 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # Record this login attempt
         login_attempts[client_ip].append(current_time)
         
-        # Find user by email
-        user = await users_collection().find_one({"email": credentials.email})
+        # Find user by email - CRITICAL FIX: Use case-insensitive email lookup with proper validation
+        import re
+        normalized_email = credentials.email.lower().strip()
+        
+        # SECURITY: Validate email format before database query
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', normalized_email):
+            auth_log(f"Login failed: Invalid email format: {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
+        
+        try:
+            user = await users_collection().find_one({
+                "email": {"$regex": f"^{re.escape(normalized_email)}$", "$options": "i"}
+            })
+        except Exception as db_error:
+            auth_log(f"Database error during user lookup: {type(db_error).__name__}: {str(db_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable"
+            )
+            
         if not user:
-            auth_log(f"Login failed: User not found: {credentials.email}")
+            auth_log(f"Login failed: User not found: {normalized_email}")
             # SECURITY: Don't increase per-email lockout for non-existent users (prevents enumeration)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
-        # Verify password - CRITICAL FIX: Ensure password_hash exists
+        # Verify password - CRITICAL FIX: Ensure password_hash exists and handle legacy formats
         password_hash = user.get("password_hash")
         if not password_hash:
-            auth_log(f"Login failed: User {credentials.email} has no password hash (corrupted record)")
+            auth_log(f"Login failed: User {normalized_email} has no password hash (corrupted record)")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
-        # Verify password with constant-time comparison
-        is_password_valid = verify_password(credentials.password, password_hash, str(user.get("_id")))
+        # Verify password with constant-time comparison - CRITICAL FIX: Pass user_id correctly
+        user_id = user.get("_id")
+        if isinstance(user_id, str):
+            user_id_str = user_id
+        else:
+            user_id_str = str(user_id)
+            
+        try:
+            is_password_valid = verify_password(credentials.password, password_hash, user_id_str)
+        except Exception as verify_error:
+            auth_log(f"Password verification error for {normalized_email}: {type(verify_error).__name__}")
+            # Treat verification errors as invalid passwords for security
+            is_password_valid = False
         
         if not is_password_valid:
-            auth_log(f"Login failed: Invalid password for: {credentials.email}")
+            auth_log(f"Login failed: Invalid password for: {normalized_email}")
             
             # SECURITY FIX: Track failed attempts per email for progressive lockout
             user_id_str = str(user["_id"])
@@ -497,7 +540,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 lockout_seconds = PROGRESSIVE_LOCKOUTS.get(min(attempt_count, 5), 1800)  # Max 30 min
                 lockout_time = current_time + timedelta(seconds=lockout_seconds)
                 persistent_login_lockouts[email_lockout_key] = lockout_time
-                auth_log(f"Account {credentials.email} locked out for {lockout_seconds} seconds after {attempt_count} failed attempts")
+                auth_log(f"Account {normalized_email} locked out for {lockout_seconds} seconds after {attempt_count} failed attempts")
                 
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,

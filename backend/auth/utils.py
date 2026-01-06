@@ -80,7 +80,7 @@ def hash_password(password: str) -> str:
     if not password or not isinstance(password, str):
         raise ValueError("Password must be a non-empty string")
     
-    # CRITICAL FIX: Use secrets.token_hex for cryptographically secure random salt
+    # CRITICAL FIX: Use secrets.token_hex for cryptographically secure salt
     # Generate 32 hex characters (16 bytes of random data)
     salt = secrets.token_hex(16)  # 16 bytes -> 32 hex chars
     
@@ -109,17 +109,28 @@ def verify_password(plain_password: str, hashed_password: str, user_id: str = No
     """Verify a password against its PBKDF2 hash with constant-time comparison"""
     try:
         if not plain_password or not hashed_password:
+            _log("debug", f"Password verification failed: missing input (user: {user_id})")
             return False
         
         # CRITICAL FIX: Validate input types to prevent type confusion attacks
         if not isinstance(plain_password, str) or not isinstance(hashed_password, str):
-            _log("warning", "Invalid password verification input types")
+            _log("warning", f"Invalid password verification input types (user: {user_id})")
             return False
         
         # Check if hash is in new format (salt$hash)
-        if '$' in hashed_password and len(hashed_password.split('$')) == 2:
-            salt, stored_hash = hashed_password.split('$')
-            if not salt or not stored_hash or len(salt) != 32:
+        if '$' in hashed_password:
+            parts = hashed_password.split('$')
+            if len(parts) != 2:
+                _log("warning", f"Invalid hash format: expected 2 parts, got {len(parts)} (user: {user_id})")
+                return False
+            
+            salt, stored_hash = parts
+            if not salt or not stored_hash:
+                _log("warning", f"Invalid hash format: empty salt or hash (user: {user_id})")
+                return False
+            
+            if len(salt) != 32:
+                _log("warning", f"Invalid salt length: expected 32, got {len(salt)} (user: {user_id})")
                 return False
             
             try:
@@ -201,8 +212,8 @@ def decode_token(token: str) -> TokenData:
             )
         
         # Validate user_id format (ObjectId format)
-        import re
-        if not re.match(r'^[a-fA-F0-9]{24}$', user_id):
+        from bson import ObjectId
+        if not ObjectId.is_valid(user_id):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: malformed user identifier",

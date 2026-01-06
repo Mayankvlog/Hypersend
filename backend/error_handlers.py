@@ -326,13 +326,15 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             303: "See Other - Response can be found at another URI using GET method",
             304: "Not Modified - Resource has not been modified since last request",
             305: "Use Proxy - Must use a proxy to access this resource",
+            306: "(Unused) - Switch Proxy - Former specification",
             307: "Temporary Redirect - Resource temporarily located at different URI",
             308: "Permanent Redirect - Resource permanently located at different URI",
         }
         hints = [
             "This is a redirect response",
-            "Your client should follow the redirect location",
-            "Check the Location header for the new URL",
+            "Your client should follow the redirect location automatically",
+            "Check the Location header for the new URL if manual redirect needed",
+            "Ensure your HTTP client follows redirects properly",
         ]
     
     # 4xx Client errors

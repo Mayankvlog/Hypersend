@@ -152,24 +152,83 @@ class SecurityConfig:
     
     @staticmethod
     def sanitize_input(text: str, max_length: int = 10000) -> str:
-        """Sanitize user input to prevent XSS and injection"""
+        """Sanitize user input to prevent XSS and injection with enhanced security"""
         if not text:
             return ""
         
-        # Remove HTML tags
+        # CRITICAL SECURITY: Remove all HTML tags and scripts
+        text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
         text = re.sub(r'<[^>]*>', '', text)
         
-        # Remove potentially dangerous characters
-        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
+        # Remove potentially dangerous characters and control sequences
+        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', text)
         
-        # Normalize whitespace
+        # Remove JavaScript and data URIs
+        text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'data:', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'vbscript:', '', text, flags=re.IGNORECASE)
+        
+        # Remove SQL injection patterns
+        text = re.sub(r"(\b(union|select|insert|update|delete|drop|create|alter|exec|execute)\b)", '', text, flags=re.IGNORECASE)
+        text = re.sub(r"[;'\"]", '', text)
+        
+        # Normalize whitespace and prevent horizontal tabs
         text = re.sub(r'\s+', ' ', text)
         
-        # Limit length
+        # Limit length to prevent DoS attacks
         if len(text) > max_length:
             text = text[:max_length]
         
         return text.strip()
+    
+    @staticmethod
+    def validate_email_format(email: str) -> bool:
+        """Enhanced email format validation to prevent injection"""
+        if not email or not isinstance(email, str):
+            return False
+        
+        email = email.strip()
+        
+        # Basic length check
+        if len(email) > 254:  # RFC 5321 limit
+            return False
+            
+        # Enhanced regex pattern that prevents injection
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        
+        # Additional security checks
+        if '..' in email:  # Prevent path traversal
+            return False
+        if email.startswith('.') or email.endswith('.'):  # Prevent leading/trailing dots
+            return False
+        if email.count('@') != 1:  # Ensure exactly one @
+            return False
+            
+        return bool(re.match(pattern, email))
+    
+    @staticmethod
+    def validate_file_path(file_path: str) -> bool:
+        """Validate file path to prevent directory traversal"""
+        if not file_path or not isinstance(file_path, str):
+            return False
+            
+        # Prevent directory traversal attacks
+        dangerous_patterns = [
+            '..', '../', '..\\', '%2e%2e', '%2e%2e%2f', '%2e%2e%5c',
+            '....', '....../', '....\\\\', '~/', '~\\', '/etc/', '/var/',
+            'c:\\', 'd:\\', 'e:\\', '/root/', '/home/', '/usr/', '/bin/'
+        ]
+        
+        normalized_path = file_path.lower()
+        for pattern in dangerous_patterns:
+            if pattern in normalized_path:
+                return False
+                
+        # Check for null bytes and control characters
+        if '\x00' in file_path or any(ord(c) < 32 for c in file_path):
+            return False
+            
+        return True
     
     @staticmethod
     def validate_file_upload(filename: str, mime_type: str, file_size: int) -> Dict[str, Any]:
@@ -200,15 +259,18 @@ class SecurityConfig:
     
     @staticmethod
     def get_security_headers() -> Dict[str, str]:
-        """Get security headers for HTTP responses"""
+        """Get security headers for HTTP responses with enhanced protection"""
         return {
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
             "X-XSS-Protection": "1; mode=block",
             # HSTS removed - will be added by middleware only for HTTPS
-            "Content-Security-Policy": "default-src 'self'; script-src 'self' 'strict-dynamic' 'nonce-<nonce>'; style-src 'self' 'nonce-<nonce>'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; frame-ancestors 'none';",
+            "Content-Security-Policy": "default-src 'self'; script-src 'self' 'strict-dynamic' 'nonce-<nonce>'; style-src 'self' 'nonce-<nonce>'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
             "Referrer-Policy": "strict-origin-when-cross-origin",
-            "Permissions-Policy": "geolocation=(), microphone=(), camera=()"
+            "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()",
+            "Cross-Origin-Embedder-Policy": "require-corp",
+            "Cross-Origin-Opener-Policy": "same-origin",
+            "Cross-Origin-Resource-Policy": "same-origin"
         }
 
 

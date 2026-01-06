@@ -11,35 +11,39 @@ class RateLimiter:
         self.lock = threading.Lock()
     
     def is_allowed(self, identifier: str) -> bool:
-        """Check if identifier is allowed to make a request with thread safety"""
+        """Check if identifier is allowed to make a request with enhanced thread safety"""
         try:
             now = time.time()
             
             with self.lock:
-                # CRITICAL FIX: Use atomic operations for thread safety
-                # Operate on copy to avoid in-place modifications during iteration
-                current_requests = self.requests.get(identifier, []).copy()
+                # ENHANCED: Atomic operations with proper cleanup
+                current_requests = self.requests.get(identifier, [])
                 
-                # Filter old requests
+                # Filter old requests atomically
                 cutoff_time = now - self.window_seconds
                 valid_requests = [
                     req_time for req_time in current_requests
                     if req_time > cutoff_time
                 ]
                 
-                # Check limit with atomic replacement
+                # Check limit and update atomically
                 if len(valid_requests) >= self.max_requests:
+                    # Store filtered requests but don't add new one
                     self.requests[identifier] = valid_requests
                     return False
                 
-                # Add current request and store atomically
+                # Add current request atomically
                 valid_requests.append(now)
                 self.requests[identifier] = valid_requests
                 return True
+                
         except Exception as e:
-            # CRITICAL FIX: On error, allow request to prevent service denial
-            # Rate limiter failures should not block legitimate users
-            return True  # Allow request on errors to prevent service disruption
+            # Enhanced error handling with logging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Rate limiter error: {e}")
+            # Allow request on errors to prevent service disruption
+            return True
     
     def get_retry_after(self, identifier: str) -> int:
         """Get seconds until next request is allowed"""

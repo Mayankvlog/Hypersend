@@ -16,6 +16,11 @@ async def connect_db():
     max_retries = 5
     initial_retry_delay = 2
     
+    # SECURITY: Validate MongoDB URI before connection attempts
+    if not settings.MONGODB_URI or not isinstance(settings.MONGODB_URI, str):
+        print("[ERROR] Invalid MongoDB URI configuration")
+        raise ValueError("Database configuration is invalid")
+    
     for attempt in range(max_retries):
         try:
             # Create client with extended timeouts for VPS connectivity
@@ -27,13 +32,25 @@ async def connect_db():
                 retryWrites=True,
                 maxPoolSize=50,
                 minPoolSize=10,
-                # Linux-specific connection settings
-                compressors=["zlib"],  # Fix: compressors should be a list, not string
+                # Enhanced connection settings with compression
+                compressors=["zlib"],  # List of compressors
                 zlibCompressionLevel=6  # Balanced compression level
             )
-            # Test the connection
-            await client.admin.command('ping')
+            # Test connection with proper error handling
+            try:
+                await client.admin.command('ping', maxTimeMS=5000)  # 5 second timeout for ping
+            except Exception as ping_error:
+                print(f"[ERROR] MongoDB ping failed: {type(ping_error).__name__}: {str(ping_error)}")
+                raise ConnectionError("Database connection test failed")
+                
             db = client[settings._MONGO_DB]
+            
+            # Test database access
+            try:
+                await db.list_collection_names()
+            except Exception as db_error:
+                print(f"[ERROR] Database access failed: {type(db_error).__name__}: {str(db_error)}")
+                raise ConnectionError("Database access test failed")
             
             if settings.DEBUG:
                 try:
@@ -45,11 +62,20 @@ async def connect_db():
                 print(f"[OK] Connected to MongoDB: {safe_uri}")
             return
             
-        except ConnectionError as e:
-            # Database connectivity issues should return 503 Service Unavailable
+        except (ConnectionError, TimeoutError) as e:
+            # Enhanced database error classification
             error_msg = str(e)
+            error_type = type(e).__name__
             print(f"[ERROR] MongoDB connection attempt {attempt + 1}/{max_retries} failed")
-            print(f"[ERROR] Details: {error_msg}")
+            print(f"[ERROR] Type: {error_type}, Details: {error_msg}")
+            
+            # Specific error categorization
+            if "timeout" in error_msg.lower() or isinstance(e, TimeoutError):
+                print(f"[ERROR] Connection timeout - likely network issues")
+            elif "authentication" in error_msg.lower() or "auth" in error_msg.lower():
+                print(f"[ERROR] Authentication failure - check credentials")
+            elif "network" in error_msg.lower() or "connection" in error_msg.lower():
+                print(f"[ERROR] Network error - check MongoDB connectivity")
             
             if attempt < max_retries - 1:
                 import asyncio
@@ -144,16 +170,23 @@ async def close_db():
 
 
 def get_db():
-    """Get database instance"""
+    """Get database instance with enhanced error checking"""
     if db is None:
         raise RuntimeError("Database not connected. Call connect_db() first.")
+    if client is None:
+        raise RuntimeError("Database client not initialized.")
     return db
 
 
-# Collection shortcuts
+# Collection shortcuts with error handling
 def users_collection():
-    database = get_db()
-    return database.users
+    """Get users collection with error handling"""
+    try:
+        database = get_db()
+        return database.users
+    except Exception as e:
+        print(f"[ERROR] Failed to get users collection: {type(e).__name__}: {str(e)}")
+        raise RuntimeError("Database service unavailable")
 
 
 def chats_collection():
@@ -177,13 +210,22 @@ def uploads_collection():
 
 
 def refresh_tokens_collection():
-    database = get_db()
-    return database.refresh_tokens
-
+    """Get refresh tokens collection with error handling"""
+    try:
+        database = get_db()
+        return database.refresh_tokens
+    except Exception as e:
+        print(f"[ERROR] Failed to get refresh_tokens collection: {type(e).__name__}: {str(e)}")
+        raise RuntimeError("Database service unavailable")
 
 def reset_tokens_collection():
-    database = get_db()
-    return database.reset_tokens
+    """Get reset tokens collection with error handling"""
+    try:
+        database = get_db()
+        return database.reset_tokens
+    except Exception as e:
+        print(f"[ERROR] Failed to get reset_tokens collection: {type(e).__name__}: {str(e)}")
+        raise RuntimeError("Database service unavailable")
 
 
 def group_activity_collection():
