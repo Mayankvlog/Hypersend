@@ -583,12 +583,25 @@ async def initialize_upload(
             "chat_id": chat_id,
             "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.now(timezone.utc) + timedelta(seconds=upload_duration),
-            "status": "initialized"
+            "status": "uploading"  # CRITICAL FIX: Initialize with uploading status, not initialized
         }
         
         # Insert upload record
         uploads_col = uploads_collection()
-        result = await uploads_col.insert_one(upload_record)
+        try:
+            result = await uploads_col.insert_one(upload_record)
+            if not result.inserted_id:
+                raise ValueError("Database insert returned no ID")
+        except Exception as db_error:
+            _log("error", f"Failed to insert upload record: {str(db_error)}", {
+                "user_id": current_user,
+                "operation": "upload_init",
+                "error_type": type(db_error).__name__
+            })
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to initialize upload - database error"
+            )
         
         # CRITICAL SECURITY: Log only essential information
         _log("info", f"Upload initialized successfully", {
@@ -600,13 +613,25 @@ async def initialize_upload(
             "total_chunks": total_chunks
         })
         
-        return FileInitResponse(
-            uploadId=upload_id,  # Fixed: use camelCase to match model
+        # CRITICAL FIX: Ensure uploadId is always returned (use upload_id variable, not result)
+        response = FileInitResponse(
+            uploadId=upload_id,  # Fixed: use camelCase to match model and ensure it's not null
             chunk_size=chunk_size,
             total_chunks=total_chunks,
             expires_in=int(upload_duration),
             max_parallel=settings.MAX_PARALLEL_CHUNKS
         )
+        
+        # CRITICAL DEBUG: Verify response has uploadId
+        _log("info", f"Upload response created", {
+            "user_id": current_user,
+            "operation": "upload_init",
+            "response_uploadId": response.uploadId,
+            "response_chunk_size": response.chunk_size,
+            "response_total_chunks": response.total_chunks
+        })
+        
+        return response
         
     except HTTPException:
         # Re-raise HTTP exceptions (validation errors already raised with proper status)
@@ -658,16 +683,18 @@ async def upload_chunk(
             )
         
         # CRITICAL FIX: Validate upload_id format before database query
-        if not upload_id or upload_id == "null" or upload_id == "undefined":
-            _log("warning", f"Invalid upload_id received: {upload_id}", {
+        if not upload_id or upload_id == "null" or upload_id == "undefined" or upload_id.strip() == "":
+            _log("error", f"Invalid upload_id received: {repr(upload_id)}", {
                 "user_id": current_user,
                 "operation": "chunk_upload",
                 "upload_id": upload_id,
-                "client_ip": request.client.host if request.client else "unknown"
+                "upload_id_type": type(upload_id).__name__,
+                "client_ip": request.client.host if request.client else "unknown",
+                "error": "Frontend did not capture uploadId from init response"
             })
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid upload ID"
+                detail=f"Invalid upload ID: {upload_id}. Did you call /init first? Check that the uploadId was captured from the response."
             )
         
         # Verify upload exists and belongs to user
@@ -780,6 +807,20 @@ async def complete_upload(
     """Complete file upload and assemble chunks"""
     
     try:
+        # CRITICAL FIX: Validate upload_id before querying database
+        if not upload_id or upload_id == "null" or upload_id == "undefined" or upload_id.strip() == "":
+            _log("error", f"Invalid upload_id in complete endpoint: {repr(upload_id)}", {
+                "user_id": current_user,
+                "operation": "file_complete",
+                "upload_id": upload_id,
+                "client_ip": request.client.host if request.client else "unknown",
+                "error": "Frontend did not capture uploadId from init response"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid upload ID: {upload_id}. Did you call /init first? Check that uploadId was captured correctly."
+            )
+        
         # Get upload record
         upload_doc = await uploads_collection().find_one({"_id": upload_id})
         
