@@ -291,22 +291,12 @@ async def register(user: UserCreate) -> UserResponse:
             else:
                 auth_log(f"Registration: No existing user found for email: {normalized_email}")
                 
-        except (ConnectionError, TimeoutError) as db_error:
-            auth_log(f"Database connection error checking existing user: {type(db_error).__name__}: {str(db_error)}")
+        except asyncio.TimeoutError:
+            auth_log(f"Database timeout checking existing user")
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Database service temporarily unavailable. Please try again."
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - please try again"
             )
-        except Exception as db_error:
-            auth_log(f"Database error checking existing user: {type(db_error).__name__}: {str(db_error)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database operation failed. Please try again."
-            )
-            
-            existing_user = await users_col.find_one({
-                "email": {"$regex": f"^{re.escape(normalized_email)}$", "$options": "i"}
-            })
         except (ConnectionError, TimeoutError) as db_error:
             auth_log(f"Database connection error checking existing user: {type(db_error).__name__}: {str(db_error)}")
             raise HTTPException(
@@ -363,8 +353,17 @@ async def register(user: UserCreate) -> UserResponse:
         # Insert user into database
         try:
             users_col = users_collection()
-            result = await users_col.insert_one(user_doc)
+            result = await asyncio.wait_for(
+                users_col.insert_one(user_doc),
+                timeout=5.0
+            )
             auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
+        except asyncio.TimeoutError:
+            auth_log(f"Database timeout during user insertion")
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - please try again"
+            )
         except (ConnectionError, TimeoutError) as db_error:
             auth_log(f"Database connection error during user insertion: {type(db_error).__name__}: {str(db_error)}")
             raise HTTPException(
@@ -506,9 +505,17 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         
         try:
             users_col = users_collection()
-            # CRITICAL FIX: Add index to prevent full collection scan
-            # This is much more efficient than regex for large datasets
-            existing_user = await users_col.find_one({"email": normalized_email})
+            # CRITICAL FIX: Add timeout to database query to prevent 503 Service Unavailable
+            try:
+                existing_user = await asyncio.wait_for(
+                    users_col.find_one({"email": normalized_email}),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Database timeout - please try again"
+                )
             
             if not existing_user:
                 auth_log(f"Login failed: User not found: {normalized_email}")

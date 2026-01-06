@@ -26,31 +26,127 @@ logger.setLevel(logging.INFO)
 
 
 async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str):
-    """Helper function to save chunk to disk with error handling"""
+    """
+    Enhanced helper function to save chunk to disk with comprehensive error handling
+    Handles all types of I/O errors with appropriate HTTP status codes
+    """
     try:
+        # Validate chunk data before writing
+        if not chunk_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Chunk {chunk_index} is empty - no data to save"
+            )
+        
+        if len(chunk_data) > settings.CHUNK_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Chunk {chunk_index} exceeds maximum size of {settings.CHUNK_SIZE} bytes"
+            )
+        
+        # Ensure directory exists
         chunk_path.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(chunk_path, 'wb') as f:
-            await f.write(chunk_data)
+        
+        # Check available disk space (approximate check)
+        try:
+            import shutil
+            stat = shutil.disk_usage(chunk_path.parent)
+            if stat.free < len(chunk_data) * 2:  # Leave some buffer
+                raise HTTPException(
+                    status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                    detail="Insufficient disk space on server"
+                )
+        except Exception as disk_check_error:
+            logger.warning(f"[UPLOAD] Disk space check failed for chunk {chunk_index}: {disk_check_error}")
+        
+        # Write chunk with timeout protection
+        try:
+            async with asyncio.timeout(30):  # 30 second timeout for chunk write
+                async with aiofiles.open(chunk_path, 'wb') as f:
+                    await f.write(chunk_data)
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Chunk save timeout - disk write took too long"
+            )
+        
+        # Verify chunk was written correctly
+        if not chunk_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save chunk {chunk_index} - file not found after write"
+            )
+        
+        actual_size = chunk_path.stat().st_size
+        if actual_size != len(chunk_data):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Chunk {chunk_index} size mismatch: expected {len(chunk_data)}, got {actual_size}"
+            )
+        
         _log("info", f"Chunk {chunk_index} saved successfully: {len(chunk_data)} bytes", 
-               {"user_id": user_id, "operation": "chunk_save"})
-    except Exception as e:
-        _log("error", f"[UPLOAD] Failed to save chunk {chunk_index}: {str(e)}", 
-               {"user_id": user_id, "operation": "chunk_save_error"})
-        
-        # Enhanced error categorization for 400 errors
-        status_code = getattr(e, 'status_code', 500)
-        if status_code == 400:
-            _log("error", f"[UPLOAD] Bad Request - Failed to save chunk {chunk_index}: {str(e)}", 
-                       {"user_id": user_id, "operation": "chunk_save_400_error"})
-            _log("error", f"[UPLOAD] Possible 400 causes - Server storage issue, permission denied, disk full", 
-                       {"user_id": user_id, "operation": "chunk_save_400_debug"})
+               {"user_id": user_id, "operation": "chunk_save", "chunk_size": len(chunk_data)})
+               
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except PermissionError as e:
+        _log("error", f"[UPLOAD] Permission denied saving chunk {chunk_index}: {str(e)}", 
+               {"user_id": user_id, "operation": "chunk_save_error", "error_type": "PermissionError"})
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Server permission denied - cannot write file"
+        )
+    except OSError as e:
+        # Handle various disk I/O errors with specific status codes
+        error_msg = str(e).lower()
+        if "no space left" in error_msg:
+            status_code = status.HTTP_507_INSUFFICIENT_STORAGE
+            detail = "Server storage full - cannot save chunk"
+        elif "disk quota exceeded" in error_msg:
+            status_code = status.HTTP_507_INSUFFICIENT_STORAGE  
+            detail = "Server disk quota exceeded - cannot save chunk"
+        elif "read-only file system" in error_msg:
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            detail = "Server file system is read-only"
+        elif "device i/o error" in error_msg:
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            detail = "Server storage device error - please retry"
+        elif "too many open files" in error_msg:
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            detail = "Server resource limit exceeded - please retry"
         else:
-            _log("error", f"[UPLOAD] Server error {status_code} - Failed to save chunk {chunk_index}: {str(e)}", 
-                       {"user_id": user_id, "operation": "chunk_save_server_error"})
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            detail = "Server storage error - please retry upload"
         
+        _log("error", f"[UPLOAD] OS/Disk error saving chunk {chunk_index}: {str(e)}", 
+               {"user_id": user_id, "operation": "chunk_save_error", "error_type": type(e).__name__})
         raise HTTPException(
             status_code=status_code,
-            detail=f"Failed to save chunk {chunk_index}. Please retry."
+            detail=detail
+        )
+    except asyncio.TimeoutError:
+        _log("error", f"[UPLOAD] Timeout saving chunk {chunk_index}", 
+               {"user_id": user_id, "operation": "chunk_save_timeout"})
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Chunk save timeout - please retry"
+        )
+    except Exception as e:
+        # Catch-all for unexpected errors
+        _log("error", f"[UPLOAD] Unexpected error saving chunk {chunk_index}: {type(e).__name__}: {str(e)}", 
+               {"user_id": user_id, "operation": "chunk_save_error", "error_type": type(e).__name__})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected server error while saving chunk - please retry"
+        )
+    except Exception as e:
+        # Generic error handling
+        _log("error", f"[UPLOAD] Unexpected error saving chunk {chunk_index}: {str(e)}", 
+               {"user_id": user_id, "operation": "chunk_save_error", "error_type": type(e).__name__})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save chunk. Please retry."
         )
 
 
@@ -698,7 +794,21 @@ async def upload_chunk(
             )
         
         # Verify upload exists and belongs to user
-        upload_doc = await uploads_collection().find_one({"_id": upload_id})
+        try:
+            upload_doc = await asyncio.wait_for(
+                uploads_collection().find_one({"_id": upload_id}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            _log("error", f"Database timeout checking upload: {upload_id}", {
+                "user_id": current_user,
+                "operation": "chunk_upload",
+                "upload_id": upload_id
+            })
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - please retry upload"
+            )
         
         if not upload_doc:
             _log("warning", f"Upload not found in database: {upload_id}", {
@@ -743,20 +853,34 @@ async def upload_chunk(
         
         # CRITICAL FIX: Prevent race condition with atomic version checking
         # Use findOneAndUpdate to ensure atomic read-modify-write operation
-        upload_doc = await uploads_collection().find_one_and_update(
-            {
-                "_id": upload_id,
-                "status": "uploading"  # Must still be in uploading state
-            },
-            {
-                "$set": {
-                    "last_chunk_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc)
-                },
-                "$addToSet": {"uploaded_chunks": chunk_index}  # Only adds if not present
-            },
-            return_document=True  # Return the updated document
-        )
+        try:
+            upload_doc = await asyncio.wait_for(
+                uploads_collection().find_one_and_update(
+                    {
+                        "_id": upload_id,
+                        "status": "uploading"  # Must still be in uploading state
+                    },
+                    {
+                        "$set": {
+                            "last_chunk_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc)
+                        },
+                        "$addToSet": {"uploaded_chunks": chunk_index}  # Only adds if not present
+                    },
+                    return_document=True  # Return the updated document
+                ),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            _log("error", f"Database timeout updating upload: {upload_id}", {
+                "user_id": current_user,
+                "operation": "chunk_upload",
+                "upload_id": upload_id
+            })
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - please retry upload"
+            )
         
         if not upload_doc:
             _log("error", f"Upload document not found or not in uploading state: {upload_id}", {"user_id": current_user, "operation": "chunk_upload"})
@@ -826,7 +950,21 @@ async def complete_upload(
             )
         
         # Get upload record
-        upload_doc = await uploads_collection().find_one({"_id": upload_id})
+        try:
+            upload_doc = await asyncio.wait_for(
+                uploads_collection().find_one({"_id": upload_id}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            _log("error", f"Database timeout fetching upload: {upload_id}", {
+                "user_id": current_user,
+                "operation": "finalize_upload",
+                "upload_id": upload_id
+            })
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - please retry"
+            )
         
         if not upload_doc:
             raise HTTPException(
@@ -934,7 +1072,21 @@ async def complete_upload(
             }
             
             # SECURITY: Insert file record only after successful file creation
-            await files_collection().insert_one(file_record)
+            try:
+                await asyncio.wait_for(
+                    files_collection().insert_one(file_record),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                _log("error", f"Database timeout inserting file record: {file_id}", {
+                    "user_id": current_user,
+                    "operation": "file_insert_timeout",
+                    "upload_id": upload_id
+                })
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Database timeout - file record not saved"
+                )
             
             # CRITICAL SECURITY: Clean up chunks and upload record
             import shutil
@@ -948,7 +1100,17 @@ async def complete_upload(
                     "upload_id": upload_id
                 })
             
-            await uploads_collection().delete_one({"_id": upload_id})
+            try:
+                await asyncio.wait_for(
+                    uploads_collection().delete_one({"_id": upload_id}),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                _log("error", f"Database timeout deleting upload record: {upload_id}", {
+                    "user_id": current_user,
+                    "operation": "upload_delete_timeout"
+                })
+                # Non-critical timeout - don't raise exception
             
             _log("info", f"Upload completed successfully", {
                 "user_id": current_user,
@@ -1028,7 +1190,21 @@ async def get_file_info(
             # Chat members can access files in their chats
             elif chat_id:
                 from db_proxy import chats_collection
-                chat_doc = await chats_collection().find_one({"_id": chat_id})
+                try:
+                    chat_doc = await asyncio.wait_for(
+                        chats_collection().find_one({"_id": chat_id}),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    _log("error", f"Database timeout checking chat membership: {chat_id}", {
+                        "user_id": current_user,
+                        "operation": "file_info_chat_timeout"
+                    })
+                    raise HTTPException(
+                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                        detail="Database timeout"
+                    )
+                
                 if chat_doc and current_user in chat_doc.get("members", []):
                     _log("info", f"Chat member accessing file info: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
                 else:
@@ -1502,7 +1678,21 @@ async def share_file(
     """Share file with specific users"""
     
     # Find file
-    file_doc = await files_collection().find_one({"_id": file_id})
+    try:
+        file_doc = await asyncio.wait_for(
+            files_collection().find_one({"_id": file_id}),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        _log("error", f"Database timeout finding file: {file_id}", {
+            "user_id": current_user,
+            "operation": "file_share_timeout"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout"
+        )
+    
     if not file_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1519,10 +1709,23 @@ async def share_file(
         )
     
     # Add users to shared_with list
-    await files_collection().update_one(
-        {"_id": file_id},
-        {"$addToSet": {"shared_with": {"$each": user_ids}}}
-    )
+    try:
+        await asyncio.wait_for(
+            files_collection().update_one(
+                {"_id": file_id},
+                {"$addToSet": {"shared_with": {"$each": user_ids}}}
+            ),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        _log("error", f"Database timeout sharing file: {file_id}", {
+            "user_id": current_user,
+            "operation": "file_share_update_timeout"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout while sharing file"
+        )
     
     _log("info", f"File shared: owner={current_user}, file={file_id}, users={user_ids}", {"user_id": current_user, "operation": "file_share"})
     
@@ -1534,7 +1737,21 @@ async def get_shared_users(file_id: str, current_user: str = Depends(get_current
     """Get list of users file is shared with"""
     
     # Find file
-    file_doc = await files_collection().find_one({"_id": file_id})
+    try:
+        file_doc = await asyncio.wait_for(
+            files_collection().find_one({"_id": file_id}),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        _log("error", f"Database timeout finding file: {file_id}", {
+            "user_id": current_user,
+            "operation": "file_shared_users_timeout"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout"
+        )
+    
     if not file_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1564,7 +1781,21 @@ async def revoke_file_access(
     """Revoke file access from specific user"""
     
     # Find file
-    file_doc = await files_collection().find_one({"_id": file_id})
+    try:
+        file_doc = await asyncio.wait_for(
+            files_collection().find_one({"_id": file_id}),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        _log("error", f"Database timeout finding file: {file_id}", {
+            "user_id": current_user,
+            "operation": "file_revoke_timeout"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout"
+        )
+    
     if not file_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1581,10 +1812,23 @@ async def revoke_file_access(
         )
     
     # Remove user from shared_with list
-    await files_collection().update_one(
-        {"_id": file_id},
-        {"$pull": {"shared_with": user_id}}
-    )
+    try:
+        await asyncio.wait_for(
+            files_collection().update_one(
+                {"_id": file_id},
+                {"$pull": {"shared_with": user_id}}
+            ),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        _log("error", f"Database timeout revoking file access: {file_id}", {
+            "user_id": current_user,
+            "operation": "file_revoke_update_timeout"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout while revoking access"
+        )
     
     _log("info", f"File access revoked: owner={current_user}, file={file_id}, user={user_id}", {"user_id": current_user, "operation": "file_revoke_access"})
     
@@ -1596,7 +1840,21 @@ async def refresh_upload_token(upload_id: str, current_user: str = Depends(get_c
     """Refresh upload token for long-running uploads"""
     
     # CRITICAL FIX: Query by _id field, not upload_id field (database inconsistency)
-    upload = await uploads_collection().find_one({"_id": upload_id})
+    try:
+        upload = await asyncio.wait_for(
+            uploads_collection().find_one({"_id": upload_id}),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        _log("error", f"Database timeout finding upload: {upload_id}", {
+            "user_id": current_user,
+            "operation": "upload_token_refresh_timeout"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout"
+        )
+    
     if not upload:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1647,7 +1905,21 @@ async def cancel_upload(upload_id: str, request: Request, current_user: str = De
     # Handle token expiration gracefully
     try:
         # CRITICAL FIX: Query by _id field, not upload_id field (database inconsistency)
-        upload = await uploads_collection().find_one({"_id": upload_id})
+        try:
+            upload = await asyncio.wait_for(
+                uploads_collection().find_one({"_id": upload_id}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            _log("error", f"Database timeout finding upload for cancel: {upload_id}", {
+                "user_id": current_user,
+                "operation": "upload_cancel_timeout"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout"
+            )
+        
         if not upload:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

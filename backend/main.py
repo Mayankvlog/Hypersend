@@ -113,20 +113,85 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             # SECURITY: Check for malicious request patterns
             url_path = str(request.url.path)
             
-            # Block suspicious path patterns
+            # Enhanced suspicious pattern detection with more comprehensive coverage
             suspicious_patterns = [
-                '../', '..\\', '%2e%2e', '%2e%2e%2f', '%2e%2e%5c',  # Path traversal
-                '<script', 'javascript:', 'vbscript:', 'data:', 'vbscript:',  # Script injection
-                'union select', 'drop table', 'delete from', 'insert into',  # SQL injection
-                '<?xml', '<!doctype', '<svg',  # XML/XXE injection
-                '../../etc/passwd', '/etc/passwd', '/etc/shadow',  # System file access
-                'cmd.exe', 'powershell', 'bash', 'sh', '/bin/', '/usr/bin/'  # Command execution
+                # Path traversal attacks
+                '../', '..\\', '%2e%2e', '%2e%2e%2f', '%2e%2e%5c', 
+                '..%2f', '..%5c', '%2e%2e/', '%2e%2e\\',
+                '....//', '....\\\\', '%252e%252e%252f',
+                
+                # Script injection attacks
+                '<script', '</script>', 'javascript:', 'vbscript:', 'data:', 
+                'onload=', 'onerror=', 'onclick=', 'onmouseover=',
+                'eval(', 'alert(', 'confirm(', 'prompt(',
+                
+                # SQL injection attacks  
+                'union select', 'drop table', 'delete from', 'insert into',
+                'update set', 'create table', 'alter table', 'exec sp_',
+                '1\' or \'1\'=\'1', '1" or "1"="1', "admin'--",
+                "' or 1=1--", '" or 1=1--', "'; drop table--",
+                
+                # XML/XXE injection attacks
+                '<?xml', '<!doctype', '<svg', '<!entity', 'xlink:href=',
+                '<xsl:stylesheet', 'external-entitiy', '<!ATTLIST',
+                
+                # System file access attempts
+                '../../etc/passwd', '/etc/passwd', '/etc/shadow', '/etc/hosts',
+                'c:\\windows\\system32', 'c:\\windows\\system32\\config',
+                '/proc/version', '/proc/self/environ', '/etc/passwd%00',
+                'cmd.exe', 'powershell', 'bash', 'sh', '/bin/', '/usr/bin/',
+                'wget ', 'curl ', 'nc ', 'netcat ', 'perl ',
+                
+                # Command injection attempts
+                '; rm -rf', '| cat /etc/passwd', '&& ls -la', '|| id',
+                '`whoami`', '$(id)', '${jndi:ldap', '${env:HOME}',
+                
+                # NoSQL/Document injection
+                '{$ne:}', '{$gt:}', '{$where:}', '$regex:', '$expr:',
+                '{"$gt":""}', '{"$ne":null}', "'; return db.admin.find('",
+                
+                # LDAP injection
+                '*)(', '*)(uid=*', '*)(|(uid=', '*)(password=*',
+                '*)%00', '*)(&(objectClass=',
+                
+                # Log4j/RCE attempts
+                '${jndi:', '${lower:jndi:', '${upper:jndi:', '${::-:j',
+                '${env:', '${java:', '${sys:', '${log4j:',
+                
+                # Server-Side Template Injection
+                '{{7*7}}', '${7*7}', '#{7*7}', '<%=7*7%>',
+                '{{config}}', '${config}', '#{config}',
+                
+                # XXE payload variants
+                '<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>',
+                '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE test',
+                
+                # Common web shell patterns
+                'webshell', 'shell.php', 'cmd.jsp', 'aspshell',
+                'eval(base64', 'system($_POST', 'passthru($_',
+                'shell_exec($_', 'exec($_POST', 'preg_replace eval',
+                
+                # SSRF patterns
+                'localhost', '127.0.0.1', '0.0.0.0', '::1',
+                '169.254.169.254', 'metadata.google.internal',
+                'file:///', 'gopher://', 'dict://',
+                
+                # Deserialization attacks
+                'O:4:"User"', 'ACED0005', 'rO0ABX', '80ACED0',
+                'ys0yPC', 'base64_decode', 'unserialize(',
+                
+                # Header injection
+                'CRLF-injection', '%0d%0a', '\r\n', '%0D%0A',
+                'X-Forwarded-For:', 'X-Real-IP:', 'X-Originating-IP:',
             ]
             
             url_lower = url_path.lower()
+            headers_lower = {k.lower(): v.lower() if v else '' for k, v in dict(request.headers).items()}
+            
+            # Check URL path for suspicious patterns
             for pattern in suspicious_patterns:
                 if pattern in url_lower:
-                    logger.warning(f"[SECURITY] Suspicious request blocked: {pattern} in {url_path}")
+                    logger.warning(f"[SECURITY] Suspicious URL blocked: {pattern} in {url_path}")
                     return JSONResponse(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         content={
@@ -136,9 +201,27 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                             "path": url_path,
                             "method": request.method,
-                            "hints": ["Remove malicious content", "Check request format"]
+                            "hints": ["Remove malicious content", "Check request format", "Ensure proper encoding"]
                         }
                     )
+            
+            # Check headers for suspicious patterns
+            for header_name, header_value in headers_lower.items():
+                for pattern in suspicious_patterns:
+                    if pattern in header_value and header_name not in ['user-agent', 'accept']:
+                        logger.warning(f"[SECURITY] Suspicious header blocked: {pattern} in {header_name}")
+                        return JSONResponse(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            content={
+                                "status_code": 400,
+                                "error": "Bad Request - Malicious header detected",
+                                "detail": "Request header contains potentially malicious content",
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "path": url_path,
+                                "method": request.method,
+                                "hints": ["Remove malicious content", "Check request headers", "Ensure proper encoding"]
+                            }
+                        )
             
             # Check Content-Length for POST/PUT/PATCH (411)
             if request.method in ["POST", "PUT", "PATCH"]:
@@ -203,23 +286,141 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     }
                 )
             
-            # Check Content-Type for POST/PUT (415 - though Pydantic usually catches)
+            # Enhanced Content-Type validation for POST/PUT/PATCH
             if request.method in ["POST", "PUT", "PATCH"]:
                 content_type = request.headers.get("content-type", "")
                 if not content_type:
-                    # Some requests can work without explicit Content-Type
-                    logger.debug(f"[415] No Content-Type for {request.method} {request.url.path}")
+                    # Some requests can work without explicit Content-Type, but log for security
+                    logger.debug(f"[SECURITY] No Content-Type for {request.method} {request.url.path}")
+                else:
+                    # Check for dangerous content types
+                    dangerous_content_types = [
+                        'application/x-msdownload',     # Executable download
+                        'application/x-msdos-program',   # DOS executable
+                        'application/x-executable',      # Generic executable
+                        'application/x-shockwave-flash',  # Flash (deprecated, risky)
+                        'text/html',                    # HTML in API requests (XSS risk)
+                        'application/javascript',         # JavaScript in non-JS endpoints
+                        'text/javascript',              # JavaScript in non-JS endpoints
+                    ]
+                    
+                    content_type_lower = content_type.lower()
+                    for dangerous_type in dangerous_content_types:
+                        if dangerous_type in content_type_lower:
+                            logger.warning(f"[SECURITY] Dangerous content-type blocked: {content_type}")
+                            return JSONResponse(
+                                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                                content={
+                                    "status_code": 415,
+                                    "error": "Unsupported Media Type - Content type not allowed",
+                                    "detail": f"Content type '{content_type}' is not permitted for security reasons",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "path": str(request.url.path),
+                                    "method": request.method,
+                                    "hints": ["Use supported content types", "Check API documentation", "Ensure proper file format"]
+                                }
+                            )
+            
+            # Enhanced request size validation for different endpoints
+            if request.method in ["POST", "PUT", "PATCH"]:
+                content_length = request.headers.get("content-length")
+                if content_length:
+                    try:
+                        size = int(content_length)
+                        # Endpoint-specific size limits
+                        url_path = str(request.url.path).lower()
+                        
+                        # Login/register endpoints - smaller limit
+                        if '/auth/' in url_path or '/login' in url_path or '/register' in url_path:
+                            max_size = 1024 * 1024  # 1MB
+                            if size > max_size:
+                                return JSONResponse(
+                                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                    content={
+                                        "status_code": 413,
+                                        "error": "Payload Too Large - Auth request too big",
+                                        "detail": f"Authentication requests must be less than {max_size} bytes",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "path": str(request.url.path),
+                                        "method": request.method,
+                                        "hints": ["Reduce request size", "Check for file uploads", "Use appropriate endpoints"]
+                                    }
+                                )
+                        
+                        # Profile/Settings endpoints - medium limit
+                        elif '/profile' in url_path or '/settings' in url_path:
+                            max_size = 5 * 1024 * 1024  # 5MB
+                            if size > max_size:
+                                return JSONResponse(
+                                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                    content={
+                                        "status_code": 413,
+                                        "error": "Payload Too Large - Profile data too big",
+                                        "detail": f"Profile requests must be less than {max_size} bytes",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "path": str(request.url.path),
+                                        "method": request.method,
+                                        "hints": ["Reduce profile data size", "Compress images", "Remove unnecessary data"]
+                                    }
+                                )
+                        
+                        # File upload endpoints - handled by file-specific logic
+                        # This is just an additional safety net
+                        elif '/files/' in url_path and '/upload' in url_path:
+                            max_size = 5 * 1024 * 1024 * 1024  # 5GB safety net (should be enforced elsewhere)
+                            if size > max_size:
+                                return JSONResponse(
+                                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                    content={
+                                        "status_code": 413,
+                                        "error": "Payload Too Large - File too big",
+                                        "detail": f"File uploads must be less than {max_size} bytes",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "path": str(request.url.path),
+                                        "method": request.method,
+                                        "hints": ["Use smaller files", "Compress large files", "Split large files"]
+                                    }
+                                )
+                    except ValueError:
+                        pass  # Invalid content-length handled elsewhere
             
             response = await call_next(request)
+            
+            # Enhanced response security headers
+            security_headers = {
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "X-XSS-Protection": "1; mode=block",
+                "Referrer-Policy": "strict-origin-when-cross-origin",
+                "Content-Security-Policy": "default-src 'none'; script-src 'none'; object-src 'none';",
+                "X-Permitted-Cross-Domain-Policies": "none",
+                "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+            }
+            
+            # Add security headers to response
+            for header, value in security_headers.items():
+                response.headers[header] = value
+            
             return response
             
         except HTTPException:
             # Re-raise HTTPException to be handled by specific handlers
             raise
         except Exception as e:
-            logger.error(f"[MIDDLEWARE_ERROR] {request.method} {request.url.path}: {str(e)}", exc_info=True)
-            # For debugging, check if this is a validation error that should be 422
-            if "validation" in str(e).lower() or "json" in str(e).lower():
+            # Enhanced error logging with security context
+            client_ip = request.client.host if request.client else "unknown"
+            user_agent = request.headers.get("User-Agent", "unknown")
+            
+            logger.error(
+                f"[MIDDLEWARE_ERROR] {request.method} {request.url.path} | "
+                f"Client: {client_ip} | User-Agent: {user_agent[:100]} | "
+                f"Error: {type(e).__name__}: {str(e)}", 
+                exc_info=True
+            )
+            
+            # Enhanced error classification
+            error_str = str(e).lower()
+            if any(keyword in error_str for keyword in ["validation", "json", "parse", "syntax"]):
                 return JSONResponse(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     content={
@@ -229,19 +430,48 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
+                        "hints": ["Check request format", "Verify JSON syntax", "Review API documentation"]
                     }
                 )
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={
-                    "status_code": 500,
-                    "error": "Internal Server Error",
-                    "detail": "Server error processing request",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "path": str(request.url.path),
-                    "method": request.method,
-                }
-            )
+            elif any(keyword in error_str for keyword in ["timeout", "deadline", "deadlineexceeded"]):
+                return JSONResponse(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    content={
+                        "status_code": 504,
+                        "error": "Gateway Timeout - Request took too long",
+                        "detail": str(e) if settings.DEBUG else "Request timeout",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "path": str(request.url.path),
+                        "method": request.method,
+                        "hints": ["Try again later", "Reduce request complexity", "Check server load"]
+                    }
+                )
+            elif any(keyword in error_str for keyword in ["connection", "network", "unreachable"]):
+                return JSONResponse(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    content={
+                        "status_code": 503,
+                        "error": "Service Unavailable - Connection issue",
+                        "detail": str(e) if settings.DEBUG else "Service temporarily unavailable",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "path": str(request.url.path),
+                        "method": request.method,
+                        "hints": ["Check network connection", "Try again later", "Verify server status"]
+                    }
+                )
+            else:
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={
+                        "status_code": 500,
+                        "error": "Internal Server Error",
+                        "detail": "Server error processing request" if not settings.DEBUG else str(e),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "path": str(request.url.path),
+                        "method": request.method,
+                        "hints": ["This is a server error", "Try again later", "Contact support if persistent"]
+                    }
+                )
 
 
 @asynccontextmanager
@@ -355,51 +585,144 @@ register_exception_handlers(app)
 # Add validation middleware for 4xx error handling (411, 413, 414, 415)
 app.add_middleware(RequestValidationMiddleware)
 
-# Add a catch-all exception handler for any unhandled exceptions
+# Add a comprehensive catch-all exception handler for any unhandled exceptions
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """
-    Catch-all exception handler for unhandled exceptions
+    Enhanced catch-all exception handler for unhandled exceptions
     
     LOGIC:
     - HTTPException: Already handled by specific handlers, re-raise
-    - Timeout/Connection errors: 503 Service Unavailable
+    - Timeout/Connection errors: 504 Gateway Timeout / 503 Service Unavailable
     - Database errors: 503 Service Unavailable
+    - File system errors: 500 Internal Server Error / 507 Insufficient Storage
+    - Validation errors: 400 Bad Request
+    - Security errors: 401/403 Forbidden
     - Other errors: 500 Internal Server Error
     
-    SECURITY: Don't expose internal details in production
+    SECURITY: Don't expose internal details in production mode
+    LOGIC: Provide specific error handling for common exception types
     """
     # Don't catch HTTPException - let the specific handler deal with those
     if isinstance(exc, HTTPException):
         raise exc  # Re-raise HTTPException to be handled by its specific handler
     
     import traceback
-    logger.error(f"[UNCAUGHT_EXCEPTION] {type(exc).__name__}: {str(exc)}", exc_info=True)
+    import asyncio
+    import pymongo.errors
+    from pymongo.errors import PyMongoError
     
-    # Determine status code based on exception type
-    if isinstance(exc, TimeoutError):
+    # Enhanced logging with full context
+    logger.error(
+        f"[UNCAUGHT_EXCEPTION] {request.method} {request.url.path} | "
+        f"{type(exc).__name__}: {str(exc)} | "
+        f"Client: {request.client.host if request.client else 'Unknown'}",
+        exc_info=True
+    )
+    
+    # Determine appropriate status code and message based on exception type
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    error_msg = "Internal server error"
+    hints = ["Try again in a moment", "Contact support if the problem persists"]
+    
+    # Enhanced exception type handling
+    if isinstance(exc, asyncio.TimeoutError):
         status_code = status.HTTP_504_GATEWAY_TIMEOUT
-        error_msg = "Request timeout - please try again"
+        error_msg = "Request timeout - operation took too long"
+        hints = ["Check your network connection", "Try with a smaller request", "Try again later"]
+        
     elif isinstance(exc, ConnectionError):
         status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        error_msg = "Service temporarily unavailable - please try again"
-    elif "database" in str(exc).lower() or "mongodb" in str(exc).lower():
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        error_msg = "Database service unavailable - please try again"
-    else:
+        error_msg = "Service temporarily unavailable - cannot connect to external service"
+        hints = ["Check your internet connection", "Try again in a few moments", "Verify service status"]
+        
+    elif isinstance(exc, PyMongoError):
+        if "timeout" in str(exc).lower():
+            status_code = status.HTTP_504_GATEWAY_TIMEOUT
+            error_msg = "Database timeout - operation took too long"
+        elif "connection" in str(exc).lower():
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            error_msg = "Database connection failed - service temporarily unavailable"
+        elif "duplicate" in str(exc).lower():
+            status_code = status.HTTP_409_CONFLICT
+            error_msg = "Resource already exists - duplicate entry detected"
+        else:
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            error_msg = "Database error - service temporarily unavailable"
+        hints = ["Try again in a few moments", "Check your request data", "Contact support if persistent"]
+        
+    elif isinstance(exc, (OSError, IOError)):
+        error_msg_lower = str(exc).lower()
+        if "no space left" in error_msg_lower or "disk full" in error_msg_lower:
+            status_code = status.HTTP_507_INSUFFICIENT_STORAGE
+            error_msg = "Server storage full - cannot complete operation"
+        elif "permission denied" in error_msg_lower:
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            error_msg = "Server permission error - please contact support"
+        elif "network unreachable" in error_msg_lower:
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            error_msg = "Network service unavailable - please check connection"
+        else:
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            error_msg = "Server I/O error - please try again"
+        hints = ["Try again with smaller data", "Contact support if persistent"]
+        
+    elif isinstance(exc, ValueError):
+        status_code = status.HTTP_400_BAD_REQUEST
+        error_msg = "Invalid input data - check your request parameters"
+        hints = ["Check request format and data types", "Verify all required fields are provided"]
+        
+    elif isinstance(exc, KeyError):
+        status_code = status.HTTP_400_BAD_REQUEST
+        error_msg = "Missing required field in request"
+        hints = ["Check that all required fields are provided", "Review API documentation"]
+        
+    elif isinstance(exc, (AttributeError, TypeError)):
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        error_msg = "Internal server error"
+        error_msg = "Internal server error - data processing failed"
+        hints = ["This is a server issue", "Try again later", "Contact support if persistent"]
+        
+    # Security-related exceptions
+    elif "unauthorized" in str(exc).lower() or "authentication" in str(exc).lower():
+        status_code = status.HTTP_401_UNAUTHORIZED
+        error_msg = "Authentication required or invalid credentials"
+        hints = ["Check your authentication token", "Login again if session expired"]
+        
+    elif "forbidden" in str(exc).lower() or "permission" in str(exc).lower():
+        status_code = status.HTTP_403_FORBIDDEN
+        error_msg = "Access denied - insufficient permissions"
+        hints = ["Check your access permissions", "Contact administrator for access"]
+    
+    # Prepare response data
+    response_data = {
+        "status_code": status_code,
+        "error": type(exc).__name__ if settings.DEBUG else error_msg.title(),
+        "detail": error_msg if not settings.DEBUG else str(exc),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "path": str(request.url.path),
+        "method": request.method,
+        "hints": hints,
+    }
+    
+    # Add specific context for certain error types
+    if status_code == 413:
+        response_data["max_size"] = "5GB"
+    elif status_code == 429:
+        response_data["retry_after"] = "60"
+    
+    # Add security headers to all error responses
+    security_headers = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Cache-Control": "no-cache, no-store, must-revalidate",  # Don't cache errors
+    }
     
     return JSONResponse(
         status_code=status_code,
-        content={
-            "status_code": status_code,
-            "error": error_msg.title() if not settings.DEBUG else type(exc).__name__,
-            "detail": error_msg if not settings.DEBUG else str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "path": str(request.url.path),
-            "method": request.method,
-        }
+        content=response_data,
+        headers=security_headers
     )
 
 # Add 404 handler for non-existent endpoints

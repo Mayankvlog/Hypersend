@@ -1336,12 +1336,28 @@ Future<void> postToChannel(String channelId, String text) async {
     } on DioException catch (e) {
       _log('[API_INIT_ERROR] Failed to initialize upload: ${e.toString()}');
       
-      // CRITICAL FIX: Enhanced error handling with retry logic
+      // CRITICAL FIX: Enhanced error handling with retry logic and proper status code mapping
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout ||
           e.type == DioExceptionType.sendTimeout) {
-        // Retry for timeout errors
+        // Retry for timeout errors (504 Gateway Timeout)
+        _log('[API_INIT_RETRY] Timeout error detected, attempting retry...');
         return await _retryUpload(filename, size, mime, chatId, checksum);
+      }
+      
+      // Enhanced status code checking
+      final statusCode = e.response?.statusCode;
+      if (statusCode != null) {
+        if (statusCode >= 500 && statusCode < 600) {
+          // Server errors - should be retried
+          _log('[API_INIT_RETRY] Server error $statusCode detected, attempting retry...');
+          return await _retryUpload(filename, size, mime, chatId, checksum);
+        } else if (statusCode == 408 || statusCode == 429) {
+          // Request timeout and rate limit - should be retried
+          _log('[API_INIT_RETRY] Retryable error $statusCode detected, attempting retry...');
+          return await _retryUpload(filename, size, mime, chatId, checksum);
+        }
+        // 4xx client errors (except 408, 429) - should NOT be retried
       }
       
       // CRITICAL FIX: Throw exception instead of returning error object
@@ -1429,51 +1445,152 @@ Future<void> postToChannel(String channelId, String text) async {
     final url = '${ApiConstants.filesEndpoint}/$uploadId/chunk?chunk_index=$chunkIndex';
     debugPrint('[API_SERVICE] Chunk upload URL: $url');
     
-    try {
-      final response = await _dio.put(
-        url,
-        data: bytes,
-        options: Options(
-          contentType: 'application/octet-stream',
-          sendTimeout: const Duration(minutes: 30),
-          receiveTimeout: const Duration(minutes: 30),
-          headers: {
-            if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
-            'Content-Length': bytes.length.toString(),
-          },
-          followRedirects: false,
-          validateStatus: (status) => status != null && status < 500,
-        ),
-      );
-      
-      if (response.statusCode == 200) {
-        debugPrint('[API_SERVICE] Chunk $chunkIndex uploaded successfully');
+    // Enhanced error handling with comprehensive retry logic
+    int retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        final response = await _dio.put(
+          url,
+          data: bytes,
+          options: Options(
+            contentType: 'application/octet-stream',
+            sendTimeout: const Duration(minutes: 30),
+            receiveTimeout: const Duration(minutes: 30),
+            headers: {
+              if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
+              'Content-Length': bytes.length.toString(),
+            },
+            followRedirects: false,
+            validateStatus: (status) => status != null && status < 500,
+          ),
+        );
+        
+        if (response.statusCode == 200) {
+          debugPrint('[API_SERVICE] Chunk $chunkIndex uploaded successfully');
+          return; // Success - exit retry loop
+        } else if (response.statusCode == null || response.statusCode! >= 500) {
+          // Server error - should retry
+          throw DioException(
+            requestOptions: response.requestOptions,
+            response: response,
+            type: DioExceptionType.badResponse,
+            message: 'Server error: ${response.statusCode}',
+          );
+        } else {
+          // Client error (4xx) - should NOT retry, just throw
+          String errorMessage = _getChunkUploadErrorMessage(response.statusCode, response.data);
+          debugPrint('[API_SERVICE] Chunk $chunkIndex failed with client error: $errorMessage');
+          throw Exception(errorMessage);
+        }
+      } on DioException catch (e) {
+        debugPrint('[API_SERVICE] Chunk upload attempt ${retryCount + 1} failed: $e');
+        debugPrint('[API_SERVICE] Status: ${e.response?.statusCode}');
+        debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
+        debugPrint('[API_SERVICE] Request URL: ${e.requestOptions.uri}');
+        debugPrint('[API_SERVICE] Request method: ${e.requestOptions.method}');
+        
+        // Check if this is a retryable error
+        if (!_isRetryableChunkError(e)) {
+          // Non-retryable error - rethrow immediately
+          String errorMessage = _getChunkUploadErrorMessage(e.response?.statusCode, e.response?.data);
+          throw Exception(errorMessage);
+        }
+        
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          // Max retries reached
+          String errorMessage = _getChunkUploadErrorMessage(e.response?.statusCode, e.response?.data);
+          errorMessage += ' (failed after $maxRetries retries)';
+          throw Exception(errorMessage);
+        }
+        
+        // Wait before retry with exponential backoff
+        final delay = Duration(seconds: 2 * retryCount);
+        debugPrint('[API_SERVICE] Retrying chunk $chunkIndex in ${delay.inSeconds} seconds...');
+        await Future.delayed(delay);
+      } catch (e) {
+        // Non-DioException - rethrow immediately
+        debugPrint('[API_SERVICE] Unexpected error uploading chunk $chunkIndex: $e');
+        rethrow;
       }
-    } on DioException catch (e) {
-      debugPrint('[API_SERVICE] Chunk upload failed: $e');
-      debugPrint('[API_SERVICE] Status: ${e.response?.statusCode}');
-      debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
-      debugPrint('[API_SERVICE] Request URL: ${e.requestOptions.uri}');
-      debugPrint('[API_SERVICE] Request method: ${e.requestOptions.method}');
-      rethrow;
+    }
+  }
+  
+  // Check if chunk upload error is retryable
+  bool _isRetryableChunkError(DioException e) {
+    final statusCode = e.response?.statusCode;
+    
+    // Retry on network errors and 5xx server errors
+    if (e.type == DioExceptionType.connectionError ||
+        e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.sendTimeout) {
+      return true;
     }
     
-    await _dio.put(
-      url,
-      data: bytes,
-      options: Options(
-        contentType: 'application/octet-stream',
-        sendTimeout: const Duration(minutes: 30),
-        receiveTimeout: const Duration(minutes: 30),
-        headers: {
-          if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
-          'Content-Length': bytes.length.toString(),
-        },
-        // Ensure no redirects and proper validation
-        followRedirects: false,
-        validateStatus: (status) => status != null && status < 500,
-      ),
-    );
+    // Retry on 5xx server errors
+    if (statusCode != null && statusCode >= 500 && statusCode < 600) {
+      return true;
+    }
+    
+    // Don't retry on 4xx client errors (except 408 Request Timeout)
+    if (statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 408) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // Get specific chunk upload error messages
+  String _getChunkUploadErrorMessage(int? statusCode, dynamic responseData) {
+    // Extract custom message from response if available
+    String? customMessage;
+    if (responseData is Map) {
+      customMessage = responseData['detail'] as String? ?? 
+                     responseData['error'] as String? ??
+                     responseData['message'] as String?;
+    }
+    
+    // Return custom message if available, otherwise use defaults
+    switch (statusCode) {
+      // 4xx Client Errors
+      case 400:
+        return customMessage ?? 'Invalid chunk data. Please check chunk size and format.';
+      case 401:
+        return customMessage ?? 'Authentication required for chunk upload. Please login again.';
+      case 403:
+        return customMessage ?? 'Access denied for chunk upload. You may not have permission.';
+      case 404:
+        return customMessage ?? 'Upload session not found. Please restart file upload.';
+      case 408:
+        return customMessage ?? 'Chunk upload timeout. Please check connection and try again.';
+      case 413:
+        return customMessage ?? 'Chunk too large. Maximum chunk size exceeded.';
+      case 422:
+        return customMessage ?? 'Invalid chunk data. Please check checksum and try again.';
+      case 429:
+        return customMessage ?? 'Too many chunk uploads. Please wait before trying again.';
+        
+      // 5xx Server Errors  
+      case 500:
+        return customMessage ?? 'Server error uploading chunk. Please retry.';
+      case 502:
+        return customMessage ?? 'Gateway error during chunk upload. Please retry.';
+      case 503:
+        return customMessage ?? 'Chunk upload service temporarily unavailable. Please retry.';
+      case 504:
+        return customMessage ?? 'Chunk upload timeout. Server took too long to respond.';
+      case 507:
+        return customMessage ?? 'Server storage full. Cannot upload chunk at this time.';
+        
+      default:
+        if (statusCode != null) {
+          return customMessage ?? 'Chunk upload failed (Error $statusCode). Please retry.';
+        }
+        return 'Failed to upload chunk. Please check your connection and retry.';
+    }
   }
 
   Future<Map<String, dynamic>> completeUpload({required String uploadId}) async {
