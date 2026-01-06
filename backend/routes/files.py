@@ -719,7 +719,11 @@ async def upload_chunk(
         
         # Check if upload has expired
         if upload_doc.get("expires_at"):
-            if datetime.now(timezone.utc) > upload_doc["expires_at"]:
+            expires_at = upload_doc["expires_at"]
+            # Handle offset-naive datetimes from MongoDB
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires_at:
                 raise HTTPException(
                     status_code=status.HTTP_410_GONE,
                     detail="Upload session has expired"
