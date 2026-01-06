@@ -138,14 +138,6 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
                {"user_id": user_id, "operation": "chunk_save_error", "error_type": type(e).__name__})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unexpected server error while saving chunk - please retry"
-        )
-    except Exception as e:
-        # Generic error handling
-        _log("error", f"[UPLOAD] Unexpected error saving chunk {chunk_index}: {str(e)}", 
-               {"user_id": user_id, "operation": "chunk_save_error", "error_type": type(e).__name__})
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save chunk. Please retry."
         )
 
@@ -905,6 +897,7 @@ async def upload_chunk(
         })
         
         return ChunkUploadResponse(
+            upload_id=upload_id,
             chunk_index=chunk_index,
             status="uploaded",
             total_chunks=total_chunks,

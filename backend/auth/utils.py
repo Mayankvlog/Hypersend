@@ -8,13 +8,42 @@ import hmac
 import logging
 from fastapi import HTTPException, status, Depends, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from config import settings
-from models import TokenData
 import secrets
 import string
 import base64
 import json
 from io import BytesIO
+import sys
+from pathlib import Path
+
+# Robust import handling for settings and models
+try:
+    # Try direct import first (when running from backend directory)
+    from config import settings
+except ImportError:
+    try:
+        # Try parent directory import (when running from project root)
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from config import settings
+    except ImportError as e:
+        raise ImportError(
+            f"Failed to import settings from config module. "
+            f"Ensure config.py exists in backend directory. Error: {e}"
+        ) from e
+
+try:
+    # Try direct import first
+    from models import TokenData
+except ImportError:
+    try:
+        # Try parent directory import
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from models import TokenData
+    except ImportError as e:
+        raise ImportError(
+            f"Failed to import TokenData from models module. "
+            f"Ensure models.py exists in backend directory. Error: {e}"
+        ) from e
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -80,9 +109,15 @@ def hash_password(password: str) -> str:
     if not password or not isinstance(password, str):
         raise ValueError("Password must be a non-empty string")
     
+    if len(password) < 1 or len(password) > 128:
+        raise ValueError("Password length must be between 1 and 128 characters")
+    
     # CRITICAL FIX: Use secrets.token_hex for cryptographically secure salt
     # Generate 32 hex characters (16 bytes of random data)
-    salt = secrets.token_hex(16)  # 16 bytes -> 32 hex chars
+    try:
+        salt = secrets.token_hex(16)  # 16 bytes -> 32 hex chars
+    except Exception as e:
+        raise ValueError(f"Failed to generate cryptographically secure salt: {type(e).__name__}")
     
     if not salt or len(salt) != 32:
         raise ValueError("Invalid salt generation - critical security issue")
@@ -115,6 +150,15 @@ def verify_password(plain_password: str, hashed_password: str, user_id: str = No
         # CRITICAL FIX: Validate input types to prevent type confusion attacks
         if not isinstance(plain_password, str) or not isinstance(hashed_password, str):
             _log("warning", f"Invalid password verification input types (user: {user_id})")
+            return False
+        
+        # Validate input is not excessively long (prevent DoS)
+        if len(plain_password) > 128:
+            _log("warning", f"Password verification failed: password exceeds maximum length (user: {user_id})")
+            return False
+        
+        if len(hashed_password) > 256:
+            _log("warning", f"Password verification failed: hash exceeds maximum length (user: {user_id})")
             return False
         
         # Check if hash is in new format (salt$hash)
@@ -210,6 +254,13 @@ def decode_token(token: str) -> TokenData:
         # SECURITY FIX: Remove random delay to improve performance
         # Timing attacks are mitigated by constant-time comparison in hmac.compare_digest
         
+        if not token or not isinstance(token, str):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: token must be a non-empty string",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")
         token_type: str = payload.get("token_type")
@@ -232,10 +283,10 @@ def decode_token(token: str) -> TokenData:
             )
         
         # CRITICAL FIX: Enhanced token validation with scope and user binding
-        if token_type not in ["access", "refresh", "password_reset", "upload"]:
+        if not token_type or token_type not in ["access", "refresh", "password_reset", "upload"]:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: unsupported token type",
+                detail=f"Invalid token: unsupported or missing token type (got: {token_type})",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
@@ -417,6 +468,14 @@ async def get_current_user_from_query(token: Optional[str] = Query(None)) -> str
 
 def validate_upload_token(payload: dict) -> str:
     """Validate upload token payload and return user_id"""
+    # Validate payload itself
+    if not payload or not isinstance(payload, dict):
+        logger.warning(f"Upload token validation failed: invalid payload type {type(payload)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid upload token: corrupted token payload",
+            )
+    
     upload_id = payload.get("upload_id")
     if not upload_id or not isinstance(upload_id, str) or not upload_id.strip():
         logger.warning(f"Upload token missing or invalid upload_id field: {upload_id}")
@@ -427,6 +486,13 @@ def validate_upload_token(payload: dict) -> str:
     
     # Validate upload_id format (basic security check)
     import re
+    if len(upload_id) > 256:
+        logger.warning(f"Upload token has excessively long upload_id: {len(upload_id)} chars")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid upload token: upload_id exceeds maximum length",
+            )
+    
     if not re.match(r'^[a-zA-Z0-9_-]+$', upload_id):
         logger.warning(f"Upload token has invalid upload_id format: {upload_id}")
         raise HTTPException(
@@ -440,6 +506,13 @@ def validate_upload_token(payload: dict) -> str:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid upload token: missing or invalid user_id",
+            )
+    
+    if len(user_id) > 256:
+        logger.warning(f"Upload token has excessively long user_id: {len(user_id)} chars")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid upload token: user_id exceeds maximum length",
             )
     
     return user_id  # Return user_id from payload
@@ -514,13 +587,25 @@ def generate_session_code(length: int = 6) -> str:
     """Generate a random numeric session code for QR verification.
     
     Args:
-        length: Length of the code (default 6 digits)
+        length: Length of the code (default 6 digits, max 256)
         
     Returns:
         Random numeric string
+        
+    Raises:
+        ValueError: If length is invalid
     """
-    digits = string.digits
-    return ''.join(secrets.choice(digits) for _ in range(length))
+    if not isinstance(length, int) or length < 1 or length > 256:
+        raise ValueError(f"Session code length must be between 1 and 256, got {length}")
+    
+    try:
+        digits = string.digits
+        code = ''.join(secrets.choice(digits) for _ in range(length))
+        if not code or len(code) != length:
+            raise ValueError("Failed to generate session code of correct length")
+        return code
+    except Exception as e:
+        raise ValueError(f"Failed to generate session code: {type(e).__name__}")
 
 
 def generate_qr_code(data: dict) -> Tuple[str, str]:
@@ -603,5 +688,23 @@ def validate_session_code(provided_code: str, stored_code: str) -> bool:
         
     Returns:
         True if codes match
+        
+    Raises:
+        ValueError: If codes are None, empty, or invalid type
     """
+    # Validate inputs
+    if not provided_code or not isinstance(provided_code, str):
+        logger.warning(f"Session code validation failed: invalid provided_code type {type(provided_code)}")
+        return False
+    
+    if not stored_code or not isinstance(stored_code, str):
+        logger.warning(f"Session code validation failed: invalid stored_code type {type(stored_code)}")
+        return False
+    
+    # Validate length (session codes should be reasonable length)
+    if len(provided_code) > 256 or len(stored_code) > 256:
+        logger.warning(f"Session code validation failed: codes exceed maximum length")
+        return False
+    
+    # Use constant-time comparison to prevent timing attacks
     return hmac.compare_digest(provided_code, stored_code)

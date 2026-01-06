@@ -42,7 +42,7 @@ def validate_command_injection(input_string: str) -> bool:
     if not input_string or not isinstance(input_string, str):
         return True  # Empty/null is not a threat, just invalid input
     
-# Command execution metacharacters - PRECISE SECURITY PATTERNS
+    # Command execution metacharacters - PRECISE SECURITY PATTERNS
     # These are shell metacharacters that enable command chaining/execution
     # More specific patterns to reduce false positives
     shell_metacharacters = [
@@ -63,28 +63,6 @@ def validate_command_injection(input_string: str) -> bool:
         '(',   # Subshell execution
         ')',   # End subshell
     ]
-    
-    # CRITICAL FIX: Define shell metacharacters first
-    shell_metacharacters = [
-        ';',   # Command separator
-        '|',   # Pipe operator
-        '&',   # Background execution
-        '>',   # Redirection
-        '<',   # Input redirection
-        '`',   # Backtick execution
-        '$(',  # Command substitution
-        '${',  # Parameter expansion (bracket form)
-        '&&',  # Command chaining
-        '||',  # OR command execution
-        '>>',  # Append redirection
-        '<<',  # Here document
-        '&>',  # Output to file
-    ]
-    
-    # Command injection validation - check for dangerous shell metacharacters
-    for char_sequence in shell_metacharacters:
-        if char_sequence in input_string:
-            return False
     
     # Command injection validation - check for dangerous shell metacharacters
     for char_sequence in shell_metacharacters:
