@@ -1702,6 +1702,7 @@ async def clear_location(current_user: str = Depends(get_current_user)):
                     "name": 1,
                     "email": 1,
                     "username": 1,
+                    "phone": 1,
                     "avatar_url": 1,
                     "is_online": 1,
                     "last_seen": 1,
@@ -1718,6 +1719,7 @@ async def clear_location(current_user: str = Depends(get_current_user)):
                         name=contact.get("name", ""),
                         email=contact.get("email", ""),
                         username=contact.get("username"),
+                        phone=contact.get("phone"),
                         avatar_url=contact.get("avatar_url"),
                         is_online=contact.get("is_online", False),
                         last_seen=contact.get("last_seen"),
@@ -1829,17 +1831,14 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         blocked_users = set(current_user_data.get("blocked_users", []))
         
         # Build prioritized search query based on detected search type
-        # Phone search removed - redirect to general search for better UX
-        if search_type in ["phone", "mobile"]:
+        if search_type == "phone":
             search_query = {
                 "$or": [
-                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name search
-                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username search
-                    {"email": {"$regex": sanitized_q, "$options": "i"}},  # Email search
+                    {"phone": {"$regex": re.escape(clean_phone), "$options": "i"}},  # Phone priority
+                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name fallback
                 ],
                 "_id": {"$ne": current_user}
             }
-            logger.info(f"Phone/mobile search redirected to general search for query: {q}")
         elif search_type == "email":
             search_query = {
                 "$or": [
@@ -1867,11 +1866,53 @@ async def clear_location(current_user: str = Depends(get_current_user)):
                 "_id": {"$ne": current_user}
             }
         
-        # Phone search functionality removed for privacy and simplicity
-        # Numeric queries will search name, username, and email fields only
+        # Add phone search as fallback for general searches if numeric
+        # Operator precedence: check search_type first, then conditions in order
+        is_general_search = search_type == "general"
+        has_clean_phone = clean_phone is not None and len(clean_phone) > 0
+        is_long_enough = len(clean_phone) >= 3 if has_clean_phone else False
+        has_digits = any(c.isdigit() for c in clean_phone) if has_clean_phone else False
         
-        # Define clean_phone for compatibility (empty since phone search is removed)
-        clean_phone = ""
+        if is_general_search and has_clean_phone and is_long_enough and has_digits:
+            search_query["$or"].append({
+                "phone": {"$regex": re.escape(clean_phone), "$options": "i"}
+            })
+        
+        # Search users with limit
+        cursor = users_collection().find(
+            search_query,
+            {
+                "_id": 1,
+                "name": 1,
+                "email": 1,
+                "username": 1,
+                "phone": 1,
+                "avatar_url": 1,
+                "is_online": 1,
+                "last_seen": 1,
+                "status": 1
+            }
+        ).limit(limit)
+        
+        async def fetch_results():
+            results = []
+            async for user in cursor:
+                user_id = user.get("_id")
+                score = _calculate_search_score(user, q, clean_phone, search_type)
+                
+                result = UserSearchResponse(
+                    id=user_id,
+                    name=user.get("name", ""),
+                    email=user.get("email", ""),
+                    username=user.get("username"),
+                    phone=user.get("phone"),
+                    avatar_url=user.get("avatar_url"),
+                    is_online=user.get("is_online", False),
+                    last_seen=user.get("last_seen"),
+                    status=user.get("status"),
+                    is_contact=user_id in existing_contacts,
+                    is_blocked=user_id in blocked_users
+                )
                 
                 # Add relevance score for sorting
                 results.append({
@@ -1879,6 +1920,7 @@ async def clear_location(current_user: str = Depends(get_current_user)):
                     "name": result.name,
                     "email": result.email,
                     "username": result.username,
+                    "phone": result.phone,
                     "avatar_url": result.avatar_url,
                     "is_online": result.is_online,
                     "last_seen": result.last_seen,
