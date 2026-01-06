@@ -114,6 +114,15 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             url_path = str(request.url.path)
             
             # Enhanced suspicious pattern detection with more comprehensive coverage
+            # Immediate fix: Allow localhost and production domain requests
+            def is_localhost_or_production(request):
+              """Check if request is from localhost, Docker internal, or production domain"""
+              client_host = request.client.host if request.client else ''
+              host_header = request.headers.get('host', '').lower()
+              localhost_patterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
+              production_patterns = ['zaply.in.net', 'www.zaply.in.net']
+              return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
+
             suspicious_patterns = [
                 # Path traversal attacks
                 '../', '..\\', '%2e%2e', '%2e%2e%2f', '%2e%2e%5c', 
@@ -171,10 +180,10 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 'eval(base64', 'system($_POST', 'passthru($_',
                 'shell_exec($_', 'exec($_POST', 'preg_replace eval',
                 
-                # SSRF patterns
-                'localhost', '127.0.0.1', '0.0.0.0', '::1',
+                # SSRF patterns (but allow localhost for health checks and development)
                 '169.254.169.254', 'metadata.google.internal',
                 'file:///', 'gopher://', 'dict://',
+                # Note: 127.0.0.1, localhost, ::1, 0.0.0.0 are allowed for legitimate requests
                 
                 # Deserialization attacks
                 'O:4:"User"', 'ACED0005', 'rO0ABX', '80ACED0',
@@ -188,9 +197,40 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             url_lower = url_path.lower()
             headers_lower = {k.lower(): v.lower() if v else '' for k, v in dict(request.headers).items()}
             
-            # Check URL path for suspicious patterns
+            # Enhanced security check with localhost/loopback exception for legitimate requests
+            def is_localhost_or_internal():
+                """Check if request is from localhost or internal Docker network"""
+                client_host = request.client.host if request.client else ''
+                # Allow common localhost patterns for legitimate health checks and development
+                localhost_patterns = [
+                    'localhost', '127.0.0.1', '0.0.0.0', '::1',
+                    'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend'
+                ]
+                
+                # Also check for production domain in host header
+                host_header = request.headers.get('host', '').lower()
+                production_patterns = ['zaply.in.net', 'www.zaply.in.net']
+                
+                return (any(pattern in client_host for pattern in localhost_patterns) or
+                        any(pattern in host_header for pattern in production_patterns))
+            
+            is_internal = is_localhost_or_internal()
+            
+            # Check URL path for suspicious patterns (but allow legitimate localhost and production requests)
+            # Always allow health check endpoint
+            if url_path in ['/health', '/api/v1/health']:
+                is_internal = True  # Force internal for health checks
+                
             for pattern in suspicious_patterns:
-                if pattern in url_lower:
+                # Skip localhost-related patterns for internal requests
+                if pattern in ['localhost', '127.0.0.1', '0.0.0.0', '::1'] and is_internal:
+                    continue
+                    
+                # Skip production domain patterns
+                if pattern in ['zaply.in.net'] and 'zaply.in.net' in url_lower:
+                    continue
+                    
+                if pattern in url_lower and not is_internal:
                     logger.warning(f"[SECURITY] Suspicious URL blocked: {pattern} in {url_path}")
                     return JSONResponse(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -205,10 +245,34 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         }
                     )
             
-            # Check headers for suspicious patterns
+            # Check headers for suspicious patterns (but allow common legitimate headers and localhost)
             for header_name, header_value in headers_lower.items():
+                # Skip checking certain safe headers
+                safe_headers = ['user-agent', 'accept', 'content-type', 'authorization', 'host', 'x-forwarded-for', 'x-real-ip']
+                if header_name in safe_headers:
+                    continue
+                    
+                # Special handling for host header - allow localhost for legitimate requests
+                if header_name == 'host':
+                    # Allow common localhost patterns in host header for health checks and development
+                    allowed_host_patterns = [
+                        '169.254.169.254',
+                        'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend',
+                        'zaply.in.net', 'www.zaply.in.net'  # Allow your production domain
+                    ]
+                    if any(allowed in header_value for allowed in allowed_host_patterns):
+                        continue
+                    
                 for pattern in suspicious_patterns:
-                    if pattern in header_value and header_name not in ['user-agent', 'accept']:
+                    # Skip localhost-related patterns for internal requests
+                    if pattern in ['localhost', '127.0.0.1', '0.0.0.0', '::1'] and is_internal:
+                        continue
+                        
+                    # Skip production domain patterns  
+                    if pattern in ['zaply.in.net'] and 'zaply.in.net' in header_value:
+                        continue
+                        
+                    if pattern in header_value:
                         logger.warning(f"[SECURITY] Suspicious header blocked: {pattern} in {header_name}")
                         return JSONResponse(
                             status_code=status.HTTP_400_BAD_REQUEST,
