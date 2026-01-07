@@ -401,13 +401,13 @@ class SecurityConfig:
         }
     
     @staticmethod
-    def get_security_headers() -> Dict[str, str]:
+    def get_security_headers() -> dict:
         """Get security headers for HTTP responses with enhanced protection"""
-        return {
+        headers = {
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
             "X-XSS-Protection": "1; mode=block",
-            # HSTS removed - will be added by middleware only for HTTPS
+            # HSTS will be added by middleware only for HTTPS
             "Content-Security-Policy": "default-src 'self'; script-src 'self' 'strict-dynamic' 'nonce-<nonce>'; style-src 'self' 'nonce-<nonce>'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
             "Referrer-Policy": "strict-origin-when-cross-origin",
             "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()",
@@ -415,6 +415,13 @@ class SecurityConfig:
             "Cross-Origin-Opener-Policy": "same-origin",
             "Cross-Origin-Resource-Policy": "same-origin"
         }
+        return headers
+    
+    @staticmethod
+    def get_hsts_header() -> str:
+        """Get HSTS header for HTTPS connections"""
+        # HSTS with 1 year max-age, include subdomains, and preload
+        return "max-age=31536000; includeSubDomains; preload"
 
 
 def generate_csrf_token() -> str:

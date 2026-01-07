@@ -1052,12 +1052,13 @@ async def root():
 async def add_security_headers(request, call_next):
     response = await call_next(request)
     
-    # Add security headers (modified for HTTP-only deployment)
+    # Add security headers
     security_headers = SecurityConfig.get_security_headers()
     
-    # Remove HSTS if not using HTTPS
-    if not request.url.scheme == "https":
-        security_headers.pop("Strict-Transport-Security", None)
+    # Add HSTS only for HTTPS connections
+    if request.url.scheme == "https":
+        hsts_header = SecurityConfig.get_hsts_header()
+        security_headers["Strict-Transport-Security"] = hsts_header
     
     for header, value in security_headers.items():
         response.headers[header] = value
