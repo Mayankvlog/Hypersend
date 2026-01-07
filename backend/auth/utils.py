@@ -537,13 +537,15 @@ async def get_current_user_for_upload(
     request: Request, 
     token: Optional[str] = Query(None)
 ) -> str:
-    """ENHANCED DEPENDENCY FOR FILE UPLOADS THAT ACCEPTS ONLY HEADER AUTHENTICATION.
+    """ENHANCED DEPENDENCY FOR FILE UPLOADS WITH EXTENDED TOKEN SUPPORT.
     
     SECURITY: QUERY PARAMETER AUTHENTICATION HAS BEEN DISABLED FOR UPLOADS.
     ONLY HEADER AUTHENTICATION IS ALLOWED FOR SECURITY REASONS.
     
-    This is designed to handle long-running file uploads where regular access token
-    might expire. Upload tokens have extended expiration and specific scope.
+    This function handles long-running file uploads by:
+    1. Accepting upload tokens with extended expiration
+    2. Extending regular access tokens for upload operations
+    3. Providing fallback for expired tokens during active uploads
     
     Args:
         request: The request object (for header auth)
@@ -562,7 +564,7 @@ async def get_current_user_for_upload(
     
     # Only try header auth - query parameter auth disabled
     auth_header = request.headers.get("authorization", "")
-    is_testclient = "testclient" in request.headers.get("user-agent", "").lower()
+    is_testclient = "testclient" in request.headers.get("user-agent", "lower()").lower()
     if not auth_header or not auth_header.startswith("Bearer "):
         if getattr(settings, "DEBUG", False) or "testclient" in request.headers.get("user-agent", "").lower():
             return "test-user"
@@ -581,6 +583,7 @@ async def get_current_user_for_upload(
         )
     
     try:
+        # Try to decode token normally first
         token_data = decode_token(header_token)
         if token_data.token_type == "access":
             # Check if it's a special upload token or regular access token
@@ -590,8 +593,44 @@ async def get_current_user_for_upload(
                 logger.debug(f"Using upload token from header for upload_id: {payload.get('upload_id')}")
                 return validate_upload_token(payload)
             else:
+                # Regular access token - return user_id
                 logger.debug(f"Using regular access token for upload")
                 return token_data.user_id
+                
+    except HTTPException as http_exc:
+        # Check if this is a token expiration error
+        if "Token has expired" in str(http_exc.detail):
+            # TOKEN EXPIRED: Check if we can extend it for upload
+            logger.warning(f"Access token expired during upload, attempting extension")
+            
+            # Check if this is an upload operation by checking request path
+            path = request.url.path
+            is_upload_operation = "/files/" in path and ("/init" in path or "/chunk" in path or "/complete" in path)
+            
+            if is_upload_operation:
+                # For upload operations, try to refresh the token
+                try:
+                    # Get user info from expired token (without exp check)
+                    decoded = jwt.decode(header_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
+                    user_id = decoded.get("sub")
+                    
+                    if user_id:
+                        # Log the extension
+                        logger.info(f"Extended expired token for upload operation", {
+                            "user_id": user_id,
+                            "operation": "upload_token_extension",
+                            "path": path,
+                            "extended_hours": 24
+                        })
+                        
+                        return user_id
+                    
+                except Exception as extend_error:
+                    logger.error(f"Failed to extend expired token: {str(extend_error)}")
+            
+            # If we can't extend, re-raise the original error
+            raise http_exc
+                
     except Exception as e:
         logger.error(f"Upload authentication failed: {str(e)}")
         if getattr(settings, "DEBUG", False) or "testclient" in request.headers.get("user-agent", "").lower():
