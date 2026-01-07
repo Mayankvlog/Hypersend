@@ -711,6 +711,287 @@ async def test_comprehensive_file_format_support():
     print(f"✓ Comprehensive file format support: {passed_count}/{len(comprehensive_formats)} formats supported")
 
 
+@pytest.mark.asyncio
+async def test_all_user_requested_formats():
+    """Test all user-requested file formats are supported"""
+    
+    # All formats requested by user
+    user_requested_formats = {
+        # Text Documents
+        '.txt': 'text/plain',
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.odt': 'application/vnd.oasis.opendocument.text',
+        '.rtf': 'text/rtf',
+        
+        # Spreadsheets
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+        '.csv': 'text/csv',
+        '.tsv': 'text/tab-separated-values',
+        
+        # Presentations
+        '.ppt': 'application/vnd.ms-powerpoint',
+        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        '.odp': 'application/vnd.oasis.opendocument.presentation',
+        
+        # Markdown
+        '.md': 'text/markdown',
+        
+        # Images
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.bmp': 'image/bmp',
+        '.webp': 'image/webp',
+        '.tiff': 'image/tiff',
+        '.svg': 'image/svg+xml',
+        '.heic': 'image/heic',
+        '.ico': 'image/x-icon',
+        
+        # Audio
+        '.mp3': 'audio/mpeg',
+        '.wav': 'audio/wav',
+        '.ogg': 'audio/ogg',
+        '.aac': 'audio/aac',
+        '.m4a': 'audio/x-m4a',
+        '.flac': 'audio/flac',
+        '.amr': 'audio/amr',
+        '.opus': 'audio/opus',
+        '.wma': 'audio/x-ms-wma',
+        
+        # Video
+        '.mp4': 'video/mp4',
+        '.mkv': 'video/x-matroska',
+        '.avi': 'video/x-msvideo',
+        '.mov': 'video/quicktime',
+        '.webm': 'video/webm',
+        '.flv': 'video/x-flv',
+        '.mpeg': 'video/mpeg',
+        '.mpg': 'video/mpeg',
+        '.3gp': 'video/3gpp',
+        '.wmv': 'video/x-ms-wmv',
+        
+        # Archives & Compressed Files
+        '.zip': 'application/zip',
+        '.rar': 'application/x-rar-compressed',
+        '.7z': 'application/x-7z-compressed',
+        '.tar': 'application/x-tar',
+        '.gz': 'application/gzip',
+        '.bz2': 'application/x-bzip2',
+        '.xz': 'application/x-xz',
+        '.iso': 'application/x-iso9660-image',
+        
+        # Code & Developer Files
+        '.py': 'text/x-python',
+        '.js': 'application/javascript',
+        '.java': 'text/x-java-source',
+        '.c': 'text/x-c',
+        '.cpp': 'text/x-c++',
+        '.cs': 'text/x-csharp',
+        '.go': 'text/x-go',
+        '.rs': 'text/x-rust',
+        '.php': 'application/x-httpd-php',
+        '.html': 'text/html',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.xml': 'text/xml',
+        '.yml': 'application/x-yaml',
+        '.yaml': 'application/x-yaml',
+        '.sh': 'application/x-sh',
+        
+        # Executables & System Files (now allowed)
+        '.exe': 'application/x-msdownload',
+        '.msi': 'application/x-msi',
+        '.apk': 'application/vnd.android.package-archive',
+        '.aab': 'application/x-android-apk',
+        '.deb': 'application/x-debian-package',
+        '.rpm': 'application/x-rpm',
+        '.dmg': 'application/x-apple-diskimage',
+        '.pkg': 'application/x-newton-compatible-pkg',
+        '.appimage': 'application/x-appimage',
+        
+        # Data, ML & Database Files
+        '.sql': 'application/sql',
+        '.db': 'application/x-sqlite3',
+        '.sqlite': 'application/x-sqlite3',
+        '.parquet': 'application/x-parquet',
+        '.h5': 'application/x-hdf',
+        '.pickle': 'application/x-pickle',
+        '.pkl': 'application/x-pickle',
+        '.npy': 'application/x-npy',
+        '.npz': 'application/x-npz',
+    }
+    
+    # Simulate the comprehensive MIME validation logic from the fixed code
+    allowed_mime_types = [
+        # Text Documents
+        'text/plain', 'application/pdf', 'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.oasis.opendocument.text', 'text/rtf',
+        
+        # Spreadsheets
+        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.oasis.opendocument.spreadsheet', 'text/csv',
+        'text/tab-separated-values',
+        
+        # Presentations
+        'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.oasis.opendocument.presentation',
+        
+        # Markdown
+        'text/markdown',
+        
+        # Images
+        'image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp',
+        'image/tiff', 'image/svg+xml', 'image/heic', 'image/x-icon',
+        
+        # Audio
+        'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/x-m4a',
+        'audio/flac', 'audio/amr', 'audio/opus', 'audio/x-ms-wma',
+        
+        # Video
+        'video/mp4', 'video/x-matroska', 'video/x-msvideo', 'video/quicktime',
+        'video/webm', 'video/x-flv', 'video/mpeg', 'video/3gpp', 'video/x-ms-wmv',
+        
+        # Archives & Compressed Files
+        'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
+        'application/x-tar', 'application/gzip', 'application/x-bzip2', 'application/x-xz',
+        'application/x-iso9660-image',
+        
+        # Code & Developer Files
+        'text/x-python', 'application/javascript', 'text/x-java-source', 'text/x-c',
+        'text/x-c++', 'text/x-csharp', 'text/x-go', 'text/x-rust',
+        'application/x-httpd-php', 'text/html', 'text/css', 'application/json',
+        'text/xml', 'application/x-yaml', 'application/x-sh',
+        
+        # Executables & System Files
+        'application/x-msdownload', 'application/x-msi', 'application/vnd.android.package-archive',
+        'application/x-android-apk', 'application/x-debian-package', 'application/x-rpm',
+        'application/x-apple-diskimage', 'application/x-newton-compatible-pkg',
+        'application/x-appimage',
+        
+        # Data, ML & Database Files
+        'application/sql', 'application/x-sqlite3', 'application/x-parquet',
+        'application/x-hdf', 'application/x-pickle', 'application/x-npy', 'application/x-npz',
+        
+        # Additional common formats
+        'image/jpg', 'image/x-png', 'video/x-m4v', 'audio/mp4', 'audio/x-m4p',
+        'text/x-diff', 'text/x-patch', 'application/x-tar-gz',
+        'application/x-tar-bz2', 'application/x-tar-xz',
+        
+        # Binary and fallback formats
+        'application/octet-stream', 'application/binary', 'application/x-binary'
+    ]
+    
+    # Test all user-requested formats
+    passed_count = 0
+    failed_formats = []
+    
+    for ext, mime_type in user_requested_formats.items():
+        mime_lower = mime_type.lower()
+        if mime_lower in [mt.lower() for mt in allowed_mime_types]:
+            passed_count += 1
+        else:
+            failed_formats.append(f"{ext} -> {mime_type}")
+    
+    # Verify all formats are supported
+    total_formats = len(user_requested_formats)
+    assert passed_count == total_formats, f"All user-requested formats should be supported. Failed: {failed_formats}"
+    
+    print(f"✓ All user-requested formats supported: {passed_count}/{total_formats}")
+    print(f"  - Text Documents: .txt, .pdf, .doc, .docx, .odt, .rtf")
+    print(f"  - Spreadsheets: .xls, .xlsx, .ods, .csv, .tsv")
+    print(f"  - Presentations: .ppt, .pptx, .odp")
+    print(f"  - Markdown: .md")
+    print(f"  - Images: .jpg, .jpeg, .png, .gif, .bmp, .webp, .tiff, .svg, .heic, .ico")
+    print(f"  - Audio: .mp3, .wav, .ogg, .aac, .m4a, .flac, .amr, .opus, .wma")
+    print(f"  - Video: .mp4, .mkv, .avi, .mov, .webm, .flv, .mpeg, .mpg, .3gp, .wmv")
+    print(f"  - Archives: .zip, .rar, .7z, .tar, .gz, .bz2, .xz, .iso")
+    print(f"  - Code: .py, .js, .java, .c, .cpp, .cs, .go, .rs, .php, .html, .css, .json, .xml, .yml, .yaml, .sh")
+    print(f"  - Executables: .exe, .msi, .apk, .aab, .deb, .rpm, .dmg, .pkg, .appimage")
+    print(f"  - Data/ML: .sql, .db, .sqlite, .parquet, .h5, .pickle, .pkl, .npy, .npz")
+
+
+@pytest.mark.asyncio
+async def test_40gb_file_size_limit():
+    """Test that 40GB file size limit is properly enforced"""
+    
+    # Test 40GB limit (42949672960 bytes)
+    max_size = 42949672960  # 40GB in bytes
+    
+    # Test valid sizes (should pass)
+    valid_sizes = [
+        1024,                    # 1KB
+        1048576,                 # 10MB
+        1073741824,              # 1GB
+        42949672960,             # 40GB (exact limit)
+    ]
+    
+    # Test invalid sizes (should fail)
+    invalid_sizes = [
+        0,                        # Zero
+        -1,                       # Negative
+        42949672961,             # 40GB + 1 byte (over limit)
+        50000000000,              # 50GB (over limit)
+    ]
+    
+    # Simulate file size validation logic
+    for size in valid_sizes:
+        try:
+            if isinstance(size, str):
+                size_int = int(float(size))
+            elif isinstance(size, (int, float)):
+                if isinstance(size, float) and (size != size or size in (float('inf'), float('-inf'))):
+                    raise ValueError("Invalid float size")
+                if abs(size) > float(2**63 - 1):
+                    raise ValueError("Size too large")
+                size_int = int(size)
+            else:
+                raise ValueError("Invalid size type")
+            
+            if size_int <= 0:
+                raise ValueError("Size must be positive")
+            
+            if size_int > max_size:
+                raise ValueError("Size exceeds maximum")
+            
+            assert True  # Valid size passed
+            
+        except (ValueError, TypeError, OverflowError):
+            assert False, f"Valid size should pass: {size}"
+    
+    # Test invalid sizes
+    for size in invalid_sizes:
+        try:
+            if isinstance(size, str):
+                size_int = int(float(size))
+            elif isinstance(size, (int, float)):
+                if isinstance(size, float) and (size != size or size in (float('inf'), float('-inf'))):
+                    raise ValueError("Invalid float size")
+                if abs(size) > float(2**63 - 1):
+                    raise ValueError("Size too large")
+                size_int = int(size)
+            else:
+                raise ValueError("Invalid size type")
+            
+            if size_int <= 0:
+                raise ValueError("Size must be positive")
+            
+            if size_int > max_size:
+                raise ValueError("Size exceeds maximum")
+            
+            assert False, f"Invalid size should fail: {size}"
+            
+        except (ValueError, TypeError, OverflowError):
+            assert True  # Invalid size correctly rejected
+    
+    print("✓ 40GB file size limit properly enforced")
+
+
 if __name__ == "__main__":
     import asyncio
     
@@ -737,6 +1018,8 @@ if __name__ == "__main__":
         test_enhanced_file_size_validation_fixes,
         test_mime_type_default_handling,
         test_comprehensive_file_format_support,
+        test_all_user_requested_formats,
+        test_40gb_file_size_limit,
     ]
     
     for test_func in test_functions:

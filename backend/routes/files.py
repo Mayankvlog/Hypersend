@@ -553,32 +553,9 @@ async def initialize_upload(
                 detail="Invalid filename - contains null bytes or control characters"
             )
         
-        # CRITICAL SECURITY: Block dangerous file extensions
-        # CRITICAL FIX: Enhanced dangerous extension validation
-        dangerous_exts = {
-            # Executables and scripts
-            '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar', '.app',
-            '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lua', '.r',
-            # System files and libraries
-            '.msi', '.dll', '.so', '.dylib', '.o', '.class', '.bin', '.run',
-            # Documents with macros (dangerous)
-            '.docm', '.xlsm', '.pptm', '.dotm', '.xltm', '.potm',
-            # Archives (allow common formats but scan contents)
-            '.rar', '.7z', '.tar', '.gz', '.bz2',
-            # NOTE: .zip allowed for compatibility, but contents should be scanned
-            # Image formats that can contain exploits
-            '.svg', '.swf', '.fla',
-            # Configuration and system files
-            '.reg', '.inf', '.ini', '.cfg', '.conf', '.config', '.plist',
-            # Shortcut and link files
-            '.lnk', '.url', '.webloc', '.desktop',
-            # Package installers (allow common formats)
-            '.deb', '.rpm', '.pkg', '.apk', '.ipa',
-            # NOTE: .dmg (macOS disk image) and .iso (disk image) are now allowed
-            # but should be scanned for malware in production
-            # Other dangerous formats
-            '.iso', '.img', '.vhd', '.vmdk', '.ova', '.ovf'
-        }
+        # CRITICAL SECURITY: Use comprehensive extension validation from SecurityConfig
+        # Import SecurityConfig for blocked extensions
+        from security import SecurityConfig as SC
         
         # Extract and validate file extension with comprehensive checking
         file_ext = ''
@@ -588,14 +565,15 @@ async def initialize_upload(
         # Multiple extension check for disguised files (e.g., file.txt.exe)
         name_parts = decoded_filename.lower().split('.')
         if len(name_parts) > 2:
-            # Check all extensions
+            # Check all extensions in sequence for double-extension attacks
             for i in range(1, len(name_parts)):
                 potential_ext = '.' + name_parts[i]
-                if potential_ext in dangerous_exts:
+                if potential_ext in SC.BLOCKED_FILE_EXTENSIONS:
                     file_ext = potential_ext
                     break
         
-        if file_ext in dangerous_exts:
+        # CRITICAL: Check if extension is in blocked list
+        if file_ext in SC.BLOCKED_FILE_EXTENSIONS:
             _log("warning", f"Dangerous file extension blocked: {file_ext}", {
                 "user_id": current_user,
                 "operation": "upload_init",
@@ -640,55 +618,56 @@ async def initialize_upload(
         if not mime_type:
             mime_type = 'application/octet-stream'
         
-        allowed_mime_types = [
-            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-            'video/mp4', 'video/webm', 'video/quicktime',
-            'audio/mpeg', 'audio/wav', 'audio/ogg',
-            'application/pdf', 'text/plain', 'application/json',
-            'application/zip', 'application/x-zip-compressed',
-            'application/octet-stream'  # CRITICAL FIX: Allow default binary type
-        ]
+        # COMPREHENSIVE FORMAT SUPPORT: Use SecurityConfig for allowed MIME types
+        from security import SecurityConfig as SC
         
         # ENHANCED SECURITY: Intelligent MIME validation
-        # CRITICAL FIX: Case-sensitive MIME validation to prevent bypass
-        if mime_type not in allowed_mime_types:
+        # Check if MIME type is in allowed list
+        if mime_type not in SC.ALLOWED_MIME_TYPES:
             # Check for dangerous MIME types with case-sensitive comparison
-            dangerous_mimes = ['application/javascript', 'text/javascript', 'application/x-javascript', 
-                              'text/html', 'application/html', 'text/x-script']
+            dangerous_mimes = [
+                'application/javascript', 'text/javascript', 'application/x-javascript',
+                'text/html', 'application/html', 'text/x-script',
+                'application/x-sh', 'application/x-shellscript',
+                'application/x-executable', 'application/x-msdownload',
+                'application/x-msdos-program', 'application/x-python',
+                'application/x-perl', 'application/x-ruby', 'application/x-php'
+            ]
+            
+            # Dangerous MIME types should be rejected with 403
             if mime_type.lower() in [d.lower() for d in dangerous_mimes]:
+                _log("warning", f"Dangerous MIME type rejected: {mime_type}", {
+                    "user_id": current_user,
+                    "operation": "upload_init",
+                    "mime_type": mime_type
+                })
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"File type '{mime_type}' is not allowed - dangerous content detected"
+                    detail=f"File type '{mime_type}' is not allowed for security reasons"
                 )
-            else:
+            
+            # Check for MIME patterns that are potentially dangerous
+            # More specific patterns to avoid blocking legitimate formats
+            dangerous_patterns = [
+                'application/x-executable', 'application/x-msdownload', 'application/x-msdos-program',
+                'application/javascript', 'text/javascript', 'text/x-script', 'application/x-shellscript'
+            ]
+            
+            if any(pattern in mime_type.lower() for pattern in dangerous_patterns):
+                _log("warning", f"Potentially dangerous MIME type blocked: {mime_type}", {
+                    "user_id": current_user,
+                    "operation": "upload_init",
+                    "mime_type": mime_type
+                })
                 raise HTTPException(
-                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                    detail=f"File type '{mime_type}' is not supported"
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"File type '{mime_type}' is not allowed for security reasons"
                 )
-        
-        # ENHANCED SECURITY: Content verification for specific file types
-        if mime_type.startswith('text/') and len(filename) > 1000:  # Large text files could be scripts
+            
+            # Standard unsupported MIME type
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Large text files are not allowed for security reasons"
-            )
-        
-        # Block any MIME type containing executable or script patterns
-        dangerous_patterns = [
-            'application/x-', 'text/x-', 'application/javascript', 'text/javascript'
-        ]
-        
-        # Fix: Use only dangerous_patterns since dangerous_mime_types is undefined
-        if any(pattern in mime_type.lower() for pattern in dangerous_patterns):
-            _log("warning", f"Potentially dangerous MIME type detected", {
-                "user_id": current_user,
-                "operation": "upload_init",
-                "mime_type": mime_type,
-                "action": "blocked_for_review"
-            })
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"File type '{mime_type}' is not allowed for security reasons"
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=f"File type '{mime_type}' is not supported"
             )
         
         # Validate required fields
