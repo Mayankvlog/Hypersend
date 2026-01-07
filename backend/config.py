@@ -121,16 +121,16 @@ class Settings:
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     
     # Token expiration constants
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "28800"))  # 480 hours (20 days) for large uploads
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
-    UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "72"))  # Extended to 72 hours (3 days) for large uploads
+    UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "480"))  # 480 hours (20 days) for very large uploads
     
     # File upload chunk settings  
     UPLOAD_CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB - Alias for backward compatibility
     
     # Upload token duration settings (in seconds)
     UPLOAD_TOKEN_DURATION: int = UPLOAD_TOKEN_EXPIRE_HOURS * 3600  # Convert hours to seconds
-    UPLOAD_TOKEN_DURATION_LARGE: int = int(os.getenv("UPLOAD_TOKEN_DURATION_LARGE", "259200"))  # 72 hours for large files (3 days)
+    UPLOAD_TOKEN_DURATION_LARGE: int = int(os.getenv("UPLOAD_TOKEN_DURATION_LARGE", "1728000"))  # 480 hours for large files (20 days)
     
     # QR Code session expiration
     QR_CODE_SESSION_EXPIRE_MINUTES: int = int(os.getenv("QR_CODE_SESSION_EXPIRE_MINUTES", "5"))
