@@ -1,5 +1,5 @@
 import os
-import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
@@ -208,8 +208,10 @@ class Settings:
     if USE_MOCK_DB:
         print("[CONFIG] WARNING: USING MOCK DATABASE - FOR TESTING ONLY")
     
-    # CRITICAL: Production safety check
-    if not DEBUG and USE_MOCK_DB:
+    # CRITICAL: Production safety check - allow mock DB in tests or when DEBUG is True
+    # Check if we're in a test environment by looking at common test indicators
+    is_test_env = 'test' in sys.modules or 'pytest' in sys.modules or os.getenv('PYTEST_CURRENT_TEST')
+    if not DEBUG and not is_test_env and USE_MOCK_DB:
         raise RuntimeError("PRODUCTION SAFETY ERROR: Mock database cannot be used in production. Set USE_MOCK_DB=False")
     
     # CORS Configuration

@@ -1,92 +1,57 @@
 #!/usr/bin/env python3
 """Direct validation of file extension blocking"""
 
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import pytest
 
+from backend.security import SecurityConfig
 from backend.validators import validate_command_injection, validate_path_injection
 
-# Test dangerous file extensions detection
-dangerous_exts = {
-    '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-    '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',
-    '.msi', '.dll', '.app', '.deb', '.rpm', '.dmg', '.pkg', '.so', '.o', '.class'
-}
 
-test_files = [
-    ('document.pdf', True),   # Safe
-    ('script.js', False),      # Dangerous
-    ('virus.exe', False),      # Dangerous
-    ('image.JPG', True),       # Safe (uppercase)
-    ('program.EXE', False),    # Dangerous (uppercase)
-    ('movie.mp4', True),       # Safe
-    ('setup.msi', False),      # Dangerous
-]
+def _ext(filename: str) -> str:
+    if "." not in filename:
+        return ""
+    return "." + filename.rsplit(".", 1)[-1].lower()
 
-print("=" * 60)
-print("FILE EXTENSION SECURITY VALIDATION")
-print("=" * 60)
 
-all_pass = True
-for filename, should_pass in test_files:
-    if '.' in filename:
-        file_ext = '.' + filename.rsplit('.', 1)[-1]
-        file_ext_lower = file_ext.lower()
-    else:
-        file_ext_lower = ''
-    
-    is_safe = file_ext_lower not in dangerous_exts
-    
-    status = "[PASS]" if (is_safe == should_pass) else "[FAIL]"
-    if is_safe != should_pass:
-        all_pass = False
-    
-    print(f"{status} {filename:20} -> {file_ext_lower:6} (safe={is_safe})")
+@pytest.mark.parametrize(
+    "filename,expected_safe",
+    [
+        ("document.pdf", True),
+        ("script.js", False),
+        ("virus.exe", False),
+        ("image.JPG", True),
+        ("program.EXE", False),
+        ("movie.mp4", True),
+        ("setup.msi", False),
+    ],
+)
+def test_file_extension_blocking(filename: str, expected_safe: bool):
+    ext = _ext(filename)
+    is_blocked = ext in SecurityConfig.BLOCKED_FILE_EXTENSIONS
+    assert (not is_blocked) == expected_safe
 
-print("=" * 60)
-if all_pass:
-    print("[PASS] All file extension checks PASSED")
-else:
-    print("[FAIL] Some checks failed")
-print("=" * 60)
 
-# Also validate the validators work
-print("\nVALIDATOR TESTS:")
-print("-" * 60)
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("test.txt", True),
+        ("rm -rf /", False),
+        ("test; whoami", False),
+        ("test | cat", False),
+    ],
+)
+def test_command_injection_validation(value: str, expected: bool):
+    assert validate_command_injection(value) is expected
 
-# Command injection tests
-cmd_tests = [
-    ("test.txt", True),
-    ("rm -rf /", False),
-    ("test; whoami", False),
-    ("test | cat", False),
-]
 
-print("\nCommand Injection Validation:")
-for test, expected in cmd_tests:
-    result = validate_command_injection(test)
-    status = "[OK]" if (result == expected) else "[FAIL]"
-    print(f"  {status} {test:30} -> {result} (expected {expected})")
-
-# Path injection tests  
-path_tests = [
-    ("document.txt", True),
-    ("../../../etc/passwd", False),
-    ("safe/path/file.txt", True),
-    ("test\x00null.txt", False),
-]
-
-print("\nPath Injection Validation:")
-for test, expected in path_tests:
-    result = validate_path_injection(test)
-    status = "[OK]" if (result == expected) else "[FAIL]"
-    print(f"  {status} {test:30} -> {result} (expected {expected})")
-
-print("-" * 60)
-print("[PASS] All validation tests completed")
-print("=" * 60)
-
-# Exit with appropriate code
-import sys
-sys.exit(0 if all_pass else 1)
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("document.txt", True),
+        ("../../../etc/passwd", False),
+        ("safe/path/file.txt", True),
+        ("test\x00null.txt", False),
+    ],
+)
+def test_path_injection_validation(value: str, expected: bool):
+    assert validate_path_injection(value) is expected

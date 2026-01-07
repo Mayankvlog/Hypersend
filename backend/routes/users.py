@@ -460,7 +460,7 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
 
 
 @router.get("/search")
-async def search_users(q: str, search_type: str = None, current_user: str = Depends(get_current_user)):
+async def search_users(q: str, search_type: str = None, current_user: str = Depends(get_current_user_or_query)):
     """Search users by name, email, or username with intelligent prioritization
     
     Args:

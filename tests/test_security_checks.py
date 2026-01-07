@@ -12,8 +12,8 @@ def check_email_validation():
     """Check email validation is standardized"""
     print("\n[SECURITY] Email Validation Pattern Check...")
     
-    auth_file = Path("backend/routes/auth.py").read_text(errors='ignore')
-    models_file = Path("backend/models.py").read_text(errors='ignore')
+    auth_file = Path("backend/routes/auth.py").read_text(encoding='utf-8', errors='ignore')
+    models_file = Path("backend/models.py").read_text(encoding='utf-8', errors='ignore')
     
     # Check for standard pattern
     standard_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
@@ -33,7 +33,7 @@ def check_binary_detection():
     """Check binary detection uses proper variables"""
     print("\n[SECURITY] Binary Detection Logic Check...")
     
-    files = Path("backend/routes/files.py").read_text(errors='ignore')
+    files = Path("backend/routes/files.py").read_text(encoding='utf-8', errors='ignore')
     
     # Check for safe division
     has_ratio_var = "non_printable_ratio = non_printable / total_chars" in files
@@ -51,7 +51,7 @@ def check_error_handling():
     """Check error handling returns specific errors"""
     print("\n[SECURITY] Error Handling Specificity Check...")
     
-    error_handlers = Path("backend/error_handlers.py").read_text(errors='ignore')
+    error_handlers = Path("backend/error_handlers.py").read_text(encoding='utf-8', errors='ignore')
     
     # Check for specific error descriptions
     checks = [
@@ -103,7 +103,7 @@ def check_validation_consistency():
     """Check validation logic is consistent"""
     print("\n[SECURITY] Validation Consistency Check...")
     
-    models = Path("backend/models.py").read_text(errors='ignore')
+    models = Path("backend/models.py").read_text(encoding='utf-8', errors='ignore')
     
     # Check that validation errors are consistent
     email_validators = len(re.findall(r'@field_validator.*email', models))

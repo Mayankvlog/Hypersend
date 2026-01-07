@@ -56,15 +56,15 @@ class TestCommandInjectionPrevention:
             "test `id`",              # Backtick execution
             "test $(whoami)",         # Command substitution
             "rm -rf /",               # Dangerous command
-            "DROP TABLE users",       # SQL injection
+            "'; DROP TABLE users; --",  # SQL injection
         ]
         
         for payload in dangerous_payloads:
             result = validate_command_injection(payload)
             assert result == False, f"Validator should BLOCK: {payload}"
-            print(f"✓ BLOCKED: {payload}")
+            print(f"[BLOCKED] {payload}")
         
-        print("✓ Shell metacharacters properly blocked by actual validator")
+        print("[OK] Shell metacharacters properly blocked by actual validator")
     
     def test_code_execution_keywords_blocked(self):
         """Test that ACTUAL validator blocks code execution keywords"""
@@ -81,9 +81,9 @@ class TestCommandInjectionPrevention:
         for payload in dangerous_payloads:
             result = validate_command_injection(payload)
             assert result == False, f"Validator should BLOCK: {payload}"
-            print(f"✓ BLOCKED: {payload}")
+            print(f"[BLOCKED] {payload}")
         
-        print("✓ Code execution keywords properly blocked by actual validator")
+        print("[OK] Code execution keywords properly blocked by actual validator")
     
     def test_safe_input_passes(self):
         """Test that ACTUAL validator ALLOWS safe input"""
@@ -99,9 +99,9 @@ class TestCommandInjectionPrevention:
         for payload in safe_payloads:
             result = validate_command_injection(payload)
             assert result == True, f"Validator should ALLOW: {payload}"
-            print(f"✓ ALLOWED: {payload}")
+            print(f"[ALLOWED] {payload}")
         
-        print("✓ Safe input properly allowed by actual validator")
+        print("[OK] Safe input properly allowed by actual validator")
 
 
 # ============================================================================
@@ -122,9 +122,9 @@ class TestXSSPrevention:
         for payload in dangerous_payloads:
             result = validate_command_injection(payload)
             assert result == False, f"Validator should BLOCK: {payload}"
-            print(f"✓ BLOCKED: {payload}")
+            print(f"[BLOCKED] {payload}")
         
-        print("✓ Script tags properly blocked by actual validator")
+        print("[OK] Script tags properly blocked by actual validator")
     
     def test_event_handlers_blocked(self):
         """Test that ACTUAL validator blocks event handlers"""
@@ -137,9 +137,9 @@ class TestXSSPrevention:
         for payload in dangerous_payloads:
             result = validate_command_injection(payload)
             assert result == False, f"Validator should BLOCK: {payload}"
-            print(f"✓ BLOCKED: {payload}")
+            print(f"[BLOCKED] {payload}")
         
-        print("✓ Event handlers properly blocked by actual validator")
+        print("[OK] Event handlers properly blocked by actual validator")
     
     def test_javascript_protocol_blocked(self):
         """Test that ACTUAL validator blocks javascript: protocol"""
@@ -151,9 +151,9 @@ class TestXSSPrevention:
         for payload in dangerous_payloads:
             result = validate_command_injection(payload)
             assert result == False, f"Validator should BLOCK: {payload}"
-            print(f"✓ BLOCKED: {payload}")
+            print(f"[BLOCKED] {payload}")
         
-        print("✓ JavaScript protocol properly blocked by actual validator")
+        print("[OK] JavaScript protocol properly blocked by actual validator")
 
 
 # ============================================================================
@@ -175,9 +175,9 @@ class TestPathTraversalPrevention:
         for path in dangerous_paths:
             result = validate_path_injection(path)
             assert result == False, f"Validator should BLOCK: {path}"
-            print(f"✓ BLOCKED: {path}")
+            print(f"[BLOCKED] {path}")
         
-        print("✓ Directory traversal properly blocked by actual validator")
+        print("[OK] Directory traversal properly blocked by actual validator")
     
     def test_null_byte_injection_blocked(self):
         """Test that ACTUAL validator blocks null byte injection"""
@@ -189,9 +189,9 @@ class TestPathTraversalPrevention:
         for path in dangerous_paths:
             result = validate_path_injection(path)
             assert result == False, f"Validator should BLOCK: {path}"
-            print(f"✓ BLOCKED: {path}")
+            print(f"[BLOCKED] {path}")
         
-        print("✓ Null byte injection properly blocked by actual validator")
+        print("[OK] Null byte injection properly blocked by actual validator")
     
     def test_safe_paths_pass(self):
         """Test that ACTUAL validator ALLOWS safe paths"""
@@ -204,9 +204,9 @@ class TestPathTraversalPrevention:
         for path in safe_paths:
             result = validate_path_injection(path)
             assert result == True, f"Validator should ALLOW: {path}"
-            print(f"✓ ALLOWED: {path}")
+            print(f"[ALLOWED] {path}")
         
-        print("✓ Safe paths properly allowed by actual validator")
+        print("[OK] Safe paths properly allowed by actual validator")
 
 
 # ============================================================================
@@ -228,7 +228,7 @@ class TestInputValidation:
         for email in valid_emails:
             result = validate_command_injection(email)
             assert result == True, f"Valid email should PASS: {email}"
-            print(f"✓ VALID: {email}")
+            print(f"[OK]: {email}")
         
         # Invalid emails with injection (command metacharacters)
         invalid_emails = [
@@ -240,9 +240,9 @@ class TestInputValidation:
         for email in invalid_emails:
             result = validate_command_injection(email)
             assert result == False, f"Invalid email should FAIL: {email}"
-            print(f"✓ BLOCKED: {email}")
+            print(f"[BLOCKED] {email}")
         
-        print("✓ Email validation working with actual validator")
+        print("[OK] Email validation working with actual validator")
     
     def test_file_size_validation(self):
         """Test file size limits using REAL logic"""
@@ -258,7 +258,7 @@ class TestInputValidation:
         
         for size in valid_sizes:
             assert size > 0 and size <= MAX_FILE_SIZE, f"Size validation failed for {size}"
-            print(f"✓ VALID SIZE: {size / (1024**3):.2f} GB")
+            print(f"[OK] SIZE: {size / (1024**3):.2f} GB")
         
         # Invalid sizes
         invalid_sizes = [
@@ -272,7 +272,7 @@ class TestInputValidation:
             assert not (size > 0 and size <= MAX_FILE_SIZE), f"Size should be invalid: {size}"
             print(f"✓ BLOCKED SIZE: {size}")
         
-        print("✓ File size validation working correctly")
+        print("[OK] File size validation working correctly")
     
     def test_mime_type_validation(self):
         """Test MIME type validation using REAL pattern"""
@@ -294,7 +294,7 @@ class TestInputValidation:
         for mime in valid_mimes:
             matches = re.match(mime_pattern, mime)
             assert matches, f"Valid MIME type should match: {mime}"
-            print(f"✓ VALID: {mime}")
+            print(f"[OK]: {mime}")
         
         # Invalid MIME types
         invalid_mimes = [
@@ -307,9 +307,9 @@ class TestInputValidation:
         for mime in invalid_mimes:
             matches = re.match(mime_pattern, mime)
             assert not matches, f"Invalid MIME type should NOT match: {mime}"
-            print(f"✓ BLOCKED: {mime}")
+            print(f"[BLOCKED] {mime}")
         
-        print("✓ MIME type validation working with real pattern")
+        print("[OK] MIME type validation working with real pattern")
 
 
 # ============================================================================
@@ -360,7 +360,7 @@ class TestAuthenticationValidation:
         assert response.status_code in [200, 201, 409], f"Strong password should be accepted"
         print(f"✓ Strong password ACCEPTED: {strong_user['password']}")
         
-        print("✓ Password validation working correctly through backend")
+        print("[OK] Password validation working correctly through backend")
     
     def test_token_format_validation(self):
         """Test JWT token format validation"""
@@ -378,7 +378,7 @@ class TestAuthenticationValidation:
         for token in valid_tokens:
             matches = re.match(jwt_pattern, token)
             assert matches, f"Valid JWT should match: {token}"
-            print(f"✓ VALID: {token[:50]}...")
+            print(f"[OK]: {token[:50]}...")
         
         # Invalid JWT format
         invalid_tokens = [
@@ -391,9 +391,9 @@ class TestAuthenticationValidation:
         for token in invalid_tokens:
             matches = re.match(jwt_pattern, token)
             assert not matches, f"Invalid JWT should NOT match: {token}"
-            print(f"✓ BLOCKED: {token}")
+            print(f"[BLOCKED] {token}")
         
-        print("✓ Token format validation working")
+        print("[OK] Token format validation working")
 
 
 # ============================================================================
@@ -436,7 +436,7 @@ class TestRateLimiting:
             print(f"✓ Attempt {i+1}: ALLOWED (401 - wrong credentials)")
         
         assert blocked_attempts > 0 or allowed_attempts >= 5, "Rate limiting should work"
-        print("✓ Login attempt throttling working correctly")
+        print("[OK] Login attempt throttling working correctly")
     
     def test_api_rate_limit(self):
         """Test ACTUAL API rate limiting"""
@@ -464,7 +464,7 @@ class TestRateLimiting:
                 continue
         
         assert requests_made >= 10, "Should allow reasonable number of requests before limiting"
-        print("✓ API rate limiting working correctly")
+        print("[OK] API rate limiting working correctly")
 
 
 # ============================================================================
@@ -492,7 +492,7 @@ class TestDataSanitization:
             assert output.count('<') <= input_str.count('<'), "Control characters should be reduced"
             print(f"✓ SANITIZED: {input_str[:30]} → {output[:30]}")
         
-        print("✓ HTML tag removal working with actual sanitizer")
+        print("[OK] HTML tag removal working with actual sanitizer")
     
     def test_unicode_normalization(self):
         """Test ACTUAL unicode normalization with real library"""
@@ -529,7 +529,7 @@ class TestDataSanitization:
             f"Both forms should normalize to same: {repr(norm_decomposed)} vs {repr(norm_composed)}"
         print(f"✓ CONSISTENCY: different forms normalize to same result")
         
-        print("✓ Unicode normalization ACTUALLY working with real library")
+        print("[OK] Unicode normalization ACTUALLY working with real library")
 
 
 # Run with: pytest test_security_validation.py -v

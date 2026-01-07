@@ -5,11 +5,11 @@ Tests core security and validation functionality without full app import
 
 import pytest
 from datetime import datetime, timedelta, timezone
-from models import UserCreate, UserLogin
-from auth.utils import verify_password, hash_password, decode_token, create_access_token
-from validators import validate_command_injection, validate_path_injection
-from rate_limiter import RateLimiter
-from config import settings
+from backend.models import UserCreate, UserLogin
+from backend.auth.utils import verify_password, hash_password, decode_token, create_access_token
+from backend.validators import validate_command_injection, validate_path_injection
+from backend.rate_limiter import RateLimiter
+from backend.config import settings
 
 class TestSecurityFeatures:
     """Test security improvements"""

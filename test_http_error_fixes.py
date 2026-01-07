@@ -297,6 +297,61 @@ class TestFileUploadFlow:
                 await initialize_upload(request, "test_user")
             
             assert exc_info.value.status_code == 429  # Too Many Requests
+
+    @pytest.mark.asyncio
+    async def test_complete_upload_checksum_none_returns_empty_string(self, tmp_path):
+        from routes.files import complete_upload
+
+        upload_id = "upload_test_checksum_none"
+        current_user = "user_1234567890abcdef12345678"
+        chunk_bytes = b"hello-world"
+
+        data_root = tmp_path / "data"
+        upload_dir = data_root / "tmp" / upload_id
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        (upload_dir / "chunk_0.part").write_bytes(chunk_bytes)
+
+        upload_doc = {
+            "_id": upload_id,
+            "user_id": current_user,
+            "total_chunks": 1,
+            "uploaded_chunks": [0],
+            "filename": "x.txt",
+            "size": len(chunk_bytes),
+            "mime_type": "text/plain",
+            "chat_id": None,
+            "checksum": None,
+        }
+
+        class _UploadsColl:
+            def find_one(self, query):
+                return AsyncMock(return_value=upload_doc)()
+
+            def delete_one(self, query):
+                return AsyncMock(return_value=MagicMock(deleted_count=1))()
+
+        class _FilesColl:
+            def insert_one(self, doc):
+                return AsyncMock(return_value=MagicMock(inserted_id=doc.get("_id")))()
+
+        request = MagicMock()
+        request.client = None
+
+        with patch("routes.files.upload_complete_limiter") as mock_limiter, \
+             patch("routes.files.settings") as mock_settings, \
+             patch("routes.files.uploads_collection", return_value=_UploadsColl()), \
+             patch("routes.files.files_collection", return_value=_FilesColl()), \
+             patch("database.get_db", return_value=MagicMock()):
+
+            mock_limiter.is_allowed.return_value = True
+            mock_settings.DATA_ROOT = data_root
+
+            resp = await complete_upload(upload_id, request, current_user)
+            assert resp.file_id
+            assert resp.filename == "x.txt"
+            assert resp.size == len(chunk_bytes)
+            assert resp.checksum == ""
+            assert resp.storage_path
     
     @pytest.mark.asyncio
     async def test_chunk_upload_rate_limiting(self):

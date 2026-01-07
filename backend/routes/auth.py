@@ -256,41 +256,47 @@ async def register(user: UserCreate) -> UserResponse:
         
         if not user.password or len(user.password) < 6:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Password must be at least 6 characters"
             )
         
         if not user.name or not user.name.strip():
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Name is required"
             )
         
         # Check if user already exists with case-insensitive email lookup
+        users_col = users_collection()
+        # CRITICAL FIX: Use case-insensitive email lookup with regex to prevent duplicates
+        # Also normalize email to lowercase for consistent lookup
+        normalized_email = user.email.lower().strip()
+        
+        # SECURITY: Validate email format before database operations
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', normalized_email):
+            auth_log(f"Registration failed: Invalid email format: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid email format"
+            )
+        
+        # CRITICAL FIX: Fix duplicate database query and handle both sync/async properly
+        existing_user = None
         try:
-            users_col = users_collection()
-            # CRITICAL FIX: Use case-insensitive email lookup with regex to prevent duplicates
-            # Also normalize email to lowercase for consistent lookup
-            normalized_email = user.email.lower().strip()
-            
-            # SECURITY: Validate email format before database operations
-            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', normalized_email):
-                auth_log(f"Registration failed: Invalid email format: {user.email}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid email format"
-                )
-            
-            existing_user = await users_col.find_one({
-                "email": {"$regex": f"^{re.escape(normalized_email)}$", "$options": "i"}
-            })
-            
-            # DEBUG: Log the search result for troubleshooting
-            if existing_user:
-                auth_log(f"Registration failed: Found existing user with email: {normalized_email} (ID: {existing_user.get('_id')})")
+            if hasattr(users_col, 'find_one') and callable(getattr(users_col, 'find_one')):
+                if asyncio.iscoroutinefunction(users_col.find_one):
+                    existing_user = await asyncio.wait_for(
+                        users_col.find_one({"email": normalized_email}),
+                        timeout=5.0
+                    )
+                else:
+                    # Mock collection (synchronous)
+                    existing_user = users_col.find_one({"email": normalized_email})
             else:
-                auth_log(f"Registration: No existing user found for email: {normalized_email}")
-                
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service temporarily unavailable"
+                )
         except asyncio.TimeoutError:
             auth_log(f"Database timeout checking existing user")
             raise HTTPException(
@@ -309,6 +315,12 @@ async def register(user: UserCreate) -> UserResponse:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Database operation failed. Please try again."
             )
+        
+        # DEBUG: Log the search result for troubleshooting
+        if existing_user:
+            auth_log(f"Registration failed: Found existing user with email: {normalized_email} (ID: {existing_user.get('_id')})")
+        else:
+            auth_log(f"Registration: No existing user found for email: {normalized_email}")
         
         if existing_user:
             auth_log(f"Registration failed: Email already exists: {user.email}")
@@ -372,10 +384,16 @@ async def register(user: UserCreate) -> UserResponse:
             )
         except Exception as db_error:
             auth_log(f"Database error during user insertion: {type(db_error).__name__}: {str(db_error)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create user account. Please try again."
-            )
+            if "duplicate" in str(db_error).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already registered. Please use a different email."
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create user account. Please try again."
+                )
         
         # Create response
         return UserResponse(
@@ -419,13 +437,13 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         if not re.match(email_pattern, credentials.email):
             auth_log(f"Invalid email format in login attempt: {credentials.email[:50]}")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Invalid email format"
             )
         
         if not credentials.password:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Password is required"
             )
         
@@ -516,6 +534,24 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                     detail="Database timeout - please try again"
                 )
+            except (ConnectionError, TimeoutError) as db_error:
+                auth_log(f"Database connection error during user lookup: {type(db_error).__name__}: {str(db_error)}")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service temporarily unavailable"
+                )
+            except Exception as db_error:
+                auth_log(f"Database error during user lookup: {type(db_error).__name__}: {str(db_error)}")
+                if "connection" in str(db_error).lower() or "network" in str(db_error).lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Database service temporarily unavailable"
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Database operation failed"
+                    )
             
             if not existing_user:
                 auth_log(f"Login failed: User not found: {normalized_email}")
@@ -625,6 +661,13 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         
     except HTTPException:
         raise
+    except (ConnectionError, TimeoutError) as e:
+        # Database connection or timeout errors
+        auth_log(f"Login database error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database timeout - please try again"
+        )
     except ValueError as e:
         auth_log(f"Login validation error: {type(e).__name__}: {str(e)}")
         # Validation errors should return 400, not 401
@@ -641,6 +684,14 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         )
     except Exception as e:
         auth_log(f"Login error: {type(e).__name__}: {str(e)}")
+        # Check if this is a database connectivity error
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in ["connection", "timeout", "database", "unavailable", "refused", "unreachable"]):
+            # Database-related errors should return 503
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service temporarily unavailable"
+            )
         # Return generic error for security, don't expose internal details
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -38,58 +38,81 @@ def validate_command_injection(input_string: str) -> bool:
     
     Returns True if safe (no dangerous patterns detected), False if potentially dangerous.
     Validates against shell metacharacters, code execution patterns, and script injection.
+    Note: SQL injection should be prevented through parameterized queries, not text filtering.
     """
     if not input_string or not isinstance(input_string, str):
         return True  # Empty/null is not a threat, just invalid input
     
-    # Command injection patterns - use regex for proper detection
-    dangerous_patterns = [
-        r'[;&|`$<>]',  # Shell metacharacters
-        r'\|\|',       # OR command execution
-        r'&&',         # AND command execution
-        r'>>',         # Append redirection
-        r'<<',         # Here document
-        r'<\(',        # Process substitution
-        r'\$\(',       # Command substitution
-        r'\$\{',       # Parameter expansion
-        r'eval\s*\(',  # eval function
-        r'exec\s*\(',  # exec function
-        r'system\s*\(', # system function
-        r'popen\s*\(', # popen function
-        r'shell\s*=\s*["\']?true["\']?',  # shell=True
-        r'cat\s+/',    # cat system files
-        r'passwd',      # password files
-        r'shadow',     # shadow file
-        r'hosts',       # hosts file
-        r'crontab',     # cron jobs
-        r'wget\s+',     # wget command
-        r'curl\s+',     # curl command
-        r'nc\s+',       # netcat command
-        r'netcat',      # netcat
-        r'chmod\s+',    # chmod command
-        r'chown\s+',    # chown command
-        r'rm\s+',       # rm command
-        r'rmdir\s+',    # rmdir command
-        r'mv\s+',       # mv command
-        r'cp\s+',       # cp command
-        r'dd\s+',       # dd command
+    # Block dangerous shell patterns - ZERO tolerance for shell metacharacters
+    dangerous_shell_patterns = [
+        '||', '&&', ';', '|', '$(', '${', '`', '>', '<', '>>', '&'  # Shell metacharacters
     ]
     
-    for pattern in dangerous_patterns:
+    if any(pattern in input_string for pattern in dangerous_shell_patterns):
+        return False
+    
+    # Block dangerous system paths that appear anywhere in input
+    dangerous_system_paths = [
+        'cat /etc/passwd',  # Direct cat of passwd file
+        'cat /etc/shadow',  # Direct cat of shadow file  
+        'rm /etc/passwd',  # Direct rm of system file
+        'rm -rf /',        # Destructive command
+        '/etc/passwd',     # Just the path
+        '/etc/shadow',     # Shadow file
+    ]
+    
+    for dangerous_path in dangerous_system_paths:
+        if dangerous_path in input_string:
+            return False
+    
+    # Block dangerous command patterns (must have arguments following)
+    # These patterns match commands that indicate command execution with network access or system modification
+    dangerous_commands = [
+        r'\bsudo\s+',         # sudo usage
+        r'\beval\s*\(',       # eval function call
+        r'\bexec\s*\(',       # exec function call
+        r'\bsystem\s*\(',     # system function call
+        r'\bpopen\s*\(',      # popen function call
+        r'\bos\.system',      # Python os.system
+        r'\bsubprocess\.',    # Python subprocess module
+        r'\bshell\s*=\s*(?:True|true|yes|1)\b', # shell=True parameter
+        r'\bwget\s+',         # wget command with arguments (network access)
+        r'\bcurl\s+',         # curl command with arguments (network access)
+        r'\bnc\s+',           # netcat command with arguments (network access)
+        r'\bchmod\s+\d',      # chmod with numeric permissions
+        r'\bchown\s+',        # chown command (privilege modification)
+        r'\bkill\s+',         # kill command
+    ]
+    
+    for pattern in dangerous_commands:
         if re.search(pattern, input_string, re.IGNORECASE):
             return False
     
-    # Block script injection patterns (XSS and HTML injection)
+    # Block SQL injection patterns - only block clear injection attempts
+    sql_patterns = [
+        r"'\s*or\s*'1'\s*=\s*'1",  # Classic SQL injection
+        r"'\s*or\s*1\s*=\s*1",     # SQL injection without quotes
+        r'\bdelete\s+from\b',        # DELETE FROM 
+        r'\bunion\s+select\b',       # UNION SELECT
+        r'\binsert\s+into\b',        # INSERT INTO (suspicious context)
+        r'\bupdate\s+\w+\s+set\b',  # UPDATE ... SET (suspicious context)
+        r'\bexec\s*\(',             # SQL EXEC
+        r'\bexecute\s*\(',          # SQL EXECUTE
+    ]
+    
+    for pattern in sql_patterns:
+        if re.search(pattern, input_string, re.IGNORECASE):
+            return False
+    
+    # Block script/XSS injection patterns
     script_patterns = [
-        r'<script[^>]*>',
-        r'</script>',
-        r'<iframe',
-        r'<object',
-        r'javascript:',
-        r'onerror\s*=',
-        r'onload\s*=',
-        r'onclick\s*=',
-        r'on\w+\s*=',  # Generic event handler injection
+        r'<\s*script',              # <script tag
+        r'javascript\s*:',          # javascript: protocol
+        r'on\w+\s*=',              # Event handler (onerror=, onload=, etc.)
+        r'<\s*iframe',              # <iframe tag
+        r'<\s*object',              # <object tag
+        r'<\s*embed',               # <embed tag
+        r'data:\s*text/html',       # data: URI with HTML
     ]
     
     for pattern in script_patterns:
@@ -98,6 +121,10 @@ def validate_command_injection(input_string: str) -> bool:
     
     # Block null bytes (file path injection)
     if '\x00' in input_string:
+        return False
+    
+    # Block control characters (except whitespace)
+    if re.search(r'[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', input_string):
         return False
     
     return True
@@ -203,50 +230,50 @@ def validate_path_injection(file_path: str) -> bool:
 
 def sanitize_input(input_string: str, max_length: int = 1000) -> str:
     """
-    Sanitize input string to prevent various injection attacks
+    Sanitize input string to prevent various injection attacks.
+    Remove null/control chars and neutralize dangerous patterns while preserving length.
     """
     if not input_string or not isinstance(input_string, str):
         return ""
     
-    # Remove null bytes
-    sanitized = input_string.replace('\x00', '')
+    sanitized = input_string[:max_length]
+    sanitized = sanitized.replace('\x00', '')
+    sanitized = re.sub(r'[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', '', sanitized)
     
-    # Remove HTML tags and content
-    sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
-    sanitized = re.sub(r'<[^>]*>', '', sanitized)
+    # Neutralize dangerous patterns by replacing with spaces of equal length
+    patterns = [
+        r'<\s*script[^>]*>.*?</\s*script\s*>',
+        r'<\s*iframe[^>]*>.*?</\s*iframe\s*>',
+        r'<\s*object[^>]*>.*?</\s*object\s*>',
+        r'<\s*embed[^>]*>.*?</\s*embed\s*>',
+        r'javascript:',
+        r'vbscript:',
+        r'data:\s*text/html',
+        r'\bdrop\s+table\b',
+        r'\bdelete\s+from\b',
+        r'\bunion\s+select\b',
+        r'on\w+\s*=',  # event handlers
+        r'script',
+        r'\$\{',
+        r'\{\{',
+    ]
+    for pat in patterns:
+        matches = list(re.finditer(pat, sanitized, flags=re.IGNORECASE | re.DOTALL))
+        if matches:
+            parts = []
+            last = 0
+            for m in matches:
+                parts.append(sanitized[last:m.start()])
+                parts.append(' ' * (m.end() - m.start()))
+                last = m.end()
+            parts.append(sanitized[last:])
+            sanitized = ''.join(parts)
     
-    # Remove potentially dangerous characters and control sequences
-    sanitized = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', sanitized)
+    # Explicitly strip template/shell markers that may remain
+    sanitized = sanitized.replace('${', ' ').replace('{{', ' ').replace('}}', ' ')
     
-    # Remove JavaScript and data URIs - more aggressive
-    sanitized = re.sub(r'javascript\s*:', '', sanitized, flags=re.IGNORECASE)
-    sanitized = re.sub(r'data\s*:', '', sanitized, flags=re.IGNORECASE)
-    sanitized = re.sub(r'vbscript\s*:', '', sanitized, flags=re.IGNORECASE)
-    
-    # Remove JNDI injection patterns
-    sanitized = re.sub(r'\$\{[^}]*\}', '', sanitized, flags=re.IGNORECASE)
-    
-    # Remove template injection patterns
-    sanitized = re.sub(r'\{\{[^}]*\}\}', '', sanitized, flags=re.IGNORECASE)
-    
-    # Remove SQL injection patterns
-    sanitized = re.sub(r"(\b(union|select|insert|update|delete|drop|create|alter|exec|execute)\b)", '', sanitized, flags=re.IGNORECASE)
-    sanitized = re.sub(r"[;'\"]", '', sanitized)
-    
-    # Remove potentially dangerous characters
-    sanitized = re.sub(r'[<>"\'`]', '', sanitized)
-    
-    # Remove null bytes and control characters
-    sanitized = re.sub(r'[\x00-\x1f\x7f]', '', sanitized)
-    
-    # Normalize whitespace
-    sanitized = re.sub(r'\s+', ' ', sanitized)
-    
-    # Limit length
-    if len(sanitized) > max_length:
-        sanitized = sanitized[:max_length]
-    
-    # Strip whitespace
-    sanitized = sanitized.strip()
+    # Replace remaining angle brackets to prevent HTML execution while keeping length
+    sanitized = sanitized.replace('<', ' ')
+    sanitized = sanitized.replace('>', ' ')
     
     return sanitized

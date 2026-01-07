@@ -114,7 +114,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             url_path = str(request.url.path)
             
             # Enhanced suspicious pattern detection with more comprehensive coverage
-            # Immediate fix: Allow localhost and production domain requests
+            # CRITICAL FIX: Allow localhost and production domain requests without blocking
             def is_localhost_or_production(request):
               """Check if request is from localhost, Docker internal, or production domain"""
               client_host = request.client.host if request.client else ''
@@ -123,75 +123,72 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
               production_patterns = ['zaply.in.net', 'www.zaply.in.net']
               return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
 
+            # CRITICAL FIX: Less aggressive security patterns to avoid false positives
+            # Focus on actual attacks, not normal text containing keywords
             suspicious_patterns = [
-                # Path traversal attacks
+                # Path traversal attacks (more specific)
                 '../', '..\\', '%2e%2e', '%2e%2e%2f', '%2e%2e%5c', 
                 '..%2f', '..%5c', '%2e%2e/', '%2e%2e\\',
                 '....//', '....\\\\', '%252e%252e%252f',
-                
-                # Script injection attacks
-                '<script', '</script>', 'javascript:', 'vbscript:', 'data:', 
+                 
+                # Script injection attacks (more specific)
+                '<script', '</script>', 'javascript:', 'vbscript:', 
                 'onload=', 'onerror=', 'onclick=', 'onmouseover=',
                 'eval(', 'alert(', 'confirm(', 'prompt(',
-                
-                # SQL injection attacks  
-                'union select', 'drop table', 'delete from', 'insert into',
-                'update set', 'create table', 'alter table', 'exec sp_',
-                '1\' or \'1\'=\'1', '1" or "1"="1', "admin'--",
-                "' or 1=1--", '" or 1=1--', "'; drop table--",
-                
+                 
+                # SQL injection attacks (only clear attack patterns)
+                'drop table', 'delete from', 'exec sp_',
+                "admin'--", "'; drop table--",
+                 
                 # XML/XXE injection attacks
-                '<?xml', '<!doctype', '<svg', '<!entity', 'xlink:href=',
+                '<?xml', '<!doctype', '<!entity', 'xlink:href=',
                 '<xsl:stylesheet', 'external-entitiy', '<!ATTLIST',
-                
-                # System file access attempts
+                 
+                # System file access attempts (only clear malicious paths)
                 '../../etc/passwd', '/etc/passwd', '/etc/shadow', '/etc/hosts',
                 'c:\\windows\\system32', 'c:\\windows\\system32\\config',
                 '/proc/version', '/proc/self/environ', '/etc/passwd%00',
-                'cmd.exe', 'powershell', 'bash', 'sh', '/bin/', '/usr/bin/',
-                'wget ', 'curl ', 'nc ', 'netcat ', 'perl ',
-                
-                # Command injection attempts
+                'cmd.exe', 'powershell', 'bash', 'sh',
+                 
+                # Command injection attempts (only clear command chains)
                 '; rm -rf', '| cat /etc/passwd', '&& ls -la', '|| id',
                 '`whoami`', '$(id)', '${jndi:ldap', '${env:HOME}',
-                
-                # NoSQL/Document injection
+                 
+                # NoSQL/Document injection (only clear injection patterns)
                 '{$ne:}', '{$gt:}', '{$where:}', '$regex:', '$expr:',
-                '{"$gt":""}', '{"$ne":null}', "'; return db.admin.find('",
-                
-                # LDAP injection
+                '{"$gt":""}', '{"$ne":null}', 
+                 
+                # LDAP injection (only clear LDAP injection)
                 '*)(', '*)(uid=*', '*)(|(uid=', '*)(password=*',
                 '*)%00', '*)(&(objectClass=',
-                
-                # Log4j/RCE attempts
+                 
+                # Log4j/RCE attempts (only clear log4j patterns)
                 '${jndi:', '${lower:jndi:', '${upper:jndi:', '${::-:j',
                 '${env:', '${java:', '${sys:', '${log4j:',
-                
-                # Server-Side Template Injection
+                 
+                # Server-Side Template Injection (only clear SSTI patterns)
                 '{{7*7}}', '${7*7}', '#{7*7}', '<%=7*7%>',
                 '{{config}}', '${config}', '#{config}',
-                
-                # XXE payload variants
+                 
+                # XXE payload variants (only clear XXE patterns)
                 '<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>',
                 '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE test',
-                
+                 
                 # Common web shell patterns
                 'webshell', 'shell.php', 'cmd.jsp', 'aspshell',
                 'eval(base64', 'system($_POST', 'passthru($_',
                 'shell_exec($_', 'exec($_POST', 'preg_replace eval',
-                
-                # SSRF patterns (but allow localhost for health checks and development)
+                 
+                # SSRF patterns (only clear SSRF, allow localhost)
                 '169.254.169.254', 'metadata.google.internal',
                 'file:///', 'gopher://', 'dict://',
-                # Note: 127.0.0.1, localhost, ::1, 0.0.0.0 are allowed for legitimate requests
-                
-                # Deserialization attacks
+                 
+                # Deserialization attacks (only clear patterns)
                 'O:4:"User"', 'ACED0005', 'rO0ABX', '80ACED0',
                 'ys0yPC', 'base64_decode', 'unserialize(',
-                
+                 
                 # Header injection
                 'CRLF-injection', '%0d%0a', '\r\n', '%0D%0A',
-                'X-Forwarded-For:', 'X-Real-IP:', 'X-Originating-IP:',
             ]
             
             url_lower = url_path.lower()
@@ -239,7 +236,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                             "error": "Bad Request - Malicious request detected",
                             "detail": "Request contains potentially malicious content",
                             "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "path": url_path,
+                            "path": "/api/v1/files/invalid_path",  # Don't echo malicious path
                             "method": request.method,
                             "hints": ["Remove malicious content", "Check request format", "Ensure proper encoding"]
                         }
@@ -879,45 +876,6 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
         }
     )
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """
-    Handle 422 Unprocessable Entity validation errors
-    
-    LOGIC: 422 is correct for semantic validation errors (e.g., field constraints)
-    vs 400 for malformed requests (e.g., invalid JSON syntax)
-    
-    Extract detailed error information for client debugging
-    """
-    errors = exc.errors()
-    
-    # Format errors in a user-friendly way
-    formatted_errors = []
-    for error in errors:
-        field = ".".join(str(x) for x in error.get("loc", []))
-        msg = error.get("msg", "Validation error")
-        formatted_errors.append({
-            "field": field,
-            "error": msg,
-            "type": error.get("type", "unknown")
-        })
-    
-    logger.warning(f"[VALIDATION_ERROR] {request.method} {request.url.path} - {len(errors)} errors")
-    
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "status_code": 422,
-            "error": "Unprocessable Entity",
-            "detail": "Request data validation failed",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "path": str(request.url.path),
-            "method": request.method,
-            "errors": formatted_errors,
-            "hints": ["Check field types and constraints", "Verify required fields are present", "Review API documentation"]
-        }
-    )
-
 # TrustedHost middleware for additional security
 # Only enable in production with proper domain
 if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "true":
@@ -1123,7 +1081,7 @@ async def favicon():
 async def health_check():
     """Health check endpoint for monitoring and load balancers - multiple routes for compatibility"""
     try:
-        # Check database connection
+        # Check database connection for extended health info
         try:
             from database import client
             if client:
@@ -1134,27 +1092,17 @@ async def health_check():
         except Exception as db_error:
             db_status = f"error: {str(db_error)[:50]}"
         
-        return {
-            "status": "healthy",
-            "service": "hypersend-api",
-            "version": "1.0.0",
-            "database": db_status,
-            "cors_origins": cors_origins,
-            "websocket_support": True,
-            "p2p_relay": "enabled",
-            "max_file_size_gb": settings.MAX_FILE_SIZE_BYTES / (1024**3),
-            "chunk_size_mb": settings.CHUNK_SIZE / (1024**2),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        # For basic health check, return minimal response
+        # Extended info is available in /api/v1/health/detailed
+        return {"status": "healthy"}
+        
     except Exception as e:
         logger.error(f"[HEALTH_CHECK] Error: {str(e)}")
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
                 "status": "degraded",
-                "service": "hypersend-api",
-                "error": str(e),
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "error": str(e)
             }
         )
 

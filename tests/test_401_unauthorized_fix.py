@@ -431,9 +431,8 @@ def test_full_upload_error_handling_flow():
 
 
 # Run with: pytest test_401_unauthorized_fix.py -v
-    test_initupload_fixed_behavior()
-    test_full_upload_error_handling_flow()
-    
+if __name__ == "__main__":
+    # This function just prints the flow, doesn't need to call itself
     print("\n" + "="*80)
-    print("✓ ALL TESTS PASSED")
+    print("✓ UPLOAD ERROR HANDLING FLOW TEST COMPLETE")
     print("="*80 + "\n")

@@ -220,7 +220,7 @@ def test_reset_password_weak_password() -> bool:
         print_status(f"[FAIL] Error: {e}", "FAIL")
         return False
 
-def test_response_structure(response_data: dict) -> bool:
+def verify_response_structure(response_data: dict) -> bool:
     """Verify response has expected structure"""
     print_status("Verifying response structure...", "TEST")
     
@@ -363,7 +363,7 @@ def main():
     test_results["forgot_password_endpoint"] = forgot_password_result is not None
     
     if forgot_password_result:
-        test_results["response_structure"] = test_response_structure(forgot_password_result)
+        test_results["response_structure"] = verify_response_structure(forgot_password_result)
     
     # Test 2: Invalid email validation
     print_header("TEST 2: Invalid Email Validation")

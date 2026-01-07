@@ -71,7 +71,7 @@ def print_info(text: str):
     """Print info message"""
     print(f"{Colors.WHITE}ℹ {text}{Colors.RESET}")
 
-def test_endpoint(url: str, description: str, timeout: int = 5) -> Tuple[bool, Optional[Dict], Optional[str]]:
+def check_endpoint(url: str, description: str, timeout: int = 5) -> Tuple[bool, Optional[Dict], Optional[str]]:
     """Test a single endpoint"""
     try:
         print(f"  Testing: {Colors.CYAN}{description}{Colors.RESET}")
@@ -138,7 +138,7 @@ def test_endpoints_batch() -> Dict[str, Tuple[bool, Optional[Dict], Optional[str
     
     results = {}
     for url, description in TEST_URLS:
-        success, data, error = test_endpoint(url, description)
+        success, data, error = check_endpoint(url, description)
         results[description] = (success, data, error)
         print()
     

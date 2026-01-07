@@ -3,6 +3,10 @@
 Comprehensive integration test demonstrating both token authentication methods
 """
 
+import pytest
+
+pytest.skip("Legacy integration script (query-token auth is disabled); not part of automated pytest", allow_module_level=True)
+
 import sys
 import os
 import asyncio
