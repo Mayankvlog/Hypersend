@@ -13,11 +13,11 @@ from backend.config import settings
 
 @pytest.mark.asyncio
 async def test_upload_token_duration_fix():
-    """Test that upload tokens have correct duration (72 hours)"""
+    """Test that upload tokens have correct duration (480 hours)"""
     
     # Test the configuration fix
-    assert settings.UPLOAD_TOKEN_EXPIRE_HOURS == 72, f"Expected 72 hours, got {settings.UPLOAD_TOKEN_EXPIRE_HOURS}"
-    assert settings.UPLOAD_TOKEN_DURATION == 72 * 3600, f"Expected {72*3600} seconds, got {settings.UPLOAD_TOKEN_DURATION}"
+    assert settings.UPLOAD_TOKEN_EXPIRE_HOURS == 480, f"Expected 480 hours, got {settings.UPLOAD_TOKEN_EXPIRE_HOURS}"
+    assert settings.UPLOAD_TOKEN_DURATION == 480 * 3600, f"Expected {480*3600} seconds, got {settings.UPLOAD_TOKEN_DURATION}"
     
     print(f"✓ Upload token duration fixed: {settings.UPLOAD_TOKEN_EXPIRE_HOURS} hours")
     print(f"✓ Upload token duration in seconds: {settings.UPLOAD_TOKEN_DURATION}")

@@ -17,12 +17,12 @@ def _ext(filename: str) -> str:
     "filename,expected_safe",
     [
         ("document.pdf", True),
-        ("script.js", False),
-        ("virus.exe", False),
+        ("script.js", True),  # User requested JavaScript files
+        ("virus.exe", True),  # User requested .exe files
         ("image.JPG", True),
-        ("program.EXE", False),
+        ("program.EXE", True),  # User requested .exe files
         ("movie.mp4", True),
-        ("setup.msi", False),
+        ("setup.msi", True),  # User requested .msi files
     ],
 )
 def test_file_extension_blocking(filename: str, expected_safe: bool):

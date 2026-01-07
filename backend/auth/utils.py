@@ -537,15 +537,16 @@ async def get_current_user_for_upload(
     request: Request, 
     token: Optional[str] = Query(None)
 ) -> str:
-    """ENHANCED DEPENDENCY FOR FILE UPLOADS WITH EXTENDED TOKEN SUPPORT.
+    """ENHANCED DEPENDENCY FOR FILE UPLOADS WITH 480-HOUR TOKEN SUPPORT.
     
     SECURITY: QUERY PARAMETER AUTHENTICATION HAS BEEN DISABLED FOR UPLOADS.
     ONLY HEADER AUTHENTICATION IS ALLOWED FOR SECURITY REASONS.
     
     This function handles long-running file uploads by:
-    1. Accepting upload tokens with extended expiration
-    2. Extending regular access tokens for upload operations
+    1. Accepting upload tokens with extended expiration (480 hours)
+    2. Extending regular access tokens to 480 hours for upload operations
     3. Providing fallback for expired tokens during active uploads
+    4. COMPLETELY BYPASSING 15-MINUTE LIMIT FOR UPLOADS
     
     Args:
         request: The request object (for header auth)
@@ -582,62 +583,123 @@ async def get_current_user_for_upload(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # CRITICAL FIX: For upload operations, use 480-hour token validation regardless of env vars
+    path = request.url.path
+    is_upload_operation = "/files/" in path and ("/init" in path or "/chunk" in path or "/complete" in path)
+    
+    if is_upload_operation:
+        # For upload operations, use extended 480-hour validation
+        try:
+            # Decode token WITHOUT expiration check first
+            decoded = jwt.decode(header_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
+            user_id = decoded.get("sub")
+            
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token: missing user ID",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # Check if token was issued within 480 hours (20 days)
+            issued_at = decoded.get("iat")
+            if issued_at:
+                current_time = datetime.now(timezone.utc).timestamp()
+                hours_since_issued = (current_time - issued_at) / 3600
+                
+                if hours_since_issued > 480:  # More than 480 hours old
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token expired: older than 480 hours",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            
+            # Check if token has upload scope or is a regular access token
+            token_type = decoded.get("token_type", "access")
+            upload_scope = decoded.get("upload_scope", False)
+            
+            if upload_scope:
+                # Upload token - validate with upload token rules
+                logger.debug(f"Using upload token for upload operation")
+                return validate_upload_token(decoded)
+            else:
+                # Regular access token - allow for uploads with 480-hour limit
+                logger.info(f"Using regular access token for upload (480-hour validation)", {
+                    "user_id": user_id,
+                    "operation": "upload_auth",
+                    "path": path,
+                    "hours_since_issued": hours_since_issued if issued_at else "unknown"
+                })
+                return user_id
+                
+        except jwt.ExpiredSignatureError:
+            # Even if expired, check if it's within 480 hours for upload operations
+            try:
+                decoded = jwt.decode(header_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
+                user_id = decoded.get("sub")
+                
+                if user_id:
+                    # Check if token was issued within 480 hours
+                    issued_at = decoded.get("iat")
+                    if issued_at:
+                        current_time = datetime.now(timezone.utc).timestamp()
+                        hours_since_issued = (current_time - issued_at) / 3600
+                        
+                        if hours_since_issued <= 480:  # Within 480 hours - allow for upload
+                            logger.info(f"Extended expired token for upload operation (within 480 hours)", {
+                                "user_id": user_id,
+                                "operation": "upload_token_extension",
+                                "path": path,
+                                "hours_since_issued": hours_since_issued
+                            })
+                            return user_id
+                    
+                # If we get here, token is too old or invalid
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token expired: older than 480 hours. Please re-authenticate.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+                
+            except Exception as extend_error:
+                logger.error(f"Failed to extend expired token: {str(extend_error)}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token validation failed",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        
+        except jwt.InvalidTokenError as e:
+            logger.error(f"Invalid token for upload: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token format",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    
+    # For non-upload operations, use normal validation
     try:
-        # Try to decode token normally first
         token_data = decode_token(header_token)
         if token_data.token_type == "access":
-            # Check if it's a special upload token or regular access token
             payload = getattr(token_data, 'payload', {}) or {}
-            # CRITICAL FIX: Require explicit upload_scope=True, not just truthy
             if payload.get("upload_scope") is True:
                 logger.debug(f"Using upload token from header for upload_id: {payload.get('upload_id')}")
                 return validate_upload_token(payload)
             else:
-                # Regular access token - return user_id
-                logger.debug(f"Using regular access token for upload")
+                logger.debug(f"Using regular access token")
                 return token_data.user_id
                 
     except HTTPException as http_exc:
-        # Check if this is a token expiration error
-        if "Token has expired" in str(http_exc.detail):
-            # TOKEN EXPIRED: Check if we can extend it for upload
-            logger.warning(f"Access token expired during upload, attempting extension")
-            
-            # Check if this is an upload operation by checking request path
-            path = request.url.path
-            is_upload_operation = "/files/" in path and ("/init" in path or "/chunk" in path or "/complete" in path)
-            
-            if is_upload_operation:
-                # For upload operations, try to refresh the token
-                try:
-                    # Get user info from expired token (without exp check)
-                    decoded = jwt.decode(header_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
-                    user_id = decoded.get("sub")
-                    
-                    if user_id:
-                        # Log the extension
-                        logger.info(f"Extended expired token for upload operation", {
-                            "user_id": user_id,
-                            "operation": "upload_token_extension",
-                            "path": path,
-                            "extended_hours": 24
-                        })
-                        
-                        return user_id
-                    
-                except Exception as extend_error:
-                    logger.error(f"Failed to extend expired token: {str(extend_error)}")
-            
-            # If we can't extend, re-raise the original error
-            raise http_exc
+        # For non-upload operations, don't extend expired tokens
+        raise http_exc
                 
     except Exception as e:
-        logger.error(f"Upload authentication failed: {str(e)}")
+        logger.error(f"Authentication failed: {str(e)}")
         if getattr(settings, "DEBUG", False) or "testclient" in request.headers.get("user-agent", "").lower():
             return "test-user"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token for upload",
+            detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

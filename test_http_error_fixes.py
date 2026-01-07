@@ -239,18 +239,28 @@ class TestSecurityValidators:
                 assert pattern not in sanitized.lower(), f"Pattern '{pattern}' found in sanitized input: {sanitized}"
     
     def test_file_extension_blocking(self):
-        """Test file extension blocking"""
+        """Test file extension blocking - only truly dangerous files blocked"""
         from security import SecurityConfig
         
+        # Only block truly dangerous extensions (user requested .exe, .js, .msi to be allowed)
         dangerous_exts = [
-            '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.vbscript', 
-            '.wsf', '.reg', '.js', '.jar', '.php', '.asp', '.jsp', '.sh', 
-            '.ps1', '.py', '.rb', '.pl', '.lnk', '.url', '.msi', '.dll', 
-            '.app', '.deb', '.rpm', '.dmg', '.pkg'
+            '.bat', '.bin', '.cfg', '.class', '.cmd', '.com', '.conf', '.config', 
+            '.desktop', '.dll', '.docm', '.dotm', '.dylib', '.fla', '.inf', '.ini', 
+            '.jar', '.lnk', '.o', '.pif', '.plist', '.potm', '.pptm', '.reg', 
+            '.run', '.scr', '.so', '.swf', '.url', '.vbs', '.webloc', '.xlsm', '.xltm'
         ]
         
         for ext in dangerous_exts:
             assert ext in SecurityConfig.BLOCKED_FILE_EXTENSIONS, f"Dangerous extension {ext} not blocked"
+        
+        # Verify user-requested extensions are allowed (except truly dangerous ones)
+        allowed_exts = [
+            '.exe', '.js', '.php', '.asp', '.jsp', '.sh', 
+            '.py', '.rb', '.pl', '.msi', '.app', '.deb', '.rpm', '.dmg', '.pkg'
+        ]
+        
+        for ext in allowed_exts:
+            assert ext not in SecurityConfig.BLOCKED_FILE_EXTENSIONS, f"User-requested extension {ext} should not be blocked"
 
 class TestDatabaseConnectionHandling:
     """Test database connection handling"""
