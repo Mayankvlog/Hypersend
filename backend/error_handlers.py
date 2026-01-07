@@ -724,7 +724,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         response_data["retry_after"] = retry_header or "60"
     elif status_code == 413:
         # Payload too large - include size limits
-        response_data["max_size"] = "5.0GB"
+        response_data["max_size"] = "40GB"
     elif status_code == 415:
         # Unsupported media type - include supported types
         response_data["supported_types"] = ["application/json", "multipart/form-data", "image/*"]

@@ -280,8 +280,8 @@ class TestHTTP413PayloadTooLarge:
     
     def test_413_request_body_too_large(self):
         """Request body exceeding limit should return 413"""
-        body_size = 6 * 1024 * 1024 * 1024  # 6GB
-        max_body_size = 5 * 1024 * 1024 * 1024  # 5GB
+        body_size = 50 * 1024 * 1024 * 1024  # 50GB
+        max_body_size = 40 * 1024 * 1024 * 1024  # 40GB
         
         if body_size > max_body_size:
             status = 413

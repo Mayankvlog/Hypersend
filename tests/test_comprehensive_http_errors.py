@@ -261,13 +261,13 @@ class TestFileUploadErrorHandling:
     def test_file_size_limits(self):
         """Test file size limit enforcement"""
         # Test oversized file
-        oversized_data = b"x" * (6 * 1024 * 1024 * 1024)  # 6GB
+        oversized_size = 50 * 1024 * 1024 * 1024  # 50GB
         
         response = client.post(
             "/api/v1/files/init",
             json={
                 "filename": "oversized.txt",
-                "size": len(oversized_data),
+                "size": oversized_size,
                 "mime_type": "text/plain",
                 "chat_id": "test-chat"
             }

@@ -303,7 +303,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 if content_length_header:
                     try:
                         content_length = int(content_length_header)
-                        max_size = 5 * 1024 * 1024 * 1024  # 5GB limit
+                        max_size = settings.MAX_FILE_SIZE_BYTES
                         if content_length > max_size:
                             return JSONResponse(
                                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -428,7 +428,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         # File upload endpoints - handled by file-specific logic
                         # This is just an additional safety net
                         elif '/files/' in url_path and '/upload' in url_path:
-                            max_size = 5 * 1024 * 1024 * 1024  # 5GB safety net (should be enforced elsewhere)
+                            max_size = settings.MAX_FILE_SIZE_BYTES
                             if size > max_size:
                                 return JSONResponse(
                                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -767,7 +767,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     
     # Add specific context for certain error types
     if status_code == 413:
-        response_data["max_size"] = "5GB"
+        response_data["max_size"] = "40GB"
     elif status_code == 429:
         response_data["retry_after"] = "60"
     

@@ -64,7 +64,7 @@ class SecurityConfig:
         'application/json'
     }
     
-    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    MAX_FILE_SIZE = 40 * 1024 * 1024 * 1024  # 40GB
     BLOCKED_FILE_EXTENSIONS = {
         '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.vbscript', '.wsf', '.reg', '.js', '.jar',
         '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',

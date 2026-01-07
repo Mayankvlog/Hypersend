@@ -490,7 +490,7 @@ async def initialize_upload(
                 )
             
             # CRITICAL SECURITY: Add maximum file size check (consistent with middleware)
-            max_size = 5 * 1024 * 1024 * 1024  # 5GB in bytes
+            max_size = settings.MAX_FILE_SIZE_BYTES  # 40GB in bytes
             if size_int > max_size:
                 max_size_gb = max_size / (1024 * 1024 * 1024)
                 # Compute chunk meta for response
