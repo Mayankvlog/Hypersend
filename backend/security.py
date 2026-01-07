@@ -49,7 +49,7 @@ class SecurityConfig:
     ALLOWED_MIME_TYPES = {
         # Text & Document Formats
         'text/plain', 'text/csv', 'text/tab-separated-values', 'text/markdown',
-        'application/pdf', 'application/postscript',
+        'application/pdf', 'application/postscript', 'text/rtf', 'application/rtf',
         
         # Office Documents (Microsoft)
         'application/msword',  # .doc
@@ -65,41 +65,71 @@ class SecurityConfig:
         'application/vnd.oasis.opendocument.presentation',  # .odp
         'application/vnd.oasis.opendocument.graphics',  # .odg
         
-        # Rich Text Format
-        'application/rtf', 'text/rtf',
-        
         # Image Formats
         'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff',
         'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/heic',
+        'image/jpg', 'image/x-png',  # Alternative MIME types
         
         # Video Formats
         'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska',
         'video/x-flv', 'video/mpeg', 'video/3gpp', 'video/x-ms-wmv',
         'video/mp2t', 'video/ogg', 'video/dv', 'video/x-ms-wm', 'video/x-ms-asf',
+        'video/x-m4v',  # .m4v
         
         # Audio Formats
         'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/flac',
         'audio/mp4', 'audio/m4a', 'audio/x-wav', 'audio/webm', 'audio/opus',
         'audio/x-ms-wma', 'audio/x-matroska', 'audio/amr-nb', 'audio/amr-wb',
         'audio/midi', 'audio/x-midi', 'audio/aiff', 'audio/x-aiff', 'audio/x-wav',
+        'audio/x-m4p',  # .m4p
         
         # Archive & Compressed Formats
         'application/zip', 'application/x-zip-compressed',
         'application/x-rar-compressed', 'application/x-7z-compressed',
         'application/x-tar', 'application/gzip', 'application/x-bzip2', 'application/x-xz',
         'application/x-iso9660-image', 'application/x-cd-image',  # ISO support
+        'application/x-tar-gz', 'application/x-tar-bz2', 'application/x-tar-xz',  # Compressed tar
         
         # Data & ML Formats
         'application/json', 'application/xml', 'text/xml', 'application/sql',
         'application/x-parquet', 'application/x-hdf', 'application/hdf5',
         'application/octet-stream', 'application/x-sqlite3', 'application/x-sqlite',
         'text/yaml', 'application/x-yaml', 'application/x-pickle', 'application/x-numpy',
+        'application/x-npy', 'application/x-npz', 'application/x-pickle',  # .pickle/.pkl
         
-        # Code Files (informational - web executables blocked by extension)
-        'text/x-java', 'text/x-csharp', 'text/x-c++',
-        'text/x-golang', 'text/x-rust',
-        'text/x-r', 'text/x-lua', 'text/x-swift', 'text/x-kotlin', 'text/x-scala',
-        'text/x-kotlin', 'text/x-groovy', 'text/x-typescript',
+        # Code Files (all requested formats - now allowed)
+        'text/x-python',  # .py
+        'application/javascript', 'text/javascript',  # .js
+        'text/x-java-source',  # .java
+        'text/x-c',  # .c
+        'text/x-c++',  # .cpp
+        'text/x-csharp',  # .cs
+        'text/x-go',  # .go
+        'text/x-rust',  # .rs
+        'application/x-httpd-php',  # .php
+        'text/html',  # .html
+        'text/css',  # .css
+        'text/x-java',  # .java alternative
+        'text/x-lua',  # .lua
+        'text/x-r',  # .r
+        'text/x-swift',  # .swift
+        'text/x-kotlin',  # .kotlin
+        'text/x-scala',  # .scala
+        'text/x-groovy',  # .groovy
+        'text/x-typescript',  # .typescript
+        'application/x-sh', 'text/x-shellscript',  # .sh
+        
+        # Executables & System Files (user-requested - now allowed with security)
+        'application/x-msdownload',  # .exe
+        'application/x-msi',  # .msi
+        'application/vnd.android.package-archive',  # .apk
+        'application/x-android-apk',  # .aab
+        'application/x-debian-package',  # .deb
+        'application/x-rpm',  # .rpm
+        'application/x-apple-diskimage',  # .dmg
+        'application/x-newton-compatible-pkg',  # .pkg
+        'application/x-appimage',  # .appimage
+        'application/binary', 'application/x-binary',  # Binary fallbacks
     }
     
     MAX_FILE_SIZE = 40 * 1024 * 1024 * 1024  # 40GB
@@ -107,7 +137,7 @@ class SecurityConfig:
     # Allowed file extensions - comprehensive format support
     ALLOWED_FILE_EXTENSIONS = {
         # Text & Document Formats
-        '.txt', '.md', '.csv', '.tsv',
+        '.txt', '.md', '.csv', '.tsv', '.rtf',
         '.pdf', '.ps',
         
         # Office Documents (Microsoft)
@@ -116,18 +146,15 @@ class SecurityConfig:
         # Office Documents (OpenDocument/LibreOffice)
         '.odt', '.ods', '.odp', '.odg',
         
-        # Rich Text Format
-        '.rtf',
-        
         # Image Formats
         '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif',
         '.svg', '.ico', '.heic',
         
         # Video Formats
-        '.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.mpeg', '.mpg', '.3gp', '.wmv',
+        '.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.mpeg', '.mpg', '.3gp', '.wmv', '.m4v',
         
         # Audio Formats
-        '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.amr', '.opus', '.wma',
+        '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.amr', '.opus', '.wma', '.m4p',
         
         # Archive & Compressed Formats
         '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.iso',
@@ -136,52 +163,28 @@ class SecurityConfig:
         '.json', '.xml', '.sql', '.db', '.sqlite', '.sqlite3', '.parquet',
         '.h5', '.hdf5', '.pickle', '.pkl', '.npy', '.npz',
         
-        # Code Files (source code only - web executables and server executables blocked for security)
-        '.java', '.c', '.cpp', '.cs', '.go', '.rs',  # Programming languages
-        '.lua', '.r', '.m', '.swift',  # Scripting languages (non-executable)
-        '.kt', '.scala', '.groovy', '.ts', '.tsx', '.jsx', '.vue',  # Modern languages
-        '.yaml', '.yml', '.json', '.xml',  # Data formats
+        # Code Files (all requested formats - now allowed)
+        '.py', '.js', '.java', '.c', '.cpp', '.cs', '.go', '.rs', '.php',
+        '.html', '.css', '.lua', '.r', '.m', '.swift', '.kt', '.scala', '.groovy', '.ts',
+        '.yaml', '.yml', '.sh',
+        
+        # Executables & System Files (user-requested - now allowed with security)
+        '.exe', '.msi', '.apk', '.aab', '.deb', '.rpm', '.dmg', '.pkg', '.appimage',
     }
     
     # Executables and dangerous files - BLOCKED regardless of other rules
-    # NOTE: This blocks dangerous executables, web-executable content, and server scripts
+    # NOTE: Only block truly dangerous files, allow user-requested executables
     BLOCKED_FILE_EXTENSIONS = {
-        # Executables (Windows)
-        '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.msi',
-        
-        # Executables (Linux/Mac) - package installers only
-        '.app', '.deb', '.rpm', '.dmg', '.pkg', '.apk', '.aab',
-        
-        # Scripts that execute code (blocked for security)
-        '.vbs', '.vbscript', '.wsf', '.ps1', '.psc1', '.msh', '.msh1', '.msh2',
-        '.mshxml', '.msh2xml', '.scr', '.sh', '.bash', '.zsh', '.csh', '.ksh',
-        
-        # Server-side scripting (blocked for security)
-        '.py', '.rb', '.pl', '.php', '.asp', '.aspx', '.jsp', '.jspx', '.cgi', '.fcgi',
-        
-        # Java/Python/Ruby/Perl compiled/bytecode (not source code)
-        '.jar', '.class', '.pyc', '.pyo', '.pyd', '.so', '.a', '.lib', '.dll', '.dylib',
-        
-        # Libraries and system files
-        '.dll', '.so', '.dylib', '.a', '.lib', '.o', '.obj', '.sys', '.ocx', '.cpl',
-        
-        # Web-executable content (blocked for security)
-        '.js', '.html', '.htm', '.css',  # Can execute in browsers
-        
-        # Config files that could be dangerous
-        '.reg', '.inf', '.ini', '.cfg', '.conf', '.config', '.plist',
-        
-        # Shortcuts and links
-        '.lnk', '.url', '.webloc', '.desktop',
-        
-        # Virtual machine and disk images (blocking only dangerous formats)
-        '.vhd', '.vmdk', '.ova', '.ovf', '.qcow2', '.img',
-        
-        # Duplicate entries removed for clarity
-        '.btm',
+        # Only block truly dangerous executables (allow user-requested ones)
+        '.bat', '.cmd', '.com', '.pif', '.scr',  # Windows batch/cmd files
+        '.vbs', '.jar',  # Script files and Java archives
+        '.dll', '.so', '.dylib', '.o', '.class', '.bin', '.run',  # System libraries
+        '.docm', '.xlsm', '.pptm', '.dotm', '.xltm', '.potm',  # Macro documents
+        '.swf', '.fla',  # Flash files
+        '.reg', '.inf', '.ini', '.cfg', '.conf', '.config', '.plist',  # Config files
+        '.lnk', '.url', '.webloc', '.desktop',  # Shortcut files
     }
-
-    
+        
     @staticmethod
     def generate_secure_token(length: int = None) -> str:
         """Generate a cryptographically secure token"""
