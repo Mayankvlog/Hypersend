@@ -15,7 +15,7 @@ from typing import Optional, List
 from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
-from db_proxy import files_collection as _files_collection_factory, uploads_collection as _uploads_collection_factory, users_collection
+from db_proxy import files_collection as _files_collection_factory, uploads_collection as _uploads_collection_factory, users_collection, get_db, connect_db
 from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, decode_token
 from config import settings
 from validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
@@ -1038,7 +1038,6 @@ async def complete_upload(
         # Get upload record with database connection check
         try:
             # CRITICAL FIX: Ensure database is connected before querying
-            from database import get_db
             try:
                 get_db()  # This will raise if database is not connected
             except RuntimeError as db_error:

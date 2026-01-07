@@ -341,7 +341,7 @@ class TestFileUploadFlow:
              patch("routes.files.settings") as mock_settings, \
              patch("routes.files.uploads_collection", return_value=_UploadsColl()), \
              patch("routes.files.files_collection", return_value=_FilesColl()), \
-             patch("database.get_db", return_value=MagicMock()):
+             patch("routes.files.get_db", return_value=MagicMock()):
 
             mock_limiter.is_allowed.return_value = True
             mock_settings.DATA_ROOT = data_root
