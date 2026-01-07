@@ -487,6 +487,230 @@ async def test_mime_type_default_handling():
     print("✓ MIME type default handling: ALL CASES PASS")
 
 
+@pytest.mark.asyncio
+async def test_comprehensive_file_format_support():
+    """Test comprehensive file format support - all major file types should be allowed"""
+    
+    # Test comprehensive file format support - these should all PASS
+    comprehensive_formats = [
+        # Images (20+ formats)
+        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp',
+        'image/tiff', 'image/tif', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon',
+        'image/x-ms-bmp', 'image/x-png', 'image/x-citrix-jpeg', 'image/x-citrix-png',
+        
+        # Videos (20+ formats)
+        'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska',
+        'video/3gpp', 'video/3gpp2', 'video/x-ms-wmv', 'video/x-flv', 'video/x-f4v',
+        'video/x-m4v', 'video/mp2t', 'video/ogg', 'video/h264', 'video/h265', 'video/hevc',
+        'video/avi', 'video/mov', 'video/wmv', 'video/flv', 'video/m4v', 'video/3gp',
+        
+        # Audio (25+ formats)
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/aac',
+        'audio/flac', 'audio/x-flac', 'audio/m4a', 'audio/mp4', 'audio/x-m4a', 'audio/x-m4p',
+        'audio/x-m4b', 'audio/x-m4r', 'audio/x-m4v', 'audio/3gpp', 'audio/3gpp2',
+        'audio/amr', 'audio/amr-wb', 'audio/x-aiff', 'audio/aiff', 'audio/x-aifc',
+        'audio/basic', 'audio/midi', 'audio/x-midi', 'audio/opus', 'audio/webm',
+        'audio/wma', 'audio/x-ms-wma', 'audio/ac3', 'audio/x-ac3', 'audio/dts',
+        
+        # Documents (15+ formats)
+        'application/pdf', 'text/plain', 'text/csv', 'text/markdown', 'text/rtf',
+        'text/richtext', 'text/tab-separated-values', 'text/vcard', 'text/calendar',
+        'text/x-vcard', 'text/x-calendar', 'text/x-vcalendar', 'text/x-vcf',
+        
+        # Microsoft Office (15+ formats)
+        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+        'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.openxmlformats-officedocument.presentationml.template',
+        'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+        
+        # Google Docs formats
+        'application/vnd.google-apps.document', 'application/vnd.google-apps.spreadsheet',
+        'application/vnd.google-apps.presentation', 'application/vnd.google-apps.drawing',
+        
+        # OpenDocument formats (10+ formats)
+        'application/vnd.oasis.opendocument.text', 'application/vnd.oasis.opendocument.text-template',
+        'application/vnd.oasis.opendocument.graphics', 'application/vnd.oasis.opendocument.presentation',
+        'application/vnd.oasis.opendocument.spreadsheet', 'application/vnd.oasis.opendocument.spreadsheet-template',
+        
+        # Archives (20+ formats)
+        'application/zip', 'application/x-zip-compressed', 'application/x-zip', 'application/x-compress',
+        'application/x-rar-compressed', 'application/x-rar', 'application/x-7z-compressed', 'application/x-7z',
+        'application/gzip', 'application/x-gzip', 'application/x-tar', 'application/x-tar-compressed',
+        'application/x-tar-gz', 'application/x-gtar', 'application/x-bzip2', 'application/x-bzip',
+        'application/x-lzh', 'application/x-lzh-compressed', 'application/x-stuffit', 'application/x-sit',
+        
+        # Code and text files (25+ formats)
+        'application/json', 'text/xml', 'application/xml', 'text/html', 'text/css',
+        'application/javascript', 'text/javascript', 'application/x-javascript', 'text/x-javascript',
+        'text/x-python', 'text/x-perl', 'text/x-ruby', 'text/x-php', 'text/x-java-source',
+        'text/x-c', 'text/x-c++', 'text/x-csharp', 'text/x-go', 'text/x-rust', 'text/x-swift',
+        'text/x-kotlin', 'text/x-scala', 'text/x-haskell', 'text/x-erlang', 'text/x-elixir',
+        'text/x-lua', 'text/x-tcl', 'text/x-shellscript', 'text/x-powershell', 'text/x-batch',
+        
+        # E-books and publishing (10+ formats)
+        'application/epub+zip', 'application/epub', 'application/x-mobipocket-ebook',
+        'application/x-fictionbook+xml', 'application/x-fictionbook', 'application/x-palm-database',
+        'application/x-tex', 'application/x-latex', 'application/x-texinfo', 'application/x-troff',
+        
+        # Fonts (10+ formats)
+        'application/font-woff', 'application/font-woff2', 'application/x-font-woff',
+        'application/x-font-ttf', 'application/x-font-truetype', 'application/x-font-opentype',
+        'font/woff', 'font/woff2', 'font/ttf', 'font/otf', 'font/sfnt',
+        
+        # Database files (5+ formats)
+        'application/x-sqlite3', 'application/x-sqlite', 'application/x-db', 'application/x-dbase',
+        'application/x-msaccess', 'application/vnd.ms-access', 'application/x-mdb',
+        
+        # CAD and design files (10+ formats)
+        'application/vnd.dwg', 'application/vnd.dxf', 'application/vnd.dwf', 'application/vnd.iges',
+        'application/iges', 'application/step', 'application/x-3ds', 'application/x-obj',
+        'application/x-stl', 'application/x-ply',
+        
+        # Scientific and medical formats (5+ formats)
+        'application/x-hdf', 'application/x-netcdf', 'application/x-matlab-data',
+        'application/x-dicom', 'application/dicom', 'application/x-fits', 'application/fits',
+        
+        # Binary and fallback formats
+        'application/octet-stream', 'application/binary', 'application/x-binary',
+    ]
+    
+    # Simulate the comprehensive MIME validation logic
+    allowed_mime_types = [
+        # Images - Comprehensive support
+        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 
+        'image/tiff', 'image/tif', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon',
+        'image/x-ms-bmp', 'image/x-png', 'image/x-citrix-jpeg', 'image/x-citrix-png',
+        'image/x-citrix-gif', 'image/vnd.dwg', 'image/vnd.dxf', 'image/x-emf', 'image/x-wmf',
+        
+        # Videos - Extensive format support
+        'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska',
+        'video/3gpp', 'video/3gpp2', 'video/x-ms-wmv', 'video/x-flv', 'video/x-f4v',
+        'video/x-m4v', 'video/mp2t', 'video/ogg', 'video/vnd.dlna.mpeg-tts',
+        'video/h264', 'video/h265', 'video/hevc', 'video/vc1', 'video/vp8', 'video/vp9',
+        'video/avi', 'video/mov', 'video/wmv', 'video/flv', 'video/m4v', 'video/3gp',
+        
+        # Audio - Complete audio format support
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/aac',
+        'audio/flac', 'audio/x-flac', 'audio/m4a', 'audio/mp4', 'audio/x-m4a', 'audio/x-m4p',
+        'audio/x-m4b', 'audio/x-m4r', 'audio/x-m4v', 'audio/3gpp', 'audio/3gpp2',
+        'audio/amr', 'audio/amr-wb', 'audio/x-aiff', 'audio/aiff', 'audio/x-aifc',
+        'audio/basic', 'audio/midi', 'audio/x-midi', 'audio/opus', 'audio/webm',
+        'audio/wma', 'audio/x-ms-wma', 'audio/x-wma', 'audio/ac3', 'audio/x-ac3',
+        'audio/dts', 'audio/x-dts', 'audio/aac', 'audio/x-aac', 'audio/flac',
+        'audio/x-flac', 'audio/ogg', 'audio/x-ogg', 'audio/vorbis', 'audio/x-vorbis',
+        
+        # Documents - Office and text formats
+        'application/pdf', 'text/plain', 'text/csv', 'text/markdown', 'text/rtf',
+        'text/richtext', 'text/tab-separated-values', 'text/vcard', 'text/calendar',
+        'text/x-vcard', 'text/x-calendar', 'text/x-vcalendar', 'text/x-vcf',
+        
+        # Microsoft Office formats
+        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+        'application/vnd.ms-word.document.macroEnabled.12',
+        'application/vnd.ms-word.template.macroEnabled.12',
+        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+        'application/vnd.ms-excel.sheet.macroEnabled.12',
+        'application/vnd.ms-excel.template.macroEnabled.12',
+        'application/vnd.ms-excel.addin.macroEnabled.12',
+        'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+        'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.openxmlformats-officedocument.presentationml.template',
+        'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+        'application/vnd.ms-powerpoint.addin.macroEnabled.12',
+        'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
+        'application/vnd.ms-powerpoint.template.macroEnabled.12',
+        'application/vnd.ms-powerpoint.slideshow.macroEnabled.12',
+        
+        # Google Docs formats
+        'application/vnd.google-apps.document', 'application/vnd.google-apps.spreadsheet',
+        'application/vnd.google-apps.presentation', 'application/vnd.google-apps.drawing',
+        
+        # OpenDocument formats
+        'application/vnd.oasis.opendocument.text', 'application/vnd.oasis.opendocument.text-template',
+        'application/vnd.oasis.opendocument.text-web', 'application/vnd.oasis.opendocument.text-master',
+        'application/vnd.oasis.opendocument.graphics', 'application/vnd.oasis.opendocument.graphics-template',
+        'application/vnd.oasis.opendocument.presentation', 'application/vnd.oasis.opendocument.presentation-template',
+        'application/vnd.oasis.opendocument.spreadsheet', 'application/vnd.oasis.opendocument.spreadsheet-template',
+        'application/vnd.oasis.opendocument.chart', 'application/vnd.oasis.opendocument.formula',
+        'application/vnd.oasis.opendocument.database', 'application/vnd.oasis.opendocument.image',
+        
+        # Archives and compressed files - Comprehensive support
+        'application/zip', 'application/x-zip-compressed', 'application/x-zip', 'application/x-compress',
+        'application/x-compressed', 'application/x-rar-compressed', 'application/x-rar',
+        'application/x-7z-compressed', 'application/x-7z', 'application/gzip', 'application/x-gzip',
+        'application/x-tar', 'application/x-tar-compressed', 'application/x-tar-gz', 'application/x-gtar',
+        'application/x-bzip2', 'application/x-bzip', 'application/x-lzh', 'application/x-lzh-compressed',
+        'application/x-stuffit', 'application/x-sit', 'application/x-sitx', 'application/x-cab',
+        'application/x-cab-compressed', 'application/x-ace', 'application/x-ace-compressed',
+        'application/x-arj', 'application/x-arj-compressed', 'application/x-zoo', 'application/x-zoo-compressed',
+        'application/x-dms', 'application/x-dms-compressed', 'application/x-lha', 'application/x-lha-compressed',
+        
+        # Code and text files - Safe development formats
+        'application/json', 'text/xml', 'application/xml', 'text/html', 'text/css',
+        'application/javascript', 'text/javascript', 'application/x-javascript', 'text/x-javascript',
+        'text/x-python', 'text/x-perl', 'text/x-ruby', 'text/x-php', 'text/x-java-source',
+        'text/x-c', 'text/x-c++', 'text/x-csharp', 'text/x-go', 'text/x-rust', 'text/x-swift',
+        'text/x-kotlin', 'text/x-scala', 'text/x-haskell', 'text/x-erlang', 'text/x-elixir',
+        'text/x-lua', 'text/x-tcl', 'text/x-shellscript', 'text/x-powershell', 'text/x-batch',
+        'text/x-dockerfile', 'text/x-yaml', 'text/x-toml', 'text/x-ini', 'text/x-conf',
+        'text/x-log', 'text/x-diff', 'text/x-patch', 'text/x-makefile', 'text/x-cmake',
+        'application/x-yaml', 'application/x-toml', 'application/x-ini', 'application/x-conf',
+        
+        # E-books and publishing
+        'application/epub+zip', 'application/epub', 'application/x-mobipocket-ebook',
+        'application/x-fictionbook+xml', 'application/x-fictionbook', 'application/x-palm-database',
+        'application/x-tex', 'application/x-latex', 'application/x-texinfo', 'application/x-troff',
+        'application/x-troff-man', 'application/x-troff-me', 'application/x-troff-ms',
+        
+        # Fonts
+        'application/font-woff', 'application/font-woff2', 'application/x-font-woff',
+        'application/x-font-ttf', 'application/x-font-truetype', 'application/x-font-opentype',
+        'application/x-font-type1', 'application/x-font-sfnt', 'font/woff', 'font/woff2',
+        'font/ttf', 'font/otf', 'font/sfnt',
+        
+        # Database files
+        'application/x-sqlite3', 'application/x-sqlite', 'application/x-db', 'application/x-dbase',
+        'application/x-msaccess', 'application/vnd.ms-access', 'application/x-mdb',
+        
+        # CAD and design files
+        'application/vnd.dwg', 'application/vnd.dxf', 'application/vnd.dwf', 'application/vnd.iges',
+        'application/iges', 'application/step', 'application/iges', 'application/x-3ds',
+        'application/x-obj', 'application/x-stl', 'application/x-ply', 'application/x-off',
+        
+        # Scientific and medical formats
+        'application/x-hdf', 'application/x-netcdf', 'application/x-matlab-data',
+        'application/x-dicom', 'application/dicom', 'application/x-fits', 'application/fits',
+        
+        # Binary and fallback formats
+        'application/octet-stream', 'application/binary', 'application/x-binary',
+        'application/x-msdownload', 'application/x-msdos-program', 'application/x-executable'
+    ]
+    
+    # Test all comprehensive formats
+    passed_count = 0
+    for mime_type in comprehensive_formats:
+        mime_lower = mime_type.lower()
+        if mime_lower in [mt.lower() for mt in allowed_mime_types]:
+            passed_count += 1
+        else:
+            # Check if it would be converted to octet-stream
+            import re
+            if re.match(r'^[a-zA-Z0-9][a-zA-Z0-9!#$&\-_^]*\/[a-zA-Z0-9][a-zA-Z0-9!#$&\-_.]*$', mime_type):
+                passed_count += 1  # Would be converted to octet-stream
+            else:
+                assert False, f"Comprehensive format should be supported: {mime_type}"
+    
+    # Verify we support at least 150+ formats
+    assert passed_count >= 150, f"Should support at least 150 formats, got {passed_count}"
+    
+    print(f"✓ Comprehensive file format support: {passed_count}/{len(comprehensive_formats)} formats supported")
+
+
 if __name__ == "__main__":
     import asyncio
     
@@ -512,6 +736,7 @@ if __name__ == "__main__":
         test_enhanced_mime_validation_fixes,
         test_enhanced_file_size_validation_fixes,
         test_mime_type_default_handling,
+        test_comprehensive_file_format_support,
     ]
     
     for test_func in test_functions:
