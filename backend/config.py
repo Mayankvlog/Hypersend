@@ -123,7 +123,7 @@ class Settings:
     # Token expiration constants
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
-    UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "2"))  # Extended tokens for large uploads
+    UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "72"))  # Extended to 72 hours (3 days) for large uploads
     
     # File upload chunk settings  
     UPLOAD_CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB - Alias for backward compatibility
