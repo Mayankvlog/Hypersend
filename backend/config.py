@@ -293,87 +293,43 @@ class Settings:
                 "https://direct.zaply.in.net",
                 "https://www.direct.zaply.in.net"
             ]
-            print(f"[CORS_SECURITY] PRODUCTION: Empty origins list, using secure zaply.in.net defaults")
+            print(f"[CORS_SECURITY] PRODUCTION: Using secure default origins for zaply.in.net")
+            print(f"[CORS_SECURITY] Configure ALLOWED_ORIGINS env var to override")
             return origins
         
         # SECURITY: Filter origins based on production vs development mode
         if not self.DEBUG:
-            # Production mode: Only allow HTTPS origins
+            # Production mode: ONLY allow HTTPS origins - NO EXCEPTIONS
             https_origins = [origin for origin in origins if origin.startswith("https://")]
             http_origins = [origin for origin in origins if origin.startswith("http://")]
             
-            # Check if HTTP origins are Docker internal (safe) vs external (security risk)
-            external_http_origins = []
-            docker_http_origins = []
+            # SECURITY FIX: In production, NEVER allow HTTP origins - even Docker internal
+            # All traffic must be encrypted in production environment
+            if http_origins:
+                print(f"[CORS_SECURITY] CRITICAL: HTTP origins detected in production - SECURITY RISK!")
+                print(f"[CORS_SECURITY] CRITICAL: HTTP origins blocked: {http_origins}")
+                print(f"[CORS_SECURITY] CRITICAL: Only HTTPS origins allowed in production")
+                print(f"[CORS_SECURITY] CRITICAL: Configure ALLOWED_ORIGINS=https://zaply.in.net")
             
-            for origin in http_origins:
-                # Only actual Docker service names are considered safe in production
-                if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:']):
-                    docker_http_origins.append(origin)
-                else:
-                    # All localhost/127.0.0.1 are EXTERNAL security risks in production
-                    external_http_origins.append(origin)
-            
-            if external_http_origins:
-                # Only warn about external HTTP origins (security risk)
-                print(f"[CORS_SECURITY] WARNING: Production mode with EXTERNAL HTTP origins detected!")
-                print(f"[CORS_SECURITY] WARNING: External HTTP origins allow unencrypted traffic - SECURITY RISK!")
-                print(f"[CORS_SECURITY] WARNING: External HTTP origins found: {external_http_origins}")
-                print(f"[CORS_SECURITY] WARNING: Use HTTPS only in production deployment")
-            
-            if docker_http_origins:
-                print(f"[CORS_SECURITY] Docker internal HTTP origins (safe): {docker_http_origins}")
-            
+            # Only return HTTPS origins in production - NO HTTP allowed
             if https_origins:
-                print(f"[CORS_SECURITY] OK Production CORS origins (HTTPS only): {https_origins}")
-            
-            # Return HTTPS origins + safe Docker HTTP origins
-            safe_origins = https_origins + docker_http_origins
-            if not safe_origins:
-                print(f"[CORS_SECURITY] ERROR: No HTTPS origins configured in production!")
-                print(f"[CORS_SECURITY] ERROR: Set API_BASE_URL=https://zaply.in.net/api/v1")
-                # SECURE FALLBACK - use zaply.in.net defaults instead of wildcard
+                print(f"[CORS_SECURITY] SECURE: Production CORS origins (HTTPS only): {https_origins}")
+                return https_origins
+            else:
+                print(f"[CORS_SECURITY] CRITICAL: No HTTPS origins configured in production!")
+                print(f"[CORS_SECURITY] CRITICAL: Using secure zaply.in.net defaults")
+                # SECURE FALLBACK - use zaply.in.net HTTPS defaults
                 return [
                     "https://zaply.in.net",
                     "https://www.zaply.in.net", 
                     "https://direct.zaply.in.net",
                     "https://www.direct.zaply.in.net"
                 ]
-            
-            return safe_origins
         else:
-            # Development mode: allow all configured origins
-            print(f"[CORS_SECURITY] Development mode: Total CORS origins: {len(origins)}")
+            # Development mode: Allow both HTTP and HTTPS for testing
+            print(f"[CORS_SECURITY] Development mode: Mixed HTTP/HTTPS origins allowed for testing")
+            print(f"[CORS_SECURITY] Total CORS origins: {len(origins)}")
             return origins
-    
-    def validate_email_config(self):
-        """Validate email service configuration with enhanced checking"""
-        if self.EMAIL_SERVICE_ENABLED:
-            print(f"[EMAIL] Email service configured with host: {self.SMTP_HOST}")
-            print(f"[EMAIL] Email from: {self.EMAIL_FROM}")
-            print(f"[EMAIL] Rate limits: {self.EMAIL_RATE_LIMIT_PER_HOUR}/hour, {self.EMAIL_RATE_LIMIT_PER_DAY}/day")
-            
-            # Enhanced email format validation
-            if '@' not in self.EMAIL_FROM or '.' not in self.EMAIL_FROM.split('@')[1]:
-                print(f"[EMAIL] WARNING: Invalid email format: {self.EMAIL_FROM}")
-            
-            # Validate SMTP configuration
-            self._validate_smtp_config()
-            
-            print("[EMAIL] Email service ready for use")
-        else:
-            # Only show email warning in debug mode to reduce log noise in production
-            if self.DEBUG:
-                print("[EMAIL] Email service NOT configured - password reset emails will not be sent")
-                print("[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM")
-            else:
-                print("[EMAIL] Email service disabled (optional - configure SMTP for password reset)")
-            
-            if self.EMAIL_FALLBACK_ENABLED and self.DEBUG:
-                print("[EMAIL] Fallback mode: Tokens returned in debug mode for testing")
-            
-            if self.EMAIL_AUTO_CONFIGURE:
-                print("[EMAIL] Auto-configuration enabled - attempting to setup default email")
     
     def _validate_smtp_config(self):
         """Validate SMTP configuration details"""
