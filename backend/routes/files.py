@@ -1007,6 +1007,14 @@ async def complete_upload(
     ):
     """Complete file upload and assemble chunks"""
     
+    # Enhanced logging for debugging large file uploads
+    _log("info", f"File completion requested", {
+        "user_id": current_user,
+        "operation": "file_complete",
+        "upload_id": upload_id,
+        "debug": "large_file_upload_debug"
+    })
+    
     # Rate limiting check
     if not upload_complete_limiter.is_allowed(current_user):
         raise HTTPException(
@@ -1108,6 +1116,17 @@ async def complete_upload(
         mime_type = upload_doc.get("mime_type", "application/octet-stream")
         chat_id = upload_doc.get("chat_id")
 
+        _log("info", f"Starting file assembly", {
+            "user_id": current_user,
+            "operation": "file_assembly",
+            "upload_id": upload_id,
+            "filename": filename,
+            "size": size,
+            "total_chunks": total_chunks,
+            "upload_dir": str(upload_dir),
+            "debug": "large_file_upload_debug"
+        })
+
         checksum_value = upload_doc.get("checksum")
         if not isinstance(checksum_value, str):
             checksum_value = ""
@@ -1143,55 +1162,159 @@ async def complete_upload(
                         detail="Failed to set secure file permissions"
                     )
                 
-                # Write chunks to temp file
+                # Write chunks to temp file with enhanced error handling
+                chunks_written = 0
+                chunks_failed = []
+                
                 for chunk_idx in range(total_chunks):
                     chunk_path = upload_dir / f"chunk_{chunk_idx}.part"
                     
                     if not chunk_path.exists():
                         temp_path.unlink(missing_ok=True)  # Clean up temp file
+                        _log("error", f"Chunk {chunk_idx} not found during assembly", {
+                            "user_id": current_user,
+                            "operation": "file_assembly",
+                            "upload_id": upload_id,
+                            "missing_chunk": chunk_idx,
+                            "total_chunks": total_chunks,
+                            "chunks_written": chunks_written,
+                            "debug": "large_file_upload_debug"
+                        })
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Chunk {chunk_idx} not found during assembly"
+                            detail=f"Chunk {chunk_idx} not found during assembly. Chunks written: {chunks_written}/{total_chunks}"
                         )
                     
                     try:
                         with open(chunk_path, 'rb') as chunk_file:
                             # Write in smaller chunks to prevent memory exhaustion
+                            bytes_written = 0
                             while True:
                                 chunk_data = chunk_file.read(8192)  # 8KB chunks
                                 if not chunk_data:
                                     break
                                 temp_file.write(chunk_data)
+                                bytes_written += len(chunk_data)
+                        
+                        chunks_written += 1
+                        _log("debug", f"Chunk {chunk_idx} assembled successfully", {
+                            "user_id": current_user,
+                            "operation": "file_assembly",
+                            "upload_id": upload_id,
+                            "chunk_idx": chunk_idx,
+                            "bytes_written": bytes_written,
+                            "debug": "large_file_upload_debug"
+                        })
+                        
                     except (OSError, IOError) as chunk_error:
+                        chunks_failed.append(chunk_idx)
                         temp_path.unlink(missing_ok=True)
+                        _log("error", f"Failed to read chunk {chunk_idx}: {str(chunk_error)}", {
+                            "user_id": current_user,
+                            "operation": "file_assembly",
+                            "upload_id": upload_id,
+                            "chunk_idx": chunk_idx,
+                            "error": str(chunk_error),
+                            "chunks_written": chunks_written,
+                            "debug": "large_file_upload_debug"
+                        })
                         raise HTTPException(
                             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail=f"Failed to read chunk {chunk_idx}: {str(chunk_error)}"
+                            detail=f"Failed to read chunk {chunk_idx}: {str(chunk_error)}. Chunks processed: {chunks_written}/{total_chunks}"
                         )
                     except Exception as e:
+                        chunks_failed.append(chunk_idx)
                         temp_path.unlink(missing_ok=True)
+                        _log("error", f"Unexpected error processing chunk {chunk_idx}: {str(e)}", {
+                            "user_id": current_user,
+                            "operation": "file_assembly",
+                            "upload_id": upload_id,
+                            "chunk_idx": chunk_idx,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "chunks_written": chunks_written,
+                            "debug": "large_file_upload_debug"
+                        })
                         raise HTTPException(
                             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail=f"Unexpected error processing chunk {chunk_idx}: {str(e)}"
+                            detail=f"Unexpected error processing chunk {chunk_idx}: {str(e)}. Chunks processed: {chunks_written}/{total_chunks}"
                         )
+                
+                _log("info", f"All chunks assembled successfully", {
+                    "user_id": current_user,
+                    "operation": "file_assembly",
+                    "upload_id": upload_id,
+                    "total_chunks": total_chunks,
+                    "chunks_written": chunks_written,
+                    "chunks_failed": len(chunks_failed),
+                    "debug": "large_file_upload_debug"
+                })
             
             # CRITICAL SECURITY: Verify temp file integrity before making it permanent
             actual_size = temp_path.stat().st_size
+            _log("info", f"File size verification", {
+                "user_id": current_user,
+                "operation": "file_size_verification",
+                "upload_id": upload_id,
+                "expected_size": size,
+                "actual_size": actual_size,
+                "size_match": actual_size == size,
+                "debug": "large_file_upload_debug"
+            })
+            
             if actual_size != size:
                 # SECURITY: Clean up temp file on size mismatch
                 temp_path.unlink()
+                _log("error", f"File size mismatch detected", {
+                    "user_id": current_user,
+                    "operation": "file_size_verification",
+                    "upload_id": upload_id,
+                    "expected_size": size,
+                    "actual_size": actual_size,
+                    "difference": abs(actual_size - size),
+                    "debug": "large_file_upload_debug"
+                })
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"File size mismatch: expected {size}, got {actual_size}"
+                    detail=f"File size mismatch: expected {size}, got {actual_size}. Difference: {abs(actual_size - size)} bytes"
                 )
             
             # SECURITY: Atomic move from temp to final location
             import shutil
             try:
+                _log("info", f"Moving temp file to final location", {
+                    "user_id": current_user,
+                    "operation": "file_move",
+                    "upload_id": upload_id,
+                    "temp_path": str(temp_path),
+                    "final_path": str(final_path),
+                    "debug": "large_file_upload_debug"
+                })
+                
                 shutil.move(str(temp_path), str(final_path))
+                
+                _log("info", f"File moved successfully to final location", {
+                    "user_id": current_user,
+                    "operation": "file_move",
+                    "upload_id": upload_id,
+                    "final_path": str(final_path),
+                    "file_exists": final_path.exists(),
+                    "final_size": final_path.stat().st_size if final_path.exists() else 0,
+                    "debug": "large_file_upload_debug"
+                })
+                
             except (OSError, IOError) as move_error:
                 # Clean up temp file if move failed
                 temp_path.unlink(missing_ok=True)
+                _log("error", f"Failed to move assembled file: {str(move_error)}", {
+                    "user_id": current_user,
+                    "operation": "file_move",
+                    "upload_id": upload_id,
+                    "temp_path": str(temp_path),
+                    "final_path": str(final_path),
+                    "error": str(move_error),
+                    "debug": "large_file_upload_debug"
+                })
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to save assembled file: {str(move_error)}"
@@ -1199,6 +1322,16 @@ async def complete_upload(
             except Exception as e:
                 # Clean up temp file if move failed
                 temp_path.unlink(missing_ok=True)
+                _log("error", f"Unexpected error moving file: {str(e)}", {
+                    "user_id": current_user,
+                    "operation": "file_move",
+                    "upload_id": upload_id,
+                    "temp_path": str(temp_path),
+                    "final_path": str(final_path),
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "debug": "large_file_upload_debug"
+                })
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Unexpected error saving file: {str(e)}"
@@ -1218,6 +1351,17 @@ async def complete_upload(
                 "shared_with": [],
                 "checksum": checksum_value
             }
+            
+            _log("info", f"File record created with storage path", {
+                "user_id": current_user,
+                "operation": "file_record_creation",
+                "upload_id": upload_id,
+                "file_id": file_id,
+                "storage_path": str(final_path),
+                "filename": filename,
+                "size": size,
+                "debug": "large_file_upload_debug"
+            })
             
             # SECURITY: Insert file record only after successful file creation
             try:
@@ -2161,6 +2305,123 @@ async def cancel_upload(upload_id: str, request: Request, current_user: str = De
     await uploads_collection().delete_one({"_id": upload_id})
     
     return {"message": "Upload cancelled"}
+
+
+def _handle_file_error(error: Exception, operation: str, user_id: str, upload_id: str = None, file_id: str = None, **context):
+    """
+    Comprehensive error handler for all file operations with proper HTTP status codes.
+    
+    Args:
+        error: The exception that occurred
+        operation: The operation being performed (e.g., "chunk_upload", "file_assembly", "file_download")
+        user_id: The user ID performing the operation
+        upload_id: Optional upload ID for context
+        file_id: Optional file ID for context
+        **context: Additional context for debugging
+    
+    Returns:
+        HTTPException with appropriate status code and detail
+    """
+    error_type = type(error).__name__
+    error_msg = str(error).lower()
+    
+    # Log the error with full context
+    _log("error", f"Error in {operation}: {error_type}: {str(error)}", {
+        "user_id": user_id,
+        "operation": operation,
+        "upload_id": upload_id,
+        "file_id": file_id,
+        "error_type": error_type,
+        "error_message": str(error),
+        **context
+    })
+    
+    # Handle different error types with appropriate HTTP status codes
+    
+    # 300-series: Redirection errors (rare in file operations)
+    if error_type in ["RedirectError", "MultipleChoicesError"]:
+        return HTTPException(
+            status_code=status.HTTP_300_MULTIPLE_CHOICES,
+            detail=f"Multiple options available for {operation}. Please specify your choice."
+        )
+    
+    # 400-series: Client errors
+    elif error_type in ["ValidationError", "ValueError"]:
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid request for {operation}: {str(error)}"
+        )
+    elif error_type in ["PermissionError", "AccessDeniedError"]:
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission denied for {operation}: {str(error)}"
+        )
+    elif error_type in ["FileNotFoundError", "NotFoundError"]:
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Resource not found for {operation}: {str(error)}"
+        )
+    elif error_type in ["TimeoutError", "asyncio.TimeoutError"]:
+        return HTTPException(
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
+            detail=f"Request timeout for {operation}: {str(error)}"
+        )
+    elif error_type in ["SizeError", "OSError"] and "size" in error_msg:
+        return HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large for {operation}: {str(error)}"
+        )
+    elif error_type in ["FormatError", "TypeError"]:
+        return HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported format for {operation}: {str(error)}"
+        )
+    elif error_type in ["RateLimitError", "TooManyRequestsError"]:
+        return HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many requests for {operation}: {str(error)}"
+        )
+    
+    # 500-series: Server errors
+    elif error_type in ["ConnectionError", "DatabaseError", "MongoError"]:
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Service unavailable for {operation}: {str(error)}"
+        )
+    elif error_type in ["NetworkError", "SocketError"]:
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Network error for {operation}: {str(error)}"
+        )
+    elif "timeout" in error_msg or "timed out" in error_msg:
+        return HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"Gateway timeout for {operation}: {str(error)}"
+        )
+    elif "disk" in error_msg and ("full" in error_msg or "space" in error_msg):
+        return HTTPException(
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            detail=f"Insufficient storage for {operation}: {str(error)}"
+        )
+    elif error_type in ["OSError", "IOError", "SystemError"]:
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"System error for {operation}: {str(error)}"
+        )
+    
+    # 600-series: Network/protocol errors (custom handling)
+    elif error_type in ["ProtocolError", "NetworkProtocolError"]:
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Protocol error for {operation}: {str(error)}"
+        )
+    
+    # Default: Internal server error
+    else:
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error for {operation}: {str(error)} ({error_type})"
+        )
 
 
 def optimize_40gb_transfer(file_size_bytes: int) -> dict:
