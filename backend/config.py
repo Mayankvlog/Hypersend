@@ -126,7 +126,7 @@ class Settings:
     UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "480"))  # 480 hours (20 days) for very large uploads
     
     # File upload chunk settings  
-    UPLOAD_CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "16777216"))  # 16 MiB - Increased for large files (was 4 MiB) - Alias for backward compatibility
+    UPLOAD_CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "8388608"))  # 8 MiB default - Alias for backward compatibility
     
     # Upload token duration settings (in seconds)
     UPLOAD_TOKEN_DURATION: int = UPLOAD_TOKEN_EXPIRE_HOURS * 3600  # Convert hours to seconds
@@ -140,16 +140,16 @@ class Settings:
     STORAGE_MODE: str = os.getenv("STORAGE_MODE", "local")  # local, server, or hybrid
     DATA_ROOT: Path = Path(os.getenv("DATA_ROOT", "./data")).resolve()  # Only for metadata/temp - normalized for cross-platform
     UPLOAD_DIR: str = os.path.normpath(os.getenv("UPLOAD_DIR", "./uploads"))  # Upload directory for chunks - cross-platform paths
-    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "16777216"))  # 16 MiB - Increased for large files (was 4 MiB)
+    CHUNK_SIZE: int = UPLOAD_CHUNK_SIZE  # Alias to keep consistency - always use UPLOAD_CHUNK_SIZE from env
     MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", "42949672960"))  # 40 GiB
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
     FILE_RETENTION_HOURS: int = int(os.getenv("FILE_RETENTION_HOURS", "0"))  # 0 = no server storage
     UPLOAD_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_EXPIRE_HOURS", "72"))  # Extended to 72 hours (3 days) for very large files
     
     # Enhanced timeout settings for large file transfers
-    CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(os.getenv("CHUNK_UPLOAD_TIMEOUT_SECONDS", "600"))  # 10 minutes per chunk (for 40GB files)
-    FILE_ASSEMBLY_TIMEOUT_MINUTES: int = int(os.getenv("FILE_ASSEMBLY_TIMEOUT_MINUTES", "30"))  # 30 minutes for assembly (40GB)
-    MAX_UPLOAD_RETRY_ATTEMPTS: int = int(os.getenv("MAX_UPLOAD_RETRY_ATTEMPTS", "5"))  # More retries for large files
+    CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(os.getenv("CHUNK_UPLOAD_TIMEOUT_SECONDS", "60000"))  # 10 minutes per chunk (for 40GB files)
+    FILE_ASSEMBLY_TIMEOUT_MINUTES: int = int(os.getenv("FILE_ASSEMBLY_TIMEOUT_MINUTES", "300"))  # 30 minutes for assembly (40GB)
+    MAX_UPLOAD_RETRY_ATTEMPTS: int = int(os.getenv("MAX_UPLOAD_RETRY_ATTEMPTS", "15"))  # More retries for large files
     
     # Large file handling optimizations
     LARGE_FILE_THRESHOLD_GB: int = int(os.getenv("LARGE_FILE_THRESHOLD_GB", "1"))  # Files > 1GB get special handling

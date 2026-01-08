@@ -2928,39 +2928,41 @@ def optimize_40gb_transfer(file_size_bytes: int) -> dict:
     # Convert to GB for calculations
     file_size_gb = file_size_bytes / (1024 ** 3)
     
-    # Define optimization thresholds
+    # Define optimization thresholds using configured UPLOAD_CHUNK_SIZE
+    configured_chunk_size_mb = settings.UPLOAD_CHUNK_SIZE / (1024 * 1024)
+    
     if file_size_gb <= 1:
         # Small files (< 1GB): Standard configuration
-        chunk_size_mb = 4
-        target_chunks = max(1, int(file_size_gb * 256))  # 4MB chunks
+        chunk_size_mb = configured_chunk_size_mb
+        target_chunks = max(1, int(file_size_gb * (1024 / configured_chunk_size_mb)))
         estimated_time_hours = file_size_gb * 0.01  # Very fast
         optimization_level = "standard"
         performance_gain = "baseline"
     elif file_size_gb <= 5:
         # Medium files (1-5GB): Slightly larger chunks
-        chunk_size_mb = 8
-        target_chunks = max(1, int(file_size_gb * 128))  # 8MB chunks
+        chunk_size_mb = min(configured_chunk_size_mb * 2, 16)
+        target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
         estimated_time_hours = file_size_gb * 0.008  # 20% faster
         optimization_level = "medium"
         performance_gain = "20% faster"
     elif file_size_gb <= 15:
         # Large files (5-15GB): Optimized chunks
-        chunk_size_mb = 12
-        target_chunks = max(1, int(file_size_gb * 85))  # 12MB chunks
+        chunk_size_mb = min(configured_chunk_size_mb * 2, 16)
+        target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
         estimated_time_hours = file_size_gb * 0.008  # 20% faster
         optimization_level = "large"
         performance_gain = "20% faster"
     elif file_size_gb <= 30:
         # Very large files (15-30GB): Heavy optimization
-        chunk_size_mb = 16
-        target_chunks = max(1, int(file_size_gb * 64))  # 16MB chunks
+        chunk_size_mb = min(configured_chunk_size_mb * 2, 16)
+        target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
         estimated_time_hours = file_size_gb * 0.006  # 40% faster
         optimization_level = "very_large"
         performance_gain = "40% faster"
     else:
         # Massive files (30GB+): Maximum optimization
-        chunk_size_mb = 32
-        target_chunks = max(1, int(file_size_gb * 32))  # 32MB chunks
+        chunk_size_mb = min(configured_chunk_size_mb * 4, 32)
+        target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
         estimated_time_hours = file_size_gb * 0.004  # 60% faster
         optimization_level = "massive"
         performance_gain = "60% faster"
