@@ -90,9 +90,30 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
             )
         
         if len(chunk_data) > settings.CHUNK_SIZE:
+            # Enhanced error message with guidance for frontend
+            actual_size_mb = len(chunk_data) / (1024 * 1024)
+            max_size_mb = settings.CHUNK_SIZE / (1024 * 1024)
+            
+            _log("warning", f"Chunk {chunk_index} size exceeded: {actual_size_mb:.2f}MB > {max_size_mb:.2f}MB", {
+                "user_id": user_id,
+                "operation": "chunk_upload",
+                "chunk_index": chunk_index,
+                "actual_size": len(chunk_data),
+                "max_size": settings.CHUNK_SIZE,
+                "actual_size_mb": actual_size_mb,
+                "max_size_mb": max_size_mb
+            })
+            
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"Chunk {chunk_index} exceeds maximum size of {settings.CHUNK_SIZE} bytes"
+                detail={
+                    "error": f"Chunk {chunk_index} exceeds maximum size",
+                    "actual_size": len(chunk_data),
+                    "max_size": settings.CHUNK_SIZE,
+                    "actual_size_mb": round(actual_size_mb, 2),
+                    "max_size_mb": round(max_size_mb, 2),
+                    "guidance": f"Please split your data into chunks of max {max_size_mb:.0f}MB each"
+                }
             )
         
         # Ensure directory exists
@@ -2014,7 +2035,7 @@ async def download_file(
             async with aiofiles.open(file_path, "rb") as f:
                 await f.seek(start)
                 remaining = end - start + 1
-                chunk_size = 4 * 1024 * 1024  # 4MB chunks (same as upload)
+                chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
                 while remaining > 0:
                     read_size = min(chunk_size, remaining)
                     data = await f.read(read_size)
@@ -2040,7 +2061,7 @@ async def download_file(
     if file_size > 100 * 1024 * 1024:  # 100MB threshold
         async def file_iterator():
             async with aiofiles.open(file_path, "rb") as f:
-                chunk_size = 4 * 1024 * 1024  # 4MB chunks
+                chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
                 remaining = file_size
                 while remaining > 0:
                     read_size = min(chunk_size, remaining)

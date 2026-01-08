@@ -426,8 +426,8 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 )
                         
                         # File upload endpoints - handled by file-specific logic
-                        # This is just an additional safety net
-                        elif '/files/' in url_path and '/upload' in url_path:
+                        # This is just an additional safety net for very large requests
+                        elif '/files/' in url_path and ('/upload' in url_path or '/chunk' in url_path):
                             max_size = settings.MAX_FILE_SIZE_BYTES
                             if size > max_size:
                                 return JSONResponse(
@@ -440,6 +440,28 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                         "path": str(request.url.path),
                                         "method": request.method,
                                         "hints": ["Use smaller files", "Compress large files", "Split large files"]
+                                    }
+                                )
+                        
+                        # Chunk upload endpoints - check chunk size specifically
+                        elif '/files/' in url_path and '/chunk' in url_path:
+                            max_chunk_size = settings.CHUNK_SIZE
+                            if size > max_chunk_size:
+                                return JSONResponse(
+                                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                    content={
+                                        "status_code": 413,
+                                        "error": "Payload Too Large - Chunk too big",
+                                        "detail": f"Chunk {url_path.split('/')[-2]} exceeds maximum size of {max_chunk_size} bytes",
+                                        "actual_size": size,
+                                        "max_size": max_chunk_size,
+                                        "actual_size_mb": round(size / (1024 * 1024), 2),
+                                        "max_size_mb": round(max_chunk_size / (1024 * 1024), 2),
+                                        "guidance": f"Please split your data into chunks of max {round(max_chunk_size / (1024 * 1024), 0)}MB each",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "path": str(request.url.path),
+                                        "method": request.method,
+                                        "hints": ["Reduce chunk size", "Check file chunking logic", "Use smaller chunk sizes"]
                                     }
                                 )
                     except ValueError:
