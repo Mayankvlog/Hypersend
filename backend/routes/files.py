@@ -732,7 +732,8 @@ async def initialize_upload(
             optimization = optimize_40gb_transfer(size)
             chunk_size = optimization["chunk_size_mb"] * 1024 * 1024  # Convert MB to bytes
             total_chunks = optimization["target_chunks"]
-            upload_duration = optimization["estimated_time_hours"] * 3600  # Convert hours to seconds
+            # Keep upload_duration as settings.UPLOAD_TOKEN_DURATION_LARGE (480 hours)
+            # Don't use optimization estimated_time_hours for duration
             
             _log("info", f"Large file optimization applied", {
                 "user_id": current_user, 
