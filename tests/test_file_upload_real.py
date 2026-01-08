@@ -64,7 +64,7 @@ async def test_chunk_upload_endpoint_404():
             response = await client.put(
                 f"{TEST_SERVER_URL}/api/v1/files/nonexistent_upload/chunk",
                 params={"chunk_index": 0},
-                content=chunk_data,
+                data=chunk_data,
                 timeout=5.0
             )
             
@@ -90,7 +90,7 @@ async def test_chunk_upload_endpoint_400_invalid_index():
             response = await client.put(
                 f"{TEST_SERVER_URL}/api/v1/files/test_upload/chunk",
                 params={"chunk_index": 99},  # Out of range
-                content=chunk_data,
+                data=chunk_data,
                 timeout=5.0
             )
             
@@ -111,7 +111,7 @@ async def test_chunk_upload_endpoint_400_empty_data():
             response = await client.put(
                 f"{TEST_SERVER_URL}/api/v1/files/test_upload/chunk",
                 params={"chunk_index": 0},
-                content=b"",  # Empty data
+                data=b"",  # Empty data
                 timeout=5.0
             )
             

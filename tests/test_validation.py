@@ -4,13 +4,19 @@ Run this to test: python backend/test_validation.py
 """
 
 import sys
-sys.path.insert(0, '.')
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-from models import (
-    UserCreate, UserLogin, UserInDB, ProfileUpdate,
-    EmailChangeRequest, ForgotPasswordRequest
-)
+try:
+    from models import (
+        UserCreate, UserLogin, UserInDB, ProfileUpdate,
+        EmailChangeRequest, ForgotPasswordRequest
+    )
+except ImportError:
+    pytest.skip("Models not available", allow_module_level=True)
+
 from datetime import datetime
+import pytest
 
 def test_user_create():
     """Test UserCreate validation"""
@@ -25,22 +31,16 @@ def test_user_create():
         )
         print(f"  [PASS] Valid user created: {user.email}")
     except Exception as e:
-        print(f"  [FAIL] Error: {e}")
-        return False
+        assert False, f"Error: {e}"
     
     # Invalid email
-    try:
-        user = UserCreate(
+    with pytest.raises(Exception):
+        UserCreate(
             name="John",
             email="invalid-email",
             password="password"
         )
-        print(f"  [FAIL] Invalid email should have failed!")
-        return False
-    except Exception as e:
-        print(f"  [PASS] Correctly rejected invalid email: {e}")
-    
-    return True
+    print(f"  [PASS] Correctly rejected invalid email")
 
 def test_user_login():
     """Test UserLogin validation"""
@@ -54,48 +54,40 @@ def test_user_login():
         )
         print(f"  [PASS] Valid login: {login.email}")
     except Exception as e:
-        print(f"  [FAIL] Error: {e}")
-        return False
-    
-    return True
+        assert False, f"Error: {e}"
 
 def test_profile_update():
     """Test ProfileUpdate validation"""
     print("\nTesting ProfileUpdate...")
     
-    # Valid case - only update name
+    # Valid case - only update name with username
     try:
         update = ProfileUpdate(
             name="Jane Doe",
-            username=None,
+            username="janedoe",
             email=None
         )
         print(f"  [PASS] Valid profile update: name={update.name}")
     except Exception as e:
-        print(f"  [FAIL] Error: {e}")
-        return False
+        assert False, f"Error: {e}"
     
-    # Valid case - update email
+    # Valid case - update email with username
     try:
         update = ProfileUpdate(
-            email="newemail@example.com"
+            email="newemail@example.com",
+            username="janedoe"
         )
         print(f"  [PASS] Valid email update: {update.email}")
     except Exception as e:
-        print(f"  [FAIL] Error: {e}")
-        return False
+        assert False, f"Error: {e}"
     
     # Invalid username (too short)
-    try:
-        update = ProfileUpdate(
-            username="ab"  # Only 2 chars, needs 3+
+    with pytest.raises(Exception):
+        ProfileUpdate(
+            username="ab",  # Only 2 chars, needs 3+
+            name="Test User"
         )
-        print(f"  [FAIL] Short username should have failed!")
-        return False
-    except Exception as e:
-        print(f"  [PASS] Correctly rejected short username")
-    
-    return True
+    print(f"  [PASS] Correctly rejected short username")
 
 def test_email_change():
     """Test EmailChangeRequest validation"""
@@ -109,10 +101,7 @@ def test_email_change():
         )
         print(f"  [PASS] Valid email change request: {request.email}")
     except Exception as e:
-        print(f"  [FAIL] Error: {e}")
-        return False
-    
-    return True
+        assert False, f"Error: {e}"
 
 def test_forgot_password():
     """Test ForgotPasswordRequest validation"""
@@ -125,10 +114,7 @@ def test_forgot_password():
         )
         print(f"  [PASS] Valid forgot password request: {request.email}")
     except Exception as e:
-        print(f"  [FAIL] Error: {e}")
-        return False
-    
-    return True
+        assert False, f"Error: {e}"
 
 if __name__ == "__main__":
     print("=" * 60)

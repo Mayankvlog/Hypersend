@@ -1904,13 +1904,16 @@ async def download_file(
                             detail="Access denied - unauthorized file access"
                         )
                     
-                    # 5. Additional character-level validation
-                    if '..' in str(normalized_path.parts) or any(part.startswith('.') for part in normalized_path.parts[1:]):
-                        _log("error", f"Suspicious path components: {storage_path}", {"user_id": current_user, "operation": "file_download"})
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Access denied - invalid file path"
-                        )
+                    # 5. Additional character-level validation - only check for dangerous patterns
+                    path_parts = str(normalized_path).parts
+                    for i, part in enumerate(path_parts):
+                        # Allow leading dot in user directories (e.g., ./files/ab/userid/)
+                        if i > 0 and part.startswith('.') and part != '.':
+                            _log("error", f"Suspicious path component: {part} in {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Access denied - invalid file path"
+                            )
                     
                     file_path = normalized_path
                     
@@ -1922,13 +1925,11 @@ async def download_file(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found - invalid path")
             
             if not file_path.exists():
-                _log("error", f"File exists in DB but not on disk", {"user_id": current_user, "operation": "file_download"})
-            # 404 Not Found is correct for missing uploads
-            # 403 Forbidden would be for permission denied
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Upload not found or expired"
-            )
+                _log("error", f"File exists in DB but not on disk: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Upload not found or expired"
+                )
             
             # Return file for download
             return FileResponse(
@@ -1970,16 +1971,10 @@ async def download_file(
             detail="Database timeout while downloading file"
         )
     except Exception as e:
-        _log("error", f"Failed to download file", {"user_id": current_user, "operation": "file_download"})
+        _log("error", f"Failed to download file: {str(e)}", {"user_id": current_user, "operation": "file_download"})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Failed to upload chunk - service temporarily unavailable"
-        )
-    except (OSError, ValueError) as path_error:
-        _log("error", f"Invalid download path: {storage_path} - {path_error}", {"user_id": current_user, "operation": "file_download"})
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Invalid file path"
+            detail=f"Failed to download file - service temporarily unavailable"
         )
     
     # Handle range requests

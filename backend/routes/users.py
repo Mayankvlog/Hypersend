@@ -386,8 +386,8 @@ async def update_profile(
     except asyncio.TimeoutError:
         logger.error(f"Database operation timed out")
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database operation timed out. Please try again."
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
         )
     except HTTPException:
         raise  # Re-raise HTTP exceptions
@@ -537,7 +537,7 @@ async def search_users(q: str, search_type: str = None, current_user: str = Depe
         return {"users": users}
     except asyncio.TimeoutError:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Search operation timed out. Please try again."
         )
 
@@ -1909,7 +1909,7 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         
     except asyncio.TimeoutError:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Search operation timed out. Please try again."
         )
     except Exception as e:

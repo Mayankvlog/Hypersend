@@ -526,6 +526,34 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         status_code = 500
         detail = "Internal server error"
     
+    # Enhanced logging for debugging and monitoring
+    try:
+        client_ip = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("User-Agent", "unknown")[:100]
+        
+        # Log with structured format for better parsing
+        logger.error(
+            f"[HTTP_{status_code}] {request.method} {request.url.path} | "
+            f"Client: {client_ip} | UA: {user_agent} | "
+            f"Detail: {detail[:200]} | "
+            f"Debug: {debug_mode}"
+        )
+        
+        # Additional context for specific error types
+        if status_code == 404:
+            logger.warning(f"[404_DEBUG] Path not found: {request.url.path} | Method: {request.method}")
+        elif status_code == 401:
+            logger.warning(f"[401_DEBUG] Auth failed for: {request.url.path} | Client: {client_ip}")
+        elif status_code == 403:
+            logger.warning(f"[403_DEBUG] Access denied: {request.url.path} | Client: {client_ip}")
+        elif status_code >= 500:
+            logger.error(f"[500_DEBUG] Server error: {request.url.path} | Detail: {detail}")
+            
+    except Exception as log_error:
+        # Fallback logging if structured logging fails
+        logger.error(f"[LOG_ERROR] Failed to log error details: {log_error}")
+        logger.error(f"[HTTP_{status_code}] {request.method} {request.url.path} | {detail}")
+    
     # CRITICAL FIX: Prevent information disclosure in production mode
     if not debug_mode:
         # In production, sanitize error messages to prevent leaking internal details

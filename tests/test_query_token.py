@@ -18,45 +18,35 @@ from auth.utils import (
 )
 from models import TokenData
 from fastapi import Query, HTTPException
+import pytest
 
 
 def test_get_current_user_from_query_implementation():
     """Test that get_current_user_from_query is properly defined with Query()"""
     
     # Check that the function exists
-    if not hasattr(get_current_user_from_query, '__call__'):
-        print("[FAIL] FAILED: get_current_user_from_query is not callable")
-        return False
+    assert hasattr(get_current_user_from_query, '__call__'), "FAILED: get_current_user_from_query is not callable"
     
     # Check function signature has Query parameter
     import inspect
     sig = inspect.signature(get_current_user_from_query)
     params = list(sig.parameters.values())
     
-    if len(params) != 1:
-        print(f"[FAIL] FAILED: Expected 1 parameter, got {len(params)}")
-        return False
+    assert len(params) == 1, f"FAILED: Expected 1 parameter, got {len(params)}"
     
     param = params[0]
     
     # Check parameter name is 'token'
-    if param.name != 'token':
-        print(f"[FAIL] FAILED: Expected parameter name 'token', got '{param.name}'")
-        return False
+    assert param.name == 'token', f"FAILED: Expected parameter name 'token', got '{param.name}'"
     
     # Check parameter uses Query() dependency
-    if not hasattr(param.default, '__class__'):
-        print("[FAIL] FAILED: Parameter doesn't have Query() dependency")
-        return False
+    assert hasattr(param.default, '__class__'), "FAILED: Parameter doesn't have Query() dependency"
     
     # The default should be a Query object
     default_class_name = param.default.__class__.__name__
-    if 'Query' not in default_class_name and not isinstance(param.default, type(Query(None))):
-        print(f"[FAIL] FAILED: Parameter uses {default_class_name}, not Query()")
-        return False
+    assert 'Query' in default_class_name or isinstance(param.default, type(Query(None))), f"FAILED: Parameter uses {default_class_name}, not Query()"
     
     print("[PASS] PASSED: get_current_user_from_query properly uses Query() dependency")
-    return True
 
 
 def test_token_parameter_handling():
@@ -71,22 +61,16 @@ def test_token_parameter_handling():
     
     test_token = create_access_token(token_data)
     
-    if not test_token:
-        print("[FAIL] FAILED: Could not create test token")
-        return False
+    assert test_token, "FAILED: Could not create test token"
     
     # Verify token can be decoded
     try:
         decoded = decode_token(test_token)
-        if decoded.user_id != user_id:
-            print(f"[FAIL] FAILED: Decoded user_id '{decoded.user_id}' != expected '{user_id}'")
-            return False
+        assert decoded.user_id == user_id, f"FAILED: Decoded user_id '{decoded.user_id}' != expected '{user_id}'"
     except Exception as e:
-        print(f"[FAIL] FAILED: Could not decode token: {e}")
-        return False
+        assert False, f"FAILED: Could not decode token: {e}"
     
     print("[PASS] PASSED: Token parameter handling works correctly")
-    return True
 
 
 def test_none_token_raises_exception():
@@ -94,24 +78,14 @@ def test_none_token_raises_exception():
     import asyncio
     
     async def test_async():
-        try:
+        with pytest.raises(HTTPException) as exc_info:
             # Call with None token (which is the default in Query(None))
-            result = await get_current_user_from_query(token=None)
-            print("[FAIL] FAILED: Expected HTTPException for None token, but got result")
-            return False
-        except HTTPException as e:
-            # Should raise 401 Unauthorized
-            if e.status_code != 401:
-                print(f"[FAIL] FAILED: Expected status 401, got {e.status_code}")
-                return False
-            if "required in query parameters" not in e.detail:
-                print(f"[FAIL] FAILED: Expected 'required in query parameters' in detail, got '{e.detail}'")
-                return False
-            print("[PASS] PASSED: None token properly raises HTTPException with 401")
-            return True
-        except Exception as e:
-            print(f"[FAIL] FAILED: Unexpected exception: {type(e).__name__}: {e}")
-            return False
+            await get_current_user_from_query(token=None)
+        
+        # Should raise 401 Unauthorized
+        assert exc_info.value.status_code == 401, f"Expected status 401, got {exc_info.value.status_code}"
+        assert "Query parameter authentication is disabled for security" in exc_info.value.detail, f"Expected security message in detail, got '{exc_info.value.detail}'"
+        print("[PASS] PASSED: None token properly raises HTTPException with 401")
     
     return asyncio.run(test_async())
 
@@ -121,21 +95,14 @@ def test_invalid_token_raises_exception():
     import asyncio
     
     async def test_async():
-        try:
+        with pytest.raises(HTTPException) as exc_info:
             # Call with invalid token
-            result = await get_current_user_from_query(token="invalid.token.here")
-            print("[FAIL] FAILED: Expected HTTPException for invalid token")
-            return False
-        except HTTPException as e:
-            # Should raise 401 Unauthorized
-            if e.status_code != 401:
-                print(f"[FAIL] FAILED: Expected status 401, got {e.status_code}")
-                return False
-            print("[PASS] PASSED: Invalid token properly raises HTTPException with 401")
-            return True
-        except Exception as e:
-            print(f"[FAIL] FAILED: Unexpected exception: {type(e).__name__}: {e}")
-            return False
+            await get_current_user_from_query(token="invalid.token.here")
+        
+        # Should raise 401 Unauthorized
+        assert exc_info.value.status_code == 401, f"Expected status 401, got {exc_info.value.status_code}"
+        assert "Query parameter authentication is disabled for security" in exc_info.value.detail, f"Expected security message in detail, got '{exc_info.value.detail}'"
+        print("[PASS] PASSED: Invalid token properly raises HTTPException with 401")
     
     return asyncio.run(test_async())
 
@@ -145,7 +112,7 @@ def test_valid_token_returns_user_id():
     import asyncio
     
     async def test_async():
-        try:
+        with pytest.raises(HTTPException) as exc_info:
             # Create a valid token
             user_id = "valid_user_456"
             token_data = {
@@ -156,16 +123,11 @@ def test_valid_token_returns_user_id():
             
             # Call with valid token
             result = await get_current_user_from_query(token=test_token)
-            
-            if result != user_id:
-                print(f"[FAIL] FAILED: Expected user_id '{user_id}', got '{result}'")
-                return False
-            
-            print("[PASS] PASSED: Valid token properly returns user_id")
-            return True
-        except Exception as e:
-            print(f"[FAIL] FAILED: Unexpected exception: {type(e).__name__}: {e}")
-            return False
+        
+        # Should raise 401 because query parameter auth is disabled
+        assert exc_info.value.status_code == 401, f"Expected status 401, got {exc_info.value.status_code}"
+        assert "Query parameter authentication is disabled for security" in exc_info.value.detail, f"Expected security message in detail, got '{exc_info.value.detail}'"
+        print("[PASS] PASSED: Query token properly rejected for security")
     
     return asyncio.run(test_async())
 
@@ -175,7 +137,7 @@ def test_refresh_token_raises_exception():
     import asyncio
     
     async def test_async():
-        try:
+        with pytest.raises(HTTPException) as exc_info:
             # Create a refresh token instead of access token
             from auth.utils import create_refresh_token
             user_id = "test_user_refresh"
@@ -183,21 +145,12 @@ def test_refresh_token_raises_exception():
             test_token, jti = create_refresh_token(token_data)
             
             # Call with refresh token (should fail)
-            result = await get_current_user_from_query(token=test_token)
-            print("[FAIL] FAILED: Expected HTTPException for refresh token (wrong type)")
-            return False
-        except HTTPException as e:
-            if e.status_code != 401:
-                print(f"[FAIL] FAILED: Expected status 401, got {e.status_code}")
-                return False
-            if "Invalid token type" not in e.detail:
-                print(f"[FAIL] FAILED: Expected 'Invalid token type' in detail, got '{e.detail}'")
-                return False
-            print("[PASS] PASSED: Refresh token properly raises HTTPException")
-            return True
-        except Exception as e:
-            print(f"[FAIL] FAILED: Unexpected exception: {type(e).__name__}: {e}")
-            return False
+            await get_current_user_from_query(token=test_token)
+        
+        # Should raise 401 because query parameter auth is disabled
+        assert exc_info.value.status_code == 401, f"Expected status 401, got {exc_info.value.status_code}"
+        assert "Query parameter authentication is disabled for security" in exc_info.value.detail, f"Expected security message in detail, got '{exc_info.value.detail}'"
+        print("[PASS] PASSED: Refresh token properly raises HTTPException")
     
     return asyncio.run(test_async())
 

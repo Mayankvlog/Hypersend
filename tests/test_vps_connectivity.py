@@ -7,9 +7,13 @@ Diagnoses connection issues with zaply.in.net backend server
 import requests
 import json
 import sys
+import warnings
 from urllib.parse import urljoin
 from datetime import datetime
 from typing import Dict, Tuple, Optional
+
+# Suppress SSL warnings for testing
+warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
 # Test configuration
 PROD_DOMAIN = "zaply.in.net"
@@ -132,7 +136,7 @@ def check_dns_resolution() -> bool:
         print_error(f"DNS check failed: {str(e)}")
         return False
 
-def test_endpoints_batch() -> Dict[str, Tuple[bool, Optional[Dict], Optional[str]]]:
+def check_endpoints_batch() -> Dict[str, Tuple[bool, Optional[Dict], Optional[str]]]:
     """Test all endpoints"""
     print_section("API Endpoint Connectivity Tests")
     
@@ -182,7 +186,7 @@ def check_cors_configuration() -> bool:
         print_warning(f"Could not test CORS: {str(e)}")
         return False
 
-def test_api_functionality() -> bool:
+def check_api_functionality() -> bool:
     """Test basic API functionality"""
     print_section("API Functionality Test")
     
@@ -292,9 +296,9 @@ def main():
     
     # Run tests
     dns_ok = check_dns_resolution()
-    results = test_endpoints_batch()
+    results = check_endpoints_batch()
     cors_ok = check_cors_configuration()
-    api_ok = test_api_functionality()
+    api_ok = check_api_functionality()
     
     # Generate report
     generate_report(results)

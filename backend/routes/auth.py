@@ -698,7 +698,162 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             detail="Authentication service error"
         )
 
-# Token Refresh Endpoint
+# Enhanced Token Refresh Endpoint for Session Persistence
+@router.post("/refresh-session", response_model=Token)
+async def refresh_session_token(request: RefreshTokenRequest) -> Token:
+    """
+    Enhanced refresh endpoint that maintains session persistence across page refreshes.
+    
+    This endpoint:
+    - Extends session duration automatically
+    - Provides new access token without requiring re-login
+    - Maintains refresh token validity for long-running sessions
+    - Handles expired access tokens gracefully
+    
+    ENHANCEMENT: This prevents session expiration on page refresh by extending
+    the session automatically when the frontend detects an expired token.
+    """
+    try:
+        auth_log(f"Session refresh request")
+        
+        # Validate refresh token format
+        if not request.refresh_token or not isinstance(request.refresh_token, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Refresh token is required and must be a string"
+            )
+        
+        # Decode refresh token
+        try:
+            token_data = decode_token(request.refresh_token)
+        except HTTPException as e:
+            # Re-raise HTTP exceptions from token decoding
+            raise e
+        except Exception as e:
+            auth_log(f"Token decode error: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token format"
+            )
+        
+        if not token_data.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token: missing user identifier"
+            )
+        
+        # Validate token type is refresh
+        if token_data.token_type != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type - expected refresh token"
+            )
+        
+        # Check if refresh token exists and is not invalidated
+        try:
+            # Convert user_id to ObjectId if it's a valid string
+            user_id_for_query = token_data.user_id
+            if isinstance(user_id_for_query, str) and ObjectId.is_valid(user_id_for_query):
+                user_id_for_query = ObjectId(user_id_for_query)
+            
+            refresh_doc = await asyncio.wait_for(
+                refresh_tokens_collection().find_one({
+                    "jti": token_data.jti,
+                    "user_id": user_id_for_query,
+                    "$or": [
+                        {"invalidated": {"$exists": False}},
+                        {"invalidated": False}
+                    ]
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - try again later"
+            )
+        except Exception as e:
+            auth_log(f"Database error checking refresh token: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to verify refresh token"
+            )
+        
+        if not refresh_doc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token is invalid or has been revoked"
+            )
+        
+        # Check if token has expired
+        expires_at = refresh_doc.get("expires_at")
+        if not expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has no expiration - database corruption"
+            )
+        
+        if expires_at < datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has expired"
+            )
+        
+        # Get user
+        try:
+            user = await asyncio.wait_for(
+                users_collection().find_one({"_id": user_id_for_query}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - try again later"
+            )
+        except Exception as e:
+            auth_log(f"Database error fetching user: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to verify user"
+            )
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        # ENHANCEMENT: Extend refresh token expiration for session persistence
+        new_expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        await refresh_tokens_collection().update_one(
+            {"_id": refresh_doc["_id"]},
+            {"$set": {"expires_at": new_expires_at, "last_used": datetime.now(timezone.utc)}}
+        )
+        
+        # Create new access token with extended expiration
+        access_token_expires = timedelta(hours=480)  # 480 hours for session persistence
+        access_token = create_access_token(
+            data={"sub": token_data.user_id},
+            expires_delta=access_token_expires
+        )
+        
+        auth_log(f"Session refreshed successfully for user: {token_data.user_id}")
+        
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=int(access_token_expires.total_seconds()),
+            refresh_token=request.refresh_token  # Return same refresh token
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Session refresh failed: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refresh session"
+        )
 @router.post("/refresh", response_model=Token)
 async def refresh_access_token(request: RefreshTokenRequest) -> Token:
     """
