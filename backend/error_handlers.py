@@ -262,6 +262,23 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
         else:
             detail_message = f"{field}: {msg}"
     
+    # Generate helpful hints based on the error type
+    hints = []
+    if error_details["validation_errors"]:
+        first_error = error_details["validation_errors"][0]
+        field = first_error.get("field", "unknown")
+        msg = first_error.get("message", "validation failed")
+        
+        # Add specific hints based on common validation errors
+        if "email" in field.lower() and "valid email" in msg.lower():
+            hints.append("Please provide a valid email address (e.g., user@example.com)")
+        elif "password" in field.lower() and "at least" in msg.lower():
+            hints.append("Password must meet the minimum length requirement")
+        elif "missing" in first_error.get("type", "").lower():
+            hints.append(f"Please provide the required {field} field")
+        else:
+            hints.append("Please check your input and try again")
+    
     response = {
         "status_code": status_code,
         "error": "Validation Error",
@@ -270,7 +287,8 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
         "error_count": error_details["error_count"],
         "timestamp": error_details["timestamp"],
         "path": str(request.url.path),
-        "method": request.method
+        "method": request.method,
+        "hints": hints
     }
     
     # Add security headers to validation error responses

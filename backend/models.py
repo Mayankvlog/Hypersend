@@ -98,7 +98,6 @@ class UserLogin(BaseModel):
         # Ensure email is not excessively long
         if len(v) > 254:
             raise ValueError('Email address too long')
-        return v
         # Standard email validation pattern
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
@@ -707,4 +706,5 @@ class TokenData(BaseModel):
     """Token data extracted from JWT payload"""
     user_id: str
     token_type: str
+    jti: Optional[str] = None  # JWT ID for token revocation
     payload: dict = Field(default_factory=dict)  # Full JWT payload for additional token validation

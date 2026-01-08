@@ -264,6 +264,7 @@ def decode_token(token: str) -> TokenData:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")
         token_type: str = payload.get("token_type")
+        jti: Optional[str] = payload.get("jti")  # CRITICAL FIX: Extract JTI for token revocation
         
         # Enhanced 'sub' field validation
         if not user_id or not isinstance(user_id, str):
@@ -318,11 +319,12 @@ def decode_token(token: str) -> TokenData:
                     headers={"WWW-Authenticate": "Bearer"},
                 )
         
-        # Create TokenData with additional payload info for upload tokens
+        # Return TokenData with jti for refresh token validation
         return TokenData(
-            user_id=user_id, 
+            user_id=user_id,
             token_type=token_type,
-            payload=payload  # Store full payload for upload token validation
+            jti=jti,
+            payload=payload
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(

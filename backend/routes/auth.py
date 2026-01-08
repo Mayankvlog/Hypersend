@@ -3,7 +3,7 @@ from models import (
     UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
     ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse,
     QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
-    QRCodeSession
+    QRCodeSession, TokenData
 )
 from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
 from auth.utils import (
@@ -701,27 +701,78 @@ async def login(credentials: UserLogin, request: Request) -> Token:
 # Token Refresh Endpoint
 @router.post("/refresh", response_model=Token)
 async def refresh_access_token(request: RefreshTokenRequest) -> Token:
-    """Refresh access token using refresh token"""
+    """
+    Refresh access token using refresh token without expiring session.
+    
+    CRITICAL FIX: Refresh token is NOT invalidated/deleted on refresh
+    This allows the session to continue without expiring on page refresh.
+    Only logout or manual token revocation should invalidate the refresh token.
+    """
     try:
         auth_log(f"Token refresh request")
         
+        # Validate refresh token format
+        if not request.refresh_token or not isinstance(request.refresh_token, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Refresh token is required and must be a string"
+            )
+        
         # Decode refresh token
-        token_data = decode_token(request.refresh_token)
+        try:
+            token_data = decode_token(request.refresh_token)
+        except HTTPException as e:
+            # Re-raise HTTP exceptions from token decoding
+            raise e
+        except Exception as e:
+            auth_log(f"Token decode error: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token format"
+            )
+        
         if not token_data.user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
+                detail="Invalid refresh token: missing user identifier"
+            )
+        
+        # Validate token type is refresh
+        if token_data.token_type != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type - expected refresh token"
             )
         
         # Check if refresh token exists and is not invalidated
-        refresh_doc = await refresh_tokens_collection().find_one({
-            "jti": token_data.jti,
-            "user_id": token_data.user_id,
-            "$or": [
-                {"invalidated": {"$exists": False}},
-                {"invalidated": False}
-            ]
-        })
+        try:
+            # Convert user_id to ObjectId if it's a valid string
+            user_id_for_query = token_data.user_id
+            if isinstance(user_id_for_query, str) and ObjectId.is_valid(user_id_for_query):
+                user_id_for_query = ObjectId(user_id_for_query)
+            
+            refresh_doc = await asyncio.wait_for(
+                refresh_tokens_collection().find_one({
+                    "jti": token_data.jti,
+                    "user_id": user_id_for_query,
+                    "$or": [
+                        {"invalidated": {"$exists": False}},
+                        {"invalidated": False}
+                    ]
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - try again later"
+            )
+        except Exception as e:
+            auth_log(f"Database error checking refresh token: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to verify refresh token"
+            )
         
         if not refresh_doc:
             raise HTTPException(
@@ -730,31 +781,75 @@ async def refresh_access_token(request: RefreshTokenRequest) -> Token:
             )
         
         # Check if token has expired
-        if refresh_doc["expires_at"] < datetime.now(timezone.utc):
+        expires_at = refresh_doc.get("expires_at")
+        if not expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has no expiration - database corruption"
+            )
+        
+        if expires_at < datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token has expired"
             )
         
         # Get user
-        user = await users_collection().find_one({"_id": token_data.user_id})
+        try:
+            user = await asyncio.wait_for(
+                users_collection().find_one({"_id": ObjectId(token_data.user_id)}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - try again later"
+            )
+        except Exception as e:
+            auth_log(f"User lookup error: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to verify user"
+            )
+        
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
         
-        # Create new access token
-        new_access_token = create_access_token(
-            data={"sub": str(user["_id"])},
-            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        )
+        # CRITICAL FIX: Update refresh token last_used timestamp to extend session
+        # Do NOT invalidate the refresh token - just update the timestamp
+        try:
+            await asyncio.wait_for(
+                refresh_tokens_collection().update_one(
+                    {"jti": token_data.jti},
+                    {"$set": {"last_used": datetime.now(timezone.utc)}}
+                ),
+                timeout=5.0
+            )
+        except Exception as e:
+            auth_log(f"Warning: Failed to update refresh token timestamp: {e}")
+            # Don't fail the refresh if we can't update timestamp
+        
+        # Create new access token with proper error handling
+        try:
+            new_access_token = create_access_token(
+                data={"sub": str(user["_id"])},
+                expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            )
+        except Exception as e:
+            auth_log(f"Token creation error: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create new access token"
+            )
         
         auth_log(f"SUCCESS: Token refreshed successfully for user: {token_data.user_id}")
         
         return Token(
             access_token=new_access_token,
-            refresh_token=request.refresh_token,
+            refresh_token=request.refresh_token,  # Return the SAME refresh token (not invalidated)
             token_type="bearer"
         )
         
@@ -764,7 +859,7 @@ async def refresh_access_token(request: RefreshTokenRequest) -> Token:
         auth_log(f"Token refresh error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Token refresh failed"
+            detail="Token refresh failed - please try again"
         )
 
 @router.post("/logout")

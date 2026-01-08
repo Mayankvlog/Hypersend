@@ -2470,6 +2470,41 @@ def _ensure_session_validity(request: Request, current_user: str, operation: str
         )
 
 
+def _create_standard_error_response(status_code: int, error_type: str, detail: str, path: str = None, method: str = None, hints: list = None) -> HTTPException:
+    """
+    Create a standardized error response with all required fields.
+    
+    Args:
+        status_code: HTTP status code
+        error_type: Type of error
+        detail: Error detail message
+        path: Request path (optional)
+        method: HTTP method (optional)
+        hints: List of hints for the user (optional)
+        
+    Returns:
+        HTTPException with standardized response format
+    """
+    from datetime import datetime, timezone
+    import json
+    
+    # Create standardized error response
+    error_response = {
+        "status_code": status_code,
+        "error": error_type,
+        "detail": detail,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "path": path or "unknown",
+        "method": method or "unknown",
+        "hints": hints or []
+    }
+    
+    return HTTPException(
+        status_code=status_code,
+        detail=json.dumps(error_response)
+    )
+
+
 def _handle_comprehensive_error(error: Exception, operation: str, user_id: str, **context) -> HTTPException:
     """
     Comprehensive error handler covering all HTTP status codes (300,400,500,600).
@@ -2486,368 +2521,328 @@ def _handle_comprehensive_error(error: Exception, operation: str, user_id: str, 
     error_type = type(error).__name__
     error_msg = str(error).lower()
     
-    # Enhanced logging with full context
-    _log("error", f"Comprehensive error handling for {operation}", {
-        "user_id": user_id,
-        "operation": operation,
-        "error_type": error_type,
-        "error_message": str(error),
-        "error_class": error.__class__.__name__,
-        **context
-    })
-    
-    # 300-series: Redirection errors
-    if error_type in ["MultipleChoicesError", "AmbiguousError"]:
-        return HTTPException(
-            status_code=status.HTTP_300_MULTIPLE_CHOICES,
-            detail=f"Multiple options available for {operation}. Please specify your choice: {str(error)}"
-        )
-    elif error_type in ["MovedPermanentlyError", "RedirectError"]:
-        return HTTPException(
-            status_code=status.HTTP_301_MOVED_PERMANENTLY,
-            detail=f"Resource permanently moved for {operation}: {str(error)}"
-        )
-    elif error_type in ["FoundError", "TemporaryRedirectError"]:
-        return HTTPException(
-            status_code=status.HTTP_302_FOUND,
-            detail=f"Resource temporarily moved for {operation}: {str(error)}"
-        )
-    
-    # 400-series: Client errors
-    elif error_type in ["ValidationError", "ValueError", "InvalidFormatError"]:
-        return HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid request for {operation}: {str(error)}. Please check your input and try again."
-        )
-    elif error_type in ["UnauthorizedError", "AuthenticationError"]:
-        return HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Authentication required for {operation}: {str(error)}. Please login and try again."
-        )
-    elif error_type in ["ForbiddenError", "PermissionError", "AccessDeniedError"]:
-        return HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Access denied for {operation}: {str(error)}. You don't have permission to perform this action."
-        )
-    elif error_type in ["NotFoundError", "FileNotFoundError", "MissingResourceError"]:
-        return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Resource not found for {operation}: {str(error)}. The requested resource may have been deleted or moved."
-        )
-    elif error_type in ["MethodNotAllowedError", "UnsupportedMethodError"]:
-        return HTTPException(
-            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-            detail=f"Method not allowed for {operation}: {str(error)}. Please check the HTTP method."
-        )
-    elif error_type in ["NotAcceptableError", "FormatNotSupportedError"]:
-        return HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE,
-            detail=f"Format not acceptable for {operation}: {str(error)}. Please check content negotiation."
-        )
-    elif error_type in ["TimeoutError", "RequestTimeoutError", "asyncio.TimeoutError"]:
-        return HTTPException(
-            status_code=status.HTTP_408_REQUEST_TIMEOUT,
-            detail=f"Request timeout for {operation}: {str(error)}. The request took too long to process."
-        )
-    elif error_type in ["ConflictError", "DataConflictError"]:
-        return HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Conflict detected for {operation}: {str(error)}. The request conflicts with current state."
-        )
-    elif error_type in ["GoneError", "ResourceExpiredError"]:
-        return HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail=f"Resource gone for {operation}: {str(error)}. The requested resource is no longer available."
-        )
-    elif error_type in ["LengthRequiredError", "MissingContentLengthError"]:
-        return HTTPException(
-            status_code=status.HTTP_411_LENGTH_REQUIRED,
-            detail=f"Content length required for {operation}: {str(error)}. Please provide Content-Length header."
-        )
-    elif error_type in ["PreconditionFailedError", "ConditionNotMetError"]:
-        return HTTPException(
-            status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail=f"Precondition failed for {operation}: {str(error)}. The request preconditions were not met."
-        )
-    elif error_type in ["PayloadTooLargeError", "SizeError", "FileSizeError"]:
-        return HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Request entity too large for {operation}: {str(error)}. Please reduce the file size or use chunked upload."
-        )
-    elif error_type in ["URITooLongError", "PathTooLongError"]:
-        return HTTPException(
-            status_code=status.HTTP_414_URI_TOO_LONG,
-            detail=f"URI too long for {operation}: {str(error)}. Please shorten the request URI."
-        )
-    elif error_type in ["UnsupportedMediaTypeError", "InvalidMimeTypeError"]:
-        return HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported media type for {operation}: {str(error)}. Please use a supported file format."
-        )
-    elif error_type in ["RangeNotSatisfiableError", "InvalidRangeError"]:
-        return HTTPException(
-            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
-            detail=f"Range not satisfiable for {operation}: {str(error)}. Please check the requested range."
-        )
-    elif error_type in ["ExpectationFailedError", "InvalidExpectationError"]:
-        return HTTPException(
-            status_code=status.HTTP_417_EXPECTATION_FAILED,
-            detail=f"Expectation failed for {operation}: {str(error)}. The server could not meet the request expectations."
-        )
-    elif error_type in ["TeapotError", "ImATeapotError"]:
-        return HTTPException(
-            status_code=status.HTTP_418_IM_A_TEAPOT,
-            detail=f"I'm a teapot for {operation}: {str(error)}. This is an Easter egg error!"
-        )
-    elif error_type in ["MisdirectedRequestError", "WrongHostError"]:
-        return HTTPException(
-            status_code=status.HTTP_421_MISDIRECTED_REQUEST,
-            detail=f"Misdirected request for {operation}: {str(error)}. The request was sent to the wrong server."
-        )
-    elif error_type in ["UnprocessableEntityError", "SemanticError"]:
-        return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Unprocessable entity for {operation}: {str(error)}. The request was well-formed but semantically erroneous."
-        )
-    elif error_type in ["LockedError", "ResourceLockedError"]:
-        return HTTPException(
-            status_code=status.HTTP_423_LOCKED,
-            detail=f"Resource locked for {operation}: {str(error)}. The requested resource is currently locked."
-        )
-    elif error_type in ["FailedDependencyError", "DependencyError"]:
-        return HTTPException(
-            status_code=status.HTTP_424_FAILED_DEPENDENCY,
-            detail=f"Failed dependency for {operation}: {str(error)}. The request failed due to a dependency failure."
-        )
-    elif error_type in ["TooEarlyError", "PrematureResponseError"]:
-        return HTTPException(
-            status_code=status.HTTP_425_TOO_EARLY,
-            detail=f"Too early for {operation}: {str(error)}. The server is unwilling to risk processing the request."
-        )
-    elif error_type in ["UpgradeRequiredError", "ProtocolUpgradeError"]:
-        return HTTPException(
-            status_code=status.HTTP_426_UPGRADE_REQUIRED,
-            detail=f"Upgrade required for {operation}: {str(error)}. Please upgrade your protocol."
-        )
-    elif error_type in ["PreconditionRequiredError", "MissingPreconditionError"]:
-        return HTTPException(
-            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
-            detail=f"Precondition required for {operation}: {str(error)}. The request requires preconditions."
-        )
-    elif error_type in ["TooManyRequestsError", "RateLimitError", "ThrottledError"]:
-        return HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many requests for {operation}: {str(error)}. Please rate limit your requests and try again later."
-        )
-    elif error_type in ["RequestHeaderFieldsTooLargeError", "HeaderTooLargeError"]:
-        return HTTPException(
-            status_code=status.HTTP_431_REQUEST_HEADER_FIELDS_TOO_LARGE,
-            detail=f"Request header fields too large for {operation}: {str(error)}. Please reduce header size."
-        )
-    elif error_type in ["UnavailableForLegalReasonsError", "LegalRestrictionError"]:
-        return HTTPException(
-            status_code=status.HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS,
-            detail=f"Unavailable for legal reasons for {operation}: {str(error)}. Access is legally restricted."
-        )
-    
-    # 500-series: Server errors
-    elif error_type in ["InternalServerError", "SystemError", "RuntimeError"]:
-        return HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error for {operation}: {str(error)}. The server encountered an unexpected condition."
-        )
-    elif error_type in ["NotImplementedError", "UnsupportedOperationError"]:
-        return HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail=f"Not implemented for {operation}: {str(error)}. The server does not support this functionality."
-        )
-    elif error_type in ["BadGatewayError", "GatewayError"]:
-        return HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Bad gateway for {operation}: {str(error)}. The server received an invalid response from upstream."
-        )
-    elif error_type in ["ServiceUnavailableError", "MaintenanceError"]:
-        return HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Service unavailable for {operation}: {str(error)}. The server is temporarily unavailable."
-        )
-    elif error_type in ["GatewayTimeoutError", "UpstreamTimeoutError"]:
-        return HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=f"Gateway timeout for {operation}: {str(error)}. The upstream server timed out."
-        )
-    elif error_type in ["HTTPVersionNotSupportedError", "ProtocolVersionError"]:
-        return HTTPException(
-            status_code=status.HTTP_505_HTTP_VERSION_NOT_SUPPORTED,
-            detail=f"HTTP version not supported for {operation}: {str(error)}. Please use a supported HTTP version."
-        )
-    elif error_type in ["VariantAlsoNegotiatesError", "ContentNegotiationError"]:
-        return HTTPException(
-            status_code=status.HTTP_506_VARIANT_ALSO_NEGOTIATES,
-            detail=f"Variant also negotiates for {operation}: {str(error)}. Content negotiation failed."
-        )
-    elif error_type in ["InsufficientStorageError", "DiskFullError", "OutOfSpaceError"]:
-        return HTTPException(
-            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-            detail=f"Insufficient storage for {operation}: {str(error)}. The server has insufficient storage space."
-        )
-    elif error_type in ["LoopDetectedError", "RedirectLoopError"]:
-        return HTTPException(
-            status_code=status.HTTP_508_LOOP_DETECTED,
-            detail=f"Loop detected for {operation}: {str(error)}. The server detected an infinite loop."
-        )
-    elif error_type in ["NotExtendedError", "ExtensionRequiredError"]:
-        return HTTPException(
-            status_code=status.HTTP_510_NOT_EXTENDED,
-            detail=f"Not extended for {operation}: {str(error)}. The request requires further extensions."
-        )
-    elif error_type in ["NetworkAuthenticationRequiredError", "AuthRequiredError"]:
-        return HTTPException(
-            status_code=status.HTTP_511_NETWORK_AUTHENTICATION_REQUIRED,
-            detail=f"Network authentication required for {operation}: {str(error)}. Network-level authentication is needed."
-        )
-    
-    # 600-series: Custom/Network protocol errors
-    elif error_type in ["ProtocolError", "NetworkProtocolError", "ConnectionError"]:
-        return HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Protocol error for {operation}: {str(error)}. A network protocol error occurred."
-        )
-    elif error_type in ["DNSError", "HostNotFoundError", "ResolutionError"]:
-        return HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"DNS resolution error for {operation}: {str(error)}. Could not resolve the hostname."
-        )
-    elif error_type in ["ConnectionRefusedError", "ServiceNotRunningError"]:
-        return HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Connection refused for {operation}: {str(error)}. The service is not running or refusing connections."
-        )
-    elif error_type in ["ConnectionResetError", "ConnectionLostError"]:
-        return HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Connection reset for {operation}: {str(error)}. The connection was unexpectedly terminated."
-        )
-    elif error_type in ["ConnectionTimeoutError", "NetworkTimeoutError"]:
-        return HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=f"Connection timeout for {operation}: {str(error)}. The connection timed out."
-        )
-    
-    # Default: Internal server error
-    """
-    Comprehensive error handler for all file operations with proper HTTP status codes.
-    
-    Args:
-        error: The exception that occurred
-        operation: The operation being performed (e.g., "chunk_upload", "file_assembly", "file_download")
-        user_id: The user ID performing the operation
-        upload_id: Optional upload ID for context
-        file_id: Optional file ID for context
-        **context: Additional context for debugging
-    
-    Returns:
-        HTTPException with appropriate status code and detail
-    """
-    error_type = type(error).__name__
-    error_msg = str(error).lower()
-    
     # Log the error with full context
-    _log("error", f"Error in {operation}: {error_type}: {str(error)}", {
+    log_context = {
         "user_id": user_id,
         "operation": operation,
-        "upload_id": upload_id,
-        "file_id": file_id,
         "error_type": error_type,
         "error_message": str(error),
         **context
-    })
+    }
+    
+    # Add optional IDs if they exist in context
+    if "upload_id" in context:
+        log_context["upload_id"] = context["upload_id"]
+    if "file_id" in context:
+        log_context["file_id"] = context["file_id"]
+    
+    _log("error", f"Comprehensive error handling for {operation}", log_context)
     
     # Handle different error types with appropriate HTTP status codes
     
     # 300-series: Redirection errors (rare in file operations)
     if error_type in ["RedirectError", "MultipleChoicesError"]:
-        return HTTPException(
+        return _create_standard_error_response(
             status_code=status.HTTP_300_MULTIPLE_CHOICES,
-            detail=f"Multiple options available for {operation}. Please specify your choice."
+            error_type="Multiple Choices",
+            detail=f"Multiple options available for {operation}. Please specify your choice: {str(error)}",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Please specify your choice from available options"]
+        )
+    elif error_type in ["MovedPermanentlyError", "RedirectError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_301_MOVED_PERMANENTLY,
+            error_type="Moved Permanently",
+            detail=f"Resource permanently moved for {operation}: {str(error)}",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["The resource has been permanently moved to a new location"]
+        )
+    elif error_type in ["FoundError", "TemporaryRedirectError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_302_FOUND,
+            error_type="Found",
+            detail=f"Resource temporarily moved for {operation}: {str(error)}",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["The resource has been temporarily moved to a new location"]
         )
     
     # 400-series: Client errors
-    elif error_type in ["ValidationError", "ValueError"]:
-        return HTTPException(
+    elif error_type in ["ValidationError", "ValueError", "InvalidFormatError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid request for {operation}: {str(error)}"
+            error_type="Validation Error",
+            detail=f"Invalid request for {operation}: {str(error)}. Please check your input and try again.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Please check your input format and values", "Ensure all required fields are provided"]
         )
-    elif error_type in ["PermissionError", "AccessDeniedError"]:
-        return HTTPException(
+    elif error_type in ["UnauthorizedError", "AuthenticationError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            error_type="Authentication Error",
+            detail=f"Authentication required for {operation}: {str(error)}. Please login and try again.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Please login with valid credentials", "Check if your token has expired"]
+        )
+    elif error_type in ["ForbiddenError", "PermissionError", "AccessDeniedError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Permission denied for {operation}: {str(error)}"
+            error_type="Forbidden",
+            detail=f"Access denied for {operation}: {str(error)}. You don't have permission to perform this action.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["You don't have permission to access this resource", "Contact administrator for access"]
         )
-    elif error_type in ["FileNotFoundError", "NotFoundError"]:
-        return HTTPException(
+    elif error_type in ["NotFoundError", "FileNotFoundError", "MissingResourceError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Resource not found for {operation}: {str(error)}"
+            error_type="Not Found",
+            detail=f"Resource not found for {operation}: {str(error)}. The requested resource may have been deleted or moved.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Check if the resource ID is correct", "The resource may have been deleted"]
         )
-    elif error_type in ["TimeoutError", "asyncio.TimeoutError"]:
-        return HTTPException(
+    elif error_type in ["TimeoutError", "RequestTimeoutError", "asyncio.TimeoutError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_408_REQUEST_TIMEOUT,
-            detail=f"Request timeout for {operation}: {str(error)}"
+            error_type="Request Timeout",
+            detail=f"Request timeout for {operation}: {str(error)}. The request took too long to process.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try again with a smaller request", "Check your network connection"]
         )
-    elif error_type in ["SizeError", "OSError"] and "size" in error_msg:
-        return HTTPException(
+    elif error_type in ["ConflictError", "DataConflictError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            error_type="Conflict",
+            detail=f"Conflict detected for {operation}: {str(error)}. The request conflicts with current state.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["The resource may have been modified by another user", "Try refreshing and retry"]
+        )
+    elif error_type in ["PayloadTooLargeError", "SizeError", "FileSizeError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large for {operation}: {str(error)}"
+            error_type="Payload Too Large",
+            detail=f"Request entity too large for {operation}: {str(error)}. Please reduce the file size or use chunked upload.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Use chunked upload for large files", "Compress the file before uploading"]
         )
-    elif error_type in ["FormatError", "TypeError"]:
-        return HTTPException(
+    elif error_type in ["UnsupportedMediaTypeError", "InvalidMimeTypeError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported format for {operation}: {str(error)}"
+            error_type="Unsupported Media Type",
+            detail=f"Unsupported media type for {operation}: {str(error)}. Please use a supported file format.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Check supported file formats", "Convert file to supported format"]
         )
-    elif error_type in ["RateLimitError", "TooManyRequestsError"]:
-        return HTTPException(
+    elif error_type in ["TooManyRequestsError", "RateLimitError", "ThrottledError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many requests for {operation}: {str(error)}"
+            error_type="Too Many Requests",
+            detail=f"Too many requests for {operation}: {str(error)}. Please rate limit your requests and try again later.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Wait before making another request", "Check rate limit policies"]
         )
     
     # 500-series: Server errors
-    elif error_type in ["ConnectionError", "DatabaseError", "MongoError"]:
-        return HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Service unavailable for {operation}: {str(error)}"
-        )
-    elif error_type in ["NetworkError", "SocketError"]:
-        return HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Network error for {operation}: {str(error)}"
-        )
-    elif "timeout" in error_msg or "timed out" in error_msg:
-        return HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=f"Gateway timeout for {operation}: {str(error)}"
-        )
-    elif "disk" in error_msg and ("full" in error_msg or "space" in error_msg):
-        return HTTPException(
-            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-            detail=f"Insufficient storage for {operation}: {str(error)}"
-        )
-    elif error_type in ["OSError", "IOError", "SystemError"]:
-        return HTTPException(
+    elif error_type in ["InternalServerError", "SystemError", "RuntimeError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"System error for {operation}: {str(error)}"
+            error_type="Internal Server Error",
+            detail=f"Internal server error for {operation}: {str(error)}. The server encountered an unexpected condition.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try again later", "Contact support if the problem persists"]
+        )
+    elif error_type in ["ServiceUnavailableError", "MaintenanceError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error_type="Service Unavailable",
+            detail=f"Service unavailable for {operation}: {str(error)}. The server is temporarily unavailable.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try again later", "Service may be under maintenance"]
+        )
+    elif error_type in ["InsufficientStorageError", "DiskFullError", "OutOfSpaceError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            error_type="Insufficient Storage",
+            detail=f"Insufficient storage for {operation}: {str(error)}. The server has insufficient storage space.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try uploading a smaller file", "Contact administrator about storage limits"]
         )
     
-    # 600-series: Network/protocol errors (custom handling)
-    elif error_type in ["ProtocolError", "NetworkProtocolError"]:
-        return HTTPException(
+    # 600-series: Custom/Network protocol errors
+    elif error_type in ["ProtocolError", "NetworkProtocolError", "ConnectionError"]:
+        return _create_standard_error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Protocol error for {operation}: {str(error)}"
+            error_type="Protocol Error",
+            detail=f"Protocol error for {operation}: {str(error)}. A network protocol error occurred.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Check your network connection", "Try again later"]
         )
     
     # Default: Internal server error
     else:
-        return HTTPException(
+        return _create_standard_error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error for {operation}: {str(error)} ({error_type}). Please contact support if this persists."
+            error_type="Unexpected Error",
+            detail=f"Unexpected error for {operation}: {str(error)} ({error_type}). Please contact support if this persists.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try again later", "Contact support if the problem persists"]
+        )
+    if "file_id" in context:
+        log_context["file_id"] = context["file_id"]
+    
+    _log("error", f"Comprehensive error handling for {operation}", log_context)
+    
+    # Handle different error types with appropriate HTTP status codes
+    
+    # 300-series: Redirection errors (rare in file operations)
+    if error_type in ["RedirectError", "MultipleChoicesError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_300_MULTIPLE_CHOICES,
+            error_type="Multiple Choices",
+            detail=f"Multiple options available for {operation}. Please specify your choice: {str(error)}",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Please specify your choice from available options"]
+        )
+    
+    # 400-series: Client errors
+    elif error_type in ["ValidationError", "ValueError", "InvalidFormatError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type="Validation Error",
+            detail=f"Invalid request for {operation}: {str(error)}. Please check your input and try again.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Please check your input format and values", "Ensure all required fields are provided"]
+        )
+    elif error_type in ["UnauthorizedError", "AuthenticationError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            error_type="Authentication Error",
+            detail=f"Authentication required for {operation}: {str(error)}. Please login and try again.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Please login with valid credentials", "Check if your token has expired"]
+        )
+    elif error_type in ["ForbiddenError", "PermissionError", "AccessDeniedError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_type="Forbidden",
+            detail=f"Access denied for {operation}: {str(error)}. You don't have permission to perform this action.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["You don't have permission to access this resource", "Contact administrator for access"]
+        )
+    elif error_type in ["NotFoundError", "FileNotFoundError", "MissingResourceError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error_type="Not Found",
+            detail=f"Resource not found for {operation}: {str(error)}. The requested resource may have been deleted or moved.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Check if the resource ID is correct", "The resource may have been deleted"]
+        )
+    elif error_type in ["TimeoutError", "RequestTimeoutError", "asyncio.TimeoutError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
+            error_type="Request Timeout",
+            detail=f"Request timeout for {operation}: {str(error)}. The request took too long to process.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try again with a smaller request", "Check your network connection"]
+        )
+    elif error_type in ["PayloadTooLargeError", "SizeError", "FileSizeError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            error_type="Payload Too Large",
+            detail=f"Request entity too large for {operation}: {str(error)}. Please reduce the file size or use chunked upload.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Use chunked upload for large files", "Compress the file before uploading"]
+        )
+    elif error_type in ["UnsupportedMediaTypeError", "InvalidMimeTypeError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            error_type="Unsupported Media Type",
+            detail=f"Unsupported media type for {operation}: {str(error)}. Please use a supported file format.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Check supported file formats", "Convert file to supported format"]
+        )
+    elif error_type in ["TooManyRequestsError", "RateLimitError", "ThrottledError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            error_type="Too Many Requests",
+            detail=f"Too many requests for {operation}: {str(error)}. Please rate limit your requests and try again later.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Wait before making another request", "Check rate limit policies"]
+        )
+    
+    # 500-series: Server errors
+    elif error_type in ["InternalServerError", "SystemError", "RuntimeError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_type="Internal Server Error",
+            detail=f"Internal server error for {operation}: {str(error)}. The server encountered an unexpected condition.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try again later", "Contact support if the problem persists"]
+        )
+    elif error_type in ["ServiceUnavailableError", "MaintenanceError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error_type="Service Unavailable",
+            detail=f"Service unavailable for {operation}: {str(error)}. The server is temporarily unavailable.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try again later", "Service may be under maintenance"]
+        )
+    elif error_type in ["InsufficientStorageError", "DiskFullError", "OutOfSpaceError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            error_type="Insufficient Storage",
+            detail=f"Insufficient storage for {operation}: {str(error)}. The server has insufficient storage space.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try uploading a smaller file", "Contact administrator about storage limits"]
+        )
+    
+    # 600-series: Custom/Network protocol errors
+    elif error_type in ["ProtocolError", "NetworkProtocolError", "ConnectionError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_type="Protocol Error",
+            detail=f"Protocol error for {operation}: {str(error)}. A network protocol error occurred.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Check your network connection", "Try again later"]
+        )
+    
+    # Default: Internal server error
+    else:
+        return _create_standard_error_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_type="Unexpected Error",
+            detail=f"Unexpected error for {operation}: {str(error)} ({error_type}). Please contact support if this persists.",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Try again later", "Contact support if the problem persists"]
         )
 
 
@@ -2862,70 +2857,45 @@ def optimize_40gb_transfer(file_size_bytes: int) -> dict:
         dict: Optimization configuration with chunk_size_mb, target_chunks, 
               estimated_time_hours, optimization_level, performance_gain
     """
-    # File size in GB for easier calculations
+    # Convert to GB for calculations
     file_size_gb = file_size_bytes / (1024 ** 3)
     
-    # Base configuration
-    base_chunk_size_mb = 4  # 4 MiB default
-    max_chunk_size_mb = 16  # 16 MiB maximum for very large files
-    
-    # Optimization levels based on file size
-    if file_size_gb <= 2:
-        # 1-2GB files: Use standard 4MB chunks, 20% faster
+    # Define optimization thresholds
+    if file_size_gb <= 1:
+        # Small files (< 1GB): Standard configuration
         chunk_size_mb = 4
-        target_chunks = int(file_size_bytes / (4 * 1024 * 1024))
-        estimated_time_hours = 0.25  # 15 minutes
+        target_chunks = max(1, int(file_size_gb * 256))  # 4MB chunks
+        estimated_time_hours = file_size_gb * 0.01  # Very fast
         optimization_level = "standard"
-        performance_gain = "20% faster"
-        
+        performance_gain = "baseline"
     elif file_size_gb <= 5:
-        # 2-5GB files: Use 4MB chunks, 20% faster
-        chunk_size_mb = 4
-        target_chunks = int(file_size_bytes / (4 * 1024 * 1024))
-        estimated_time_hours = 0.25  # 15 minutes
-        optimization_level = "standard"
-        performance_gain = "20% faster"
-        
-    elif file_size_gb <= 15:
-        # 5-15GB files: Use 4MB chunks, 20% faster
-        chunk_size_mb = 4
-        target_chunks = int(file_size_bytes / (4 * 1024 * 1024))
-        estimated_time_hours = 0.25  # 15 minutes
-        optimization_level = "standard"
-        performance_gain = "20% faster"
-        
-    elif file_size_gb <= 30:
-        # 15-30GB files: Use 4MB chunks, 40% faster
-        chunk_size_mb = 4
-        target_chunks = int(file_size_bytes / (4 * 1024 * 1024))
-        estimated_time_hours = 0.5  # 30 minutes
-        optimization_level = "enhanced"
-        performance_gain = "40% faster"
-        
-    elif file_size_gb <= 40:
-        # 30-40GB files: Use 8MB chunks, 60% faster
+        # Medium files (1-5GB): Slightly larger chunks
         chunk_size_mb = 8
-        target_chunks = int(file_size_bytes / (8 * 1024 * 1024))
-        estimated_time_hours = 1.5  # 90 minutes
-        optimization_level = "high"
-        performance_gain = "60% faster"
-        
-    else:
-        # 40GB+ files: Use 16MB chunks, 75% faster
+        target_chunks = max(1, int(file_size_gb * 128))  # 8MB chunks
+        estimated_time_hours = file_size_gb * 0.008  # 20% faster
+        optimization_level = "medium"
+        performance_gain = "20% faster"
+    elif file_size_gb <= 15:
+        # Large files (5-15GB): Optimized chunks
+        chunk_size_mb = 12
+        target_chunks = max(1, int(file_size_gb * 85))  # 12MB chunks
+        estimated_time_hours = file_size_gb * 0.008  # 20% faster
+        optimization_level = "large"
+        performance_gain = "20% faster"
+    elif file_size_gb <= 30:
+        # Very large files (15-30GB): Heavy optimization
         chunk_size_mb = 16
-        target_chunks = int(file_size_bytes / (16 * 1024 * 1024))
-        estimated_time_hours = 2.0  # 2 hours
-        optimization_level = "maximum"
-        performance_gain = "75% faster"
-    
-    # Ensure minimum chunk size for efficiency
-    chunk_size_mb = max(chunk_size_mb, base_chunk_size_mb)
-    
-    # Ensure maximum chunk size for stability
-    chunk_size_mb = min(chunk_size_mb, max_chunk_size_mb)
-    
-    # Recalculate target chunks based on final chunk size
-    target_chunks = int(file_size_bytes / (chunk_size_mb * 1024 * 1024))
+        target_chunks = max(1, int(file_size_gb * 64))  # 16MB chunks
+        estimated_time_hours = file_size_gb * 0.006  # 40% faster
+        optimization_level = "very_large"
+        performance_gain = "40% faster"
+    else:
+        # Massive files (30GB+): Maximum optimization
+        chunk_size_mb = 32
+        target_chunks = max(1, int(file_size_gb * 32))  # 32MB chunks
+        estimated_time_hours = file_size_gb * 0.004  # 60% faster
+        optimization_level = "massive"
+        performance_gain = "60% faster"
     
     return {
         "file_size_bytes": file_size_bytes,
