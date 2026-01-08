@@ -1,10 +1,10 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from typing import Optional
 from datetime import datetime, timezone
 from bson import ObjectId
 from models import ChatCreate, MessageCreate
 from db_proxy import chats_collection, messages_collection, users_collection
-from auth.utils import get_current_user
+from auth.utils import get_current_user, get_current_user_for_upload
 import logging
 
 # Setup logging
@@ -321,8 +321,9 @@ async def get_messages(
 @router.post("/{chat_id}/messages", status_code=status.HTTP_201_CREATED)
 async def send_message(
     chat_id: str,
+    request: Request,
     message: MessageCreate,
-    current_user: str = Depends(get_current_user)
+    current_user: str = Depends(get_current_user_for_upload)
 ):
     """Send a message in a chat"""
     
