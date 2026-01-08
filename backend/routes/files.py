@@ -110,15 +110,19 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
         except Exception as disk_check_error:
             logger.warning(f"[UPLOAD] Disk space check failed for chunk {chunk_index}: {disk_check_error}")
         
-        # Write chunk with timeout protection
+        # Write chunk with dynamic timeout based on chunk size
         try:
-            async with asyncio.timeout(30):  # 30 second timeout for chunk write
+            # Calculate timeout based on chunk size (30s base + 1s per MB)
+            chunk_size_mb = len(chunk_data) / (1024 * 1024)
+            timeout_seconds = max(30, int(30 + chunk_size_mb))  # Minimum 30s, add 1s per MB
+            
+            async with asyncio.timeout(timeout_seconds):
                 async with aiofiles.open(chunk_path, 'wb') as f:
                     await f.write(chunk_data)
         except asyncio.TimeoutError:
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Chunk save timeout - disk write took too long"
+                detail=f"Chunk write timeout after {timeout_seconds}s - chunk too large or slow storage"
             )
         
         # Verify chunk was written correctly
