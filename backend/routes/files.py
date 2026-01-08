@@ -6,6 +6,7 @@ import logging
 import asyncio
 import os
 import aiofiles
+import jwt
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote
