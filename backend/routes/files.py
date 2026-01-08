@@ -983,6 +983,24 @@ async def upload_chunk(
             )
         
         uploaded_chunks = upload_doc.get("uploaded_chunks", [])
+        if uploaded_chunks is None:
+            _log("warning", "Uploaded chunks list was None, defaulting to empty list", {
+                "user_id": current_user or "anonymous",
+                "operation": "file_complete",
+                "upload_id": upload_id
+            })
+            uploaded_chunks = []
+        elif not isinstance(uploaded_chunks, list):
+            try:
+                uploaded_chunks = list(uploaded_chunks)
+            except Exception:
+                _log("warning", "Uploaded chunks field not list-like, resetting to empty list", {
+                    "user_id": current_user or "anonymous",
+                    "operation": "file_complete",
+                    "upload_id": upload_id,
+                    "type": str(type(uploaded_chunks))
+                })
+                uploaded_chunks = []
         
         # Check if this was a duplicate chunk upload
         if chunk_index not in uploaded_chunks:
@@ -1028,9 +1046,17 @@ async def complete_upload(
     ):
     """Complete file upload and assemble chunks"""
     
+    # Guard against missing auth to avoid NoneType errors downstream
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to complete upload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     # Enhanced logging for debugging large file uploads
     _log("info", f"File completion requested", {
-        "user_id": current_user,
+        "user_id": current_user or "anonymous",
         "operation": "file_complete",
         "upload_id": upload_id,
         "debug": "large_file_upload_debug"
@@ -1154,8 +1180,9 @@ async def complete_upload(
         
         # CRITICAL FIX: Generate secure random filename with user isolation
         file_id = hashlib.sha256(f"{uuid.uuid4()}".encode()).hexdigest()[:16]
-        user_prefix = current_user[:2] if len(current_user) >= 2 else current_user  # Safe prefix extraction
-        final_path = Path(settings.DATA_ROOT) / "files" / user_prefix / current_user / file_id
+        safe_user = str(current_user)
+        user_prefix = safe_user[:2] if len(safe_user) >= 2 else safe_user  # Safe prefix extraction
+        final_path = Path(settings.DATA_ROOT) / "files" / user_prefix / safe_user / file_id
         
         # SECURITY: Use secure temporary file with random name
         import tempfile
