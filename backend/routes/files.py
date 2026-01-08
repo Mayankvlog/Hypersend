@@ -702,10 +702,22 @@ async def initialize_upload(
         upload_duration = settings.UPLOAD_TOKEN_DURATION
         if size > settings.LARGE_FILE_THRESHOLD:  # > 1GB
             upload_duration = settings.UPLOAD_TOKEN_DURATION_LARGE
-            _log("info", f"Large file detected, using extended upload duration", {
+            # Apply optimization for files > 1GB
+            optimization = optimize_40gb_transfer(size)
+            chunk_size = optimization["chunk_size_mb"] * 1024 * 1024  # Convert MB to bytes
+            total_chunks = optimization["target_chunks"]
+            upload_duration = optimization["estimated_time_hours"] * 3600  # Convert hours to seconds
+            
+            _log("info", f"Large file optimization applied", {
                 "user_id": current_user, 
                 "operation": "upload_init", 
                 "file_size": size,
+                "file_size_gb": size / (1024**3),
+                "optimization_level": optimization["optimization_level"],
+                "chunk_size_mb": optimization["chunk_size_mb"],
+                "target_chunks": optimization["target_chunks"],
+                "estimated_time_hours": optimization["estimated_time_hours"],
+                "performance_gain": optimization["performance_gain"],
                 "upload_duration_hours": upload_duration / 3600,
                 "security_level": "EXTENDED_VALIDATION"
             })
