@@ -531,11 +531,17 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         client_ip = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("User-Agent", "unknown")[:100]
         
+        # Convert detail to string for logging (handle both dict and string)
+        if isinstance(detail, dict):
+            detail_str = str(detail)
+        else:
+            detail_str = str(detail)
+        
         # Log with structured format for better parsing
         logger.error(
             f"[HTTP_{status_code}] {request.method} {request.url.path} | "
             f"Client: {client_ip} | UA: {user_agent} | "
-            f"Detail: {detail[:200]} | "
+            f"Detail: {detail_str[:200]} | "
             f"Debug: {debug_mode}"
         )
         
@@ -547,7 +553,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         elif status_code == 403:
             logger.warning(f"[403_DEBUG] Access denied: {request.url.path} | Client: {client_ip}")
         elif status_code >= 500:
-            logger.error(f"[500_DEBUG] Server error: {request.url.path} | Detail: {detail}")
+            logger.error(f"[500_DEBUG] Server error: {request.url.path} | Detail: {detail_str}")
             
     except Exception as log_error:
         # Fallback logging if structured logging fails
