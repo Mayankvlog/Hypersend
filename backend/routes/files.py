@@ -1313,16 +1313,34 @@ async def complete_upload(
                             "debug": "large_file_upload_debug"
                         })
                         
-                        # Use centralized error handler for consistent responses
-                        raise _handle_file_error(
-                            e, 
-                            "file_assembly", 
-                            current_user, 
-                            upload_id=upload_id,
-                            chunk_idx=chunk_idx,
-                            chunks_written=chunks_written,
-                            chunks_failed=len(chunks_failed)
-                        )
+                        # Use centralized error handling
+                        _log("error", f"Unexpected error processing chunk {chunk_idx}: {str(e)}", {
+                            "user_id": current_user,
+                            "operation": "file_assembly",
+                            "upload_id": upload_id,
+                            "chunk_idx": chunk_idx,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "chunks_written": chunks_written,
+                            "debug": "large_file_upload_debug"
+                        })
+                        
+                        # Raise appropriate HTTP exception based on error type
+                        if isinstance(e, (OSError, IOError)):
+                            raise HTTPException(
+                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail=f"Storage service error processing chunk {chunk_idx}: {str(e)}"
+                            )
+                        elif isinstance(e, MemoryError):
+                            raise HTTPException(
+                                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                                detail=f"Insufficient memory to process chunk {chunk_idx}. Try smaller chunk sizes."
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail=f"Unexpected error processing chunk {chunk_idx}: {str(e)}"
+                            )
                 
                 # Check if we have enough chunks for a valid file
                 if chunks_failed:
