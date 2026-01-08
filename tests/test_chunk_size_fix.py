@@ -24,10 +24,10 @@ def test_chunk_size_configuration():
         assert hasattr(settings, 'CHUNK_SIZE'), "CHUNK_SIZE should be defined in settings"
         assert hasattr(settings, 'UPLOAD_CHUNK_SIZE'), "UPLOAD_CHUNK_SIZE should be defined in settings"
         
-        # Verify chunk sizes are reasonable (should be either 4MB or 16MB)
-        valid_sizes = [4 * 1024 * 1024, 16 * 1024 * 1024]  # 4MB or 16MB
-        assert settings.CHUNK_SIZE in valid_sizes, f"CHUNK_SIZE should be 4MB or 16MB, got {settings.CHUNK_SIZE}"
-        assert settings.UPLOAD_CHUNK_SIZE in valid_sizes, f"UPLOAD_CHUNK_SIZE should be 4MB or 16MB, got {settings.UPLOAD_CHUNK_SIZE}"
+        # Verify chunk sizes are reasonable (should be 4MB, 8MB, or 16MB)
+        valid_sizes = [4 * 1024 * 1024, 8 * 1024 * 1024, 16 * 1024 * 1024]  # 4MB, 8MB, or 16MB
+        assert settings.CHUNK_SIZE in valid_sizes, f"CHUNK_SIZE should be 4MB, 8MB, or 16MB, got {settings.CHUNK_SIZE}"
+        assert settings.UPLOAD_CHUNK_SIZE in valid_sizes, f"UPLOAD_CHUNK_SIZE should be 4MB, 8MB, or 16MB, got {settings.UPLOAD_CHUNK_SIZE}"
         
         # Test optimization function
         test_file_gb = 2  # 2GB file
@@ -66,13 +66,15 @@ def test_chunk_size_error_handling():
 def test_chunk_size_math():
     """Test chunk size calculations are correct"""
     
-    # Test MB to bytes conversion for both 4MB and 16MB
-    for chunk_size_mb in [4, 16]:
+    # Test MB to bytes conversion for 4MB, 8MB, and 16MB
+    for chunk_size_mb in [4, 8, 16]:
         chunk_size_bytes = chunk_size_mb * 1024 * 1024
         
         # Verify conversion
         if chunk_size_mb == 4:
             assert chunk_size_bytes == 4194304, f"4MB should be 4194304 bytes, got {chunk_size_bytes}"
+        elif chunk_size_mb == 8:
+            assert chunk_size_bytes == 8388608, f"8MB should be 8388608 bytes, got {chunk_size_bytes}"
         elif chunk_size_mb == 16:
             assert chunk_size_bytes == 16777216, f"16MB should be 16777216 bytes, got {chunk_size_bytes}"
         

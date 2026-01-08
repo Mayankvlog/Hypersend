@@ -90,17 +90,17 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
                 detail=f"Chunk {chunk_index} is empty - no data to save"
             )
         
-        if len(chunk_data) > settings.CHUNK_SIZE:
+        if len(chunk_data) > settings.UPLOAD_CHUNK_SIZE:
             # Enhanced error message with guidance for frontend
             actual_size_mb = len(chunk_data) / (1024 * 1024)
-            max_size_mb = settings.CHUNK_SIZE / (1024 * 1024)
+            max_size_mb = settings.UPLOAD_CHUNK_SIZE / (1024 * 1024)
             
             _log("warning", f"Chunk {chunk_index} size exceeded: {actual_size_mb:.2f}MB > {max_size_mb:.2f}MB", {
                 "user_id": user_id,
                 "operation": "chunk_upload",
                 "chunk_index": chunk_index,
                 "actual_size": len(chunk_data),
-                "max_size": settings.CHUNK_SIZE,
+                "max_size": settings.UPLOAD_CHUNK_SIZE,
                 "actual_size_mb": actual_size_mb,
                 "max_size_mb": max_size_mb
             })
@@ -110,7 +110,7 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
                 detail={
                     "error": f"Chunk {chunk_index} exceeds maximum size",
                     "actual_size": len(chunk_data),
-                    "max_size": settings.CHUNK_SIZE,
+                    "max_size": settings.UPLOAD_CHUNK_SIZE,
                     "actual_size_mb": round(actual_size_mb, 2),
                     "max_size_mb": round(max_size_mb, 2),
                     "guidance": f"Please split your data into chunks of max {max_size_mb:.0f}MB each"
