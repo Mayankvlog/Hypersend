@@ -1905,7 +1905,7 @@ async def download_file(
                         )
                     
                     # 5. Additional character-level validation - only check for dangerous patterns
-                    path_parts = str(normalized_path).parts
+                    path_parts = normalized_path.parts
                     for i, part in enumerate(path_parts):
                         # Allow leading dot in user directories (e.g., ./files/ab/userid/)
                         if i > 0 and part.startswith('.') and part != '.':
@@ -1969,6 +1969,12 @@ async def download_file(
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Database timeout while downloading file"
+        )
+    except AttributeError as e:
+        _log("error", f"Attribute error in file download: {str(e)}", {"user_id": current_user, "operation": "file_download"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="File download service error - invalid file data"
         )
     except Exception as e:
         _log("error", f"Failed to download file: {str(e)}", {"user_id": current_user, "operation": "file_download"})
