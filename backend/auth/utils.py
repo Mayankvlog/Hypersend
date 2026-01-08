@@ -537,16 +537,17 @@ async def get_current_user_for_upload(
     request: Request, 
     token: Optional[str] = Query(None)
 ) -> str:
-    """ENHANCED DEPENDENCY FOR FILE UPLOADS WITH 480-HOUR TOKEN SUPPORT.
+    """ENHANCED DEPENDENCY FOR FILE UPLOADS AND MESSAGES WITH 480-HOUR TOKEN SUPPORT.
     
     SECURITY: QUERY PARAMETER AUTHENTICATION HAS BEEN DISABLED FOR UPLOADS.
     ONLY HEADER AUTHENTICATION IS ALLOWED FOR SECURITY REASONS.
     
-    This function handles long-running file uploads by:
+    This function handles long-running file uploads and messages by:
     1. Accepting upload tokens with extended expiration (480 hours)
     2. Extending regular access tokens to 480 hours for upload operations
-    3. Providing fallback for expired tokens during active uploads
-    4. COMPLETELY BYPASSING 15-MINUTE LIMIT FOR UPLOADS
+    3. Extending regular access tokens to 480 hours for messages during uploads
+    4. Providing fallback for expired tokens during active uploads
+    5. COMPLETELY BYPASSING 15-MINUTE LIMIT FOR UPLOADS AND MESSAGES
     
     Args:
         request: The request object (for header auth)
@@ -583,11 +584,12 @@ async def get_current_user_for_upload(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # CRITICAL FIX: For upload operations, use 480-hour token validation regardless of env vars
+    # CRITICAL FIX: For upload operations and messages during uploads, use 480-hour token validation regardless of env vars
     path = request.url.path
     is_upload_operation = "/files/" in path and ("/init" in path or "/chunk" in path or "/complete" in path)
+    is_messages_endpoint = "/chats/" in path and "/messages" in path
     
-    if is_upload_operation:
+    if is_upload_operation or is_messages_endpoint:
         # For upload operations, use extended 480-hour validation
         try:
             # Decode token WITHOUT expiration check first

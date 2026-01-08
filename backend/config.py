@@ -126,7 +126,7 @@ class Settings:
     UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "480"))  # 480 hours (20 days) for very large uploads
     
     # File upload chunk settings  
-    UPLOAD_CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB - Alias for backward compatibility
+    UPLOAD_CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "16777216"))  # 16 MiB - Increased for large files (was 4 MiB) - Alias for backward compatibility
     
     # Upload token duration settings (in seconds)
     UPLOAD_TOKEN_DURATION: int = UPLOAD_TOKEN_EXPIRE_HOURS * 3600  # Convert hours to seconds
@@ -140,7 +140,7 @@ class Settings:
     STORAGE_MODE: str = os.getenv("STORAGE_MODE", "local")  # local, server, or hybrid
     DATA_ROOT: Path = Path(os.getenv("DATA_ROOT", "./data")).resolve()  # Only for metadata/temp - normalized for cross-platform
     UPLOAD_DIR: str = os.path.normpath(os.getenv("UPLOAD_DIR", "./uploads"))  # Upload directory for chunks - cross-platform paths
-    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB
+    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "16777216"))  # 16 MiB - Increased for large files (was 4 MiB)
     MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", "42949672960"))  # 40 GiB
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
     FILE_RETENTION_HOURS: int = int(os.getenv("FILE_RETENTION_HOURS", "0"))  # 0 = no server storage
