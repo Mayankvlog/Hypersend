@@ -3,7 +3,7 @@ from typing import Optional, Dict
 from datetime import datetime, timedelta, timezone
 
 from auth.utils import get_current_user
-from tests.db_proxy import chats_collection, messages_collection
+from db_proxy import chats_collection, messages_collection
 from models import MessageEditRequest, MessageReactionRequest
 
 

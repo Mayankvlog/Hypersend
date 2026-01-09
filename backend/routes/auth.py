@@ -5,7 +5,7 @@ from models import (
     QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
     QRCodeSession, TokenData
 )
-from tests.db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
 from auth.utils import (
     hash_password, verify_password, create_access_token, 
     create_refresh_token, decode_token, get_current_user

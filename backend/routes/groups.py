@@ -5,7 +5,7 @@ from bson import ObjectId
 import asyncio
 
 from auth.utils import get_current_user
-from tests.db_proxy import chats_collection, users_collection, messages_collection, get_db
+from db_proxy import chats_collection, users_collection, messages_collection, get_db
 from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
 
 
