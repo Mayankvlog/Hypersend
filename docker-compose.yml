@@ -106,7 +106,7 @@ services:
       DATA_ROOT: /data
       UPLOADS_PATH: /app/uploads
       MAX_FILE_SIZE_BYTES: 42949672960
-      CHUNK_SIZE: 8388608
+      CHUNK_SIZE: 33554432
       MAX_PARALLEL_CHUNKS: 4
       UPLOAD_EXPIRE_HOURS: 24
       FILE_RETENTION_HOURS: 0
@@ -117,7 +117,7 @@ services:
       # ===== CORS CONFIGURATION =====
       # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
       # Structure: HTTPS production first, then Docker HTTP, then Dev HTTP
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net,http://hypersend_frontend:80,http://hypersend_frontend,http://frontend:80,http://frontend,http://hypersend_backend:8000,http://backend:8000,http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net}
       
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
