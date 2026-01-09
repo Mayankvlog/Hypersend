@@ -409,4 +409,4 @@ settings = Settings()
 # Test email service on startup in DEBUG mode
 if settings.DEBUG:
     print("[CONFIG] DEBUG mode enabled - testing email service...")
-    settings.validate_email_config()
+    settings._validate_smtp_config()
