@@ -254,10 +254,22 @@ async def register(user: UserCreate) -> UserResponse:
                 detail="Invalid email format"
             )
         
-        if not user.password or len(user.password) < 6:
+        # CRITICAL FIX: Add password strength validation
+        if not user.password or len(user.password) < 8:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Password must be at least 6 characters"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must be at least 8 characters"
+            )
+        
+        # Check password strength: require mix of uppercase, lowercase, and numbers
+        has_upper = any(c.isupper() for c in user.password)
+        has_lower = any(c.islower() for c in user.password)
+        has_digit = any(c.isdigit() for c in user.password)
+        
+        if not (has_upper and has_lower and has_digit):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must contain uppercase, lowercase, and numbers"
             )
         
         if not user.name or not user.name.strip():
@@ -333,8 +345,8 @@ async def register(user: UserCreate) -> UserResponse:
                 }
             )
         
-        # Hash password
-        password_hash = hash_password(user.password)
+        # Hash password - CRITICAL FIX: Store hash and salt separately
+        password_hash, salt = hash_password(user.password)
         
         # Extract initials from name for avatar
         initials = "".join([word[0].upper() for word in user.name.split() if word])[:2]
@@ -344,7 +356,8 @@ async def register(user: UserCreate) -> UserResponse:
             "_id": str(ObjectId()),
             "name": user.name,
             "email": user.email.lower().strip(),  # CRITICAL FIX: Store email in lowercase for consistency
-            "password_hash": password_hash,
+            "password_hash": password_hash,  # CRITICAL FIX: Store hash separately
+            "password_salt": salt,  # CRITICAL FIX: Store salt separately
             "avatar": initials,
             "avatar_url": None,
             "username": None,
@@ -441,13 +454,13 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         if not re.match(email_pattern, credentials.email):
             auth_log(f"Invalid email format in login attempt: {credentials.email[:50]}")
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid email format"
             )
         
         if not credentials.password:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Password is required"
             )
         
@@ -573,8 +586,16 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             auth_log(f"DEBUG: Email search for login: '{normalized_email}' (normalized)")
             auth_log(f"DEBUG: User found: {bool(existing_user)}")
             
-            # Verify password - CRITICAL FIX: Ensure password_hash exists and handle legacy formats
+            # Verify password - CRITICAL FIX: Ensure password_hash and salt exist
             password_hash = existing_user.get("password_hash")
+            password_salt = existing_user.get("password_salt")
+            
+            # Handle both new format (separate hash/salt) and legacy format (tuple)
+            if isinstance(password_hash, (tuple, list)) and len(password_hash) == 2:
+                # Legacy format: (hash, salt) stored as tuple
+                password_hash, password_salt = password_hash
+                auth_log(f"Converting legacy password format for {normalized_email}")
+            
             if not password_hash:
                 auth_log(f"Login failed: User {normalized_email} has no password hash (corrupted record)")
                 raise HTTPException(
@@ -582,14 +603,15 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     detail="Invalid email or password"
                 )
             
-            # Verify password with constant-time comparison - CRITICAL FIX: Pass user_id correctly
-            user_id = existing_user.get("_id")
-            if isinstance(user_id, str):
-                user_id_str = user_id
-            else:
-                user_id_str = str(user_id)
-                
-            is_password_valid = verify_password(credentials.password, password_hash, user_id_str)
+            if not password_salt:
+                auth_log(f"Login failed: User {normalized_email} has no password salt (corrupted record)")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
+            
+            # Verify password with constant-time comparison - CRITICAL FIX: Use correct salt
+            is_password_valid = verify_password(credentials.password, password_hash, password_salt)
             auth_log(f"Password verification result for {normalized_email}: {is_password_valid} (hash_length: {len(password_hash)})")
         except HTTPException:
             raise
@@ -1224,15 +1246,16 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                 detail="User not found"
             )
         
-        # Hash new password
+        # Hash new password - CRITICAL FIX: Store hash and salt separately
         from auth.utils import hash_password
-        password_hash = hash_password(request.new_password)
+        password_hash, password_salt = hash_password(request.new_password)
         
         # Update user password
         await users_collection().update_one(
             {"_id": ObjectId(token_data.user_id)},
             {"$set": {
-                "password_hash": password_hash,
+                "password_hash": password_hash,  # CRITICAL FIX: Store hash separately
+                "password_salt": password_salt,  # CRITICAL FIX: Store salt separately
                 "updated_at": datetime.now(timezone.utc)
             }}
         )

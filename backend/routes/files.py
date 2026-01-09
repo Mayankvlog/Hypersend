@@ -372,7 +372,7 @@ upload_complete_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(
     request: Request,
-    current_user: str = Depends(get_current_user_for_upload)
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
     ):
     """Initialize file upload for 40GB files with enhanced security - accepts both 'mime' and 'mime_type'"""
     
@@ -411,18 +411,21 @@ async def initialize_upload(
             body = await request.json()
         except ValueError as json_error:
             _log("error", f"Invalid JSON in upload init request: {str(json_error)}", {
-                "user_id": current_user,
+                "user_id": "unknown",
                 "operation": "upload_init",
                 "error_type": "json_parse_error"
             })
             # JSON parsing errors should return 400 with proper validation details
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Malformed JSON in request body",
-                    "data": None
-                }
+                detail="Malformed JSON in request body"
+            )
+        
+        # CRITICAL FIX: Check authentication AFTER input validation
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required"
             )
         
         # CRITICAL DEBUG: Log the raw request for debugging 400 errors
@@ -903,6 +906,13 @@ async def upload_chunk(
             headers={"Allow": "PUT, OPTIONS"}
         )
     
+    # CRITICAL FIX: Check authentication AFTER validation
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    
     # Rate limiting check
     if not upload_chunk_limiter.is_allowed(current_user):
         raise HTTPException(
@@ -1185,7 +1195,7 @@ async def upload_chunk(
 async def complete_upload(
     upload_id: str,
     request: Request,
-    current_user: str = Depends(get_current_user_for_upload)
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
     ):
     """Complete file upload and assemble chunks"""
     
@@ -1201,27 +1211,16 @@ async def complete_upload(
             headers={"Allow": "POST, OPTIONS"}
         )
     
-    # Guard against missing auth to avoid NoneType errors downstream
+    # CRITICAL FIX: Check authentication AFTER validation
     if not current_user:
-        # Check if this is a test client, Flutter Web client, or debug mode
-        is_testclient = "testclient" in request.headers.get("user-agent", "").lower()
-        is_flutter_web = "zaply-flutter-web" in request.headers.get("user-agent", "").lower()
-        if getattr(settings, "DEBUG", False) or is_testclient or is_flutter_web:
-            current_user = "test-user"
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Authentication required to complete upload",
-                    "data": None
-                },
-                headers={"WWW-Authenticate": "Bearer"},
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
         )
     
     # Enhanced logging for debugging large file uploads
     _log("info", f"File completion requested", {
-        "user_id": current_user or "anonymous",
+        "user_id": current_user,
         "operation": "file_complete",
         "upload_id": upload_id,
         "debug": "large_file_upload_debug"

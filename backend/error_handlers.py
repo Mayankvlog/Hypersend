@@ -229,8 +229,9 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
         for err in errors
     )
     
-    # Use 422 for all validation errors (including missing fields)
-    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    # Use 400 for all validation errors (both missing fields and invalid values)
+    # This aligns with HTTP semantics: 400 for bad request, 422 for unprocessable
+    status_code = status.HTTP_400_BAD_REQUEST
     
     # Build a meaningful detail message based on the first error
     detail_message = "Request data validation failed"
@@ -506,6 +507,16 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     """
     status_code = getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
     detail = getattr(exc, "detail", "An error occurred")
+
+    # CRITICAL FIX: Convert 403 from HTTPBearer (missing credentials) to 401 (unauthorized)
+    # HTTPBearer raises 403 when Authorization header is missing
+    # But HTTP semantics require 401 for missing/invalid authentication
+    if status_code == 403 and "Missing Authorization header" in str(detail):
+        status_code = status.HTTP_401_UNAUTHORIZED
+        detail = "Missing authentication credentials"
+    elif status_code == 403 and "Invalid Authorization header" in str(detail):
+        status_code = status.HTTP_401_UNAUTHORIZED
+        detail = "Invalid authentication credentials"
 
     # Always re-evaluate debug mode dynamically (patch friendly)
     debug_mode = False

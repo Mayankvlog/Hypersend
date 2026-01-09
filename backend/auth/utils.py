@@ -101,7 +101,9 @@ else:
         print(f"QR code library not available: {e}")
 
 logger = logging.getLogger("auth")
-security = HTTPBearer()
+security = HTTPBearer(
+    auto_error=False  # Don't auto-raise, handle it manually
+)
 
 
 def hash_password(password: str) -> str:
@@ -356,8 +358,16 @@ def verify_token(token: str) -> dict:
     return payload
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> str:
     """Dependency to get current user from token in Authorization header"""
+    # Check if credentials are missing
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token = credentials.credentials
     token_data = decode_token(token)
     
@@ -599,7 +609,7 @@ def validate_upload_token(payload: dict) -> str:
 async def get_current_user_for_upload(
     request: Request, 
     token: Optional[str] = Query(None)
-) -> str:
+) -> Optional[str]:
     """ENHANCED DEPENDENCY FOR FILE UPLOADS AND MESSAGES WITH 480-HOUR TOKEN SUPPORT.
     
     SECURITY: QUERY PARAMETER AUTHENTICATION HAS BEEN DISABLED FOR UPLOADS.
@@ -617,7 +627,7 @@ async def get_current_user_for_upload(
         token: IGNORED - query parameter authentication disabled
         
     Returns:
-        The user_id from Authorization header token
+        The user_id from Authorization header token, or None if validation should happen in endpoint
         
     Raises:
         HTTPException: If header token is missing or invalid
@@ -636,19 +646,8 @@ async def get_current_user_for_upload(
     if not auth_header:
         if debug_mode or is_testclient or is_flutter_web:
             return "test-user"
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "status": "ERROR",
-                "message": "Authentication required - missing Authorization header",
-                "data": {
-                    "error_type": "missing_header",
-                    "required": "Authorization: Bearer <token> header",
-                    "hint": "Add Authorization header with Bearer token"
-                }
-            },
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        # Return None instead of raising - let endpoint validate input first
+        return None
     
     if not auth_header.startswith("Bearer "):
         if debug_mode or is_testclient or is_flutter_web:
