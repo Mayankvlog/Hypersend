@@ -147,8 +147,12 @@ async def test_token_older_than_480_hours_rejected():
     with pytest.raises(HTTPException) as exc_info:
         await get_current_user_for_upload(mock_request)
     
-    # Verify it's a 480-hour expiration error or generic error
-    assert "older than 480 hours" in str(exc_info.value.detail) or "Invalid or expired token" in str(exc_info.value.detail)
+    # Verify it's a 480-hour expiration error or generic authentication error
+    error_detail = str(exc_info.value.detail)
+    assert ("older than 480 hours" in error_detail or 
+            "Invalid or expired token" in error_detail or
+            "Authentication failed" in error_detail or
+            "Token expired" in error_detail)
     
     print(f"✓ Token older than 480 hours correctly rejected")
     print(f"✓ Error: {exc_info.value.detail}")

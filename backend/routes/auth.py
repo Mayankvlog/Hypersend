@@ -353,7 +353,13 @@ async def register(user: UserCreate) -> UserResponse:
             )
         
         # Hash password - CRITICAL FIX: Store hash and salt separately
-        password_hash, salt = hash_password(user.password)
+        combined_password, salt = hash_password(user.password)
+        
+        # Extract hash from combined format for database storage
+        if '$' in combined_password:
+            password_hash = combined_password.split('$')[1]  # Get hash part
+        else:
+            password_hash = combined_password  # Fallback
         
         # Extract initials from name for avatar
         initials = "".join([word[0].upper() for word in user.name.split() if word])[:2]
@@ -388,13 +394,23 @@ async def register(user: UserCreate) -> UserResponse:
         
         # Insert user into database
         try:
-            users_col = users_collection()
-            # CRITICAL FIX: Ensure collection is properly awaited
+            # CRITICAL FIX: Get database connection first
+            from database import get_db
+            db = get_db()
+            
+            # Get collection directly from database
+            users_col = db.users
+            
+            # CRITICAL FIX: Debug collection type
+            auth_log(f"DEBUG: Collection type: {type(users_col)}")
+            auth_log(f"DEBUG: Collection has insert_one: {hasattr(users_col, 'insert_one')}")
+            
             if hasattr(users_col, 'insert_one'):
                 result = await asyncio.wait_for(
                     users_col.insert_one(user_doc),
                     timeout=5.0
                 )
+                auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
             else:
                 # Handle case where collection is not properly initialized
                 auth_log(f"Database collection not properly initialized")
@@ -402,7 +418,6 @@ async def register(user: UserCreate) -> UserResponse:
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Database service temporarily unavailable"
                 )
-            auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
         except asyncio.TimeoutError:
             auth_log(f"Database timeout during user insertion")
             raise HTTPException(
@@ -607,9 +622,12 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             password_salt = existing_user.get("password_salt")
             
             # CRITICAL FIX: Handle legacy password format migration
-            if not password_hash and not password_salt:
+            # Check for missing or empty password fields
+            if not password_hash or not password_salt or password_hash == "" or password_salt == "":
                 # Check if user has legacy password format
                 legacy_password = existing_user.get("password")
+                auth_log(f"DEBUG: Checking legacy password for {normalized_email}: {bool(legacy_password)}")
+                
                 if legacy_password and isinstance(legacy_password, str) and '$' in legacy_password:
                     # Parse legacy format: salt$hash
                     parts = legacy_password.split('$')
@@ -636,10 +654,23 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                             # Continue with legacy format for now
                     else:
                         auth_log(f"Invalid legacy password format for {normalized_email}")
+                else:
+                    # Try to find password in other possible fields
+                    possible_fields = ["pwd", "pass", "password_hash", "password_salt"]
+                    for field in possible_fields:
+                        value = existing_user.get(field)
+                        if value and isinstance(value, str) and value.strip():
+                            auth_log(f"Found password in field '{field}' for {normalized_email}")
+                            if field == "password_hash":
+                                password_hash = value
+                            elif field == "password_salt":
+                                password_salt = value
+                            break
                 
                 # If still no password hash after migration attempt
-                if not password_hash or not password_salt:
-                    auth_log(f"Login failed: User {normalized_email} has no password hash or salt (corrupted record)")
+                if not password_hash or not password_salt or password_hash == "" or password_salt == "":
+                    auth_log(f"Login failed: User {normalized_email} has no valid password hash or salt (corrupted record)")
+                    auth_log(f"DEBUG: User fields - password_hash: {repr(password_hash)}, password_salt: {repr(password_salt)}")
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Invalid email or password"

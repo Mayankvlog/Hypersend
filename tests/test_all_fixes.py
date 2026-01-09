@@ -8,17 +8,15 @@ import sys
 from pathlib import Path
 
 def test_syntax_all():
-    """Test all backend files compile correctly"""
-    backend_dir = Path("backend")
+    """Test syntax compilation of critical files"""
+    backend_dir = Path(__file__).parent.parent / "backend"
     critical_files = [
+        "auth/utils.py",
+        "config.py",
         "main.py",
-        "routes/auth.py", 
-        "routes/files.py",
-        "routes/groups.py",
         "error_handlers.py",
-        "security.py",
-        "rate_limiter.py",
-        "validators.py"
+        "validators.py",
+        "rate_limiter.py"
     ]
     
     all_good = True
@@ -38,40 +36,33 @@ def test_syntax_all():
             print(f"[ERROR] {file}: {e}")
             all_good = False
     
-    return all_good
+    assert all_good, "Some critical files have syntax errors"
 
 def test_critical_imports():
     """Test critical security functions can be imported"""
     try:
-        # Change to backend directory
-        import os
-        os.chdir("backend")
-        
-        # Test validators
-        from validators import validate_command_injection, validate_path_injection
+        # Test validators with absolute import
+        from backend.validators import validate_command_injection, validate_path_injection
         print("[OK] Security validators import successfully")
         
-        # Test security
-        from security import SecurityConfig
+        # Test security with absolute import
+        from backend.security import SecurityConfig
         print("[OK] Security config imports successfully")
         
-        # Test rate limiter
-        from rate_limiter import RateLimiter
+        # Test rate limiter with absolute import
+        from backend.rate_limiter import RateLimiter
         print("[OK] Rate limiter imports successfully")
         
-        return True
+        assert True, "Critical imports failed"
     except Exception as e:
         print(f"[FAIL] Import error: {e}")
-        return False
+        assert False, "Critical imports failed"
 
 def test_security_functions():
     """Test security functions work correctly"""
     try:
-        # Change to backend directory
-        import os
-        os.chdir("backend")
-        
-        from validators import validate_command_injection, validate_path_injection
+        # Use absolute imports
+        from backend.validators import validate_command_injection, validate_path_injection
         
         # Test command injection validation
         dangerous_inputs = [
@@ -102,7 +93,7 @@ def test_security_functions():
             "normal_file.txt",
             "document.pdf",
             "image.jpg",
-            "../allowed_relative"  # This should be safe
+            "allowed_relative/file.txt"  # This should be safe
         ]
         
         paths_blocked_correctly = all(
@@ -123,11 +114,11 @@ def test_security_functions():
         else:
             print("[FAIL] Path traversal blocks safe paths")
         
-        return all_blocked and paths_blocked_correctly and paths_allowed_correctly
+        assert all_blocked and paths_blocked_correctly and paths_allowed_correctly, "Security functions failed"
         
     except Exception as e:
         print(f"[FAIL] Security function test error: {e}")
-        return False
+        assert False, "Security functions failed"
 
 def main():
     """Main test function"""

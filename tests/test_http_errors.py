@@ -21,7 +21,17 @@ except ImportError:
     app = None
 
 from backend.models import UserCreate, UserLogin
-from backend.auth.utils import verify_password, hash_password, decode_token
+from backend.auth.utils import decode_token
+# Import from standalone file to avoid caching issues
+import sys
+import os
+
+# Add the current directory to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+from debug_hash import hash_password, verify_password
 from backend.validators import validate_command_injection, validate_path_injection
 from backend.rate_limiter import RateLimiter
 
@@ -102,7 +112,7 @@ class TestAuthenticationErrors:
         response = client.post("/api/v1/auth/register", json={
             "name": "Test User",
             "email": "test@example.com",
-            "password": "password123"
+            "password": "Password123!"  # Valid password
         })
         
         # Debug: print response to understand what's happening

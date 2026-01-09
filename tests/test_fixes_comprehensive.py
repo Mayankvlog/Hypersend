@@ -164,7 +164,7 @@ class TestHTTPErrorHandling:
                 "/api/v1/auth/register",
                 json={
                     "email": "test@example.com",
-                    "password": "password123",
+                    "password": "Password123!",
                     "name": "Test User"
                 }
             )
@@ -218,7 +218,7 @@ class TestHTTPErrorHandling:
                 "/api/v1/auth/register",
                 json={
                     "email": "invalid-email",  # Invalid format
-                    "password": "password123",
+                    "password": "Password123!",
                     "name": "Test User"
                 }
             )
@@ -276,7 +276,7 @@ class TestHTTPErrorHandling:
                 "/api/v1/auth/register",
                 json={
                     "email": "test@example.com",
-                    "password": "password123",
+                    "password": "Password123!",
                     "name": "Test User"
                 }
             )
@@ -303,7 +303,7 @@ class TestHTTPErrorHandling:
                 "/api/v1/auth/register",
                 json={
                     "email": "test@example.com",
-                    "password": "password123",
+                    "password": "Password123!",
                     "name": "Test User"
                 }
             )
@@ -330,7 +330,7 @@ class TestHTTPErrorHandling:
                 "/api/v1/auth/register",
                 json={
                     "email": "test@example.com",
-                    "password": "password123",
+                    "password": "Password123!",
                     "name": "Test User"
                 }
             )
@@ -692,8 +692,8 @@ class TestAuthTokenHandling:
             json={}
         )
         
-        # Should return 403 (Not authenticated) instead of 401
-        assert response.status_code == 403
+        # Should return 401 (Unauthorized) for invalid format
+        assert response.status_code == 401
         response_data = response.json()
         assert isinstance(response_data, dict)
         # Check for error response format
@@ -735,8 +735,8 @@ class TestAuthTokenHandling:
             headers={"Authorization": "InvalidFormat token123"}
         )
         
-        # Should return 403 (Not authenticated) for invalid format
-        assert response.status_code == 403
+        # Should return 401 (Unauthorized) for invalid format
+        assert response.status_code == 401
         response_data = response.json()
         assert isinstance(response_data, dict)
         # Check for error response format
@@ -754,8 +754,8 @@ class TestAuthTokenHandling:
             headers={"Authorization": "Bearer "}
         )
         
-        # Should return 403 (Not authenticated) for empty token
-        assert response.status_code == 403
+        # Should return 401 (Unauthorized) for missing token
+        assert response.status_code == 401
         response_data = response.json()
         assert isinstance(response_data, dict)
         # Check for error response format
@@ -864,7 +864,7 @@ class TestMessagePinDeleteAuth:
         # Test with missing auth
         response = client.post("/api/v1/messages/test_message_123/pin")
         
-        assert response.status_code == 403
+        assert response.status_code == 401
         response_data = response.json()
         assert isinstance(response_data, dict)
         # Check for error response format
@@ -879,7 +879,7 @@ class TestMessagePinDeleteAuth:
         # Test with missing auth
         response = client.delete("/api/v1/messages/test_message_123")
         
-        assert response.status_code == 403
+        assert response.status_code == 401
         response_data = response.json()
         assert isinstance(response_data, dict)
         # Check for error response format

@@ -24,10 +24,10 @@ def test_chunk_size_configuration():
         assert hasattr(settings, 'CHUNK_SIZE'), "CHUNK_SIZE should be defined in settings"
         assert hasattr(settings, 'UPLOAD_CHUNK_SIZE'), "UPLOAD_CHUNK_SIZE should be defined in settings"
         
-        # Verify chunk sizes are reasonable (should be 4MB, 8MB, or 16MB)
-        valid_sizes = [4 * 1024 * 1024, 8 * 1024 * 1024, 16 * 1024 * 1024]  # 4MB, 8MB, or 16MB
-        assert settings.CHUNK_SIZE in valid_sizes, f"CHUNK_SIZE should be 4MB, 8MB, or 16MB, got {settings.CHUNK_SIZE}"
-        assert settings.UPLOAD_CHUNK_SIZE in valid_sizes, f"UPLOAD_CHUNK_SIZE should be 4MB, 8MB, or 16MB, got {settings.UPLOAD_CHUNK_SIZE}"
+        # Verify chunk sizes are reasonable (should be 4MB, 8MB, 16MB, or 32MB for 40GB files)
+        valid_sizes = [4 * 1024 * 1024, 8 * 1024 * 1024, 16 * 1024 * 1024, 32 * 1024 * 1024]  # 4MB, 8MB, 16MB, or 32MB
+        assert settings.CHUNK_SIZE in valid_sizes, f"CHUNK_SIZE should be 4MB, 8MB, 16MB, or 32MB, got {settings.CHUNK_SIZE}"
+        assert settings.UPLOAD_CHUNK_SIZE in valid_sizes, f"UPLOAD_CHUNK_SIZE should be 4MB, 8MB, 16MB, or 32MB, got {settings.UPLOAD_CHUNK_SIZE}"
         
         # Test optimization function
         test_file_gb = 2  # 2GB file

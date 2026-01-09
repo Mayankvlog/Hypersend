@@ -335,15 +335,15 @@ class TestFileUploadFlow:
         }
 
         class _UploadsColl:
-            def find_one(self, query):
-                return AsyncMock(return_value=upload_doc)()
+            async def find_one(self, query):
+                return upload_doc
 
-            def delete_one(self, query):
-                return AsyncMock(return_value=MagicMock(deleted_count=1))()
+            async def delete_one(self, query):
+                return MagicMock(deleted_count=1)
 
         class _FilesColl:
-            def insert_one(self, doc):
-                return AsyncMock(return_value=MagicMock(inserted_id=doc.get("_id")))()
+            async def insert_one(self, doc):
+                return MagicMock(inserted_id=doc.get("_id"))
 
         request = MagicMock()
         request.method = "POST"  # Set correct HTTP method

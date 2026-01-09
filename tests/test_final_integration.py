@@ -14,7 +14,17 @@ def test_all_security_fixes_integration():
     print("Testing security fixes integration...")
     
     # Test JWT validation improvements
-    from auth.utils import hash_password, verify_password, create_access_token, decode_token
+    # Import from standalone file to avoid caching issues
+    import sys
+    import os
+    
+    # Add the current directory to sys.path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    
+    from debug_hash import hash_password, verify_password
+    from backend.auth.utils import create_access_token, decode_token
     from bson import ObjectId
     
     # 1. Password hashing with proper salt

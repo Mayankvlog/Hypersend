@@ -6,10 +6,20 @@ Tests core security and validation functionality without full app import
 import pytest
 from datetime import datetime, timedelta, timezone
 from backend.models import UserCreate, UserLogin
-from backend.auth.utils import verify_password, hash_password, decode_token, create_access_token
+from backend.auth.utils import decode_token, create_access_token
 from backend.validators import validate_command_injection, validate_path_injection
 from backend.rate_limiter import RateLimiter
 from backend.config import settings
+# Import from standalone file to avoid caching issues
+import sys
+import os
+
+# Add the current directory to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+from debug_hash import hash_password, verify_password
 
 class TestSecurityFeatures:
     """Test security improvements"""

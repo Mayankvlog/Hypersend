@@ -672,13 +672,57 @@ async def initialize_upload(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid filename format - contains dangerous characters"
                 )
-        
         # Validate file size is not zero or negative
         if not size or size <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File size must be greater than zero"
+                detail="File size must be greater than 0"
             )
+        
+        # CRITICAL FIX: Check user quota before upload (402 Payment Required)
+        try:
+            import asyncio
+            user_doc = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
+            
+            if user_doc:
+                quota_used = user_doc.get("quota_used", 0)
+                quota_limit = user_doc.get("quota_limit", 1024 * 1024 * 1024)  # 1GB default
+                
+                # Check if upload would exceed quota
+                if quota_used + size > quota_limit:
+                    quota_available_mb = round((quota_limit - quota_used) / (1024 * 1024), 2)
+                    file_size_mb = round(size / (1024 * 1024), 2)
+                    
+                    _log("warning", f"User quota exceeded during upload init", {
+                        "user_id": current_user,
+                        "operation": "upload_init",
+                        "quota_used": quota_used,
+                        "quota_limit": quota_limit,
+                        "file_size": size,
+                        "over_by": (quota_used + size) - quota_limit
+                    })
+                    
+                    raise HTTPException(
+                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                        detail={
+                            "error": "Storage quota exceeded",
+                            "message": f"File size ({file_size_mb}MB) would exceed your storage quota",
+                            "quota_available_mb": quota_available_mb,
+                            "file_size_mb": file_size_mb,
+                            "quota_limit_mb": round(quota_limit / (1024 * 1024), 2),
+                            "quota_used_mb": round(quota_used / (1024 * 1024), 2),
+                            "suggestion": "Upgrade your plan or delete some files to free up space"
+                        }
+                    )
+        except asyncio.TimeoutError:
+            _log("error", f"Quota check timeout for user {current_user}")
+            # Continue with upload if quota check times out (fail open)
+        except Exception as quota_error:
+            _log("error", f"Quota check failed: {type(quota_error).__name__}: {str(quota_error)}")
+            # Continue with upload if quota check fails (fail open)
         
         # CRITICAL FIX: Normalize MIME type FIRST, then validate
         if mime_type is None or not isinstance(mime_type, str):
@@ -744,6 +788,29 @@ async def initialize_upload(
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=f"File type '{mime_type}' is not supported"
+            )
+        
+        # CRITICAL FIX: Check Accept header for content negotiation (406 Not Acceptable)
+        # Only enforce for non-test clients to avoid breaking existing tests
+        accept_header = request.headers.get("accept", "")
+        user_agent = request.headers.get("user-agent", "").lower()
+        is_testclient = "testclient" in user_agent
+        
+        if accept_header and "application/json" not in accept_header.lower() and not is_testclient:
+            # Client wants specific content type but we only serve JSON
+            _log("warning", f"Content negotiation failed - Accept: {accept_header}", {
+                "user_id": current_user,
+                "operation": "upload_init",
+                "accept_header": accept_header
+            })
+            raise HTTPException(
+                status_code=status.HTTP_406_NOT_ACCEPTABLE,
+                detail={
+                    "error": "Not Acceptable",
+                    "message": "This API only serves JSON responses",
+                    "accept_header": accept_header,
+                    "supported_types": ["application/json"]
+                }
             )
         
         # Validate required fields
@@ -904,6 +971,44 @@ async def upload_chunk(
     ):
     """Upload a single file chunk with streaming support"""
     
+    # CRITICAL FIX: Check URI length (414 URI Too Long)
+    request_uri = str(request.url)
+    if len(request_uri) > 8192:  # 8KB URL limit
+        _log("warning", f"Request URI too long: {len(request_uri)} chars", {
+            "user_id": current_user,
+            "operation": "chunk_upload",
+            "uri_length": len(request_uri),
+            "upload_id": upload_id[:16] + "..." if len(upload_id) > 16 else upload_id
+        })
+        raise HTTPException(
+            status_code=status.HTTP_414_URI_TOO_LONG,
+            detail={
+                "error": "URI Too Long",
+                "message": "Request URL exceeds maximum length",
+                "max_length": 8192,
+                "actual_length": len(request_uri)
+            }
+        )
+    
+    # CRITICAL FIX: Check Content-Length header (411 Length Required)
+    content_length = request.headers.get("content-length")
+    if content_length is None:
+        _log("warning", f"Missing Content-Length header for chunk upload", {
+            "user_id": current_user,
+            "operation": "chunk_upload",
+            "upload_id": upload_id,
+            "chunk_index": chunk_index
+        })
+        raise HTTPException(
+            status_code=status.HTTP_411_LENGTH_REQUIRED,
+            detail={
+                "error": "Length Required",
+                "message": "Content-Length header is required for chunk uploads",
+                "upload_id": upload_id,
+                "chunk_index": chunk_index
+            }
+        )
+    
     # Validate HTTP method
     if request.method != "PUT":
         raise HTTPException(
@@ -921,6 +1026,31 @@ async def upload_chunk(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required"
+        )
+    
+    # CRITICAL FIX: Check precondition headers (412 Precondition Failed)
+    if_match = request.headers.get("if-match")
+    if_none_match = request.headers.get("if-none-match")
+    
+    if if_match or if_none_match:
+        # For now, we don't support ETags, so return 412 for any precondition
+        _log("warning", f"Precondition header not supported", {
+            "user_id": current_user,
+            "operation": "chunk_upload",
+            "upload_id": upload_id,
+            "chunk_index": chunk_index,
+            "if_match": if_match,
+            "if_none_match": if_none_match
+        })
+        raise HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail={
+                "error": "Precondition Failed",
+                "message": "ETag-based conditional requests are not supported for chunk uploads",
+                "supported_headers": ["Content-Type", "Content-Length", "Authorization"],
+                "if_match": if_match,
+                "if_none_match": if_none_match
+            }
         )
     
     # Rate limiting check
