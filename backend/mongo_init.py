@@ -172,6 +172,15 @@ async def init_mongodb():
                 if "already exists" not in str(e).lower():
                     pass  # Silent
         
+        # Store globally for application use
+        mongo_init._app_db = app_db
+        mongo_init._app_client = client
+        
+        # Also store in database module globals for backup
+        import database
+        database._global_db = app_db
+        database._global_client = client
+        
         print("[MONGO_INIT] [OK] MongoDB initialization complete")
         # CRITICAL FIX: Don't close the client - keep it open for the application
         # client.close()  # REMOVED: This was causing the Future object error

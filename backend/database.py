@@ -196,10 +196,11 @@ def get_db():
     if _global_db is not None and _global_client is not None:
         db = _global_db
         client = _global_client
+        print(f"[DB] Using global database instance")
         return db
     
     # CRITICAL FIX: Check if database was initialized at startup
-    # Try to get the database from the motor module if it exists
+    # Try to get the database from the mongo_init module if it exists
     try:
         import sys
         if 'mongo_init' in sys.modules:
@@ -211,9 +212,10 @@ def get_db():
                     # Store globally for future calls
                     _global_db = db
                     _global_client = client
+                    print(f"[DB] Using initialized database from mongo_init")
                     return db
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[DB] Warning: Could not get initialized database: {e}")
     
     # CRITICAL FIX: In production, always use real MongoDB, not mock
     if not settings.USE_MOCK_DB:
