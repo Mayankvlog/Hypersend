@@ -122,7 +122,6 @@ services:
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
-      DEBUG: "False"
       USE_MOCK_DB: "False"
       
       # ===== EMAIL CONFIGURATION =====
