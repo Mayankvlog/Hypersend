@@ -376,6 +376,19 @@ async def initialize_upload(
     ):
     """Initialize file upload for 40GB files with enhanced security - accepts both 'mime' and 'mime_type'"""
     
+    # Validate HTTP method first
+    if request.method != "POST":
+        raise HTTPException(
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+            detail={
+                "status": "ERROR",
+                "message": "Method not allowed. Use POST for file upload initialization.",
+                "data": None
+            },
+            headers={"Allow": "POST, OPTIONS"}
+        )
+    """Initialize file upload for 40GB files with enhanced security - accepts both 'mime' and 'mime_type'"""
+    
     # Rate limiting check (reset in DEBUG/testclient to avoid cross-test pollution)
     user_agent = request.headers.get("user-agent", "").lower()
     is_testclient = "testclient" in user_agent
@@ -384,7 +397,11 @@ async def initialize_upload(
     if not upload_init_limiter.is_allowed(current_user):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many upload initialization requests. Please try again later.",
+            detail={
+                "status": "ERROR",
+                "message": "Too many upload initialization requests. Please try again later.",
+                "data": None
+            },
             headers={"Retry-After": "60"}
         )
     
@@ -401,7 +418,11 @@ async def initialize_upload(
             # JSON parsing errors should return 400 with proper validation details
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Malformed JSON in request body"
+                detail={
+                    "status": "ERROR",
+                    "message": "Malformed JSON in request body",
+                    "data": None
+                }
             )
         
         # CRITICAL DEBUG: Log the raw request for debugging 400 errors
@@ -468,28 +489,44 @@ async def initialize_upload(
         if not filename or not filename.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Filename cannot be empty"
+                detail={
+                    "status": "ERROR",
+                    "message": "Filename cannot be empty",
+                    "data": None
+                }
             )
         
         # chat_id required per tests
         if not chat_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="chat_id is required"
+                detail={
+                    "status": "ERROR",
+                    "message": "chat_id is required",
+                    "data": None
+                }
             )
         
         # CRITICAL SECURITY: Enhanced file size validation with type checking
         if size is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File size is required"
+                detail={
+                    "status": "ERROR",
+                    "message": "File size is required",
+                    "data": None
+                }
             )
         
         # CRITICAL FIX: Validate size type to prevent bypass attempts
         if not isinstance(size, (int, float)):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid file size format - must be a number"
+                detail={
+                    "status": "ERROR",
+                    "message": "Invalid file size format - must be a number",
+                    "data": None
+                }
             )
         
         try:
@@ -854,11 +891,27 @@ async def upload_chunk(
     ):
     """Upload a single file chunk with streaming support"""
     
+    # Validate HTTP method
+    if request.method != "PUT":
+        raise HTTPException(
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+            detail={
+                "status": "ERROR",
+                "message": "Method not allowed. Use PUT for chunk upload.",
+                "data": None
+            },
+            headers={"Allow": "PUT, OPTIONS"}
+        )
+    
     # Rate limiting check
     if not upload_chunk_limiter.is_allowed(current_user):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many chunk upload requests. Please try again later.",
+            detail={
+                "status": "ERROR",
+                "message": "Too many chunk upload requests. Please try again later.",
+                "data": None
+            },
             headers={"Retry-After": "60"}
         )
     
@@ -1048,11 +1101,27 @@ async def complete_upload(
     ):
     """Complete file upload and assemble chunks"""
     
+    # Validate HTTP method
+    if request.method != "POST":
+        raise HTTPException(
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+            detail={
+                "status": "ERROR",
+                "message": "Method not allowed. Use POST for file upload completion.",
+                "data": None
+            },
+            headers={"Allow": "POST, OPTIONS"}
+        )
+    
     # Guard against missing auth to avoid NoneType errors downstream
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required to complete upload",
+            detail={
+                "status": "ERROR",
+                "message": "Authentication required to complete upload",
+                "data": None
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
     

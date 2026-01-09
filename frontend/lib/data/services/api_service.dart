@@ -230,7 +230,7 @@ class ApiService {
       case 400:
         return customMessage ?? 'Bad request. Please check your input data and try again.';
       case 401:
-        return customMessage ?? 'Unauthorized. Please login again to continue.';
+        return customMessage ?? 'Unauthorized. Authentication required or credentials invalid.';
       case 402:
         return customMessage ?? 'Payment required. Please check your subscription.';
       case 403:

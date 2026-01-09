@@ -326,7 +326,11 @@ async def register(user: UserCreate) -> UserResponse:
             auth_log(f"Registration failed: Email already exists: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered. Please login or use a different email."
+                detail={
+                    "status": "ERROR",
+                    "message": "Email already registered. Please login or use a different email.",
+                    "data": None
+                }
             )
         
         # Hash password
@@ -558,7 +562,11 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 # SECURITY: Don't increase per-email lockout for non-existent users (prevents enumeration)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password"
+                    detail={
+                        "status": "ERROR",
+                        "message": "Invalid email or password",
+                        "data": None
+                    }
                 )
             
             # CRITICAL FIX: Add debug logging to show what was searched
@@ -611,13 +619,21 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Too many failed login attempts. Account locked for {lockout_seconds} seconds.",
+                    detail={
+                        "status": "ERROR",
+                        "message": f"Too many failed login attempts. Account locked for {lockout_seconds} seconds.",
+                        "data": None
+                    },
                     headers={"Retry-After": str(lockout_seconds)}
                 )
             
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail={
+                    "status": "ERROR",
+                    "message": "Invalid email or password",
+                    "data": None
+                }
             )
         
         # CRITICAL FIX: Session fixation prevention - invalidate existing sessions

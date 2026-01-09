@@ -301,6 +301,7 @@ class TestFileUploadFlow:
             mock_limiter.is_allowed.return_value = False
             
             request = MagicMock()
+            request.method = "POST"  # Set correct HTTP method
             request.json = AsyncMock(return_value={"filename": "test.pdf"})
             
             with pytest.raises(HTTPException) as exc_info:
@@ -345,6 +346,7 @@ class TestFileUploadFlow:
                 return AsyncMock(return_value=MagicMock(inserted_id=doc.get("_id")))()
 
         request = MagicMock()
+        request.method = "POST"  # Set correct HTTP method
         request.client = None
 
         with patch("routes.files.upload_complete_limiter") as mock_limiter, \
@@ -373,6 +375,7 @@ class TestFileUploadFlow:
             mock_limiter.is_allowed.return_value = False
             
             request = MagicMock()
+            request.method = "PUT"  # Set correct HTTP method
             request.body = AsyncMock(return_value=b"chunk_data")
             
             with pytest.raises(HTTPException) as exc_info:
@@ -390,6 +393,7 @@ class TestFileUploadFlow:
             mock_limiter.is_allowed.return_value = False
             
             request = MagicMock()
+            request.method = "POST"  # Set correct HTTP method
             
             with pytest.raises(HTTPException) as exc_info:
                 await complete_upload("upload_123", request, "test_user")

@@ -734,6 +734,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     
     # Build comprehensive response data
     response_data = {
+        "status": "ERROR",  # Always include status for consistency
         "status_code": status_code,
         "error": error_description,
         "detail": str(detail),
@@ -752,6 +753,9 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         for k, v in detail_dict.items():
             if k not in ("message", "detail"):
                 response_data[k] = v
+        # Preserve status from detail dict if present
+        if "status" in detail_dict:
+            response_data["status"] = detail_dict["status"]
     
     # Add request_id if available (but ensure it's JSON serializable)
     request_id = getattr(request.state, 'request_id', None)
