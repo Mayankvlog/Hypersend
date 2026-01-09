@@ -43,6 +43,76 @@ class TestProductionFixes:
                     is_invalid = verify_password("wrongpassword", migrated_hash, migrated_salt)
                     assert not is_invalid, "Wrong password should be invalid"
     
+    def test_async_database_operations(self):
+        """Test that async database operations don't return Future objects"""
+        from backend.database import get_db, users_collection
+        from backend.auth.utils import hash_password
+        import asyncio
+        
+        # Test 1: Database connection returns proper database, not Future
+        db = get_db()
+        assert db is not None, "Database should be initialized"
+        assert not hasattr(db, '__await__'), "Database should not be a coroutine"
+        
+        # Test 2: Collection operations work correctly
+        users_col = users_collection()
+        assert users_col is not None, "Users collection should be available"
+        assert not hasattr(users_col, '__await__'), "Users collection should not be a coroutine"
+        assert callable(getattr(users_col, 'find_one', None)), "find_one should be callable"
+        
+        # Test 3: Password hashing consistency
+        test_password = "TestPassword123!@#"
+        
+        # Hash password for registration
+        hashed, generated_salt = hash_password(test_password)
+        
+        # Verify the password works
+        is_valid = verify_password(test_password, hashed, generated_salt)
+        assert is_valid, "Password verification should work with consistent hashing"
+        
+        # Test 4: Registration creates proper user record
+        user_doc = {
+            "_id": "test_user_id",
+            "email": "test@example.com",
+            "password_hash": hashed,
+            "password_salt": generated_salt,
+            "name": "Test User"
+        }
+        
+        # Insert should work without Future errors
+        result = asyncio.run(users_col.insert_one(user_doc))
+        assert result is not None, "Insert should return result"
+        assert hasattr(result, 'inserted_id'), "Result should have inserted_id"
+        assert not hasattr(result.inserted_id, '__await__'), "inserted_id should not be a Future"
+        
+        print("✅ Async database operations test passed")
+    
+    def test_password_hashing_consistency(self):
+        """Test password hashing consistency between registration and login"""
+        from backend.auth.utils import hash_password, verify_password
+        
+        # Test password hashing consistency
+        test_password = "TestPassword123!@#"
+        
+        # Hash password for registration
+        reg_hash, reg_salt = hash_password(test_password)
+        
+        # Hash same password for login verification
+        login_hash, login_salt = hash_password(test_password)
+        
+        # Both hashes should be different (different salts generated each time)
+        assert reg_hash != login_hash, "Hashes should be different due to different salts"
+        assert reg_salt != login_salt, "Salts should be different for each hash"
+        
+        # Verify password works with both hashes
+        reg_valid = verify_password(test_password, reg_hash, reg_salt)
+        login_valid = verify_password(test_password, login_hash, login_salt)
+        
+        assert reg_valid, "Password should verify with registration hash"
+        assert login_valid, "Password should verify with login hash"
+        
+        print("✅ Password hashing consistency test passed")
+    
     def test_database_connection_fix(self):
         """Test that database connection uses real MongoDB, not mock"""
         from backend.database import get_db

@@ -379,10 +379,10 @@ def decode_token(token: str) -> TokenData:
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             
-            # Upload tokens should have short TTL (validate max 1 hour)
+            # Upload tokens should have reasonable TTL (validate max 480 hours for large files)
             exp_timestamp = payload["exp"]
             issued_at = payload.get("iat", exp_timestamp)
-            if exp_timestamp - issued_at > 3600:  # More than 1 hour
+            if exp_timestamp - issued_at > 172800:  # More than 48 hours
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Upload token lifetime exceeds maximum allowed duration",

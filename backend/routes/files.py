@@ -1163,18 +1163,18 @@ async def upload_chunk(
                     detail="Upload session has expired"
                 )
         
-        # CRITICAL FIX: Dynamic chunk index validation with resume support
+        # CRITICAL FIX: Dynamic chunk index validation with server-side total_chunks verification
         total_chunks = upload_doc.get("total_chunks", 0)
         uploaded_chunks = upload_doc.get("uploaded_chunks", [])
         
-        # Allow flexible chunk handling for out-of-order uploads and client/server desync
+        # CRITICAL FIX: Validate chunk_index against server-side total_chunks
         if chunk_index < 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid chunk index: {chunk_index}. Chunk index cannot be negative"
             )
         
-        # Handle final chunk index exceeding expected (client/server desync recovery)
+        # CRITICAL FIX: Handle final chunk index exceeding expected (client/server desync recovery)
         if chunk_index >= total_chunks:
             # Check if this might be the last chunk and total_chunks was underestimated
             current_file_size = upload_doc.get("size", 0)

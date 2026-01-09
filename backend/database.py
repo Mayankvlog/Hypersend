@@ -352,7 +352,7 @@ def get_db():
 
 # Collection shortcuts with error handling
 def users_collection():
-    """Get users collection with error handling"""
+    """Get users collection with enhanced error handling and Future safety"""
     try:
         database = get_db()
         if database is None:
@@ -364,9 +364,13 @@ def users_collection():
         
         users_col = database.users
         
-        # CRITICAL FIX: Check if collection is properly initialized
-        if users_col is None:
-            raise RuntimeError("Users collection is None")
+        # CRITICAL FIX: Ensure collection is properly initialized and not a Future
+        if hasattr(users_col, '__await__'):
+            raise RuntimeError("CRITICAL: users_collection is a coroutine - not awaited")
+        
+        # CRITICAL FIX: Validate collection is callable
+        if not callable(getattr(users_col, 'find_one', None)):
+            raise RuntimeError("CRITICAL: users_collection.find_one is not callable")
         
         return users_col
     except Exception as e:
@@ -375,23 +379,111 @@ def users_collection():
 
 
 def chats_collection():
-    database = get_db()
-    return database.chats
+    """Get chats collection with error handling"""
+    try:
+        database = get_db()
+        if database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Check if database has chats collection
+        if not hasattr(database, 'chats'):
+            raise RuntimeError("Database chats collection not available")
+        
+        chats_col = database.chats
+        
+        # CRITICAL FIX: Ensure collection is properly initialized and not a Future
+        if hasattr(chats_col, '__await__'):
+            raise RuntimeError("CRITICAL: chats_collection is a coroutine - not awaited")
+        
+        # CRITICAL FIX: Validate collection is callable
+        if not callable(getattr(chats_col, 'find_one', None)):
+            raise RuntimeError("CRITICAL: chats_collection.find_one is not callable")
+        
+        return chats_col
+    except Exception as e:
+        print(f"[ERROR] Failed to get chats collection: {type(e).__name__}: {str(e)}")
+        raise RuntimeError(f"Database service unavailable: {str(e)}")
 
 
 def messages_collection():
-    database = get_db()
-    return database.messages
+    """Get messages collection with error handling"""
+    try:
+        database = get_db()
+        if database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Check if database has messages collection
+        if not hasattr(database, 'messages'):
+            raise RuntimeError("Database messages collection not available")
+        
+        messages_col = database.messages
+        
+        # CRITICAL FIX: Ensure collection is properly initialized and not a Future
+        if hasattr(messages_col, '__await__'):
+            raise RuntimeError("CRITICAL: messages_collection is a coroutine - not awaited")
+        
+        # CRITICAL FIX: Validate collection is callable
+        if not callable(getattr(messages_col, 'find_one', None)):
+            raise RuntimeError("CRITICAL: messages_collection.find_one is not callable")
+        
+        return messages_col
+    except Exception as e:
+        print(f"[ERROR] Failed to get messages collection: {type(e).__name__}: {str(e)}")
+        raise RuntimeError(f"Database service unavailable: {str(e)}")
 
 
 def files_collection():
-    database = get_db()
-    return database.files
+    """Get files collection with error handling"""
+    try:
+        database = get_db()
+        if database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Check if database has files collection
+        if not hasattr(database, 'files'):
+            raise RuntimeError("Database files collection not available")
+        
+        files_col = database.files
+        
+        # CRITICAL FIX: Ensure collection is properly initialized and not a Future
+        if hasattr(files_col, '__await__'):
+            raise RuntimeError("CRITICAL: files_collection is a coroutine - not awaited")
+        
+        # CRITICAL FIX: Validate collection is callable
+        if not callable(getattr(files_col, 'find_one', None)):
+            raise RuntimeError("CRITICAL: files_collection.find_one is not callable")
+        
+        return files_col
+    except Exception as e:
+        print(f"[ERROR] Failed to get files collection: {type(e).__name__}: {str(e)}")
+        raise RuntimeError(f"Database service unavailable: {str(e)}")
 
 
 def uploads_collection():
-    database = get_db()
-    return database.uploads
+    """Get uploads collection with error handling"""
+    try:
+        database = get_db()
+        if database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Check if database has uploads collection
+        if not hasattr(database, 'uploads'):
+            raise RuntimeError("Database uploads collection not available")
+        
+        uploads_col = database.uploads
+        
+        # CRITICAL FIX: Ensure collection is properly initialized and not a Future
+        if hasattr(uploads_col, '__await__'):
+            raise RuntimeError("CRITICAL: uploads_collection is a coroutine - not awaited")
+        
+        # CRITICAL FIX: Validate collection is callable
+        if not callable(getattr(uploads_col, 'find_one', None)):
+            raise RuntimeError("CRITICAL: uploads_collection.find_one is not callable")
+        
+        return uploads_col
+    except Exception as e:
+        print(f"[ERROR] Failed to get uploads collection: {type(e).__name__}: {str(e)}")
+        raise RuntimeError(f"Database service unavailable: {str(e)}")
 
 
 def refresh_tokens_collection():
