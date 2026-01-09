@@ -396,7 +396,17 @@ async def register(user: UserCreate) -> UserResponse:
                         result = await result
             else:
                 raise RuntimeError("Database collection not properly initialized")
-            auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
+            
+            # CRITICAL FIX: Extract inserted_id safely - it might be a Future object
+            if result is None:
+                raise RuntimeError("Insert operation returned None")
+            
+            inserted_id = result.inserted_id
+            # Validate inserted_id is not a Future/coroutine object
+            if hasattr(inserted_id, '__await__') or asyncio.isfuture(inserted_id):
+                raise RuntimeError(f"Critical async error: inserted_id is a Future object: {type(inserted_id)}")
+            
+            auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {inserted_id})")
         except asyncio.TimeoutError:
             auth_log(f"Database timeout during user insertion")
             raise HTTPException(
@@ -424,7 +434,7 @@ async def register(user: UserCreate) -> UserResponse:
         
         # Create response
         return UserResponse(
-            id=str(result.inserted_id),
+            id=str(inserted_id),
             name=user.name,
             email=user.email,
             username=None,
