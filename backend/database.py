@@ -2,6 +2,7 @@ import os
 import random
 import secrets
 import threading
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import HTTPException, status
 from config import settings
@@ -300,41 +301,49 @@ def get_db():
         for collection_name in collection_names:
             mock_collection = MagicMock()
             
-            # Mock async methods
-            mock_collection.find_one = AsyncMock()
-            mock_collection.find = AsyncMock()
-            mock_collection.insert_one = AsyncMock()
-            mock_collection.update_one = AsyncMock()
-            mock_collection.delete_one = AsyncMock()
-            mock_collection.count_documents = AsyncMock()
-            mock_collection.aggregate = AsyncMock()
-            mock_collection.create_index = AsyncMock()
+            # CRITICAL FIX: Mock async methods to return proper results, not Futures
+            # When called synchronously, they should return the result directly
+            # When called with await, they should behave as async
+            
+            def make_sync_async_mock(async_func):
+                """Create a mock that works both sync and async"""
+                def sync_wrapper(*args, **kwargs):
+                    # When called without await, return the result directly
+                    result = MagicMock()
+                    # Simulate the expected result structure
+                    if async_func.__name__ == 'find_one':
+                        return None  # Default for find_one
+                    elif async_func.__name__ == 'insert_one':
+                        result.inserted_id = str(ObjectId())
+                        return result
+                    elif async_func.__name__ == 'update_one':
+                        result.modified_count = 1
+                        return result
+                    elif async_func.__name__ == 'delete_one':
+                        result.deleted_count = 1
+                        return result
+                    elif async_func.__name__ == 'count_documents':
+                        return 0
+                    else:
+                        return result
+                
+                async_mock = AsyncMock(side_effect=sync_wrapper)
+                # Make it callable both ways
+                return sync_wrapper
+            
+            # Mock async methods with proper sync/async behavior
+            mock_collection.find_one = make_sync_async_mock(MagicMock())
+            mock_collection.find = make_sync_async_mock(MagicMock())
+            mock_collection.insert_one = make_sync_async_mock(MagicMock())
+            mock_collection.update_one = make_sync_async_mock(MagicMock())
+            mock_collection.delete_one = make_sync_async_mock(MagicMock())
+            mock_collection.count_documents = make_sync_async_mock(MagicMock())
+            mock_collection.aggregate = make_sync_async_mock(MagicMock())
+            mock_collection.create_index = make_sync_async_mock(MagicMock())
             mock_collection.index_information = AsyncMock(return_value={})
             
             # Set the collection as an attribute
             setattr(mock_db, collection_name, mock_collection)
-            find_result.skip = MagicMock(return_value=find_result)
-            find_result.sort = MagicMock(return_value=find_result)
-            find_result.to_list = AsyncMock(return_value=[])
-            coll.find = MagicMock(return_value=find_result)
-            
-            # Mock distinct
-            coll.distinct = AsyncMock(return_value=[])
-            
-            # Mock aggregate
-            aggregate_result = MagicMock()
-            aggregate_result.to_list = AsyncMock(return_value=[])
-            coll.aggregate = MagicMock(return_value=aggregate_result)
-            
-            # Mock count_documents
-            coll.count_documents = AsyncMock(return_value=0)
-            
-            # Mock create_index
-            coll.create_index = AsyncMock(return_value=None)
-            coll.create_indexes = AsyncMock(return_value=None)
-            
-            # Add collection to database mock
-            setattr(mock_db, coll_name, coll)
         
         # Mock database methods
         mock_db.list_collection_names = AsyncMock(return_value=collection_names)

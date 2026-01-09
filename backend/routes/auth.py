@@ -330,6 +330,11 @@ async def register(user: UserCreate) -> UserResponse:
         
         # DEBUG: Log the search result for troubleshooting
         if existing_user:
+            # CRITICAL FIX: Check if existing_user is a Future object
+            if hasattr(existing_user, '__await__') or asyncio.isfuture(existing_user):
+                auth_log(f"CRITICAL ERROR: existing_user is a Future object: {type(existing_user)}")
+                raise RuntimeError("Database operation returned Future instead of result")
+            
             auth_log(f"Registration failed: Found existing user with email: {normalized_email} (ID: {existing_user.get('_id')})")
         else:
             auth_log(f"Registration: No existing user found for email: {normalized_email}")
