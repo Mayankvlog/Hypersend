@@ -317,17 +317,10 @@ async def register(user: UserCreate) -> UserResponse:
             )
         except (ConnectionError, TimeoutError) as db_error:
             auth_log(f"Database connection error checking existing user: {type(db_error).__name__}: {str(db_error)}")
-            # CRITICAL FIX: Distinguish between 502 and 503 errors
-            if "connection refused" in str(db_error).lower() or "bad gateway" in str(db_error).lower():
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Database gateway error - upstream service unavailable"
-                )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Database service temporarily unavailable. Please try again."
-                )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service temporarily unavailable. Please try again."
+            )
         except Exception as db_error:
             auth_log(f"Database error checking existing user: {type(db_error).__name__}: {str(db_error)}")
             raise HTTPException(
@@ -353,13 +346,7 @@ async def register(user: UserCreate) -> UserResponse:
             )
         
         # Hash password - CRITICAL FIX: Store hash and salt separately
-        combined_password, salt = hash_password(user.password)
-        
-        # Extract hash from combined format for database storage
-        if '$' in combined_password:
-            password_hash = combined_password.split('$')[1]  # Get hash part
-        else:
-            password_hash = combined_password  # Fallback
+        password_hash, salt = hash_password(user.password)
         
         # Extract initials from name for avatar
         initials = "".join([word[0].upper() for word in user.name.split() if word])[:2]
@@ -394,30 +381,12 @@ async def register(user: UserCreate) -> UserResponse:
         
         # Insert user into database
         try:
-            # CRITICAL FIX: Get database connection first
-            from database import get_db
-            db = get_db()
-            
-            # Get collection directly from database
-            users_col = db.users
-            
-            # CRITICAL FIX: Debug collection type
-            auth_log(f"DEBUG: Collection type: {type(users_col)}")
-            auth_log(f"DEBUG: Collection has insert_one: {hasattr(users_col, 'insert_one')}")
-            
-            if hasattr(users_col, 'insert_one'):
-                result = await asyncio.wait_for(
-                    users_col.insert_one(user_doc),
-                    timeout=5.0
-                )
-                auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
-            else:
-                # Handle case where collection is not properly initialized
-                auth_log(f"Database collection not properly initialized")
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Database service temporarily unavailable"
-                )
+            users_col = users_collection()
+            result = await asyncio.wait_for(
+                users_col.insert_one(user_doc),
+                timeout=5.0
+            )
+            auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
         except asyncio.TimeoutError:
             auth_log(f"Database timeout during user insertion")
             raise HTTPException(
@@ -617,70 +586,15 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             auth_log(f"DEBUG: Email search for login: '{normalized_email}' (normalized)")
             auth_log(f"DEBUG: User found: {bool(existing_user)}")
             
-            # Verify password - CRITICAL FIX: Handle both legacy and new password formats
+            # Verify password - CRITICAL FIX: Ensure password_hash and salt exist
             password_hash = existing_user.get("password_hash")
             password_salt = existing_user.get("password_salt")
             
-            # CRITICAL FIX: Handle legacy password format migration
-            # Check for missing or empty password fields
-            if not password_hash or not password_salt or password_hash == "" or password_salt == "":
-                # Check if user has legacy password format
-                legacy_password = existing_user.get("password")
-                auth_log(f"DEBUG: Checking legacy password for {normalized_email}: {bool(legacy_password)}")
-                
-                if legacy_password and isinstance(legacy_password, str) and '$' in legacy_password:
-                    # Parse legacy format: salt$hash
-                    parts = legacy_password.split('$')
-                    if len(parts) == 2:
-                        password_salt, password_hash = parts
-                        auth_log(f"Migrating legacy password format for {normalized_email}")
-                        
-                        # Update user record with new format
-                        try:
-                            await users_collection().update_one(
-                                {"_id": existing_user["_id"]},
-                                {
-                                    "$set": {
-                                        "password_hash": password_hash,
-                                        "password_salt": password_salt,
-                                        "password_migrated": True
-                                    },
-                                    "$unset": {"password": ""}
-                                }
-                            )
-                            auth_log(f"Successfully migrated password format for {normalized_email}")
-                        except Exception as migrate_error:
-                            auth_log(f"Failed to migrate password for {normalized_email}: {migrate_error}")
-                            # Continue with legacy format for now
-                    else:
-                        auth_log(f"Invalid legacy password format for {normalized_email}")
-                else:
-                    # Try to find password in other possible fields
-                    possible_fields = ["pwd", "pass", "password_hash", "password_salt"]
-                    for field in possible_fields:
-                        value = existing_user.get(field)
-                        if value and isinstance(value, str) and value.strip():
-                            auth_log(f"Found password in field '{field}' for {normalized_email}")
-                            if field == "password_hash":
-                                password_hash = value
-                            elif field == "password_salt":
-                                password_salt = value
-                            break
-                
-                # If still no password hash after migration attempt
-                if not password_hash or not password_salt or password_hash == "" or password_salt == "":
-                    auth_log(f"Login failed: User {normalized_email} has no valid password hash or salt (corrupted record)")
-                    auth_log(f"DEBUG: User fields - password_hash: {repr(password_hash)}, password_salt: {repr(password_salt)}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid email or password"
-                    )
-            
-            # Handle new format (separate hash/salt) stored as tuple/list (edge case)
+            # Handle both new format (separate hash/salt) and legacy format (tuple)
             if isinstance(password_hash, (tuple, list)) and len(password_hash) == 2:
                 # Legacy format: (hash, salt) stored as tuple
                 password_hash, password_salt = password_hash
-                auth_log(f"Converting tuple password format for {normalized_email}")
+                auth_log(f"Converting legacy password format for {normalized_email}")
             
             if not password_hash:
                 auth_log(f"Login failed: User {normalized_email} has no password hash (corrupted record)")

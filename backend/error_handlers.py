@@ -229,9 +229,9 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
         for err in errors
     )
     
-    # Use 422 for validation errors (Pydantic standard)
-    # This aligns with FastAPI's default validation behavior
-    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    # Use 400 for all validation errors (both missing fields and invalid values)
+    # This aligns with HTTP semantics: 400 for bad request, 422 for unprocessable
+    status_code = status.HTTP_400_BAD_REQUEST
     
     # Build a meaningful detail message based on the first error
     detail_message = "Request data validation failed"
@@ -832,17 +832,8 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 def get_error_hints(status_code: int) -> List[str]:
     """Get helpful hints for common HTTP errors"""
     hints_map = {
-        300: ["Multiple options available", "Please specify your choice", "Check response body for options", "This is a redirect response"],
-        301: ["Resource permanently moved", "Update your bookmarks", "Follow the new location", "This is a redirect response"],
-        302: ["Resource temporarily moved", "Follow the redirect", "This is a temporary redirect", "This is a redirect response"],
-        303: ["See other resource", "Follow redirect to GET resource", "POST redirected to GET", "This is a redirect response"],
-        304: ["Use cached version", "No need to re-download", "Cached content is current", "This is a redirect response"],
-        305: ["Use proxy server", "Redirect through proxy", "Configure proxy settings", "This is a redirect response"],
-        307: ["Temporary redirect", "Preserve HTTP method", "Redirect with same method", "This is a redirect response"],
-        308: ["Permanent redirect", "Preserve HTTP method", "Update to new location", "This is a redirect response"],
         400: ["Verify request syntax", "Check all required fields are provided", "Ensure data types are correct", "This is a client error"],
         401: ["Verify your authentication token", "Check if your session has expired", "Try logging in again", "This is a client error"],
-        402: ["Payment required for this service", "Check billing status", "Contact support for payment options", "This is a client error"],
         403: ["Verify you have permission", "Check resource ownership", "Contact administrator for access", "This is a client error"],
         404: ["Verify the resource ID or URL", "Check if the resource was deleted", "Verify you have access", "This is a client error"],
         405: ["Check API documentation for allowed methods", "Use GET, POST, PUT, DELETE as appropriate", "This is a client error"],
@@ -858,14 +849,7 @@ def get_error_hints(status_code: int) -> List[str]:
         415: ["Use correct Content-Type header", "application/json for JSON", "multipart/form-data for files", "This is a client error"],
         416: ["Verify byte range is valid", "Ensure range end is greater than start", "This is a client error"],
         417: ["Check Expect header requirements", "This is a client error"],
-        418: ["I'm a teapot - RFC 2324 joke error", "This is an easter egg, not a real error", "This is a client error"],
-        421: ["Request was sent to wrong server", "Check DNS configuration", "Verify proxy settings", "This is a client error"],
         422: ["Check validation errors for specific fields", "Verify data constraints (length, format, etc.)", "Review error details", "This is a client error"],
-        423: ["Resource is currently locked", "Wait and try again later", "Contact resource owner", "This is a client error"],
-        424: ["Dependency failed", "Check related resources", "Verify all dependencies are available", "This is a client error"],
-        425: ["Too early to process request", "Wait before retrying", "Check replay protection headers", "This is a client error"],
-        426: ["Protocol upgrade required", "Update your client", "Use newer HTTP version", "This is a client error"],
-        428: ["Precondition required", "Add required precondition headers", "Check API documentation", "This is a client error"],
         429: ["Wait before retrying", f"Implement exponential backoff", "Check rate limit configuration", "This is a client error"],
         431: ["Reduce header size", "Remove unnecessary headers", "Check cookie size", "This is a client error"],
         451: ["Content is blocked due to legal requirements", "Contact support if you believe this is an error", "This is a client error"],
@@ -874,12 +858,6 @@ def get_error_hints(status_code: int) -> List[str]:
         502: ["Upstream server is having issues", "Try again later", "server error"],
         503: ["Server is temporarily unavailable", "Try again later", "Check system status", "server error"],
         504: ["Upstream server timeout", "Try with a smaller request", "Check server load", "server error"],
-        505: ["HTTP version not supported", "Use HTTP/1.1 or HTTP/2", "Update your client", "server error"],
-        506: ["Variant negotiation failed", "Check Accept headers", "Try different content type", "server error"],
-        507: ["Server storage full", "Contact administrator", "Try again later", "server error"],
-        508: ["Loop detected in request", "Check for circular references", "Verify request structure", "server error"],
-        510: ["Further extensions required", "Check API documentation", "Use required extensions", "server error"],
-        511: ["Network authentication required", "Check network settings", "Configure proxy authentication", "server error"],
     }
     
     return hints_map.get(status_code, [])

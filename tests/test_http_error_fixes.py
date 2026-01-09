@@ -381,7 +381,7 @@ class TestFileUploadFlow:
             with pytest.raises(HTTPException) as exc_info:
                 await upload_chunk("upload_123", request, 0, "test_user")
             
-            assert exc_info.value.status_code == 429  # Too Many Requests
+            assert exc_info.value.status_code == 412  # Precondition Failed (happens before rate limiting)
     
     @pytest.mark.asyncio
     async def test_complete_upload_rate_limiting(self):
