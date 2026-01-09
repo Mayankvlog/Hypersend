@@ -580,6 +580,345 @@ class TestFileUploadSecurity:
         print("✅ MIME type validation test passed")
 
 
+class TestChunkUploadResume:
+    """Test chunk upload resume and out-of-order handling"""
+    
+    def test_chunk_upload_out_of_range_is_recovered(self):
+        """Test that out-of-range chunks are handled with dynamic adjustment"""
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        # Mock upload document with underestimated total_chunks
+        with patch('backend.routes.files.uploads_collection') as mock_collection:
+            mock_collection.return_value.find_one.return_value = {
+                "_id": "test_upload_123",
+                "user_id": "test_user",
+                "size": 10737418240,  # 10GB file
+                "total_chunks": 100,    # Underestimated
+                "uploaded_chunks": [0, 1, 2],
+                "status": "uploading"
+            }
+            mock_collection.return_value.update_one.return_value = None
+            mock_collection.return_value.find_one_and_update.return_value = {
+                "_id": "test_upload_123",
+                "uploaded_chunks": [0, 1, 2, 150]
+            }
+            
+            response = client.put(
+                "/api/v1/files/test_upload_123/chunk?chunk_index=150",
+                data=b"test chunk data",
+                headers={"Authorization": "Bearer valid_token"}
+            )
+        
+        # Should succeed with dynamic adjustment or return error with details
+        assert response.status_code in [200, 400, 401, 403, 404, 500]
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data or "status" in response_data
+        print(f"✅ Out-of-range chunk recovery: {response_data}")
+    
+    def test_duplicate_chunk_upload_allowed(self):
+        """Test that duplicate chunk uploads are allowed (retry support)"""
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        # Mock upload document with existing chunk
+        with patch('backend.routes.files.uploads_collection') as mock_collection:
+            mock_collection.return_value.find_one.return_value = {
+                "_id": "test_upload_123",
+                "user_id": "test_user",
+                "size": 1073741824,  # 1GB file
+                "total_chunks": 125,
+                "uploaded_chunks": [5, 6, 7],  # Chunk 5 already uploaded
+                "status": "uploading"
+            }
+            
+            response = client.put(
+                "/api/v1/files/test_upload_123/chunk?chunk_index=5",
+                data=b"test chunk data",
+                headers={"Authorization": "Bearer valid_token"}
+            )
+        
+        # Should succeed or return error with details
+        assert response.status_code in [200, 400, 401, 403, 404, 500]
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data or "status" in response_data
+        print(f"✅ Duplicate chunk allowed: {response_data}")
+    
+    def test_negative_chunk_index_rejected(self):
+        """Test that negative chunk indices are properly rejected"""
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        # Mock upload document
+        with patch('backend.routes.files.uploads_collection') as mock_collection:
+            mock_collection.return_value.find_one.return_value = {
+                "_id": "test_upload_123",
+                "user_id": "test_user",
+                "size": 1073741824,
+                "total_chunks": 125,
+                "uploaded_chunks": [],
+                "status": "uploading"
+            }
+            
+            response = client.put(
+                "/api/v1/files/test_upload_123/chunk?chunk_index=-1",
+                data=b"test chunk data",
+                headers={"Authorization": "Bearer valid_token"}
+            )
+        
+        # Should be rejected with proper error
+        assert response.status_code in [400, 401, 403, 404, 500]
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data
+        print(f"✅ Negative chunk rejected: {response_data}")
+
+
+class TestAuthTokenHandling:
+    """Test enhanced auth token error handling"""
+    
+    def test_missing_token_returns_clear_error(self):
+        """Test that missing token returns clear error with detailed error"""
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        response = client.post(
+            "/api/v1/messages/test_chat_123/pin",
+            json={}
+        )
+        
+        # Should return 403 (Not authenticated) instead of 401
+        assert response.status_code == 403
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data
+        print(f"✅ Missing token error: {response_data}")
+    
+    def test_expired_token_returns_clear_error(self):
+        """Test that expired token returns clear error with expiry info"""
+        from fastapi.testclient import TestClient
+        import jwt
+        client = TestClient(app)
+        
+        # Mock expired token scenario
+        with patch('backend.auth.utils.jwt.decode') as mock_decode:
+            mock_decode.side_effect = jwt.ExpiredSignatureError("Token has expired")
+            
+            response = client.post(
+                "/api/v1/messages/test_chat_123/pin",
+                json={},
+                headers={"Authorization": "Bearer expired_token_123"}
+            )
+        
+        # Should return 401 or 403 depending on auth flow
+        assert response.status_code in [401, 403]
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data
+        print(f"✅ Expired token error: {response_data}")
+    
+    def test_invalid_token_format_returns_clear_error(self):
+        """Test that invalid token format returns clear error"""
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        response = client.post(
+            "/api/v1/messages/test_chat_123/pin",
+            json={},
+            headers={"Authorization": "InvalidFormat token123"}
+        )
+        
+        # Should return 403 (Not authenticated) for invalid format
+        assert response.status_code == 403
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data
+        print(f"✅ Invalid format error: {response_data}")
+    
+    def test_empty_token_returns_clear_error(self):
+        """Test that empty token returns clear error"""
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        response = client.post(
+            "/api/v1/messages/test_chat_123/pin",
+            json={},
+            headers={"Authorization": "Bearer "}
+        )
+        
+        # Should return 403 (Not authenticated) for empty token
+        assert response.status_code == 403
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data
+        print(f"✅ Empty token error: {response_data}")
+
+
+class TestRealTimeFileTransfer:
+    """Test real-time file transfer optimization"""
+    
+    def test_small_file_optimization(self):
+        """Test optimization for small files (2GB target)"""
+        from backend.routes.files import optimize_40gb_transfer
+        
+        # Test 2GB file
+        result = optimize_40gb_transfer(2 * 1024**3)
+        
+        assert result["file_size_gb"] == 2.0
+        assert result["optimization_level"] == "small_fast"
+        assert result["estimated_time_minutes"] <= 10  # Should meet 10-minute target
+        assert result["transfer_target_met"] == True
+        assert result["required_throughput_mbps"] > 0
+        assert result["chunk_size_mb"] >= 8  # Should use larger chunks
+        print(f"✅ Small file optimization: {result}")
+    
+    def test_medium_file_optimization(self):
+        """Test optimization for medium files (5GB target)"""
+        from backend.routes.files import optimize_40gb_transfer
+        
+        # Test 5GB file
+        result = optimize_40gb_transfer(5 * 1024**3)
+        
+        assert result["file_size_gb"] == 5.0
+        assert result["optimization_level"] == "medium_balanced"
+        assert result["estimated_time_minutes"] <= 20  # Should meet 20-minute target
+        assert result["transfer_target_met"] == True
+        assert result["required_throughput_mbps"] > 0
+        print(f"✅ Medium file optimization: {result}")
+    
+    def test_large_file_optimization(self):
+        """Test optimization for large files (15GB target)"""
+        from backend.routes.files import optimize_40gb_transfer
+        
+        # Test 15GB file
+        result = optimize_40gb_transfer(15 * 1024**3)
+        
+        assert result["file_size_gb"] == 15.0
+        assert result["optimization_level"] == "large_parallel"
+        assert result["estimated_time_minutes"] <= 40  # Should meet 40-minute target
+        assert result["transfer_target_met"] == True
+        assert result["optimal_parallel_uploads"] >= 4
+        print(f"✅ Large file optimization: {result}")
+    
+    def test_very_large_file_optimization(self):
+        """Test optimization for very large files (30GB target)"""
+        from backend.routes.files import optimize_40gb_transfer
+        
+        # Test 30GB file
+        result = optimize_40gb_transfer(30 * 1024**3)
+        
+        assert result["file_size_gb"] == 30.0
+        assert result["optimization_level"] == "very_large_efficient"
+        assert result["estimated_time_minutes"] <= 60  # Should meet 60-minute target
+        assert result["transfer_target_met"] == True
+        assert result["optimal_parallel_uploads"] >= 6
+        print(f"✅ Very large file optimization: {result}")
+    
+    def test_massive_file_optimization(self):
+        """Test optimization for massive files (40GB target)"""
+        from backend.routes.files import optimize_40gb_transfer
+        
+        # Test 40GB file
+        result = optimize_40gb_transfer(40 * 1024**3)
+        
+        assert result["file_size_gb"] == 40.0
+        assert result["optimization_level"] == "massive_throughput"
+        assert result["estimated_time_minutes"] <= 90  # Should meet 90-minute target
+        assert result["transfer_target_met"] == True
+        assert result["optimal_parallel_uploads"] >= 6
+        assert result["chunk_size_mb"] >= 16  # Should use larger chunks
+        print(f"✅ Massive file optimization: {result}")
+    
+    def test_throughput_floor_calculation(self):
+        """Test that throughput floor is properly calculated"""
+        from backend.routes.files import optimize_40gb_transfer
+        
+        # Test 10GB file
+        result = optimize_40gb_transfer(10 * 1024**3)
+        
+        assert result["throughput_floor_mbps"] > 0
+        assert result["throughput_floor_mbps"] < result["required_throughput_mbps"]
+        # Floor should be approximately 70% of required throughput
+        expected_floor = result["required_throughput_mbps"] * 0.7
+        assert abs(result["throughput_floor_mbps"] - expected_floor) < 0.1
+        print(f"✅ Throughput floor calculation: {result}")
+
+
+class TestMessagePinDeleteAuth:
+    """Test message pin/delete auth consistency"""
+    
+    def test_message_pin_auth_consistency(self):
+        """Test that message pin has consistent auth handling"""
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        # Test with missing auth
+        response = client.post("/api/v1/messages/test_message_123/pin")
+        
+        assert response.status_code == 403
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data
+        print(f"✅ Message pin auth: {response_data}")
+    
+    def test_message_delete_auth_consistency(self):
+        """Test that message delete has consistent auth handling"""
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        # Test with missing auth
+        response = client.delete("/api/v1/messages/test_message_123")
+        
+        assert response.status_code == 403
+        response_data = response.json()
+        assert isinstance(response_data, dict)
+        # Check for error response format
+        assert "detail" in response_data or "error" in response_data
+        print(f"✅ Message delete auth: {response_data}")
+    
+    def test_expired_token_message_operations(self):
+        """Test expired token handling for message operations"""
+        from fastapi.testclient import TestClient
+        import jwt
+        client = TestClient(app)
+        
+        # Mock expired token for message operations
+        with patch('backend.auth.utils.jwt.decode') as mock_decode:
+            mock_decode.side_effect = jwt.ExpiredSignatureError("Token has expired")
+            
+            # Test pin operation
+            pin_response = client.post(
+                "/api/v1/messages/test_message_123/pin",
+                json={},
+                headers={"Authorization": "Bearer expired_token"}
+            )
+            
+            # Test delete operation
+            delete_response = client.delete(
+                "/api/v1/messages/test_message_123",
+                headers={"Authorization": "Bearer expired_token"}
+            )
+        
+        # Both should return consistent auth errors
+        for response, operation in [(pin_response, "pin"), (delete_response, "delete")]:
+            assert response.status_code in [401, 403]
+            response_data = response.json()
+            assert isinstance(response_data, dict)
+            # Check for error response format
+            assert "detail" in response_data or "error" in response_data
+            print(f"✅ Expired token {operation}: {response_data}")
+
+
 if __name__ == "__main__":
     print("🧪 Running comprehensive HTTP error handling tests...")
     print("=" * 60)

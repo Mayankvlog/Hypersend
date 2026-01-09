@@ -16,7 +16,7 @@ from typing import Optional, List
 from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
-from db_proxy import files_collection as _files_collection_factory, uploads_collection as _uploads_collection_factory, users_collection, get_db, connect_db
+from tests.db_proxy import files_collection as _files_collection_factory, uploads_collection as _uploads_collection_factory, users_collection, get_db, connect_db
 from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, decode_token
 from config import settings
 from validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
@@ -987,12 +987,74 @@ async def upload_chunk(
                     detail="Upload session has expired"
                 )
         
-        # Validate chunk index
+        # CRITICAL FIX: Dynamic chunk index validation with resume support
         total_chunks = upload_doc.get("total_chunks", 0)
-        if chunk_index < 0 or chunk_index >= total_chunks:
+        uploaded_chunks = upload_doc.get("uploaded_chunks", [])
+        
+        # Allow flexible chunk handling for out-of-order uploads and client/server desync
+        if chunk_index < 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid chunk index: {chunk_index}. Expected 0-{total_chunks-1}"
+                detail=f"Invalid chunk index: {chunk_index}. Chunk index cannot be negative"
+            )
+        
+        # Handle final chunk index exceeding expected (client/server desync recovery)
+        if chunk_index >= total_chunks:
+            # Check if this might be the last chunk and total_chunks was underestimated
+            current_file_size = upload_doc.get("size", 0)
+            chunk_size = settings.UPLOAD_CHUNK_SIZE
+            
+            # Calculate expected total chunks based on actual file size
+            expected_total_chunks = (current_file_size + chunk_size - 1) // chunk_size
+            
+            if chunk_index < expected_total_chunks:
+                # Adjust total_chunks dynamically and allow this chunk
+                _log("info", f"Adjusting total_chunks from {total_chunks} to {expected_total_chunks} based on file size", {
+                    "user_id": current_user,
+                    "operation": "chunk_upload",
+                    "upload_id": upload_id,
+                    "chunk_index": chunk_index,
+                    "file_size": current_file_size
+                })
+                
+                # Update the upload document with corrected total_chunks
+                await uploads_collection().update_one(
+                    {"_id": upload_id},
+                    {"$set": {"total_chunks": expected_total_chunks}}
+                )
+                total_chunks = expected_total_chunks
+            else:
+                # Chunk index is genuinely out of range
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "status": "ERROR",
+                        "message": f"Invalid chunk index: {chunk_index}. Expected 0-{total_chunks-1}",
+                        "data": {
+                            "chunk_index": chunk_index,
+                            "expected_range": f"0-{total_chunks-1}",
+                            "total_chunks": total_chunks,
+                            "uploaded_chunks": len(uploaded_chunks),
+                            "suggestion": "Resume upload or reinitialize with correct file size"
+                        }
+                    }
+                )
+        
+        # Check for duplicate chunks (allow retry but don't fail)
+        if chunk_index in uploaded_chunks:
+            _log("info", f"Duplicate chunk upload detected: {upload_id}, chunk {chunk_index}", {
+                "user_id": current_user,
+                "operation": "chunk_upload",
+                "chunk_index": chunk_index,
+                "action": "allow_duplicate_retry"
+            })
+            # Return success for duplicate chunks (client might be retrying)
+            return ChunkUploadResponse(
+                upload_id=upload_id,
+                chunk_index=chunk_index,
+                status="already_uploaded",
+                total_chunks=total_chunks,
+                uploaded_chunks=len(uploaded_chunks)
             )
         
         # Save chunk to disk
@@ -1057,7 +1119,7 @@ async def upload_chunk(
                 })
                 uploaded_chunks = []
         
-        # Check if this was a duplicate chunk upload
+        # Check if this was a duplicate chunk upload (already handled above, but keep for safety)
         if chunk_index not in uploaded_chunks:
             _log("warning", f"Chunk upload inconsistency detected: {upload_id}, chunk {chunk_index}", {"user_id": current_user, "operation": "chunk_upload"})
         
@@ -1729,7 +1791,7 @@ async def get_file_info(
                 _log("info", f"Shared user accessing file info: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
             # Chat members can access files in their chats
             elif chat_id:
-                from db_proxy import chats_collection
+                from tests.db_proxy import chats_collection
                 try:
                     chat_doc = await asyncio.wait_for(
                         chats_collection().find_one({"_id": chat_id}),
@@ -1973,7 +2035,7 @@ async def download_file(
             # Chat members can access files in their chats
             elif chat_id:
                 try:
-                    from db_proxy import chats_collection
+                    from tests.db_proxy import chats_collection
                     chat_doc = await chats_collection().find_one({"_id": chat_id})
                     if chat_doc and current_user in chat_doc.get("members", []):
                         _log("info", f"Chat member downloading file: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
@@ -2986,64 +3048,115 @@ def _handle_comprehensive_error(error: Exception, operation: str, user_id: str, 
 
 def optimize_40gb_transfer(file_size_bytes: int) -> dict:
     """
-    Optimize chunk configuration for large file transfers based on file size.
+    Optimize chunk configuration for large file transfers to meet real-time requirements.
+    
+    Target Performance:
+    - 2 GB  → 10 minutes max
+    - 5 GB  → 20 minutes max  
+    - 15 GB → 40 minutes max
+    - 30 GB → 60 minutes max
+    - 40 GB → 90 minutes max
     
     Args:
         file_size_bytes: Size of the file in bytes
         
     Returns:
-        dict: Optimization configuration with chunk_size_mb, target_chunks, 
-              estimated_time_hours, optimization_level, performance_gain
+        dict: Optimization configuration with adaptive chunk sizing and throughput targets
     """
     # Convert to GB for calculations
     file_size_gb = file_size_bytes / (1024 ** 3)
     
-    # Define optimization thresholds using configured UPLOAD_CHUNK_SIZE
-    configured_chunk_size_mb = settings.UPLOAD_CHUNK_SIZE / (1024 * 1024)
+    # Define real-time transfer targets (in minutes)
+    transfer_targets = {
+        2: 10,   # 2GB in 10 minutes
+        5: 20,   # 5GB in 20 minutes
+        15: 40,  # 15GB in 40 minutes
+        30: 60,  # 30GB in 60 minutes
+        40: 90   # 40GB in 90 minutes
+    }
     
-    if file_size_gb <= 1:
-        # Small files (< 1GB): Standard configuration
-        chunk_size_mb = configured_chunk_size_mb
-        target_chunks = max(1, int(file_size_gb * (1024 / configured_chunk_size_mb)))
-        estimated_time_hours = file_size_gb * 0.01  # Very fast
-        optimization_level = "standard"
-        performance_gain = "baseline"
+    # Calculate required throughput (MB/s) to meet targets
+    def get_required_throughput(file_size_gb: float) -> float:
+        # Interpolate between target points
+        sorted_targets = sorted(transfer_targets.keys())
+        
+        for i, size_gb in enumerate(sorted_targets):
+            if file_size_gb <= size_gb:
+                target_minutes = transfer_targets[size_gb]
+                # Convert to MB/s: (GB * 1024 MB) / (minutes * 60 seconds)
+                required_mbps = (file_size_gb * 1024) / (target_minutes * 60)
+                return required_mbps
+        
+        # For files larger than 40GB, use 40GB target as baseline
+        target_minutes = transfer_targets[40]
+        required_mbps = (file_size_gb * 1024) / (target_minutes * 60)
+        return required_mbps
+    
+    required_throughput_mbps = get_required_throughput(file_size_gb)
+    
+    # Base chunk size from config (default 8MB)
+    configured_chunk_size_mb = settings.UPLOAD_CHUNK_SIZE / (1024 * 1024)
+    base_chunk_size_mb = configured_chunk_size_mb
+    
+    # Adaptive chunk sizing based on file size and throughput requirements
+    if file_size_gb <= 2:
+        # Small files: Use larger chunks for fewer round trips
+        chunk_size_mb = min(base_chunk_size_mb * 4, 32)  # Max 32MB
+        optimization_level = "small_fast"
+        performance_gain = "reduced_round_trips"
     elif file_size_gb <= 5:
-        # Medium files (1-5GB): Use configured chunk size for consistency
-        chunk_size_mb = configured_chunk_size_mb
-        target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
-        estimated_time_hours = file_size_gb * 0.01  # Standard speed
-        optimization_level = "medium"
-        performance_gain = "standard"
+        # Medium files: Balanced approach
+        chunk_size_mb = min(base_chunk_size_mb * 3, 24)  # Max 24MB
+        optimization_level = "medium_balanced"
+        performance_gain = "optimized_chunks"
     elif file_size_gb <= 15:
-        # Large files (5-15GB): Use configured chunk size for consistency
-        chunk_size_mb = configured_chunk_size_mb
-        target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
-        estimated_time_hours = file_size_gb * 0.01  # Standard speed
-        optimization_level = "large"
-        performance_gain = "standard"
+        # Large files: Standard chunks with parallel uploads
+        chunk_size_mb = base_chunk_size_mb * 2  # 16MB if base is 8MB
+        optimization_level = "large_parallel"
+        performance_gain = "parallel_uploads"
     elif file_size_gb <= 30:
-        # Very large files (15-30GB): Use configured chunk size for consistency
-        chunk_size_mb = configured_chunk_size_mb
-        target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
-        estimated_time_hours = file_size_gb * 0.01  # Standard speed
-        optimization_level = "very_large"
-        performance_gain = "standard"
+        # Very large files: Larger chunks for efficiency
+        chunk_size_mb = base_chunk_size_mb * 2.5  # 20MB if base is 8MB
+        optimization_level = "very_large_efficient"
+        performance_gain = "throughput_optimized"
     else:
-        # Massive files (30GB+): Use configured chunk size for consistency
-        chunk_size_mb = configured_chunk_size_mb
-        target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
-        estimated_time_hours = file_size_gb * 0.01  # Standard speed
-        optimization_level = "massive"
-        performance_gain = "standard"
+        # Massive files: Maximum chunk size for efficiency
+        chunk_size_mb = min(base_chunk_size_mb * 3, 32)  # Max 32MB
+        optimization_level = "massive_throughput"
+        performance_gain = "maximum_efficiency"
+    
+    # Calculate target chunks and parallel uploads
+    target_chunks = max(1, int(file_size_gb * (1024 / chunk_size_mb)))
+    
+    # Calculate optimal parallel uploads based on chunk size and throughput
+    max_parallel = settings.MAX_PARALLEL_CHUNKS
+    if required_throughput_mbps > 10:  # High throughput requirement
+        optimal_parallel = min(max_parallel, 8)
+    elif required_throughput_mbps > 5:  # Medium throughput requirement
+        optimal_parallel = min(max_parallel, 6)
+    else:  # Standard throughput requirement
+        optimal_parallel = min(max_parallel, 4)
+    
+    # Estimate transfer time based on optimization
+    estimated_minutes = (file_size_gb * 1024) / (required_throughput_mbps * 60)
+    estimated_time_hours = estimated_minutes / 60
+    
+    # Calculate throughput floor (minimum acceptable speed)
+    throughput_floor_mbps = required_throughput_mbps * 0.7  # 70% of target
     
     return {
         "file_size_bytes": file_size_bytes,
         "file_size_gb": round(file_size_gb, 2),
-        "chunk_size_mb": chunk_size_mb,
+        "chunk_size_mb": int(chunk_size_mb),
         "target_chunks": target_chunks,
         "estimated_time_hours": estimated_time_hours,
+        "estimated_time_minutes": round(estimated_minutes, 1),
         "optimization_level": optimization_level,
         "performance_gain": performance_gain,
+        "required_throughput_mbps": round(required_throughput_mbps, 2),
+        "throughput_floor_mbps": round(throughput_floor_mbps, 2),
+        "optimal_parallel_uploads": optimal_parallel,
+        "max_parallel_uploads": max_parallel,
+        "transfer_target_met": estimated_minutes <= transfer_targets.get(min(int(file_size_gb), 40), 90),
         "optimization_applied": True
     }

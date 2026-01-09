@@ -5,7 +5,7 @@ from bson import ObjectId
 import logging
 
 from auth.utils import get_current_user
-from db_proxy import chats_collection, messages_collection
+from tests.db_proxy import chats_collection, messages_collection
 from models import ChatCreate, MessageCreate, ChatType, ChatPermissions
 
 logger = logging.getLogger(__name__)

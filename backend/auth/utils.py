@@ -627,15 +627,42 @@ async def get_current_user_for_upload(
     if token is not None:
         logger.warning("SECURITY VIOLATION: Query parameter authentication attempted for upload - ignored for security")
     
-    # Only try header auth - query parameter auth disabled
+    # CRITICAL FIX: Enhanced authentication with detailed error messages
     auth_header = request.headers.get("authorization", "")
-    is_testclient = "testclient" in request.headers.get("user-agent", "lower()").lower()
-    if not auth_header or not auth_header.startswith("Bearer "):
-        if getattr(settings, "DEBUG", False) or "testclient" in request.headers.get("user-agent", "").lower():
+    is_testclient = "testclient" in request.headers.get("user-agent", "").lower()
+    
+    if not auth_header:
+        if getattr(settings, "DEBUG", False) or is_testclient:
             return "test-user"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required for upload - use Authorization header with Bearer token",
+            detail={
+                "status": "ERROR",
+                "message": "Authentication required - missing Authorization header",
+                "data": {
+                    "error_type": "missing_header",
+                    "required": "Authorization: Bearer <token> header",
+                    "hint": "Add Authorization header with Bearer token"
+                }
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not auth_header.startswith("Bearer "):
+        if getattr(settings, "DEBUG", False) or is_testclient:
+            return "test-user"
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "status": "ERROR",
+                "message": "Invalid Authorization header format - must start with 'Bearer '",
+                "data": {
+                    "error_type": "invalid_format",
+                    "received": auth_header[:20] + "..." if len(auth_header) > 20 else auth_header,
+                    "expected": "Bearer <token>",
+                    "hint": "Use format: Authorization: Bearer <token>"
+                }
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -643,7 +670,16 @@ async def get_current_user_for_upload(
     if not header_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Authorization header format",
+            detail={
+                "status": "ERROR",
+                "message": "Empty token provided in Authorization header",
+                "data": {
+                    "error_type": "empty_token",
+                    "received": "Bearer <empty>",
+                    "expected": "Bearer <token>",
+                    "hint": "Ensure token is provided after 'Bearer '"
+                }
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -661,7 +697,14 @@ async def get_current_user_for_upload(
             if token_data.token_type != "access":
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token type - access token required",
+                    detail={
+                        "status": "ERROR",
+                        "message": "Invalid token type - access token required",
+                        "data": {
+                            "error_type": "invalid_token_type",
+                            "action_required": "Login again to get fresh token"
+                        }
+                    }
                 )
             
             return token_data.user_id
@@ -675,10 +718,17 @@ async def get_current_user_for_upload(
                 return "test-user"
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
+                detail={
+                    "status": "ERROR",
+                    "message": "Authentication failed",
+                    "data": {
+                        "error_type": "auth_failed",
+                        "action_required": "Login again to get fresh token"
+                    }
+                },
                 headers={"WWW-Authenticate": "Bearer"},
             )
-    
+
     # For upload operations, use extended 480-hour validation
     try:
         # Decode token WITHOUT expiration check first
@@ -688,7 +738,14 @@ async def get_current_user_for_upload(
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing user ID",
+                detail={
+                    "status": "ERROR",
+                    "message": "Invalid token: missing user ID",
+                    "data": {
+                        "error_type": "invalid_token",
+                        "action_required": "Login again to get fresh token"
+                    }
+                },
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
@@ -748,7 +805,15 @@ async def get_current_user_for_upload(
             # If we get here, token is too old or invalid
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token expired: older than 480 hours. Please re-authenticate.",
+                detail={
+                    "status": "ERROR",
+                    "message": "Token expired: older than 480 hours. Please re-authenticate.",
+                    "data": {
+                        "error_type": "expired_token",
+                        "max_age_hours": 480,
+                        "action_required": "Login again to get fresh token"
+                    }
+                },
                 headers={"WWW-Authenticate": "Bearer"},
             )
             
@@ -756,25 +821,45 @@ async def get_current_user_for_upload(
             logger.error(f"Failed to extend expired token: {str(extend_error)}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token validation failed",
+                detail={
+                    "status": "ERROR",
+                    "message": "Token validation failed",
+                    "data": {
+                        "error_type": "validation_failed",
+                        "action_required": "Login again to get fresh token"
+                    }
+                },
                 headers={"WWW-Authenticate": "Bearer"},
             )
+    
+    except jwt.DecodeError as decode_error:
+        # Handle JWT decode errors (invalid token format, missing segments, etc.)
+        logger.error(f"JWT decode error: {str(decode_error)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "status": "ERROR",
+                "message": "Invalid token format",
+                "data": {
+                    "error_type": "invalid_token_format",
+                    "action_required": "Login again to get fresh token"
+                }
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     except jwt.InvalidTokenError as e:
         logger.error(f"Invalid token for upload: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token format",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    except Exception as e:
-        logger.error(f"Authentication failed: {str(e)}")
-        if getattr(settings, "DEBUG", False) or "testclient" in request.headers.get("user-agent", "").lower():
-            return "test-user"
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail={
+                "status": "ERROR",
+                "message": "Invalid token format",
+                "data": {
+                    "error_type": "invalid_token",
+                    "action_required": "Login again to get fresh token"
+                }
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
 

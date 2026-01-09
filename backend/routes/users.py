@@ -4,7 +4,7 @@ from models import (
     UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
     UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
 )
-from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
+from tests.db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
 from auth.utils import get_current_user, get_current_user_optional, get_current_user_or_query
 import asyncio
 from pydantic import BaseModel, Field, field_validator
