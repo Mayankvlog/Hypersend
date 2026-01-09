@@ -382,10 +382,20 @@ async def register(user: UserCreate) -> UserResponse:
         # Insert user into database
         try:
             users_col = users_collection()
-            result = await asyncio.wait_for(
-                users_col.insert_one(user_doc),
-                timeout=5.0
-            )
+            # CRITICAL FIX: Ensure database connection is properly awaited
+            if hasattr(users_col, 'insert_one'):
+                if asyncio.iscoroutinefunction(users_col.insert_one):
+                    result = await asyncio.wait_for(
+                        users_col.insert_one(user_doc),
+                        timeout=5.0
+                    )
+                else:
+                    # Fallback for non-async collection (shouldn't happen but safety)
+                    result = users_col.insert_one(user_doc)
+                    if hasattr(result, '__await__'):
+                        result = await result
+            else:
+                raise RuntimeError("Database collection not properly initialized")
             auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {result.inserted_id})")
         except asyncio.TimeoutError:
             auth_log(f"Database timeout during user insertion")

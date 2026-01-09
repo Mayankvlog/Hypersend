@@ -356,10 +356,23 @@ def users_collection():
     """Get users collection with error handling"""
     try:
         database = get_db()
-        return database.users
+        if database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Check if database has users collection
+        if not hasattr(database, 'users'):
+            raise RuntimeError("Database users collection not available")
+        
+        users_col = database.users
+        
+        # CRITICAL FIX: Check if collection is properly initialized
+        if users_col is None:
+            raise RuntimeError("Users collection is None")
+        
+        return users_col
     except Exception as e:
         print(f"[ERROR] Failed to get users collection: {type(e).__name__}: {str(e)}")
-        raise RuntimeError("Database service unavailable")
+        raise RuntimeError(f"Database service unavailable: {str(e)}")
 
 
 def chats_collection():
