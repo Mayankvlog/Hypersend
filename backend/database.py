@@ -235,21 +235,34 @@ def get_db():
                 f"/{settings._MONGO_DB}?authSource=admin&retryWrites=true&w=majority"
             )
             
-            # Create MongoDB client with connection pooling
+            # Create MongoDB client with connection pooling and better timeout handling
             client = AsyncIOMotorClient(
                 mongo_uri,
                 maxPoolSize=50,
                 minPoolSize=5,
                 maxIdleTimeMS=30000,
-                serverSelectionTimeoutMS=10000,  # Increased timeout
-                connectTimeoutMS=10000,           # Increased timeout
-                socketTimeoutMS=30000,
+                serverSelectionTimeoutMS=5000,   # Reduced timeout for faster failure
+                connectTimeoutMS=5000,           # Reduced timeout for faster failure
+                socketTimeoutMS=10000,           # Reduced socket timeout
                 retryWrites=True,
-                w="majority"
+                w="majority",
+                # Add connection retry settings
+                retryReads=True,
+                retryWrites=True
             )
             
             # Get database instance
             db = client[settings._MONGO_DB]
+            
+            # CRITICAL FIX: Test the connection immediately
+            try:
+                # Quick ping test to verify connection
+                client.admin.command('ping', maxTimeMS=3000)
+                if settings.DEBUG:
+                    print(f"[DB] MongoDB connection test successful")
+            except Exception as ping_error:
+                print(f"[ERROR] MongoDB connection test failed: {ping_error}")
+                raise ConnectionError(f"Database connection test failed: {ping_error}")
             
             # Store globally for future calls
             _global_db = db
