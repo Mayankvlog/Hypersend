@@ -247,8 +247,7 @@ def get_db():
                 retryWrites=True,
                 w="majority",
                 # Add connection retry settings
-                retryReads=True,
-                retryWrites=True
+                retryReads=True
             )
             
             # Get database instance
