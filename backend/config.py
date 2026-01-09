@@ -32,7 +32,36 @@ class Settings:
     # Read MongoDB credentials from environment
     _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
     _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
-    _MONGO_HOST: str = os.getenv("MONGO_HOST", "localhost")
+    
+    # CRITICAL FIX: Detect if running in Docker or local development
+    # Check for Docker environment indicators
+    is_docker = False
+    try:
+        # Check for Docker environment file
+        if os.path.exists('/.dockerenv'):
+            is_docker = True
+        # Check for Docker in cgroup (Linux)
+        elif os.path.exists('/proc/1/cgroup'):
+            with open('/proc/1/cgroup', 'r') as f:
+                if 'docker' in f.read():
+                    is_docker = True
+        # Check for Windows Docker detection
+        elif os.getenv('DOCKER_CONTAINER'):
+            is_docker = True
+    except Exception:
+        # If any error in detection, assume not in Docker
+        pass
+    
+    # Use appropriate MongoDB host based on environment
+    if is_docker:
+        # Running in Docker - use container names
+        _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb")
+        print(f"[CONFIG] Docker environment detected, using MongoDB host: {_MONGO_HOST}")
+    else:
+        # Running locally - use external IP or localhost
+        _MONGO_HOST: str = os.getenv("MONGO_HOST", "139.59.82.105")
+        print(f"[CONFIG] Local environment detected, using MongoDB host: {_MONGO_HOST}")
+    
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     

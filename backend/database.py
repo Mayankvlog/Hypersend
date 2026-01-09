@@ -238,8 +238,8 @@ def get_db():
                 maxPoolSize=50,
                 minPoolSize=5,
                 maxIdleTimeMS=30000,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
+                serverSelectionTimeoutMS=10000,  # Increased timeout
+                connectTimeoutMS=10000,           # Increased timeout
                 socketTimeoutMS=30000,
                 retryWrites=True,
                 w="majority"
