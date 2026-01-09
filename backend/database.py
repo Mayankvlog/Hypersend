@@ -185,7 +185,7 @@ async def close_db():
 
 
 def get_db():
-    """Get database instance with enhanced error checking and lazy initialization"""
+    """Get database connection with proper initialization"""
     global db, client, _global_db, _global_client
     
     # If database is already initialized and connected, return it
@@ -206,14 +206,14 @@ def get_db():
         if 'mongo_init' in sys.modules:
             mongo_init = sys.modules['mongo_init']
             if hasattr(mongo_init, '_app_db') and mongo_init._app_db is not None:
-                db = mongo_init._app_db
-                client = getattr(mongo_init, '_app_client', None)
-                if db is not None:
+                app_db = mongo_init._app_db
+                app_client = getattr(mongo_init, '_app_client', None)
+                if app_db is not None:
                     # Store globally for future calls
-                    _global_db = db
-                    _global_client = client
+                    _global_db = app_db
+                    _global_client = app_client
                     print(f"[DB] Using initialized database from mongo_init")
-                    return db
+                    return app_db
     except Exception as e:
         print(f"[DB] Warning: Could not get initialized database: {e}")
     
@@ -290,30 +290,29 @@ def get_db():
             "files", 
             "uploads", 
             "refresh_tokens", 
-            "reset_tokens", 
-            "group_activity",
-            "contact_requests",
+            "groups",
             "group_members",
+            "channels",
+            "channel_members"
         ]
         
-        # Create mock collections with proper async support
-        for coll_name in collection_names:
-            coll = MagicMock()
+        # Create mock collections for each collection name
+        for collection_name in collection_names:
+            mock_collection = MagicMock()
             
             # Mock async methods
-            coll.find_one = AsyncMock(return_value={"_id": "mock_upload_id", "user_id": "test_user"})
-            coll.insert_one = AsyncMock(return_value=MagicMock(inserted_id="test_upload_id"))
-            coll.find_one_and_update = AsyncMock(return_value=None)
-            coll.find_one_and_delete = AsyncMock(return_value=None)
-            coll.delete_one = AsyncMock(return_value=MagicMock(deleted_count=0))
-            coll.delete_many = AsyncMock(return_value=MagicMock(deleted_count=0))
-            coll.update_one = AsyncMock(return_value=MagicMock(modified_count=0))
-            coll.update_many = AsyncMock(return_value=MagicMock(modified_count=0))
-            coll.replace_one = AsyncMock(return_value=MagicMock(modified_count=0))
+            mock_collection.find_one = AsyncMock()
+            mock_collection.find = AsyncMock()
+            mock_collection.insert_one = AsyncMock()
+            mock_collection.update_one = AsyncMock()
+            mock_collection.delete_one = AsyncMock()
+            mock_collection.count_documents = AsyncMock()
+            mock_collection.aggregate = AsyncMock()
+            mock_collection.create_index = AsyncMock()
+            mock_collection.index_information = AsyncMock(return_value={})
             
-            # Mock find method with chaining support
-            find_result = MagicMock()
-            find_result.limit = MagicMock(return_value=find_result)
+            # Set the collection as an attribute
+            setattr(mock_db, collection_name, mock_collection)
             find_result.skip = MagicMock(return_value=find_result)
             find_result.sort = MagicMock(return_value=find_result)
             find_result.to_list = AsyncMock(return_value=[])
