@@ -109,6 +109,7 @@ services:
       CHUNK_SIZE: 33554432
       MAX_PARALLEL_CHUNKS: 4
       FILE_RETENTION_HOURS: 0
+      DEBUG: "True"
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
