@@ -141,9 +141,8 @@ def hash_password(password: str) -> Tuple[str, str]:
         if not hash_hex or len(hash_hex) != 64:  # SHA256 produces 64 hex chars
             raise ValueError("Invalid hash generation")
         
-        # CRITICAL FIX: Return combined format for tests AND separate salt for database
-        combined = f"{salt}${hash_hex}"
-        return combined, salt
+        # Return separate hash and salt for database storage
+        return hash_hex, salt
     except Exception as e:
         raise ValueError(f"Password hashing failed: {type(e).__name__}")
 

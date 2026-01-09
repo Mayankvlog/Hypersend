@@ -18,7 +18,8 @@ class TestPasswordVerification:
     def test_combined_password_format_verification(self):
         """Test password verification with combined salt$hash format"""
         # Create a password in combined format (97 chars: 32+1+64)
-        combined_password, salt = hash_password("testpassword123")
+        password_hash, salt = hash_password("testpassword123")
+        combined_password = f"{salt}${password_hash}"
         
         # Test verification with combined format
         is_valid = verify_password("testpassword123", combined_password)
@@ -30,13 +31,7 @@ class TestPasswordVerification:
     
     def test_separated_password_format_verification(self):
         """Test password verification with separated hash and salt"""
-        combined_password, salt = hash_password("testpassword123")
-        
-        # Extract hash from combined format
-        if '$' in combined_password:
-            password_hash = combined_password.split('$')[1]
-        else:
-            password_hash = combined_password
+        password_hash, salt = hash_password("testpassword123")
         
         # Test verification with separated format
         is_valid = verify_password("testpassword123", password_hash, salt)

@@ -229,9 +229,8 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
         for err in errors
     )
     
-    # Use 400 for all validation errors (both missing fields and invalid values)
-    # This aligns with HTTP semantics: 400 for bad request, 422 for unprocessable
-    status_code = status.HTTP_400_BAD_REQUEST
+    # Use 422 for missing fields, 400 for invalid values
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY if has_missing_fields else status.HTTP_400_BAD_REQUEST
     
     # Build a meaningful detail message based on the first error
     detail_message = "Request data validation failed"

@@ -673,9 +673,15 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                             detail="Invalid email or password"
                         )
             
-            # Verify password with constant-time comparison - CRITICAL FIX: Use correct salt
-            is_password_valid = verify_password(credentials.password, password_hash, password_salt)
-            auth_log(f"Password verification result for {normalized_email}: {is_password_valid} (hash_length: {len(password_hash)})")
+            # Verify password with constant-time comparison - CRITICAL FIX: Handle different formats
+            if password_salt:
+                # New format: separated hash and salt
+                is_password_valid = verify_password(credentials.password, password_hash, password_salt)
+            else:
+                # Legacy/combined format: hash contains salt$hash
+                is_password_valid = verify_password(credentials.password, password_hash)
+            
+            auth_log(f"Password verification result for {normalized_email}: {is_password_valid} (hash_length: {len(password_hash)}, has_salt: {bool(password_salt)})")
         except HTTPException:
             raise
         except Exception as verify_error:
