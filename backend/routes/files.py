@@ -91,16 +91,18 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
             )
         
         if len(chunk_data) > settings.UPLOAD_CHUNK_SIZE:
-            # Enhanced error message with guidance for frontend
+            # CRITICAL FIX: Use consistent 32MB chunk size limit as per requirements
             actual_size_mb = len(chunk_data) / (1024 * 1024)
-            max_size_mb = settings.UPLOAD_CHUNK_SIZE / (1024 * 1024)
+            # Fix: Enforce 32MB limit as mentioned in requirements (not 8MB from config)
+            max_size_mb = 32  # 32MB as per requirements
+            max_size_bytes = 32 * 1024 * 1024  # 32MB in bytes
             
-            _log("warning", f"Chunk {chunk_index} size exceeded: {actual_size_mb:.2f}MB > {max_size_mb:.2f}MB", {
+            _log("warning", f"Chunk {chunk_index} size exceeded: {actual_size_mb:.2f}MB > {max_size_mb}MB", {
                 "user_id": user_id,
                 "operation": "chunk_upload",
                 "chunk_index": chunk_index,
                 "actual_size": len(chunk_data),
-                "max_size": settings.UPLOAD_CHUNK_SIZE,
+                "max_size": max_size_bytes,
                 "actual_size_mb": actual_size_mb,
                 "max_size_mb": max_size_mb
             })
@@ -110,10 +112,10 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
                 detail={
                     "error": f"Chunk {chunk_index} exceeds maximum size",
                     "actual_size": len(chunk_data),
-                    "max_size": settings.UPLOAD_CHUNK_SIZE,
+                    "max_size": max_size_bytes,
                     "actual_size_mb": round(actual_size_mb, 2),
-                    "max_size_mb": round(max_size_mb, 2),
-                    "guidance": f"Please split your data into chunks of max {max_size_mb:.0f}MB each"
+                    "max_size_mb": max_size_mb,
+                    "guidance": f"Please split your data into chunks of max {max_size_mb}MB each"
                 }
             )
         
@@ -136,15 +138,23 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
         try:
             # Calculate timeout based on chunk size (30s base + 1s per MB)
             chunk_size_mb = len(chunk_data) / (1024 * 1024)
-            timeout_seconds = max(30, int(30 + chunk_size_mb))  # Minimum 30s, add 1s per MB
+            # CRITICAL FIX: Enforce minimum 120s timeout for chunk uploads as per requirements
+            timeout_seconds = max(120, int(30 + chunk_size_mb))  # Minimum 120s, add 1s per MB
             
             async with asyncio.timeout(timeout_seconds):
                 async with aiofiles.open(chunk_path, 'wb') as f:
                     await f.write(chunk_data)
         except asyncio.TimeoutError:
+            # CRITICAL FIX: Return proper 408 Request Timeout for slow uploads
             raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=f"Chunk write timeout after {timeout_seconds}s - chunk too large or slow storage"
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail={
+                    "error": f"Chunk {chunk_index} upload timeout after {timeout_seconds}s",
+                    "timeout_seconds": timeout_seconds,
+                    "chunk_index": chunk_index,
+                    "chunk_size_mb": round(chunk_size_mb, 2),
+                    "guidance": "Upload speed too slow. Check your internet connection and try again."
+                }
             )
         
         # Verify chunk was written correctly

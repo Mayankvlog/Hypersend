@@ -715,9 +715,16 @@ async def general_exception_handler(request: Request, exc: Exception):
         hints = ["Check your network connection", "Try with a smaller request", "Try again later"]
         
     elif isinstance(exc, ConnectionError):
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        error_msg = "Service temporarily unavailable - cannot connect to external service"
-        hints = ["Check your internet connection", "Try again in a few moments", "Verify service status"]
+        # CRITICAL FIX: Distinguish between 502 and 503 errors
+        error_msg_lower = str(exc).lower()
+        if "connection refused" in error_msg_lower or "bad gateway" in error_msg_lower:
+            status_code = status.HTTP_502_BAD_GATEWAY
+            error_msg = "Bad gateway - upstream service unavailable"
+            hints = ["Check if backend service is running", "Try again in a few moments", "Contact support if persistent"]
+        else:
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            error_msg = "Service temporarily unavailable - cannot connect to external service"
+            hints = ["Check your internet connection", "Try again in a few moments", "Verify service status"]
         
     elif isinstance(exc, PyMongoError):
         if "timeout" in str(exc).lower():

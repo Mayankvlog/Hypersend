@@ -317,10 +317,17 @@ async def register(user: UserCreate) -> UserResponse:
             )
         except (ConnectionError, TimeoutError) as db_error:
             auth_log(f"Database connection error checking existing user: {type(db_error).__name__}: {str(db_error)}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Database service temporarily unavailable. Please try again."
-            )
+            # CRITICAL FIX: Distinguish between 502 and 503 errors
+            if "connection refused" in str(db_error).lower() or "bad gateway" in str(db_error).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Database gateway error - upstream service unavailable"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service temporarily unavailable. Please try again."
+                )
         except Exception as db_error:
             auth_log(f"Database error checking existing user: {type(db_error).__name__}: {str(db_error)}")
             raise HTTPException(

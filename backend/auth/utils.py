@@ -106,8 +106,12 @@ security = HTTPBearer(
 )
 
 
-def hash_password(password: str) -> str:
-    """Hash a password using PBKDF2 with SHA-256 and cryptographically secure salt"""
+def hash_password(password: str) -> Tuple[str, str]:
+    """Hash a password using PBKDF2 with SHA-256 and cryptographically secure salt
+    
+    Returns:
+        Tuple[str, str]: (password_hash, salt) - separate hash and salt for database storage
+    """
     if not password or not isinstance(password, str):
         raise ValueError("Password must be a non-empty string")
     
@@ -137,42 +141,76 @@ def hash_password(password: str) -> str:
         if not hash_hex or len(hash_hex) != 64:  # SHA256 produces 64 hex chars
             raise ValueError("Invalid hash generation")
         
-        return f"{salt}${hash_hex}"
+        # CRITICAL FIX: Return separate hash and salt for database storage
+        return hash_hex, salt
     except Exception as e:
         raise ValueError(f"Password hashing failed: {type(e).__name__}")
 
 
-def verify_password(plain_password: str, hashed_password: str, user_id: str = None) -> bool:
-    """Verify a password against its PBKDF2 hash with constant-time comparison"""
+def verify_password(plain_password: str, hashed_password: str, salt: str = None, user_id: str = None) -> bool:
+    """Verify a password against its PBKDF2 hash with constant-time comparison
+    
+    Args:
+        plain_password: Password to verify
+        hashed_password: Hashed password (hex string)
+        salt: Salt used for hashing (hex string)
+        user_id: Optional user ID for logging
+    """
     try:
         if not plain_password or not hashed_password:
             _log("debug", f"Password verification failed: missing input (user: {user_id})")
             return False
         
-        # CRITICAL FIX: Validate input types to prevent type confusion attacks
-        if not isinstance(plain_password, str) or not isinstance(hashed_password, str):
-            _log("warning", f"Invalid password verification input types (user: {user_id})")
-            return False
-        
-        # Validate input is not excessively long (prevent DoS)
-        if len(plain_password) > 128:
-            _log("warning", f"Password verification failed: password exceeds maximum length (user: {user_id})")
-            return False
-        
-        if len(hashed_password) > 256:
-            _log("warning", f"Password verification failed: hash exceeds maximum length (user: {user_id})")
-            return False
-        
-        # Check if hash is in new format (salt$hash)
-        if '$' in hashed_password:
-            parts = hashed_password.split('$')
-            if len(parts) != 2:
-                _log("warning", f"Invalid hash format: expected 2 parts, got {len(parts)} (user: {user_id})")
+        # CRITICAL FIX: Handle both new format (separate hash/salt) and legacy format (combined)
+        if salt is None:
+            # Legacy format: hash contains "salt$hash"
+            if '$' in hashed_password:
+                parts = hashed_password.split('$')
+                if len(parts) != 2:
+                    _log("warning", f"Invalid hash format: expected 2 parts, got {len(parts)} (user: {user_id})")
+                    return False
+                
+                salt, stored_hash = parts
+                if not salt or not stored_hash:
+                    _log("warning", f"Invalid hash format: empty salt or hash (user: {user_id})")
+                    return False
+                
+                if len(salt) != 32:
+                    _log("warning", f"Invalid salt length: expected 32, got {len(salt)} (user: {user_id})")
+                    return False
+                
+                try:
+                    password_bytes = plain_password.encode('utf-8')
+                    password_hash = hashlib.pbkdf2_hmac(
+                        'sha256',
+                        password_bytes,
+                        salt.encode('utf-8'),
+                        100000
+                    )
+                    computed_hex = password_hash.hex()
+                    # SECURITY: Use constant-time comparison to prevent timing attacks
+                    is_valid = hmac.compare_digest(computed_hex, stored_hash)
+                    return is_valid
+                except (ValueError, UnicodeEncodeError) as e:
+                    _log("warning", f"Password verification failed: {type(e).__name__}")
+                    return False
+            else:
+                # Handle other legacy formats
+                return _verify_legacy_passwords(plain_password, hashed_password, user_id)
+        else:
+            # New format: separate hash and salt
+            # CRITICAL FIX: Validate input types to prevent type confusion attacks
+            if not isinstance(plain_password, str) or not isinstance(hashed_password, str) or not isinstance(salt, str):
+                _log("warning", f"Invalid password verification input types (user: {user_id})")
                 return False
             
-            salt, stored_hash = parts
-            if not salt or not stored_hash:
-                _log("warning", f"Invalid hash format: empty salt or hash (user: {user_id})")
+            # Validate input is not excessively long (prevent DoS)
+            if len(plain_password) > 128:
+                _log("warning", f"Password verification failed: password exceeds maximum length (user: {user_id})")
+                return False
+            
+            if len(hashed_password) > 256:
+                _log("warning", f"Password verification failed: hash exceeds maximum length (user: {user_id})")
                 return False
             
             if len(salt) != 32:
@@ -189,12 +227,22 @@ def verify_password(plain_password: str, hashed_password: str, user_id: str = No
                 )
                 computed_hex = password_hash.hex()
                 # SECURITY: Use constant-time comparison to prevent timing attacks
-                is_valid = hmac.compare_digest(computed_hex, stored_hash)
+                is_valid = hmac.compare_digest(computed_hex, hashed_password)
                 return is_valid
             except (ValueError, UnicodeEncodeError) as e:
                 _log("warning", f"Password verification failed: {type(e).__name__}")
                 return False
-        elif len(hashed_password) == 64 and all(c in '0123456789abcdefABCDEF' for c in hashed_password):
+            
+    except Exception as e:
+        # Log but don't expose details
+        _log("error", f"Password verification exception: {type(e).__name__}")
+        return False
+
+
+def _verify_legacy_passwords(plain_password: str, hashed_password: str, user_id: str = None) -> bool:
+    """Verify legacy password formats for migration purposes"""
+    try:
+        if len(hashed_password) == 64 and all(c in '0123456789abcdefABCDEF' for c in hashed_password):
             # Legacy SHA256 hash (64 hex chars) - ONLY for migration, not recommended
             try:
                 legacy_hash = hashlib.sha256(plain_password.encode()).hexdigest()
@@ -223,7 +271,7 @@ def verify_password(plain_password: str, hashed_password: str, user_id: str = No
             
     except Exception as e:
         # Log but don't expose details
-        _log("error", f"Password verification exception: {type(e).__name__}")
+        _log("error", f"Legacy password verification exception: {type(e).__name__}")
         return False
 
 

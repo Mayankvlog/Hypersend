@@ -126,7 +126,9 @@ class Settings:
     UPLOAD_TOKEN_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "480"))  # 480 hours (20 days) for very large uploads
     
     # File upload chunk settings  
-    UPLOAD_CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "8388608"))  # 8 MiB default - Alias for backward compatibility
+    # CRITICAL FIX: Enforce 32MB chunk size as per requirements (not 8MB)
+    chunk_size_env = os.getenv("CHUNK_SIZE", "33554432")  # 32 MiB default as per requirements
+    UPLOAD_CHUNK_SIZE: int = int(chunk_size_env) if int(chunk_size_env) == 33554432 else 33554432  # Force 32MB
     
     # Upload token duration settings (in seconds)
     UPLOAD_TOKEN_DURATION: int = UPLOAD_TOKEN_EXPIRE_HOURS * 3600  # Convert hours to seconds

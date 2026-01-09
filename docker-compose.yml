@@ -48,6 +48,12 @@ services:
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
+      # CRITICAL FIX: Add nginx timeout configurations for 40GB files
+      - NGINX_PROXY_READ_TIMEOUT=3600  # 1 hour for large file downloads
+      - NGINX_PROXY_SEND_TIMEOUT=3600  # 1 hour for large file uploads
+      - NGINX_PROXY_CONNECT_TIMEOUT=300  # 5 minutes for backend connection
+      - NGINX_CLIENT_BODY_TIMEOUT=3600  # 1 hour for client body upload
+      - NGINX_CLIENT_MAX_BODY_SIZE=45G  # Allow 40GB files + overhead
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
