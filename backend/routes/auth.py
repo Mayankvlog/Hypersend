@@ -603,12 +603,75 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     detail="Invalid email or password"
                 )
             
+            # CRITICAL FIX: Handle missing password salt with migration
             if not password_salt:
-                auth_log(f"Login failed: User {normalized_email} has no password salt (corrupted record)")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password"
-                )
+                auth_log(f"DEBUG: User {normalized_email} has no password salt, attempting migration")
+                
+                # Check if user has legacy password field
+                legacy_password = existing_user.get("password")
+                if legacy_password and isinstance(legacy_password, str) and '$' in legacy_password:
+                    # Parse legacy format: salt$hash
+                    parts = legacy_password.split('$')
+                    if len(parts) == 2:
+                        password_salt, password_hash = parts
+                        auth_log(f"Migrating legacy password format for {normalized_email}")
+                        
+                        # Update user record with new format
+                        try:
+                            await users_collection().update_one(
+                                {"_id": existing_user["_id"]},
+                                {
+                                    "$set": {
+                                        "password_hash": password_hash,
+                                        "password_salt": password_salt,
+                                        "password_migrated": True
+                                    },
+                                    "$unset": {"password": ""}
+                                }
+                            )
+                            auth_log(f"Successfully migrated password format for {normalized_email}")
+                        except Exception as migrate_error:
+                            auth_log(f"Failed to migrate password for {normalized_email}: {migrate_error}")
+                            # Continue with legacy format for now
+                    else:
+                        auth_log(f"Invalid legacy password format for {normalized_email}")
+                else:
+                    # Check if password_hash is in combined format (salt$hash)
+                    if password_hash and isinstance(password_hash, str) and '$' in password_hash:
+                        # Parse combined format: salt$hash (97 chars: 32+1+64)
+                        if len(password_hash) == 97:
+                            parts = password_hash.split('$')
+                            if len(parts) == 2:
+                                password_salt, password_hash = parts
+                                auth_log(f"Found combined password format for {normalized_email}")
+                                
+                                # Update user record with separated format
+                                try:
+                                    await users_collection().update_one(
+                                        {"_id": existing_user["_id"]},
+                                        {
+                                            "$set": {
+                                                "password_hash": password_hash,
+                                                "password_salt": password_salt,
+                                                "password_migrated": True
+                                            }
+                                        }
+                                    )
+                                    auth_log(f"Successfully separated password format for {normalized_email}")
+                                except Exception as migrate_error:
+                                    auth_log(f"Failed to separate password for {normalized_email}: {migrate_error}")
+                            else:
+                                auth_log(f"Invalid combined password format for {normalized_email}")
+                        else:
+                            auth_log(f"Invalid combined password length for {normalized_email}: {len(password_hash)}")
+                    
+                    # If still no password salt after migration attempt
+                    if not password_salt:
+                        auth_log(f"Login failed: User {normalized_email} has no valid password salt (corrupted record)")
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid email or password"
+                        )
             
             # Verify password with constant-time comparison - CRITICAL FIX: Use correct salt
             is_password_valid = verify_password(credentials.password, password_hash, password_salt)

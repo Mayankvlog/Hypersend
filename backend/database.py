@@ -186,15 +186,49 @@ def get_db():
     if db is not None and client is not None:
         return db
     
-    # Attempt to use the global database if it was previously initialized
-    if db is not None:
+    # CRITICAL FIX: In production, always use real MongoDB, not mock
+    if not settings.USE_MOCK_DB:
+        # Initialize real MongoDB connection
         try:
-            # Quick validation - try to access a collection
-            _ = db.command('ping')
+            from motor.motor_asyncio import AsyncIOMotorClient
+            
+            # Build MongoDB URI with authentication
+            from urllib.parse import quote_plus
+            
+            # Encode password for URL safety
+            encoded_password = quote_plus(settings._MONGO_PASSWORD)
+            mongo_uri = (
+                f"mongodb://{settings._MONGO_USER}:{encoded_password}"
+                f"@{settings._MONGO_HOST}:{settings._MONGO_PORT}"
+                f"/{settings._MONGO_DB}?authSource=admin&retryWrites=true&w=majority"
+            )
+            
+            # Create MongoDB client with connection pooling
+            client = AsyncIOMotorClient(
+                mongo_uri,
+                maxPoolSize=50,
+                minPoolSize=5,
+                maxIdleTimeMS=30000,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=30000,
+                retryWrites=True,
+                w="majority"
+            )
+            
+            # Get database instance
+            db = client[settings._MONGO_DB]
+            
+            if settings.DEBUG:
+                print(f"[DB] Connected to MongoDB: {mongo_uri.replace(settings._MONGO_PASSWORD, '***')}")
+            
             return db
-        except Exception:
-            # Database connection is stale, fall through to initialization
-            pass
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[ERROR] MongoDB connection failed: {error_msg}")
+            # In production, raise connection error instead of falling back to mock
+            raise ConnectionError("Database service temporarily unavailable")
     
     # In test environment or when database isn't ready, provide mock database
     try:
