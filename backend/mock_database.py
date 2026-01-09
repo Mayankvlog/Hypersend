@@ -80,6 +80,22 @@ class MockCollection:
                 count += 1
         return count
     
+    async def delete_many(self, query: Dict) -> MagicMock:
+        """Delete multiple documents"""
+        deleted_count = 0
+        docs_to_delete = []
+        for doc_id, doc in self._data.items():
+            if self._matches_query(doc, query):
+                docs_to_delete.append(doc_id)
+                deleted_count += 1
+        
+        for doc_id in docs_to_delete:
+            del self._data[doc_id]
+        
+        result = MagicMock()
+        result.deleted_count = deleted_count
+        return result
+    
     async def create_index(self, index_spec: Dict, **kwargs) -> None:
         """Create index (mock)"""
         pass

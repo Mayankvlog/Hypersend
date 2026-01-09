@@ -582,10 +582,6 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     }
                 )
             
-            # CRITICAL FIX: Add debug logging to show what was searched
-            auth_log(f"DEBUG: Email search for login: '{normalized_email}' (normalized)")
-            auth_log(f"DEBUG: User found: {bool(existing_user)}")
-            
             # Verify password - CRITICAL FIX: Ensure password_hash and salt exist
             password_hash = existing_user.get("password_hash")
             password_salt = existing_user.get("password_salt")

@@ -13,7 +13,7 @@ dependencies = [
   "fastapi==0.115.5",
   "uvicorn[standard]==0.32.1",
   "motor==3.6.0",
-  "pydantic==2.11.5",
+  "pydantic[email]==2.11.5",
   "pydantic-settings==2.6.1",
   "python-jose[cryptography]==3.3.0",
   "passlib[bcrypt]==1.7.4",
@@ -25,6 +25,8 @@ dependencies = [
   "python-dotenv==1.0.1",
   "PyJWT==2.10.1",
   "flet>=0.28.3",
+  "pytest>=8.4.2",
+  "pytest-asyncio>=0.24.0",
 ]
 
 [project.optional-dependencies]
@@ -109,3 +111,14 @@ android_architectures = ["arm64-v8a"]
 split_per_abi = true
 min_sdk_version = 21
 target_sdk_version = 33
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]

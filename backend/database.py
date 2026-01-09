@@ -6,8 +6,11 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import HTTPException, status
 from config import settings
 
+# Global database connection variables
 client = None
 db = None
+_global_db = None
+_global_client = None
 
 
 async def connect_db():
@@ -160,7 +163,7 @@ async def connect_db():
 
 async def close_db():
     """Close MongoDB connection with proper error handling"""
-    global client
+    global client, db, _global_db, _global_client
     if client:
         try:
             client.close()
@@ -176,15 +179,40 @@ async def close_db():
                 logging.getLogger(__name__).error(f"Database connection close error: {str(e)}")
     # Always clear the global reference
     client = None
+    db = None
+    _global_db = None
+    _global_client = None
 
 
 def get_db():
     """Get database instance with enhanced error checking and lazy initialization"""
-    global db, client
+    global db, client, _global_db, _global_client
     
     # If database is already initialized and connected, return it
     if db is not None and client is not None:
         return db
+    
+    # Check if we have global database from initialization
+    if _global_db is not None and _global_client is not None:
+        db = _global_db
+        client = _global_client
+        return db
+    
+    # CRITICAL FIX: Check if database was initialized at startup
+    # Try to get the database from the motor module if it exists
+    try:
+        from motor.motor_asyncio import AsyncIOMotorDatabase
+        # Check if we can get the database from the global scope
+        import sys
+        if 'mongo_init' in sys.modules:
+            mongo_init = sys.modules['mongo_init']
+            if hasattr(mongo_init, '_app_db'):
+                db = mongo_init._app_db
+                client = getattr(mongo_init, '_app_client', None)
+                if db is not None:
+                    return db
+    except Exception:
+        pass
     
     # CRITICAL FIX: In production, always use real MongoDB, not mock
     if not settings.USE_MOCK_DB:
@@ -218,6 +246,10 @@ def get_db():
             
             # Get database instance
             db = client[settings._MONGO_DB]
+            
+            # Store globally for future calls
+            _global_db = db
+            _global_client = client
             
             if settings.DEBUG:
                 print(f"[DB] Connected to MongoDB: {mongo_uri.replace(settings._MONGO_PASSWORD, '***')}")

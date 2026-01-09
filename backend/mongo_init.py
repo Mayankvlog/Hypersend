@@ -118,6 +118,11 @@ async def init_mongodb():
             
         app_db = client.hypersend
         
+        # CRITICAL FIX: Store database and client globally for get_db()
+        import mongo_init
+        mongo_init._app_db = app_db
+        mongo_init._app_client = client
+        
         # Create collections if they don't exist
         collections = ['users', 'chats', 'messages', 'files', 'uploads', 'refresh_tokens', 'reset_tokens', 'group_activity']
         

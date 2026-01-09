@@ -831,8 +831,13 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 def get_error_hints(status_code: int) -> List[str]:
     """Get helpful hints for common HTTP errors"""
     hints_map = {
+        300: ["Multiple options available", "Choose one from the provided options", "This is a redirect response"],
+        301: ["Resource moved permanently", "Update your bookmarks", "This is a permanent redirect"],
+        302: ["Resource moved temporarily", "Use the original URL for future requests", "This is a temporary redirect"],
+        303: ["See other resource", "Use GET method for the new location", "This is a redirect response"],
         400: ["Verify request syntax", "Check all required fields are provided", "Ensure data types are correct", "This is a client error"],
         401: ["Verify your authentication token", "Check if your session has expired", "Try logging in again", "This is a client error"],
+        402: ["Payment required for this resource", "Check subscription status", "Contact support for billing", "This is a client error"],
         403: ["Verify you have permission", "Check resource ownership", "Contact administrator for access", "This is a client error"],
         404: ["Verify the resource ID or URL", "Check if the resource was deleted", "Verify you have access", "This is a client error"],
         405: ["Check API documentation for allowed methods", "Use GET, POST, PUT, DELETE as appropriate", "This is a client error"],
@@ -848,15 +853,29 @@ def get_error_hints(status_code: int) -> List[str]:
         415: ["Use correct Content-Type header", "application/json for JSON", "multipart/form-data for files", "This is a client error"],
         416: ["Verify byte range is valid", "Ensure range end is greater than start", "This is a client error"],
         417: ["Check Expect header requirements", "This is a client error"],
+        418: ["This is a joke response", "I'm a teapot", "Happy April Fools' Day!"],
+        421: ["Too many connections from your IP", "Wait before making more requests", "This is a client error"],
         422: ["Check validation errors for specific fields", "Verify data constraints (length, format, etc.)", "Review error details", "This is a client error"],
+        423: ["Resource is locked", "Wait and try again", "Contact resource owner", "This is a client error"],
+        424: ["Dependency failed", "Check related resources", "Fix dependencies first", "This is a client error"],
+        425: ["Too early for this request", "Wait until the specified time", "Check retry-after header", "This is a client error"],
+        426: ["Upgrade required", "Switch to a different protocol", "Check upgrade header", "This is a client error"],
+        428: ["Conditional request failed", "Check precondition headers", "Resource state changed", "This is a client error"],
         429: ["Wait before retrying", f"Implement exponential backoff", "Check rate limit configuration", "This is a client error"],
         431: ["Reduce header size", "Remove unnecessary headers", "Check cookie size", "This is a client error"],
         451: ["Content is blocked due to legal requirements", "Contact support if you believe this is an error", "This is a client error"],
         499: ["Client connection was closed", "Ensure stable network connection", "Retry request", "This is a client error"],
         500: ["This is a server error, not your request", "Try again in a moment", "Contact support if persistent", "server error"],
+        501: ["Feature not implemented", "Check API documentation", "Contact support for availability", "server error"],
         502: ["Upstream server is having issues", "Try again later", "server error"],
         503: ["Server is temporarily unavailable", "Try again later", "Check system status", "server error"],
         504: ["Upstream server timeout", "Try with a smaller request", "Check server load", "server error"],
+        505: ["HTTP version not supported", "Try with HTTP/1.1", "Check client configuration", "server error"],
+        506: ["Content negotiation failed", "Check Accept headers", "Try different content format", "server error"],
+        507: ["Server storage full", "Contact administrator", "Try with smaller data", "server error"],
+        508: ["Infinite loop detected", "Check request dependencies", "Simplify request structure", "server error"],
+        510: ["Extension not required", "Remove extension headers", "Use standard HTTP", "server error"],
+        511: ["Network authentication required", "Check network settings", "Configure proxy authentication", "server error"],
     }
     
     return hints_map.get(status_code, [])

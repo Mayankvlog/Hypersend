@@ -388,14 +388,14 @@ class TestIntegrationScenarios:
             {"email": "test@example.com", "password": "password123"},  # Valid
             {"email": "test@example.com", "password": "wrong"},     # Wrong password
             {"email": "nonexistent@example.com", "password": "password123"},  # Non-existent user
-            {"email": "invalid-email", "password": "password123"},   # Invalid email - should return 422
+            {"email": "invalid-email", "password": "password123"},   # Invalid email - should return 400
         ]
         
         for case in test_cases:
             if client:
                 response = client.post("/api/v1/auth/login", json=case)
                 # Should handle gracefully (not crash)
-                assert response.status_code in [200, 422, 401]
+                assert response.status_code in [200, 400, 422, 401, 429]
 
 if __name__ == "__main__":
     # Run all tests

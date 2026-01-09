@@ -3,12 +3,14 @@
 Test email validation error types
 """
 
-from pydantic import ValidationError
-from pydantic import EmailStr
+from pydantic import BaseModel, ValidationError, EmailStr
+
+class TestModel(BaseModel):
+    email: EmailStr
 
 # Test email validation
 try:
-    EmailStr('invalid-email-format')
+    TestModel(email='invalid-email-format')
 except ValidationError as e:
     print('ValidationError errors:')
     for error in e.errors():

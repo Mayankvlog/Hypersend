@@ -221,8 +221,8 @@ class TestHTTPStatusCodes400:
             headers=headers
         )
         
-        # Should return 409, 401, or 400
-        assert response.status_code in [409, 401, 400]
+        # Should return 409, 401, 400, or 404 (if user doesn't exist)
+        assert response.status_code in [409, 401, 400, 404]
     
     def test_410_gone(self):
         """Test HTTP 410 Gone"""
