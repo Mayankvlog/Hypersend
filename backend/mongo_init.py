@@ -173,7 +173,8 @@ async def init_mongodb():
                     pass  # Silent
         
         print("[MONGO_INIT] [OK] MongoDB initialization complete")
-        client.close()
+        # CRITICAL FIX: Don't close the client - keep it open for the application
+        # client.close()  # REMOVED: This was causing the Future object error
         
     except Exception as e:
         print(f"[MONGO_INIT] Warning: {str(e)[:100]}")

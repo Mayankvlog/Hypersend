@@ -201,15 +201,16 @@ def get_db():
     # CRITICAL FIX: Check if database was initialized at startup
     # Try to get the database from the motor module if it exists
     try:
-        from motor.motor_asyncio import AsyncIOMotorDatabase
-        # Check if we can get the database from the global scope
         import sys
         if 'mongo_init' in sys.modules:
             mongo_init = sys.modules['mongo_init']
-            if hasattr(mongo_init, '_app_db'):
+            if hasattr(mongo_init, '_app_db') and mongo_init._app_db is not None:
                 db = mongo_init._app_db
                 client = getattr(mongo_init, '_app_client', None)
                 if db is not None:
+                    # Store globally for future calls
+                    _global_db = db
+                    _global_client = client
                     return db
     except Exception:
         pass
