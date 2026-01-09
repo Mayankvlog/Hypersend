@@ -305,24 +305,24 @@ def get_db():
             # When called synchronously, they should return the result directly
             # When called with await, they should behave as async
             
-            def make_sync_async_mock(async_func):
+            def make_sync_async_mock(method_name):
                 """Create a mock that works both sync and async"""
                 def sync_wrapper(*args, **kwargs):
                     # When called without await, return the result directly
                     result = MagicMock()
                     # Simulate the expected result structure
-                    if async_func.__name__ == 'find_one':
+                    if method_name == 'find_one':
                         return None  # Default for find_one
-                    elif async_func.__name__ == 'insert_one':
+                    elif method_name == 'insert_one':
                         result.inserted_id = str(ObjectId())
                         return result
-                    elif async_func.__name__ == 'update_one':
+                    elif method_name == 'update_one':
                         result.modified_count = 1
                         return result
-                    elif async_func.__name__ == 'delete_one':
+                    elif method_name == 'delete_one':
                         result.deleted_count = 1
                         return result
-                    elif async_func.__name__ == 'count_documents':
+                    elif method_name == 'count_documents':
                         return 0
                     else:
                         return result
@@ -332,14 +332,14 @@ def get_db():
                 return sync_wrapper
             
             # Mock async methods with proper sync/async behavior
-            mock_collection.find_one = make_sync_async_mock(MagicMock())
-            mock_collection.find = make_sync_async_mock(MagicMock())
-            mock_collection.insert_one = make_sync_async_mock(MagicMock())
-            mock_collection.update_one = make_sync_async_mock(MagicMock())
-            mock_collection.delete_one = make_sync_async_mock(MagicMock())
-            mock_collection.count_documents = make_sync_async_mock(MagicMock())
-            mock_collection.aggregate = make_sync_async_mock(MagicMock())
-            mock_collection.create_index = make_sync_async_mock(MagicMock())
+            mock_collection.find_one = make_sync_async_mock('find_one')
+            mock_collection.find = make_sync_async_mock('find')
+            mock_collection.insert_one = make_sync_async_mock('insert_one')
+            mock_collection.update_one = make_sync_async_mock('update_one')
+            mock_collection.delete_one = make_sync_async_mock('delete_one')
+            mock_collection.count_documents = make_sync_async_mock('count_documents')
+            mock_collection.aggregate = make_sync_async_mock('aggregate')
+            mock_collection.create_index = make_sync_async_mock('create_index')
             mock_collection.index_information = AsyncMock(return_value={})
             
             # Set the collection as an attribute
