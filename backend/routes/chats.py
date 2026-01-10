@@ -323,7 +323,7 @@ async def send_message(
     chat_id: str,
     request: Request,
     message: MessageCreate,
-    current_user: str = Depends(get_current_user_for_upload)
+    current_user: str = Depends(get_current_user)
 ):
     """Send a message in a chat"""
     

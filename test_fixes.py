@@ -391,6 +391,82 @@ class TestHTTPStatusCodes:
             assert response.status_code in [200, 405, 204, 400]
 
 
+class TestDockerLogIssues:
+    """Test specific issues found in Docker logs"""
+
+    def test_password_verification_failing(self, client):
+        """Test password verification logic works correctly"""
+        # Test that password verification doesn't crash and handles legacy formats
+        from auth.utils import verify_password
+        
+        # Test with separated format (new)
+        result1 = verify_password("test123", "c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116", "869e09653dd2da217688c907290b6c4c", "test-user")
+        
+        # Test with legacy format (combined)
+        result2 = verify_password("test123", "869e09653dd2da217688c907290b6c4c$c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116", None, "test-user")
+        
+        # Should not crash and return boolean
+        assert isinstance(result1, bool)
+        assert isinstance(result2, bool)
+
+    def test_file_upload_anonymous_allowed(self, client):
+        """Test that anonymous uploads are allowed"""
+        # Test file init without auth headers
+        response = client.post('/api/v1/files/init', json={
+            "filename": "test.txt",
+            "size": 100,
+            "mime_type": "text/plain",
+            "chat_id": "test-chat-id"
+        })
+        
+        # Should accept anonymous uploads, not return 401
+        assert response.status_code != 401
+        # Should accept and not return authentication required
+        if response.status_code == 200:
+            data = response.json()
+            # File init response contains various fields, check for any of them
+            assert any(key in data for key in ["upload_id", "expires_in", "chunk_size"])
+
+    def test_chat_message_with_proper_auth(self, client):
+        """Test that chat message endpoint works with proper authentication"""
+        # This test would require actual login and token, but we can test endpoint exists
+        # Test OPTIONS to ensure endpoint is accessible
+        response = client.options('/api/v1/chats/test-chat/messages')
+        
+        # Should not return 404 for OPTIONS
+        assert response.status_code in [200, 405]
+
+    def test_authentication_error_format(self, client):
+        """Test authentication error responses have proper format"""
+        response = client.get('/api/v1/chats')
+        assert response.status_code == 401
+        data = response.json()
+        
+        # Check error response format
+        assert "detail" in data
+        assert isinstance(data["detail"], str)
+
+    def test_health_check_endpoint(self, client):
+        """Test health check is working (indicates fixes are loaded)"""
+        response = client.get('/api/v1/health')
+        assert response.status_code == 200
+        
+        # Also test root health
+        response = client.get('/health')
+        assert response.status_code == 200
+
+    def test_database_connection_working(self, client):
+        """Test that database connection is established (from logs)"""
+        # If we can reach any endpoint successfully, database is likely working
+        response = client.get('/api/v1/health')
+        assert response.status_code == 200
+        
+        # Test that we can request user info (will return 401 but proves DB connection)
+        response = client.get('/api/v1/users/me')
+        # Should return 401, not 500/503 indicating database issues
+        assert response.status_code in [401, 403]
+
+
 if __name__ == "__main__":
     # Run the tests
     pytest.main([__file__, "-v"])

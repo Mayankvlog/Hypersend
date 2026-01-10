@@ -681,17 +681,26 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 # If verification failed with separated format and hash is 64 chars, try legacy SHA256 hash with salt
                 if not is_password_valid and password_hash and isinstance(password_hash, str) and len(password_hash) == 64:
                     auth_log(f"Separated format verification failed, trying legacy SHA256+salt format for {normalized_email}")
-                    # CRITICAL FIX: Pass the salt to legacy verification
-                    is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
+                    # CRITICAL FIX: Try both salt+pwd and pwd+salt legacy formats
+                    # Try password + salt format
+                    is_password_valid = verify_password(credentials.password, password_salt, password_hash, str(existing_user.get("_id")))
+                    
+                    # If that fails, try salt + password format  
+                    if not is_password_valid:
+                        auth_log(f"Trying salt+password legacy format for {normalized_email}")
+                        is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
                     
                     # DEBUG: Log what we're trying to match
                     import hashlib
                     if password_salt:
-                        combined_test = credentials.password + password_salt
-                        expected_hash = hashlib.sha256(combined_test.encode()).hexdigest()
-                        auth_log(f"[DEBUG] Expected SHA256(pwd+salt): {expected_hash[:20]}...")
+                        # Test both legacy formats
+                        pwd_salt_hash = hashlib.sha256((credentials.password + password_salt).encode()).hexdigest()
+                        salt_pwd_hash = hashlib.sha256((password_salt + credentials.password).encode()).hexdigest()
+                        auth_log(f"[DEBUG] Expected SHA256(pwd+salt): {pwd_salt_hash[:20]}...")
+                        auth_log(f"[DEBUG] Expected SHA256(salt+pwd): {salt_pwd_hash[:20]}...")
                         auth_log(f"[DEBUG] Database hash: {password_hash[:20]}...")
-                        auth_log(f"[DEBUG] Hashes match: {expected_hash == password_hash}")
+                        auth_log(f"[DEBUG] Pwd+Salt match: {pwd_salt_hash == password_hash}")
+                        auth_log(f"[DEBUG] Salt+Pwd match: {salt_pwd_hash == password_hash}")
                         
                         # Try alternative
                         combined_test_alt = password_salt + credentials.password
