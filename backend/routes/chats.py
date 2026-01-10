@@ -327,8 +327,15 @@ async def send_message(
 ):
     """Send a message in a chat"""
     
-    # Verify user is member
-    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    # Verify user is member - handle both string and ObjectId chat_id
+    try:
+        chat_id_obj = ObjectId(chat_id)
+        chat_query = {"_id": chat_id_obj, "members": current_user}
+    except:
+        # If chat_id is not a valid ObjectId, try as string
+        chat_query = {"_id": chat_id, "members": current_user}
+    
+    chat = await chats_collection().find_one(chat_query)
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

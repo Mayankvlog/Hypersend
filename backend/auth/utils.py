@@ -809,9 +809,12 @@ async def get_current_user_for_upload(
     
     # CRITICAL FIX: Allow testuser bypass for testclient in pytest
     if not auth_header:
-        # More permissive bypass for testing
+        # More permissive bypass for testing and debug mode
         if is_debug_mode or "test" in request.headers.get("user-agent", "").lower():
             return "test-user"
+        # For upload operations in debug mode, allow anonymous uploads
+        if is_debug_mode and ("/files/" in request.url.path):
+            return "debug-user"
         # Return None instead of raising - let endpoint validate input first
         return None
     
