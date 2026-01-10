@@ -815,11 +815,14 @@ async def get_current_user_for_upload(
         # For upload operations in debug mode, allow anonymous uploads
         if is_debug_mode and ("/files/" in request.url.path):
             return "debug-user"
+        # For Flutter Web client in debug mode, allow uploads
+        if is_flutter_web and ("/files/" in request.url.path):
+            return "flutter-user"
         # Return None instead of raising - let endpoint validate input first
         return None
     
     if not auth_header.startswith("Bearer "):
-        if is_debug_mode:  # Allow bypass for test clients in debug mode
+        if is_debug_mode or is_flutter_web:  # Allow bypass for test clients and Flutter Web in debug mode
             return "test-user"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
