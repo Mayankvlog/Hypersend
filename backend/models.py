@@ -129,6 +129,7 @@ class UserInDB(BaseModel):
     name: str
     email: str
     password_hash: str
+    password_salt: Optional[str] = None  # CRITICAL FIX: Store password salt separately
     username: Optional[str] = None
     bio: Optional[str] = None
     avatar: Optional[str] = None  # Avatar initials like 'JD'

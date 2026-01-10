@@ -678,14 +678,36 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                         )
             
             # Verify password with constant-time comparison - CRITICAL FIX: Handle different formats
-            if password_salt:
-                # New format: separated hash and salt
-                is_password_valid = verify_password(credentials.password, password_hash, password_salt)
-            else:
-                # Legacy/combined format: hash contains salt$hash
-                is_password_valid = verify_password(credentials.password, password_hash)
+            # CRITICAL FIX: Check if we have the new format (separated) or legacy format (combined)
+            # Always attempt verification regardless of format, since we don't know what the actual format is
             
-            auth_log(f"Password verification result for {normalized_email}: {is_password_valid} (hash_length: {len(password_hash)}, has_salt: {bool(password_salt)})")
+            if password_salt and isinstance(password_salt, str) and len(password_salt) > 0:
+                # Try new format: separated hash and salt
+                auth_log(f"Attempting separated password format for {normalized_email}")
+                is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
+                
+                # If verification failed with separated format and hash is 64 chars, try legacy SHA256 hash
+                if not is_password_valid and password_hash and isinstance(password_hash, str) and len(password_hash) == 64:
+                    auth_log(f"Separated format verification failed, trying legacy SHA256 format for {normalized_email}")
+                    is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
+                    
+            elif password_hash and isinstance(password_hash, str):
+                # Check for combined format (salt$hash - 97 chars with $)
+                if '$' in password_hash and len(password_hash) == 97:
+                    # Legacy/combined format: hash contains "salt$hash"
+                    auth_log(f"Using legacy combined password format for {normalized_email}")
+                    is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
+                else:
+                    # Old legacy format: just the hash without salt (shouldn't happen with our code, but handle it)
+                    # This could be SHA256 or PBKDF2 without stored salt
+                    auth_log(f"Using legacy format for {normalized_email}")
+                    is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
+            else:
+                # Unrecognized format - this is an error
+                auth_log(f"Unrecognized password format for {normalized_email}: hash_len={len(password_hash) if password_hash else 0}, hash_has_$={('$' in password_hash) if password_hash else False}, salt_len={len(password_salt) if password_salt else 0}")
+                is_password_valid = False
+            
+            auth_log(f"Password verification result for {normalized_email}: {is_password_valid} (hash_length: {len(password_hash) if password_hash else 0}, has_salt: {bool(password_salt)})")
         except HTTPException:
             raise
         except Exception as verify_error:
