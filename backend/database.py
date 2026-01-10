@@ -30,15 +30,12 @@ async def connect_db():
             # Create client with extended timeouts for VPS connectivity
             client = AsyncIOMotorClient(
                 settings.MONGODB_URI,
-                serverSelectionTimeoutMS=30000,  # Increased to 30 seconds for Linux VPS compatibility
-                connectTimeoutMS=30000,  # Increased for slower Linux connections
-                socketTimeoutMS=60000,   # Increased for large file operations
-                retryWrites=True,
-                maxPoolSize=50,
-                minPoolSize=10,
-                # Enhanced connection settings with compression
-                compressors=["zlib"],  # List of compressors
-                zlibCompressionLevel=6  # Balanced compression level
+                serverSelectionTimeoutMS=10000,  # Reduced timeout for faster failure
+                connectTimeoutMS=10000,  # Reduced timeout
+                socketTimeoutMS=30000,   # Moderate socket timeout
+                retryWrites=False,  # Disable retryWrites to prevent Future issues
+                maxPoolSize=10,
+                minPoolSize=2
             )
             # Test connection with proper error handling
             try:
@@ -232,22 +229,20 @@ def get_db():
             mongo_uri = (
                 f"mongodb://{settings._MONGO_USER}:{encoded_password}"
                 f"@{settings._MONGO_HOST}:{settings._MONGO_PORT}"
-                f"/{settings._MONGO_DB}?authSource=admin&retryWrites=true&w=majority"
+                f"/{settings._MONGO_DB}?authSource=admin&tls=false"
             )
             
             # Create MongoDB client with connection pooling and better timeout handling
             client = AsyncIOMotorClient(
                 mongo_uri,
-                maxPoolSize=50,
-                minPoolSize=5,
+                maxPoolSize=10,
+                minPoolSize=2,
                 maxIdleTimeMS=30000,
-                serverSelectionTimeoutMS=5000,   # Reduced timeout for faster failure
-                connectTimeoutMS=5000,           # Reduced timeout for faster failure
-                socketTimeoutMS=10000,           # Reduced socket timeout
-                retryWrites=True,
-                w="majority",
-                # Add connection retry settings
-                retryReads=True
+                serverSelectionTimeoutMS=10000,   # Reduced timeout for faster failure
+                connectTimeoutMS=10000,           # Reduced timeout for faster failure
+                socketTimeoutMS=30000,           # Moderate socket timeout
+                retryWrites=False,  # Disable retryWrites to prevent Future issues
+                w="majority"
             )
             
             # Get database instance

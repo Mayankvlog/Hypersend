@@ -65,25 +65,28 @@ class Settings:
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     
-    # Try to get MongoDB URI from environment first, fallback to local development setup
-    if os.getenv("MONGODB_URI"):
+    # CRITICAL FIX: In Docker, always use internal networking regardless of any MONGODB_URI
+    if is_docker:
+        # Running in Docker - use container names for internal networking
+        # Construct URI with Docker hostname to override any external MONGODB_URI
+        from urllib.parse import quote_plus
+        encoded_password = quote_plus(_MONGO_PASSWORD)
+        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false"
+        print(f"[CONFIG] Docker environment detected, using internal MongoDB: {_MONGO_HOST}:{_MONGO_PORT}")
+    elif os.getenv("MONGODB_URI") and not is_docker:
+        # Only use external MONGODB_URI if NOT in Docker
         MONGODB_URI: str = os.getenv("MONGODB_URI")
+        print(f"[CONFIG] Using external MONGODB_URI from environment")
     else:
         # Construct MONGODB_URI with proper URL encoding for special characters in password
         from urllib.parse import quote_plus
         encoded_password = quote_plus(_MONGO_PASSWORD)
         # Connect directly to target database with admin authentication
-        # Include replicaSet and retry logic for VPS deployments
-        # Use environment variable for MONGODB_URI when available (more secure)
-        _MONGO_URI = os.getenv('MONGODB_URI')
-        if _MONGO_URI:
-            MONGODB_URI: str = _MONGO_URI
-        else:
-            # In production, environment variables must be set
-            if not _MONGO_USER or not _MONGO_HOST or not os.getenv('MONGO_PASSWORD'):
-                raise ValueError("MongoDB credentials must be set via environment variables in production")
-            MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&retryWrites=true&w=majority"
-        print(f"[CONFIG] MongoDB connection: authenticated with retries")
+        # Use simpler connection for better reliability
+        if not _MONGO_USER or not _MONGO_HOST or not os.getenv('MONGO_PASSWORD'):
+            raise ValueError("MongoDB credentials must be set via environment variables in production")
+        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false"
+        print(f"[CONFIG] MongoDB connection: authenticated with simple config")
     
     # Log connection info without exposing credentials
     if '@' in MONGODB_URI:
