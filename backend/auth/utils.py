@@ -804,8 +804,11 @@ async def get_current_user_for_upload(
     is_flutter_web = "zaply-flutter-web" in request.headers.get("user-agent", "").lower()
     debug_mode = getattr(settings, "DEBUG", False)
     
+    # ENHANCED DEBUG: Allow more user agents for testing
+    is_debug_mode = debug_mode or is_testclient or is_flutter_web
+    
     if not auth_header:
-        if debug_mode or is_testclient or is_flutter_web:
+        if is_debug_mode:
             return "test-user"
         # Return None instead of raising - let endpoint validate input first
         return None
