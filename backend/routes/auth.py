@@ -46,6 +46,13 @@ def cleanup_expired_lockouts():
     for key in expired_keys:
         del persistent_login_lockouts[key]
 
+def clear_all_lockouts():
+    """Clear all lockout entries - useful for testing"""
+    global persistent_login_lockouts, login_attempts, failed_login_attempts
+    persistent_login_lockouts.clear()
+    login_attempts.clear()
+    failed_login_attempts.clear()
+
 # Configuration for rate limiting
 MAX_LOGIN_ATTEMPTS_PER_IP = 20
 LOGIN_ATTEMPT_WINDOW = 300
@@ -244,8 +251,8 @@ async def register(user: UserCreate) -> UserResponse:
         # Validate email and password with security checks
         import re
         
-        # Security: Simplified email validation to reduce false positives
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        # Security: Enhanced email validation to allow localhost
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
         # Basic validation - allow consecutive dots but check format
         if not re.match(email_pattern, user.email):
             auth_log(f"Invalid email format: {user.email[:50]}")
@@ -254,23 +261,7 @@ async def register(user: UserCreate) -> UserResponse:
                 detail="Invalid email format"
             )
         
-        # CRITICAL FIX: Add password strength validation
-        if not user.password or len(user.password) < 8:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password must be at least 8 characters"
-            )
-        
-        # Check password strength: require mix of uppercase, lowercase, and numbers
-        has_upper = any(c.isupper() for c in user.password)
-        has_lower = any(c.islower() for c in user.password)
-        has_digit = any(c.isdigit() for c in user.password)
-        
-        if not (has_upper and has_lower and has_digit):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password must contain uppercase, lowercase, and numbers"
-            )
+        # Password validation is now handled in the model validator
         
         if not user.name or not user.name.strip():
             raise HTTPException(
@@ -285,7 +276,8 @@ async def register(user: UserCreate) -> UserResponse:
         normalized_email = user.email.lower().strip()
         
         # SECURITY: Validate email format before database operations
-        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', normalized_email):
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
+        if not re.match(email_pattern, normalized_email):
             auth_log(f"Registration failed: Invalid email format: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -335,11 +327,7 @@ async def register(user: UserCreate) -> UserResponse:
             auth_log(f"Registration failed: Email already exists: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "status": "ERROR",
-                    "message": "Email already registered. Please login or use a different email.",
-                    "data": None
-                }
+                detail="Email already registered. Please login or use a different email."
             )
         
         # Hash password - CRITICAL FIX: Store hash and salt separately
@@ -456,8 +444,8 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # Validate input with security checks
         import re
         
-        # Security: Simplified email validation to reduce false positives
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        # Security: Enhanced email validation to allow localhost
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
         # Basic validation - allow consecutive dots but check format
         if not re.match(email_pattern, credentials.email):
             auth_log(f"Invalid email format in login attempt: {credentials.email[:50]}")
@@ -539,7 +527,8 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         normalized_email = credentials.email.lower().strip()
         
         # SECURITY: Validate email format before database query
-        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', normalized_email):
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
+        if not re.match(email_pattern, normalized_email):
             auth_log(f"Login failed: Invalid email format: {credentials.email}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -583,11 +572,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 # SECURITY: Don't increase per-email lockout for non-existent users (prevents enumeration)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail={
-                        "status": "ERROR",
-                        "message": "Invalid email or password",
-                        "data": None
-                    }
+                    detail="Invalid email or password"
                 )
             
             # Verify password - CRITICAL FIX: Ensure password_hash and salt exist
@@ -790,21 +775,13 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail={
-                        "status": "ERROR",
-                        "message": f"Too many failed login attempts. Account locked for {lockout_seconds} seconds.",
-                        "data": None
-                    },
+                    detail=f"Too many failed login attempts. Account locked for {lockout_seconds} seconds.",
                     headers={"Retry-After": str(lockout_seconds)}
                 )
             
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid email or password",
-                    "data": None
-                }
+                detail="Invalid email or password"
             )
         
         # CRITICAL FIX: Session fixation prevention - invalidate existing sessions

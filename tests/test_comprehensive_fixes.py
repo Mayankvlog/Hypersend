@@ -74,6 +74,7 @@ class TestMongoDBConnectionFixes:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_client.admin.command.return_value = {"ok": 1}
+            mock_client.__getitem__.return_value.list_collection_names = AsyncMock(return_value=[])
             
             # Test connect_db function
             from database import connect_db
@@ -87,6 +88,7 @@ class TestMongoDBConnectionFixes:
             with patch('database.settings') as mock_settings:
                 mock_settings.MONGODB_URI = "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&tls=false"
                 mock_settings._MONGO_DB = "hypersend"
+                mock_settings.DEBUG = True
                 
                 # Run connect_db
                 asyncio.run(connect_db())

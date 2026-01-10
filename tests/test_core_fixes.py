@@ -94,7 +94,7 @@ class TestValidationFeatures:
         ]
         
         for email in valid_emails:
-            user = UserCreate(name="Test", email=email, password="password123")
+            user = UserCreate(name="Test", email=email, password="Password123")
             assert user.email == email.lower()
         
         # Invalid emails
@@ -107,16 +107,16 @@ class TestValidationFeatures:
         
         for email in invalid_emails:
             with pytest.raises(ValueError):
-                UserCreate(name="Test", email=email, password="password123")
+                UserCreate(name="Test", email=email, password="Password123")
     
     def test_model_validation_password(self):
         """Test Pydantic password validation"""
         # Valid passwords
         valid_passwords = [
-            "password123",
+            "Password123",
             "P@ssw0rd!",
-            "mypassword",
-            "123456"
+            "Mypassword1",
+            "Password1"
         ]
         
         for password in valid_passwords:
@@ -138,15 +138,15 @@ class TestValidationFeatures:
         ]
         
         for name in valid_names:
-            user = UserCreate(name=name, email="test@example.com", password="password123")
+            user = UserCreate(name=name, email="test@example.com", password="Password123")
             assert user.name == name.strip()
         
         # Empty name
         with pytest.raises(ValueError):
-            UserCreate(name="", email="test@example.com", password="password123")
+            UserCreate(name="", email="test@example.com", password="Password123")
         
         # Name with HTML tags (should be sanitized)
-        user = UserCreate(name="<script>alert('xss')</script>", email="test@example.com", password="password123")
+        user = UserCreate(name="<script>alert('xss')</script>", email="test@example.com", password="Password123")
         assert '<script>' not in user.name
     
     def test_command_injection_validation(self):

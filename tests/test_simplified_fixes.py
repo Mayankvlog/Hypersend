@@ -86,45 +86,34 @@ class TestMongoDBConnectionFixes:
         """Test password strength validation"""
         from routes.auth import register
         from models import UserCreate
-        
+        from pydantic import ValidationError
+
         test_cases = [
-            # (password, should_be_valid, expected_error)
-            ("short", False, "Password must be at least 8 characters"),
-            ("alllowercase", False, "Password must contain uppercase"),
-            ("ALLUPPERCASE", False, "Password must contain lowercase"),
-            ("NoNumbers", False, "Password must contain numbers"),
+            # (password, should_be_valid, expected_error_pattern)
+            ("short", False, "String should have at least 8 characters"),
+            ("alllowercase", False, "Password must contain uppercase, lowercase, and numbers"),
+            ("ALLUPPERCASE", False, "Password must contain uppercase, lowercase, and numbers"),
+            ("NoNumbers", False, "Password must contain uppercase, lowercase, and numbers"),
             ("ValidPass123", True, None),
             ("AnotherValid456", True, None),
             ("Complex!Pass789", True, None)
         ]
-        
+
         for password, should_pass, expected_error in test_cases:
-            user_data = UserCreate(
-                name="Test User",
-                email="test@example.com",
-                password=password
-            )
-            
-            # Test password validation logic directly
-            import re
-            
-            # Test length
-            if not user_data.password or len(user_data.password) < 8:
-                assert not should_pass
-                assert expected_error == "Password must be at least 8 characters"
-                continue
-            
-            # Test complexity
-            has_upper = any(c.isupper() for c in user_data.password)
-            has_lower = any(c.islower() for c in user_data.password)
-            has_digit = any(c.isdigit() for c in user_data.password)
-            
-            is_valid = has_upper and has_lower and has_digit
-            
-            if should_pass:
-                assert is_valid
-            else:
-                assert not is_valid
+            try:
+                user_data = UserCreate(
+                    name="Test User",
+                    email="test@example.com",
+                    password=password
+                )
+                # If we get here, validation passed
+                assert should_pass, f"Password '{password}' should have failed but passed"
+            except ValidationError as e:
+                # Validation failed
+                assert not should_pass, f"Password '{password}' should have passed but failed"
+                if expected_error:
+                    error_msg = str(e)
+                    assert expected_error in error_msg, f"Expected error pattern '{expected_error}' not found in '{error_msg}'"
         
         print("✓ Password validation works correctly")
     
@@ -145,7 +134,8 @@ class TestMongoDBConnectionFixes:
         ]
         
         import re
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        # CRITICAL FIX: Allow localhost emails for development
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost)$'
         
         for email, should_be_valid in test_cases:
             is_valid = bool(re.match(email_pattern, email))
@@ -159,10 +149,13 @@ class TestDatabaseClientConfiguration:
     
     def test_motor_client_config_docker(self):
         """Test Motor client configuration for Docker"""
-        with patch('database.AsyncIOMotorClient') as mock_client_class:
+        # CRITICAL: Patch at module level before import
+        with patch('motor.motor_asyncio.AsyncIOMotorClient') as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_client.admin.command.return_value = {"ok": 1}
+            # CRITICAL: Make list_collection_names async
+            mock_client.__getitem__.return_value.list_collection_names = AsyncMock(return_value=["users", "chats"])
             
             # Import and test connect_db function
             from database import connect_db
@@ -171,6 +164,7 @@ class TestDatabaseClientConfiguration:
             with patch('database.settings') as mock_settings:
                 mock_settings.MONGODB_URI = "mongodb://test:test@mongodb:27017/test?authSource=admin&tls=false"
                 mock_settings._MONGO_DB = "test_db"
+                mock_settings.USE_MOCK_DB = False  # ensure connect_db runs the real path for this test
                 
                 # Reset globals
                 import database
@@ -194,7 +188,8 @@ class TestDatabaseClientConfiguration:
     
     def test_motor_client_config_get_db(self):
         """Test Motor client configuration in get_db function"""
-        with patch('database.AsyncIOMotorClient') as mock_client_class:
+        # CRITICAL: Patch at module level before import
+        with patch('motor.motor_asyncio.AsyncIOMotorClient') as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_client.admin.command.return_value = {"ok": 1}
@@ -202,21 +197,31 @@ class TestDatabaseClientConfiguration:
             # Import and test get_db function
             from database import get_db
             
-            # Mock settings
+            # Mock settings - ensure USE_MOCK_DB is False
             with patch('database.settings') as mock_settings:
                 mock_settings._MONGO_USER = "test"
                 mock_settings._MONGO_PASSWORD = "test"
                 mock_settings._MONGO_HOST = "localhost"
                 mock_settings._MONGO_PORT = "27017"
                 mock_settings._MONGO_DB = "test_db"
-                mock_settings.USE_MOCK_DB = False
+                mock_settings.USE_MOCK_DB = False  # CRITICAL: Force False for this test
+                mock_settings.DEBUG = True
                 
-                # Reset globals
+                # Reset globals and clear any existing database connections
                 import database
                 database.client = None
                 database.db = None
                 database._global_db = None
                 database._global_client = None
+                
+                # CRITICAL: Clear any existing database from mongo_init module
+                import sys
+                if 'mongo_init' in sys.modules:
+                    mongo_init = sys.modules['mongo_init']
+                    if hasattr(mongo_init, '_app_db'):
+                        mongo_init._app_db = None
+                    if hasattr(mongo_init, '_app_client'):
+                        mongo_init._app_client = None
                 
                 # Run get_db
                 db = get_db()

@@ -329,42 +329,75 @@ def register_exception_handlers(app: FastAPI) -> None:
     # Handle HTTP exceptions with comprehensive 3xx, 4xx, 5xx support
     app.add_exception_handler(HTTPException, http_exception_handler)
     
-    # Handle asyncio.TimeoutError - convert to proper HTTP 503 Service Unavailable
+    # Handle asyncio.TimeoutError - convert to proper HTTP 504 Gateway Timeout for large uploads
     @app.exception_handler(asyncio.TimeoutError)
     async def timeout_exception_handler(request: Request, exc: asyncio.TimeoutError):
-        """Handle database and async timeout errors"""
-        logger.warning(f"[HTTP_503] {request.method} {request.url.path} | Timeout Error")
+        """Handle database and async timeout errors with enhanced large file support"""
+        logger.warning(f"[HTTP_504] {request.method} {request.url.path} | Timeout Error | Large file upload detected")
+        
+        # Check if this is a file upload request
+        is_file_upload = any(path in str(request.url.path).lower() for path in ['/files/upload', '/files/', '/chunk'])
+        
+        detail_msg = "Request timeout - operation took too long"
+        hints = [
+            "Database may be overloaded - try again",
+            "Check your network connection",
+            "Try again in a few seconds"
+        ]
+        
+        if is_file_upload:
+            detail_msg = "File upload timeout - file may be too large or connection too slow"
+            hints = [
+                "Try uploading a smaller file",
+                "Check your internet connection speed",
+                "Consider splitting large files into chunks",
+                "Upload may take longer for files >1GB"
+            ]
+        
         return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             content={
-                "status_code": 503,
-                "error": "Service Unavailable",
-                "detail": "Database service temporarily unavailable - please retry your request",
+                "status_code": 504,
+                "error": "Gateway Timeout",
+                "detail": detail_msg,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "path": str(request.url.path),
                 "method": request.method,
-                "hints": ["Database may be overloaded - try again", "Check your network connection", "Try again in a few seconds"]
-            }
+                "is_file_upload": is_file_upload,
+                "hints": hints
+            },
+            headers={"Retry-After": "120"}
         )
     
-    # Handle MongoDB specific errors
+    # Handle MongoDB specific errors with enhanced timeout handling
     @app.exception_handler(PyMongoError)
     async def mongodb_exception_handler(request: Request, exc: PyMongoError):
-        """Handle MongoDB connection and operation errors"""
+        """Handle MongoDB connection and operation errors with enhanced timeout handling"""
         logger.error(f"[MONGODB_ERROR] {request.method} {request.url.path} | {type(exc).__name__}: {str(exc)}")
         
-        if "timeout" in str(exc).lower():
+        error_str = str(exc).lower()
+        if "timeout" in error_str or "timed out" in error_str:
+            status_code = status.HTTP_504_GATEWAY_TIMEOUT
+            error_msg = "Database operation timed out - please try with a smaller request"
+        elif "connection" in error_str:
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-            error_msg = "Database service temporarily unavailable"
-        elif "connection" in str(exc).lower():
-            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-            error_msg = "Database connection failed - please try again later"
-        elif "duplicate" in str(exc).lower():
+            error_msg = "Database connection failed - service temporarily unavailable"
+        elif "duplicate" in error_str:
             status_code = status.HTTP_409_CONFLICT
             error_msg = "Resource already exists - please check your data"
+        elif "network" in error_str or "unreachable" in error_str:
+            status_code = status.HTTP_502_BAD_GATEWAY
+            error_msg = "Database network error - upstream service unavailable"
         else:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
             error_msg = "Database operation failed"
+        
+        # Add retry information for timeout errors
+        headers = {}
+        if status_code in [502, 503, 504]:
+            headers["Retry-After"] = "120"
+        elif status_code == 409:
+            headers["Retry-After"] = "5"
         
         return JSONResponse(
             status_code=status_code,
@@ -375,8 +408,13 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "path": str(request.url.path),
                 "method": request.method,
-                "hints": ["Try again in a few moments", "Check your request data", "Contact support if persistent"]
-            }
+                "hints": [
+                    "Try again in a few moments" if status_code in [502, 503, 504] else "Check your request data",
+                    "Check your network connection" if status_code in [502, 503] else "Verify data uniqueness",
+                    "Contact support if persistent" if status_code >= 500 else "Use different data"
+                ]
+            },
+            headers=headers
         )
     
     # Handle HTTP client errors (for external API calls)
@@ -585,6 +623,15 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         elif status_code == 401:
             # 401 errors - don't leak which field failed
             detail = "Authentication required or invalid credentials"
+        # CRITICAL FIX: Also sanitize MongoDB connection strings and other sensitive data
+        elif isinstance(detail, str):
+            # Remove sensitive information like database URIs
+            if "mongodb://" in detail.lower():
+                detail = "Database connection error occurred"
+            elif "mysql://" in detail.lower() or "postgres://" in detail.lower():
+                detail = "Database connection error occurred"
+            elif "password" in detail.lower() and ":" in detail:
+                detail = "Authentication error occurred"
     # In debug mode, preserve full detail information for debugging
     elif debug_mode:
         # Keep the original detail in debug mode
@@ -704,6 +751,25 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             status_code,
             f"HTTP Error {status_code}"
         )
+        # CRITICAL FIX: Sanitize detail in production mode to prevent information disclosure
+        if 500 <= status_code < 600:
+            # Server errors - generic message only
+            detail = "Internal server error. Please try again later."
+        elif 400 <= status_code < 500:
+            # Client errors - safe generic message
+            safe_details = {
+                400: "Bad request. Please check your input.",
+                401: "Authentication required.",
+                403: "Access denied.",
+                404: "Resource not found.",
+                409: "Conflict with existing resource.",
+                422: "Invalid input data.",
+                429: "Too many requests. Please try again later."
+            }
+            detail = safe_details.get(status_code, "Client error. Please check your request.")
+        else:
+            # Other errors - generic
+            detail = "An error occurred. Please try again."
     
     # Enhanced logging with full context and security considerations
     try:
@@ -747,7 +813,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         "status": "ERROR",  # Always include status for consistency
         "status_code": status_code,
         "error": error_description,
-        "detail": str(detail),
+        "detail": detail,  # Use sanitized detail
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "path": str(getattr(getattr(request, "url", None), "path", "")),
         "method": str(getattr(request, "method", "")),
@@ -798,13 +864,37 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     # Prepare response headers
     headers = {}
     
-    # Add retry-after header for rate limit errors
-    if status_code == 429 and getattr(exc, "headers", None) and "Retry-After" in exc.headers:
-        headers["Retry-After"] = exc.headers["Retry-After"]
-    
     # Add Location header for redirect responses (3xx)
-    if 300 <= status_code < 400 and getattr(exc, "headers", None) and "Location" in exc.headers:
-        headers["Location"] = exc.headers["Location"]
+    if 300 <= status_code < 400:
+        exc_headers = getattr(exc, "headers", None) or {}
+        if "Location" in exc_headers:
+            headers["Location"] = exc_headers["Location"]
+        else:
+            # Auto-generate Location header for common redirect scenarios
+            if status_code in [301, 302, 303, 307, 308]:
+                # For API endpoints, redirect to same path with proper method
+                request_obj = getattr(request, "url", None)
+                original_path = str(request_obj.path) if request_obj else ""
+                if original_path and original_path != "/":
+                    headers["Location"] = original_path
+                elif status_code == 301:
+                    # Permanent redirect to HTTPS for HTTP requests
+                    request_headers = getattr(request, "headers", {}) or {}
+                    if getattr(request, "scheme", "https") == "http":
+                        host = request_headers.get("host", "localhost")
+                        headers["Location"] = f"https://{host}{original_path}"
+    
+    # Add Retry-After header for rate limit and timeout errors
+    if status_code == 429:
+        exc_headers = getattr(exc, "headers", None) or {}
+        retry_after = exc_headers.get("Retry-After", "60")
+        headers["Retry-After"] = retry_after
+    elif status_code == 408:
+        # Request timeout - suggest retry after 30 seconds
+        headers["Retry-After"] = "30"
+    elif status_code in [502, 503, 504]:
+        # Server errors - suggest retry after 120 seconds
+        headers["Retry-After"] = "120"
     
     # Add security headers to all error responses
     security_headers = {
@@ -873,7 +963,7 @@ def get_error_hints(status_code: int) -> List[str]:
         505: ["HTTP version not supported", "Try with HTTP/1.1", "Check client configuration", "server error"],
         506: ["Content negotiation failed", "Check Accept headers", "Try different content format", "server error"],
         507: ["Server storage full", "Contact administrator", "Try with smaller data", "server error"],
-        508: ["Infinite loop detected", "Check request dependencies", "Simplify request structure", "server error"],
+        508: ["Infinite loop detected in request processing", "Check request dependencies and redirects", "Simplify request structure", "server error"],
         510: ["Extension not required", "Remove extension headers", "Use standard HTTP", "server error"],
         511: ["Network authentication required", "Check network settings", "Configure proxy authentication", "server error"],
     }

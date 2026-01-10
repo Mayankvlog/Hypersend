@@ -101,7 +101,7 @@ class TestAuthenticationErrors:
             "password": "123"
         })
         assert response.status_code == 400
-        assert "Password must be at least 6 characters" in response.json()["detail"]
+        assert "Password must be at least 8 characters" in response.json()["detail"]
     
     @patch('backend.routes.auth.users_collection')
     def test_register_existing_email(self, mock_collection):
@@ -201,7 +201,7 @@ class TestValidationErrors:
         ]
         
         for email in valid_emails:
-            user = UserCreate(name="Test", email=email, password="password123")
+            user = UserCreate(name="Test", email=email, password="Password123")
             assert user.email == email.lower()
         
         # Invalid emails
@@ -214,7 +214,7 @@ class TestValidationErrors:
         
         for email in invalid_emails:
             with pytest.raises(ValueError):
-                UserCreate(name="Test", email=email, password="password123")
+                UserCreate(name="Test", email=email, password="Password123")
     
     def test_command_injection_validation(self):
         """Test command injection prevention"""

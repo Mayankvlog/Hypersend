@@ -38,13 +38,13 @@ async def test_480_hour_token_validation():
     print(f"✓ Created 480-hour JWT token for user: {user_id}")
     print(f"✓ Token expires at: {payload['exp']}")
     
-    # Test the 480-hour validation
+    # Test that 480-hour token is accepted (not rejected)
     result_user_id = await get_current_user_for_upload(mock_request)
     
-    # Verify the user ID is returned
+    # Verify the user ID is returned correctly
     assert result_user_id == user_id, f"Expected {user_id}, got {result_user_id}"
     
-    print(f"✓ 480-hour token validation successful")
+    print(f"✓ 480-hour token successfully accepted")
     print(f"✓ User ID returned: {result_user_id}")
 
 
@@ -135,8 +135,10 @@ async def test_token_older_than_480_hours_rejected():
     
     # Create mock request for upload operation
     mock_request = MagicMock()
-    mock_request.headers = {"authorization": f"Bearer {old_token}"}
-    mock_request.url.path = "/api/v1/files/init"
+    mock_request.headers = {
+        "authorization": f"Bearer {old_token}",
+        "user-agent": "real-browser-client"  # Use non-test client to avoid exception bypass
+    }
     mock_request.url = MagicMock()
     mock_request.url.path = "/api/v1/files/init"
     

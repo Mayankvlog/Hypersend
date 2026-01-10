@@ -58,8 +58,8 @@ class Settings:
         _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb")
         print(f"[CONFIG] Docker environment detected, using MongoDB host: {_MONGO_HOST}")
     else:
-        # Running locally - use external IP or localhost
-        _MONGO_HOST: str = os.getenv("MONGO_HOST", "139.59.82.105")
+        # Running locally - use localhost for development
+        _MONGO_HOST: str = os.getenv("MONGO_HOST", "localhost")
         print(f"[CONFIG] Local environment detected, using MongoDB host: {_MONGO_HOST}")
     
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")

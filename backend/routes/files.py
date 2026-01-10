@@ -386,6 +386,18 @@ async def initialize_upload(
     ):
     """Initialize file upload for 40GB files with enhanced security - accepts both 'mime' and 'mime_type'"""
     
+    # DEBUG: Log authentication details
+    auth_header = request.headers.get("authorization", "") or request.headers.get("Authorization", "")
+    _log("info", f"[FILE_UPLOAD_DEBUG] Upload request received", {
+        "path": str(request.url.path),
+        "method": request.method,
+        "has_auth_header": bool(auth_header),
+        "auth_header_length": len(auth_header) if auth_header else 0,
+        "user_agent": request.headers.get("user-agent", ""),
+        "current_user": current_user,
+        "content_type": request.headers.get("content-type", "")
+    })
+    
     # Validate HTTP method first
     if request.method != "POST":
         raise HTTPException(
@@ -2939,157 +2951,191 @@ def _handle_comprehensive_error(error: Exception, operation: str, user_id: str, 
     
     # Handle different error types with appropriate HTTP status codes
     
-    # 300-series: Redirection errors (rare in file operations)
-    if error_type in ["RedirectError", "MultipleChoicesError"]:
+    # 300-series: Redirection errors
+    if error_type in ["MultipleChoicesError", "AmbiguousResourceError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_300_MULTIPLE_CHOICES,
             error_type="Multiple Choices",
-            detail=f"Multiple options available for {operation}. Please specify your choice: {str(error)}",
+            detail=f"Multiple links available for resource in {operation}: {str(error)}",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["Please specify your choice from available options"]
+            hints=["Please specify your choice from available options", "Check API documentation for resource selection"]
         )
-    elif error_type in ["MovedPermanentlyError", "RedirectError"]:
+    elif error_type in ["MovedPermanentlyError", "PermanentRedirectError", "ResourceMovedError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_301_MOVED_PERMANENTLY,
             error_type="Moved Permanently",
-            detail=f"Resource permanently moved for {operation}: {str(error)}",
+            detail=f"File URL changed permanently for {operation}: {str(error)}",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["The resource has been permanently moved to a new location"]
+            hints=["Update your bookmarks/links", "The resource has been permanently moved"]
         )
-    elif error_type in ["FoundError", "TemporaryRedirectError"]:
+    elif error_type in ["FoundError", "TemporaryRedirectError", "ResourceTemporarilyMovedError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_302_FOUND,
             error_type="Found",
-            detail=f"Resource temporarily moved for {operation}: {str(error)}",
+            detail=f"Temporary redirect for {operation}: {str(error)}",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["The resource has been temporarily moved to a new location"]
+            hints=["Resource temporarily moved", "Follow the redirect location"]
+        )
+    elif error_type in ["SeeOtherError", "PostToGetRedirectError"]:
+        return _create_standard_error_response(
+            status_code=status.HTTP_303_SEE_OTHER,
+            error_type="See Other",
+            detail=f"POST → GET redirect after {operation}: {str(error)}",
+            path=context.get("path"),
+            method=context.get("method"),
+            hints=["Use GET method for the response", "Check Location header for new URL"]
         )
     
     # 400-series: Client errors
-    elif error_type in ["ValidationError", "ValueError", "InvalidFormatError"]:
+    elif error_type in ["ValidationError", "ValueError", "InvalidFormatError", "JSONDecodeError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_400_BAD_REQUEST,
-            error_type="Validation Error",
-            detail=f"Invalid request for {operation}: {str(error)}. Please check your input and try again.",
+            error_type="Bad Request",
+            detail=f"Invalid JSON/chunk data for {operation}: {str(error)}. Please check your input and try again.",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["Please check your input format and values", "Ensure all required fields are provided"]
+            hints=["Check JSON syntax", "Verify chunk data format", "Ensure all required fields are provided"]
         )
-    elif error_type in ["UnauthorizedError", "AuthenticationError"]:
+    elif error_type in ["UnauthorizedError", "AuthenticationError", "TokenExpiredError", "AuthRequiredError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            error_type="Authentication Error",
-            detail=f"Authentication required for {operation}: {str(error)}. Please login and try again.",
+            error_type="Unauthorized",
+            detail=f"Token expired for {operation}: {str(error)}. Please re-authenticate.",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["Please login with valid credentials", "Check if your token has expired"]
+            hints=["Login again to get fresh token", "Check if your token has expired", "Verify Authorization header"]
         )
-    elif error_type in ["ForbiddenError", "PermissionError", "AccessDeniedError"]:
+    elif error_type in ["ForbiddenError", "PermissionError", "AccessDeniedError", "NoChatPermissionError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_403_FORBIDDEN,
             error_type="Forbidden",
-            detail=f"Access denied for {operation}: {str(error)}. You don't have permission to perform this action.",
+            detail=f"No chat permissions for {operation}: {str(error)}. You don't have permission to perform this action.",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["You don't have permission to access this resource", "Contact administrator for access"]
+            hints=["Check chat membership", "Verify admin permissions", "Contact chat owner for access"]
         )
-    elif error_type in ["NotFoundError", "FileNotFoundError", "MissingResourceError"]:
+    elif error_type in ["NotFoundError", "FileNotFoundError", "MissingResourceError", "InvalidUploadIdError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_404_NOT_FOUND,
             error_type="Not Found",
-            detail=f"Resource not found for {operation}: {str(error)}. The requested resource may have been deleted or moved.",
+            detail=f"Upload ID invalid for {operation}: {str(error)}. The requested resource may have been deleted or moved.",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["Check if the resource ID is correct", "The resource may have been deleted"]
+            hints=["Check if the upload ID is correct", "The upload may have expired", "Verify file exists"]
         )
-    elif error_type in ["TimeoutError", "RequestTimeoutError", "asyncio.TimeoutError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_408_REQUEST_TIMEOUT,
-            error_type="Request Timeout",
-            detail=f"Request timeout for {operation}: {str(error)}. The request took too long to process.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Try again with a smaller request", "Check your network connection"]
-        )
-    elif error_type in ["ConflictError", "DataConflictError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_409_CONFLICT,
-            error_type="Conflict",
-            detail=f"Conflict detected for {operation}: {str(error)}. The request conflicts with current state.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["The resource may have been modified by another user", "Try refreshing and retry"]
-        )
-    elif error_type in ["PayloadTooLargeError", "SizeError", "FileSizeError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            error_type="Payload Too Large",
-            detail=f"Request entity too large for {operation}: {str(error)}. Please reduce the file size or use chunked upload.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Use chunked upload for large files", "Compress the file before uploading"]
-        )
-    elif error_type in ["UnsupportedMediaTypeError", "InvalidMimeTypeError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            error_type="Unsupported Media Type",
-            detail=f"Unsupported media type for {operation}: {str(error)}. Please use a supported file format.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Check supported file formats", "Convert file to supported format"]
-        )
-    elif error_type in ["TooManyRequestsError", "RateLimitError", "ThrottledError"]:
+    elif error_type in ["TimeoutError", "RequestTimeoutError", "asyncio.TimeoutError", "SlowUploadError"]:
+        # Check if it's specifically a chunk upload timeout
+        if "chunk" in operation.lower() or "upload" in operation.lower():
+            return _create_standard_error_response(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                error_type="Request Timeout",
+                detail=f"Chunk upload slow >120s for {operation}: {str(error)}. The request took too long to process.",
+                path=context.get("path"),
+                method=context.get("method"),
+                hints=["Check your internet connection", "Try uploading smaller chunks", "Resume upload if supported"]
+            )
+        else:
+            return _create_standard_error_response(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                error_type="Request Timeout",
+                detail=f"Request timeout for {operation}: {str(error)}. The request took too long to process.",
+                path=context.get("path"),
+                method=context.get("method"),
+                hints=["Try again with a better connection", "Reduce request size", "Check server status"]
+            )
+    elif error_type in ["PayloadTooLargeError", "SizeError", "FileSizeError", "ChunkTooLargeError"]:
+        # Check if it's specifically a chunk size error
+        error_msg_lower = str(error).lower()
+        if "chunk" in error_msg_lower or "32mb" in error_msg_lower:
+            return _create_standard_error_response(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                error_type="Payload Too Large",
+                detail=f"Chunk >32MB for {operation}: {str(error)}. Chunk size exceeds maximum limit.",
+                path=context.get("path"),
+                method=context.get("method"),
+                hints=["Use 32MB or smaller chunks", "Check chunk size configuration", "Verify file size limits"]
+            )
+        else:
+            return _create_standard_error_response(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                error_type="Payload Too Large",
+                detail=f"Request entity too large for {operation}: {str(error)}. Please reduce the file size or use chunked upload.",
+                path=context.get("path"),
+                method=context.get("method"),
+                hints=["Use chunked upload for large files", "Compress the file before uploading", "Check file size limits"]
+            )
+    elif error_type in ["TooManyRequestsError", "RateLimitError", "ThrottledError", "RequestQuotaExceededError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             error_type="Too Many Requests",
-            detail=f"Too many requests for {operation}: {str(error)}. Please rate limit your requests and try again later.",
+            detail=f"Rate limit hit for {operation}: {str(error)}. Please rate limit your requests and try again later.",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["Wait before making another request", "Check rate limit policies"]
+            hints=["Wait before making another request", "Check rate limit policies", "Implement exponential backoff"]
         )
     
     # 500-series: Server errors
-    elif error_type in ["InternalServerError", "SystemError", "RuntimeError"]:
+    elif error_type in ["InternalServerError", "SystemError", "RuntimeError", "DatabaseCrashError", "MongoError"]:
         return _create_standard_error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             error_type="Internal Server Error",
-            detail=f"Internal server error for {operation}: {str(error)}. The server encountered an unexpected condition.",
+            detail=f"DB/Mongo crash for {operation}: {str(error)}. The server encountered an unexpected condition.",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["Try again later", "Contact support if the problem persists"]
+            hints=["Try again later", "Contact support if the problem persists", "Check server status"]
         )
-    elif error_type in ["ServiceUnavailableError", "MaintenanceError"]:
+    elif error_type in ["BadGatewayError", "ProxyError", "NginxError", "DockerProxyError"]:
         return _create_standard_error_response(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            error_type="Service Unavailable",
-            detail=f"Service unavailable for {operation}: {str(error)}. The server is temporarily unavailable.",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            error_type="Bad Gateway",
+            detail=f"Nginx/Docker proxy fail for {operation}: {str(error)}. The server received an invalid response.",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["Try again later", "Service may be under maintenance"]
+            hints=["Check proxy configuration", "Verify backend service status", "Try again later"]
         )
-    elif error_type in ["InsufficientStorageError", "DiskFullError", "OutOfSpaceError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-            error_type="Insufficient Storage",
-            detail=f"Insufficient storage for {operation}: {str(error)}. The server has insufficient storage space.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Try uploading a smaller file", "Contact administrator about storage limits"]
-        )
-    
-    # 600-series: Custom/Network protocol errors
-    elif error_type in ["ProtocolError", "NetworkProtocolError", "ConnectionError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            error_type="Protocol Error",
-            detail=f"Protocol error for {operation}: {str(error)}. A network protocol error occurred.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Check your network connection", "Try again later"]
-        )
+    elif error_type in ["ServiceUnavailableError", "BackendOverloadError", "ConcurrentUploadError", "MaintenanceError"]:
+        # Check if it's specifically a concurrent upload issue
+        if "concurrent" in str(error).lower() or "upload" in operation.lower():
+            return _create_standard_error_response(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                error_type="Service Unavailable",
+                detail=f"Backend overload for {operation}: {str(error)}. Too many concurrent uploads.",
+                path=context.get("path"),
+                method=context.get("method"),
+                hints=["Wait and retry upload", "Reduce concurrent operations", "Check server capacity"]
+            )
+        else:
+            return _create_standard_error_response(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                error_type="Service Unavailable",
+                detail=f"Service unavailable for {operation}: {str(error)}. The server is temporarily unavailable.",
+                path=context.get("path"),
+                method=context.get("method"),
+                hints=["Try again later", "Service may be under maintenance", "Check system status"]
+            )
+    elif error_type in ["GatewayTimeoutError", "NginxTimeoutError", "LargeFileTimeoutError", "ProxyTimeoutError"]:
+        # Check if it's specifically a large file timeout
+        if "40gb" in str(error).lower() or "large" in str(error).lower():
+            return _create_standard_error_response(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                error_type="Gateway Timeout",
+                detail=f"Nginx timeout on 40GB file for {operation}: {str(error)}. Large file transfer timed out.",
+                path=context.get("path"),
+                method=context.get("method"),
+                hints=["Use chunked upload for large files", "Increase timeout settings", "Check network stability"]
+            )
+        else:
+            return _create_standard_error_response(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                error_type="Gateway Timeout",
+                detail=f"Gateway timeout for {operation}: {str(error)}. The upstream server timed out.",
+                path=context.get("path"),
+                method=context.get("method"),
+                hints=["Try again with smaller request", "Check network connection", "Verify server performance"]
+            )
     
     # Default: Internal server error
     else:
@@ -3099,149 +3145,7 @@ def _handle_comprehensive_error(error: Exception, operation: str, user_id: str, 
             detail=f"Unexpected error for {operation}: {str(error)} ({error_type}). Please contact support if this persists.",
             path=context.get("path"),
             method=context.get("method"),
-            hints=["Try again later", "Contact support if the problem persists"]
-        )
-    if "file_id" in context:
-        log_context["file_id"] = context["file_id"]
-    
-    _log("error", f"Comprehensive error handling for {operation}", log_context)
-    
-    # Handle different error types with appropriate HTTP status codes
-    
-    # 300-series: Redirection errors (rare in file operations)
-    if error_type in ["RedirectError", "MultipleChoicesError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_300_MULTIPLE_CHOICES,
-            error_type="Multiple Choices",
-            detail=f"Multiple options available for {operation}. Please specify your choice: {str(error)}",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Please specify your choice from available options"]
-        )
-    
-    # 400-series: Client errors
-    elif error_type in ["ValidationError", "ValueError", "InvalidFormatError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error_type="Validation Error",
-            detail=f"Invalid request for {operation}: {str(error)}. Please check your input and try again.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Please check your input format and values", "Ensure all required fields are provided"]
-        )
-    elif error_type in ["UnauthorizedError", "AuthenticationError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            error_type="Authentication Error",
-            detail=f"Authentication required for {operation}: {str(error)}. Please login and try again.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Please login with valid credentials", "Check if your token has expired"]
-        )
-    elif error_type in ["ForbiddenError", "PermissionError", "AccessDeniedError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_403_FORBIDDEN,
-            error_type="Forbidden",
-            detail=f"Access denied for {operation}: {str(error)}. You don't have permission to perform this action.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["You don't have permission to access this resource", "Contact administrator for access"]
-        )
-    elif error_type in ["NotFoundError", "FileNotFoundError", "MissingResourceError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_404_NOT_FOUND,
-            error_type="Not Found",
-            detail=f"Resource not found for {operation}: {str(error)}. The requested resource may have been deleted or moved.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Check if the resource ID is correct", "The resource may have been deleted"]
-        )
-    elif error_type in ["TimeoutError", "RequestTimeoutError", "asyncio.TimeoutError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_408_REQUEST_TIMEOUT,
-            error_type="Request Timeout",
-            detail=f"Request timeout for {operation}: {str(error)}. The request took too long to process.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Try again with a smaller request", "Check your network connection"]
-        )
-    elif error_type in ["PayloadTooLargeError", "SizeError", "FileSizeError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            error_type="Payload Too Large",
-            detail=f"Request entity too large for {operation}: {str(error)}. Please reduce the file size or use chunked upload.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Use chunked upload for large files", "Compress the file before uploading"]
-        )
-    elif error_type in ["UnsupportedMediaTypeError", "InvalidMimeTypeError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            error_type="Unsupported Media Type",
-            detail=f"Unsupported media type for {operation}: {str(error)}. Please use a supported file format.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Check supported file formats", "Convert file to supported format"]
-        )
-    elif error_type in ["TooManyRequestsError", "RateLimitError", "ThrottledError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            error_type="Too Many Requests",
-            detail=f"Too many requests for {operation}: {str(error)}. Please rate limit your requests and try again later.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Wait before making another request", "Check rate limit policies"]
-        )
-    
-    # 500-series: Server errors
-    elif error_type in ["InternalServerError", "SystemError", "RuntimeError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            error_type="Internal Server Error",
-            detail=f"Internal server error for {operation}: {str(error)}. The server encountered an unexpected condition.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Try again later", "Contact support if the problem persists"]
-        )
-    elif error_type in ["ServiceUnavailableError", "MaintenanceError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            error_type="Service Unavailable",
-            detail=f"Service unavailable for {operation}: {str(error)}. The server is temporarily unavailable.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Try again later", "Service may be under maintenance"]
-        )
-    elif error_type in ["InsufficientStorageError", "DiskFullError", "OutOfSpaceError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-            error_type="Insufficient Storage",
-            detail=f"Insufficient storage for {operation}: {str(error)}. The server has insufficient storage space.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Try uploading a smaller file", "Contact administrator about storage limits"]
-        )
-    
-    # 600-series: Custom/Network protocol errors
-    elif error_type in ["ProtocolError", "NetworkProtocolError", "ConnectionError"]:
-        return _create_standard_error_response(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            error_type="Protocol Error",
-            detail=f"Protocol error for {operation}: {str(error)}. A network protocol error occurred.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Check your network connection", "Try again later"]
-        )
-    
-    # Default: Internal server error
-    else:
-        return _create_standard_error_response(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            error_type="Unexpected Error",
-            detail=f"Unexpected error for {operation}: {str(error)} ({error_type}). Please contact support if this persists.",
-            path=context.get("path"),
-            method=context.get("method"),
-            hints=["Try again later", "Contact support if the problem persists"]
+            hints=["Try again later", "Contact support if the problem persists", "Check request parameters"]
         )
 
 
