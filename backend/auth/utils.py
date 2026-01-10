@@ -296,7 +296,6 @@ def _verify_legacy_passwords(plain_password: str, hashed_password: str, salt: st
                             100000
                         )
                         computed_hex = password_hash.hex()
-                        # SECURITY: Use constant-time comparison to prevent timing attacks
                         is_valid = hmac.compare_digest(computed_hex, stored_hash)
                         if is_valid:
                             _log("warning", f"User {user_id} using legacy password format - migration recommended")
