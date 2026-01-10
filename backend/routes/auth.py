@@ -319,7 +319,8 @@ async def register(user: UserCreate) -> UserResponse:
                 auth_log(f"CRITICAL ERROR: existing_user is a Future object: {type(existing_user)}")
                 raise RuntimeError("Database operation returned Future instead of result")
             
-            auth_log(f"Registration failed: Found existing user with email: {normalized_email} (ID: {existing_user.get('_id')})")
+            user_id = existing_user.get('_id') if isinstance(existing_user, dict) else None
+            auth_log(f"Registration failed: Found existing user with email: {normalized_email} (ID: {user_id})")
         else:
             auth_log(f"Registration: No existing user found for email: {normalized_email}")
         

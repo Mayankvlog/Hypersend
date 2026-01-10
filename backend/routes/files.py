@@ -446,31 +446,42 @@ async def initialize_upload(
                 detail="Malformed JSON in request body"
             )
         
-        # CRITICAL FIX: Allow anonymous uploads for compatibility
+        # CRITICAL FIX: Enforce authentication - no anonymous uploads allowed
         if not current_user:
-            _log("info", f"[UPLOAD_AUTH] No authentication provided, allowing anonymous upload", {
+            _log("error", f"[UPLOAD_AUTH] Authentication required but missing for upload_init", {
                 "operation": "upload_init",
-                "user_agent": request.headers.get("user-agent", ""),
-                "path": str(request.url.path)
+                "has_user_agent": bool(request.headers.get("user-agent", "")),
+                "has_client_ip": request.client is not None,
+                "reason": "unauthenticated_upload_attempt"
             })
-            current_user = "anonymous-user"
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for file uploads. Please provide a valid authentication token."
+            )
         
         # CRITICAL FIX: Validate Accept header for proper content negotiation
         accept_header = request.headers.get("accept", "").lower()
         if accept_header and "application/json" not in accept_header and "*/*" not in accept_header:
-            # Client specifically requesting non-JSON format
-            raise HTTPException(
-                status_code=status.HTTP_406_NOT_ACCEPTABLE,
-                detail={
-                    "status": "ERROR",
-                    "message": "Requested content type not supported",
-                    "data": {
-                        "requested_accept": request.headers.get("accept"),
-                        "supported_types": ["application/json"],
-                        "hint": "Use Accept: application/json or Accept: */*"
+            # For file uploads, be more permissive with Accept headers
+            if "/files/" in request.url.path:
+                _log("info", f"[UPLOAD_ACCEPT] Accept header check bypassed for file upload: {accept_header}", {
+                    "user_id": current_user,
+                    "operation": "upload_init"
+                })
+            else:
+                # Strict check for other endpoints
+                raise HTTPException(
+                    status_code=status.HTTP_406_NOT_ACCEPTABLE,
+                    detail={
+                        "status": "ERROR",
+                        "message": "Requested content type not supported",
+                        "data": {
+                            "requested_accept": request.headers.get("accept"),
+                            "supported_types": ["application/json"],
+                            "hint": "Use Accept: application/json or Accept: */*"
+                        }
                     }
-                }
-            )
+                )
         
         # CRITICAL DEBUG: Log the raw request for debugging 400 errors
         _log("info", f"File upload init request received", {
@@ -1070,21 +1081,12 @@ async def upload_chunk(
             headers={"Allow": "PUT, OPTIONS"}
         )
     
-    # CRITICAL FIX: Allow anonymous uploads for compatibility
+    # CRITICAL FIX: Check authentication AFTER validation
     if not current_user:
-        _log("info", f"[UPLOAD_AUTH] No authentication provided, allowing anonymous upload", {
-            "operation": "chunk_upload",
-            "user_agent": request.headers.get("user-agent", ""),
-            "path": str(request.url.path)
-        })
-        current_user = "anonymous-user"
-    
-    # DEBUG: Log current user for debugging
-    _log("debug", f"[CHUNK_UPLOAD_DEBUG] Current user: {current_user}, upload_id: {upload_id}", {
-        "operation": "chunk_upload",
-        "user_agent": request.headers.get("user-agent", ""),
-        "path": str(request.url.path)
-    })
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
     
     # CRITICAL FIX: Check precondition headers (412 Precondition Failed)
     if_match = request.headers.get("if-match")

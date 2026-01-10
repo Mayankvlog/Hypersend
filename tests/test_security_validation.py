@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 # ============================================================================
 # BASE URL for all tests
 # ============================================================================
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8000/api/v1"
 
 # ============================================================================
 # REAL VALIDATOR IMPORTS - These are production code!
@@ -330,12 +330,12 @@ class TestAuthenticationValidation:
             pytest.skip("Backend not available for password validation test")
             return
         
-        # Test weak passwords through actual registration endpoint
+# Test weak passwords through actual registration endpoint
         # Note: Backend may have different requirements than our inline validator
         weak_passwords = [
-            {"email": f"test{hash('weak1')}@example.com", "password": "short", "username": f"test{hash('user1')}"},
-            {"email": f"test{hash('weak2')}@example.com", "password": "12345678", "username": f"test{hash('user2')}"},
-            {"email": f"test{hash('weak3')}@example.com", "password": "alllowercase", "username": f"test{hash('user3')}"},
+            {"email": f"test{hash('weak1')}@example.com", "password": "short", "name": f"test{hash('user1')}"},
+            {"email": f"test{hash('weak2')}@example.com", "password": "12345678", "name": f"test{hash('user2')}"},
+            {"email": f"test{hash('weak3')}@example.com", "password": "alllowercase", "name": f"test{hash('user3')}"},
         ]
         
         for user_data in weak_passwords:
@@ -347,17 +347,17 @@ class TestAuthenticationValidation:
             assert "detail" in error_data or "validation_errors" in error_data
             print(f"✓ Weak password REJECTED: {user_data['password']}")
         
-        # Test strong password
+# Test strong password
         strong_user = {
             "email": f"strong{hash('pass')}@example.com", 
             "password": "MyStr0ng!Passw0rd", 
-            "username": f"strong{hash('user')}"
+            "name": f"strong{hash('user')}"
         }
         
         response = requests.post(f"{BASE_URL}/auth/register", json=strong_user, timeout=5)
         
         # Strong password should be accepted (or 409 if email already exists)
-        assert response.status_code in [200, 201, 409], f"Strong password should be accepted"
+        assert response.status_code in [200, 201, 409], f"Strong password should be accepted: got {response.status_code}"
         print(f"✓ Strong password ACCEPTED: {strong_user['password']}")
         
         print("[OK] Password validation working correctly through backend")
