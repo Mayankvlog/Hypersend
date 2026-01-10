@@ -292,23 +292,15 @@ async def register(user: UserCreate) -> UserResponse:
                 detail="Invalid email format"
             )
         
-        # CRITICAL FIX: Fix duplicate database query and handle both sync/async properly
+        # CRITICAL FIX: Fix duplicate database query and handle async properly
         existing_user = None
         try:
-            if hasattr(users_col, 'find_one') and callable(getattr(users_col, 'find_one')):
-                if asyncio.iscoroutinefunction(users_col.find_one):
-                    existing_user = await asyncio.wait_for(
-                        users_col.find_one({"email": normalized_email}),
-                        timeout=5.0
-                    )
-                else:
-                    # Mock collection (synchronous)
-                    existing_user = users_col.find_one({"email": normalized_email})
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Database service temporarily unavailable"
-                )
+            users_col = users_collection()
+            # CRITICAL FIX: Motor MongoDB operations are always async, await them directly
+            existing_user = await asyncio.wait_for(
+                users_col.find_one({"email": normalized_email}),
+                timeout=5.0
+            )
         except asyncio.TimeoutError:
             auth_log(f"Database timeout checking existing user")
             raise HTTPException(
@@ -387,22 +379,13 @@ async def register(user: UserCreate) -> UserResponse:
         # Insert user into database
         try:
             users_col = users_collection()
-            # CRITICAL FIX: Ensure database connection is properly awaited
-            if hasattr(users_col, 'insert_one'):
-                if asyncio.iscoroutinefunction(users_col.insert_one):
-                    result = await asyncio.wait_for(
-                        users_col.insert_one(user_doc),
-                        timeout=5.0
-                    )
-                else:
-                    # Fallback for non-async collection (shouldn't happen but safety)
-                    result = users_col.insert_one(user_doc)
-                    if hasattr(result, '__await__'):
-                        result = await result
-            else:
-                raise RuntimeError("Database collection not properly initialized")
+            # CRITICAL FIX: Motor MongoDB operations are always async, await them directly
+            result = await asyncio.wait_for(
+                users_col.insert_one(user_doc),
+                timeout=5.0
+            )
             
-            # CRITICAL FIX: Extract inserted_id safely - it might be a Future object
+            # CRITICAL FIX: Extract inserted_id safely - motor returns result directly
             if result is None:
                 raise RuntimeError("Insert operation returned None")
             
