@@ -160,19 +160,22 @@ class TestDatabaseClientConfiguration:
             # Import and test connect_db function
             from database import connect_db
             
-            # Mock settings
+            # Mock settings AND environment
             with patch('database.settings') as mock_settings:
                 mock_settings.MONGODB_URI = "mongodb://test:test@mongodb:27017/test?authSource=admin&tls=false"
                 mock_settings._MONGO_DB = "test_db"
                 mock_settings.USE_MOCK_DB = False  # ensure connect_db runs the real path for this test
+                mock_settings.DEBUG = True  # Set DEBUG to True to reduce retries
                 
                 # Reset globals
                 import database
                 database.client = None
                 database.db = None
                 
-                # Run connect_db
-                asyncio.run(connect_db())
+                # CRITICAL: Also patch the client_class check in connect_db
+                with patch.object(database, 'AsyncIOMotorClient', mock_client_class):
+                    # Run connect_db
+                    asyncio.run(connect_db())
                 
                 # Verify client was called with correct parameters
                 mock_client_class.assert_called_once()

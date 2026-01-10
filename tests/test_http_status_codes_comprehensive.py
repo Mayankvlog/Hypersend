@@ -376,7 +376,7 @@ class TestHTTPStatusCodes400:
         }
         
         token = create_access_token(test_payload)
-        headers = {"Authorization": f"Bearer {token}", "User-Agent": "testclient"}
+        headers = {"Authorization": f"Bearer {token}", "User-Agent": "testclient", "X-Test-Rate-Limit": "true"}
         
         payload = {
             "filename": "test.txt",
