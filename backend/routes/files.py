@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body, Query, UploadFile, File
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse, RedirectResponse
 from typing import Optional, List
 from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
@@ -446,15 +446,17 @@ async def initialize_upload(
                 detail="Malformed JSON in request body"
             )
         
-        # CRITICAL FIX: Check authentication AFTER input validation but be more permissive
+        # CRITICAL FIX: Enforce authentication
         if not current_user:
-            # Allow anonymous uploads for compatibility with frontend
-            _log("warning", f"No authentication provided, allowing anonymous upload", {
+            _log("warning", f"Unauthenticated upload attempt", {
                 "operation": "upload_init",
                 "user_agent": request.headers.get("user-agent", ""),
                 "path": str(request.url.path)
             })
-            current_user = "anonymous-user"  # Set default user for anonymous uploads
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for file uploads"
+            )
         
         # CRITICAL FIX: Validate Accept header for proper content negotiation
         accept_header = request.headers.get("accept", "").lower()
@@ -714,7 +716,7 @@ async def initialize_upload(
                 detail="File size must be greater than 0"
             )
         
-        # CRITICAL FIX: Check user quota before upload (402 Payment Required)
+        # CRITICAL FIX: Check user quota before upload (fail-closed on error)
         try:
             import asyncio
             user_doc = await asyncio.wait_for(
@@ -753,11 +755,26 @@ async def initialize_upload(
                         }
                     )
         except asyncio.TimeoutError:
-            _log("error", f"Quota check timeout for user {current_user}")
-            # Continue with upload if quota check times out (fail open)
+            _log("error", f"Quota check timeout for user {current_user}", {
+                "user_id": current_user,
+                "operation": "upload_init"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Quota service unavailable - unable to process upload"
+            )
+        except HTTPException:
+            raise  # Re-raise HTTPException as-is
         except Exception as quota_error:
-            _log("error", f"Quota check failed: {type(quota_error).__name__}: {str(quota_error)}")
-            # Continue with upload if quota check fails (fail open)
+            _log("error", f"Quota check failed: {type(quota_error).__name__}: {str(quota_error)}", {
+                "user_id": current_user,
+                "operation": "upload_init",
+                "error_type": type(quota_error).__name__
+            })
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Quota service unavailable - unable to process upload"
+            )
         
         # CRITICAL FIX: Normalize MIME type FIRST, then validate
         if mime_type is None or not isinstance(mime_type, str):
@@ -1156,9 +1173,6 @@ async def upload_chunk(
         
         if upload_doc.get("user_id") != current_user:
             # Extra detailed logging for permission denied
-            is_debug = getattr(settings, "DEBUG", False)
-            is_testclient = "testclient" in request.headers.get("user-agent", "").lower()
-            is_flutter_web = "zaply-flutter-web" in request.headers.get("user-agent", "").lower()
             upload_user_id = upload_doc.get("user_id") or upload_doc.get("owner_id")
             
             _log("warning", f"Permission check failed for chunk upload", {
@@ -1167,24 +1181,13 @@ async def upload_chunk(
                 "operation": "chunk_upload",
                 "upload_id": upload_id,
                 "chunk_index": chunk_index,
-                "debug_mode": is_debug,
-                "is_testclient": is_testclient,
-                "is_flutter_web": is_flutter_web,
                 "mismatch": f"{current_user} != {upload_user_id}"
             })
             
-            # In debug/test mode, allow test-user to upload chunks
-            if (is_debug or is_testclient) and current_user == "test-user":
-                _log("info", f"Permission check overridden for test-user in debug mode", {
-                    "user_id": current_user,
-                    "upload_user_id": upload_user_id,
-                    "operation": "chunk_upload"
-                })
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You don't have permission to upload to this session"
-                )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to upload to this session"
+            )
         
         # Check if upload has expired
         if upload_doc.get("expires_at"):
@@ -1209,36 +1212,19 @@ async def upload_chunk(
                 detail=f"Invalid chunk index: {chunk_index}. Chunk index cannot be negative"
             )
         
-        # CRITICAL FIX: Handle final chunk index exceeding expected (client/server desync recovery)
+        # CRITICAL FIX: Reject out-of-range chunks to maintain data integrity
         if chunk_index >= total_chunks:
-            # CRITICAL FIX: Allow out-of-range chunks for compatibility instead of rejecting
-            _log("warning", f"Chunk index {chunk_index} exceeds expected {total_chunks-1}, allowing for compatibility", {
+            _log("error", f"Chunk index out of range: {chunk_index} >= {total_chunks}", {
                 "user_id": current_user,
                 "operation": "chunk_upload",
                 "upload_id": upload_id,
                 "chunk_index": chunk_index,
                 "expected_max": total_chunks - 1
             })
-            
-            # Adjust total_chunks dynamically to accommodate this chunk
-            new_total_chunks = chunk_index + 1
-            if new_total_chunks > total_chunks:
-                _log("info", f"Adjusting total_chunks from {total_chunks} to {new_total_chunks} to accommodate chunk {chunk_index}", {
-                    "user_id": current_user,
-                    "operation": "chunk_upload",
-                    "upload_id": upload_id,
-                    "chunk_index": chunk_index
-                })
-                
-                # Update upload document with corrected total_chunks
-                try:
-                    await uploads_collection().update_one(
-                        {"_id": upload_id},
-                        {"$set": {"total_chunks": new_total_chunks}}
-                    )
-                except Exception as e:
-                    _log("error", f"Failed to update total_chunks: {e}")
-                total_chunks = new_total_chunks
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Chunk index {chunk_index} out of range. Expected: 0-{total_chunks - 1}"
+            )
         
         # Check for duplicate chunks (allow retry but don't fail)
         if chunk_index in uploaded_chunks:
@@ -1451,39 +1437,22 @@ async def complete_upload(
                 detail="Upload not found or expired"
             )
         
-        # CRITICAL FIX: Handle user_id comparison for test-user and debug mode
+        # CRITICAL FIX: Handle user_id comparison - enforce strict permission check
         upload_user_id = upload_doc.get("user_id") or upload_doc.get("owner_id")
         
-        # Allow completion if user matches OR if in test mode with test-user
+        # Enforce that user matches
         if upload_user_id != current_user:
-            # Extra detailed logging for permission denied
-            is_debug = getattr(settings, "DEBUG", False)
-            is_testclient = "testclient" in request.headers.get("user-agent", "").lower()
-            is_flutter_web = "zaply-flutter-web" in request.headers.get("user-agent", "").lower()
-            
             _log("warning", f"Permission check failed for upload completion", {
                 "user_id": current_user,
                 "upload_user_id": upload_user_id,
                 "operation": "file_complete",
                 "upload_id": upload_id,
-                "debug_mode": is_debug,
-                "is_testclient": is_testclient,
-                "is_flutter_web": is_flutter_web,
                 "mismatch": f"{current_user} != {upload_user_id}"
             })
-            
-            # In debug/test mode, allow test-user to complete any upload
-            if (is_debug or is_testclient) and current_user == "test-user":
-                _log("info", f"Permission check overridden for test-user in debug mode", {
-                    "user_id": current_user,
-                    "upload_user_id": upload_user_id,
-                    "operation": "file_complete"
-                })
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You don't have permission to complete this upload"
-                )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to complete this upload"
+            )
         
         # Verify all chunks have been uploaded
         total_chunks = upload_doc.get("total_chunks", 0)
@@ -1566,51 +1535,50 @@ async def complete_upload(
                         detail="Failed to set secure file permissions"
                     )
                 
-                # Write chunks to temp file with enhanced error handling and partial recovery
+                # Write chunks to temp file - all chunks must be present
                 chunks_written = 0
                 chunks_failed = []
-                partial_assembly_allowed = True  # Allow partial assembly for recovery
                 
                 for chunk_idx in range(total_chunks):
                     chunk_path = upload_dir / f"chunk_{chunk_idx}.part"
                     
                     if not chunk_path.exists():
                         chunks_failed.append(chunk_idx)
-                        _log("warning", f"Chunk {chunk_idx} missing during assembly", {
+                        _log("error", f"Chunk {chunk_idx} missing during assembly", {
                             "user_id": current_user,
                             "operation": "file_assembly",
                             "upload_id": upload_id,
                             "missing_chunk": chunk_idx,
-                            "total_chunks": total_chunks,
-                            "chunks_written": chunks_written,
-                            "chunks_failed": len(chunks_failed),
-                            "partial_recovery": partial_assembly_allowed,
-                            "debug": "large_file_upload_debug"
+                            "total_chunks": total_chunks
                         })
                         
-                        # Continue assembly if partial recovery is allowed and we have enough chunks
-                        if partial_assembly_allowed and chunks_written > 0 and len(chunks_failed) < total_chunks * 0.1:  # Allow up to 10% missing chunks
-                            continue
-                        else:
-                            temp_path.unlink(missing_ok=True)  # Clean up temp file
-                            raise HTTPException(
-                                status_code=status.HTTP_400_BAD_REQUEST,
-                                detail=f"Too many chunks missing for assembly. Missing: {len(chunks_failed)}/{total_chunks}. Available: {chunks_written}/{total_chunks}"
-                            )
+                        # Do not allow partial assembly - all chunks required
+                        temp_path.unlink(missing_ok=True)  # Clean up temp file
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Missing chunk {chunk_idx} - all chunks required for assembly"
+                        )
                     
                     try:
                         chunk_size = chunk_path.stat().st_size
                         if chunk_size == 0:
-                            chunks_failed.append(chunk_idx)
-                            _log("warning", f"Chunk {chunk_idx} is empty during assembly", {
+                            _log("error", f"Chunk {chunk_idx} is empty during assembly", {
                                 "user_id": current_user,
                                 "operation": "file_assembly",
                                 "upload_id": upload_id,
                                 "empty_chunk": chunk_idx,
                                 "chunk_size": chunk_size,
+                                "chunks_written": chunks_written,
+                                "total_chunks": total_chunks,
                                 "debug": "large_file_upload_debug"
                             })
-                            continue
+                            
+                            # Strict requirement: all chunks must be readable - no partial recovery
+                            temp_path.unlink(missing_ok=True)
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Empty chunk {chunk_idx} during assembly. Chunks processed: {chunks_written}/{total_chunks}"
+                            )
                         
                         with open(chunk_path, 'rb') as chunk_file:
                             # Write in smaller chunks to prevent memory exhaustion
@@ -1674,15 +1642,12 @@ async def complete_upload(
                             "debug": "large_file_upload_debug"
                         })
                         
-                        # Continue if we have enough chunks and partial recovery is allowed
-                        if partial_assembly_allowed and chunks_written > 0 and len(chunks_failed) < total_chunks * 0.1:
-                            continue
-                        else:
-                            temp_path.unlink(missing_ok=True)
-                            raise HTTPException(
-                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                detail=f"Failed to read chunk {chunk_idx}: {str(chunk_error)}. Chunks processed: {chunks_written}/{total_chunks}"
-                            )
+                        # Strict requirement: all chunks must be readable - no partial recovery
+                        temp_path.unlink(missing_ok=True)
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to read chunk {chunk_idx}: {str(chunk_error)}. Chunks processed: {chunks_written}/{total_chunks}"
+                        )
                     except Exception as e:
                         chunks_failed.append(chunk_idx)
                         _log("error", f"Unexpected error processing chunk {chunk_idx}: {str(e)}", {
@@ -2326,11 +2291,11 @@ async def download_file(
                             detail="Access denied - unauthorized file access"
                         )
                     
-                    # 5. Additional character-level validation - only check for dangerous patterns
+                    # 5. Additional character-level validation - validate all path components
                     path_parts = normalized_path.parts
-                    for i, part in enumerate(path_parts):
-                        # Allow leading dot in user directories (e.g., ./files/ab/userid/)
-                        if i > 0 and part.startswith('.') and part != '.':
+                    for part in path_parts:
+                        # Reject any component starting with dot (except '.' itself is already filtered by normalization)
+                        if part.startswith('.') and part != '.':
                             _log("error", f"Suspicious path component: {part} in {storage_path}", {"user_id": current_user, "operation": "file_download"})
                             raise HTTPException(
                                 status_code=status.HTTP_403_FORBIDDEN,
@@ -3275,3 +3240,254 @@ def optimize_40gb_transfer(file_size_bytes: int) -> dict:
         "transfer_target_met": estimated_minutes <= transfer_targets.get(min(int(file_size_gb), 40), 90),
         "optimization_applied": True
     }
+
+
+# Add redirect endpoints for file versioning and upload management
+@router.get("/files/{file_id}/versions", response_model=dict)
+async def get_file_versions(
+    file_id: str,
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Get multiple file versions (300 Multiple Choices)"""
+    try:
+        # Check if file has multiple versions
+        from db_proxy import files_collection as files_coll
+        files = await files_coll().find({
+            "original_id": file_id,
+            "is_deleted": False
+        }).to_list(length=None)
+        
+        if len(files) > 1:
+            # Multiple versions exist - return 300 Multiple Choices
+            versions = []
+            for file in files:
+                versions.append({
+                    "file_id": file["_id"],
+                    "version": file.get("version", 1),
+                    "upload_date": file.get("created_at"),
+                    "size": file.get("size"),
+                    "mime_type": file.get("mime_type"),
+                    "download_url": f"/api/v1/files/{file['_id']}/download"
+                })
+            
+            return JSONResponse(
+                status_code=status.HTTP_300_MULTIPLE_CHOICES,
+                content={
+                    "status": "MULTIPLE_CHOICES",
+                    "message": "Multiple file versions available",
+                    "file_id": file_id,
+                    "versions": versions,
+                    "total_versions": len(versions)
+                },
+                headers={"Vary": "Accept"}
+            )
+        else:
+            # Single version - redirect to file
+            return RedirectResponse(
+                url=f"/api/v1/files/{file_id}/download",
+                status_code=status.HTTP_302_FOUND
+            )
+            
+    except Exception as e:
+        _log("error", f"Error getting file versions: {str(e)}", {
+            "user_id": current_user,
+            "file_id": file_id,
+            "operation": "file_versions"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve file versions"
+        )
+
+@router.get("/uploads/{upload_id}/redirect")
+async def redirect_upload(
+    upload_id: str,
+    request: Request,
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Handle upload ID rotation (301 Moved Permanently)"""
+    try:
+        from database import files_collection
+        
+        # Check if upload ID has been rotated
+        upload_record = await files_collection().find_one({
+            "_id": upload_id,
+            "is_deleted": False
+        })
+        
+        if upload_record and upload_record.get("new_upload_id"):
+            # Upload ID was rotated - permanent redirect
+            return RedirectResponse(
+                url=f"/api/v1/files/{upload_record['new_upload_id']}/download",
+                status_code=status.HTTP_301_MOVED_PERMANENTLY
+            )
+        else:
+            # No rotation - redirect to actual download
+            return RedirectResponse(
+                url=f"/api/v1/files/{upload_id}/download",
+                status_code=status.HTTP_302_FOUND
+            )
+            
+    except Exception as e:
+        _log("error", f"Error in upload redirect: {str(e)}", {
+            "user_id": current_user,
+            "upload_id": upload_id,
+            "operation": "upload_redirect"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload not found"
+        )
+
+@router.post("/files/{file_id}/process")
+async def process_file_upload(
+    file_id: str,
+    request: Request,
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Process file after upload (303 See Other - POST to GET redirect)"""
+    try:
+        from database import files_collection
+        
+        # Start file processing
+        file_record = await files_collection().find_one({
+            "_id": file_id,
+            "is_deleted": False
+        })
+        
+        if not file_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+        
+        # Simulate processing (in real app, this would be async processing)
+        await files_collection().update_one(
+            {"_id": file_id},
+            {"$set": {"status": "processing", "processed_at": datetime.now(timezone.utc)}}
+        )
+        
+        # Return 303 See Other to redirect to GET endpoint
+        return RedirectResponse(
+            url=f"/api/v1/files/{file_id}/info",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Error processing file: {str(e)}", {
+            "user_id": current_user,
+            "file_id": file_id,
+            "operation": "file_process"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process file"
+        )
+
+@router.put("/files/{file_id}/relocate")
+async def relocate_file_permanently(
+    file_id: str,
+    request: Request,
+    new_location: str = Query(...),
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Permanently relocate file (308 Permanent Redirect)"""
+    try:
+        from database import files_collection
+        
+        # Update file location permanently
+        file_record = await files_collection().find_one({
+            "_id": file_id,
+            "is_deleted": False
+        })
+        
+        if not file_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+        
+        # Update with new location
+        await files_collection().update_one(
+            {"_id": file_id},
+            {"$set": {
+                "permanent_location": new_location,
+                "relocated_at": datetime.now(timezone.utc),
+                "status": "relocated"
+            }}
+        )
+        
+        # Return 308 Permanent Redirect
+        return RedirectResponse(
+            url=new_location,
+            status_code=status.HTTP_308_PERMANENT_REDIRECT
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Error relocating file: {str(e)}", {
+            "user_id": current_user,
+            "file_id": file_id,
+            "new_location": new_location,
+            "operation": "file_relocate"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to relocate file"
+        )
+
+@router.put("/uploads/{upload_id}/temporary-redirect")
+async def temporary_upload_redirect(
+    upload_id: str,
+    request: Request,
+    temp_location: str = Query(...),
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Temporary redirect for upload (307 Temporary Redirect)"""
+    try:
+        from database import files_collection
+        
+        # Check upload exists
+        upload_record = await files_collection().find_one({
+            "_id": upload_id,
+            "is_deleted": False
+        })
+        
+        if not upload_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Upload not found"
+            )
+        
+        # Store temporary location
+        await files_collection().update_one(
+            {"_id": upload_id},
+            {"$set": {
+                "temp_location": temp_location,
+                "temp_redirect_at": datetime.now(timezone.utc),
+                "temp_redirect_expires": datetime.now(timezone.utc).timestamp() + 3600  # 1 hour
+            }}
+        )
+        
+        # Return 307 Temporary Redirect
+        return RedirectResponse(
+            url=temp_location,
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Error in temporary redirect: {str(e)}", {
+            "user_id": current_user,
+            "upload_id": upload_id,
+            "temp_location": temp_location,
+            "operation": "temp_redirect"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create temporary redirect"
+        )

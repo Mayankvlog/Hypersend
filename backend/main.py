@@ -32,10 +32,6 @@ print("[STARTUP] Python path:", sys.path)
 print("[STARTUP] Current working directory:", os.getcwd())
 print("[STARTUP] Starting backend imports...")
 
-# Debug environment variables
-print(f"[DEBUG] SECRET_KEY env var: {os.getenv('SECRET_KEY')}")
-print(f"[DEBUG] DEBUG env var: {os.getenv('DEBUG')}")
-
 try:
     # Add current directory to Python path for Docker
     import sys
@@ -44,9 +40,8 @@ try:
     from datetime import datetime, timezone
     
     # SECURITY: Prevent importing config with missing secrets in production
-    if not os.getenv('SECRET_KEY') and not os.getenv('DEBUG', 'false').lower() in ('true', '1'):
-        print(f"[DEBUG] SECRET_KEY env var: {os.getenv('SECRET_KEY')}")
-        print(f"[DEBUG] DEBUG env var: {os.getenv('DEBUG')}")
+    debug_mode = os.getenv('DEBUG', 'false').lower() in ('true', '1')
+    if not os.getenv('SECRET_KEY') and not debug_mode:
         raise RuntimeError("PRODUCTION SAFETY: SECRET_KEY must be set in production")
     
     from config import settings
@@ -96,6 +91,8 @@ except Exception as e:
 
 print("[STARTUP] All imports successful!")
 
+# Setup logger early for use in middleware
+logger = logging.getLogger(__name__)
 
 # ===== VALIDATION MIDDLEWARE FOR 4XX ERROR HANDLING =====
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -246,16 +243,63 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 if header_name in safe_headers:
                     continue
                     
-                # Special handling for host header - allow localhost for legitimate requests
+                # Special handling for host header - strict validation
                 if header_name == 'host':
-                    # Allow common localhost patterns in host header for health checks and development
-                    allowed_host_patterns = [
-                        '169.254.169.254',
+                    # Extract hostname without port - handle both IPv4 and IPv6
+                    hostname = header_value.lower()
+                    
+                    # Handle IPv6 format: [::1]:8000 or [::1]
+                    if hostname.startswith('['):
+                        # IPv6 address in brackets
+                        if ']' in hostname:
+                            # Extract address between brackets, ignore port after ]
+                            hostname = hostname[1:hostname.index(']')]
+                        else:
+                            # Malformed IPv6 - missing closing bracket
+                            hostname = hostname[1:]
+                    else:
+                        # IPv4 or hostname - remove port if present
+                        # Use rpartition to split on last ':' to handle edge cases
+                        hostname = hostname.rpartition(':')[0] if ':' in hostname else hostname
+                    
+                    # Only allow exact trusted hostnames
+                    allowed_hostnames = {
                         'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend',
-                        'zaply.in.net', 'www.zaply.in.net'  # Allow your production domain
-                    ]
-                    if any(allowed in header_value for allowed in allowed_host_patterns):
-                        continue
+                        'zaply.in.net', 'www.zaply.in.net', 'localhost', '127.0.0.1', '::1'
+                    }
+                    
+                    # Reject IP addresses and link-local ranges
+                    if hostname.startswith('169.254.') or hostname in ['169.254.169.254']:
+                        logger.warning(f"[SECURITY] SSRF attempt blocked - metadata IP in host header: {hostname}")
+                        return JSONResponse(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            content={
+                                "status_code": 400,
+                                "error": "Bad Request - Invalid host",
+                                "detail": "Request contains invalid host header",
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "path": "/api/v1/files/invalid_path",
+                                "method": request.method,
+                                "hints": ["Use valid hostname", "Avoid metadata IPs", "Check host header"]
+                            }
+                        )
+                    
+                    # Check if hostname is in allowed list
+                    if hostname not in allowed_hostnames:
+                        logger.warning(f"[SECURITY] Suspicious host header blocked: {hostname}")
+                        return JSONResponse(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            content={
+                                "status_code": 400,
+                                "error": "Bad Request - Invalid host",
+                                "detail": "Request contains invalid host header",
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "path": "/api/v1/files/invalid_path",
+                                "method": request.method,
+                                "hints": ["Use valid hostname", "Check host header", "Contact support"]
+                            }
+                        )
+                    continue
                     
                 for pattern in suspicious_patterns:
                     # Skip localhost-related patterns for internal requests
@@ -286,15 +330,8 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 content_length_header = request.headers.get("content-length")
                 
                 if not content_length_header and request.method != "GET":
-                    # Try to check if there's a body without Content-Length
-                    try:
-                        body = await request.body()
-                        if body and not content_length_header:
-                            # Log but allow (fastapi might handle)
-                            import logging
-                        logging.getLogger(__name__).warning(f"[411] Missing Content-Length for {request.method} {request.url.path}")
-                    except Exception as e:
-                        logger.warning(f"[MIDDLEWARE_ERROR] Content-Length header parsing error: {str(e)}")
+                    # Log missing Content-Length but don't consume body
+                    logger.warning(f"[411] Missing Content-Length for {request.method} {request.url.path}")
                 
                 # Check payload size (413)
                 if content_length_header:
@@ -638,7 +675,11 @@ async def lifespan(app: FastAPI):
         print("[SHUTDOWN] Lifespan shutdown starting")
     except Exception as e:
         print(f"[ERROR] CRITICAL: Failed to start backend - {str(e)}")
-        print(f"[ERROR] Ensure MongoDB is running: {settings.MONGODB_URI}")
+        # Sanitize MongoDB URI before logging
+        sanitized_uri = settings.MONGODB_URI
+        if '@' in sanitized_uri:
+            sanitized_uri = sanitized_uri.split('@')[-1]
+        print(f"[ERROR] Ensure MongoDB is running: {sanitized_uri}")
         raise
     finally:
         # Shutdown
@@ -769,7 +810,7 @@ async def general_exception_handler(request: Request, exc: Exception):
         error_msg = "Internal server error - data processing failed"
         hints = ["This is a server issue", "Try again later", "Contact support if persistent"]
         
-    # Security-related exceptions
+# Security-related exceptions
     elif "unauthorized" in str(exc).lower() or "authentication" in str(exc).lower():
         status_code = status.HTTP_401_UNAUTHORIZED
         error_msg = "Authentication required or invalid credentials"
@@ -779,6 +820,43 @@ async def general_exception_handler(request: Request, exc: Exception):
         status_code = status.HTTP_403_FORBIDDEN
         error_msg = "Access denied - insufficient permissions"
         hints = ["Check your access permissions", "Contact administrator for access"]
+        
+    # Standard HTTP Error Codes
+    elif isinstance(exc, ConnectionRefusedError):
+        # 502 Bad Gateway - Upstream connection refused
+        status_code = 502
+        error_msg = "Network connection timeout - cannot reach server"
+        hints = ["Check firewall settings", "Verify VPS is accessible", "Contact network administrator"]
+        
+    elif isinstance(exc, ConnectionResetError):
+        # 502 Bad Gateway - Connection lost during transfer
+        status_code = 502
+        error_msg = "Network connection reset - transfer interrupted"
+        hints = ["Check network stability", "Restart the transfer", "Try different network"]
+        
+    elif "timeout" in str(exc).lower() and "disk" in str(exc).lower():
+        # 503 Service Unavailable - Disk I/O saturated
+        status_code = 503
+        error_msg = "Disk I/O timeout - server storage overloaded"
+        hints = ["Wait and retry", "Upload smaller files", "Contact support about storage capacity"]
+        
+    elif "quota" in str(exc).lower() or "limit" in str(exc).lower():
+        # 507 Insufficient Storage - Disk quota exceeded
+        status_code = 507
+        error_msg = "Storage quota exceeded - disk space limit reached"
+        hints = ["Wait for space cleanup", "Upload smaller files", "Contact support about quota"]
+        
+    elif "ssl" in str(exc).lower() or "tls" in str(exc).lower():
+        # 502 Bad Gateway - SSL/TLS connection issues
+        status_code = 502
+        error_msg = "Secure connection failed - SSL/TLS error"
+        hints = ["Check SSL certificates", "Try HTTP connection", "Contact support about SSL setup"]
+        
+    elif "dns" in str(exc).lower() or "resolve" in str(exc).lower():
+        # 502 Bad Gateway - DNS resolution failed
+        status_code = 502
+        error_msg = "DNS resolution failed - cannot reach server"
+        hints = ["Check DNS settings", "Try using IP address directly", "Contact DNS administrator"]
     
     # Prepare response data
     response_data = {
@@ -1002,7 +1080,7 @@ async def handle_options_request(full_path: str, request: Request):
             ])
         
         # SECURITY: Exact match only - no pattern matching to prevent bypass
-        allowed_origin = origin if origin in allowed_origins else None
+        allowed_origin = origin if origin in allowed_origins else "null"
     
     return Response(
         status_code=200,
@@ -1143,6 +1221,31 @@ app.include_router(files.router, prefix="/api/v1")
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
+
+# Add swagger.json endpoint for compatibility
+@app.get("/api/swagger.json")
+async def swagger_json():
+    """Provide OpenAPI specification at /api/swagger.json for compatibility"""
+    from fastapi.openapi.utils import get_openapi
+    return get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+# Add simple bins endpoints for compatibility
+@app.get("/bins/")
+@app.get("/bin/")
+async def bins_list():
+    """Simple bins endpoint for compatibility"""
+    return {"bins": [], "message": "Bins endpoint - functionality not implemented"}
+
+@app.get("/bins/{bin_id}")
+@app.get("/bin/{bin_id}")
+async def bins_get(bin_id: str):
+    """Simple bin detail endpoint for compatibility"""
+    return {"bin_id": bin_id, "data": None, "message": "Bin endpoint - functionality not implemented"}
 
 # Add endpoint aliases for frontend compatibility
 # Import models for alias endpoints

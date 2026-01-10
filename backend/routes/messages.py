@@ -1,15 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional, Dict
 from datetime import datetime, timedelta, timezone
+import uuid
+import logging
+from pydantic import BaseModel, Field
 
 from auth.utils import get_current_user
 from db_proxy import chats_collection, messages_collection
 from models import MessageEditRequest, MessageReactionRequest
 
+logger = logging.getLogger(__name__)
+
+
+class MessageSendRequest(BaseModel):
+    chat_id: str
+    message: str = Field(..., min_length=1, max_length=10000)
+    message_type: str = "text"
+
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
 
 # OPTIONS handlers for CORS preflight requests
+@router.options("/send")
 @router.options("/{message_id}")
 @router.options("/{message_id}/versions")
 @router.options("/{message_id}/reactions")
@@ -33,6 +45,62 @@ async def messages_options():
             "Access-Control-Max-Age": "86400"
         }
     )
+
+
+@router.post("/send")
+async def send_message(
+    request: MessageSendRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Send a message to a chat"""
+    # Verify chat exists and user has access
+    chat = await chats_collection().find_one({"_id": request.chat_id})
+    if not chat:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+    
+    # Check if user is member of the chat
+    participants = chat.get("participants", chat.get("members", chat.get("member_ids", [])))
+    logger.debug(f"Checking chat membership for user authorization")
+    
+    if current_user not in participants and str(current_user) not in [str(p) for p in participants]:
+        logger.debug(f"User authorization check failed")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this chat")
+    
+    logger.debug(f"User authorized to send message")
+    
+    # Create message
+    message = {
+        "_id": str(uuid.uuid4()),
+        "chat_id": request.chat_id,
+        "sender_id": current_user,
+        "text": request.message,
+        "message_type": request.message_type,
+        "created_at": _utcnow(),
+        "updated_at": _utcnow(),
+        "is_deleted": False,
+        "is_edited": False,
+        "read_by": [],
+        "reactions": {},
+        "is_pinned": False
+    }
+    
+    # Save message
+    await messages_collection().insert_one(message)
+    
+    # Update chat's last message
+    await chats_collection().update_one(
+        {"_id": request.chat_id},
+        {"$set": {"last_message": request.message, "last_activity": _utcnow()}}
+    )
+    
+    return {
+        "status": "success",
+        "message_id": message["_id"],
+        "chat_id": request.chat_id,
+        "message": request.message,
+        "message_type": request.message_type,
+        "created_at": message["created_at"].isoformat()
+    }
 
 
 def _utcnow() -> datetime:
