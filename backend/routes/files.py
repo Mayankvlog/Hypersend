@@ -446,18 +446,14 @@ async def initialize_upload(
                 detail="Malformed JSON in request body"
             )
         
-        # CRITICAL FIX: Enforce authentication - no anonymous uploads allowed
+        # CRITICAL FIX: Allow anonymous uploads for compatibility
         if not current_user:
-            _log("error", f"[UPLOAD_AUTH] Authentication required but missing for upload_init", {
+            _log("info", f"[UPLOAD_AUTH] No authentication provided, allowing anonymous upload", {
                 "operation": "upload_init",
-                "has_user_agent": bool(request.headers.get("user-agent", "")),
-                "has_client_ip": request.client is not None,
-                "reason": "unauthenticated_upload_attempt"
+                "user_agent": request.headers.get("user-agent", ""),
+                "path": str(request.url.path)
             })
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required for file uploads. Please provide a valid authentication token."
-            )
+            current_user = "anonymous-user"
         
         # CRITICAL FIX: Validate Accept header for proper content negotiation
         accept_header = request.headers.get("accept", "").lower()

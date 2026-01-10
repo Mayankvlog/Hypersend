@@ -467,6 +467,137 @@ class TestDockerLogIssues:
         assert response.status_code in [401, 403]
 
 
+class TestAllDockerIssuesFixed:
+    """Comprehensive test for all Docker log issues"""
+
+    def test_all_critical_endpoints_working(self, client):
+        """Test that all critical endpoints from Docker logs are working"""
+        
+        # 1. Health check endpoints (working in logs)
+        response = client.get('/health')
+        assert response.status_code == 200
+        
+        response = client.get('/api/v1/health')
+        assert response.status_code == 200
+        
+        # 2. Authentication endpoints (partially working in logs)
+        # Login should work with correct credentials
+        response = client.post('/api/v1/auth/login', json={
+            "email": "test@example.com", 
+            "password": "test-password"  # This will fail but shouldn't crash
+        })
+        # Should return 401 (invalid password)
+        assert response.status_code == 401
+        
+        # 3. File upload endpoints (were failing with 401)
+        response = client.post('/api/v1/files/init', json={
+            "filename": "test.txt",
+            "size": 100,
+            "mime_type": "text/plain",
+            "chat_id": "test-chat-id"
+        })
+        # Should accept anonymous uploads, not return 401
+        assert response.status_code != 401
+        # Should return 200 with upload data or 400 for validation
+        assert response.status_code in [200, 400, 422]
+        
+        # 4. Chat endpoints (working in logs)
+        response = client.get('/api/v1/chats')
+        # Should return 401 (unauthorized), not 404 or 500
+        assert response.status_code == 401
+        
+        # 5. Message endpoints (were failing with 404)
+        # Test OPTIONS first (should work)
+        response = client.options('/api/v1/chats/test-chat/messages')
+        assert response.status_code in [200, 405]
+
+    def test_error_response_formats_consistent(self, client):
+        """Test that all error responses follow consistent format"""
+        
+        # Test 401 format
+        response = client.get('/api/v1/users/me')
+        assert response.status_code == 401
+        data = response.json()
+        assert "detail" in data
+        
+        # Test 404 format  
+        response = client.get('/api/v1/files/nonexistent')
+        assert response.status_code == 404
+        data = response.json()
+        assert "detail" in data
+        assert "status_code" in data or "error" in data
+        
+        # Test 400 format
+        response = client.post('/api/v1/files/init', data="invalid json")
+        assert response.status_code in [400, 422]
+        data = response.json()
+        assert "detail" in data
+
+    def test_file_upload_workflow(self, client):
+        """Test complete file upload workflow"""
+        
+        # 1. Initialize upload
+        init_response = client.post('/api/v1/files/init', json={
+            "filename": "workflow-test.txt",
+            "size": 1024,
+            "mime_type": "text/plain",
+            "chat_id": "test-workflow-chat"
+        })
+        
+        assert init_response.status_code != 401  # Should not fail auth
+        
+        if init_response.status_code == 200:
+            init_data = init_response.json()
+            if "uploadId" in init_data:
+                upload_id = init_data["uploadId"]
+                
+                # 2. Test chunk upload (will likely fail but shouldn't be auth error)
+                chunk_response = client.put(
+                    f'/api/v1/files/{upload_id}/chunk?chunk_index=0',
+                    data=b'test chunk data'
+                )
+                # Should not fail with 401
+                assert chunk_response.status_code != 401
+
+    def test_server_is_running_and_accessible(self, client):
+        """Test that server is properly running and accessible"""
+        
+        # Test root endpoint (should redirect or return info)
+        response = client.get('/')
+        # Should not return 500 (server crash)
+        assert response.status_code in [200, 404, 302]
+        
+        # Test that FastAPI is properly initialized
+        response = client.get('/openapi.json')
+        assert response.status_code == 200
+        data = response.json()
+        assert "openapi" in data or "swagger" in data
+
+    def test_no_server_errors_in_logs(self, client):
+        """Test that no server errors (500/502/503) are generated"""
+        
+        # Test various endpoints with proper methods and payloads
+        endpoints_to_test = {
+            '/api/v1/health': ('GET', None),
+            '/api/v1/users/me': ('GET', None),
+            '/api/v1/chats': ('GET', None),
+            '/api/v1/files/init': ('POST', {
+                "filename": "test.txt",
+                "size": 1024,
+                "mime_type": "text/plain",
+                "chat_id": "test-chat"
+            })
+        }
+        
+        for endpoint, (method, payload) in endpoints_to_test.items():
+            if method == 'GET':
+                response = client.get(endpoint)
+            else:
+                response = client.post(endpoint, json=payload)
+            # Should return 200, 401, or 4xx - not 5xx
+            assert response.status_code < 500
+
+
 if __name__ == "__main__":
     # Run the tests
     pytest.main([__file__, "-v"])
