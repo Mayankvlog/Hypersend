@@ -681,6 +681,13 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             # CRITICAL FIX: Check if we have the new format (separated) or legacy format (combined)
             # Always attempt verification regardless of format, since we don't know what the actual format is
             
+            # DEEP DEBUGGING: Log all password details
+            auth_log(f"[PASSWORD_DEBUG] Email: {normalized_email} | Hash type: {type(password_hash).__name__} | Hash len: {len(password_hash) if password_hash else 0} | Salt type: {type(password_salt).__name__} | Salt len: {len(password_salt) if password_salt else 0}")
+            if password_hash and isinstance(password_hash, str) and len(password_hash) <= 100:
+                auth_log(f"[PASSWORD_DEBUG] Hash value: {password_hash[:50]}..." if len(password_hash) > 50 else f"[PASSWORD_DEBUG] Hash value: {password_hash}")
+            if password_salt and isinstance(password_salt, str) and len(password_salt) <= 50:
+                auth_log(f"[PASSWORD_DEBUG] Salt value: {password_salt}")
+            
             if password_salt and isinstance(password_salt, str) and len(password_salt) > 0:
                 # Try new format: separated hash and salt
                 auth_log(f"Attempting separated password format for {normalized_email}")
@@ -690,6 +697,22 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 if not is_password_valid and password_hash and isinstance(password_hash, str) and len(password_hash) == 64:
                     auth_log(f"Separated format verification failed, trying legacy SHA256 format for {normalized_email}")
                     is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
+                
+                # CRITICAL FIX: If both fail, check if hash and salt might be swapped
+                if not is_password_valid and password_salt and isinstance(password_salt, str) and len(password_salt) == 64:
+                    auth_log(f"[RECOVERY] Trying swapped hash/salt for {normalized_email}")
+                    is_password_valid = verify_password(credentials.password, password_salt, password_hash, str(existing_user.get("_id")))
+                    if is_password_valid:
+                        auth_log(f"[RECOVERY] SUCCESS: Hash and salt were swapped for {normalized_email}, fixing in database")
+                        # Fix the database
+                        try:
+                            await users_collection().update_one(
+                                {"_id": existing_user["_id"]},
+                                {"$set": {"password_hash": password_salt, "password_salt": password_hash}}
+                            )
+                            auth_log(f"[RECOVERY] Database corrected for {normalized_email}")
+                        except Exception as fix_error:
+                            auth_log(f"[RECOVERY] Failed to fix database: {fix_error}")
                     
             elif password_hash and isinstance(password_hash, str):
                 # Check for combined format (salt$hash - 97 chars with $)
@@ -717,6 +740,15 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         
         if not is_password_valid:
             auth_log(f"Login failed: Invalid password for: {normalized_email}")
+            
+            # ADVANCED DEBUGGING: Diagnose actual password format stored
+            from auth.utils import diagnose_password_format
+            diagnosis = diagnose_password_format(password_hash, password_salt)
+            auth_log(f"[DIAGNOSIS] Hash format: {diagnosis['hash']['format']} (len={diagnosis['hash']['length']}, hex={diagnosis['hash']['is_hex']})")
+            if diagnosis['hash']['details']:
+                auth_log(f"[DIAGNOSIS] Hash details: {diagnosis['hash']['details']}")
+            auth_log(f"[DIAGNOSIS] Salt format: {diagnosis['salt']['format']} (len={diagnosis['salt']['length']}, hex={diagnosis['salt']['is_hex']})")
+            auth_log(f"[DIAGNOSIS] Combined format detected: {diagnosis['combined_format']}")
             
             # SECURITY FIX: Track failed attempts per email for progressive lockout
             user_id_str = str(existing_user["_id"])

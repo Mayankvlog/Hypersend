@@ -14,9 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
 async def migrate_user_passwords():
     """Migrate all users to new password format"""
-    from config import settings
+    from backend.config import settings
     from motor.motor_asyncio import AsyncIOMotorClient
-    from auth.utils import verify_password
+    from backend.auth.utils import verify_password
     import hashlib
     
     # Connect to MongoDB

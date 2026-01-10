@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
 async def check_user():
-    from config import settings
+    from backend.config import settings
     from motor.motor_asyncio import AsyncIOMotorClient
     
     # Connect to MongoDB

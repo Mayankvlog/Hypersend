@@ -10,7 +10,7 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
-from auth.utils import verify_password, hash_password
+from backend.auth.utils import verify_password, hash_password
 import hashlib
 import hmac
 

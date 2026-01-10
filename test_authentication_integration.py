@@ -10,10 +10,10 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
-from auth.utils import verify_password, hash_password
+from backend.auth.utils import verify_password, hash_password
 import hashlib
 
-def test_scenario(scenario_name, test_func):
+def run_scenario(scenario_name, test_func):
     """Helper to run a test scenario"""
     print(f"\n[SCENARIO: {scenario_name}]")
     try:
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     failed = 0
     
     for scenario_name, test_func in scenarios:
-        if test_scenario(scenario_name, test_func):
+        if run_scenario(scenario_name, test_func):
             passed += 1
         else:
             failed += 1

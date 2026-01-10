@@ -218,6 +218,67 @@ async def test_validation(
         }
 
 
+@router.post("/diagnose-password")
+async def diagnose_password_for_user(
+    email: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Diagnose password format for a specific user (ADMIN ONLY)
+    Helps troubleshoot password verification issues
+    Only available in DEBUG mode
+    """
+    check_debug_mode()
+    
+    # Import database function
+    from database import users_collection
+    
+    # Find user by email
+    user = await users_collection().find_one({"email": email.lower().strip()})
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with email {email} not found"
+        )
+    
+    # Get password info
+    password_hash = user.get("password_hash")
+    password_salt = user.get("password_salt")
+    
+    # Import diagnosis function
+    from auth.utils import diagnose_password_format, hash_password
+    
+    diagnosis = diagnose_password_format(password_hash, password_salt)
+    
+    # Generate what a correct hash should be for a test password
+    test_password = "TestPassword123!"
+    test_hash, test_salt = hash_password(test_password)
+    
+    return {
+        "email": email,
+        "user_id": str(user.get("_id")),
+        "diagnosis": diagnosis,
+        "password_info": {
+            "hash_exists": bool(password_hash),
+            "salt_exists": bool(password_salt),
+            "password_migrated": user.get("password_migrated", False)
+        },
+        "test_hash_example": {
+            "password": test_password,
+            "hash": test_hash,
+            "salt": test_salt,
+            "format_created": "separate_hash_and_salt"
+        },
+        "recommendations": [
+            "If hash format is 'SHA256_hex' with no salt, password needs migration",
+            "If hash format is 'combined_format', password will be auto-migrated on next login",
+            "If salt is missing but hash exists, password migration is needed",
+            "Contact admin to reset password if format is unrecognized"
+        ]
+    }
+
+
 @router.get("/endpoints-info")
 async def get_endpoints_info(
     current_user: str = Depends(get_current_user)
@@ -301,6 +362,12 @@ async def get_endpoints_info(
                 "method": "POST",
                 "path": "/debug/test-validation",
                 "description": "Test any data against ProfileUpdate validation"
+            },
+            {
+                "method": "POST",
+                "path": "/debug/diagnose-password",
+                "description": "Diagnose password format issues for a user",
+                "params": {"email": "user email address"}
             }
         ]
     }

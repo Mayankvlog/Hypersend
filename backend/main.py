@@ -50,12 +50,9 @@ try:
         raise RuntimeError("PRODUCTION SAFETY: SECRET_KEY must be set in production")
     
     from config import settings
-    if settings.USE_MOCK_DB:
-        from mock_database import connect_db, close_db
-        print("[STARTUP] + Using mock database module")
-    else:
-        from database import connect_db, close_db
-        print("[STARTUP] + database module imported")
+    # Always use real database - remove mock database option
+    from database import connect_db, close_db
+    print("[STARTUP] + database module imported (real MongoDB)")
 except Exception as e:
     print(f"[STARTUP] X Failed to import database: {e}")
     raise

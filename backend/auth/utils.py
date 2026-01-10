@@ -305,6 +305,56 @@ def _verify_legacy_passwords(plain_password: str, hashed_password: str, user_id:
         return False
 
 
+def diagnose_password_format(hashed_password: str, salt: str = None) -> dict:
+    """Diagnose what password format is stored in the database
+    
+    Returns a dict with detected format info
+    """
+    diagnosis = {
+        "hash": {
+            "length": len(hashed_password) if hashed_password else 0,
+            "is_hex": False,
+            "format": "unknown",
+            "details": ""
+        },
+        "salt": {
+            "length": len(salt) if salt else 0,
+            "is_hex": False,
+            "format": "unknown"
+        },
+        "combined_format": False
+    }
+    
+    if hashed_password:
+        # Check if it's hex
+        is_hex = all(c in '0123456789abcdefABCDEF' for c in str(hashed_password))
+        diagnosis["hash"]["is_hex"] = is_hex
+        
+        # Check for combined format
+        if '$' in hashed_password:
+            diagnosis["combined_format"] = True
+            diagnosis["hash"]["format"] = "combined_format (salt$hash)"
+            parts = hashed_password.split('$')
+            if len(parts) == 2:
+                diagnosis["hash"]["details"] = f"2 parts: {len(parts[0])}-char salt, {len(parts[1])}-char hash"
+        elif len(hashed_password) == 64 and is_hex:
+            diagnosis["hash"]["format"] = "SHA256_hex"
+        elif len(hashed_password) == 32 and is_hex:
+            diagnosis["hash"]["format"] = "MD5_hex"
+        else:
+            diagnosis["hash"]["format"] = f"unknown_hex_{len(hashed_password)}"
+    
+    if salt:
+        is_hex = all(c in '0123456789abcdefABCDEF' for c in str(salt))
+        diagnosis["salt"]["is_hex"] = is_hex
+        if len(salt) == 32 and is_hex:
+            diagnosis["salt"]["format"] = "hex_32_char_salt"
+        else:
+            diagnosis["salt"]["format"] = f"other_{len(salt)}_char"
+    
+    return diagnosis
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token"""
     to_encode = data.copy()
