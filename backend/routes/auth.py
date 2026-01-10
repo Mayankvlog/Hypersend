@@ -693,10 +693,11 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 auth_log(f"Attempting separated password format for {normalized_email}")
                 is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
                 
-                # If verification failed with separated format and hash is 64 chars, try legacy SHA256 hash
+                # If verification failed with separated format and hash is 64 chars, try legacy SHA256 hash with salt
                 if not is_password_valid and password_hash and isinstance(password_hash, str) and len(password_hash) == 64:
-                    auth_log(f"Separated format verification failed, trying legacy SHA256 format for {normalized_email}")
-                    is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
+                    auth_log(f"Separated format verification failed, trying legacy SHA256+salt format for {normalized_email}")
+                    # CRITICAL FIX: Pass the salt to legacy verification
+                    is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
                 
                 # CRITICAL FIX: If both fail, check if hash and salt might be swapped
                 if not is_password_valid and password_salt and isinstance(password_salt, str) and len(password_salt) == 64:

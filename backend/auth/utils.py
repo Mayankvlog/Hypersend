@@ -195,8 +195,8 @@ def verify_password(plain_password: str, hashed_password: str, salt: str = None,
                     _log("warning", f"Password verification failed: {type(e).__name__}")
                     return False
             else:
-                # Handle other legacy formats
-                return _verify_legacy_passwords(plain_password, hashed_password, user_id)
+                # Handle other legacy formats - CRITICAL FIX: Pass salt parameter
+                return _verify_legacy_passwords(plain_password, hashed_password, salt, user_id)
         else:
             # New format: separate hash and salt provided
             # CRITICAL FIX: Be permissive about salt format - just try to verify it
@@ -224,7 +224,15 @@ def verify_password(plain_password: str, hashed_password: str, salt: str = None,
                 # SECURITY: Use constant-time comparison to prevent timing attacks
                 is_valid = hmac.compare_digest(computed_hex, hashed_password)
                 
-                # CRITICAL FIX: If PBKDF2 fails and hash is 64 chars hex, try legacy SHA256
+                # CRITICAL FIX: If PBKDF2 fails and we have salt, try legacy SHA256+salt format
+                if not is_valid and salt:
+                    _log("debug", f"PBKDF2 with provided salt failed, trying legacy SHA256+salt format (user: {user_id})")
+                    legacy_result = _verify_legacy_passwords(plain_password, hashed_password, salt, user_id)
+                    if legacy_result:
+                        _log("warning", f"User {user_id} using legacy SHA256+salt format - migration recommended")
+                        return True
+                
+                # CRITICAL FIX: If PBKDF2 fails and hash is 64 chars, try legacy SHA256 without salt
                 if not is_valid and len(hashed_password) == 64 and all(c in '0123456789abcdefABCDEF' for c in hashed_password):
                     _log("debug", f"PBKDF2 with provided salt failed, trying legacy SHA256 (user: {user_id})")
                     # Fallback to legacy SHA256 without salt
@@ -244,9 +252,35 @@ def verify_password(plain_password: str, hashed_password: str, salt: str = None,
         return False
 
 
-def _verify_legacy_passwords(plain_password: str, hashed_password: str, user_id: str = None) -> bool:
+def _verify_legacy_passwords(plain_password: str, hashed_password: str, salt: str = None, user_id: str = None) -> bool:
     """Verify legacy password formats for migration purposes"""
     try:
+        # CRITICAL FIX: Handle legacy SHA256 with separate salt (current database format)
+        if (salt and len(salt) == 32 and hashed_password and len(hashed_password) == 64 and 
+            all(c in '0123456789abcdefABCDEF' for c in hashed_password) and
+            all(c in '0123456789abcdefABCDEF' for c in salt)):
+            
+            _log("debug", f"Attempting legacy SHA256 with separate salt for {user_id}")
+            try:
+                # Legacy format: SHA256(password + salt) 
+                combined_input = plain_password + salt
+                legacy_hash = hashlib.sha256(combined_input.encode()).hexdigest()
+                
+                if hmac.compare_digest(legacy_hash, hashed_password):
+                    _log("warning", f"User {user_id} using legacy SHA256+salt format - migration recommended")
+                    return True
+                    
+                # Try alternative: SHA256(salt + password)
+                combined_input_alt = salt + plain_password
+                legacy_hash_alt = hashlib.sha256(combined_input_alt.encode()).hexdigest()
+                
+                if hmac.compare_digest(legacy_hash_alt, hashed_password):
+                    _log("warning", f"User {user_id} using legacy SHA256+salt (salt+password) format - migration recommended")
+                    return True
+                    
+            except Exception as e:
+                _log("error", f"Legacy SHA256+salt verification failed: {type(e).__name__}")
+        
         # Check for combined salt$hash format (97 chars: 32+1+64)
         if len(hashed_password) == 97 and '$' in hashed_password:
             parts = hashed_password.split('$')
