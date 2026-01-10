@@ -698,6 +698,27 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     auth_log(f"Separated format verification failed, trying legacy SHA256+salt format for {normalized_email}")
                     # CRITICAL FIX: Pass the salt to legacy verification
                     is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
+                    
+                    # DEBUG: Log what we're trying to match
+                    import hashlib
+                    if password_salt:
+                        combined_test = credentials.password + password_salt
+                        expected_hash = hashlib.sha256(combined_test.encode()).hexdigest()
+                        auth_log(f"[DEBUG] Expected SHA256(pwd+salt): {expected_hash[:20]}...")
+                        auth_log(f"[DEBUG] Database hash: {password_hash[:20]}...")
+                        auth_log(f"[DEBUG] Hashes match: {expected_hash == password_hash}")
+                        
+                        # Try alternative
+                        combined_test_alt = password_salt + credentials.password
+                        expected_hash_alt = hashlib.sha256(combined_test_alt.encode()).hexdigest()
+                        auth_log(f"[DEBUG] Expected SHA256(salt+pwd): {expected_hash_alt[:20]}...")
+                        auth_log(f"[DEBUG] Alternative matches: {expected_hash_alt == password_hash}")
+                
+                # CRITICAL FIX: If verification still fails, provide helpful error for password reset
+                if not is_password_valid:
+                    auth_log(f"[PASSWORD_RESET_NEEDED] All verification methods failed for {normalized_email}")
+                    auth_log(f"[PASSWORD_RESET_NEEDED] User should use forgot-password to reset")
+                    # Continue to return 401 - user needs to reset password
                 
                 # CRITICAL FIX: If both fail, check if hash and salt might be swapped
                 if not is_password_valid and password_salt and isinstance(password_salt, str) and len(password_salt) == 64:
