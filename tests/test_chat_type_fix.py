@@ -196,6 +196,47 @@ class TestChatCreationFix:
             mock_collection.insert_one.assert_called_once()
             
             print("✅ POST /api/v1/chats endpoint works correctly")
+    
+    @pytest.mark.asyncio
+    async def test_private_chat_type_accepted(self):
+        """Test that 'private' chat type is accepted (frontend fix)"""
+        from routes.chats import create_chat
+        from models import ChatCreate
+        
+        # Test with 'private' type (what frontend should send)
+        chat_data = ChatCreate(
+            type="private",
+            member_ids=["test_user_id", "other_user_id"]
+        )
+        
+        # Mock collections
+        mock_collection = AsyncMock()
+        mock_collection.find_one.return_value = None  # No existing chat
+        mock_collection.insert_one.return_value = MagicMock(inserted_id="test_chat_id")
+        
+        with patch('routes.chats.chats_collection', return_value=mock_collection):
+            # This should work without errors
+            result = await create_chat(chat_data, "test_user_id")
+            
+            assert result is not None
+            assert "chat_id" in result
+            print("✅ 'private' chat type accepted correctly")
+    
+    @pytest.mark.asyncio
+    async def test_direct_chat_type_rejected(self):
+        """Test that 'direct' chat type is rejected (old frontend bug)"""
+        from models import ChatCreate
+        from pydantic import ValidationError
+        
+        # Test that 'direct' type is rejected at model level
+        with pytest.raises(ValidationError) as exc_info:
+            ChatCreate(
+                type="direct",  # This should fail
+                member_ids=["test_user_id", "other_user_id"]
+            )
+        
+        assert "Invalid chat type" in str(exc_info.value)
+        print("✅ 'direct' chat type properly rejected at model level")
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

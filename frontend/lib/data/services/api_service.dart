@@ -1233,7 +1233,7 @@ Future<void> postToChannel(String channelId, String text) async {
 
   Future<Map<String, dynamic>> createChat({
     required String targetUserId,
-    String type = 'direct',
+    String type = 'private',
   }) async {
     final response = await _dio.post(
       ApiConstants.chatsEndpoint,
