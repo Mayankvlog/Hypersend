@@ -343,14 +343,40 @@ def get_db():
                 def find(self, query):
                     return []
                     
-                def insert_one(self, doc):
-                    return type('MockInsertResult', {'inserted_id': f'mock_{self._name}_{len(self._db.__dict__[self._name])}'})()
+                async def insert_one(self, doc):
+                    # CRITICAL FIX: Handle MockCollection properly
+                    try:
+                        collection_data = self._db.__dict__.get(self._name, [])
+                        if hasattr(collection_data, '__len__'):
+                            collection_len = len(collection_data)
+                        else:
+                            collection_len = 0
+                    except (TypeError, AttributeError):
+                        collection_len = 0
                     
-                def update_one(self, query, update):
-                    return type('MockUpdateResult', {'matched_count': 0, 'modified_count': 0})()
+                    # Create proper MockInsertResult class
+                    class MockInsertResult:
+                        def __init__(self, inserted_id):
+                            self.inserted_id = inserted_id
                     
-                def delete_one(self, query):
-                    return type('MockDeleteResult', {'deleted_count': 0})()
+                    return MockInsertResult(f'mock_{self._name}_{collection_len}')
+                    
+                async def update_one(self, query, update):
+                    # Create proper MockUpdateResult class
+                    class MockUpdateResult:
+                        def __init__(self):
+                            self.matched_count = 0
+                            self.modified_count = 0
+                    
+                    return MockUpdateResult()
+                    
+                async def delete_one(self, query):
+                    # Create proper MockDeleteResult class
+                    class MockDeleteResult:
+                        def __init__(self):
+                            self.deleted_count = 0
+                    
+                    return MockDeleteResult()
             
             # Add proper mock collections
             mock_db.users = MockCollection(mock_db, 'users')

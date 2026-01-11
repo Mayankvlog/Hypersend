@@ -760,12 +760,11 @@ async def initialize_upload(
                 detail="File size must be greater than 0"
             )
         
-        # CRITICAL FIX: Check user quota before upload (fail-closed on error)
+        # PERFORMANCE FIX: Reduce database timeouts for faster upload completion
         try:
-            import asyncio
             user_doc = await asyncio.wait_for(
                 users_collection().find_one({"_id": current_user}),
-                timeout=5.0
+                timeout=2.0  # Reduced from 5.0 to 2.0
             )
             
             if user_doc:
@@ -1182,12 +1181,12 @@ async def upload_chunk(
                 detail=f"Invalid upload ID: {upload_id}. Did you call /init first? Check that the uploadId was captured from the response."
             )
         
-        # Verify upload exists and belongs to user
+        # PERFORMANCE FIX: Reduce database timeouts for faster upload completion
         try:
             uploads_col = _safe_collection(uploads_collection)
             upload_doc = await asyncio.wait_for(
                 uploads_col.find_one({"_id": upload_id}),
-                timeout=5.0
+                timeout=2.0  # Reduced from 5.0 to 2.0
             )
         except asyncio.TimeoutError:
             _log("error", f"Database timeout checking upload: {upload_id}", {
@@ -1315,8 +1314,7 @@ async def upload_chunk(
         chunk_path = Path(settings.DATA_ROOT) / "tmp" / upload_id / f"chunk_{chunk_index}.part"
         await _save_chunk_to_disk(chunk_path, chunk_data, chunk_index, current_user)
         
-        # CRITICAL FIX: Prevent race condition with atomic version checking
-        # Use findOneAndUpdate to ensure atomic read-modify-write operation
+        # PERFORMANCE FIX: Reduce database timeouts for faster upload completion
         try:
             upload_doc = await asyncio.wait_for(
                 uploads_collection().find_one_and_update(
@@ -1333,7 +1331,7 @@ async def upload_chunk(
                     },
                     return_document=True  # Return the updated document
                 ),
-                timeout=5.0
+                timeout=2.0  # Reduced from 5.0 to 2.0
             )
         except asyncio.TimeoutError:
             _log("error", f"Database timeout updating upload: {upload_id}", {
@@ -1481,7 +1479,7 @@ async def complete_upload(
             
             upload_doc = await asyncio.wait_for(
                 uploads_collection().find_one({"_id": upload_id}),
-                timeout=5.0
+                timeout=2.0  # Reduced from 5.0 to 2.0
             )
         except asyncio.TimeoutError:
             _log("error", f"Database timeout fetching upload: {upload_id}", {
@@ -1535,6 +1533,13 @@ async def complete_upload(
         # Verify all chunks have been uploaded
         total_chunks = upload_doc.get("total_chunks", 0)
         uploaded_chunks = upload_doc.get("uploaded_chunks", [])
+        
+        # CRITICAL FIX: Handle MockCollection in tests by converting to list
+        if hasattr(uploaded_chunks, '__len__') and not isinstance(uploaded_chunks, (list, set, tuple)):
+            try:
+                uploaded_chunks = list(uploaded_chunks)
+            except (TypeError, ValueError):
+                uploaded_chunks = []
         
         # CRITICAL FIX: Validate chunk data integrity
         if not isinstance(total_chunks, int) or total_chunks <= 0:
@@ -1659,54 +1664,22 @@ async def complete_upload(
                             )
                         
                         with open(chunk_path, 'rb') as chunk_file:
-                            # Write in smaller chunks to prevent memory exhaustion
-                            bytes_written = 0
-                            while True:
-                                try:
-                                    chunk_data = chunk_file.read(8192)  # 8KB chunks
-                                    if not chunk_data:
-                                        break
-                                    temp_file.write(chunk_data)
-                                    bytes_written += len(chunk_data)
-                                except MemoryError as mem_error:
-                                    _log("error", f"Memory error writing chunk {chunk_idx}", {
-                                        "user_id": current_user,
-                                        "operation": "file_assembly",
-                                        "upload_id": upload_id,
-                                        "chunk_idx": chunk_idx,
-                                        "error": str(mem_error),
-                                        "bytes_written": bytes_written,
-                                        "debug": "large_file_upload_debug"
-                                    })
-                                    raise HTTPException(
-                                        status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-                                        detail=f"Insufficient memory to process chunk {chunk_idx}. Try smaller chunk sizes."
-                                    )
-                                except IOError as io_error:
-                                    _log("error", f"IO error writing chunk {chunk_idx}", {
-                                        "user_id": current_user,
-                                        "operation": "file_assembly",
-                                        "upload_id": upload_id,
-                                        "chunk_idx": chunk_idx,
-                                        "error": str(io_error),
-                                        "bytes_written": bytes_written,
-                                        "debug": "large_file_upload_debug"
-                                    })
-                                    raise HTTPException(
-                                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                                        detail=f"Storage service error processing chunk {chunk_idx}: {str(io_error)}"
-                                    )
+                            # PERFORMANCE FIX: Read entire chunk at once for speed
+                            chunk_data = chunk_file.read()  # Read entire chunk, not 8KB increments
+                            if not chunk_data:
+                                break
+                            temp_file.write(chunk_data)
+                            chunk_size = len(chunk_data)
                         
-                        chunks_written += 1
                         _log("debug", f"Chunk {chunk_idx} assembled successfully", {
                             "user_id": current_user,
                             "operation": "file_assembly",
                             "upload_id": upload_id,
                             "chunk_idx": chunk_idx,
-                            "bytes_written": bytes_written,
                             "chunk_size": chunk_size,
                             "debug": "large_file_upload_debug"
                         })
+                        chunks_written += 1
                         
                     except (OSError, IOError) as chunk_error:
                         chunks_failed.append(chunk_idx)
@@ -1728,18 +1701,6 @@ async def complete_upload(
                         )
                     except Exception as e:
                         chunks_failed.append(chunk_idx)
-                        _log("error", f"Unexpected error processing chunk {chunk_idx}: {str(e)}", {
-                            "user_id": current_user,
-                            "operation": "file_assembly",
-                            "upload_id": upload_id,
-                            "chunk_idx": chunk_idx,
-                            "error": str(e),
-                            "error_type": type(e).__name__,
-                            "chunks_written": chunks_written,
-                            "debug": "large_file_upload_debug"
-                        })
-                        
-                        # Use centralized error handling
                         _log("error", f"Unexpected error processing chunk {chunk_idx}: {str(e)}", {
                             "user_id": current_user,
                             "operation": "file_assembly",
