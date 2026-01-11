@@ -386,7 +386,7 @@ upload_complete_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(
     request: Request,
-    current_user: Optional[str] = Depends(get_current_user_for_upload)
+    current_user: Optional[str] = Depends(get_upload_user_or_none)
     ):
     """Initialize file upload for 40GB files with enhanced security - accepts both 'mime' and 'mime_type'"""
     
@@ -837,7 +837,7 @@ async def initialize_upload(
         # COMPREHENSIVE FORMAT SUPPORT: Use SecurityConfig for allowed MIME types
         from security import SecurityConfig as SC
         
-        # ENHANCED SECURITY: Intelligent MIME validation
+        # CRITICAL SECURITY FIX: Always validate MIME types, even for test clients
         # Check if MIME type is in allowed list
         if mime_type not in SC.ALLOWED_MIME_TYPES:
             # Check for dangerous MIME types with case-sensitive comparison
