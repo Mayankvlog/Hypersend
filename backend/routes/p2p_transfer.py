@@ -313,19 +313,26 @@ async def sender_stream(websocket: WebSocket, session_id: str, token: str = None
                     
                     # Relay directly to receiver (NO SERVER STORAGE)
                     with session._lock:
-                        if session.receiver_ws:
-                            await session.receiver_ws.send_bytes(chunk_data)
-                            session.add_bytes(len(chunk_data))
-                            
-                            # Send progress
-                            await websocket.send_json({
-                                "type": "progress",
-                                "bytes": session.bytes_transferred,
-                                "total": session.file_size,
-                                "percent": session.get_progress()
-                            })
+                        if session.receiver_ws and session.status == "transferring":
+                            try:
+                                await session.receiver_ws.send_bytes(chunk_data)
+                                session.add_bytes(len(chunk_data))
+                                
+                                # Send progress to sender
+                                await websocket.send_json({
+                                    "type": "progress",
+                                    "bytes": session.bytes_transferred,
+                                    "total": session.file_size,
+                                    "percent": session.get_progress()
+                                })
+                            except Exception as e:
+                                print(f"[P2P_TRANSFER] Error sending to receiver: {e}")
+                                session.set_status("failed")
+                                break
                         else:
-                            raise Exception("Receiver disconnected")
+                            print(f"[P2P_TRANSFER] Receiver not ready or session not transferring")
+                            await asyncio.sleep(0.1)  # Brief wait for receiver
+                            continue  # Skip this iteration and try again
                 
                 elif "text" in message:
                     data = json.loads(message["text"])
@@ -338,13 +345,10 @@ async def sender_stream(websocket: WebSocket, session_id: str, token: str = None
                             "bytes_transferred": session.bytes_transferred
                         })
                         
-                        # Update metadata
+                        # Update database
                         await files_collection().update_one(
                             {"session_id": session_id},
-                            {"$set": {
-                                "status": "completed",
-                                "completed_at": datetime.now(timezone.utc)
-                            }}
+                            {"$set": {"status": "completed"}}
                         )
                         break
                         
@@ -421,7 +425,7 @@ async def receiver_stream(websocket: WebSocket, session_id: str, token: str = No
         })
         
         # Keep connection alive and handle control messages
-        while session.status == "transferring":
+        while session.status in ["transferring", "receiver_ready"]:
             try:
                 # Receiver can send control messages
                 message = await asyncio.wait_for(
@@ -438,6 +442,14 @@ async def receiver_stream(websocket: WebSocket, session_id: str, token: str = No
                     break
                     
             except asyncio.TimeoutError:
+                # Check if transfer completed
+                if session.status == "completed":
+                    await websocket.send_json({
+                        "type": "complete",
+                        "message": "File saved to local storage!",
+                        "bytes_received": session.bytes_transferred
+                    })
+                    break
                 continue
             except WebSocketDisconnect:
                 session.set_status("failed")

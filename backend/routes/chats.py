@@ -81,19 +81,11 @@ async def get_saved_messages(
     return {"messages": list(reversed(messages))}
 
 
-@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("/create")
 async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_user)):
     """Create a new chat (private, group, channel, or saved)"""
     
-    # Validate chat type
-    # Validate chat type
-    valid_types = ["private", "group", "supergroup", "channel", "secret", "saved"]
-    if chat.type not in valid_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid chat type. Must be one of: {', '.join(valid_types)}"
-        )
-    
+    # Chat type validation is now handled by the model validator
     # Ensure current user is in members
     if current_user not in chat.member_ids:
         chat.member_ids.append(current_user)

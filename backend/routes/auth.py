@@ -1260,7 +1260,7 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
         # Generate reset token
         from auth.utils import create_access_token
         reset_token = create_access_token(
-            data={"sub": str(user["_id"]), "type": "password_reset"},
+            data={"sub": str(user["_id"]), "token_type": "password_reset"},
             expires_delta=timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES)
         )
         

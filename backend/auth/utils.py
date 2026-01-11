@@ -400,7 +400,13 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode.update({"exp": expire, "token_type": "access"})
+    # Add expiration to the token payload
+    to_encode.update({"exp": expire})
+    
+    # Only set token_type to "access" if not already specified
+    if "token_type" not in to_encode:
+        to_encode.update({"token_type": "access"})
+    
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
@@ -514,7 +520,13 @@ def verify_token(token: str) -> dict:
     """Verify JWT token and return payload with normalized user_id field"""
     if not token or not isinstance(token, str):
         raise ValueError("Token must be a non-empty string")
-    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise jwt.ExpiredSignatureError("Token has expired")
+    except jwt.InvalidTokenError:
+        raise jwt.InvalidTokenError("Invalid token")
     
     # Normalize payload to always include user_id for backward compatibility
     if "sub" in payload and "user_id" not in payload:

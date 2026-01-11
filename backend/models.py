@@ -28,6 +28,7 @@ class ChatType:
     SUPERGROUP = "supergroup"
     CHANNEL = "channel"
     SECRET = "secret"
+    SAVED = "saved"
 
 class Role:
     OWNER = "owner"
@@ -323,13 +324,22 @@ class ChatMember(BaseModel):
 
 # Chat Models
 class ChatCreate(BaseModel):
-    type: str = ChatType.PRIVATE
+    type: str = Field(default=ChatType.PRIVATE, description="Chat type: private, group, supergroup, channel, secret, saved")
     name: Optional[str] = None
     description: Optional[str] = None
     avatar_url: Optional[str] = None
     member_ids: List[str]
     # For channels/supergroups
     username: Optional[str] = None  # public link
+    
+    @field_validator('type')
+    @classmethod
+    def validate_type(cls, v):
+        valid_types = [ChatType.PRIVATE, ChatType.GROUP, ChatType.SUPERGROUP, 
+                     ChatType.CHANNEL, ChatType.SECRET, ChatType.SAVED]
+        if v not in valid_types:
+            raise ValueError(f"Invalid chat type. Must be one of: {', '.join(valid_types)}")
+        return v
 
 
 
