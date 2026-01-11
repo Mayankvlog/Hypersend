@@ -196,10 +196,10 @@ def test_no_authentication():
     
     response = client.post("/api/v1/files/init", json=payload)
     
-    # With testclient user-agent, auth is bypassed and returns 200
-    # This is expected behavior for test clients
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-    print("[PASS] No authentication test PASSED (auth bypassed for test client)")
+    # Authentication is now required for file uploads - should get 401
+    assert response.status_code == 401, f"Expected 401, got {response.status_code}: {response.text}"
+    print(f"[PASS] No authentication test PASSED - correctly rejected with 401")
+    print("[PASS] No authentication test PASSED (properly rejected with 401)")
 
 if __name__ == "__main__":
     print("=" * 80)

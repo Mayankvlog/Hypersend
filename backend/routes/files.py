@@ -446,6 +446,26 @@ async def initialize_upload(
                 detail="Malformed JSON in request body"
             )
         
+        # CRITICAL FIX: Check for empty body first, then authentication
+        # Empty body should return 400 before any other validation
+        if not body or len(str(body).strip()) == 0:
+            _log("error", f"[UPLOAD_BODY_EMPTY] Empty request body for upload_init", {
+                "operation": "upload_init",
+                "has_user_agent": bool(request.headers.get("user-agent", "")),
+                "auth_header": request.headers.get("authorization", "") or request.headers.get("Authorization", "")
+            })
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "ERROR",
+                    "message": "Empty request body",
+                    "data": {
+                        "required_fields": ["filename", "size", "chat_id"],
+                        "hint": "All fields are required for file upload initialization"
+                    }
+                }
+            )
+        
         # CRITICAL FIX: Enforce authentication - no anonymous uploads allowed
         if not current_user:
             _log("error", f"[UPLOAD_AUTH] Authentication required but missing for upload_init", {
@@ -462,12 +482,32 @@ async def initialize_upload(
         # CRITICAL FIX: Validate Accept header for proper content negotiation
         accept_header = request.headers.get("accept", "").lower()
         if accept_header and "application/json" not in accept_header and "*/*" not in accept_header:
-            # For file uploads, be more permissive with Accept headers
+            # For file uploads, be permissive but still validate problematic Accept headers
             if "/files/" in request.url.path:
-                _log("info", f"[UPLOAD_ACCEPT] Accept header check bypassed for file upload: {accept_header}", {
-                    "user_id": current_user,
-                    "operation": "upload_init"
-                })
+                # Check if Accept header is explicitly requesting incompatible format
+                problematic_accepts = ["text/xml", "application/xml", "text/html"]
+                if any(problematic in accept_header for problematic in problematic_accepts):
+                    _log("info", f"[UPLOAD_ACCEPT] Rejecting problematic Accept header for file upload: {accept_header}", {
+                        "user_id": current_user,
+                        "operation": "upload_init"
+                    })
+                    raise HTTPException(
+                        status_code=status.HTTP_406_NOT_ACCEPTABLE,
+                        detail={
+                            "status": "ERROR",
+                            "message": "Requested content type not supported for file uploads",
+                            "data": {
+                                "requested_accept": request.headers.get("accept"),
+                                "supported_types": ["application/json"],
+                                "hint": "Use Accept: application/json or Accept: */* for file uploads"
+                            }
+                        }
+                    )
+                else:
+                    _log("info", f"[UPLOAD_ACCEPT] Accept header check passed for file upload: {accept_header}", {
+                        "user_id": current_user,
+                        "operation": "upload_init"
+                    })
             else:
                 # Strict check for other endpoints
                 raise HTTPException(

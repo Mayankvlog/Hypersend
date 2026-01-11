@@ -24,7 +24,7 @@ try:
     from backend.main import app
     from backend.config import settings
     from backend.models import FileInitResponse, Token
-    print("✅ Backend imports successful")
+    print("Backend imports successful")
 except ImportError as e:
     print(f"⚠️  Backend import error: {e}")
     # Create mock objects for testing

@@ -48,6 +48,10 @@ except ImportError:
 # Configure logger
 logger = logging.getLogger(__name__)
 
+# Token lifetime constants
+UPLOAD_TOKEN_MAX_LIFETIME_HOURS = 480  # 20 days - maximum lifetime for upload tokens
+UPLOAD_TOKEN_MAX_LIFETIME_SECONDS = UPLOAD_TOKEN_MAX_LIFETIME_HOURS * 3600  # 1,728,000 seconds
+
 def _log(level: str, message: str, extra_data: dict = None):
     """Centralized logging function for auth utilities"""
     log_data = {"auth_operation": message}
@@ -476,7 +480,7 @@ def decode_token(token: str) -> TokenData:
             # Upload tokens should have reasonable TTL (validate max 480 hours for large files)
             exp_timestamp = payload["exp"]
             issued_at = payload.get("iat", exp_timestamp)
-            if exp_timestamp - issued_at > 172800:  # More than 48 hours
+            if exp_timestamp - issued_at > UPLOAD_TOKEN_MAX_LIFETIME_SECONDS:  # More than 480 hours
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Upload token lifetime exceeds maximum allowed duration",
@@ -768,320 +772,133 @@ def validate_upload_token(payload: dict) -> str:
 
 
 async def get_current_user_for_upload(
-    request: Request, 
-    token: Optional[str] = Query(None)
+    request: Request,
+    token: Optional[str] = None
 ) -> Optional[str]:
-    """ENHANCED DEPENDENCY FOR FILE UPLOADS AND MESSAGES WITH 480-HOUR TOKEN SUPPORT.
-    
-    SECURITY: QUERY PARAMETER AUTHENTICATION HAS BEEN DISABLED FOR UPLOADS.
-    ONLY HEADER AUTHENTICATION IS ALLOWED FOR SECURITY REASONS.
-    
-    This function handles long-running file uploads and messages by:
-    1. Accepting upload tokens with extended expiration (480 hours)
-    2. Extending regular access tokens to 480 hours for upload operations
-    3. Extending regular access tokens to 480 hours for messages during uploads
-    4. Providing fallback for expired tokens during active uploads
-    5. COMPLETELY BYPASSING 15-MINUTE LIMIT FOR UPLOADS AND MESSAGES
-    
-    Args:
-        request: The request object (for header auth)
-        token: IGNORED - query parameter authentication disabled
-        
-    Returns:
-        The user_id from Authorization header token, or None if validation should happen in endpoint
-        
-    Raises:
-        HTTPException: If header token is missing or invalid
     """
+    Enhanced dependency for file upload endpoints with 480-hour token validation.
+    Extracts and validates JWT token from Authorization header.
+    Returns user_id if valid, None if missing/invalid.
+    Implements special 480-hour validation for upload operations.
+    """
+    # Consolidate header parsing to a single canonical variable
+    auth_header = request.headers.get("authorization", "").strip() or request.headers.get("Authorization", "").strip()
     
-    # SECURITY: Log any query parameter attempts for monitoring
-    if token is not None:
-        logger.warning("SECURITY VIOLATION: Query parameter authentication attempted for upload - ignored for security")
+    # Initialize token_str to None before conditional block
+    token_str = None
     
-    # CRITICAL FIX: Enhanced authentication with detailed error messages
-    auth_header = request.headers.get("authorization", "") or request.headers.get("Authorization", "")
-    is_testclient = "testclient" in request.headers.get("user-agent", "").lower()
-    is_flutter_web = "zaply-flutter-web" in request.headers.get("user-agent", "").lower()
-    debug_mode = getattr(settings, "DEBUG", False)
+    # Try Authorization header first
+    if auth_header and auth_header.startswith("Bearer "):
+        token_str = auth_header[7:].strip()
+        logger.debug(f"Extracted Bearer token: {token_str[:20]}...")
+    # Fall back to query parameter if provided
+    elif token:
+        token_str = token
+        logger.debug(f"Using query token: {token_str[:20]}...")
     
-    # ENHANCED DEBUG: Allow more user agents for testing
-    is_debug_mode = debug_mode or is_flutter_web
-    
-    # CRITICAL FIX: More permissive authentication for production use
-    if not auth_header:
-        # Allow Flutter Web and debug clients more permissively
-        if is_flutter_web or is_debug_mode or "test" in request.headers.get("user-agent", "").lower():
-            return "flutter-user" if is_flutter_web else "test-user"
-        # For upload operations, be more permissive in production
-        if "/files/" in request.url.path:
-            logger.warning(f"[UPLOAD_AUTH] No auth header for upload, allowing anonymous for compatibility")
-            return "anonymous-user"
-        # Return None for other operations to let endpoint handle validation
+    # No token provided
+    if not token_str:
+        logger.debug("No token string extracted from auth header")
         return None
     
-    if not auth_header.startswith("Bearer "):
-        # CRITICAL FIX: More permissive token validation for file uploads
-        # Check if this is a file upload request
-        is_file_upload = "/files/" in request.url.path if request else False
-        
-        if is_debug_mode or is_flutter_web:  # Allow bypass for test clients and Flutter Web in debug mode
-            return "test-user"
-        
-        if is_file_upload:
-            # For file uploads, be more permissive with token formats
-            _log("warning", f"[UPLOAD_AUTH] Permissive token validation for file upload: auth_header_length={len(auth_header) if auth_header else 0}", {
-                "user_agent": request.headers.get("user-agent", ""),
-                "path": str(request.url.path)
-            })
-            # Allow various token formats for file uploads
-            if auth_header and auth_header.strip():  # Not empty
-                return "file-upload-user"  # Allow any non-empty auth header for file uploads
-        else:
-            # Strict validation for other operations
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid Authorization header format - must start with 'Bearer '",
-                    "data": {
-                        "error_type": "invalid_format",
-                        "received": auth_header[:20] + "..." if len(auth_header) > 20 else auth_header,
-                        "expected": "Bearer <token>",
-                        "hint": "Use format: Authorization: Bearer <token>"
-                    }
-                },
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+# Check if this is an upload operation that needs 480-hour validation
+    request_path = getattr(request.url, 'path', '') if hasattr(request, 'url') else ''
+    is_upload_operation = (
+        '/files/' in request_path or 
+        request_path.startswith('/api/v1/files/') or
+        'upload' in request_path.lower()
+    )
     
-    header_token = auth_header.replace("Bearer ", "").strip()
-    if not header_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "status": "ERROR",
-                "message": "Empty token provided in Authorization header",
-                "data": {
-                    "error_type": "empty_token",
-                    "received": "Bearer <empty>",
-                    "expected": "Bearer <token>",
-                    "hint": "Ensure token is provided after 'Bearer '"
-                }
-            },
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # Check if this is messages endpoint (also gets 480-hour validation)
+    # Only apply to chat messages endpoints, not general messages API
+    is_messages_endpoint = (
+        '/chats/' in request_path and '/messages' in request_path
+    )
     
-    # CRITICAL FIX: For upload operations and messages during uploads, use 480-hour token validation regardless of env vars
-    path = request.url.path
-    is_upload_operation = "/files/" in path and ("/init" in path or "/chunk" in path or "/complete" in path)
-    is_messages_endpoint = "/chats/" in path and "/messages" in path
+    # Use extended validation for uploads and messages
+    use_extended_validation = is_upload_operation or is_messages_endpoint
     
-    # ENHANCEMENT: Only allow 480-hour validation for actual upload operations and messages
-    if not (is_upload_operation or is_messages_endpoint):
-        # For non-upload operations, use normal validation (15-minute limit)
-        try:
-            token_data = decode_token(header_token)
-            
-            if token_data.token_type != "access":
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail={
-                        "status": "ERROR",
-                        "message": "Invalid token type - access token required",
-                        "data": {
-                            "error_type": "invalid_token_type",
-                            "action_required": "Login again to get fresh token"
-                        }
-                    }
-                )
-            
-            return token_data.user_id
-                
-        except HTTPException as http_exc:
-            # For non-upload operations, don't extend expired tokens
-            raise http_exc
-        except Exception as e:
-            logger.error(f"Authentication failed: {str(e)}")
-            # ENHANCED FIX: Allow test tokens to pass through for proper error handling
-            if getattr(settings, "DEBUG", False):
-                # In debug mode, allow obvious test tokens to reach endpoint for proper 404/403 handling
-                if "fake" in header_token.lower() or "test" in header_token.lower():
-                    return "test-user"
-                # Also allow testclient without bypassing all auth
-                if not is_testclient:
-                    return "test-user"
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Authentication failed",
-                    "data": {
-                        "error_type": "auth_failed",
-                        "action_required": "Login again to get fresh token"
-                    }
-                },
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-    # For upload operations, use extended 480-hour validation
+    # First try normal JWT decode
     try:
-        # DEBUG: Log authentication attempt
-        logger.info(f"[UPLOAD_AUTH] Attempting upload authentication", {
-            "path": path,
-            "is_upload_operation": is_upload_operation,
-            "user_agent": request.headers.get("user-agent", ""),
-            "has_auth_header": bool(auth_header)
-        })
-        
-        # Decode token WITHOUT expiration check first
-        decoded = jwt.decode(header_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
+        logger.debug(f"Attempting to decode JWT token: {token_str[:30]}...")
+        decoded = jwt.decode(
+            token_str,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_exp": True}
+        )
         user_id = decoded.get("sub")
-        
-        logger.info(f"[UPLOAD_AUTH] Token decoded successfully", {
-            "user_id": user_id,
-            "token_type": decoded.get("token_type", "unknown"),
-            "has_upload_scope": decoded.get("upload_scope", False)
-        })
-        
+        logger.debug(f"JWT decoded successfully, user_id: {user_id}")
         if not user_id:
-            logger.error(f"[UPLOAD_AUTH] No user_id in token")
+            logger.debug("No user_id (sub) in JWT payload")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid token: missing user ID",
-                    "data": {
-                        "error_type": "invalid_token",
-                        "action_required": "Login again to get fresh token"
-                    }
-                },
+                detail="Invalid or expired token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
-        # Check if token was issued within 480 hours (20 days)
-        issued_at = decoded.get("iat")
-        if issued_at:
-            current_time = datetime.now(timezone.utc).timestamp()
-            hours_since_issued = (current_time - issued_at) / 3600
-            
-            logger.info(f"[UPLOAD_AUTH] Token age check", {
-                "hours_since_issued": hours_since_issued,
-                "within_480_hours": hours_since_issued <= 480
-            })
-            
-            if hours_since_issued > 480:  # More than 480 hours old
-                logger.error(f"[UPLOAD_AUTH] Token too old: {hours_since_issued} hours")
+        return user_id
+    except jwt.ExpiredSignatureError:
+        # For expired tokens, check if we can extend them (480-hour rule)
+        if use_extended_validation:
+            try:
+                # Decode without expiration check to see the issue time
+                decoded = jwt.decode(
+                    token_str,
+                    settings.SECRET_KEY,
+                    algorithms=[settings.ALGORITHM],
+                    options={"verify_exp": False}
+                )
+                
+                user_id = decoded.get("sub")
+                issued_at = decoded.get("iat")
+                exp = decoded.get("exp")
+                
+                if not user_id or not issued_at:
+                    logger.debug("Missing user_id or iat in expired token")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid or expired token",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                
+                current_time = datetime.now(timezone.utc).timestamp()
+                
+                # Check if token was issued within 480 hours (20 days)
+                hours_since_issued = (current_time - issued_at) / 3600
+                if hours_since_issued <= UPLOAD_TOKEN_MAX_LIFETIME_HOURS:
+                    logger.debug(f"Accepting expired token for upload/messages: issued {hours_since_issued:.1f} hours ago (within {UPLOAD_TOKEN_MAX_LIFETIME_HOURS}h limit)")
+                    return user_id
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail=f"Token is older than {UPLOAD_TOKEN_MAX_LIFETIME_HOURS} hours",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                    
+            except HTTPException:
+                raise  # Re-raise HTTP exceptions
+            except Exception as e:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token expired: older than 480 hours",
+                    detail="Invalid or expired token",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-            
-            # Check if token has upload scope or is a regular access token
-            token_type = decoded.get("token_type", "access")
-            upload_scope = decoded.get("upload_scope", False)
-            
-            if upload_scope:
-                # Upload token - validate with upload token rules
-                logger.debug(f"Using upload token for upload operation")
-                return validate_upload_token(decoded)
-            else:
-                # Regular access token - allow for uploads with 480-hour limit
-                logger.info(f"[UPLOAD_AUTH] Using regular access token for upload (480-hour validation)", {
-                    "user_id": user_id,
-                    "operation": "upload_auth",
-                    "path": path,
-                    "hours_since_issued": hours_since_issued if issued_at else "unknown"
-                })
-                return user_id
-                
-    except jwt.ExpiredSignatureError:
-        # Even if expired, check if it's within 480 hours for upload operations
-        try:
-            decoded = jwt.decode(header_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
-            user_id = decoded.get("sub")
-            
-            if user_id:
-                # Check if token was issued within 480 hours
-                issued_at = decoded.get("iat")
-                if issued_at:
-                    current_time = datetime.now(timezone.utc).timestamp()
-                    hours_since_issued = (current_time - issued_at) / 3600
-                    
-                    if hours_since_issued <= 480:  # Within 480 hours - allow for upload
-                        logger.info(f"Extended expired token for upload operation (within 480 hours)", {
-                            "user_id": user_id,
-                            "operation": "upload_token_extension",
-                            "path": path,
-                            "hours_since_issued": hours_since_issued
-                        })
-                        return user_id
-            
-            # If we get here, token is too old or invalid
+        else:
+            # For non-upload operations, raise exception for expired tokens
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Token expired: older than 480 hours. Please re-authenticate.",
-                    "data": {
-                        "error_type": "expired_token",
-                        "max_age_hours": 480,
-                        "action_required": "Login again to get fresh token"
-                    }
-                },
+                detail="Token has expired",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-            
-        except Exception as extend_error:
-            logger.error(f"Failed to extend expired token: {str(extend_error)}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Token validation failed",
-                    "data": {
-                        "error_type": "validation_failed",
-                        "action_required": "Login again to get fresh token"
-                    }
-                },
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-    
-    except jwt.DecodeError as decode_error:
-        # Handle JWT decode errors (invalid token format, missing segments, etc.)
-        logger.error(f"JWT decode error: {str(decode_error)}")
+    except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "status": "ERROR",
-                "message": "Invalid token format",
-                "data": {
-                    "error_type": "invalid_token_format",
-                    "action_required": "Login again to get fresh token"
-                }
-            },
+            detail="Invalid token format",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    except jwt.InvalidTokenError as e:
-        logger.error(f"Invalid token for upload: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "status": "ERROR",
-                "message": "Invalid token format",
-                "data": {
-                    "error_type": "invalid_token",
-                    "action_required": "Login again to get fresh token"
-                }
-            },
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
-        logger.error(f"Upload authentication failed: {str(e)}")
-        # CRITICAL FIX: Add testclient fallback for upload operations, but not for token validation errors
-        if (debug_mode or is_testclient or is_flutter_web) and not "Token expired" in str(e):
-            return "test-user"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",

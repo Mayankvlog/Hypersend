@@ -19,7 +19,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 # ============================================================================
 # BASE URL for all tests
 # ============================================================================
-BASE_URL = "http://localhost:8000/api/v1"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000/api/v1")
+
+# Guard against accidental use of production endpoints
+if "zaply.in.net" in BASE_URL and "staging" not in BASE_URL.lower():
+    raise RuntimeError(
+        f"SECURITY ERROR: Tests would run against production domain '{BASE_URL}'.\n"
+        f"Set TEST_BASE_URL environment variable to a safe testing URL (e.g., http://localhost:8000/api/v1)"
+    )
 
 # ============================================================================
 # REAL VALIDATOR IMPORTS - These are production code!

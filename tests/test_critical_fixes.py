@@ -25,18 +25,26 @@ def test_critical_fixes():
         from auth.utils import verify_password
         
         test_cases = [
-            ("test123", "c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116", "869e09653dd2da217688c907290b6c4c", "test-user"),
-            ("test456", "combined$salt", "c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116"),
-            ("invalid_format", "c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116"),
-            ("empty_pass", "869e09653dd2da217688c907290b6c4c"),
-            ("legacy_sha256", "1a2b3c4d5e6f7", "test-user")
+            ("test123", "c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116", "869e09653dd2da217688c907290b6c4c", "test-user", True),
+            ("test456", "c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116", "combined$salt", None, False),
+            ("invalid_format", "c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116", None, None, False),
+            ("empty_pass", "869e09653dd2da217688c907290b6c4c", None, None, False),
+            ("legacy_sha256", "1a2b3c4d5e6f7", None, "test-user", False)
         ]
         
-        for i, (password, hash_val, salt, user_id) in test_cases:
+        for i, case in enumerate(test_cases):
             try:
+                # Extract fields defensively
+                password = case[0]
+                hash_val = case[1] if len(case) > 1 else None
+                salt = case[2] if len(case) > 2 else None
+                user_id = case[3] if len(case) > 3 else None
+                expected = case[4] if len(case) > 4 else False
+                
                 result = verify_password(password, hash_val, salt, user_id)
-                print(f"   {i}: {result} - {password} (len={len(password)})")
-                assert isinstance(result, bool)
+                assert isinstance(result, bool), f"verify_password should return bool, got {type(result)}"
+                assert result == expected, f"Test case {i}: Expected {expected} but got {result} for password={password}"
+                print(f"   {i}: ✅ {result} - {password} (len={len(password)}) - matched expected {expected}")
             except Exception as e:
                 print(f"   {i}: ERROR - {str(e)}")
         
@@ -97,4 +105,12 @@ def test_critical_fixes():
         return False
 
 if __name__ == "__main__":
-    test_critical_fixes()
+    try:
+        result = test_critical_fixes()
+        if result:
+            sys.exit(0)
+        else:
+            sys.exit(1)
+    except Exception as e:
+        print(f"❌ Test failed with exception: {e}")
+        sys.exit(1)

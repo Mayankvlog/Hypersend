@@ -8,9 +8,11 @@ import asyncio
 import sys
 import os
 from pathlib import Path
+import time
 
-# Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+# Add backend to path - point to project-level backend
+backend_dir = Path(__file__).resolve().parent.parent / "backend"
+sys.path.insert(0, str(backend_dir))
 
 async def migrate_user_passwords():
     """Migrate all users to new password format"""
@@ -45,14 +47,11 @@ async def migrate_user_passwords():
         # 2. Have password_hash as combined format (salt$hash)
         # 3. Have invalid salt length
         
-        all_users = await users_col.find({}).to_list(length=None)
-        
-        print(f"\n[INFO] Total users in database: {len(all_users)}")
-        
+        # Use cursor iteration to avoid loading all users into memory
         migrated = 0
         failed = 0
         
-        for user in all_users:
+        async for user in users_col.find({}):
             email = user.get('email', 'UNKNOWN')
             user_id = user.get('_id')
             password_hash = user.get('password_hash')
@@ -86,7 +85,7 @@ async def migrate_user_passwords():
                     {
                         "$set": {
                             "password_needs_reset": True,
-                            "password_migrated_at": asyncio.get_event_loop().time()
+                            "password_migrated_at": int(time.time())  # Use real clock time
                         }
                     }
                 )

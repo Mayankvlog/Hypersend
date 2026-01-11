@@ -1,107 +1,194 @@
 #!/usr/bin/env python3
-"""Final comprehensive verification of all security fixes"""
-
+"""
+Final verification script for password authentication fix
+"""
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
-from validators import validate_command_injection, validate_path_injection
+import requests
+import json
+from backend.auth.utils import verify_password, hash_password
+import hashlib
 
-print('=' * 70)
-print('FINAL SECURITY FIX VERIFICATION')
-print('=' * 70)
+def test_password_formats():
+    """Test all password formats work correctly"""
+    print("=" * 60)
+    print("PASSWORD FORMATS VERIFICATION")
+    print("=" * 60)
+    
+    # Test 1: Legacy SHA256+salt format
+    print("1. Legacy SHA256+salt format:")
+    
+    # Read from environment variables or raise error
+    test_password = os.environ.get("TEST_PASSWORD")
+    test_salt = os.environ.get("TEST_SALT")
+    
+    if not test_password or not test_salt:
+        raise ValueError(
+            "Missing required environment variables:\n"
+            f"  TEST_PASSWORD: {bool(test_password)}\n"
+            f"  TEST_SALT: {bool(test_salt)}\n"
+            "Please set these environment variables before running this test."
+        )
+    
+    combined = test_password + test_salt
+    legacy_hash = hashlib.sha256(combined.encode()).hexdigest()
+    
+    result = verify_password(test_password, legacy_hash, test_salt, "test_user")
+    print(f"   ✅ Legacy format: {result}")
+    assert result == True
+    
+    # Test 2: New PBKDF2 format
+    print("2. New PBKDF2 format:")
+    new_hash, new_salt = hash_password(test_password)
+    result = verify_password(test_password, new_hash, new_salt, "test_user")
+    print(f"   ✅ PBKDF2 format: {result}")
+    assert result == True
+    
+    # Test 3: Edge cases
+    print("3. Edge cases:")
+    result = verify_password("", legacy_hash, test_salt, "test_user")
+    print(f"   ✅ Empty password: {not result}")
+    assert result == False
+    
+    print("   ✅ All password formats working!")
 
-# Test 1: Command Injection Detection
-print('\n[1] COMMAND INJECTION VALIDATOR')
-cmd_tests = [
-    ('hello.txt', True, 'Normal filename'),
-    ('test;ls', False, 'Command separator'),
-    ('test|cat', False, 'Pipe operator'),
-    ('eval(x)', False, 'Eval function'),
-]
-all_pass = True
-for test_input, expected, desc in cmd_tests:
-    result = validate_command_injection(test_input)
-    status = 'PASS' if result == expected else 'FAIL'
-    if result != expected:
-        all_pass = False
-    print(f'  [{status}] {desc:20} -> {result}')
-print(f'  Command Injection: {"PASS" if all_pass else "FAIL"}')
+def test_database_config():
+    """Test database configuration"""
+    print(f"\nDATABASE CONFIGURATION")
+    print("=" * 60)
+    
+    from backend.config import settings
+    
+    print(f"Mock DB disabled: {not settings.USE_MOCK_DB}")
+    print(f"MongoDB host: {settings._MONGO_HOST}")
+    print(f"Database name: {settings._MONGO_DB}")
+    
+    assert not settings.USE_MOCK_DB, "Mock database should be disabled"
+    print("   ✅ Database configuration correct!")
 
-# Test 2: Path Traversal Detection  
-print('\n[2] PATH TRAVERSAL VALIDATOR')
-path_tests = [
-    ('document.txt', True, 'Normal filename'),
-    ('../../../etc/passwd', False, 'Path traversal'),
-    ('safe/path/file.txt', True, 'Safe path'),
-]
-all_pass = True
-for test_input, expected, desc in path_tests:
-    result = validate_path_injection(test_input)
-    status = 'PASS' if result == expected else 'FAIL'
-    if result != expected:
-        all_pass = False
-    print(f'  [{status}] {desc:20} -> {result}')
-print(f'  Path Traversal: {"PASS" if all_pass else "FAIL"}')
+def test_connectivity():
+    """Test service connectivity"""
+    print(f"\nSERVICE CONNECTIVITY")
+    print("=" * 60)
+    
+    services = [
+        ("Backend", "http://localhost:8000/health"),
+        ("API", "http://localhost/api/v1/health"),
+        ("Frontend", "http://localhost/health")
+    ]
+    
+    results = {}
+    for name, url in services:
+        try:
+            response = requests.get(url, timeout=5)
+            results[name] = response.status_code == 200
+            status = "✅" if results[name] else "❌"
+            print(f"   {status} {name}: {response.status_code}")
+        except Exception as e:
+            results[name] = False
+            print(f"   ❌ {name}: {type(e).__name__}")
+    
+    return results
 
-# Test 3: File Extension Blocking
-print('\n[3] FILE EXTENSION BLOCKING')
-dangerous_exts = {
-    '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-    '.php', '.asp', '.jsp', '.sh', '.ps1', '.py', '.rb', '.pl', '.lnk', '.url',
-    '.msi', '.dll', '.app', '.deb', '.rpm', '.dmg', '.pkg', '.so', '.o', '.class'
-}
-ext_tests = [
-    ('.exe', False, 'Windows executable'),
-    ('.php', False, 'PHP script'),
-    ('.pdf', True, 'Safe document'),
-    ('.mp4', True, 'Media file'),
-]
-all_pass = True
-for ext, should_be_safe, desc in ext_tests:
-    is_blocked = ext in dangerous_exts
-    status = 'PASS' if (is_blocked != should_be_safe) else 'FAIL'
-    if is_blocked == should_be_safe:
-        all_pass = False
-    action = 'BLOCKED' if is_blocked else 'ALLOWED'
-    print(f'  [{status}] {desc:20} {ext:6} -> {action}')
-print(f'  File Extension: {"PASS" if all_pass else "FAIL"} ({len(dangerous_exts)} types blocked)')
+def test_authentication():
+    """Test authentication endpoints"""
+    print(f"\nAUTHENTICATION ENDPOINTS")
+    print("=" * 60)
+    
+    # Read from environment variables
+    test_user_email = os.environ.get("TEST_USER_EMAIL")
+    test_user_password = os.environ.get("TEST_USER_PASSWORD")
+    
+    if not test_user_email or not test_user_password:
+        print("   ⚠️  Skipping authentication test - TEST_USER_EMAIL and TEST_USER_PASSWORD not set")
+        return False
+    
+    # Test login
+    print("1. Login endpoint:")
+    try:
+        login_data = {
+            "email": test_user_email,
+            "password": test_user_password
+        }
+        
+        response = requests.post(
+            "http://localhost/api/v1/auth/login",
+            json=login_data,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+        
+        print(f"   Status: {response.status_code}")
+        if response.status_code == 200:
+            print("   ✅ Login successful!")
+            return True
+        elif response.status_code == 401:
+            print("   ⚠️  Login failed - password may not match database")
+            return False
+        else:
+            print(f"   ❌ Unexpected status: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"   ❌ Login error: {type(e).__name__}")
+        return False
 
-# Test 4: Check files exist
-print('\n[4] FILE EXISTENCE CHECK')
-files_to_check = [
-    ('backend/validators.py', 'Validators module'),
-    ('backend/routes/auth.py', 'Auth routes'),
-    ('backend/routes/files.py', 'File routes'),
-    ('backend/error_handlers.py', 'Error handlers'),
-]
-for filepath, desc in files_to_check:
-    exists = os.path.exists(filepath)
-    status = 'PASS' if exists else 'FAIL'
-    print(f'  [{status}] {desc:25} -> {filepath}')
+def main():
+    """Run final verification"""
+    print("🔍 HYPERSEND FINAL VERIFICATION")
+    print("=" * 60)
+    
+    # Test password formats
+    test_password_formats()
+    
+    # Test database config
+    test_database_config()
+    
+    # Test connectivity
+    connectivity_results = test_connectivity()
+    
+    # Test authentication if services are running
+    auth_result = False
+    if connectivity_results.get("API", False):
+        auth_result = test_authentication()
+    
+    # Summary
+    print(f"\n" + "=" * 60)
+    print("FINAL VERIFICATION SUMMARY")
+    print("=" * 60)
+    
+    print("✅ Password formats: WORKING")
+    print("✅ Database config: CORRECT")
+    print(f"{'✅' if connectivity_results.get('Backend', False) else '❌'} Backend connectivity: {'UP' if connectivity_results.get('Backend', False) else 'DOWN'}")
+    print(f"{'✅' if connectivity_results.get('API', False) else '❌'} API connectivity: {'UP' if connectivity_results.get('API', False) else 'DOWN'}")
+    print(f"{'✅' if connectivity_results.get('Frontend', False) else '❌'} Frontend connectivity: {'UP' if connectivity_results.get('Frontend', False) else 'DOWN'}")
+    print(f"{'✅' if auth_result else '❌'} Authentication: {'WORKING' if auth_result else 'NEEDS TESTING'}")
+    
+    print(f"\n🎯 STATUS:")
+    if all(connectivity_results.values()) and auth_result:
+        print("🎉 ALL SYSTEMS OPERATIONAL!")
+        print("✅ Legacy password format fixed")
+        print("✅ Frontend-backend connected")
+        print("✅ Authentication working")
+    else:
+        print("⚠️  Some services need attention")
+        if not connectivity_results.get("Backend", False):
+            print("   - Backend service not running")
+        if not connectivity_results.get("API", False):
+            print("   - API not accessible through nginx")
+        if not connectivity_results.get("Frontend", False):
+            print("   - Frontend service not running")
+        if not auth_result and connectivity_results.get("API", False):
+            print("   - Authentication needs database password update")
+    
+    print(f"\n📋 Deployment Instructions:")
+    print("1. On server: cd /hypersend/Hypersend")
+    print("2. Test: python FINAL_VERIFICATION.py")
+    print("3. Restart: docker compose restart backend frontend nginx")
+    print("4. Verify: python FINAL_VERIFICATION.py")
+    print("5. Test login: http://localhost")
 
-# Test 5: Email validation check
-print('\n[5] EMAIL VALIDATION')
-with open('backend/routes/auth.py') as f:
-    auth_content = f.read()
-    has_proper_regex = r'[a-zA-Z]{2,}' in auth_content
-    has_dot_check = ('".."' in auth_content) or ("'..'") in auth_content
-    status = 'PASS' if has_proper_regex else 'FAIL'
-    print(f'  [{status}] RFC 5322 TLD pattern implemented')
-    print(f'  [PASS] Consecutive dot prevention implemented')
-
-print('\n' + '=' * 70)
-print('SUMMARY: ALL CRITICAL SECURITY FIXES VERIFIED')
-print('=' * 70)
-print('[PASS] Command Injection Detection')
-print('[PASS] Path Traversal Detection')
-print('[PASS] File Extension Blocking (24 types)')
-print('[PASS] Email Validation (RFC 5322)')
-print('[PASS] CMake Configuration')
-print('[PASS] Error Handler Implementation (14/15 codes)')
-print('[PASS] HTTP Error Code Coverage (93%)')
-print('[PASS] Security Features (19/19 validated)')
-print('[PASS] Test Results (52/52 passing)')
-print('=' * 70)
-print('PRODUCTION STATUS: READY FOR DEPLOYMENT')
-print('=' * 70)
+if __name__ == "__main__":
+    main()

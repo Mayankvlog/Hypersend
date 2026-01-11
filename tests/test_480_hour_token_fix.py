@@ -35,8 +35,8 @@ async def test_480_hour_token_validation():
     mock_request.url = MagicMock()
     mock_request.url.path = "/api/v1/files/init"
     
-    print(f"✓ Created 480-hour JWT token for user: {user_id}")
-    print(f"✓ Token expires at: {payload['exp']}")
+    print(f"✅ Created 480-hour JWT token for user: {user_id}")
+    print(f"✅ Token expires at: {payload['exp']}")
     
     # Test that 480-hour token is accepted (not rejected)
     result_user_id = await get_current_user_for_upload(mock_request)
@@ -44,8 +44,8 @@ async def test_480_hour_token_validation():
     # Verify the user ID is returned correctly
     assert result_user_id == user_id, f"Expected {user_id}, got {result_user_id}"
     
-    print(f"✓ 480-hour token successfully accepted")
-    print(f"✓ User ID returned: {result_user_id}")
+    print(f"480-hour token successfully accepted")
+    print(f"User ID returned: {result_user_id}")
 
 
 @pytest.mark.asyncio
