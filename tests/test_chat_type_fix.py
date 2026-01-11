@@ -165,5 +165,37 @@ class TestChatCreationFix:
         print("3. Trim whitespace from type values")
         print("4. Add client-side validation before API call")
 
+    @pytest.mark.asyncio
+    async def test_post_chats_root_endpoint(self):
+        """Test that POST /api/v1/chats endpoint works (not just /api/v1/chats/create)"""
+        from routes.chats import create_chat_root
+        from models import ChatCreate
+        
+        # Test data
+        chat_data = ChatCreate(
+            type="private",
+            member_ids=["test_user_id", "other_user_id"]
+        )
+        
+        # Mock collections and ObjectId
+        mock_collection = AsyncMock()
+        mock_collection.find_one.return_value = None  # No existing chat
+        mock_collection.insert_one.return_value = MagicMock(inserted_id="test_chat_id")
+        
+        with patch('routes.chats.chats_collection', return_value=mock_collection), \
+             patch('routes.chats.ObjectId', return_value="test_chat_id"):
+            # Test the new root endpoint
+            result = await create_chat_root(chat_data, "test_user_id")
+            
+            # Verify the result
+            assert result is not None
+            assert "chat_id" in result
+            assert result["chat_id"] == "test_chat_id"
+            
+            # Verify the collection was called correctly
+            mock_collection.insert_one.assert_called_once()
+            
+            print("✅ POST /api/v1/chats endpoint works correctly")
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

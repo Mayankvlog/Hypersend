@@ -81,6 +81,12 @@ async def get_saved_messages(
     return {"messages": list(reversed(messages))}
 
 
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_chat_root(chat: ChatCreate, current_user: str = Depends(get_current_user)):
+    """Create a new chat (private, group, channel, or saved) - root endpoint"""
+    return await create_chat(chat, current_user)
+
+
 @router.post("/create")
 async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_user)):
     """Create a new chat (private, group, channel, or saved)"""
