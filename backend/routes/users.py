@@ -1089,10 +1089,12 @@ async def delete_account(
         
         # Delete user avatar file if exists
         try:
+            from pathlib import Path
             avatar_url = user.get("avatar_url")
             if avatar_url and avatar_url.startswith("/api/v1/users/avatar/"):
                 avatar_filename = avatar_url.split("/")[-1]
-                avatar_path = settings.DATA_ROOT / "avatars" / avatar_filename
+                data_root = Path(settings.DATA_ROOT)
+                avatar_path = data_root / "avatars" / avatar_filename
                 if avatar_path.exists():
                     avatar_path.unlink()
                     logger.info(f"Deleted avatar file for user: {current_user}")
@@ -1239,7 +1241,9 @@ async def upload_avatar(
             )
         
         # Create directory
-        avatar_dir = settings.DATA_ROOT / "avatars"
+        from pathlib import Path
+        data_root = Path(settings.DATA_ROOT)
+        avatar_dir = data_root / "avatars"
         try:
             avatar_dir.mkdir(parents=True, exist_ok=True)
             logger.debug("Avatar storage directory created/verified")
@@ -1424,7 +1428,9 @@ async def upload_avatar_alt(
             )
         
         # Create directory
-        avatar_dir = settings.DATA_ROOT / "avatars"
+        from pathlib import Path
+        data_root = Path(settings.DATA_ROOT)
+        avatar_dir = data_root / "avatars"
         avatar_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate unique filename
@@ -1579,7 +1585,10 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
         logger.warning(f"[AVATAR] Invalid filename format: {filename}")
         raise HTTPException(status_code=400, detail="Invalid filename format")
     
-    file_path = settings.DATA_ROOT / "avatars" / filename
+    # Handle both string and Path objects for DATA_ROOT
+    from pathlib import Path
+    data_root = Path(settings.DATA_ROOT)
+    file_path = data_root / "avatars" / filename
     logger.debug(f"[AVATAR] File path: {file_path}")
     
     if not file_path.exists():
@@ -1597,7 +1606,7 @@ async def get_avatar(filename: str, current_user: str = Depends(get_current_user
             
             # Search for any avatar file for this user
             avatar_pattern = f"{user_id}_*.*"
-            avatar_dir = settings.DATA_ROOT / "avatars"
+            avatar_dir = data_root / "avatars"
             matching_files = list(glob.glob(str(avatar_dir / avatar_pattern)))
             
             if matching_files:
