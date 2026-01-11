@@ -92,7 +92,7 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
     """Create a new chat (private, group, channel, or saved)"""
     
     # Chat type validation is now handled by the model validator
-    # Ensure current user is in members
+    # Ensure current user is in members FIRST, before validation
     if current_user not in chat.member_ids:
         chat.member_ids.append(current_user)
     

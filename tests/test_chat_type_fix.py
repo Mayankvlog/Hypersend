@@ -238,5 +238,39 @@ class TestChatCreationFix:
         assert "Invalid chat type" in str(exc_info.value)
         print("✅ 'direct' chat type properly rejected at model level")
 
+    @pytest.mark.asyncio
+    async def test_private_chat_single_member_added(self):
+        """Test that creating private chat with single member ID adds current user automatically"""
+        from routes.chats import create_chat
+        from models import ChatCreate
+        
+        # Test with single member ID (what frontend sends)
+        chat_data = ChatCreate(
+            type="private",
+            member_ids=["target_user_id"]  # Only target user, current user should be added
+        )
+        
+        # Mock collections
+        mock_collection = AsyncMock()
+        mock_collection.find_one.return_value = None  # No existing chat
+        mock_collection.insert_one.return_value = MagicMock(inserted_id="test_chat_id")
+        
+        with patch('routes.chats.chats_collection', return_value=mock_collection):
+            # This should work - current user should be added automatically
+            result = await create_chat(chat_data, "current_user_id")
+            
+            assert result is not None
+            assert "chat_id" in result
+            
+            # Verify that current user was added to members list
+            # The insert_one should have been called with 2 members
+            call_args = mock_collection.insert_one.call_args
+            inserted_doc = call_args[0][0]
+            assert len(inserted_doc["members"]) == 2
+            assert "current_user_id" in inserted_doc["members"]
+            assert "target_user_id" in inserted_doc["members"]
+            
+            print("✅ Private chat creation with single member ID works correctly")
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
