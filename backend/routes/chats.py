@@ -84,12 +84,21 @@ async def get_saved_messages(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_chat_root(chat: ChatCreate, current_user: str = Depends(get_current_user)):
     """Create a new chat (private, group, channel, or saved) - root endpoint"""
+    
+    # Backward compatibility: convert 'direct' to 'private' at route level too
+    if chat.type == 'direct':
+        chat.type = 'private'
+    
     return await create_chat(chat, current_user)
 
 
 @router.post("/create")
 async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_user)):
     """Create a new chat (private, group, channel, or saved)"""
+    
+    # Backward compatibility: convert 'direct' to 'private' at route level too
+    if chat.type == 'direct':
+        chat.type = 'private'
     
     # Chat type validation is now handled by the model validator
     # Ensure current user is in members FIRST, before validation
