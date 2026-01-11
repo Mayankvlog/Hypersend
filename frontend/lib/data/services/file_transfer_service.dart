@@ -118,6 +118,7 @@ class FileTransferService {
 
       final uploadId = (init['uploadId'] ?? init['upload_id']) as String;  // Support both camelCase and snake_case
       final chunkSize = (init['chunk_size'] as num).toInt();
+      final totalChunks = (init['total_chunks'] as num?)?.toInt();  // Get total_chunks from backend for validation
 
       int chunkIndex = 0;
       int sentBytes = 0;
@@ -133,6 +134,14 @@ class FileTransferService {
 
           final checksum = sha256.convert(chunk).toString();
           try {
+            // CRITICAL FIX: Validate chunk index against backend total_chunks to prevent out-of-range errors
+            if (totalChunks != null && chunkIndex >= totalChunks) {
+              throw Exception(
+                'Chunk index $chunkIndex out of range. Expected: 0-${totalChunks - 1}. '
+                'This indicates a calculation mismatch between frontend and backend.'
+              );
+            }
+            
             await _api.uploadChunk(
               uploadId: uploadId,
               chunkIndex: chunkIndex,
@@ -162,6 +171,14 @@ class FileTransferService {
 
       final tail = buffer.takeBytes();
       if (tail.isNotEmpty) {
+        // CRITICAL FIX: Validate final chunk index against backend total_chunks
+        if (totalChunks != null && chunkIndex >= totalChunks) {
+          throw Exception(
+            'Final chunk index $chunkIndex out of range. Expected: 0-${totalChunks - 1}. '
+            'This indicates a calculation mismatch between frontend and backend.'
+          );
+        }
+        
         final checksum = sha256.convert(tail).toString();
         await _api.uploadChunk(
           uploadId: uploadId,

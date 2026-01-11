@@ -796,12 +796,12 @@ async def get_current_user_for_upload(
         token_str = token
         logger.debug(f"Using query token: {token_str[:20]}...")
     
-    # No token provided
+    # No token provided - CRITICAL FIX: Return None immediately for anonymous uploads
     if not token_str:
-        logger.debug("No token string extracted from auth header")
+        logger.debug("No token string extracted from auth header - allowing anonymous access")
         return None
     
-# Check if this is an upload operation that needs 480-hour validation
+    # Check if this is an upload operation that needs 480-hour validation
     request_path = getattr(request.url, 'path', '') if hasattr(request, 'url') else ''
     is_upload_operation = (
         '/files/' in request_path or 
@@ -817,6 +817,9 @@ async def get_current_user_for_upload(
     
     # Use extended validation for uploads and messages
     use_extended_validation = is_upload_operation or is_messages_endpoint
+    
+    # CRITICAL FIX: Add debug logging to trace authentication flow
+    logger.debug(f"Auth flow: token_str={bool(token_str)}, is_upload_operation={is_upload_operation}")
     
     # First try normal JWT decode
     try:

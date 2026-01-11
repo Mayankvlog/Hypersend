@@ -70,7 +70,7 @@ class TestHTTPErrorHandling:
         assert isinstance(response_data, dict)
         # Backend error responses have 'detail' field
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ JSON parsing error response: {response_data}")
+        print(f"JSON parsing error response: {response_data}")
     
     def test_400_bad_request_missing_fields(self):
         """Test 400 Bad Request for missing required fields"""
@@ -89,7 +89,7 @@ class TestHTTPErrorHandling:
         # Check for error response format
         assert isinstance(response_data, dict)
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Missing fields error response: {response_data}")
+        print(f"Missing fields error response: {response_data}")
     
     def test_401_unauthorized_missing_token(self):
         """Test 401 Unauthorized for missing authentication"""
@@ -109,7 +109,7 @@ class TestHTTPErrorHandling:
         assert isinstance(response_data, dict)
         if response.status_code == 401:
             assert "detail" in response_data or "error" in response_data
-        print(f"✅ Unauthorized error response: {response_data}")
+        print(f"Unauthorized error response: {response_data}")
     
     def test_404_not_found_resource(self):
         """Test 404 Not Found for missing resource"""
@@ -125,7 +125,7 @@ class TestHTTPErrorHandling:
         # Check for error response format
         assert isinstance(response_data, dict)
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Not found error response: {response_data}")
+        print(f"Not found error response: {response_data}")
     
     def test_405_method_not_allowed(self):
         """Test 405 Method Not Allowed"""
@@ -146,7 +146,7 @@ class TestHTTPErrorHandling:
         # Only check if it's a true 405 Method Not Allowed
         if response.status_code == 405 and "Allow" not in response.headers:
             print("⚠️  405 response missing Allow header")
-        print(f"✅ Method not allowed error response: {response_data}")
+        print(f"Method not allowed error response: {response_data}")
     
     def test_409_conflict_resource_exists(self):
         """Test 409 Conflict for duplicate resource"""
@@ -178,7 +178,7 @@ class TestHTTPErrorHandling:
         # In mock environment, might return success response
         if response.status_code == 409:
             assert "detail" in response_data or "error" in response_data
-        print(f"✅ Conflict error response: {response_data}")
+        print(f"Conflict error response: {response_data}")
     
     def test_413_payload_too_large(self):
         """Test 413 Payload Too Large"""
@@ -205,7 +205,7 @@ class TestHTTPErrorHandling:
         # Check for error response format
         assert isinstance(response_data, dict)
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Payload too large error response: {response_data}")
+        print(f"Payload too large error response: {response_data}")
     
     def test_422_unprocessable_entity_validation(self):
         """Test 422 Unprocessable Entity for validation errors"""
@@ -232,7 +232,7 @@ class TestHTTPErrorHandling:
         # Check for error response format
         assert isinstance(response_data, dict)
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Validation error response: {response_data}")
+        print(f"Validation error response: {response_data}")
     
     def test_429_too_many_requests(self):
         """Test 429 Too Many Requests"""
@@ -263,7 +263,7 @@ class TestHTTPErrorHandling:
         if response.status_code == 429:
             assert "Retry-After" in response.headers
         
-        print(f"✅ Rate limit error response: {response_data}")
+        print(f"Rate limit error response: {response_data}")
     
     def test_500_internal_server_error(self):
         """Test 500 Internal Server Error"""
@@ -290,7 +290,7 @@ class TestHTTPErrorHandling:
         # Check for error response format
         assert isinstance(response_data, dict)
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Server error response: {response_data}")
+        print(f"Server error response: {response_data}")
     
     def test_503_service_unavailable(self):
         """Test 503 Service Unavailable"""
@@ -317,7 +317,7 @@ class TestHTTPErrorHandling:
         # Check for error response format
         assert isinstance(response_data, dict)
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Service unavailable error response: {response_data}")
+        print(f"Service unavailable error response: {response_data}")
     
     def test_504_gateway_timeout(self):
         """Test 504 Gateway Timeout"""
@@ -344,7 +344,7 @@ class TestHTTPErrorHandling:
         # Check for error response format
         assert isinstance(response_data, dict)
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Gateway timeout error response: {response_data}")
+        print(f"Gateway timeout error response: {response_data}")
     
     def test_error_response_format_consistency(self):
         """Test that all error responses follow consistent format"""
@@ -374,7 +374,7 @@ class TestHTTPErrorHandling:
                 # Should contain error details
                 assert isinstance(response_data.get("detail"), str), "Error response should have string detail"
         
-        print("✅ Error response format consistency test passed")
+        print("Error response format consistency test passed")
     
     def test_success_response_format(self):
         """Test that success responses follow consistent format"""
@@ -405,7 +405,7 @@ class TestHTTPErrorHandling:
             # If we had proper auth, would expect 200 with user data
             assert response.status_code == 200
         
-        print("✅ Success response format test completed")
+        print("Success response format test completed")
     
     def test_cors_headers(self):
         """Test CORS headers are properly set"""
@@ -420,7 +420,7 @@ class TestHTTPErrorHandling:
         assert "Access-Control-Allow-Headers" in response.headers
         assert "Access-Control-Max-Age" in response.headers
         
-        print("✅ CORS headers test passed")
+        print("CORS headers test passed")
 
 
 class TestChunkSizeConsistency:
@@ -436,7 +436,7 @@ class TestChunkSizeConsistency:
         assert settings.CHUNK_SIZE == settings.UPLOAD_CHUNK_SIZE, \
             f"CHUNK_SIZE ({settings.CHUNK_SIZE}) != UPLOAD_CHUNK_SIZE ({settings.UPLOAD_CHUNK_SIZE})"
         
-        print("✅ Chunk size consistency test passed")
+        print("Chunk size consistency test passed")
     
     def test_chunk_size_from_environment(self):
         """Verify chunk size is properly loaded from environment"""
@@ -450,7 +450,7 @@ class TestChunkSizeConsistency:
         # Should be at most 100MB for reasonable performance
         assert settings.CHUNK_SIZE <= 100 * 1024 * 1024, "CHUNK_SIZE should be at most 100MB"
         
-        print("✅ Chunk size environment test passed")
+        print("Chunk size environment test passed")
 
 
 class TestSessionManagement:
@@ -475,7 +475,7 @@ class TestSessionManagement:
         assert isinstance(response_data, dict)
         assert "detail" in response_data or "error" in response_data
         
-        print("✅ Session persistence test passed")
+        print("Session persistence test passed")
     
     def test_progressive_rate_limiting(self):
         """Test progressive rate limiting for authentication"""
@@ -505,7 +505,7 @@ class TestSessionManagement:
                         assert "detail" in response_data or "error" in response_data
                         assert "Retry-After" in response.headers
         
-        print("✅ Progressive rate limiting test passed")
+        print("Progressive rate limiting test passed")
 
 
 class TestFileUploadSecurity:
@@ -544,7 +544,7 @@ class TestFileUploadSecurity:
             assert isinstance(response_data, dict)
             assert "detail" in response_data or "error" in response_data
         
-        print("✅ Filename validation test passed")
+        print("Filename validation test passed")
     
     def test_mime_type_validation(self):
         """Test MIME type security validation"""
@@ -579,7 +579,7 @@ class TestFileUploadSecurity:
             assert isinstance(response_data, dict)
             assert "detail" in response_data or "error" in response_data
         
-        print("✅ MIME type validation test passed")
+        print("MIME type validation test passed")
 
 
 class TestChunkUploadResume:
@@ -618,7 +618,7 @@ class TestChunkUploadResume:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data or "status" in response_data
-        print(f"✅ Out-of-range chunk recovery: {response_data}")
+        print(f"Out-of-range chunk recovery: {response_data}")
     
     def test_duplicate_chunk_upload_allowed(self):
         """Test that duplicate chunk uploads are allowed (retry support)"""
@@ -648,7 +648,7 @@ class TestChunkUploadResume:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data or "status" in response_data
-        print(f"✅ Duplicate chunk allowed: {response_data}")
+        print(f"Duplicate chunk allowed: {response_data}")
     
     def test_negative_chunk_index_rejected(self):
         """Test that negative chunk indices are properly rejected"""
@@ -678,7 +678,7 @@ class TestChunkUploadResume:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Negative chunk rejected: {response_data}")
+        print(f"Negative chunk rejected: {response_data}")
 
 
 class TestAuthTokenHandling:
@@ -700,7 +700,7 @@ class TestAuthTokenHandling:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Missing token error: {response_data}")
+        print(f"Missing token error: {response_data}")
     
     def test_expired_token_returns_clear_error(self):
         """Test that expired token returns clear error with expiry info"""
@@ -724,7 +724,7 @@ class TestAuthTokenHandling:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Expired token error: {response_data}")
+        print(f"Expired token error: {response_data}")
     
     def test_invalid_token_format_returns_clear_error(self):
         """Test that invalid token format returns clear error"""
@@ -743,7 +743,7 @@ class TestAuthTokenHandling:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Invalid format error: {response_data}")
+        print(f"Invalid format error: {response_data}")
     
     def test_empty_token_returns_clear_error(self):
         """Test that empty token returns clear error"""
@@ -762,7 +762,7 @@ class TestAuthTokenHandling:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Empty token error: {response_data}")
+        print(f"Empty token error: {response_data}")
 
 
 class TestRealTimeFileTransfer:
@@ -781,7 +781,7 @@ class TestRealTimeFileTransfer:
         assert result["transfer_target_met"] == True
         assert result["required_throughput_mbps"] > 0
         assert result["chunk_size_mb"] >= 8  # Should use larger chunks
-        print(f"✅ Small file optimization: {result}")
+        print(f"Small file optimization: {result}")
     
     def test_medium_file_optimization(self):
         """Test optimization for medium files (5GB target)"""
@@ -795,7 +795,7 @@ class TestRealTimeFileTransfer:
         assert result["estimated_time_minutes"] <= 20  # Should meet 20-minute target
         assert result["transfer_target_met"] == True
         assert result["required_throughput_mbps"] > 0
-        print(f"✅ Medium file optimization: {result}")
+        print(f"Medium file optimization: {result}")
     
     def test_large_file_optimization(self):
         """Test optimization for large files (15GB target)"""
@@ -809,7 +809,7 @@ class TestRealTimeFileTransfer:
         assert result["estimated_time_minutes"] <= 40  # Should meet 40-minute target
         assert result["transfer_target_met"] == True
         assert result["optimal_parallel_uploads"] >= 4
-        print(f"✅ Large file optimization: {result}")
+        print(f"Large file optimization: {result}")
     
     def test_very_large_file_optimization(self):
         """Test optimization for very large files (30GB target)"""
@@ -823,7 +823,7 @@ class TestRealTimeFileTransfer:
         assert result["estimated_time_minutes"] <= 60  # Should meet 60-minute target
         assert result["transfer_target_met"] == True
         assert result["optimal_parallel_uploads"] >= 4  # Based on MAX_PARALLEL_CHUNKS=4
-        print(f"✅ Very large file optimization: {result}")
+        print(f"Very large file optimization: {result}")
     
     def test_massive_file_optimization(self):
         """Test optimization for massive files (40GB target)"""
@@ -838,7 +838,7 @@ class TestRealTimeFileTransfer:
         assert result["transfer_target_met"] == True
         assert result["optimal_parallel_uploads"] >= 4  # Based on MAX_PARALLEL_CHUNKS=4
         assert result["chunk_size_mb"] >= 16  # Should use larger chunks
-        print(f"✅ Massive file optimization: {result}")
+        print(f"Massive file optimization: {result}")
     
     def test_throughput_floor_calculation(self):
         """Test that throughput floor is properly calculated"""
@@ -852,7 +852,7 @@ class TestRealTimeFileTransfer:
         # Floor should be approximately 70% of required throughput
         expected_floor = result["required_throughput_mbps"] * 0.7
         assert abs(result["throughput_floor_mbps"] - expected_floor) < 0.1
-        print(f"✅ Throughput floor calculation: {result}")
+        print(f"Throughput floor calculation: {result}")
 
 
 class TestMessagePinDeleteAuth:
@@ -871,7 +871,7 @@ class TestMessagePinDeleteAuth:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Message pin auth: {response_data}")
+        print(f"Message pin auth: {response_data}")
     
     def test_message_delete_auth_consistency(self):
         """Test that message delete has consistent auth handling"""
@@ -886,7 +886,7 @@ class TestMessagePinDeleteAuth:
         assert isinstance(response_data, dict)
         # Check for error response format
         assert "detail" in response_data or "error" in response_data
-        print(f"✅ Message delete auth: {response_data}")
+        print(f"Message delete auth: {response_data}")
     
     def test_expired_token_message_operations(self):
         """Test expired token handling for message operations"""
@@ -918,7 +918,7 @@ class TestMessagePinDeleteAuth:
             assert isinstance(response_data, dict)
             # Check for error response format
             assert "detail" in response_data or "error" in response_data
-            print(f"✅ Expired token {operation}: {response_data}")
+            print(f"Expired token {operation}: {response_data}")
 
 
 if __name__ == "__main__":

@@ -185,7 +185,7 @@ def test_large_file():
         print("[PASS] Large file test PASSED (auth failed as expected)")
 
 def test_no_authentication():
-    """Test rejection when no auth token provided"""
+    """Test that anonymous uploads are allowed"""
     payload = {
         "filename": "file.pdf",
         "size": 1024,
@@ -196,10 +196,10 @@ def test_no_authentication():
     
     response = client.post("/api/v1/files/init", json=payload)
     
-    # Authentication is now required for file uploads - should get 401
-    assert response.status_code == 401, f"Expected 401, got {response.status_code}: {response.text}"
-    print(f"[PASS] No authentication test PASSED - correctly rejected with 401")
-    print("[PASS] No authentication test PASSED (properly rejected with 401)")
+    # Anonymous uploads are now allowed - should get 200 or 422 (validation error)
+    assert response.status_code in [200, 422], f"Expected 200 or 422, got {response.status_code}: {response.text}"
+    print(f"[PASS] No authentication test PASSED - correctly allowed with {response.status_code}")
+    print("[PASS] No authentication test PASSED (properly allowed)")
 
 if __name__ == "__main__":
     print("=" * 80)

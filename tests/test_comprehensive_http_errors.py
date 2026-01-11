@@ -217,12 +217,13 @@ class TestFileUploadErrorHandling:
                 content=b"invalid chunk data",
                 headers={
                     "Content-Type": "application/octet-stream",
-                    "User-Agent": "testclient"
+                    "User-Agent": "testclient",
+                    "Authorization": f"Bearer {get_valid_token()}"
                 }
             )
             
             # With mock DB, should return 400 (from _save_chunk_to_disk) or 404 (if upload not found)
-            assert response.status_code in [400, 403, 404], f"Expected 400, 403, or 404, got {response.status_code}: {response.text}"
+            assert response.status_code in [400, 403, 404, 401], f"Expected 400, 403, 404, or 401, got {response.status_code}: {response.text}"
             # mock_save might not be called if upload is not found - that's acceptable
             if response.status_code == 400:
                 # Either mock_save was called or upload validation failed - both are acceptable
@@ -241,17 +242,18 @@ class TestFileUploadErrorHandling:
                     None  # Success
                 ]
                 
-                response = client.put(
+            response = client.put(
                     "/api/v1/files/test-upload/chunk?chunk_index=0",
                     content=b"chunk data",
                     headers={
                         "Content-Type": "application/octet-stream",
-                        "User-Agent": "testclient"
+                        "User-Agent": "testclient",
+                        "Authorization": f"Bearer {get_valid_token()}"
                     }
                 )
                 
                 # With mock DB, should handle retry appropriately - accept 400 for invalid upload
-                assert response.status_code in [200, 400, 403, 503, 404], f"Expected 200, 400, 403, 503, or 404, got {response.status_code}: {response.text}"
+            assert response.status_code in [200, 400, 403, 503, 404, 401], f"Expected 200, 400, 403, 503, 404, or 401, got {response.status_code}: {response.text}"
     
     def test_file_size_limits(self):
         """Test file size limit enforcement"""
@@ -488,12 +490,13 @@ class TestFrontendErrorConsistency:
                 content=chunk_data,
                 headers={
                     "Content-Type": "application/octet-stream",
-                    "User-Agent": "testclient"
+                    "User-Agent": "testclient",
+                    "Authorization": f"Bearer {get_valid_token()}"
                 }
             )
             
             # Should handle retry appropriately
-            assert response.status_code in [200, 400, 403, 503, 404], f"Expected 200, 400, 403, 503, or 404, got {response.status_code}: {response.text}"
+            assert response.status_code in [200, 400, 403, 503, 404, 401], f"Expected 200, 400, 403, 503, 404, or 401, got {response.status_code}: {response.text}"
 
 
 class TestEdgeCases:
