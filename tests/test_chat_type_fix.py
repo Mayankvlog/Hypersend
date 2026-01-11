@@ -68,8 +68,8 @@ class TestChatCreationFix:
         from models import ChatCreate
         from pydantic import ValidationError
         
-        # Test invalid chat types
-        invalid_types = ["invalid", "direct", "personal", "community", "broadcast"]
+        # Test invalid chat types (removed 'direct' since it's now supported)
+        invalid_types = ["invalid", "personal", "community", "broadcast"]
         
         for chat_type in invalid_types:
             # Test that ChatCreate model rejects invalid types at creation
@@ -90,7 +90,7 @@ class TestChatCreationFix:
             with patch("routes.chats.chats_collection", return_value=MagicMock()), \
                  patch("routes.chats.get_current_user", return_value="user1"):
                 
-                # Create a valid chat first, then modify type to test route validation
+                # Create a valid chat first, then modify type to test route validation (bypassing model validation)
                 try:
                     valid_chat = ChatCreate(
                         type="private",
@@ -224,19 +224,18 @@ class TestChatCreationFix:
     
     @pytest.mark.asyncio
     async def test_direct_chat_type_rejected(self):
-        """Test that 'direct' chat type is rejected (old frontend bug)"""
+        """Test that 'direct' chat type is converted to 'private' (backward compatibility)"""
         from models import ChatCreate
-        from pydantic import ValidationError
         
-        # Test that 'direct' type is rejected at model level
-        with pytest.raises(ValidationError) as exc_info:
-            ChatCreate(
-                type="direct",  # This should fail
-                member_ids=["test_user_id", "other_user_id"]
-            )
+        # Test that 'direct' type is now accepted and converted to 'private'
+        chat = ChatCreate(
+            type="direct",  # This should now work and be converted
+            member_ids=["test_user_id", "other_user_id"]
+        )
         
-        assert "Invalid chat type" in str(exc_info.value)
-        print("✅ 'direct' chat type properly rejected at model level")
+        # Verify it was converted to 'private'
+        assert chat.type == "private"
+        print("✅ 'direct' chat type converted to 'private' for backward compatibility")
 
     @pytest.mark.asyncio
     async def test_private_chat_single_member_added(self):

@@ -337,6 +337,11 @@ class ChatCreate(BaseModel):
     def validate_type(cls, v):
         valid_types = [ChatType.PRIVATE, ChatType.GROUP, ChatType.SUPERGROUP, 
                      ChatType.CHANNEL, ChatType.SECRET, ChatType.SAVED]
+        
+        # Backward compatibility: accept 'direct' as 'private'
+        if v == 'direct':
+            v = ChatType.PRIVATE
+            
         if v not in valid_types:
             raise ValueError(f"Invalid chat type. Must be one of: {', '.join(valid_types)}")
         return v
