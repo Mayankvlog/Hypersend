@@ -687,7 +687,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         return 'Channel';
 
       case ChatType.saved:
-        return 'Cloud Storage';
+        return 'Saved Messages';
       default:
         return AppStrings.online;
     }
