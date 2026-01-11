@@ -1504,14 +1504,28 @@ async def complete_upload(
         # CRITICAL FIX: Handle user_id comparison - enforce strict permission check
         upload_user_id = upload_doc.get("user_id") or upload_doc.get("owner_id")
         
-        # Enforce that user matches
-        if upload_user_id != current_user:
+        # Enforce that user matches - allow anonymous uploads to be completed anonymously
+        if current_user is not None and upload_user_id != current_user:
             _log("warning", f"Permission check failed for upload completion", {
                 "user_id": current_user,
                 "upload_user_id": upload_user_id,
                 "operation": "file_complete",
                 "upload_id": upload_id,
                 "mismatch": f"{current_user} != {upload_user_id}"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to complete this upload"
+            )
+        
+        # CRITICAL FIX: Allow anonymous upload completion when both are None
+        if current_user is None and upload_user_id is not None:
+            _log("warning", f"Permission check failed - anonymous user trying to complete authenticated upload", {
+                "user_id": current_user,
+                "upload_user_id": upload_user_id,
+                "operation": "file_complete",
+                "upload_id": upload_id,
+                "mismatch": "anonymous user cannot complete authenticated upload"
             })
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
