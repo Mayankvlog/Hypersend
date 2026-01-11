@@ -271,5 +271,92 @@ class TestChatCreationFix:
             
             print("✅ Private chat creation with single member ID works correctly")
 
+    @pytest.mark.asyncio
+    async def test_chat_creation_response_format(self, client):
+        """Test that chat creation returns both 'chat_id' and 'id' for frontend compatibility"""
+        from routes.chats import create_chat
+        from models import ChatCreate
+        
+        # Test data
+        chat_data = ChatCreate(
+            type="private",
+            member_ids=["test_user_id", "other_user_id"]
+        )
+        
+        # Mock collections
+        mock_collection = AsyncMock()
+        mock_collection.find_one.return_value = None  # No existing chat
+        mock_collection.insert_one.return_value = MagicMock(inserted_id="test_chat_id")
+        
+        with patch('routes.chats.chats_collection', return_value=mock_collection):
+            with patch('routes.chats.ObjectId', return_value="test_chat_id"):
+                result = await create_chat(chat_data, "test_user_id")
+                
+                # Verify response format
+                assert result is not None
+                assert "chat_id" in result
+                assert "id" in result
+                assert "_id" in result
+                assert result["chat_id"] == "test_chat_id"
+                assert result["id"] == "test_chat_id"
+                assert result["_id"] == "test_chat_id"
+                assert result["message"] == "Chat created"
+                
+                print("✅ Chat creation response format includes both 'chat_id' and 'id'")
+
+    @pytest.mark.asyncio
+    async def test_change_password_endpoint_exists(self, client):
+        """Test that /api/v1/auth/change-password endpoint works (not just /api/v1/users/change-password)"""
+        from fastapi import status
+        
+        # Test OPTIONS request (CORS preflight)
+        response = client.options("/api/v1/auth/change-password")
+        assert response.status_code == status.HTTP_200_OK
+        print("✅ OPTIONS /api/v1/auth/change-password works correctly")
+        
+        # Test POST request without auth (should return 401)
+        response = client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": "old_password",
+                "new_password": "new_password"
+            }
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        print("✅ POST /api/v1/auth/change-password requires authentication (401)")
+
+    @pytest.mark.asyncio
+    async def test_all_password_endpoints_exist(self, client):
+        """Test that all password-related endpoints work (change, forgot, reset)"""
+        from fastapi import status
+        
+        endpoints = [
+            "/api/v1/auth/change-password",
+            "/api/v1/forgot-password", 
+            "/api/v1/reset-password"
+        ]
+        
+        for endpoint in endpoints:
+            # Test OPTIONS request (CORS preflight)
+            response = client.options(endpoint)
+            assert response.status_code == status.HTTP_200_OK
+            print(f"✅ OPTIONS {endpoint} works correctly")
+            
+            # Test POST request without auth (should return 401 or 400 for validation)
+            if endpoint == "/api/v1/forgot-password":
+                response = client.post(endpoint, json={"email": "test@example.com"})
+                # forgot-password doesn't require auth, should work
+                assert response.status_code in [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
+            elif endpoint == "/api/v1/reset-password":
+                response = client.post(endpoint, json={"token": "test_token", "new_password": "new_password_123"})
+                # reset-password requires valid token, should return 401 or 400
+                assert response.status_code in [status.HTTP_401_UNAUTHORIZED, status.HTTP_400_BAD_REQUEST]
+            else:
+                response = client.post(endpoint, json={"test": "data"})
+                # change-password requires auth
+                assert response.status_code == status.HTTP_401_UNAUTHORIZED
+            
+            print(f"✅ POST {endpoint} responds correctly")
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

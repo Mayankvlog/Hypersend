@@ -169,7 +169,12 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
     
     await chats_collection().insert_one(chat_doc)
     
-    return {"chat_id": chat_doc["_id"], "message": "Chat created"}
+    return {
+        "chat_id": chat_doc["_id"], 
+        "id": chat_doc["_id"],  # Frontend compatibility
+        "_id": chat_doc["_id"],  # Frontend compatibility
+        "message": "Chat created"
+    }
 
 
 @router.get("")

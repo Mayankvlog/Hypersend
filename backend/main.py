@@ -1249,7 +1249,7 @@ async def bins_get(bin_id: str):
 
 # Add endpoint aliases for frontend compatibility
 # Import models for alias endpoints
-from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse
+from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse, PasswordChangeRequest, ForgotPasswordRequest, PasswordResetRequest
 from auth.utils import get_current_user
 
 # Unified OPTIONS handler for all alias endpoints
@@ -1257,6 +1257,9 @@ from auth.utils import get_current_user
 @app.options("/api/v1/register") 
 @app.options("/api/v1/refresh")
 @app.options("/api/v1/logout")
+@app.options("/api/v1/auth/change-password")
+@app.options("/api/v1/forgot-password")
+@app.options("/api/v1/reset-password")
 async def preflight_alias_endpoints(request: Request):
     """Handle CORS preflight for alias endpoints"""
     import re
@@ -1328,6 +1331,24 @@ async def logout_alias(current_user: str = Depends(get_current_user)):
     """Alias for /api/v1/auth/logout - delegates to auth router"""
     from routes.auth import logout as auth_logout
     return await auth_logout(current_user)
+
+@app.post("/api/v1/auth/change-password")
+async def change_password_alias(request: PasswordChangeRequest, current_user: str = Depends(get_current_user)):
+    """Alias for /api/v1/users/change-password - delegates to users router"""
+    from routes.users import change_password as users_change_password
+    return await users_change_password(request, current_user)
+
+@app.post("/api/v1/forgot-password")
+async def forgot_password_alias(request: ForgotPasswordRequest):
+    """Alias for /api/v1/auth/forgot-password - delegates to auth router"""
+    from routes.auth import forgot_password as auth_forgot_password
+    return await auth_forgot_password(request)
+
+@app.post("/api/v1/reset-password")
+async def reset_password_alias(request: PasswordResetRequest):
+    """Alias for /api/v1/auth/reset-password - delegates to auth router"""
+    from routes.auth import reset_password as auth_reset_password
+    return await auth_reset_password(request)
 
 # Include debug routes (only in DEBUG mode, but router checks internally)
 if settings.DEBUG:
