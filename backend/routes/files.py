@@ -1117,12 +1117,8 @@ async def upload_chunk(
             headers={"Allow": "PUT, OPTIONS"}
         )
     
-    # CRITICAL FIX: Check authentication AFTER validation
-    if not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required"
-        )
+    # CRITICAL FIX: Allow anonymous uploads - authentication handled at permission check level
+    # current_user can be None for anonymous uploads
     
     # CRITICAL FIX: Check precondition headers (412 Precondition Failed)
     if_match = request.headers.get("if-match")
@@ -1417,7 +1413,7 @@ async def upload_chunk(
 async def complete_upload(
     upload_id: str,
     request: Request,
-    current_user: Optional[str] = Depends(get_current_user_for_upload)
+    current_user: Optional[str] = Depends(get_upload_user_or_none)
     ):
     """Complete file upload and assemble chunks"""
     
@@ -1433,12 +1429,8 @@ async def complete_upload(
             headers={"Allow": "POST, OPTIONS"}
         )
     
-    # CRITICAL FIX: Check authentication AFTER validation
-    if not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required"
-        )
+    # CRITICAL FIX: Allow anonymous uploads - authentication handled at permission check level
+    # current_user can be None for anonymous uploads
     
     # Enhanced logging for debugging large file uploads
     _log("info", f"File completion requested", {

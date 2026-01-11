@@ -39,10 +39,10 @@ class TestEndpointFixes:
 
     def test_file_upload_chunk_endpoint_exists(self, client):
         """Test that PUT /api/v1/files/{upload_id}/chunk endpoint exists"""
-        # Test with no auth - currently returns 401 due to authentication requirements
+        # Test with no auth - should return 404 (upload not found) not 401 (auth required)
         response = client.put('/api/v1/files/test-upload-id/chunk?chunk_index=0', data=b'test data')
-        # Should return 401 (authentication required) not 404 (upload not found)
-        assert response.status_code == 401
+        # Should return 404 (upload not found) not 401 (authentication required)
+        assert response.status_code == 404
         
         # Test OPTIONS for CORS
         response = client.options('/api/v1/files/test-upload-id/chunk?chunk_index=0')

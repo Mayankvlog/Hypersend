@@ -72,6 +72,11 @@ class RateLimiter:
         except Exception as e:
             # Rate limiter errors should not crash the service
             return 0
+    
+    def reset(self):
+        """Reset the rate limiter by clearing all request history"""
+        with self.lock:
+            self.requests.clear()
 
 # Global rate limiters for different auth operations
 auth_rate_limiter = RateLimiter(max_requests=5, window_seconds=300)  # 5 requests per 5 minutes
