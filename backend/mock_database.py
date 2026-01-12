@@ -134,10 +134,16 @@ class MockCollection:
         else:
             docs = [doc.copy() for doc in self.data.values() if self._match_query(doc, query)]
         
-        # Apply sorting if provided
+        # Apply sorting if provided - handle the sort parameter correctly
         if sort:
-            for field, direction in sort:
-                docs.sort(key=lambda x: x.get(field), reverse=(direction == -1))
+            for sort_item in sort:
+                if isinstance(sort_item, tuple) and len(sort_item) == 2:
+                    field, direction = sort_item
+                    docs.sort(key=lambda x: x.get(field), reverse=(direction == -1))
+                elif isinstance(sort_item, dict):
+                    # Handle MongoDB sort format like {"field": 1}
+                    for field, direction in sort_item.items():
+                        docs.sort(key=lambda x: x.get(field), reverse=(direction == -1))
         
         cursor = MockCursor(docs)
         print(f"[MOCK_DB] find returning MockCursor with {len(docs)} docs")
@@ -206,13 +212,13 @@ class MockCollection:
                     return False
             elif key == '$in':
                 doc_field = doc.get(key)
-                # Check if any value in the $in array matches the document field
+                # Check if any value in $in array matches the document field
                 if isinstance(doc_field, list):
                     # If doc_field is an array, check if any element matches
                     if not any(item in value for item in doc_field):
                         return False
                 else:
-                    # If doc_field is a single value, check if it's in the $in array
+                    # If doc_field is a single value, check if it's in $in array
                     if doc_field not in value:
                         return False
             elif key == '$nin':

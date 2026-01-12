@@ -110,7 +110,7 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
         if uid != current_user:
             await _log_activity(group_id, current_user, "member_added", {"user_id": uid})
 
-    return {"group_id": group_id, "group": chat_doc}
+    return {"group_id": group_id, "chat_id": group_id, "group": chat_doc}
 
 
 @router.get("")
@@ -179,6 +179,10 @@ async def get_member_suggestions(
                     "status": 1
                 }
             )
+            
+            # Check if cursor is a coroutine (mock DB) or cursor (real MongoDB)
+            if hasattr(cursor, '__await__'):
+                cursor = await cursor
             
             async for contact in cursor:
                 # Create UserPublic object from contact data
