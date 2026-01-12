@@ -592,7 +592,14 @@ async def search_users(q: str, search_type: str = None, current_user: str = Depe
                 "_id": {"$ne": current_user}
             }
         
-        cursor = users_collection().find(search_query).limit(20)
+        find_result = users_collection().find(search_query)
+        # Check if find_result is a coroutine (mock DB) or cursor (real MongoDB)
+        if hasattr(find_result, '__await__'):
+            cursor = await find_result
+        else:
+            cursor = find_result
+        # Apply limit
+        cursor = cursor.limit(20)
         
         # Fetch results with timeout and scoring
         async def fetch_results():
@@ -2041,7 +2048,7 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         
         
         # Search users with limit
-        cursor = users_collection().find(
+        find_result = users_collection().find(
             search_query,
             {
                 "_id": 1,
@@ -2053,7 +2060,14 @@ async def clear_location(current_user: str = Depends(get_current_user)):
                 "last_seen": 1,
                 "status": 1
             }
-        ).limit(limit)
+        )
+        # Check if find_result is a coroutine (mock DB) or cursor (real MongoDB)
+        if hasattr(find_result, '__await__'):
+            cursor = await find_result
+        else:
+            cursor = find_result
+        # Apply limit
+        cursor = cursor.limit(limit)
         
         async def fetch_results():
             results = []
