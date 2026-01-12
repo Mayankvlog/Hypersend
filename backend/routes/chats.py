@@ -188,7 +188,7 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         pinned_chats = user_doc.get("pinned_chats", []) if user_doc else []
         
         chats = []
-        find_result = chats_collection().find({"members": current_user})
+        find_result = chats_collection().find({"members": {"$in": [current_user]}})
         
         # Handle both mock database (coroutine) and real MongoDB (cursor)
         if hasattr(find_result, '__await__'):
