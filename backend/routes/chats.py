@@ -188,7 +188,16 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         pinned_chats = user_doc.get("pinned_chats", []) if user_doc else []
         
         chats = []
-        cursor = await chats_collection().find({"members": current_user})
+        find_result = chats_collection().find({"members": current_user})
+        
+        # Handle both mock database (coroutine) and real MongoDB (cursor)
+        if hasattr(find_result, '__await__'):
+            # Mock database - await the coroutine
+            cursor = await find_result
+        else:
+            # Real MongoDB - use the cursor directly
+            cursor = find_result
+        
         cursor = cursor.sort("created_at", -1)
         
         async for chat in cursor:
