@@ -284,7 +284,63 @@ async def update_profile(
         # Process the avatar
         if profile_data.avatar_url is not None:
             logger.info(f"SUCCESS: Avatar URL set: {profile_data.avatar_url}")
+            
+            # Clean up old avatar file if avatar_url is being changed
+            try:
+                # Get current user data to check for existing avatar
+                current_user_data = await asyncio.wait_for(
+                    users_collection().find_one({"_id": current_user}),
+                    timeout=5.0
+                )
+                
+                if current_user_data and "avatar_url" in current_user_data:
+                    old_avatar_url = current_user_data["avatar_url"]
+                    if old_avatar_url and old_avatar_url != profile_data.avatar_url:
+                        # Only delete if the avatar_url is actually changing
+                        if old_avatar_url.startswith("/api/v1/users/avatar/"):
+                            old_filename = old_avatar_url.split("/")[-1]
+                            from pathlib import Path
+                            data_root = Path(settings.DATA_ROOT)
+                            old_file_path = data_root / "avatars" / old_filename
+                            if old_file_path.exists():
+                                try:
+                                    old_file_path.unlink()
+                                    logger.info(f"Cleaned up old avatar file: {old_filename}")
+                                except Exception as delete_error:
+                                    logger.warning(f"Could not delete old avatar file {old_filename}: {delete_error}")
+            except Exception as cleanup_error:
+                logger.warning(f"Cleanup error while checking old avatar: {cleanup_error}")
+                # Continue anyway - new avatar URL will be set
+            
             update_data["avatar_url"] = profile_data.avatar_url
+        else:
+            # avatar_url is None, check if we need to clean up existing avatar
+            try:
+                current_user_data = await asyncio.wait_for(
+                    users_collection().find_one({"_id": current_user}),
+                    timeout=5.0
+                )
+                
+                if current_user_data and "avatar_url" in current_user_data:
+                    old_avatar_url = current_user_data["avatar_url"]
+                    if old_avatar_url and old_avatar_url.startswith("/api/v1/users/avatar/"):
+                        old_filename = old_avatar_url.split("/")[-1]
+                        from pathlib import Path
+                        data_root = Path(settings.DATA_ROOT)
+                        old_file_path = data_root / "avatars" / old_filename
+                        if old_file_path.exists():
+                            try:
+                                old_file_path.unlink()
+                                logger.info(f"Removed avatar file: {old_filename}")
+                            except Exception as delete_error:
+                                logger.warning(f"Could not remove avatar file {old_filename}: {delete_error}")
+                
+                # Set avatar_url to None in database to remove avatar
+                update_data["avatar_url"] = None
+                logger.info("Avatar URL set to None (avatar removed)")
+            except Exception as cleanup_error:
+                logger.warning(f"Cleanup error while removing avatar: {cleanup_error}")
+                # Continue anyway - avatar will be set to None in database
         
         if profile_data.avatar is not None:
             logger.info(f"SUCCESS: Avatar initials set: {profile_data.avatar}")
@@ -850,8 +906,14 @@ async def create_group_endpoint(
     current_user: str = Depends(get_current_user)
 ):
     try:
+        print(f"[USERS_GROUP_CREATE] Creating group for user: {current_user}")
+        print(f"[USERS_GROUP_CREATE] Payload member_ids: {payload.member_ids}")
+        
         member_ids = list(dict.fromkeys([*(payload.member_ids or []), current_user]))
+        print(f"[USERS_GROUP_CREATE] After adding current_user: {member_ids}")
+        
         if len(member_ids) < 2:
+            print(f"[USERS_GROUP_CREATE] ERROR: Group must have at least 2 members, got {len(member_ids)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Group must have at least 2 members"
@@ -859,6 +921,8 @@ async def create_group_endpoint(
         
         from routes.groups import create_group as create_group_helper
         group_result = await create_group_helper(payload, current_user)
+        
+        print(f"[USERS_GROUP_CREATE] Group created successfully: {group_result}")
         
         return {
             "group_id": group_result["group_id"],
@@ -921,7 +985,11 @@ async def change_password(
         # Verify old password
         from auth.utils import verify_password, hash_password
         
-        if not verify_password(request.old_password, user.get("password_hash", ""), current_user):
+        # Get user's password salt for verification
+        password_salt = user.get("password_salt", "")
+        password_hash = user.get("password_hash", "")
+        
+        if not verify_password(request.old_password, password_hash, password_salt, current_user):
             print(f"[PASSWORD_CHANGE] Old password verification failed for {current_user}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -932,14 +1000,18 @@ async def change_password(
                 }
             )
         
-        # Hash new password
-        new_password_hash = hash_password(request.new_password)
+        # Hash new password (returns tuple: hash, salt)
+        new_password_hash, new_password_salt = hash_password(request.new_password)
         
         # Update password in database
         result = await asyncio.wait_for(
             users_collection().update_one(
                 {"_id": current_user},
-                {"$set": {"password_hash": new_password_hash, "updated_at": datetime.now(timezone.utc)}}
+                {"$set": {
+                    "password_hash": new_password_hash,  # Store hash separately
+                    "password_salt": new_password_salt,  # Store salt separately
+                    "updated_at": datetime.now(timezone.utc)
+                }}
             ),
             timeout=5.0
         )

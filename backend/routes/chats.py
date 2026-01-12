@@ -188,7 +188,8 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         pinned_chats = user_doc.get("pinned_chats", []) if user_doc else []
         
         chats = []
-        cursor = chats_collection().find({"members": current_user}).sort("created_at", -1)
+        cursor = await chats_collection().find({"members": current_user})
+        cursor = cursor.sort("created_at", -1)
         
         async for chat in cursor:
             # Get last message
@@ -340,7 +341,7 @@ async def send_message(
     """Send a message in a chat"""
     
     # Verify user is member - chat_id is stored as string in MongoDB
-    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

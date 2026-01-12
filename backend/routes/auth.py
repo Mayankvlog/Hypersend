@@ -1375,7 +1375,13 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
             )
         
         # Get user
-        user = await users_collection().find_one({"_id": ObjectId(token_data.user_id)})
+        # Handle both ObjectId and string IDs for mock database compatibility
+        try:
+            user_id = ObjectId(token_data.user_id)
+        except:
+            user_id = token_data.user_id
+        
+        user = await users_collection().find_one({"_id": user_id})
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1388,7 +1394,7 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         
         # Update user password
         await users_collection().update_one(
-            {"_id": ObjectId(token_data.user_id)},
+            {"_id": user_id},
             {"$set": {
                 "password_hash": password_hash,  # CRITICAL FIX: Store hash separately
                 "password_salt": password_salt,  # CRITICAL FIX: Store salt separately

@@ -235,6 +235,9 @@ def verify_password(plain_password: str, hashed_password: str, salt: str = None,
                     if legacy_result:
                         _log("warning", f"User {user_id} using legacy SHA256+salt format - migration recommended")
                         return True
+                    else:
+                        _log("error", f"Legacy SHA256+salt verification also failed for {user_id}")
+                        return False
                 
                 # CRITICAL FIX: If PBKDF2 fails and hash is 64 chars, try legacy SHA256 without salt
                 if not is_valid and len(hashed_password) == 64 and all(c in '0123456789abcdefABCDEF' for c in hashed_password):

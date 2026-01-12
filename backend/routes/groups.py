@@ -73,11 +73,17 @@ async def _log_activity(group_id: str, actor_id: str, event: str, meta: Optional
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_group(payload: GroupCreate, current_user: str = Depends(get_current_user)):
     """Create a new group chat (stored in chats collection with type=group)."""
+    print(f"[GROUP_CREATE] Creating group for user: {current_user}")
+    print(f"[GROUP_CREATE] Payload member_ids: {payload.member_ids}")
+    
     if not payload.name or not payload.name.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group name is required")
 
     member_ids = list(dict.fromkeys([*(payload.member_ids or []), current_user]))
+    print(f"[GROUP_CREATE] After adding current_user: {member_ids}")
+    
     if len(member_ids) < 2:
+        print(f"[GROUP_CREATE] ERROR: Group must have at least 2 members, got {len(member_ids)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group must have at least 2 members")
 
     group_id = str(ObjectId())
@@ -87,14 +93,17 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
         "name": payload.name.strip(),
         "description": (payload.description or "").strip(),
         "avatar_url": (payload.avatar_url or "").strip() or None,
-        "members": member_ids,
+        "members": member_ids,  # Ensure all members including current_user are included
         "admins": [current_user],
         "created_by": current_user,
         "created_at": _now(),
         "muted_by": [],
     }
+    
+    print(f"[GROUP_CREATE] Final chat_doc members: {chat_doc['members']}")
 
     await chats_collection().insert_one(chat_doc)
+    print(f"[GROUP_CREATE] Group {group_id} created successfully")
     await _log_activity(group_id, current_user, "group_created", {"name": chat_doc["name"]})
 
     # Activity for added members (excluding creator)
