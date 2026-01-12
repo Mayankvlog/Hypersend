@@ -7,6 +7,7 @@ import asyncio
 from auth.utils import get_current_user
 from db_proxy import chats_collection, users_collection, messages_collection, get_db
 from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
+from redis_cache import GroupCacheService, UserCacheService, cache
 
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
@@ -127,10 +128,98 @@ async def list_groups(current_user: str = Depends(get_current_user)):
     return {"groups": groups}
 
 
+@router.get("/{group_id}/member-suggestions")
+async def get_member_suggestions(
+    group_id: str, 
+    q: Optional[str] = None,
+    limit: int = 20,
+    current_user: str = Depends(get_current_user)
+):
+    """Get contact suggestions for adding to group (excluding current members)"""
+    
+    # Check if user is admin of the group
+    group = await _require_group(group_id, current_user)
+    if not _is_admin(group, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can add members")
+    
+    # Get current members
+    current_members = set(group.get("members", []))
+    
+    # Try to get suggestions from cache
+    cache_key = f"group_suggestions:{group_id}:{q or 'all'}"
+    suggestions = await cache.get(cache_key)
+    
+    if not suggestions:
+        # Get user's contacts
+        contacts = await UserCacheService.get_user_contacts(current_user)
+        if not contacts:
+            # Fallback to database
+            user_data = await users_collection().find_one({"_id": current_user})
+            contacts = user_data.get("contacts", []) if user_data else []
+            await UserCacheService.set_user_contacts(current_user, contacts)
+        
+        # Filter out current members and get contact details
+        available_contacts = [uid for uid in contacts if uid not in current_members]
+        
+        if available_contacts:
+            # Get contact details
+            cursor = users_collection().find(
+                {"_id": {"$in": available_contacts}},
+                {
+                    "_id": 1,
+                    "name": 1,
+                    "email": 1,
+                    "username": 1,
+                    "avatar_url": 1,
+                    "is_online": 1,
+                    "last_seen": 1,
+                    "status": 1
+                }
+            )
+            
+            suggestions = []
+            async for contact in cursor:
+                contact_data = {
+                    "id": contact.get("_id"),
+                    "name": contact.get("name"),
+                    "email": contact.get("email"),
+                    "username": contact.get("username"),
+                    "avatar_url": contact.get("avatar_url"),
+                    "is_online": contact.get("is_online", False),
+                    "last_seen": contact.get("last_seen"),
+                    "status": contact.get("status")
+                }
+                
+                # Apply search filter if provided
+                if q:
+                    q_lower = q.lower()
+                    if (q_lower in contact_data["name"].lower() or 
+                        q_lower in (contact_data["username"] or "").lower() or
+                        q_lower in contact_data["email"].lower()):
+                        suggestions.append(contact_data)
+                else:
+                    suggestions.append(contact_data)
+            
+            # Limit results
+            suggestions = suggestions[:limit]
+            
+            # Cache the results
+            await cache.set(cache_key, suggestions, expire_seconds=300)
+    
+    return suggestions
+
+
 @router.get("/{group_id}")
 async def get_group(group_id: str, current_user: str = Depends(get_current_user)):
     """Get group details + basic member info."""
-    group = await _require_group(group_id, current_user)
+    
+    # Try to get group info from cache first
+    group = await GroupCacheService.get_group_info(group_id)
+    if not group:
+        group = await _require_group(group_id, current_user)
+        # Cache the group info
+        await GroupCacheService.set_group_info(group_id, group)
+    
     member_ids: List[str] = group.get("members", [])
     admins: List[str] = group.get("admins", [])
 
@@ -138,6 +227,11 @@ async def get_group(group_id: str, current_user: str = Depends(get_current_user)
     members: List[Dict[str, Any]] = []
 
     async def fetch_member(uid: str) -> Optional[dict]:
+        # Try to get user profile from cache first
+        user_profile = await UserCacheService.get_user_profile(uid)
+        if user_profile:
+            return user_profile
+        # Fallback to database
         return await users_collection().find_one({"_id": uid})
 
     # Avoid slow sequential queries for large groups (using basic parallelism with gather)
@@ -151,6 +245,7 @@ async def get_group(group_id: str, current_user: str = Depends(get_current_user)
                 "user_id": uid,
                 "name": user.get("name"),
                 "email": user.get("email"),
+                "username": user.get("username"),
                 "role": "admin" if uid in admins else "member",
             })
 
@@ -198,12 +293,32 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
     if not add_ids:
         return {"added": 0}
 
+    # Get current members from cache or database
+    current_members = await GroupCacheService.get_group_members(group_id)
+    if not current_members:
+        current_members = group.get("members", [])
+        await GroupCacheService.set_group_members(group_id, current_members)
+
+    # Filter out already added members
+    new_members = [uid for uid in add_ids if uid not in current_members]
+    if not new_members:
+        return {"added": 0}
+
     # Atomic operation: add members not already present
-    await chats_collection().update_one({"_id": group_id}, {"$addToSet": {"members": {"$each": add_ids}}})
-    for uid in add_ids:
+    await chats_collection().update_one({"_id": group_id}, {"$addToSet": {"members": {"$each": new_members}}})
+    
+    # Update cache with new members
+    updated_members = current_members + new_members
+    await GroupCacheService.set_group_members(group_id, updated_members)
+    
+    # Invalidate group info cache
+    await GroupCacheService.invalidate_group_cache(group_id)
+    
+    # Log activity for each new member
+    for uid in new_members:
         await _log_activity(group_id, current_user, "member_added", {"user_id": uid})
 
-    return {"added": len(add_ids)}
+    return {"added": len(new_members)}
 
 
 @router.delete("/{group_id}/members/{member_id}")
@@ -215,6 +330,13 @@ async def remove_member(group_id: str, member_id: str, current_user: str = Depen
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove group creator")
 
     await chats_collection().update_one({"_id": group_id}, {"$pull": {"members": member_id, "admins": member_id}})
+    
+    # Update cache
+    await GroupCacheService.remove_member_from_cache(group_id, member_id)
+    
+    # Invalidate group info cache
+    await GroupCacheService.invalidate_group_cache(group_id)
+    
     await _log_activity(group_id, current_user, "member_removed", {"user_id": member_id})
     return {"removed": member_id}
 

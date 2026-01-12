@@ -42,6 +42,7 @@ class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: str = Field(..., max_length=254)
     password: str = Field(..., min_length=8, max_length=128)
+    username: Optional[str] = Field(None, min_length=3, max_length=50)  # Add username field
     
     @field_validator('name')
     @classmethod
@@ -725,3 +726,39 @@ class TokenData(BaseModel):
     token_type: str
     jti: Optional[str] = None  # JWT ID for token revocation
     payload: dict = Field(default_factory=dict)  # Full JWT payload for additional token validation
+
+
+# Contact Management Models
+class ContactAddRequest(BaseModel):
+    """Request to add a contact"""
+    user_id: Optional[str] = None  # Add by user ID
+    username: Optional[str] = None  # Add by username
+    email: Optional[str] = None  # Add by email
+    display_name: Optional[str] = None  # Custom display name for the contact
+    
+    @field_validator('user_id', 'username', 'email')
+    @classmethod
+    def validate_identifier(cls, v, info):
+        # At least one identifier must be provided
+        if info.field_name in ['user_id', 'username', 'email']:
+            return v
+        return v
+    
+    def get_identifier(self) -> tuple:
+        """Returns (field_name, value) for the provided identifier"""
+        if self.user_id:
+            return ("user_id", self.user_id)
+        elif self.username:
+            return ("username", self.username)
+        elif self.email:
+            return ("email", self.email)
+        else:
+            raise ValueError("Either user_id, username, or email must be provided")
+
+
+class ContactResponse(BaseModel):
+    """Response model for contact operations"""
+    message: str
+    contact_id: str
+    contact_name: str
+    display_name: Optional[str] = None

@@ -346,7 +346,7 @@ async def register(user: UserCreate) -> UserResponse:
             "password_salt": salt,  # CRITICAL FIX: Store salt separately
             "avatar": initials,
             "avatar_url": None,
-            "username": None,
+            "username": getattr(user, 'username', None),  # Set username if provided
             "bio": None,
             "quota_used": 0,
             "quota_limit": 42949672960,  # 40 GiB default

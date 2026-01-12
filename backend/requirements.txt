@@ -7,6 +7,9 @@ httptools>=0.6.1
 # Database
 motor==3.6.0
 
+# Caching
+redis==5.2.1
+
 # Data Validation
 pydantic[email]==2.11.5
 pydantic-settings==2.6.1

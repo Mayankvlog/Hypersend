@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File,
 from fastapi.responses import JSONResponse
 from models import (
     UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
-    UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
+    UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions,
+    ContactAddRequest, ContactResponse
 )
 from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
 from auth.utils import get_current_user, get_current_user_optional, get_current_user_or_query
@@ -1857,15 +1858,24 @@ async def clear_location(current_user: str = Depends(get_current_user)):
 # Contact Management Endpoints
 
 
+@router.get("/contacts")
+async def get_contacts(
+    offset: int = 0,
+    limit: int = 50,
+    current_user: str = Depends(get_current_user)
+):
+    """Get current user's contacts with pagination"""
+    try:
+        # Get user data
+        user = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
         
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "status": "ERROR",
-                    "message": "User not found",
-                    "data": None
-                }
+                detail="User not found"
             )
         
         contact_ids = user.get("contacts", [])
@@ -1919,14 +1929,9 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         }
         
     except asyncio.TimeoutError:
-        logger.error(f"Database operation timed out")
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={
-                "status": "ERROR",
-                "message": "Database operation timed out. Please try again later.",
-                "data": None
-            }
+            detail="Database operation timed out. Please try again later."
         )
     except HTTPException:
         raise
@@ -1937,7 +1942,38 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         )
 
 
-
+@router.post("/contacts", response_model=ContactResponse)
+async def add_contact(
+    request: ContactAddRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Add a new contact by user_id, username, or email"""
+    try:
+        # Validate that at least one identifier is provided
+        if not any([request.user_id, request.username, request.email]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either user_id, username, or email must be provided"
+            )
+        
+        # Find the target user
+        identifier_field, identifier_value = request.get_identifier()
+        
+        if identifier_field == "user_id":
+            target_user = await asyncio.wait_for(
+                users_collection().find_one({"_id": identifier_value}),
+                timeout=5.0
+            )
+        elif identifier_field == "username":
+            target_user = await asyncio.wait_for(
+                users_collection().find_one({"username": identifier_value}),
+                timeout=5.0
+            )
+        elif identifier_field == "email":
+            target_user = await asyncio.wait_for(
+                users_collection().find_one({"email": identifier_value}),
+                timeout=5.0
+            )
         
         if not target_user:
             raise HTTPException(
@@ -1946,57 +1982,60 @@ async def clear_location(current_user: str = Depends(get_current_user)):
             )
         
         # Don't allow adding self as contact
-        if request.user_id == current_user:
+        if target_user["_id"] == current_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot add yourself as a contact"
             )
         
-        # Check if already in contacts - use atomic operation to avoid race condition
-        # Use $pull with $addToSet for safe concurrent access
+        # Check if already in contacts
+        current_user_data = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        existing_contacts = current_user_data.get("contacts", [])
+        if target_user["_id"] in existing_contacts:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is already in your contacts"
+            )
+        
+        # Add contact
         contact_entry = {
-            "user_id": request.user_id,
-            "display_name": request.display_name or target_user.get("name", target_user.get("username", ""))
+            "user_id": target_user["_id"],
+            "display_name": request.display_name or target_user.get("name", target_user.get("username", "")),
+            "added_at": datetime.now(timezone.utc)
         }
         
-        # Try atomic add with condition check
-        # This prevents race condition where another request might add simultaneously
-        update_result = await asyncio.wait_for(
+        result = await asyncio.wait_for(
             users_collection().update_one(
+                {"_id": current_user},
                 {
-                    "_id": current_user,
-                    "contacts": {"$not": {"$elemMatch": {"user_id": request.user_id}}}  # Only if not already there
-                },
-                {
-                    "$push": {"contacts": contact_entry},  # Atomic push to array
+                    "$push": {"contacts": target_user["_id"]},
                     "$set": {"updated_at": datetime.now(timezone.utc)}
                 }
             ),
             timeout=5.0
         )
         
-        # If no update occurred, contact already exists
-        if update_result.matched_count == 0:
+        if result.matched_count == 0:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="User is already in your contacts"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
             )
         
         return {
             "message": "Contact added successfully",
-            "contact_id": request.user_id,
-            "contact_name": contact_entry["display_name"]
+            "contact_id": target_user["_id"],
+            "contact_name": target_user.get("name", target_user.get("username", "")),
+            "display_name": contact_entry["display_name"]
         }
         
     except asyncio.TimeoutError:
-        logger.error(f"Database operation timed out")
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={
-                "status": "ERROR",
-                "message": "Database operation timed out. Please try again later.",
-                "data": None
-            }
+            detail="Database operation timed out. Please try again later."
         )
     except HTTPException:
         raise
@@ -2007,114 +2046,63 @@ async def clear_location(current_user: str = Depends(get_current_user)):
         )
 
 
-
-
-
-
-
-
-
-        
-        existing_contacts = set(current_user_data.get("contacts", []))
-        blocked_users = set(current_user_data.get("blocked_users", []))
-        
-        # Build prioritized search query based on detected search type
-        if search_type == "email":
-            search_query = {
-                "$or": [
-                    {"email": {"$regex": sanitized_q, "$options": "i"}},  # Email priority
-                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username fallback
-                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name fallback
-                ],
-                "_id": {"$ne": current_user}
-            }
-        elif search_type == "username":
-            search_query = {
-                "$or": [
-                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username priority
-                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name fallback
-                ],
-                "_id": {"$ne": current_user}
-            }
-        else:
-            # General name search
-            search_query = {
-                "$or": [
-                    {"name": {"$regex": sanitized_q, "$options": "i"}},  # Name priority
-                    {"username": {"$regex": sanitized_q, "$options": "i"}},  # Username fallback
-                ],
-                "_id": {"$ne": current_user}
-            }
-        
-        
-        # Search users with limit
-        find_result = users_collection().find(
-            search_query,
-            {
-                "_id": 1,
-                "name": 1,
-                "email": 1,
-                "username": 1,
-                "avatar_url": 1,
-                "is_online": 1,
-                "last_seen": 1,
-                "status": 1
-            }
+@router.delete("/contacts/{contact_id}")
+async def remove_contact(
+    contact_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Remove a contact"""
+    try:
+        # Check if contact exists
+        current_user_data = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
         )
-        # Check if find_result is a coroutine (mock DB) or cursor (real MongoDB)
-        if hasattr(find_result, '__await__'):
-            cursor = await find_result
-        else:
-            cursor = find_result
-        # Apply limit
-        cursor = cursor.limit(limit)
         
-        async def fetch_results():
-            results = []
-            async for user in cursor:
-                user_id = user.get("_id")
-                score = _calculate_search_score(user, q, search_type)
-                
-                result = UserSearchResponse(
-                    id=user_id,
-                    name=user.get("name", ""),
-                    email=user.get("email", ""),
-                    username=user.get("username"),
-                    avatar_url=user.get("avatar_url"),
-                    is_online=user.get("is_online", False),
-                    last_seen=user.get("last_seen"),
-                    status=user.get("status")
-                )
-                
-                # Add relevance score for sorting
-                results.append({
-                    "id": result.id,
-                    "name": result.name,
-                    "email": result.email,
-                    "username": result.username,
-                    "avatar_url": result.avatar_url,
-                    "is_online": result.is_online,
-                    "last_seen": result.last_seen,
-                    "status": result.status,
-                    "relevance_score": score
-                })
-            
-            # Sort by relevance score (highest first)
-            results.sort(key=lambda x: x["relevance_score"], reverse=True)
-            return results
+        if not current_user_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
         
-        users = await asyncio.wait_for(fetch_results(), timeout=5.0)
-        return {"users": users}
+        existing_contacts = current_user_data.get("contacts", [])
+        if contact_id not in existing_contacts:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Contact not found"
+            )
+        
+        # Remove contact
+        result = await asyncio.wait_for(
+            users_collection().update_one(
+                {"_id": current_user},
+                {
+                    "$pull": {"contacts": contact_id},
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
+                }
+            ),
+            timeout=5.0
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        return {"message": "Contact removed successfully"}
         
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Search operation timed out. Please try again."
+            detail="Database operation timed out. Please try again later."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Search failed. Please try again."
+            detail=f"Failed to remove contact: {str(e)}"
         )
 
 

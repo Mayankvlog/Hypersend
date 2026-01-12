@@ -89,6 +89,13 @@ except Exception as e:
     print(f"[STARTUP] X Failed to import error_handlers: {e}")
     raise
 
+try:
+    from redis_cache import init_cache, cleanup_cache
+    print("[STARTUP] + redis_cache module imported")
+except Exception as e:
+    print(f"[STARTUP] X Failed to import redis_cache: {e}")
+    raise
+
 print("[STARTUP] All imports successful!")
 
 # Setup logger early for use in middleware
@@ -621,7 +628,15 @@ async def lifespan(app: FastAPI):
         else:
             print("[DB] Using mock database - skipping MongoDB initialization")
         
-        print(f"[DB] Connecting to MongoDB...")
+        print("[DB] Connecting to MongoDB...")
+        
+        # Initialize Redis cache
+        print("[CACHE] Initializing Redis cache...")
+        cache_connected = await init_cache()
+        if cache_connected:
+            print("[CACHE] Redis cache initialized successfully")
+        else:
+            print("[CACHE] Redis cache not available, using in-memory fallback")
         
         # Validate production settings
         try:
@@ -684,6 +699,7 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         print("[SHUTDOWN] Cleaning up resources")
+        await cleanup_cache()  # Cleanup Redis cache
         await close_db()
         print("[SHUTDOWN] All cleanup complete")
 
