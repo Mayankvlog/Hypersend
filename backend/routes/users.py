@@ -1858,6 +1858,80 @@ async def clear_location(current_user: str = Depends(get_current_user)):
 # Contact Management Endpoints
 
 
+@router.get("/simple")
+async def get_simple_users(
+    offset: int = 0,
+    limit: int = 50,
+    current_user: str = Depends(get_current_user)
+):
+    """Get simple list of users for group creation UI"""
+    try:
+        # Get user's contacts first
+        user = await asyncio.wait_for(
+            users_collection().find_one({"_id": current_user}),
+            timeout=5.0
+        )
+        
+        contact_ids = user.get("contacts", []) if user else []
+        
+        # If user has contacts, return them
+        if contact_ids:
+            paginated_ids = contact_ids[offset:offset + limit]
+            
+            cursor = users_collection().find(
+                {"_id": {"$in": paginated_ids}},
+                {
+                    "_id": 1,
+                    "name": 1,
+                    "email": 1,
+                    "username": 1,
+                    "avatar_url": 1,
+                    "is_online": 1,
+                    "last_seen": 1,
+                    "status": 1
+                }
+            )
+            
+            users = []
+            async for user_doc in cursor:
+                users.append({
+                    "id": user_doc.get("_id", ""),
+                    "name": user_doc.get("name", ""),
+                    "email": user_doc.get("email", ""),
+                    "username": user_doc.get("username"),
+                    "avatar_url": user_doc.get("avatar_url"),
+                    "is_online": user_doc.get("is_online", False),
+                    "last_seen": user_doc.get("last_seen"),
+                    "status": user_doc.get("status")
+                })
+            
+            return {
+                "users": users,
+                "total": len(contact_ids),
+                "offset": offset,
+                "limit": limit
+            }
+        
+        # If no contacts, return empty list
+        return {
+            "users": [],
+            "total": 0,
+            "offset": offset,
+            "limit": limit
+        }
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch users: {str(e)}"
+        )
+
+
 @router.get("/contacts")
 async def get_contacts(
     offset: int = 0,
@@ -1907,16 +1981,16 @@ async def get_contacts(
             async def fetch_contacts():
                 results = []
                 async for contact in cursor:
-                    results.append(UserSearchResponse(
-                        id=contact.get("_id", ""),
-                        name=contact.get("name", ""),
-                        email=contact.get("email", ""),
-                        username=contact.get("username"),
-                        avatar_url=contact.get("avatar_url"),
-                        is_online=contact.get("is_online", False),
-                        last_seen=contact.get("last_seen"),
-                        status=contact.get("status")
-                    ))
+                    results.append({
+                        "id": contact.get("_id", ""),
+                        "name": contact.get("name", ""),
+                        "email": contact.get("email", ""),
+                        "username": contact.get("username"),
+                        "avatar_url": contact.get("avatar_url"),
+                        "is_online": contact.get("is_online", False),
+                        "last_seen": contact.get("last_seen"),
+                        "status": contact.get("status")
+                    })
                 return results
             
             contacts = await asyncio.wait_for(fetch_contacts(), timeout=5.0)
