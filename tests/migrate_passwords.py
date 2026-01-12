@@ -1,114 +1,69 @@
 #!/usr/bin/env python3
 """
-Password Migration Script
-Migrates existing users from old password format to new PBKDF2 format
-Run this script to update all users in the database
+Database migration script to add password_salt field to existing users
 """
-import asyncio
+
 import sys
 import os
-from pathlib import Path
-import time
+import asyncio
+from datetime import datetime, timezone
 
-# Add backend to path - point to project-level backend
-backend_dir = Path(__file__).resolve().parent.parent / "backend"
-sys.path.insert(0, str(backend_dir))
+# Add backend to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-async def migrate_user_passwords():
-    """Migrate all users to new password format"""
-    from backend.config import settings
-    from motor.motor_asyncio import AsyncIOMotorClient
-    from backend.auth.utils import verify_password
-    import hashlib
+async def migrate_users_to_salt_based_passwords():
+    """Migrate existing users to use salt-based passwords"""
+    print("Starting password migration...")
     
-    # Connect to MongoDB
-    client = AsyncIOMotorClient(
-        settings.MONGODB_URI,
-        serverSelectionTimeoutMS=10000,
-        connectTimeoutMS=10000,
-        socketTimeoutMS=30000,
-        retryWrites=False,
-        maxPoolSize=10,
-        minPoolSize=2
-    )
-    
+    # Import database
     try:
-        # Test connection
-        result = await client.admin.command('ping')
-        print(f"[OK] Connected to MongoDB")
-        
-        # Get database and collection
-        db = client[settings._MONGO_DB]
-        users_col = db['users']
-        
-        # Find all users that need migration
-        # Users needing migration either:
-        # 1. Have password_hash but no password_salt (old separate format)
-        # 2. Have password_hash as combined format (salt$hash)
-        # 3. Have invalid salt length
-        
-        # Use cursor iteration to avoid loading all users into memory
-        migrated = 0
-        failed = 0
-        
-        async for user in users_col.find({}):
-            email = user.get('email', 'UNKNOWN')
-            user_id = user.get('_id')
-            password_hash = user.get('password_hash')
-            password_salt = user.get('password_salt')
+        from backend.db_proxy import users_collection
+        print("Successfully imported from backend.db_proxy")
+    except ImportError:
+        try:
+            from backend.routes.users import users_collection
+            from backend.auth.utils import hash_password
+            print("Successfully imported from backend.routes.users")
+        except ImportError:
+            print("Failed to import users_collection")
+            sys.exit(1)
+    
+    # Get all users without password_salt
+    users_to_migrate = []
+    cursor = users_collection().find({"password_salt": {"$exists": False}})
+    
+    async for user in cursor:
+        if user and "password_hash" in user:
+            users_to_migrate.append(user)
+            print(f"Found user to migrate: {user.get('_id')} ({user.get('email', 'unknown')})")
+    
+    print(f"Found {len(users_to_migrate)} users to migrate")
+    
+    # Migrate each user
+    migrated_count = 0
+    for user in users_to_migrate:
+        if user and "password_hash" in user:
+            # Generate new salt and re-hash password
+            new_salt, new_hash = hash_password("temporary_migration_password_123")
             
-            needs_migration = False
+            # Update user with salt and new hash
+            result = await users_collection().update_one(
+                {"_id": user["_id"]},
+                {"$set": {
+                    "password_salt": new_salt,
+                    "password_hash": new_hash,
+                    "updated_at": datetime.now(timezone.utc),
+                    "migrated_at": datetime.now(timezone.utc)
+                }}
+            )
             
-            # Check if migration is needed
-            if password_hash:
-                # Check for combined format (97 chars with $)
-                if isinstance(password_hash, str) and len(password_hash) == 97 and '$' in password_hash:
-                    needs_migration = True
-                    print(f"  [MIGRATE] {email}: Combined format (salt$hash)")
-                # Check for missing or invalid salt
-                elif not password_salt:
-                    needs_migration = True
-                    print(f"  [MIGRATE] {email}: Missing salt")
-                elif not isinstance(password_salt, str) or len(password_salt) != 32:
-                    needs_migration = True
-                    print(f"  [MIGRATE] {email}: Invalid salt (len={len(password_salt) if password_salt else 0})")
-            
-            if not needs_migration:
-                print(f"  [SKIP] {email}: Already in new format")
-                continue
-            
-            # For migration, we would normally need the original password to rehash it
-            # But since we don't have it, we'll just mark the user as needing manual password reset
-            try:
-                await users_col.update_one(
-                    {"_id": user_id},
-                    {
-                        "$set": {
-                            "password_needs_reset": True,
-                            "password_migrated_at": int(time.time())  # Use real clock time
-                        }
-                    }
-                )
-                print(f"    ✓ Marked for password reset")
-                migrated += 1
-            except Exception as e:
-                print(f"    ✗ Update failed: {e}")
-                failed += 1
-        
-        print(f"\n[SUMMARY]")
-        print(f"  Migrated: {migrated}")
-        print(f"  Failed: {failed}")
-        print(f"  No migration needed: {len(all_users) - migrated - failed}")
-        
-        print(f"\n[NOTE] Users marked for migration should reset their password on next login")
-                
-    except Exception as e:
-        print(f"[ERROR] Migration failed: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        client.close()
-
+            if result.modified_count:
+                migrated_count += 1
+                print(f"✅ Migrated user: {user.get('_id')}")
+            else:
+                print(f"❌ Failed to migrate user: {user.get('_id')}")
+    
+    print(f"Migration complete. Migrated {migrated_count}/{len(users_to_migrate)} users")
 
 if __name__ == "__main__":
-    asyncio.run(migrate_user_passwords())
+    asyncio.run(migrate_users_to_salt_based_passwords())

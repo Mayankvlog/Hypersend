@@ -581,6 +581,18 @@ class UserSearchResponse(BaseModel):
     last_seen: Optional[datetime] = None
     status: Optional[str] = None
 
+
+class UserPublic(BaseModel):
+    """Public user information for API responses"""
+    id: str
+    name: str
+    email: str
+    username: Optional[str] = None
+    avatar_url: Optional[str] = None
+    is_online: bool = False
+    last_seen: Optional[datetime] = None
+    status: Optional[str] = None
+
 # QR Code Models for Multi-Device Connection
 class QRCodeSession(BaseModel):
     """QR Code session for connecting devices to same account"""

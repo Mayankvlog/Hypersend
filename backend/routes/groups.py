@@ -6,8 +6,8 @@ import asyncio
 
 from auth.utils import get_current_user
 from db_proxy import chats_collection, users_collection, messages_collection, get_db
-from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions
-from redis_cache import GroupCacheService, UserCacheService, cache
+from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
+from redis_cache import GroupCacheService, UserCacheService, SearchCacheService
 
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
@@ -128,7 +128,7 @@ async def list_groups(current_user: str = Depends(get_current_user)):
     return {"groups": groups}
 
 
-@router.get("/{group_id}/member-suggestions")
+@router.get("/{group_id}/member-suggestions", response_model=List[UserPublic])
 async def get_member_suggestions(
     group_id: str, 
     q: Optional[str] = None,
@@ -137,17 +137,15 @@ async def get_member_suggestions(
 ):
     """Get contact suggestions for adding to group (excluding current members)"""
     
-    # Check if user is admin of the group
+    # Require user to be member of the group (not necessarily admin)
     group = await _require_group(group_id, current_user)
-    if not _is_admin(group, current_user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can add members")
     
     # Get current members
     current_members = set(group.get("members", []))
     
     # Try to get suggestions from cache
-    cache_key = f"group_suggestions:{group_id}:{q or 'all'}"
-    suggestions = await cache.get(cache_key)
+    cache_key = f"group:{group_id}:member_suggestions:{current_user}"
+    suggestions = await SearchCacheService.get_user_search(cache_key)
     
     if not suggestions:
         # Get user's contacts
@@ -179,20 +177,22 @@ async def get_member_suggestions(
             
             suggestions = []
             async for contact in cursor:
-                contact_data = {
-                    "id": contact.get("_id"),
-                    "name": contact.get("name"),
-                    "email": contact.get("email"),
-                    "username": contact.get("username"),
-                    "avatar_url": contact.get("avatar_url"),
-                    "is_online": contact.get("is_online", False),
-                    "last_seen": contact.get("last_seen"),
-                    "status": contact.get("status")
-                }
+                # Create UserPublic object from contact data
+                user_public = UserPublic(
+                    id=contact.get("_id"),
+                    name=contact.get("name"),
+                    email=contact.get("email"),
+                    username=contact.get("username"),
+                    avatar_url=contact.get("avatar_url"),
+                    is_online=contact.get("is_online", False),
+                    last_seen=contact.get("last_seen"),
+                    status=contact.get("status")
+                )
                 
                 # Apply search filter if provided
                 if q:
                     q_lower = q.lower()
+                    contact_data = user_public.model_dump()
                     if (q_lower in contact_data["name"].lower() or 
                         q_lower in (contact_data["username"] or "").lower() or
                         q_lower in contact_data["email"].lower()):
@@ -204,7 +204,10 @@ async def get_member_suggestions(
             suggestions = suggestions[:limit]
             
             # Cache the results
-            await cache.set(cache_key, suggestions, expire_seconds=300)
+            await SearchCacheService.set_user_search(cache_key, suggestions)
+        else:
+            # Parse cached suggestions
+            suggestions = json.loads(suggestions) if isinstance(suggestions, str) else suggestions
     
     return suggestions
 
