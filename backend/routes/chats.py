@@ -273,7 +273,7 @@ async def list_chats(current_user: str = Depends(get_current_user)):
 async def pin_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     """Pin a chat to the top of the list for current user"""
     # Verify chat existence and membership
-    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
         
@@ -298,7 +298,7 @@ async def unpin_chat(chat_id: str, current_user: str = Depends(get_current_user)
 async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     """Get chat details"""
     
-    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -312,18 +312,19 @@ async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
 async def get_messages(
     chat_id: str,
     limit: int = 50,
-    before: Optional[str] = None,
+    offset: int = 0,
     current_user: str = Depends(get_current_user)
 ):
     """Get messages in a chat with pagination"""
-    
+
     # Verify user is member
-    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found"
         )
+
     
     # Build query
     query = {"chat_id": chat_id}
@@ -415,7 +416,7 @@ async def save_message(
         )
     
     # Verify user is member of the chat
-    chat = await chats_collection().find_one({"_id": message["chat_id"], "members": current_user})
+    chat = await chats_collection().find_one({"_id": message["chat_id"], "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -448,7 +449,7 @@ async def unsave_message(
         )
     
     # Verify user is member of the chat
-    chat = await chats_collection().find_one({"_id": message["chat_id"], "members": current_user})
+    chat = await chats_collection().find_one({"_id": message["chat_id"], "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -533,7 +534,7 @@ async def pin_message(
     current_user: str = Depends(get_current_user)
 ):
     """Pin a message to the top of chat"""
-    chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
+    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(status_code=403, detail="Not a member of this chat")
     

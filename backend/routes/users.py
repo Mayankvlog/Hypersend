@@ -313,6 +313,8 @@ async def update_profile(
                 # Continue anyway - new avatar URL will be set
             
             update_data["avatar_url"] = profile_data.avatar_url
+            # Clear avatar initials when avatar_url is set
+            update_data["avatar"] = None
         else:
             # avatar_url is None, check if we need to clean up existing avatar
             try:
@@ -1414,7 +1416,7 @@ async def upload_avatar(
             result = await asyncio.wait_for(
                 users_collection().update_one(
                     {"_id": current_user},
-                    {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
+                    {"$set": {"avatar_url": avatar_url, "avatar": None, "updated_at": datetime.now(timezone.utc)}}
                 ),
                 timeout=5.0
             )

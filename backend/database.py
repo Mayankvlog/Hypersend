@@ -306,7 +306,14 @@ def get_db():
         print("[DB] Using mock database for testing")
         try:
             from mock_database import MockDatabase
-            return MockDatabase()
+            # Use a global instance to persist data across calls
+            global _mock_db_instance
+            if '_mock_db_instance' not in globals() or _mock_db_instance is None:
+                _mock_db_instance = MockDatabase()
+                print("[DB] Created new mock database instance")
+            else:
+                print("[DB] Reusing existing mock database instance")
+            return _mock_db_instance
         except ImportError:
             print("[DB] Mock database not available, creating fallback")
             # Create a simple mock database for testing

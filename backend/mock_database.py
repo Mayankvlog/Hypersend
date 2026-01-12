@@ -61,10 +61,17 @@ class MockCollection:
         return str(self._id_counter)
     
     async def insert_one(self, document: Dict) -> MagicMock:
-        doc_id = self._generate_id()
-        document['_id'] = doc_id
+        # Use provided _id or generate one
+        if '_id' not in document:
+            doc_id = self._generate_id()
+            document['_id'] = doc_id
+        else:
+            doc_id = document['_id']
+        
         self.data[doc_id] = document.copy()
         self._id_counter += 1
+        print(f"[MOCK_DB] Inserted document with ID: {doc_id}")
+        print(f"[MOCK_DB] Current data keys: {list(self.data.keys())}")
         
         result = MagicMock()
         result.inserted_id = doc_id
@@ -135,6 +142,27 @@ class MockCollection:
             if self._match_query(doc, query):
                 if '$set' in update:
                     doc.update(update['$set'])
+                elif '$addToSet' in update:
+                    for field, value in update['$addToSet'].items():
+                        if isinstance(value, dict) and '$each' in value:
+                            # Handle $addToSet with $each for adding multiple values
+                            if field not in doc:
+                                doc[field] = []
+                            for item in value['$each']:
+                                if item not in doc[field]:
+                                    doc[field].append(item)
+                        else:
+                            # Handle simple $addToSet
+                            if field not in doc:
+                                doc[field] = []
+                            if value not in doc[field]:
+                                doc[field].append(value)
+                elif '$pull' in update:
+                    for field, value in update['$pull'].items():
+                        if field in doc and isinstance(doc[field], list):
+                            if value in doc[field]:
+                                doc[field].remove(value)
+                
                 self.data[doc_id] = doc.copy()
                 
                 result = MagicMock()
@@ -171,8 +199,16 @@ class MockCollection:
                 if not any(self._match_query(doc, sub_query) for sub_query in value):
                     return False
             elif key == '$in':
-                if doc.get(key) not in value:
-                    return False
+                doc_field = doc.get(key)
+                # Check if any value in the $in array matches the document field
+                if isinstance(doc_field, list):
+                    # If doc_field is an array, check if any element matches
+                    if not any(item in value for item in doc_field):
+                        return False
+                else:
+                    # If doc_field is a single value, check if it's in the $in array
+                    if doc_field not in value:
+                        return False
             elif key == '$nin':
                 if doc.get(key) in value:
                     return False
