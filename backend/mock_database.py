@@ -43,6 +43,12 @@ class MockCursor:
         
         return self
     
+    def limit(self, count):
+        """Mock limit method that limits the number of documents"""
+        print(f"[MOCK_CURSOR] limit called with count={count}")
+        self.docs = self.docs[:count]
+        return self
+    
     def __aiter__(self):
         """Make cursor async iterable"""
         async def async_iter():

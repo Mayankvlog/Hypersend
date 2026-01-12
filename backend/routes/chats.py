@@ -313,6 +313,7 @@ async def get_messages(
     chat_id: str,
     limit: int = 50,
     offset: int = 0,
+    before: Optional[str] = None,
     current_user: str = Depends(get_current_user)
 ):
     """Get messages in a chat with pagination"""
@@ -335,7 +336,15 @@ async def get_messages(
     
     # Fetch messages
     messages = []
-    async for msg in messages_collection().find(query).sort("created_at", -1).limit(limit):
+    find_result = messages_collection().find(query)
+    # Check if find_result is a coroutine (mock DB) or cursor (real MongoDB)
+    if hasattr(find_result, '__await__'):
+        cursor = await find_result
+    else:
+        cursor = find_result
+    # Apply sort and limit
+    cursor = cursor.sort("created_at", -1).limit(limit)
+    async for msg in cursor:
         messages.append(msg)
     
     return {"messages": list(reversed(messages))}
