@@ -292,12 +292,38 @@ async def update_group(group_id: str, payload: GroupUpdate, current_user: str = 
 
 @router.post("/{group_id}/members")
 async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: str = Depends(get_current_user)):
+    """Add members to a group - Only admins can add members"""
+    
+    print(f"[ADD_MEMBERS] ===== ADD MEMBERS REQUEST START =====")
+    print(f"[ADD_MEMBERS] Group ID: {group_id}")
+    print(f"[ADD_MEMBERS] Current User: {current_user}")
+    print(f"[ADD_MEMBERS] Payload: {payload}")
+    print(f"[ADD_MEMBERS] Payload Type: {type(payload)}")
+    
+    # Check if payload has user_ids attribute
+    if hasattr(payload, 'user_ids'):
+        user_ids = payload.user_ids or []
+        print(f"[ADD_MEMBERS] User IDs from payload.user_ids: {user_ids}")
+    else:
+        user_ids = payload.get('user_ids', []) if isinstance(payload, dict) else []
+        print(f"[ADD_MEMBERS] User IDs from fallback: {user_ids}")
+    
+    print(f"[ADD_MEMBERS] Final user_ids: {user_ids}")
+    print(f"[ADD_MEMBERS] User IDs Type: {type(user_ids)}")
+    
     group = await _require_group(group_id, current_user)
+    print(f"[ADD_MEMBERS] Group found: {group.get('_id')}")
+    print(f"[ADD_MEMBERS] Group members: {group.get('members', [])}")
+    print(f"[ADD_MEMBERS] Group admins: {group.get('admins', [])}")
+    
     if not _is_admin(group, current_user):
+        print(f"[ADD_MEMBERS] User {current_user} is NOT admin!")
+        print(f"[ADD_MEMBERS] Admins list: {group.get('admins', [])}")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can add members")
+    
+    print(f"[ADD_MEMBERS] User {current_user} IS admin - proceeding...")
 
     # Validate and filter user_ids
-    user_ids = payload.user_ids or []
     if not user_ids:
         print(f"[ADD_MEMBERS] No user_ids provided in payload")
         return {"added": 0}
@@ -309,8 +335,11 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
             if uid not in filtered_ids:  # Remove duplicates
                 filtered_ids.append(uid.strip())
     
+    print(f"[ADD_MEMBERS] Original user_ids: {user_ids}")
+    print(f"[ADD_MEMBERS] Filtered user_ids: {filtered_ids}")
+    
     if not filtered_ids:
-        print(f"[ADD_MEMBERS] No valid user_ids after filtering. Original: {user_ids}, Filtered: {filtered_ids}")
+        print(f"[ADD_MEMBERS] No valid user_ids after filtering")
         return {"added": 0}
     
     print(f"[ADD_MEMBERS] Processing {len(filtered_ids)} valid user_ids: {filtered_ids}")
@@ -322,10 +351,12 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
         await GroupCacheService.set_group_members(group_id, current_members)
         print(f"[ADD_MEMBERS] Set initial group members: {current_members}")
 
+    print(f"[ADD_MEMBERS] Current group members: {current_members}")
+
     # Filter out already added members
     new_members = [uid for uid in filtered_ids if uid not in current_members]
     if not new_members:
-        print(f"[ADD_MEMBERS] No new members to add. Current members: {current_members}, Requested: {filtered_ids}")
+        print(f"[ADD_MEMBERS] No new members to add. All users already in group.")
         return {"added": 0}
 
     print(f"[ADD_MEMBERS] New members to add: {new_members}")
@@ -354,6 +385,7 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
         await _log_activity(group_id, current_user, "member_added", {"user_id": uid})
 
     print(f"[ADD_MEMBERS] Successfully added {len(new_members)} members to group {group_id}")
+    print(f"[ADD_MEMBERS] ===== ADD MEMBERS REQUEST END =====")
     return {"added": len(new_members)}
 
 
