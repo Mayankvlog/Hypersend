@@ -81,7 +81,7 @@ class TestMemberSuggestionsFix:
                             
                             # Make the request
                             response = client.get(
-                                "/groups/test_group/member-suggestions",
+                                "/api/v1/groups/test_group/member-suggestions",
                                 headers={"Authorization": "Bearer fake_token"}
                             )
                             
@@ -100,7 +100,7 @@ class TestMemberSuggestionsFix:
                             assert suggestions[0]["name"] == "User One"
                             
                             # Verify cache was called properly
-                            mock_cache.set_group_suggestions.assert_called_once()
+                            mock_search_cache.set_user_search.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_member_suggestions_with_search_filter(self, client):
@@ -149,7 +149,7 @@ class TestMemberSuggestionsFix:
                             
                             # Test with search query that matches
                             response = client.get(
-                                "/groups/test_group/member-suggestions?q=john",
+                                "/api/v1/groups/test_group/member-suggestions?q=john",
                                 headers={"Authorization": "Bearer fake_token"}
                             )
                             

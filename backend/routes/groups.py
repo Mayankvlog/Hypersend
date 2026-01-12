@@ -145,9 +145,13 @@ async def get_member_suggestions(
     
     # Try to get suggestions from cache
     cache_key = f"group:{group_id}:member_suggestions:{current_user}"
-    suggestions = await SearchCacheService.get_user_search(cache_key)
+    cached_suggestions = await SearchCacheService.get_user_search(cache_key)
     
-    if not suggestions:
+    if cached_suggestions is not None:
+        # Return cached suggestions
+        suggestions = json.loads(cached_suggestions) if isinstance(cached_suggestions, str) else cached_suggestions
+    else:
+        # Build suggestions from database
         # Get user's contacts
         contacts = await UserCacheService.get_user_contacts(current_user)
         if not contacts:
@@ -159,6 +163,7 @@ async def get_member_suggestions(
         # Filter out current members and get contact details
         available_contacts = [uid for uid in contacts if uid not in current_members]
         
+        suggestions = []
         if available_contacts:
             # Get contact details
             cursor = users_collection().find(
@@ -175,7 +180,6 @@ async def get_member_suggestions(
                 }
             )
             
-            suggestions = []
             async for contact in cursor:
                 # Create UserPublic object from contact data
                 user_public = UserPublic(
@@ -189,10 +193,11 @@ async def get_member_suggestions(
                     status=contact.get("status")
                 )
                 
+                contact_data = user_public.model_dump()
+                
                 # Apply search filter if provided
                 if q:
                     q_lower = q.lower()
-                    contact_data = user_public.model_dump()
                     if (q_lower in contact_data["name"].lower() or 
                         q_lower in (contact_data["username"] or "").lower() or
                         q_lower in contact_data["email"].lower()):
@@ -202,12 +207,9 @@ async def get_member_suggestions(
             
             # Limit results
             suggestions = suggestions[:limit]
-            
-            # Cache the results
-            await SearchCacheService.set_user_search(cache_key, suggestions)
-        else:
-            # Parse cached suggestions
-            suggestions = json.loads(suggestions) if isinstance(suggestions, str) else suggestions
+        
+        # Cache the results (even if empty)
+        await SearchCacheService.set_user_search(cache_key, suggestions)
     
     return suggestions
 
