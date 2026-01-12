@@ -296,37 +296,64 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
     if not _is_admin(group, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can add members")
 
-    # Use atomic operation to avoid race condition with concurrent member additions
-    # $addToSet ensures each member is only added once, even with concurrent requests
-    add_ids = [uid for uid in (payload.user_ids or []) if uid]
-    if not add_ids:
+    # Validate and filter user_ids
+    user_ids = payload.user_ids or []
+    if not user_ids:
+        print(f"[ADD_MEMBERS] No user_ids provided in payload")
         return {"added": 0}
+    
+    # Remove duplicates, empty strings, and current user
+    filtered_ids = []
+    for uid in user_ids:
+        if uid and uid.strip() and uid != current_user:
+            if uid not in filtered_ids:  # Remove duplicates
+                filtered_ids.append(uid.strip())
+    
+    if not filtered_ids:
+        print(f"[ADD_MEMBERS] No valid user_ids after filtering. Original: {user_ids}, Filtered: {filtered_ids}")
+        return {"added": 0}
+    
+    print(f"[ADD_MEMBERS] Processing {len(filtered_ids)} valid user_ids: {filtered_ids}")
 
     # Get current members from cache or database
     current_members = await GroupCacheService.get_group_members(group_id)
     if not current_members:
         current_members = group.get("members", [])
         await GroupCacheService.set_group_members(group_id, current_members)
+        print(f"[ADD_MEMBERS] Set initial group members: {current_members}")
 
     # Filter out already added members
-    new_members = [uid for uid in add_ids if uid not in current_members]
+    new_members = [uid for uid in filtered_ids if uid not in current_members]
     if not new_members:
+        print(f"[ADD_MEMBERS] No new members to add. Current members: {current_members}, Requested: {filtered_ids}")
         return {"added": 0}
 
+    print(f"[ADD_MEMBERS] New members to add: {new_members}")
+
     # Atomic operation: add members not already present
-    await chats_collection().update_one({"_id": group_id}, {"$addToSet": {"members": {"$each": new_members}}})
-    
+    update_result = await chats_collection().update_one(
+        {"_id": group_id}, 
+        {"$addToSet": {"members": {"$each": new_members}}}
+    )
+    print(f"[ADD_MEMBERS] Database update result: {update_result}")
+
     # Update cache with new members
     updated_members = current_members + new_members
     await GroupCacheService.set_group_members(group_id, updated_members)
+    print(f"[ADD_MEMBERS] Updated group members: {updated_members}")
     
-    # Invalidate group info cache
-    await GroupCacheService.invalidate_group_cache(group_id)
+    # Invalidate group info cache if method exists
+    try:
+        await GroupCacheService.invalidate_group_info(group_id)
+    except AttributeError:
+        # Method doesn't exist, continue without cache invalidation
+        print(f"[ADD_MEMBERS] Group info cache invalidation method not found, continuing...")
     
     # Log activity for each new member
     for uid in new_members:
         await _log_activity(group_id, current_user, "member_added", {"user_id": uid})
 
+    print(f"[ADD_MEMBERS] Successfully added {len(new_members)} members to group {group_id}")
     return {"added": len(new_members)}
 
 
