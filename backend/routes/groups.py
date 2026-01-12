@@ -116,7 +116,7 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
 async def list_groups(current_user: str = Depends(get_current_user)):
     """List groups for current user."""
     groups = []
-    async for chat in chats_collection().find({"type": "group", "members": current_user}).sort("created_at", -1):
+    async for chat in chats_collection().find({"type": "group", "members": {"$in": [current_user]}}).sort("created_at", -1):
         # Attach the last message
         last_message = await messages_collection().find_one(
             {"chat_id": chat["_id"], "is_deleted": {"$ne": True}},
