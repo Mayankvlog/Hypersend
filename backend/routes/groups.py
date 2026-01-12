@@ -43,11 +43,9 @@ def _now() -> datetime:
 
 
 async def _require_group(group_id: str, current_user: str) -> dict:
-    group = await chats_collection().find_one({"_id": group_id, "type": "group"})
+    group = await chats_collection().find_one({"_id": group_id, "type": "group", "members": {"$in": [current_user]}})
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
-    if current_user not in group.get("members", []):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
     return group
 
 
