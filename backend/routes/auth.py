@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from models import (
     UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
     ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse,
+    ChangePasswordRequest,
     QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
     QRCodeSession, TokenData
 )
@@ -218,6 +219,7 @@ def get_safe_cors_origin(request_origin: Optional[str]) -> str:
 @router.options("/logout")
 @router.options("/forgot-password")
 @router.options("/reset-password")
+@router.options("/change-password")
 @router.options("/qrcode/generate")
 @router.options("/qrcode/verify")
 @router.options("/qrcode/status/{session_id}")
@@ -1428,4 +1430,79 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Password reset failed"
+        )
+
+
+@router.post("/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: str = Depends(get_current_user)
+) -> PasswordResetResponse:
+    """Change password for authenticated user"""
+    try:
+        auth_log(f"Change password request for user: {current_user}")
+        
+        # Get current user from database
+        user = await users_collection().find_one({"_id": ObjectId(current_user)})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Verify old password
+        old_password_valid = False
+        if "password_hash" in user and "password_salt" in user:
+            # New format: separate hash and salt
+            old_password_valid = verify_password(request.old_password, user["password_hash"], user["password_salt"])
+        elif "password" in user:
+            # Legacy format: combined hash
+            old_password_valid = verify_password(request.old_password, user["password"])
+        else:
+            auth_log(f"[CHANGE_PASSWORD_ERROR] No password field found for user {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User password not found. Please use forgot password to reset."
+            )
+        
+        if not old_password_valid:
+            auth_log(f"[CHANGE_PASSWORD_FAILED] Invalid old password for user {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect"
+            )
+        
+        # Hash new password
+        password_hash, password_salt = hash_password(request.new_password)
+        
+        # Update user password
+        await users_collection().update_one(
+            {"_id": ObjectId(current_user)},
+            {"$set": {
+                "password_hash": password_hash,
+                "password_salt": password_salt,
+                "updated_at": datetime.now(timezone.utc)
+            }}
+        )
+        
+        # Invalidate all refresh tokens for this user
+        await refresh_tokens_collection().update_many(
+            {"user_id": current_user},
+            {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
+        )
+        
+        auth_log(f"Password change successful for user: {current_user}")
+        
+        return PasswordResetResponse(
+            message="Password changed successfully",
+            success=True
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Change password error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to change password"
         )

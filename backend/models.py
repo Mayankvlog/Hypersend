@@ -286,6 +286,11 @@ class PasswordResetRequest(BaseModel):
     new_password: str = Field(..., min_length=8)
 
 
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+
+
 class PasswordResetResponse(BaseModel):
     message: str
     success: bool
