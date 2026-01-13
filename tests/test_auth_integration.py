@@ -98,7 +98,7 @@ class TestAuthenticationIntegration:
             data = response.json()
             assert data["email"] == "test@example.com"
             assert data["name"] == "Test User"
-            assert data["avatar"] == "TU"  # Test User initials
+            assert data["avatar"] is None  # FIXED: No avatar initials
         
         print("✓ Complete registration flow successful")
     

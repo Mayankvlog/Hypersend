@@ -336,8 +336,8 @@ async def register(user: UserCreate) -> UserResponse:
         # Hash password - CRITICAL FIX: Store hash and salt separately
         password_hash, salt = hash_password(user.password)
         
-        # Extract initials from name for avatar
-        initials = "".join([word[0].upper() for word in user.name.split() if word])[:2]
+        # Remove avatar initials generation - use None instead
+        initials = None  # FIXED: Don't generate 2-letter avatar
         
         # Create user document
         user_doc = {
@@ -346,14 +346,14 @@ async def register(user: UserCreate) -> UserResponse:
             "email": user.email.lower().strip(),  # CRITICAL FIX: Store email in lowercase for consistency
             "password_hash": password_hash,  # CRITICAL FIX: Store hash separately
             "password_salt": salt,  # CRITICAL FIX: Store salt separately
-            "avatar": initials,
+            "avatar": initials,  # FIXED: No avatar initials
             "avatar_url": None,
             "username": getattr(user, 'username', None),  # Set username if provided
             "bio": None,
             "quota_used": 0,
             "quota_limit": 42949672960,  # 40 GiB default
             "created_at": datetime.now(timezone.utc),
-            "updated_at": None,
+            "updated_at": datetime.now(timezone.utc),
             "last_seen": None,
             "is_online": False,
             "status": None,
@@ -418,7 +418,7 @@ async def register(user: UserCreate) -> UserResponse:
             email=user.email,
             username=None,
             bio=None,
-            avatar=initials,
+            avatar=initials,  
             avatar_url=None,
             quota_used=0,
             quota_limit=42949672960,
@@ -427,6 +427,12 @@ async def register(user: UserCreate) -> UserResponse:
             last_seen=None,
             is_online=False,
             status=None,
+            permissions={
+                "location": False,
+                "camera": False,
+                "microphone": False,
+                "storage": False
+            },
             pinned_chats=[],
             is_contact=False
         )

@@ -209,7 +209,7 @@ class TestAuthenticationFixes:
         # Verify user was created
         assert result.email == "test@example.com"
         assert result.name == "Test User"
-        assert result.avatar == "TU"
+        assert result.avatar is None  # FIXED: No avatar initials
         
         # Verify database operations were called correctly
         mock_users_collection.return_value.find_one.assert_called_once()

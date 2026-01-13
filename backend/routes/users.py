@@ -346,8 +346,9 @@ async def update_profile(
                 # Continue anyway - avatar will be set to None in database
         
         if profile_data.avatar is not None:
-            logger.info(f"SUCCESS: Avatar initials set: {profile_data.avatar}")
-            update_data["avatar"] = profile_data.avatar  # Store avatar initials in the avatar field
+            logger.info(f"FIXED: Avatar initials ignored - set to None instead")
+            # FIXED: Don't allow avatar initials, always set to None
+            update_data["avatar"] = None  # Store avatar initials in the avatar field
         
         # Process email (enforce uniqueness)
         if profile_data.email is not None and profile_data.email.strip():

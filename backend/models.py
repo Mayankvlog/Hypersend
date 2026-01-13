@@ -253,16 +253,8 @@ class ProfileUpdate(BaseModel):
     def validate_avatar(cls, v):
         if v is None:
             return v  # Avatar can be optional
-        # Strip whitespace
-        v = v.strip() if isinstance(v, str) else v
-        # Return None if empty after stripping (allow clearing avatar)
-        if not v:
-            return None
-        if '\x00' in v:  # Null byte protection
-            raise ValueError('Avatar contains invalid characters')
-        if len(v) > 10:
-            raise ValueError('Avatar initials must be 10 characters or less')
-        return v.strip()
+        # FIXED: Always return None to prevent 2-letter avatars
+        return None  # Don't allow avatar initials
 
 
 # Password Reset Models
