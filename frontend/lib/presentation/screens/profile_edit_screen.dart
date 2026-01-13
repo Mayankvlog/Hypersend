@@ -291,8 +291,8 @@ Future<void> _saveProfile() async {
                 children: [
                    Builder(
                     builder: (context) {
-                      // Create a temporary user object to utilize the isPath/URL logic
-                      final tempUser = _initialUser.copyWith(avatar: _currentAvatar.trim());
+                      // FIXED: Don't copy old avatar text - use clean user data
+                      final tempUser = _initialUser.copyWith(avatar: ''); // Always use empty avatar
                       // FIXED: Always use initials from name when no image URL, never from old avatar field
                       final isUrl = _currentAvatar.startsWith('http') || _currentAvatar.startsWith('/');
                       final displayInitials = isUrl ? tempUser.initials : tempUser.initials;

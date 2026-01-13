@@ -1353,17 +1353,24 @@ async def change_password(
         try:
             # Handle both ObjectId strings and regular string IDs
             try:
-                user_id = ObjectId(current_user)
-            except Exception:
-                # If not a valid ObjectId, use as string
-                user_id = current_user
-            
-            user = await users_collection().find_one({"_id": user_id})
+                # Try to convert to ObjectId, but fallback to string if it fails
+                try:
+                    user_id = ObjectId(current_user)
+                except Exception:
+                    user_id = current_user
+                
+                user = await users_collection().find_one({"_id": user_id})
+            except Exception as e:
+                auth_log(f"[CHANGE_PASSWORD_ERROR] Database query failed: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Database error occurred"
+                )
         except Exception as e:
-            auth_log(f"[CHANGE_PASSWORD_ERROR] Database query failed: {e}")
+            auth_log(f"[CHANGE_PASSWORD_ERROR] Unexpected error: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database error occurred"
+                detail="Unexpected error occurred"
             )
         
         if not user:
