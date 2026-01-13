@@ -45,13 +45,14 @@ class MessageBubble extends StatelessWidget {
                       : NetworkImage('${ApiConstants.serverBaseUrl}${avatarUrl!}')
                   )
                   : null,
-              child: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/')
+              child: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/') && !avatarUrl!.contains('/avatar/')
                   ? null
                   : Center(
                       child: Text(
-                        avatarUrl!.length > 2
-                            ? avatarUrl!.substring(0, 2).toUpperCase()
-                            : avatarUrl!.toUpperCase(),
+                        // FIXED: Use proper initials from sender name, not avatar text
+                        message.sender.name.isNotEmpty 
+                            ? message.sender.initials 
+                            : '??',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,

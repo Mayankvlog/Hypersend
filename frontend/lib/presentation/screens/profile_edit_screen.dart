@@ -139,14 +139,24 @@ Future<void> _saveProfile() async {
         setState(() => _isLoading = true);
       }
 
-      // Update profile - use avatarUrl for image URLs, avatar for initials only
-      final updatedUser = await serviceProvider.profileService.updateProfile(
-        name: nameToSend,
-        username: usernameToSend,
-        avatarUrl: _avatarChanged && _currentAvatar.startsWith('/') ? _currentAvatar : null,
-        email: emailToSend,
-        bio: bioToSend,
-      );
+      // Only update profile if there are actual changes beyond avatar URL
+      // Avatar URL is already handled by uploadAvatar endpoint
+      final hasNonAvatarChanges = _nameChanged || _usernameChanged || _emailChanged || _bioChanged;
+      
+      User updatedUser;
+      if (hasNonAvatarChanges) {
+        // Update profile - skip avatarUrl since it's handled by uploadAvatar
+        updatedUser = await serviceProvider.profileService.updateProfile(
+          name: nameToSend,
+          username: usernameToSend,
+          avatarUrl: null, // Don't send avatarUrl here - handled by uploadAvatar
+          email: emailToSend,
+          bio: bioToSend,
+        );
+      } else {
+        // No profile changes needed, just return current user
+        updatedUser = _currentUser!;
+      }
 
       if (!mounted) return;
 

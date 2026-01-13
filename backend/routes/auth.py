@@ -1351,29 +1351,31 @@ async def change_password(
         
         # Get current user from database
         try:
-            # Handle both ObjectId strings and regular string IDs
+            user = None
+            
+            # Try ObjectId lookup first
             try:
-                # Try to convert to ObjectId, but fallback to string if it fails
-                try:
-                    user_id = ObjectId(current_user)
-                except Exception:
-                    user_id = current_user
-                
+                user_id = ObjectId(current_user)
                 user = await users_collection().find_one({"_id": user_id})
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] ObjectId lookup result: {user is not None}")
             except Exception as e:
-                auth_log(f"[CHANGE_PASSWORD_ERROR] Database query failed: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Database error occurred"
-                )
-        except HTTPException:
-            # Re-raise HTTP exceptions (like the ones from inner try block)
-            raise
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] ObjectId conversion failed: {e}")
+            
+            # If ObjectId lookup failed, try string lookup
+            if user is None:
+                user = await users_collection().find_one({"_id": current_user})
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] String lookup result: {user is not None}")
+            
+            if user is None:
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] Trying email lookup as fallback")
+                user = await users_collection().find_one({"email": current_user})
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] Email lookup result: {user is not None}")
+                
         except Exception as e:
-            auth_log(f"[CHANGE_PASSWORD_ERROR] Unexpected error: {e}")
+            auth_log(f"[CHANGE_PASSWORD_ERROR] Database query failed: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Unexpected error occurred"
+                detail="Database error occurred"
             )
         
         if not user:

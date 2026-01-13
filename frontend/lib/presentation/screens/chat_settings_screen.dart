@@ -104,9 +104,8 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
                       ? null
                       : Center(
                           child: Text(
-                            user.avatar.length > 2
-                                ? user.avatar.substring(0, 2).toUpperCase()
-                                : user.avatar.toUpperCase(),
+                            // FIXED: Use proper initials from user name, not avatar text
+                            user.initials,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 28,
