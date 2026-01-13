@@ -49,6 +49,13 @@ class MockCursor:
         self.docs = self.docs[:count]
         return self
     
+    async def to_list(self, length=None):
+        """Mock to_list method for MongoDB cursor compatibility"""
+        print(f"[MOCK_CURSOR] to_list called with length={length}")
+        if length is not None:
+            return self.docs[:length]
+        return self.docs
+    
     def __aiter__(self):
         """Make cursor async iterable"""
         async def async_iter():
@@ -169,20 +176,48 @@ class MockCollection:
                                 doc[field] = []
                             if value not in doc[field]:
                                 doc[field].append(value)
-                elif '$pull' in update:
-                    for field, value in update['$pull'].items():
-                        if field in doc and isinstance(doc[field], list):
-                            if value in doc[field]:
-                                doc[field].remove(value)
-                
                 self.data[doc_id] = doc.copy()
-                
                 result = MagicMock()
+                result.matched_count = 1
                 result.modified_count = 1
                 return result
+        result = MagicMock()
+        result.matched_count = 0
+        result.modified_count = 0
+        return result
+    
+    async def update_many(self, query: Dict, update: Dict) -> MagicMock:
+        """Mock update_many method"""
+        matched_count = 0
+        modified_count = 0
+        
+        for doc_id, doc in self.data.items():
+            if self._match_query(doc, query):
+                matched_count += 1
+                if '$set' in update:
+                    doc.update(update['$set'])
+                    modified_count += 1
+                elif '$addToSet' in update:
+                    for field, value in update['$addToSet'].items():
+                        if isinstance(value, dict) and '$each' in value:
+                            # Handle $addToSet with $each for adding multiple values
+                            if field not in doc:
+                                doc[field] = []
+                            for item in value['$each']:
+                                if item not in doc[field]:
+                                    doc[field].append(item)
+                        else:
+                            # Handle simple $addToSet
+                            if field not in doc:
+                                doc[field] = []
+                            if value not in doc[field]:
+                                doc[field].append(value)
+                    modified_count += 1
+                self.data[doc_id] = doc.copy()
         
         result = MagicMock()
-        result.modified_count = 0
+        result.matched_count = matched_count
+        result.modified_count = modified_count
         return result
     
     async def delete_many(self, query: Dict) -> MagicMock:

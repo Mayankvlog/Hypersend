@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 from bson import ObjectId
 import re
 
@@ -287,8 +287,27 @@ class PasswordResetRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    old_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8)
+    old_password: Optional[str] = Field(None, min_length=1, description="Current password (preferred field)")
+    current_password: Optional[str] = Field(None, min_length=1, description="Current password (alternative field for compatibility)")
+    new_password: str = Field(..., min_length=8, max_length=128, description="New password (minimum 8 characters)")
+    
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v):
+        """Validate new password strength"""
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if len(v) > 128:
+            raise ValueError('Password must be less than 128 characters long')
+        # Add more validation if needed
+        return v
+    
+    @model_validator(mode='after')
+    def validate_password_fields(self):
+        """Validate that at least one password field is provided"""
+        if not self.old_password and not self.current_password:
+            raise ValueError('Either old_password or current_password must be provided')
+        return self
 
 
 class PasswordResetResponse(BaseModel):

@@ -1442,29 +1442,68 @@ async def change_password(
     try:
         auth_log(f"Change password request for user: {current_user}")
         
+        # Handle both old_password and current_password for compatibility
+        old_password = request.old_password or request.current_password
+        
+        if not old_password:
+            auth_log(f"[CHANGE_PASSWORD_ERROR] No password field provided for user {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either old_password or current_password must be provided"
+            )
+        
         # Get current user from database
-        user = await users_collection().find_one({"_id": ObjectId(current_user)})
+        try:
+            user = await users_collection().find_one({"_id": ObjectId(current_user)})
+        except Exception as e:
+            auth_log(f"[CHANGE_PASSWORD_ERROR] Database query failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error occurred"
+            )
+        
         if not user:
+            auth_log(f"[CHANGE_PASSWORD_ERROR] User not found: {current_user}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
         
-        # Verify old password
+        # Verify old password with comprehensive format support
         old_password_valid = False
-        if "password_hash" in user and "password_salt" in user:
-            # New format: separate hash and salt
-            old_password_valid = verify_password(request.old_password, user["password_hash"], user["password_salt"])
-        elif "password" in user:
-            # Legacy format: combined hash
-            old_password_valid = verify_password(request.old_password, user["password"])
-        else:
-            auth_log(f"[CHANGE_PASSWORD_ERROR] No password field found for user {current_user}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User password not found. Please use forgot password to reset."
-            )
+        auth_log(f"[CHANGE_PASSWORD_DEBUG] Starting password verification for user {current_user}")
         
+        # Try new format first: separate hash and salt
+        if "password_hash" in user and "password_salt" in user:
+            try:
+                old_password_valid = verify_password(old_password, user["password_hash"], user["password_salt"])
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] New format verification: {old_password_valid}")
+            except Exception as e:
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] New format failed: {e}")
+        
+        # Try legacy format: combined hash
+        if not old_password_valid and "password" in user:
+            try:
+                old_password_valid = verify_password(old_password, user["password"])
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] Legacy format verification: {old_password_valid}")
+            except Exception as e:
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] Legacy format failed: {e}")
+        
+        # Try alternative legacy format: salt$hash
+        if not old_password_valid and "password" in user:
+            try:
+                password_str = user["password"]
+                if isinstance(password_str, str) and "$" in password_str and len(password_str.split("$")) == 2:
+                    salt, stored_hash = password_str.split("$", 1)
+                    if len(salt) == 32 and len(stored_hash) == 64:  # Validate format
+                        old_password_valid = verify_password(old_password, stored_hash, salt)
+                        auth_log(f"[CHANGE_PASSWORD_DEBUG] Alternative legacy format verification: {old_password_valid}")
+                    else:
+                        auth_log(f"[CHANGE_PASSWORD_DEBUG] Invalid legacy format: salt_len={len(salt)}, hash_len={len(stored_hash)}")
+            except Exception as e:
+                auth_log(f"[CHANGE_PASSWORD_DEBUG] Alternative legacy format failed: {e}")
+        
+        # Final validation
         if not old_password_valid:
             auth_log(f"[CHANGE_PASSWORD_FAILED] Invalid old password for user {current_user}")
             raise HTTPException(
@@ -1474,22 +1513,36 @@ async def change_password(
         
         # Hash new password
         password_hash, password_salt = hash_password(request.new_password)
+        auth_log(f"[CHANGE_PASSWORD_DEBUG] New password hashed successfully")
         
-        # Update user password
-        await users_collection().update_one(
-            {"_id": ObjectId(current_user)},
-            {"$set": {
-                "password_hash": password_hash,
-                "password_salt": password_salt,
-                "updated_at": datetime.now(timezone.utc)
-            }}
-        )
+        # Update user password with error handling
+        try:
+            update_result = await users_collection().update_one(
+                {"_id": ObjectId(current_user)},
+                {"$set": {
+                    "password_hash": password_hash,
+                    "password_salt": password_salt,
+                    "updated_at": datetime.now(timezone.utc)
+                }}
+            )
+            auth_log(f"[CHANGE_PASSWORD_DEBUG] Password update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
+        except Exception as e:
+            auth_log(f"[CHANGE_PASSWORD_ERROR] Password update failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update password"
+            )
         
-        # Invalidate all refresh tokens for this user
-        await refresh_tokens_collection().update_many(
-            {"user_id": current_user},
-            {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
-        )
+        # Invalidate all refresh tokens for this user with error handling
+        try:
+            invalidate_result = await refresh_tokens_collection().update_many(
+                {"user_id": current_user},
+                {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
+            )
+            auth_log(f"[CHANGE_PASSWORD_SUCCESS] Tokens invalidated for user {current_user}: matched={invalidate_result.matched_count}, modified={invalidate_result.modified_count}")
+        except Exception as e:
+            auth_log(f"[CHANGE_PASSWORD_WARNING] Token invalidation failed: {e}")
+            # Don't fail the operation if token invalidation fails
         
         auth_log(f"Password change successful for user: {current_user}")
         
