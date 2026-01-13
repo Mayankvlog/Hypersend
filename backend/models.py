@@ -719,7 +719,37 @@ class PasswordChangeRequest(BaseModel):
         return v
 
 
-# EmailChangeRequest model removed as email functionality is disabled
+class EmailVerificationRequest(BaseModel):
+    """Email verification request model"""
+    email: str = Field(..., description="Email address to verify")
+    code: str = Field(..., min_length=6, max_length=6, description="Verification code")
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Email is required')
+        v = v.strip().lower()
+        # Basic email validation
+        if not re.match(r'^[^@]+@[^@]+\.[^@]+$', v):
+            raise ValueError('Invalid email format')
+        return v
+
+
+class EmailChangeRequest(BaseModel):
+    """Email change request model"""
+    email: Optional[str] = Field(None, description="New email address")
+    current_password: str = Field(..., min_length=1, description="Current password for verification")
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if v is not None:
+            v = v.strip().lower()
+            # Basic email validation
+            if not re.match(r'^[^@]+@[^@]+\.[^@]+$', v):
+                raise ValueError('Invalid email format')
+        return v
 
 
 class TokenData(BaseModel):

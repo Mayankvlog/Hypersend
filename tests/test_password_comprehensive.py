@@ -20,7 +20,7 @@ os.environ['USE_MOCK_DB'] = 'True'
 
 from fastapi.testclient import TestClient
 from main import app
-from models import UserCreate, ChangePasswordRequest, PasswordResetRequest
+from backend.models import UserCreate, ChangePasswordRequest, PasswordResetRequest
 from db_proxy import users_collection
 from bson import ObjectId
 from datetime import datetime

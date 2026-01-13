@@ -335,9 +335,9 @@ if (result != null && result is String) {
                           debugPrint('[PROFILE_EDIT] Avatar updated successfully');
                           setState(() {
                             final newAvatar = result.trim();
-                            // Only mark as changed if the avatar actually changed
+                            // Only mark as changed if avatar actually changed
                             _avatarChanged = newAvatar != _currentAvatar;
-                            _currentAvatar = newAvatar;
+                            _currentAvatar = ''; // ALWAYS clear to empty string when image is uploaded
                           });
                           
                           // Show success message

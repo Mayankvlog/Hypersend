@@ -1307,11 +1307,9 @@ async def upload_avatar(
         
         # Return response that matches frontend expectations
         # Frontend specifically looks for 'avatar_url' field in profile_service.dart:178-182
-        current_avatar = updated_user.get("avatar") if updated_user else None
         response_data = {
             "avatar_url": avatar_url,  # REQUIRED: Frontend expects this field
-            # Keep avatar field for frontend compatibility
-            "avatar": current_avatar if current_avatar else "",
+            "avatar": "",  # FIXED: Always empty string when image uploaded (prevents text-based avatars)
             "success": True,
             "message": "Avatar uploaded successfully"
         }

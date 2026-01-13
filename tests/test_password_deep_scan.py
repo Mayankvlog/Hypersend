@@ -20,7 +20,7 @@ if backend_path not in sys.path:
 # Import required modules
 try:
     from main import app
-    from models import PasswordResetRequest, ChangePasswordRequest
+    from backend.models import PasswordResetRequest, ChangePasswordRequest
     from auth.utils import get_current_user, hash_password, create_access_token
     from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
     from bson import ObjectId
