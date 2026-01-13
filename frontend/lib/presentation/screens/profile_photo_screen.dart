@@ -62,7 +62,23 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedPhoto = widget.currentAvatar;
+    // FIXED: Don't use currentAvatar directly, extract initials properly
+    if (widget.currentAvatar.startsWith('http') || widget.currentAvatar.startsWith('/')) {
+      _selectedPhoto = widget.currentAvatar; // Use URL if it's an image
+    } else {
+      // Extract initials from name instead of using old avatar text
+      final user = serviceProvider.profileService.currentUser;
+      if (user != null && user!.name.isNotEmpty) {
+        final parts = user!.name.trim().split(' ');
+        if (parts.length >= 2) {
+          _selectedPhoto = (parts[0][0] + parts[1][0]).toUpperCase();
+        } else {
+          _selectedPhoto = user!.name.substring(0, user!.name.length >= 2 ? 2 : 1).toUpperCase();
+        }
+      } else {
+        _selectedPhoto = '??'; // Fallback
+      }
+    }
   }
 
   @override
@@ -128,7 +144,8 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                         : _buildNetworkImage(widget.currentAvatar),
                     child: _pickedFileBytes == null && !(widget.currentAvatar.startsWith('http') || widget.currentAvatar.startsWith('/'))
                         ? Text(
-                            _selectedPhoto,
+                            // FIXED: Use proper initials instead of _selectedPhoto
+                            _selectedPhoto.length <= 3 ? _selectedPhoto : '??',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 32,

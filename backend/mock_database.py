@@ -62,6 +62,10 @@ class MockCursor:
             for doc in self.docs:
                 yield doc
         return async_iter()
+    
+    def __iter__(self):
+        """Make cursor sync iterable too"""
+        return iter(self.docs)
 
 class MockCollection:
     """Mock collection for testing"""

@@ -293,9 +293,9 @@ Future<void> _saveProfile() async {
                     builder: (context) {
                       // Create a temporary user object to utilize the isPath/URL logic
                       final tempUser = _initialUser.copyWith(avatar: _currentAvatar.trim());
-                      // FIX: Get initials from _currentAvatar if it's not a URL
+                      // FIXED: Always use initials from name when no image URL, never from old avatar field
                       final isUrl = _currentAvatar.startsWith('http') || _currentAvatar.startsWith('/');
-                      final displayInitials = isUrl ? tempUser.initials : _currentAvatar.toUpperCase();
+                      final displayInitials = isUrl ? tempUser.initials : tempUser.initials;
                                          
                       return CircleAvatar(
                         radius: 60,
@@ -434,20 +434,6 @@ if (result != null && result is String) {
                     title: 'Change Password',
                     onTap: () {
                       _showChangePasswordDialog();
-                    },
-                  ),
-                  _buildActionTile(
-                    icon: Icons.email_outlined,
-                    title: 'Change Email',
-                    onTap: () {
-                      _showChangeEmailDialog();
-                    },
-                  ),
-                  _buildActionTile(
-                    icon: Icons.vpn_key_outlined,
-                    title: 'Reset Password',
-                    onTap: () {
-                      _showResetPasswordDialog();
                     },
                   ),
                   _buildActionTile(
@@ -660,158 +646,4 @@ if (result != null && result is String) {
     );
   }
 
-  // ignore: use_build_context_synchronously
-  void _showChangeEmailDialog() {
-    final emailController = TextEditingController(text: _emailController.text);
-    final passwordController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Change Email'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'New Email',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Password (for verification)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              if (emailController.text.contains('@') && passwordController.text.isNotEmpty) {
-                try {
-                  await serviceProvider.profileService.changeEmail(
-                    newEmail: emailController.text,
-                    password: passwordController.text,
-                  );
-                  Navigator.of(dialogContext).pop();
-                  if (!mounted) return;
-                  _emailController.text = emailController.text;
-                  scaffoldMessenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Email updated successfully'),
-                      backgroundColor: AppTheme.successGreen,
-                    ),
-                  );
-                } catch (e) {
-                  if (!mounted) return;
-                  scaffoldMessenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Error: $e'),
-                      backgroundColor: AppTheme.errorRed,
-                    ),
-                  );
-                }
-              } else {
-                if (!mounted) return;
-                scaffoldMessenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter valid email and password'),
-                    backgroundColor: AppTheme.errorRed,
-                  ),
-                );
-              }
-              emailController.clear();
-              passwordController.clear();
-            },
-            child: const Text('Update'),
-          ),
-        ],
-      ),
-    );
   }
-
-  // ignore: use_build_context_synchronously
-  void _showResetPasswordDialog() {
-    final emailController = TextEditingController(text: _emailController.text);
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Reset Password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('We will send a password reset link to:'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email Address',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              if (emailController.text.contains('@')) {
-                try {
-                  await serviceProvider.profileService.resetPassword(
-                    email: emailController.text,
-                  );
-                  Navigator.of(dialogContext).pop();
-                  if (!mounted) return;
-                  scaffoldMessenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Password reset link sent to your email'),
-                      backgroundColor: AppTheme.successGreen,
-                    ),
-                  );
-                } catch (e) {
-                  if (!mounted) return;
-                  scaffoldMessenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Error: $e'),
-                      backgroundColor: AppTheme.errorRed,
-                    ),
-                  );
-                }
-              } else {
-                if (!mounted) return;
-                scaffoldMessenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter a valid email address'),
-                    backgroundColor: AppTheme.errorRed,
-                  ),
-                );
-              }
-              emailController.clear();
-            },
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-    );
-  }
-}
