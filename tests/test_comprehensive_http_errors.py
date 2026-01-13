@@ -169,7 +169,7 @@ class TestValidationErrorHandling:
         # Test login with missing password
         response = client.post(
             "/api/v1/login",
-            json={"email": "test@example.com"},  # Missing password
+            json={"username": "test"},  # Missing password
             headers={"Content-Type": "application/json"}
         )
         
@@ -183,19 +183,19 @@ class TestValidationErrorHandling:
         password_errors = [e for e in validation_errors if "password" in e["field"]]
         assert len(password_errors) > 0
     
-    def test_invalid_email_format(self):
-        """Test handling of invalid email format"""
+    def test_invalid_username_format(self):
+        """Test handling of invalid username format"""
         response = client.post(
             "/api/v1/auth/register",
             json={
-                "email": "invalid-email",
+                "username": "invalid-username@",
                 "password": "password123",
                 "name": "Test User"
             },
             headers={"Content-Type": "application/json"}
         )
         
-        assert response.status_code == 400  # Invalid email returns 400
+        assert response.status_code == 400  # Invalid username returns 400
         data = response.json()
         assert data["status_code"] == 400
 
@@ -354,7 +354,7 @@ class TestSecurityVulnerabilities:
             response = client.post(
                 "/api/v1/register",
                 json={
-                    "email": "test@example.com",
+                    "username": "test",
                     "password": "password123",
                     "name": payload
                 }

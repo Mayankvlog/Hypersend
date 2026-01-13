@@ -9,11 +9,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 try:
     from models import (
-        UserCreate, UserLogin, UserInDB, ProfileUpdate,
-        EmailChangeRequest, ForgotPasswordRequest
+        UserCreate, UserLogin, UserInDB, ProfileUpdate
     )
 except ImportError:
-    pytest.skip("Models not available", allow_module_level=True)
+    sys.exit("Models not available")
 
 from datetime import datetime
 import pytest
@@ -26,10 +25,10 @@ def test_user_create():
     try:
         user = UserCreate(
             name="John Doe",
-            email="john@example.com",
+            username="johndoe",
             password="MyPassword123"
         )
-        print(f"  [PASS] Valid user created: {user.email}")
+        print(f"  [PASS] Valid user created: {user.username}")
     except Exception as e:
         assert False, f"Error: {e}"
     
@@ -49,10 +48,10 @@ def test_user_login():
     # Valid case
     try:
         login = UserLogin(
-            email="john@example.com",
+            username="john.doe",
             password="MyPassword123"
         )
-        print(f"  [PASS] Valid login: {login.email}")
+        print(f"  [PASS] Valid login: {login.username}")
     except Exception as e:
         assert False, f"Error: {e}"
 
@@ -71,13 +70,13 @@ def test_profile_update():
     except Exception as e:
         assert False, f"Error: {e}"
     
-    # Valid case - update email with username
+    # Valid case - ProfileUpdate no longer supports email, only username
     try:
         update = ProfileUpdate(
-            email="newemail@example.com",
-            username="janedoe"
+            username="janedoe",
+            name="Jane Doe"
         )
-        print(f"  [PASS] Valid email update: {update.email}")
+        print(f"  [PASS] Valid profile update: name={update.name}")
     except Exception as e:
         assert False, f"Error: {e}"
     
@@ -90,31 +89,20 @@ def test_profile_update():
     print(f"  [PASS] Correctly rejected short username")
 
 def test_email_change():
-    """Test EmailChangeRequest validation"""
-    print("\nTesting EmailChangeRequest...")
+    """Test EmailChangeRequest validation - REMOVED"""
+    print("\nTesting EmailChangeRequest - REMOVED...")
     
-    # Valid case
-    try:
-        request = EmailChangeRequest(
-            email="newemail@example.com",
-            password="CurrentPassword123"
-        )
-        print(f"  [PASS] Valid email change request: {request.email}")
-    except Exception as e:
-        assert False, f"Error: {e}"
+    # EmailChangeRequest model removed
+    print("  [SKIP] EmailChangeRequest model removed")
+    return True
 
 def test_forgot_password():
-    """Test ForgotPasswordRequest validation"""
-    print("\nTesting ForgotPasswordRequest...")
+    """Test ForgotPasswordRequest validation - REMOVED"""
+    print("\nTesting ForgotPasswordRequest - REMOVED...")
     
-    # Valid case
-    try:
-        request = ForgotPasswordRequest(
-            email="john@example.com"
-        )
-        print(f"  [PASS] Valid forgot password request: {request.email}")
-    except Exception as e:
-        assert False, f"Error: {e}"
+    # ForgotPasswordRequest model removed
+    print("  [SKIP] ForgotPasswordRequest model removed")
+    return True
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -125,7 +113,7 @@ if __name__ == "__main__":
     results.append(("UserCreate", test_user_create()))
     results.append(("UserLogin", test_user_login()))
     results.append(("ProfileUpdate", test_profile_update()))
-    results.append(("EmailChangeRequest", test_email_change()))
+    # results.append(("EmailChangeRequest", test_email_change()))  # Removed
     results.append(("ForgotPasswordRequest", test_forgot_password()))
     
     print("\n" + "=" * 60)

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi.responses import JSONResponse
 from models import (
     UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
     ForgotPasswordRequest, PasswordResetRequest, PasswordResetResponse,
@@ -17,15 +18,12 @@ from validators import validate_user_id
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
-import smtplib
-from email.message import EmailMessage
+
 from collections import defaultdict
 from typing import Dict, Tuple, List, Optional
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Email rate limiting tracking
-email_rate_limits: Dict[str, List[datetime]] = defaultdict(list)
-email_daily_limits: Dict[str, datetime] = defaultdict(datetime)
+
 
 # CRITICAL FIX: Persistent login attempt tracking with better security
 # In-memory tracking resets on server restart, allowing brute force attacks
@@ -74,92 +72,7 @@ def auth_log(message: str) -> None:
     if settings.DEBUG:
         print(message)
 
-def email_log(message: str) -> None:
-    """Log email-related messages with proper formatting."""
-    if settings.DEBUG:
-        print(f"[EMAIL] {message}")
 
-def check_email_rate_limit(email: str) -> Tuple[bool, str]:
-    """Check if email is within rate limits."""
-    current_time = datetime.now(timezone.utc)
-    
-    # Clean up old entries (older than 24 hours)
-    cutoff_time = current_time - timedelta(hours=24)
-    email_rate_limits[email] = [
-        timestamp for timestamp in email_rate_limits[email] 
-        if timestamp > cutoff_time
-    ]
-    
-    # Check daily limit
-    if len(email_rate_limits[email]) >= settings.EMAIL_RATE_LIMIT_PER_DAY:
-        return False, f"Daily email limit reached ({settings.EMAIL_RATE_LIMIT_PER_DAY} emails per day)"
-    
-    # Check hourly limit
-    hour_cutoff = current_time - timedelta(hours=1)
-    hourly_count = len([
-        timestamp for timestamp in email_rate_limits[email] 
-        if timestamp > hour_cutoff
-    ])
-    
-    if hourly_count >= settings.EMAIL_RATE_LIMIT_PER_HOUR:
-        return False, f"Hourly email limit reached ({settings.EMAIL_RATE_LIMIT_PER_HOUR} emails per hour)"
-    
-    # Record this email request
-    email_rate_limits[email].append(current_time)
-    return True, "Email rate limit OK"
-
-def test_email_service() -> Tuple[bool, str]:
-    """Test email service connectivity and configuration with comprehensive validation."""
-    if not settings.EMAIL_SERVICE_ENABLED:
-        return False, "Email service not configured - check SMTP_* environment variables"
-    
-    try:
-        import smtplib
-        from email.message import EmailMessage
-        
-        email_log(f"Testing SMTP connection to {settings.SMTP_HOST}:{settings.SMTP_PORT}")
-        
-        # Test DNS resolution
-        import socket
-        try:
-            socket.gethostbyname(settings.SMTP_HOST)
-            email_log("DNS resolution successful")
-        except socket.gaierror:
-            return False, "DNS resolution failed - check hostname"
-        
-        # Test TCP connection
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
-            email_log("TCP connection established")
-            
-            # Test TLS setup
-            if settings.SMTP_USE_TLS:
-                try:
-                    server.starttls()
-                    email_log("TLS started")
-                except smtplib.SMTPNotSupportedError:
-                    return False, "TLS not supported - try with TLS disabled"
-                except Exception:
-                    return False, "TLS setup failed - check server configuration"
-            else:
-                email_log("Unencrypted connection established")
-            
-            # Test authentication
-            if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
-                try:
-                    server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-                    email_log("Authentication successful")
-                except smtplib.SMTPAuthenticationError:
-                    return False, "Authentication failed - check credentials"
-                except Exception:
-                    return False, "Login error - check credentials"
-            else:
-                email_log("No authentication credentials provided")
-                return False, "SMTP username and password required"
-        
-        return True, "Email service test successful - all components working"
-    
-    except Exception as e:
-        return False, f"Email service test failed: {type(e).__name__}: {str(e)}"
 
 # CORS helper functions - moved to module level for importability
 import re
@@ -248,20 +161,9 @@ async def auth_options(request: Request):
 async def register(user: UserCreate) -> UserResponse:
     """Register a new user account"""
     try:
-        auth_log(f"Registration attempt for email: {user.email}")
+        auth_log(f"Registration attempt for username: {user.username}")
         
-        # Validate email and password with security checks
-        import re
-        
-        # Security: Enhanced email validation to allow localhost
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
-        # Basic validation - allow consecutive dots but check format
-        if not re.match(email_pattern, user.email):
-            auth_log(f"Invalid email format: {user.email[:50]}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format"
-            )
+        # Username and password validation is now handled in the model validator
         
         # Password validation is now handled in the model validator
         
@@ -271,28 +173,17 @@ async def register(user: UserCreate) -> UserResponse:
                 detail="Name is required"
             )
         
-        # Check if user already exists with case-insensitive email lookup
+        # Check if user already exists with case-insensitive username lookup
         users_col = users_collection()
-        # CRITICAL FIX: Use case-insensitive email lookup with regex to prevent duplicates
-        # Also normalize email to lowercase for consistent lookup
-        normalized_email = user.email.lower().strip()
+        # Use case-insensitive username lookup to prevent duplicates
+        normalized_username = user.username.lower().strip()
         
-        # SECURITY: Validate email format before database operations
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
-        if not re.match(email_pattern, normalized_email):
-            auth_log(f"Registration failed: Invalid email format: {user.email}")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Invalid email format"
-            )
-        
-        # CRITICAL FIX: Fix duplicate database query and handle async properly
+        # Check for existing username
         existing_user = None
         try:
             users_col = users_collection()
-            # CRITICAL FIX: Motor MongoDB operations are always async, await them directly
             existing_user = await asyncio.wait_for(
-                users_col.find_one({"email": normalized_email}),
+                users_col.find_one({"username": normalized_username}),
                 timeout=5.0
             )
         except asyncio.TimeoutError:
@@ -314,23 +205,17 @@ async def register(user: UserCreate) -> UserResponse:
                 detail="Database operation failed. Please try again."
             )
         
-        # DEBUG: Log the search result for troubleshooting
         if existing_user:
-            # CRITICAL FIX: Check if existing_user is a Future object
-            if hasattr(existing_user, '__await__') or asyncio.isfuture(existing_user):
-                auth_log(f"CRITICAL ERROR: existing_user is a Future object: {type(existing_user)}")
-                raise RuntimeError("Database operation returned Future instead of result")
-            
             user_id = existing_user.get('_id') if isinstance(existing_user, dict) else None
-            auth_log(f"Registration failed: Found existing user with email: {normalized_email} (ID: {user_id})")
+            auth_log(f"Registration failed: Found existing user with username: {normalized_username} (ID: {user_id})")
         else:
-            auth_log(f"Registration: No existing user found for email: {normalized_email}")
+            auth_log(f"Registration: No existing user found for username: {normalized_username}")
         
         if existing_user:
-            auth_log(f"Registration failed: Email already exists: {user.email}")
+            auth_log(f"Registration failed: Username already exists: {user.username}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered. Please login or use a different email."
+                detail="Username already registered. Please login or use a different username."
             )
         
         # Hash password - CRITICAL FIX: Store hash and salt separately
@@ -343,12 +228,11 @@ async def register(user: UserCreate) -> UserResponse:
         user_doc = {
             "_id": str(ObjectId()),
             "name": user.name,
-            "email": user.email.lower().strip(),  # CRITICAL FIX: Store email in lowercase for consistency
+            "username": user.username,  # Required username field
             "password_hash": password_hash,  # CRITICAL FIX: Store hash separately
             "password_salt": salt,  # CRITICAL FIX: Store salt separately
             "avatar": initials,  # FIXED: No avatar initials
             "avatar_url": None,
-            "username": getattr(user, 'username', None),  # Set username if provided
             "bio": None,
             "quota_used": 0,
             "quota_limit": 42949672960,  # 40 GiB default
@@ -385,7 +269,7 @@ async def register(user: UserCreate) -> UserResponse:
             if hasattr(inserted_id, '__await__') or asyncio.isfuture(inserted_id):
                 raise RuntimeError(f"Critical async error: inserted_id is a Future object: {type(inserted_id)}")
             
-            auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {inserted_id})")
+            auth_log(f"SUCCESS: User registered successfully: {user.username} (ID: {inserted_id})")
         except asyncio.TimeoutError:
             auth_log(f"Database timeout during user insertion")
             raise HTTPException(
@@ -403,7 +287,7 @@ async def register(user: UserCreate) -> UserResponse:
             if "duplicate" in str(db_error).lower():
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Email already registered. Please use a different email."
+                    detail="Username already registered. Please use a different username."
                 )
             else:
                 raise HTTPException(
@@ -415,8 +299,7 @@ async def register(user: UserCreate) -> UserResponse:
         return UserResponse(
             id=str(inserted_id),
             name=user.name,
-            email=user.email,
-            username=None,
+            username=user.username,
             bio=None,
             avatar=initials,  
             avatar_url=None,
@@ -450,18 +333,7 @@ async def register(user: UserCreate) -> UserResponse:
 async def login(credentials: UserLogin, request: Request) -> Token:
     """Login user and return access/refresh tokens with rate limiting"""
     try:
-        # Validate input with security checks
-        import re
-        
-        # Security: Enhanced email validation to allow localhost
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
-        # Basic validation - allow consecutive dots but check format
-        if not re.match(email_pattern, credentials.email):
-            auth_log(f"Invalid email format in login attempt: {credentials.email[:50]}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format"
-            )
+        # Username validation is now handled in the model validator
         
         if not credentials.password:
             raise HTTPException(
@@ -469,7 +341,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 detail="Password is required"
             )
         
-        auth_log(f"Login attempt for email: {credentials.email}")
+        auth_log(f"Login attempt for username: {credentials.username}")
         
         # Clean up expired lockouts periodically
         cleanup_expired_lockouts()
@@ -502,20 +374,20 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             ts for ts in login_attempts[client_ip] if ts > cutoff_time
         ]
         
-        # SECURITY FIX: Track login attempts by both IP and email for proper rate limiting
-        email_lockout_key = f"email:{credentials.email}"
-        if email_lockout_key in persistent_login_lockouts:
-            lockout_expiry = persistent_login_lockouts[email_lockout_key]
+        # SECURITY FIX: Track login attempts by both IP and username for proper rate limiting
+        username_lockout_key = f"username:{credentials.username}"
+        if username_lockout_key in persistent_login_lockouts:
+            lockout_expiry = persistent_login_lockouts[username_lockout_key]
             if current_time < lockout_expiry:
                 remaining_seconds = int((lockout_expiry - current_time).total_seconds())
-                auth_log(f"Email {credentials.email} is locked out for {remaining_seconds} more seconds")
+                auth_log(f"Username {credentials.username} is locked out for {remaining_seconds} more seconds")
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=f"Too many failed login attempts for this account. Please try again in {remaining_seconds} seconds.",
                     headers={"Retry-After": str(remaining_seconds)}
                 )
             else:
-                del persistent_login_lockouts[email_lockout_key]
+                del persistent_login_lockouts[username_lockout_key]
         
         # Check IP-based rate limit (prevent brute force from single IP)
         if len(login_attempts[client_ip]) >= MAX_LOGIN_ATTEMPTS_PER_IP:
@@ -531,25 +403,15 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # Record this login attempt
         login_attempts[client_ip].append(current_time)
         
-        # Find user by email - CRITICAL FIX: Use case-insensitive email lookup with proper validation
-        import re
-        normalized_email = credentials.email.lower().strip()
-        
-        # SECURITY: Validate email format before database query
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
-        if not re.match(email_pattern, normalized_email):
-            auth_log(f"Login failed: Invalid email format: {credentials.email}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format"
-            )
+        # Find user by username - Use case-insensitive username lookup
+        normalized_username = credentials.username.lower().strip()
         
         try:
             users_col = users_collection()
-            # CRITICAL FIX: Add timeout to database query to prevent 503 Service Unavailable
+            # Add timeout to database query to prevent 503 Service Unavailable
             try:
                 existing_user = await asyncio.wait_for(
-                    users_col.find_one({"email": normalized_email}),
+                    users_col.find_one({"username": normalized_username}),
                     timeout=5.0
                 )
             except asyncio.TimeoutError:
@@ -577,11 +439,11 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     )
             
             if not existing_user:
-                auth_log(f"Login failed: User not found: {normalized_email}")
-                # SECURITY: Don't increase per-email lockout for non-existent users (prevents enumeration)
+                auth_log(f"Login failed: User not found: {normalized_username}")
+                # SECURITY: Don't increase per-username lockout for non-existent users (prevents enumeration)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password"
+                    detail="Invalid username or password"
                 )
             
             # Verify password - CRITICAL FIX: Ensure password_hash and salt exist
@@ -592,18 +454,18 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             if isinstance(password_hash, (tuple, list)) and len(password_hash) == 2:
                 # Legacy format: (hash, salt) stored as tuple
                 password_hash, password_salt = password_hash
-                auth_log(f"Converting legacy password format for {normalized_email}")
+                auth_log(f"Converting legacy password format for {normalized_username}")
             
             if not password_hash:
-                auth_log(f"Login failed: User {normalized_email} has no password hash (corrupted record)")
+                auth_log(f"Login failed: User {normalized_username} has no password hash (corrupted record)")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password"
+                    detail="Invalid username or password"
                 )
             
             # CRITICAL FIX: Handle missing password salt with migration
             if not password_salt:
-                auth_log(f"DEBUG: User {normalized_email} has no password salt, attempting migration")
+                auth_log(f"DEBUG: User {normalized_username} has no password salt, attempting migration")
                 
                 # Check if user has legacy password field
                 legacy_password = existing_user.get("password")
@@ -612,7 +474,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     parts = legacy_password.split('$')
                     if len(parts) == 2:
                         password_salt, password_hash = parts
-                        auth_log(f"Migrating legacy password format for {normalized_email}")
+                        auth_log(f"Migrating legacy password format for {normalized_username}")
                         
                         # Update user record with new format
                         try:
@@ -627,12 +489,12 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                                     "$unset": {"password": ""}
                                 }
                             )
-                            auth_log(f"Successfully migrated password format for {normalized_email}")
+                            auth_log(f"Successfully migrated password format for {normalized_username}")
                         except Exception as migrate_error:
-                            auth_log(f"Failed to migrate password for {normalized_email}: {migrate_error}")
+                            auth_log(f"Failed to migrate password for {normalized_username}: {migrate_error}")
                             # Continue with legacy format for now
                     else:
-                        auth_log(f"Invalid legacy password format for {normalized_email}")
+                        auth_log(f"Invalid legacy password format for {normalized_username}")
                 else:
                     # Check if password_hash is in combined format (salt$hash)
                     if password_hash and isinstance(password_hash, str) and '$' in password_hash:
@@ -641,7 +503,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                             parts = password_hash.split('$')
                             if len(parts) == 2:
                                 password_salt, password_hash = parts
-                                auth_log(f"Found combined password format for {normalized_email}")
+                                auth_log(f"Found combined password format for {normalized_username}")
                                 
                                 # Update user record with separated format
                                 try:
@@ -655,20 +517,20 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                                             }
                                         }
                                     )
-                                    auth_log(f"Successfully separated password format for {normalized_email}")
+                                    auth_log(f"Successfully separated password format for {normalized_username}")
                                 except Exception as migrate_error:
-                                    auth_log(f"Failed to separate password for {normalized_email}: {migrate_error}")
+                                    auth_log(f"Failed to separate password for {normalized_username}: {migrate_error}")
                             else:
-                                auth_log(f"Invalid combined password format for {normalized_email}")
+                                auth_log(f"Invalid combined password format for {normalized_username}")
                         else:
-                            auth_log(f"Invalid combined password length for {normalized_email}: {len(password_hash)}")
+                            auth_log(f"Invalid combined password length for {normalized_username}: {len(password_hash)}")
                     
                     # If still no password salt after migration attempt
                     if not password_salt:
-                        auth_log(f"Login failed: User {normalized_email} has no valid password salt (corrupted record)")
+                        auth_log(f"Login failed: User {normalized_username} has no valid password salt (corrupted record)")
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Invalid email or password"
+                            detail="Invalid username or password"
                         )
             
             # Verify password with constant-time comparison - CRITICAL FIX: Handle different formats
@@ -676,7 +538,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             # Always attempt verification regardless of format, since we don't know what the actual format is
             
             # DEEP DEBUGGING: Log all password details
-            auth_log(f"[PASSWORD_DEBUG] Email: {normalized_email} | Hash type: {type(password_hash).__name__} | Hash len: {len(password_hash) if password_hash else 0} | Salt type: {type(password_salt).__name__} | Salt len: {len(password_salt) if password_salt else 0}")
+            auth_log(f"[PASSWORD_DEBUG] Email: {normalized_username} | Hash type: {type(password_hash).__name__} | Hash len: {len(password_hash) if password_hash else 0} | Salt type: {type(password_salt).__name__} | Salt len: {len(password_salt) if password_salt else 0}")
             if password_hash and isinstance(password_hash, str) and len(password_hash) <= 100:
                 auth_log(f"[PASSWORD_DEBUG] Hash value: {password_hash[:50]}..." if len(password_hash) > 50 else f"[PASSWORD_DEBUG] Hash value: {password_hash}")
             if password_salt and isinstance(password_salt, str) and len(password_salt) <= 50:
@@ -684,19 +546,19 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             
             if password_salt and isinstance(password_salt, str) and len(password_salt) > 0:
                 # Try new format: separated hash and salt
-                auth_log(f"Attempting separated password format for {normalized_email}")
+                auth_log(f"Attempting separated password format for {normalized_username}")
                 is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
                 
                 # If verification failed with separated format and hash is 64 chars, try legacy SHA256 hash with salt
                 if not is_password_valid and password_hash and isinstance(password_hash, str) and len(password_hash) == 64:
-                    auth_log(f"Separated format verification failed, trying legacy SHA256+salt format for {normalized_email}")
+                    auth_log(f"Separated format verification failed, trying legacy SHA256+salt format for {normalized_username}")
                     # CRITICAL FIX: Try both salt+pwd and pwd+salt legacy formats
                     # Try password + salt format
                     is_password_valid = verify_password(credentials.password, password_salt, password_hash, str(existing_user.get("_id")))
                     
                     # If that fails, try salt + password format  
                     if not is_password_valid:
-                        auth_log(f"Trying salt+password legacy format for {normalized_email}")
+                        auth_log(f"Trying salt+password legacy format for {normalized_username}")
                         is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
                     
                     # DEBUG: Log what we're trying to match
@@ -719,23 +581,23 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 
                 # CRITICAL FIX: If verification still fails, provide helpful error for password reset
                 if not is_password_valid:
-                    auth_log(f"[PASSWORD_RESET_NEEDED] All verification methods failed for {normalized_email}")
+                    auth_log(f"[PASSWORD_RESET_NEEDED] All verification methods failed for {normalized_username}")
                     auth_log(f"[PASSWORD_RESET_NEEDED] User should use forgot-password to reset")
                     # Continue to return 401 - user needs to reset password
                 
                 # CRITICAL FIX: If both fail, check if hash and salt might be swapped
                 if not is_password_valid and password_salt and isinstance(password_salt, str) and len(password_salt) == 64:
-                    auth_log(f"[RECOVERY] Trying swapped hash/salt for {normalized_email}")
+                    auth_log(f"[RECOVERY] Trying swapped hash/salt for {normalized_username}")
                     is_password_valid = verify_password(credentials.password, password_salt, password_hash, str(existing_user.get("_id")))
                     if is_password_valid:
-                        auth_log(f"[RECOVERY] SUCCESS: Hash and salt were swapped for {normalized_email}, fixing in database")
+                        auth_log(f"[RECOVERY] SUCCESS: Hash and salt were swapped for {normalized_username}, fixing in database")
                         # Fix the database
                         try:
                             await users_collection().update_one(
                                 {"_id": existing_user["_id"]},
                                 {"$set": {"password_hash": password_salt, "password_salt": password_hash}}
                             )
-                            auth_log(f"[RECOVERY] Database corrected for {normalized_email}")
+                            auth_log(f"[RECOVERY] Database corrected for {normalized_username}")
                         except Exception as fix_error:
                             auth_log(f"[RECOVERY] Failed to fix database: {fix_error}")
                     
@@ -743,28 +605,28 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 # Check for combined format (salt$hash - 97 chars with $)
                 if '$' in password_hash and len(password_hash) == 97:
                     # Legacy/combined format: hash contains "salt$hash"
-                    auth_log(f"Using legacy combined password format for {normalized_email}")
+                    auth_log(f"Using legacy combined password format for {normalized_username}")
                     is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
                 else:
                     # Old legacy format: just the hash without salt (shouldn't happen with our code, but handle it)
                     # This could be SHA256 or PBKDF2 without stored salt
-                    auth_log(f"Using legacy format for {normalized_email}")
+                    auth_log(f"Using legacy format for {normalized_username}")
                     is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
             else:
                 # Unrecognized format - this is an error
-                auth_log(f"Unrecognized password format for {normalized_email}: hash_len={len(password_hash) if password_hash else 0}, hash_has_$={('$' in password_hash) if password_hash else False}, salt_len={len(password_salt) if password_salt else 0}")
+                auth_log(f"Unrecognized password format for {normalized_username}: hash_len={len(password_hash) if password_hash else 0}, hash_has_$={('$' in password_hash) if password_hash else False}, salt_len={len(password_salt) if password_salt else 0}")
                 is_password_valid = False
             
-            auth_log(f"Password verification result for {normalized_email}: {is_password_valid} (hash_length: {len(password_hash) if password_hash else 0}, has_salt: {bool(password_salt)})")
+            auth_log(f"Password verification result for {normalized_username}: {is_password_valid} (hash_length: {len(password_hash) if password_hash else 0}, has_salt: {bool(password_salt)})")
         except HTTPException:
             raise
         except Exception as verify_error:
-            auth_log(f"Password verification error for {normalized_email}: {type(verify_error).__name__}")
+            auth_log(f"Password verification error for {normalized_username}: {type(verify_error).__name__}")
             # Treat verification errors as invalid passwords for security
             is_password_valid = False
         
         if not is_password_valid:
-            auth_log(f"Login failed: Invalid password for: {normalized_email}")
+            auth_log(f"Login failed: Invalid password for: {normalized_username}")
             
             # ADVANCED DEBUGGING: Diagnose actual password format stored
             from auth.utils import diagnose_password_format
@@ -788,8 +650,8 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             if attempt_count >= MAX_FAILED_ATTEMPTS_PER_ACCOUNT:
                 lockout_seconds = PROGRESSIVE_LOCKOUTS.get(min(attempt_count, 5), 1800)  # Max 30 min
                 lockout_time = current_time + timedelta(seconds=lockout_seconds)
-                persistent_login_lockouts[email_lockout_key] = lockout_time
-                auth_log(f"Account {normalized_email} locked out for {lockout_seconds} seconds after {attempt_count} failed attempts")
+                persistent_login_lockouts[username_lockout_key] = lockout_time
+                auth_log(f"Account {normalized_username} locked out for {lockout_seconds} seconds after {attempt_count} failed attempts")
                 
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -799,7 +661,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="Invalid username or password"
             )
         
         # CRITICAL FIX: Session fixation prevention - invalidate existing sessions
@@ -833,7 +695,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             }}
         )
         
-        auth_log(f"SUCCESS: Login successful: {credentials.email}")
+        auth_log(f"SUCCESS: Login successful: {credentials.username}")
         
         return Token(
             access_token=access_token,
@@ -1232,195 +1094,189 @@ async def logout(current_user: str = Depends(get_current_user)):
             detail="Logout failed"
         )
 
-# Password Reset Endpoints
+
 @router.post("/forgot-password", response_model=PasswordResetResponse)
 async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetResponse:
-    """Send password reset email to user"""
+    """Forgot password endpoint"""
     try:
-        # Validate email
-        if not request.email or '@' not in request.email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format. Use format: user@zaply.in.net"
+        auth_log(f"Forgot password request for email: {request.email}")
+        
+        # Check if password reset functionality is disabled
+        if not settings.ENABLE_PASSWORD_RESET:
+            auth_log("Password reset functionality is disabled")
+            return PasswordResetResponse(
+                message="Password reset functionality has been disabled. Please contact support.",
+                success=False
             )
         
-        auth_log(f"Password reset request for email: {request.email}")
+        # Validate email format
+        if not request.email or '@' not in request.email:
+            auth_log("Invalid email format")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
         
-        # Rate limiting check
+        # Check rate limiting
         if not password_reset_limiter.is_allowed(request.email):
             retry_after = password_reset_limiter.get_retry_after(request.email)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Too many password reset attempts. Try again in {retry_after} seconds.",
+                detail=f"Too many password reset requests. Try again in {retry_after} seconds.",
                 headers={"Retry-After": str(retry_after)}
             )
         
-        # Find user by email
-        user = await users_collection().find_one({"email": request.email})
-        if not user:
-            # Don't reveal if email exists for security
-            auth_log(f"Password reset requested for non-existent email: {request.email}")
-            return PasswordResetResponse(
-                message="If this email exists, a password reset link has been sent",
-                success=True
+        # Check if user exists by email
+        try:
+            # Find user by email (case-insensitive)
+            user = await users_collection().find_one({
+                "email": {"$regex": f"^{request.email}$", "$options": "i"}
+            })
+        except Exception as e:
+            auth_log(f"Database error checking user email: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to process request"
             )
         
-        # Generate reset token
-        from auth.utils import create_access_token
-        reset_token = create_access_token(
-            data={"sub": str(user["_id"]), "token_type": "password_reset"},
-            expires_delta=timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES)
-        )
-        
-        # Store reset token in database
-        await reset_tokens_collection().insert_one({
-            "user_id": str(user["_id"]),
-            "token": reset_token,
-            "created_at": datetime.now(timezone.utc),
-            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES),
-            "used": False
-        })
-        
-        # Send email (if configured)
-        email_sent = False
-        email_error = None
-        
-        if settings.EMAIL_SERVICE_ENABLED:
-            try:
-                reset_link = f"{settings.API_BASE_URL}/reset-password?token={reset_token}"
-                import smtplib
-                from email.message import EmailMessage
-                
-                email_message = EmailMessage()
-                email_message["Subject"] = "Password Reset - Zaply"
-                email_message["From"] = settings.EMAIL_FROM
-                email_message["To"] = request.email
-                email_message.set_content(f"""
-Hello {user['name']},
-
-You requested a password reset for your Zaply account.
-
-Click the following link to reset your password:
-{reset_link}
-
-This link will expire in {settings.PASSWORD_RESET_EXPIRE_MINUTES} minutes.
-
-If you didn't request this, please ignore this email.
-
-Best regards,
-Zaply Team
-                """)
-                
-                with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-                    if settings.SMTP_USE_TLS:
-                        server.starttls()
-                    if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
-                        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-                    server.send_message(email_message)
-                
-                email_sent = True
-                auth_log(f"SUCCESS: Password reset email sent to: {request.email}")
-                
-            except Exception as e:
-                email_error = str(e)
-                auth_log(f"Failed to send password reset email: {email_error}")
+        # Always return success to prevent email enumeration
+        # Only actually send email if user exists and email service is enabled
+        if user and settings.EMAIL_SERVICE_ENABLED:
+            # TODO: Send actual password reset email
+            auth_log(f"Password reset email would be sent to: {request.email}")
         else:
-            auth_log(f"Email service disabled - password reset token: {reset_token[:50]}...")
-        
-        # In DEBUG mode, return token in response if email fails
-        debug_info = None
-        if settings.DEBUG and not email_sent:
-            debug_info = {
-                "reset_token": reset_token,
-                "email_error": email_error,
-                "reset_link": f"{settings.API_BASE_URL}/reset-password?token={reset_token}"
-            }
+            auth_log(f"Password reset requested for non-existent email: {request.email}")
         
         return PasswordResetResponse(
-            message="Password reset instructions sent to your email" if email_sent else "Password reset initiated (debug mode)",
+            message="If an account with this email exists, a password reset link has been sent.",
             success=True
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        auth_log(f"Password reset error: {type(e).__name__}: {str(e)}")
+        auth_log(f"Forgot password error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password reset failed"
+            detail="Password reset service unavailable"
         )
 
 @router.post("/reset-password", response_model=PasswordResetResponse)
 async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse:
-    """Reset user password using token"""
+    """Reset password using token"""
     try:
+        auth_log(f"Password reset request for token: {request.token[:10]}...")
+        
+        # Check if password reset functionality is disabled
+        if not settings.ENABLE_PASSWORD_RESET:
+            auth_log("Password reset functionality is disabled")
+            raise HTTPException(
+                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                detail="Password reset functionality has been disabled. Please contact support."
+            )
+        
         # Validate token
-        token_data = decode_token(request.token)
-        if not token_data.user_id:
+        if not request.token or len(request.token) < 10:
+            auth_log("Invalid reset token format")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired reset token"
             )
         
-        # Check if token exists and is unused
-        reset_doc = await reset_tokens_collection().find_one({
-            "token": request.token,
-            "user_id": token_data.user_id,
-            "used": False
-        })
-        
-        if not reset_doc:
+        try:
+            token_data = decode_token(request.token)
+        except Exception:
+            auth_log("Failed to decode reset token")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired reset token"
             )
         
-        # Check if token has expired
-        if reset_doc["expires_at"] < datetime.now(timezone.utc):
+        # Validate token type
+        if token_data.token_type != "password_reset":
+            auth_log(f"Invalid token type: {token_data.token_type}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Reset token has expired"
+                detail="Invalid token type"
+            )
+        
+        # Check if token exists and is not used
+        try:
+            reset_token_doc = await reset_tokens_collection().find_one({
+                "token": request.token,
+                "used": False,
+                "expires_at": {"$gt": datetime.now(timezone.utc)}
+            })
+        except Exception as e:
+            auth_log(f"Database error checking reset token: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to validate reset token"
+            )
+        
+        if not reset_token_doc:
+            auth_log("Reset token not found or expired")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset token"
             )
         
         # Get user
-        # Handle both ObjectId and string IDs for mock database compatibility
         try:
-            user_id = ObjectId(token_data.user_id)
-        except:
-            user_id = token_data.user_id
-        
-        user = await users_collection().find_one({"_id": user_id})
-        if not user:
+            user = await users_collection().find_one({"_id": ObjectId(token_data.user_id)})
+        except Exception as e:
+            auth_log(f"Database error fetching user: {e}")
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch user"
             )
         
-        # Hash new password - CRITICAL FIX: Store hash and salt separately
-        from auth.utils import hash_password
+        if not user:
+            auth_log(f"User not found: {token_data.user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid reset token"
+            )
+        
+        # Hash new password
         password_hash, password_salt = hash_password(request.new_password)
         
         # Update user password
-        await users_collection().update_one(
-            {"_id": user_id},
-            {"$set": {
-                "password_hash": password_hash,  # CRITICAL FIX: Store hash separately
-                "password_salt": password_salt,  # CRITICAL FIX: Store salt separately
-                "updated_at": datetime.now(timezone.utc)
-            }}
-        )
+        try:
+            await users_collection().update_one(
+                {"_id": ObjectId(token_data.user_id)},
+                {"$set": {
+                    "password_hash": password_hash,
+                    "password_salt": password_salt,
+                    "updated_at": datetime.now(timezone.utc)
+                }}
+            )
+        except Exception as e:
+            auth_log(f"Failed to update password: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reset password"
+            )
         
-        # Mark token as used
-        await reset_tokens_collection().update_one(
-            {"token": request.token},
-            {"$set": {"used": True, "used_at": datetime.now(timezone.utc)}}
-        )
+        # Mark reset token as used
+        try:
+            await reset_tokens_collection().update_one(
+                {"_id": reset_token_doc["_id"]},
+                {"$set": {"used": True, "used_at": datetime.now(timezone.utc)}}
+            )
+        except Exception as e:
+            auth_log(f"Failed to mark reset token as used: {e}")
+            # Don't fail the operation if this fails
         
         # Invalidate all refresh tokens for this user
-        await refresh_tokens_collection().update_many(
-            {"user_id": token_data.user_id},
-            {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
-        )
+        try:
+            await refresh_tokens_collection().update_many(
+                {"user_id": str(user["_id"])},
+                {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
+            )
+        except Exception as e:
+            auth_log(f"Failed to invalidate refresh tokens: {e}")
+            # Don't fail the operation if this fails
         
         auth_log(f"Password reset successful for user: {token_data.user_id}")
         
@@ -1432,11 +1288,27 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
     except HTTPException:
         raise
     except Exception as e:
-        auth_log(f"Password reset error: {type(e).__name__}: {str(e)}")
+        auth_log(f"Reset password error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password reset failed"
+            detail="Password reset service unavailable"
         )
+
+@router.options("/forgot-password")
+async def forgot_password_options():
+    """Forgot password endpoint options - DISABLED"""
+    return JSONResponse(
+        content={"message": "Password reset functionality has been disabled"},
+        status_code=200
+    )
+
+@router.options("/reset-password")
+async def reset_password_options():
+    """Reset password endpoint options - DISABLED"""
+    return JSONResponse(
+        content={"message": "Password reset functionality has been disabled"},
+        status_code=200
+    )
 
 
 @router.post("/change-password")

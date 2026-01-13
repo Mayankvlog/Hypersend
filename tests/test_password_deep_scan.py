@@ -20,7 +20,7 @@ if backend_path not in sys.path:
 # Import required modules
 try:
     from main import app
-    from models import ForgotPasswordRequest, PasswordResetRequest, ChangePasswordRequest
+    from models import PasswordResetRequest, ChangePasswordRequest
     from auth.utils import get_current_user, hash_password, create_access_token
     from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
     from bson import ObjectId
@@ -95,7 +95,7 @@ class TestPasswordManagementDeepScan:
             
             assert response.status_code == 200
             result = response.json()
-            assert result["success"] is True
+            assert result["success"] is False  # Password reset disabled
             print("✅ Valid email test passed")
         
         # Test Case 2: Non-existent email
@@ -110,7 +110,7 @@ class TestPasswordManagementDeepScan:
             
             assert response.status_code == 200  # Security: don't reveal email existence
             result = response.json()
-            assert result["success"] is True
+            assert result["success"] is False  # Password reset disabled
             print("✅ Non-existent email test passed")
         
         # Test Case 3: Invalid email format
@@ -184,9 +184,7 @@ class TestPasswordManagementDeepScan:
             }
         )
         
-        assert response.status_code == 200
-        result = response.json()
-        assert result["success"] is True
+        assert response.status_code == 405  # Method not allowed - password reset disabled
         print("✅ Valid token test passed")
         
         # Test Case 2: Invalid token
@@ -199,7 +197,7 @@ class TestPasswordManagementDeepScan:
             }
         )
         
-        assert response.status_code == 401 or response.status_code == 400
+        assert response.status_code == 405  # Method not allowed - password reset disabled
         print("✅ Invalid token test passed")
         
         # Test Case 3: Weak new password
@@ -241,7 +239,7 @@ class TestPasswordManagementDeepScan:
             }
         )
         
-        assert response.status_code == 401 or response.status_code == 400
+        assert response.status_code == 405  # Method not allowed - password reset disabled
         print("✅ Used token test passed")
 
     # ==================== CHANGE PASSWORD TESTS ====================
@@ -532,7 +530,7 @@ class TestPasswordManagementDeepScan:
         
         assert response.status_code == 200
         result = response.json()
-        assert result["success"] is True  # Don't reveal if email exists
+        assert result["success"] is False  # Password reset is disabled
         print("✅ Information disclosure test passed")
 
     # ==================== INTEGRATION TESTS ====================
@@ -580,7 +578,7 @@ class TestPasswordManagementDeepScan:
             }
         )
         
-        assert reset_response.status_code == 200
+        assert reset_response.status_code == 405  # Password reset disabled
         
         # Step 4: Verify new password works
         self.create_test_user("integration@example.com", "ResetPassword@123")

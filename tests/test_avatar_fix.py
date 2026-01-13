@@ -72,7 +72,7 @@ class TestAvatarFix:
         # Create test user
         test_user = UserCreate(
             name="John Doe",
-            email="john@example.com",
+            username="johndoe",
             password="Test@123"
         )
         

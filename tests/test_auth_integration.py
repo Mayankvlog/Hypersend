@@ -85,7 +85,7 @@ class TestAuthenticationIntegration:
         # Test registration
         register_data = {
             "name": "Test User",
-            "email": "test@example.com",
+            "username": "test",
             "password": "TestPass123"
         }
         
@@ -96,7 +96,7 @@ class TestAuthenticationIntegration:
             
             assert response.status_code == 201
             data = response.json()
-            assert data["email"] == "test@example.com"
+            assert data["username"] == "test"
             assert data["name"] == "Test User"
             assert data["avatar"] is None  # FIXED: No avatar initials
         
@@ -108,7 +108,7 @@ class TestAuthenticationIntegration:
         user_data = {
             "_id": "507f1f77bcf86cd799439011",
             "name": "Test User",
-            "email": "test@example.com",
+            "username": "test",
             "password_hash": "a" * 64,  # Proper 64-char hex hash
             "password_salt": "b" * 32,  # Proper 32-char hex salt
             "avatar": "TU",
@@ -128,7 +128,7 @@ class TestAuthenticationIntegration:
             mock_refresh.return_value = ("refresh_token_123", "jti_123")
             
             login_data = {
-                "email": "test@example.com",
+                "username": "test",
                 "password": "TestPass123"
             }
             
@@ -142,12 +142,12 @@ class TestAuthenticationIntegration:
         
         print("✓ Login after registration successful")
     
-    def test_registration_with_duplicate_email_flow(self, client, mock_database_setup):
-        """Test registration flow with duplicate email handling"""
+    def test_registration_with_duplicate_username_flow(self, client, mock_database_setup):
+        """Test registration flow with duplicate username handling"""
         # Setup existing user
         existing_user = {
             "_id": "507f1f77bcf86cd799439011",
-            "email": "existing@example.com",
+            "username": "existing",
             "name": "Existing User"
         }
         
@@ -157,7 +157,7 @@ class TestAuthenticationIntegration:
         
         register_data = {
             "name": "New User",
-            "email": "existing@example.com",
+            "username": "existing",
             "password": "TestPass123"
         }
         
@@ -165,16 +165,16 @@ class TestAuthenticationIntegration:
         
         assert response.status_code == 409
         data = response.json()
-        assert "Email already registered" in data["detail"]
+        assert "Username already registered" in data["detail"]
         
-        print("✓ Duplicate email registration flow handled correctly")
+        print("✓ Duplicate username registration flow handled correctly")
     
     def test_login_with_invalid_credentials_flow(self, client, mock_database_setup):
         """Test login flow with invalid credentials"""
         # Setup user data
         user_data = {
             "_id": "507f1f77bcf86cd799439011",
-            "email": "test@example.com",
+            "username": "test",
             "password_hash": "a" * 64,  # Proper 64-char hex hash
             "password_salt": "b" * 32,  # Proper 32-char hex salt
         }
@@ -185,7 +185,7 @@ class TestAuthenticationIntegration:
             mock_verify.return_value = False  # Password verification fails
             
             login_data = {
-                "email": "test@example.com",
+                "username": "test",
                 "password": "wrongpassword"
             }
             
@@ -193,7 +193,7 @@ class TestAuthenticationIntegration:
             
             assert response.status_code == 401
             data = response.json()
-            assert "Invalid email or password" in data["detail"]
+            assert "Invalid username or password" in data["detail"]
         
         print("✓ Invalid credentials login flow handled correctly")
     
@@ -205,7 +205,7 @@ class TestAuthenticationIntegration:
         
         register_data = {
             "name": "Test User",
-            "email": "test@example.com",
+            "username": "test",
             "password": "TestPass123"
         }
         
@@ -223,7 +223,7 @@ class TestAuthenticationIntegration:
         mock_database_setup['users_mock'].find_one.side_effect = ConnectionError("Connection failed")
         
         login_data = {
-            "email": "test@example.com",
+            "username": "test",
             "password": "TestPass123"
         }
         
@@ -260,7 +260,7 @@ class TestPasswordStrengthValidation:
             try:
                 user_data = UserCreate(
                     name="Test User",
-                    email="test@example.com",
+                    username="test",
                     password=password
                 )
                 # If we get here, password passed model validation

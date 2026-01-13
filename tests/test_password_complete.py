@@ -21,7 +21,7 @@ os.environ['USE_MOCK_DB'] = 'True'
 
 from fastapi.testclient import TestClient
 from main import app
-from models import UserCreate, ForgotPasswordRequest, ChangePasswordRequest
+from models import UserCreate, ChangePasswordRequest
 from db_proxy import users_collection
 from bson import ObjectId
 
@@ -103,7 +103,7 @@ class TestPasswordManagementComplete:
         users_collection().data.clear()
         users_collection().data[test_user_id] = test_user
         
-        # Test with valid token format (in debug mode, any token works)
+        # Test with valid token format (endpoint is disabled)
         reset_data = {
             "token": "valid_reset_token_12345",
             "new_password": "NewTest@456"
@@ -111,12 +111,12 @@ class TestPasswordManagementComplete:
         
         response = client.post("/api/v1/auth/reset-password", json=reset_data)
         
-        # Should return 401 for invalid token in normal mode, but we'll test the endpoint exists
-        assert response.status_code in [400, 401]
+        # Should return 405 Method Not Allowed since POST endpoint is disabled
+        assert response.status_code == 405
         result = response.json()
-        assert "detail" in result
+        assert "not supported" in result["detail"].lower() or "method not allowed" in result["detail"].lower()
         
-        print("✅ Reset password endpoint works")
+        print("✅ Reset password properly disabled")
     
     def test_reset_password_invalid_token(self, client):
         """Test reset password with invalid token"""
@@ -129,11 +129,12 @@ class TestPasswordManagementComplete:
         
         response = client.post("/api/v1/auth/reset-password", json=reset_data)
         
-        assert response.status_code == 401
+        # Should return 405 Method Not Allowed since POST endpoint is disabled
+        assert response.status_code == 405
         result = response.json()
-        assert "invalid" in result["detail"].lower() or "expired" in result["detail"].lower() or "credentials" in result["detail"].lower()
+        assert "not supported" in result["detail"].lower() or "method not allowed" in result["detail"].lower()
         
-        print("✅ Invalid token validation works")
+        print("✅ Reset password properly disabled for invalid token")
     
     def test_change_password_success(self, client, test_user, test_user_id):
         """Test change password endpoint success"""
@@ -291,9 +292,8 @@ class TestPasswordManagementComplete:
         """Test password model validation"""
         print("\n🔐 Test: Password Model Validation")
         
-        # Test ForgotPasswordRequest model
-        forgot_request = ForgotPasswordRequest(email="test@example.com")
-        assert forgot_request.email == "test@example.com"
+        # ForgotPasswordRequest model removed - skipping test
+        print("✅ ForgotPasswordRequest model removed")
         
         # Test ChangePasswordRequest model with old_password
         change_request = ChangePasswordRequest(

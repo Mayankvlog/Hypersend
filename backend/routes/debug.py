@@ -6,7 +6,7 @@ These endpoints are only available in DEBUG mode
 from fastapi import APIRouter, HTTPException, status, Depends
 from config import settings
 from auth.utils import get_current_user
-from models import ProfileUpdate, PasswordChangeRequest, EmailChangeRequest
+from models import ProfileUpdate, PasswordChangeRequest
 from pydantic import BaseModel
 from typing import Dict, Any
 import json
@@ -93,26 +93,19 @@ async def get_email_change_schema(
     current_user: str = Depends(get_current_user)
 ):
     """
-    Get the JSON schema for EmailChangeRequest model
+    Get the JSON schema for EmailChangeRequest model - DISABLED
     Useful for debugging validation errors
     Only available in DEBUG mode
     """
     check_debug_mode()
     
-    schema = EmailChangeRequest.model_json_schema()
-    
     return {
         "model": "EmailChangeRequest",
-        "description": "Email change request model",
-        "schema": schema,
+        "description": "Email change request model - DISABLED",
+        "schema": {},
         "example": {
-            "email": "newemail@zaply.in.net",
-            "password": "CurrentPassword123"
-        },
-        "requirements": [
-            "email: 5-255 characters (must be valid email format)",
-            "password: 6-128 characters (current password for verification)"
-        ]
+            "message": "Email change functionality has been disabled"
+        }
     }
 
 

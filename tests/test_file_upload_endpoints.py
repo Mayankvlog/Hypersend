@@ -3,9 +3,12 @@ Comprehensive test for file upload endpoints
 Tests all HTTP error scenarios and happy paths
 """
 
+import os
 import pytest
 
-pytest.skip("Informational/print-only module (not an executable pytest suite)", allow_module_level=True)
+# Only skip if explicitly marked as informational, otherwise run tests
+if os.getenv("SKIP_FILE_UPLOAD_TESTS", "false").lower() == "true":
+    pytest.skip("Informational/print-only module (not an executable pytest suite)", allow_module_level=True)
 
 import asyncio
 import hashlib

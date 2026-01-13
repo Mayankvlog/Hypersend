@@ -43,7 +43,7 @@ class TestWhatsAppAvatarCompatibility:
         # Register user
         register_data = {
             "name": "John Doe",
-            "email": "john@example.com",
+            "username": "john",
             "password": "Test@123"
         }
         
@@ -68,7 +68,7 @@ class TestWhatsAppAvatarCompatibility:
         test_user_doc = {
             "_id": test_user_id,
             "name": "Test User",
-            "email": "test@example.com",
+            "username": "testuser",
             "avatar": "TU",  # Existing initials
             "avatar_url": None,
             "created_at": datetime.now()
@@ -113,7 +113,7 @@ class TestWhatsAppAvatarCompatibility:
         test_user_doc = {
             "_id": test_user_id,
             "name": "Test User",
-            "email": "test@example.com",
+            "username": "testuser",
             "avatar": "TU",  # Existing initials
             "avatar_url": "/api/v1/users/avatar/test.jpg",
             "created_at": datetime.now()
@@ -180,13 +180,13 @@ class TestWhatsAppAvatarCompatibility:
             from models import UserCreate
             user_data = UserCreate(
                 name=scenario["name"],
-                email=f"test_{scenario['name'].lower().replace(' ', '_')}@example.com",
+                username=f"test_{scenario['name'].lower().replace(' ', '_')}",
                 password="Test@123"
             )
             
             # Verify user creation works (avatar is handled in registration endpoint)
             assert user_data.name == scenario["name"]
-            assert user_data.email == f"test_{scenario['name'].lower().replace(' ', '_')}@example.com"
+            assert user_data.username == f"test_{scenario['name'].lower().replace(' ', '_')}"
             
             print(f"✅ {scenario['name']}: user creation works")
         

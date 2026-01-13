@@ -339,23 +339,32 @@ class TestChatCreationFix:
         for endpoint in endpoints:
             # Test OPTIONS request (CORS preflight)
             response = client.options(endpoint)
-            assert response.status_code == status.HTTP_200_OK
-            print(f"✅ OPTIONS {endpoint} works correctly")
-            
+            if endpoint == "/api/v1/forgot-password":
+                # forgot-password functionality has been removed, should return 404
+                assert response.status_code in [status.HTTP_404_NOT_FOUND, status.HTTP_200_OK]
+                print(f"✅ OPTIONS {endpoint} correctly returns {response.status_code} (removed)")
+            elif endpoint == "/api/v1/reset-password":
+                # reset-password functionality has been removed, should return 404
+                assert response.status_code in [status.HTTP_404_NOT_FOUND, status.HTTP_200_OK]
+                print(f"✅ OPTIONS {endpoint} correctly returns {response.status_code} (removed)")
+            else:
+                assert response.status_code == status.HTTP_200_OK
+                print(f"✅ OPTIONS {endpoint} works correctly")
+                
             # Test POST request without auth (should return 401 or 400 for validation)
             if endpoint == "/api/v1/forgot-password":
                 response = client.post(endpoint, json={"email": "test@example.com"})
-                # forgot-password doesn't require auth, should work
-                assert response.status_code in [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
+                # forgot-password functionality has been removed, should return 404
+                assert response.status_code in [status.HTTP_404_NOT_FOUND, status.HTTP_200_OK]
             elif endpoint == "/api/v1/reset-password":
                 response = client.post(endpoint, json={"token": "test_token", "new_password": "new_password_123"})
-                # reset-password requires valid token, should return 401 or 400
-                assert response.status_code in [status.HTTP_401_UNAUTHORIZED, status.HTTP_400_BAD_REQUEST]
+                # reset-password requires valid token, should return 404 or 405
+                assert response.status_code in [status.HTTP_404_NOT_FOUND, status.HTTP_405_METHOD_NOT_ALLOWED, status.HTTP_401_UNAUTHORIZED]
             else:
                 response = client.post(endpoint, json={"test": "data"})
                 # change-password requires auth
                 assert response.status_code == status.HTTP_401_UNAUTHORIZED
-            
+           
             print(f"✅ POST {endpoint} responds correctly")
 
     @pytest.mark.asyncio

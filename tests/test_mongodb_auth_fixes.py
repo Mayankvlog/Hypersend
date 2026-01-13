@@ -199,7 +199,7 @@ class TestAuthenticationFixes:
         # Test registration
         user_data = UserCreate(
             name="Test User",
-            email="test@example.com",
+            username="testuser",
             password="TestPass123"
         )
         
@@ -207,7 +207,7 @@ class TestAuthenticationFixes:
         result = await register(user_data)
         
         # Verify user was created
-        assert result.email == "test@example.com"
+        assert result.username == "testuser"
         assert result.name == "Test User"
         assert result.avatar is None  # FIXED: No avatar initials
         
@@ -225,7 +225,7 @@ class TestAuthenticationFixes:
         
         user_data = UserCreate(
             name="Test User",
-            email="test@example.com",
+            username="testuser",
             password="TestPass123"
         )
         
@@ -245,7 +245,7 @@ class TestAuthenticationFixes:
         with pytest.raises(ValidationError) as exc_info:
             UserCreate(
                 name="Test User",
-                email="test@example.com",
+                username="testuser",
                 password="weak"  # Too short (only 4 chars)
             )
         
@@ -257,19 +257,19 @@ class TestAuthenticationFixes:
     @pytest.mark.asyncio
     async def test_register_invalid_email(self):
         """Test registration with invalid email"""
-        # Invalid email should fail at model validation level
+        # Invalid username should fail at model validation level
         from pydantic_core import ValidationError
         with pytest.raises(ValidationError) as exc_info:
             UserCreate(
                 name="Test User",
-                email="invalid-email",  # Invalid format
+                username="ab",  # Too short (less than 3 chars)
                 password="TestPass123"
             )
         
         # Check the validation error message
-        assert "Invalid email format" in str(exc_info.value)
+        assert "at least 3 characters" in str(exc_info.value)
         
-        print("✓ Invalid email validation works")
+        print("✓ Invalid username validation works")
     
     @pytest.mark.asyncio
     async def test_login_success(self, mock_users_collection, mock_user_data):
@@ -288,7 +288,7 @@ class TestAuthenticationFixes:
             mock_refresh.return_value = ("test_refresh_token", "test_jti")
             
             credentials = UserLogin(
-                email="test@example.com",
+                username="testuser",
                 password="TestPass123"
             )
             
@@ -314,7 +314,7 @@ class TestAuthenticationFixes:
             mock_verify.return_value = False
             
             credentials = UserLogin(
-                email="test@example.com",
+                username="testuser",
                 password="wrongpassword"
             )
             
@@ -325,7 +325,7 @@ class TestAuthenticationFixes:
                 await login(credentials, mock_request)
             
             assert exc_info.value.status_code == 401
-            assert "Invalid email or password" in str(exc_info.value.detail)
+            assert "Invalid username or password" in str(exc_info.value.detail)
         
         print("✓ Invalid credentials handled correctly")
     
@@ -336,7 +336,7 @@ class TestAuthenticationFixes:
         mock_users_collection.return_value.find_one.return_value = None
         
         credentials = UserLogin(
-            email="nonexistent@example.com",
+            username="nonexistentuser",
             password="TestPass123"
         )
         
@@ -347,7 +347,7 @@ class TestAuthenticationFixes:
             await login(credentials, mock_request)
         
         assert exc_info.value.status_code == 401
-        assert "Invalid email or password" in str(exc_info.value.detail)
+        assert "Invalid username or password" in str(exc_info.value.detail)
         
         print("✓ Non-existent user handled correctly")
 

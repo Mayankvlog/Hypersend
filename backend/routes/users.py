@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from models import (
-    UserResponse, UserInDB, PasswordChangeRequest, EmailChangeRequest, ProfileUpdate,
+    UserResponse, UserInDB, PasswordChangeRequest, ProfileUpdate,
     UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions,
     ContactAddRequest, ContactResponse
 )
@@ -134,8 +134,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         return UserResponse(
             id=user["_id"],
             name=user["name"],
-            email=user["email"],
-            username=user.get("username"),
+            username=user["username"],
             bio=user.get("bio"),
             avatar="",  # FIXED: Always empty string for WhatsApp compatibility
             avatar_url=user.get("avatar_url"),
@@ -191,7 +190,7 @@ async def update_profile(
         logger.debug(f"[EMAIL_PII] Email fields present but not logged for privacy")
         
         # Check if at least one field is being updated
-        if all(v is None for v in [profile_data.name, profile_data.email, profile_data.username, profile_data.bio, profile_data.avatar_url, profile_data.avatar]):
+        if all(v is None for v in [profile_data.name, profile_data.username, profile_data.bio, profile_data.avatar_url, profile_data.avatar]):
             logger.warning(f"No fields provided for update - all are None")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -350,36 +349,6 @@ async def update_profile(
             # FIXED: Don't allow avatar initials, always set to None
             update_data["avatar"] = None  # Store avatar initials in the avatar field
         
-        # Process email (enforce uniqueness)
-        if profile_data.email is not None and profile_data.email.strip():
-            logger.info(f"Processing email field update")
-            # Validate the email format
-            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            if not re.match(email_pattern, profile_data.email):
-                logger.warning(f"Email validation failed: invalid format")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid email format. Use format: user@zaply.in.net"
-                )
-            
-            # Normalize the email
-            new_email = profile_data.email.lower().strip()
-            logger.info(f"Email field normalized")
-            
-            # Ensure no other user already uses this email
-            existing = await asyncio.wait_for(
-                users_collection().find_one({"email": new_email}),
-                timeout=5.0
-            )
-            if existing and existing.get("_id") != current_user:
-                logger.warning(f"Email field is already in use")
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Email already in use"
-                )
-            logger.info(f"SUCCESS: Email field validation passed")
-            update_data["email"] = new_email
-        
         # Add updated timestamp
         update_data["updated_at"] = datetime.now(timezone.utc)
         
@@ -436,8 +405,7 @@ async def update_profile(
         return UserResponse(
             id=updated_user["_id"],
             name=updated_user["name"],
-            email=updated_user["email"],
-            username=updated_user.get("username"),
+            username=updated_user.get("username", updated_user.get("_id")),  # Use ID as fallback
             bio=updated_user.get("bio"),
             avatar="",  # FIXED: Always empty string for WhatsApp compatibility
             avatar_url=updated_user.get("avatar_url"),
@@ -1052,96 +1020,68 @@ async def change_password(
         )
 
 
-# EmailChangeRequest moved to backend.models
+# Email change functionality removed
 
 
 @router.post("/change-email")
-async def change_email(
-    request: EmailChangeRequest,
+async def change_email():
+    """Change user's email - DISABLED"""
+    return JSONResponse(
+        content={"message": "Email change functionality has been disabled. Please contact support."},
+        status_code=200
+    )
+
+
+@router.get("/search")
+async def search_users(
+    q: str = None,
     current_user: str = Depends(get_current_user)
 ):
-    """Change user's email"""
+    """Search users by username"""
     try:
-        print(f"[EMAIL_CHANGE] Request for user: {current_user}")
+        if not q:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Search query is required"
+            )
         
-        # Get user from database
-        user = await asyncio.wait_for(
-            users_collection().find_one({"_id": current_user}),
+        print(f"[USER_SEARCH] Search query: {q} by user: {current_user}")
+        
+        # Search users by username (case-insensitive)
+        users = await asyncio.wait_for(
+            users_collection().find({
+                "username": {"$regex": q, "$options": "i"}
+            }).limit(10).to_list(None),
             timeout=5.0
         )
         
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "status": "ERROR",
-                    "message": "User not found",
-                    "data": None
-                }
-            )
+        # Convert to response format
+        search_results = []
+        for user in users:
+            search_results.append({
+                "id": str(user["_id"]),
+                "name": user.get("name", ""),
+                "username": user.get("username", ""),
+                "avatar_url": user.get("avatar_url"),
+                "is_online": user.get("is_online", False),
+                "last_seen": user.get("last_seen")
+            })
         
-        # Verify password
-        from auth.utils import verify_password
-        if not verify_password(request.password, user.get("password_hash", ""), current_user):
-            print(f"[EMAIL_CHANGE] Password verification failed for {current_user}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Incorrect password",
-                    "data": None
-                }
-            )
+        return {
+            "status": "SUCCESS",
+            "message": f"Found {len(search_results)} users",
+            "data": search_results
+        }
         
-        new_email = request.email.lower().strip()
-        
-        # Ensure no other user already uses this email
-        existing = await asyncio.wait_for(
-            users_collection().find_one({"email": new_email}),
-            timeout=5.0
-        )
-        if existing and existing.get("_id") != current_user:
-            print(f"[EMAIL_CHANGE] Email already in use by {existing.get('_id')}")
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "status": "ERROR",
-                    "message": "Email already in use",
-                    "data": None
-                }
-            )
-        
-        # Update email in database
-        result = await asyncio.wait_for(
-            users_collection().update_one(
-                {"_id": current_user},
-                {"$set": {"email": new_email, "updated_at": datetime.now(timezone.utc)}}
-            ),
-            timeout=5.0
-        )
-        
-        if result.matched_count == 0:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        print(f"[EMAIL_CHANGE] Successfully updated email for {current_user} to {new_email}")
-        return {"message": "Email changed successfully", "email": new_email}
     except asyncio.TimeoutError:
-        logger.error(f"Database operation timed out")
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={
-                "status": "ERROR",
-                "message": "Database operation timed out. Please try again later.",
-                "data": None
-            }
+            detail="Search operation timed out"
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to change email: {str(e)}"
+            detail=f"Search failed: {str(e)}"
         )
 
 
@@ -1152,7 +1092,6 @@ async def delete_account(
     """Delete user account permanently"""
     try:
         print(f"[ACCOUNT_DELETE] Delete request for user: {current_user}")
-        logger.info(f"Account deletion request for user: {current_user}")
         
         # Get user to verify they exist
         user = await asyncio.wait_for(
@@ -1163,90 +1102,10 @@ async def delete_account(
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "status": "ERROR",
-                    "message": "User not found",
-                    "data": None
-                }
+                detail="User not found"
             )
         
-        # Delete user avatar file if exists
-        try:
-            from pathlib import Path
-            avatar_url = user.get("avatar_url")
-            if avatar_url and avatar_url.startswith("/api/v1/users/avatar/"):
-                avatar_filename = avatar_url.split("/")[-1]
-                data_root = Path(settings.DATA_ROOT)
-                avatar_path = data_root / "avatars" / avatar_filename
-                if avatar_path.exists():
-                    avatar_path.unlink()
-                    logger.info(f"Deleted avatar file for user: {current_user}")
-        except Exception as e:
-            logger.warning(f"Failed to delete avatar file: {e}")
-            # Continue anyway - user deletion is more important
-        
-        # Delete all user's chats (both 1-to-1 and groups)
-        try:
-            chats = await asyncio.wait_for(
-                chats_collection().find({"members": {"$in": [current_user]}}).to_list(None),
-                timeout=10.0
-            )
-            
-            for chat in chats:
-                chat_id = chat["_id"]
-                members = chat.get("members", [])
-                
-                if len(members) == 2:
-                    # 1-to-1 chat - delete it
-                    await asyncio.wait_for(
-                        chats_collection().delete_one({"_id": chat_id}),
-                        timeout=5.0
-                    )
-                else:
-                    # Group chat - just remove user from members
-                    await asyncio.wait_for(
-                        chats_collection().update_one(
-                            {"_id": chat_id},
-                            {"$pull": {"members": current_user}}
-                        ),
-                        timeout=5.0
-                    )
-            
-            logger.info(f"Deleted/updated {len(chats)} chats for user: {current_user}")
-        except Exception as e:
-            logger.warning(f"Failed to delete chats: {e}")
-        
-        # Delete all user's messages
-        try:
-            result = await asyncio.wait_for(
-                messages_collection().delete_many({"sender_id": current_user}),
-                timeout=10.0
-            )
-            logger.info(f"Deleted {result.deleted_count} messages for user: {current_user}")
-        except Exception as e:
-            logger.warning(f"Failed to delete messages: {e}")
-        
-        # Delete all user's files
-        try:
-            result = await asyncio.wait_for(
-                files_collection().delete_many({"owner_id": current_user}),
-                timeout=10.0
-            )
-            logger.info(f"Deleted {result.deleted_count} files for user: {current_user}")
-        except Exception as e:
-            logger.warning(f"Failed to delete files: {e}")
-        
-        # Delete all refresh tokens
-        try:
-            await asyncio.wait_for(
-                refresh_tokens_collection().delete_many({"user_id": current_user}),
-                timeout=5.0
-            )
-            logger.info(f"Deleted refresh tokens for user: {current_user}")
-        except Exception as e:
-            logger.warning(f"Failed to delete refresh tokens: {e}")
-        
-        # Finally, delete the user document
+        # Delete user from database
         result = await asyncio.wait_for(
             users_collection().delete_one({"_id": current_user}),
             timeout=5.0
@@ -1258,28 +1117,18 @@ async def delete_account(
                 detail="User not found"
             )
         
-        print(f"[ACCOUNT_DELETE] SUCCESS: Successfully deleted account for user: {current_user}")
-        logger.info(f"SUCCESS: Account deleted successfully for user: {current_user}")
-        
+        print(f"[ACCOUNT_DELETE] Successfully deleted user: {current_user}")
         return {"message": "Account deleted successfully"}
         
     except asyncio.TimeoutError:
-        logger.error(f"Database operation timed out")
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={
-                "status": "ERROR",
-                "message": "Database operation timed out. Please try again later.",
-                "data": None
-            }
+            detail="Delete operation timed out"
         )
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Account deletion error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete account: {str(e)}"
+            detail=f"Delete failed: {str(e)}"
         )
 
 

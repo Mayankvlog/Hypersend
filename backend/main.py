@@ -1265,7 +1265,7 @@ async def bins_get(bin_id: str):
 
 # Add endpoint aliases for frontend compatibility
 # Import models for alias endpoints
-from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse, PasswordChangeRequest, ForgotPasswordRequest, PasswordResetRequest
+from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse, PasswordChangeRequest, PasswordResetRequest
 from auth.utils import get_current_user
 
 # Unified OPTIONS handler for all alias endpoints
@@ -1354,11 +1354,25 @@ async def change_password_alias(request: PasswordChangeRequest, current_user: st
     from routes.users import change_password as users_change_password
     return await users_change_password(request, current_user)
 
+
+
+@app.options("/api/v1/forgot-password")
+async def forgot_password_options():
+    """Forgot password endpoint options - REMOVED"""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content={"message": "Forgot password functionality has been removed"},
+        status_code=404
+    )
+
 @app.post("/api/v1/forgot-password")
-async def forgot_password_alias(request: ForgotPasswordRequest):
-    """Alias for /api/v1/auth/forgot-password - delegates to auth router"""
-    from routes.auth import forgot_password as auth_forgot_password
-    return await auth_forgot_password(request)
+async def forgot_password_removed():
+    """Forgot password endpoint - REMOVED"""
+    from fastapi import HTTPException, status
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Forgot password functionality has been removed"
+    )
 
 @app.post("/api/v1/reset-password")
 async def reset_password_alias(request: PasswordResetRequest):

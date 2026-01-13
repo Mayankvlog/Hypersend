@@ -3,6 +3,7 @@ from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone
 from bson import ObjectId
 import asyncio
+import json
 
 from auth.utils import get_current_user
 from db_proxy import chats_collection, users_collection, messages_collection, get_db
@@ -110,6 +111,36 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
         if uid != current_user:
             await _log_activity(group_id, current_user, "member_added", {"user_id": uid})
 
+    # Fetch member details for frontend
+    members_detail = []
+    async def fetch_member(uid: str) -> Optional[dict]:
+        user_profile = await UserCacheService.get_user_profile(uid)
+        if user_profile:
+            return user_profile
+        return await users_collection().find_one({"_id": uid})
+
+    tasks = [fetch_member(uid) for uid in member_ids]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for uid, user in zip(member_ids, results):
+        if isinstance(user, Exception) or not user:
+            members_detail.append({"user_id": uid, "role": "admin" if uid in chat_doc["admins"] else "member"})
+        else:
+            members_detail.append({
+                "user_id": uid,
+                "name": user.get("name"),
+                "email": user.get("email"),
+                "username": user.get("username"),
+                "role": "admin" if uid in chat_doc["admins"] else "member",
+            })
+
+    # Return group with member details for frontend
+    chat_doc["member_count"] = len(member_ids)
+    chat_doc["members"] = member_ids
+    chat_doc["members_detail"] = members_detail
+    chat_doc["is_admin"] = True  # Creator is always admin
+    
+    print(f"[GROUP_CREATE] Returning group with {len(member_ids)} members and {len(members_detail)} member details")
+    
     return {"group_id": group_id, "chat_id": group_id, "group": chat_doc}
 
 
@@ -117,13 +148,27 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
 async def list_groups(current_user: str = Depends(get_current_user)):
     """List groups for current user."""
     groups = []
-    async for chat in chats_collection().find({"type": "group", "members": {"$in": [current_user]}}).sort("created_at", -1):
+    cursor = chats_collection().find({"type": "group", "members": {"$in": [current_user]}}).sort("created_at", -1)
+    
+    # Handle both coroutine (mock DB) and cursor (real MongoDB)
+    if hasattr(cursor, '__await__'):
+        cursor = await cursor
+    
+    async for chat in cursor:
         # Attach the last message
         last_message = await messages_collection().find_one(
             {"chat_id": chat["_id"], "is_deleted": {"$ne": True}},
             sort=[("created_at", -1)],
         )
         chat["last_message"] = last_message
+        
+        # Add member count for frontend
+        members = chat.get("members", [])
+        chat["member_count"] = len(members)
+        chat["members"] = members  # Ensure members array is included
+        
+        print(f"[LIST_GROUPS] Group {chat['_id']}: {len(members)} members")
+        
         groups.append(chat)
     return {"groups": groups}
 
@@ -261,6 +306,13 @@ async def get_group(group_id: str, current_user: str = Depends(get_current_user)
     group_out = dict(group)
     group_out["members_detail"] = members
     group_out["is_admin"] = _is_admin(group, current_user)
+    
+    # Add member count for frontend compatibility
+    group_out["member_count"] = len(member_ids)
+    group_out["members"] = member_ids  # Ensure members array is included
+    
+    print(f"[GET_GROUP] Group {group_id}: {len(member_ids)} members, {len(members)} member details")
+    
     return {"group": group_out}
 
 
@@ -386,7 +438,14 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
 
     print(f"[ADD_MEMBERS] Successfully added {len(new_members)} members to group {group_id}")
     print(f"[ADD_MEMBERS] ===== ADD MEMBERS REQUEST END =====")
-    return {"added": len(new_members)}
+    
+    # Return updated member count for frontend
+    final_members = current_members + new_members
+    return {
+        "added": len(new_members),
+        "member_count": len(final_members),
+        "members": final_members
+    }
 
 
 @router.delete("/{group_id}/members/{member_id}")

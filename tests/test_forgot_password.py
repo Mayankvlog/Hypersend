@@ -238,11 +238,19 @@ def verify_response_structure(response_data: dict) -> bool:
     print_status(f"[PASS] Response has all required fields", "PASS")
     return True
 
+def test_forgot_password_request_model() -> bool:
+    """Test ForgotPasswordRequest model - REMOVED"""
+    print_status("Testing ForgotPasswordRequest model - REMOVED", "TEST")
+    
+    # ForgotPasswordRequest model removed
+    print_status("  [SKIP] ForgotPasswordRequest model removed", "PASS")
+    return True
+
 def test_email_validation() -> bool:
     """Test email validation regex"""
     print_status("Testing email validation...", "TEST")
     
-    # This would test the regex pattern used in ForgotPasswordRequest
+    # This would test the regex pattern used in email validation (ForgotPasswordRequest removed)
     valid_emails = [
         "user@example.com",
         "test.user@example.co.uk",

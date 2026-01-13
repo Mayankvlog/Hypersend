@@ -215,6 +215,9 @@ class Settings:
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() in ("true", "1", "yes")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
     
+    # Password reset functionality
+    ENABLE_PASSWORD_RESET: bool = os.getenv("ENABLE_PASSWORD_RESET", "False").lower() in ("true", "1", "yes")
+    
     # Email service validation with enhanced checking
     EMAIL_SERVICE_ENABLED: bool = bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and EMAIL_FROM)
     

@@ -40,9 +40,8 @@ class Role:
 # ... existing PyObjectId ...
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    email: str = Field(..., max_length=254)
+    username: str = Field(..., min_length=3, max_length=50)  # Required username field
     password: str = Field(..., min_length=8, max_length=128)
-    username: Optional[str] = Field(None, min_length=3, max_length=50)  # Add username field
     
     @field_validator('name')
     @classmethod
@@ -56,20 +55,17 @@ class UserCreate(BaseModel):
         v = re.sub(r'[<>"\']', '', v)
         return v.strip()
     
-    @field_validator('email')
+    @field_validator('username')
     @classmethod
-    def validate_email_field(cls, v):
-        if not v:
-            raise ValueError('Email is required')
-        # Convert to lowercase for consistency
-        v = v.lower().strip()
-        # Basic email validation
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
-        # Prevent consecutive dots in domain
-        if '..' in v.split('@')[1]:
-            raise ValueError('Email cannot contain consecutive dots in domain')
+    def validate_username(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Username is required')
+        v = v.strip()
+        # Username validation - alphanumeric, dots, hyphens, underscores
+        if not re.match(r'^[a-zA-Z0-9_.-]+$', v):
+            raise ValueError('Username can only contain letters, numbers, dots, hyphens, and underscores')
+        if len(v) < 3:
+            raise ValueError('Username must be at least 3 characters')
         return v
     
     @field_validator('password')
@@ -88,23 +84,29 @@ class UserCreate(BaseModel):
         return v
     
 class UserLogin(BaseModel):
-    email: str = Field(..., max_length=254)
+    username: str = Field(..., max_length=50)
     password: str = Field(..., min_length=1)
     
-    @field_validator('email')
+    @field_validator('username')
     @classmethod
-    def validate_login_email(cls, v):
+    def validate_login_username(cls, v):
         if not v or not isinstance(v, str) or not v.strip():
-            raise ValueError('Email cannot be empty')
-        v = v.lower().strip()
-        # Ensure email is not excessively long
-        if len(v) > 254:
-            raise ValueError('Email address too long')
-        # Standard email validation pattern including localhost for development
-        # Allow consecutive dots as per test expectations
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
-        if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
+            raise ValueError('Username cannot be empty')
+        v = v.strip()
+        # Ensure username is not excessively long
+        if len(v) > 50:
+            raise ValueError('Username too long')
+        # Allow email format or username format for login flexibility
+        # Email: contains @ and .
+        # Username: alphanumeric, dots, hyphens, underscores
+        if '@' in v:
+            # Email format - basic validation
+            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+                raise ValueError('Invalid email format')
+        else:
+            # Username format
+            if not re.match(r'^[a-zA-Z0-9_.-]+$', v):
+                raise ValueError('Invalid username format')
         return v
     
     @field_validator('password')
@@ -130,10 +132,9 @@ class UserInDB(BaseModel):
     
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     name: str
-    email: str
+    username: str
     password_hash: str
     password_salt: Optional[str] = None  # CRITICAL FIX: Store password salt separately
-    username: Optional[str] = None
     bio: Optional[str] = None
     avatar: Optional[str] = None  # Avatar initials like 'JD'
     avatar_url: Optional[str] = None
@@ -158,8 +159,7 @@ class UserInDB(BaseModel):
 class UserResponse(BaseModel):
     id: str
     name: str
-    email: str
-    username: Optional[str] = None
+    username: str
     bio: Optional[str] = None
     avatar: Optional[str] = None  # Avatar initials like 'JD'
     avatar_url: Optional[str] = None
@@ -178,7 +178,6 @@ class ProfileUpdate(BaseModel):
     """Profile update request model"""
     name: Optional[str] = Field(None, min_length=2, max_length=100)
     username: Optional[str] = Field(None, min_length=3, max_length=50)  # Fixed: min_length must be at least 3
-    email: Optional[str] = Field(None)  # Changed from EmailStr to str to handle validation manually
     avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
     bio: Optional[str] = Field(None, max_length=500)
     
@@ -259,17 +258,17 @@ class ProfileUpdate(BaseModel):
 
 # Password Reset Models
 class ForgotPasswordRequest(BaseModel):
-    email: str = Field(..., max_length=254)
+    email: str = Field(..., description="Email address for password reset")
     
     @field_validator('email')
     @classmethod
-    def validate_forgot_email(cls, v):
+    def validate_email(cls, v):
         if not v or not v.strip():
-            raise ValueError('Email cannot be empty')
-        v = v.lower().strip()
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format. Use format: user@zaply.in.net')
+            raise ValueError('Email is required')
+        v = v.strip().lower()
+        # Basic email validation
+        if not re.match(r'^[^@]+@[^@]+\.[^@]+$', v):
+            raise ValueError('Invalid email format')
         return v
 
 
@@ -583,15 +582,11 @@ class UploadInDB(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-
-
-
 class UserSearchResponse(BaseModel):
     """Enhanced user search response"""
     id: str
     name: str
-    email: str = Field(..., description="User email (always included for search)")
-    username: Optional[str] = None
+    username: str
     avatar_url: Optional[str] = None
     is_online: bool = False
     last_seen: Optional[datetime] = None
@@ -602,8 +597,7 @@ class UserPublic(BaseModel):
     """Public user information for API responses"""
     id: str
     name: str
-    email: str
-    username: Optional[str] = None
+    username: str
     avatar_url: Optional[str] = None
     is_online: bool = False
     last_seen: Optional[datetime] = None
@@ -724,28 +718,7 @@ class PasswordChangeRequest(BaseModel):
         return v
 
 
-class EmailChangeRequest(BaseModel):
-    """Email change request model"""
-    password: str = Field(..., min_length=1)
-    email: str = Field(..., max_length=254)
-    
-    @field_validator('password')
-    @classmethod
-    def validate_password(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Password cannot be empty')
-        return v
-    
-    @field_validator('email')
-    @classmethod
-    def validate_email(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Email cannot be empty')
-        v = v.lower().strip()
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format. Use format: user@zaply.in.net')
-        return v
+# EmailChangeRequest model removed as email functionality is disabled
 
 
 class TokenData(BaseModel):
@@ -761,14 +734,13 @@ class ContactAddRequest(BaseModel):
     """Request to add a contact"""
     user_id: Optional[str] = None  # Add by user ID
     username: Optional[str] = None  # Add by username
-    email: Optional[str] = None  # Add by email
     display_name: Optional[str] = None  # Custom display name for the contact
     
-    @field_validator('user_id', 'username', 'email')
+    @field_validator('user_id', 'username')
     @classmethod
     def validate_identifier(cls, v, info):
         # At least one identifier must be provided
-        if info.field_name in ['user_id', 'username', 'email']:
+        if info.field_name in ['user_id', 'username']:
             return v
         return v
     
@@ -778,10 +750,8 @@ class ContactAddRequest(BaseModel):
             return ("user_id", self.user_id)
         elif self.username:
             return ("username", self.username)
-        elif self.email:
-            return ("email", self.email)
         else:
-            raise ValueError("Either user_id, username, or email must be provided")
+            raise ValueError("Either user_id or username must be provided")
 
 
 class ContactResponse(BaseModel):

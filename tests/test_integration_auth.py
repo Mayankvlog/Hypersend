@@ -3,9 +3,12 @@
 Comprehensive integration test demonstrating both token authentication methods
 """
 
+import os
 import pytest
 
-pytest.skip("Legacy integration script (query-token auth is disabled); not part of automated pytest", allow_module_level=True)
+# Only skip if query-token auth is explicitly disabled
+if os.getenv("DISABLE_QUERY_TOKEN_AUTH", "true").lower() == "true":
+    pytest.skip("Legacy integration script (query-token auth is disabled); not part of automated pytest", allow_module_level=True)
 
 import sys
 import os

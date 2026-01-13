@@ -634,7 +634,7 @@ class TestMemberSuggestionsFix:
                         
                         # Verify suggestion structure
                         suggestion = suggestions[0]
-                        required_fields = ["id", "name", "email", "username", "avatar_url", "is_online", "last_seen", "status"]
+                        required_fields = ["id", "name", "username", "avatar_url", "is_online", "last_seen", "status"]
                         
                         for field in required_fields:
                             if field in suggestion:
@@ -646,7 +646,6 @@ class TestMemberSuggestionsFix:
                         # Verify data types
                         assert isinstance(suggestion["id"], str), "ID should be string"
                         assert isinstance(suggestion["name"], str), "Name should be string"
-                        assert isinstance(suggestion["email"], str), "Email should be string"
                         assert isinstance(suggestion["username"], str), "Username should be string"
                         assert isinstance(suggestion["is_online"], bool), "is_online should be boolean"
                         
@@ -655,7 +654,6 @@ class TestMemberSuggestionsFix:
                         # Verify specific values
                         assert suggestion["id"] == "user1"
                         assert suggestion["name"] == "Test User"
-                        assert suggestion["email"] == "test@example.com"
                         assert suggestion["username"] == "testuser"
                         assert suggestion["is_online"] == True
                         

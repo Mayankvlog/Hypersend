@@ -75,7 +75,7 @@ class TestRegistrationFixes:
     def test_registration_with_valid_data(self):
         """Test registration with valid data"""
         user_data = {
-            "email": "testuser@example.com",
+            "username": "testuser",
             "password": "TestPassword123",
             "name": "Test User"
         }
@@ -90,14 +90,14 @@ class TestRegistrationFixes:
         
         if response.status_code == 201:
             data = response.json()
-            assert "email" in data
+            assert "username" in data
             assert "name" in data
-            assert data["email"] == user_data["email"].lower()
+            assert data["username"] == user_data["username"].lower()
     
     def test_registration_with_weak_password(self):
         """Test registration with weak password"""
         user_data = {
-            "email": "weakuser@example.com",
+            "username": "weakuser",
             "password": "weak",  # Too short and no complexity
             "name": "Weak User"
         }
@@ -113,11 +113,11 @@ class TestRegistrationFixes:
         assert "detail" in data
     
     def test_registration_with_invalid_email(self):
-        """Test registration with invalid email"""
+        """Test registration with invalid username"""
         user_data = {
-            "email": "invalid-email",
+            "username": "ab",  # Too short (less than 3 chars)
             "password": "TestPassword123",
-            "name": "Invalid Email User"
+            "name": "Invalid Username User"
         }
         
         response = client.post("/api/v1/auth/register", 
@@ -125,7 +125,7 @@ class TestRegistrationFixes:
             headers={"User-Agent": "testclient"}
         )
         
-        # Should return 400 for invalid email (validation error)
+        # Should return 400 for invalid username (validation error)
         assert response.status_code == 400
         data = response.json()
         assert "detail" in data
@@ -134,7 +134,7 @@ class TestRegistrationFixes:
         """Test registration with missing fields"""
         # Test missing password
         user_data = {
-            "email": "missing@example.com",
+            "username": "missinguser",
             "name": "Missing Field User"
         }
         
@@ -168,7 +168,7 @@ class TestLoginFixes:
         """Test login with valid credentials"""
         # First register a user
         user_data = {
-            "email": "logintest@example.com",
+            "username": "logintest",
             "password": "TestPassword123",
             "name": "Login Test User"
         }
@@ -182,7 +182,7 @@ class TestLoginFixes:
         
         # Now try to login
         login_data = {
-            "email": "logintest@example.com",
+            "username": "logintest",
             "password": "TestPassword123"
         }
         
@@ -206,7 +206,7 @@ class TestLoginFixes:
     def test_login_with_invalid_credentials(self):
         """Test login with invalid credentials"""
         login_data = {
-            "email": "nonexistent@example.com",
+            "username": "nonexistentuser",
             "password": "WrongPassword123"
         }
         
@@ -221,9 +221,9 @@ class TestLoginFixes:
         assert "detail" in data
     
     def test_login_with_invalid_email_format(self):
-        """Test login with invalid email format"""
+        """Test login with invalid username format"""
         login_data = {
-            "email": "invalid-email-format",
+            "username": "ab#",  # Contains invalid character #
             "password": "TestPassword123"
         }
         
@@ -232,7 +232,7 @@ class TestLoginFixes:
             headers={"User-Agent": "testclient"}
         )
         
-        # Should return 400 for invalid email format (validation error)
+        # Should return 400 for invalid username format (validation error)
         assert response.status_code == 400
         data = response.json()
         assert "detail" in data
@@ -240,7 +240,7 @@ class TestLoginFixes:
     def test_login_with_missing_password(self):
         """Test login with missing password"""
         login_data = {
-            "email": "test@example.com"
+            "username": "testuser"
         }
         
         response = client.post("/api/v1/auth/login", 
@@ -304,7 +304,7 @@ class TestDatabaseErrorHandling:
     def test_user_not_found_handling(self):
         """Test handling of user not found scenarios"""
         login_data = {
-            "email": "definitelydoesnotexist@example.com",
+            "username": "definitelydoesnotexist",
             "password": "TestPassword123"
         }
         
@@ -323,7 +323,7 @@ class TestDatabaseErrorHandling:
     def test_duplicate_user_registration(self):
         """Test handling of duplicate user registration"""
         user_data = {
-            "email": "duplicate@example.com",
+            "username": "duplicate",
             "password": "TestPassword123",
             "name": "Duplicate User"
         }
@@ -334,7 +334,7 @@ class TestDatabaseErrorHandling:
             headers={"User-Agent": "testclient"}
         )
         
-        # Second registration with same email
+        # Second registration with same username
         response2 = client.post("/api/v1/auth/register", 
             json=user_data,
             headers={"User-Agent": "testclient"}

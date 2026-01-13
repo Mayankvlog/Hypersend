@@ -292,7 +292,8 @@ def check_email_validation(email):
     """Helper function to test email validation"""
     try:
         from models import UserCreate
-        UserCreate(name="Test", email=email, password="password123")
+        username = email.split('@')[0] if '@' in email else 'testuser'
+        UserCreate(name="Test", username=username, password="password123")
         return False  # No exception means validation passed
     except ValueError as e:
         return "format" in str(e).lower()
