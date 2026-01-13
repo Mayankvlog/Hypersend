@@ -137,7 +137,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             email=user["email"],
             username=user.get("username"),
             bio=user.get("bio"),
-            avatar=user.get("avatar"),
+            avatar="",  # FIXED: Always empty string for WhatsApp compatibility
             avatar_url=user.get("avatar_url"),
             quota_used=user.get("quota_used", 0),
             quota_limit=user.get("quota_limit", 42949672960),
@@ -439,7 +439,7 @@ async def update_profile(
             email=updated_user["email"],
             username=updated_user.get("username"),
             bio=updated_user.get("bio"),
-            avatar=updated_user.get("avatar"),
+            avatar="",  # FIXED: Always empty string for WhatsApp compatibility
             avatar_url=updated_user.get("avatar_url"),
             quota_used=int(updated_user.get("quota_used", 0)),
             quota_limit=int(updated_user.get("quota_limit", 42949672960)),
@@ -1563,7 +1563,7 @@ async def upload_avatar_alt(
         current_avatar = updated_user.get("avatar") if updated_user else None
         response_data = {
             "avatar_url": avatar_url,  # Image URL (REQUIRED)
-            "avatar": current_avatar if current_avatar else "",  # Initials (REQUIRED - defaults to empty string)
+            "avatar": "",  # FIXED: Always empty string for WhatsApp compatibility
             "success": True,
             "filename": new_file_name,
             "message": "Avatar uploaded successfully"

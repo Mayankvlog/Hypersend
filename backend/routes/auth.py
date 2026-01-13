@@ -1460,7 +1460,14 @@ async def change_password(
         
         # Get current user from database
         try:
-            user = await users_collection().find_one({"_id": ObjectId(current_user)})
+            # Handle both ObjectId strings and regular string IDs
+            try:
+                user_id = ObjectId(current_user)
+            except Exception:
+                # If not a valid ObjectId, use as string
+                user_id = current_user
+            
+            user = await users_collection().find_one({"_id": user_id})
         except Exception as e:
             auth_log(f"[CHANGE_PASSWORD_ERROR] Database query failed: {e}")
             raise HTTPException(
