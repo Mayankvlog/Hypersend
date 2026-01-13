@@ -1588,8 +1588,15 @@ async def complete_upload(
         
         # CRITICAL FIX: Generate secure random filename with user isolation
         file_id = hashlib.sha256(f"{uuid.uuid4()}".encode()).hexdigest()[:16]
-        safe_user = str(current_user)
-        user_prefix = safe_user[:2] if len(safe_user) >= 2 else safe_user  # Safe prefix extraction
+        
+        # Handle anonymous uploads with consistent naming
+        if current_user is None:
+            safe_user = "anonymous"
+            user_prefix = "an"  # First 2 letters of "anonymous"
+        else:
+            safe_user = str(current_user)
+            user_prefix = safe_user[:2] if len(safe_user) >= 2 else safe_user  # Safe prefix extraction
+            
         final_path = Path(settings.DATA_ROOT) / "files" / user_prefix / safe_user / file_id
         
         # SECURITY: Use secure temporary file with random name
@@ -2322,8 +2329,14 @@ async def download_file(
                         )
                     
                     # 4. User directory enforcement - ensure user can only access their own files
+                    # SPECIAL CASE: Allow access to anonymously uploaded files by any authenticated user
                     expected_user_prefix = Path("files") / current_user[:2] / current_user
-                    if not str(relative_path).startswith(str(expected_user_prefix)):
+                    anonymous_prefix_new = Path("files") / "an" / "anonymous"  # New anonymous path
+                    anonymous_prefix_old = Path("files") / "No" / "None"      # Old anonymous path for backward compatibility
+                    
+                    if (not str(relative_path).startswith(str(expected_user_prefix)) and 
+                        not str(relative_path).startswith(str(anonymous_prefix_new)) and
+                        not str(relative_path).startswith(str(anonymous_prefix_old))):
                         _log("error", f"Cross-user file access attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
                         raise HTTPException(
                             status_code=status.HTTP_403_FORBIDDEN,
