@@ -33,7 +33,7 @@ def create_and_login_user(email="test@test.com", password="TestPass123", usernam
     
     try:
         login_response = client.post("/api/v1/auth/login", json={
-            "email": email,
+            "username": email,
             "password": password
         })
         if login_response.status_code != 200:

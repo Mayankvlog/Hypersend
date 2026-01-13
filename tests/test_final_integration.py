@@ -163,7 +163,7 @@ def test_error_response_format():
         
         # Test 400 error response
         response = client.post("/api/v1/auth/login", json={
-            "email": "invalid-email",
+            "username": "invalid-email",
             "password": ""
         })
         

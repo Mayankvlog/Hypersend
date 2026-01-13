@@ -490,7 +490,7 @@ class TestSessionManagement:
                 response = client.post(
                     "/api/v1/auth/login",
                     json={
-                        "email": "test@example.com",
+                        "username": "test@example.com",
                         "password": "wrong_password"
                     }
                 )
