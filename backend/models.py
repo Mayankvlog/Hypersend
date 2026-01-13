@@ -84,7 +84,7 @@ class UserCreate(BaseModel):
         return v
     
 class UserLogin(BaseModel):
-    username: str = Field(..., max_length=50)
+    username: str = Field(..., max_length=255)
     password: str = Field(..., min_length=1)
     
     @field_validator('username')
@@ -92,10 +92,7 @@ class UserLogin(BaseModel):
     def validate_login_username(cls, v):
         if not v or not isinstance(v, str) or not v.strip():
             raise ValueError('Username cannot be empty')
-        v = v.strip()
-        # Ensure username is not excessively long
-        if len(v) > 50:
-            raise ValueError('Username too long')
+        v = v.strip().lower()
         # Allow email format or username format for login flexibility
         # Email: contains @ and .
         # Username: alphanumeric, dots, hyphens, underscores
@@ -107,6 +104,8 @@ class UserLogin(BaseModel):
             # Username format
             if not re.match(r'^[a-zA-Z0-9_.-]+$', v):
                 raise ValueError('Invalid username format')
+            if len(v) < 3:
+                raise ValueError('Username must be at least 3 characters')
         return v
     
     @field_validator('password')
@@ -121,6 +120,7 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    expires_in: Optional[int] = None  # Token expiration time in seconds
 
 
 class RefreshTokenRequest(BaseModel):

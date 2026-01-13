@@ -288,7 +288,7 @@ class TestAuthenticationFixes:
             mock_refresh.return_value = ("test_refresh_token", "test_jti")
             
             credentials = UserLogin(
-                username="testuser",
+                username="testuser@example.com",
                 password="TestPass123"
             )
             
@@ -325,7 +325,7 @@ class TestAuthenticationFixes:
                 await login(credentials, mock_request)
             
             assert exc_info.value.status_code == 401
-            assert "Invalid username or password" in str(exc_info.value.detail)
+            assert "Invalid email/username or password" in str(exc_info.value.detail)
         
         print("✓ Invalid credentials handled correctly")
     
@@ -336,7 +336,7 @@ class TestAuthenticationFixes:
         mock_users_collection.return_value.find_one.return_value = None
         
         credentials = UserLogin(
-            username="nonexistentuser",
+            username="nonexistentuser@example.com",
             password="TestPass123"
         )
         
@@ -347,7 +347,7 @@ class TestAuthenticationFixes:
             await login(credentials, mock_request)
         
         assert exc_info.value.status_code == 401
-        assert "Invalid username or password" in str(exc_info.value.detail)
+        assert "Invalid email/username or password" in str(exc_info.value.detail)
         
         print("✓ Non-existent user handled correctly")
 

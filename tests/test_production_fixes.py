@@ -173,7 +173,7 @@ class TestProductionFixes:
         
         # Now try to login
         login_data = {
-            "username": "migratedlogin",
+            "username": "migratedlogin@example.com",
             "password": "TestPassword123"
         }
         

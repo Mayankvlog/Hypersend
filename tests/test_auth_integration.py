@@ -193,7 +193,7 @@ class TestAuthenticationIntegration:
             
             assert response.status_code == 401
             data = response.json()
-            assert "Invalid username or password" in data["detail"]
+            assert "Invalid email/username or password" in data["detail"]
         
         print("✓ Invalid credentials login flow handled correctly")
     

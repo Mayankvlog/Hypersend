@@ -29,6 +29,7 @@ async def test_real_backend_avatar():
     test_user = {
         "name": "Test User",
         "username": "testuser123",
+        "email": "testuser123@example.com",
         "password": "Test@123"
     }
     
@@ -78,7 +79,7 @@ async def test_real_backend_avatar():
                 
                 # Get existing user to check avatar
                 login_response = requests.post(f"{base_url}/auth/login", json={
-                    "username": test_user["username"],
+                    "email": test_user["email"],
                     "password": test_user["password"]
                 }, timeout=10)
                 
@@ -119,7 +120,7 @@ async def test_real_backend_avatar():
         try:
             # Login first
             login_response = requests.post(f"{base_url}/auth/login", json={
-                "username": test_user["username"],
+                "email": test_user["email"],
                 "password": test_user["password"]
             }, timeout=10)
             
@@ -165,7 +166,7 @@ async def test_real_backend_avatar():
         try:
             # Login first
             login_response = requests.post(f"{base_url}/auth/login", json={
-                "username": test_user["username"],
+                "email": test_user["email"],
                 "password": test_user["password"]
             }, timeout=10)
             

@@ -169,7 +169,7 @@ class TestValidationErrorHandling:
         # Test login with missing password
         response = client.post(
             "/api/v1/login",
-            json={"username": "test"},  # Missing password
+            json={"email": "test@example.com"},  # Missing password
             headers={"Content-Type": "application/json"}
         )
         

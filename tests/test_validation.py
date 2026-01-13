@@ -48,7 +48,7 @@ def test_user_login():
     # Valid case
     try:
         login = UserLogin(
-            username="john.doe",
+            username="john.doe@example.com",
             password="MyPassword123"
         )
         print(f"  [PASS] Valid login: {login.username}")

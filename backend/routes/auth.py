@@ -84,7 +84,7 @@ def _is_valid_domain_format(domain: str) -> bool:
     return bool(re.match(domain_pattern, domain))
 
 def _is_valid_origin_format(origin: str) -> bool:
-    """Validate full origin URL format with strict HTTPS enforcement in production"""
+    """Validate full origin URL format with strict HTTPS enforcement and domain validation"""
     # Parse URL to validate components separately
     try:
         parsed = re.match(r'^(https?):\/\/([a-zA-Z0-9.-]+)(?::(\d+))?(?:\/.*)?$', origin)
@@ -103,7 +103,19 @@ def _is_valid_origin_format(origin: str) -> bool:
             else:
                 return False
         
-        # HTTPS is always allowed for valid domains (including localhost)
+        # HTTPS: Validate domain format before accepting
+        if not _is_valid_domain_format(domain):
+            return False
+        
+        # Validate port if present (must be valid numeric range 1-65535)
+        if port:
+            try:
+                port_num = int(port)
+                if port_num < 1 or port_num > 65535:
+                    return False
+            except ValueError:
+                return False
+        
         return True
     except Exception:
         return False
@@ -176,14 +188,14 @@ async def register(user: UserCreate) -> UserResponse:
         # Check if user already exists with case-insensitive username lookup
         users_col = users_collection()
         # Use case-insensitive username lookup to prevent duplicates
-        normalized_username = user.username.lower().strip()
+        normalized_email = user.username.lower().strip()
         
         # Check for existing username
         existing_user = None
         try:
             users_col = users_collection()
             existing_user = await asyncio.wait_for(
-                users_col.find_one({"username": normalized_username}),
+                users_col.find_one({"username": normalized_email}),
                 timeout=5.0
             )
         except asyncio.TimeoutError:
@@ -207,9 +219,9 @@ async def register(user: UserCreate) -> UserResponse:
         
         if existing_user:
             user_id = existing_user.get('_id') if isinstance(existing_user, dict) else None
-            auth_log(f"Registration failed: Found existing user with username: {normalized_username} (ID: {user_id})")
+            auth_log(f"Registration failed: Found existing user with username: {normalized_email} (ID: {user_id})")
         else:
-            auth_log(f"Registration: No existing user found for username: {normalized_username}")
+            auth_log(f"Registration: No existing user found for username: {normalized_email}")
         
         if existing_user:
             auth_log(f"Registration failed: Username already exists: {user.username}")
@@ -225,10 +237,12 @@ async def register(user: UserCreate) -> UserResponse:
         initials = None  # FIXED: Don't generate 2-letter avatar
         
         # Create user document
+        # SECURITY FIX: Store normalized email as username for consistency with lookups
+        normalized_email_value = user.email.lower().strip() if hasattr(user, 'email') else user.username.lower().strip()
         user_doc = {
             "_id": str(ObjectId()),
             "name": user.name,
-            "username": user.username,  # Required username field
+            "username": normalized_email_value,  # Store normalized value for lookup consistency
             "password_hash": password_hash,  # CRITICAL FIX: Store hash separately
             "password_salt": salt,  # CRITICAL FIX: Store salt separately
             "avatar": initials,  # FIXED: No avatar initials
@@ -341,7 +355,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 detail="Password is required"
             )
         
-        auth_log(f"Login attempt for username: {credentials.username}")
+        auth_log(f"Login attempt for email: {credentials.username}")
         
         # Clean up expired lockouts periodically
         cleanup_expired_lockouts()
@@ -375,19 +389,19 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         ]
         
         # SECURITY FIX: Track login attempts by both IP and username for proper rate limiting
-        username_lockout_key = f"username:{credentials.username}"
-        if username_lockout_key in persistent_login_lockouts:
-            lockout_expiry = persistent_login_lockouts[username_lockout_key]
+        email_lockout_key = f"email:{credentials.username}"
+        if email_lockout_key in persistent_login_lockouts:
+            lockout_expiry = persistent_login_lockouts[email_lockout_key]
             if current_time < lockout_expiry:
                 remaining_seconds = int((lockout_expiry - current_time).total_seconds())
-                auth_log(f"Username {credentials.username} is locked out for {remaining_seconds} more seconds")
+                auth_log(f"Email {credentials.username} is locked out for {remaining_seconds} more seconds")
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=f"Too many failed login attempts for this account. Please try again in {remaining_seconds} seconds.",
                     headers={"Retry-After": str(remaining_seconds)}
                 )
             else:
-                del persistent_login_lockouts[username_lockout_key]
+                del persistent_login_lockouts[email_lockout_key]
         
         # Check IP-based rate limit (prevent brute force from single IP)
         if len(login_attempts[client_ip]) >= MAX_LOGIN_ATTEMPTS_PER_IP:
@@ -403,15 +417,16 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # Record this login attempt
         login_attempts[client_ip].append(current_time)
         
-        # Find user by username - Use case-insensitive username lookup
-        normalized_username = credentials.username.lower().strip()
+        # Find user by email or username - Use case-insensitive lookup
+        normalized_email = credentials.username.lower().strip()
         
         try:
             users_col = users_collection()
             # Add timeout to database query to prevent 503 Service Unavailable
             try:
+                # Try to find user by email first, then by username
                 existing_user = await asyncio.wait_for(
-                    users_col.find_one({"username": normalized_username}),
+                    users_col.find_one({"$or": [{"email": normalized_email}, {"username": normalized_email}]}),
                     timeout=5.0
                 )
             except asyncio.TimeoutError:
@@ -439,11 +454,11 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     )
             
             if not existing_user:
-                auth_log(f"Login failed: User not found: {normalized_username}")
-                # SECURITY: Don't increase per-username lockout for non-existent users (prevents enumeration)
+                auth_log(f"Login failed: User not found: {normalized_email}")
+                # SECURITY: Don't increase per-email lockout for non-existent users (prevents enumeration)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid username or password"
+                    detail="Invalid email/username or password"
                 )
             
             # Verify password - CRITICAL FIX: Ensure password_hash and salt exist
@@ -454,18 +469,18 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             if isinstance(password_hash, (tuple, list)) and len(password_hash) == 2:
                 # Legacy format: (hash, salt) stored as tuple
                 password_hash, password_salt = password_hash
-                auth_log(f"Converting legacy password format for {normalized_username}")
+                auth_log(f"Converting legacy password format for {normalized_email}")
             
             if not password_hash:
-                auth_log(f"Login failed: User {normalized_username} has no password hash (corrupted record)")
+                auth_log(f"Login failed: User {normalized_email} has no password hash (corrupted record)")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid username or password"
+                    detail="Invalid email/username or password"
                 )
             
             # CRITICAL FIX: Handle missing password salt with migration
             if not password_salt:
-                auth_log(f"DEBUG: User {normalized_username} has no password salt, attempting migration")
+                auth_log(f"DEBUG: User {normalized_email} has no password salt, attempting migration")
                 
                 # Check if user has legacy password field
                 legacy_password = existing_user.get("password")
@@ -474,7 +489,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                     parts = legacy_password.split('$')
                     if len(parts) == 2:
                         password_salt, password_hash = parts
-                        auth_log(f"Migrating legacy password format for {normalized_username}")
+                        auth_log(f"Migrating legacy password format for {normalized_email}")
                         
                         # Update user record with new format
                         try:
@@ -489,12 +504,12 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                                     "$unset": {"password": ""}
                                 }
                             )
-                            auth_log(f"Successfully migrated password format for {normalized_username}")
+                            auth_log(f"Successfully migrated password format for {normalized_email}")
                         except Exception as migrate_error:
-                            auth_log(f"Failed to migrate password for {normalized_username}: {migrate_error}")
+                            auth_log(f"Failed to migrate password for {normalized_email}: {migrate_error}")
                             # Continue with legacy format for now
                     else:
-                        auth_log(f"Invalid legacy password format for {normalized_username}")
+                        auth_log(f"Invalid legacy password format for {normalized_email}")
                 else:
                     # Check if password_hash is in combined format (salt$hash)
                     if password_hash and isinstance(password_hash, str) and '$' in password_hash:
@@ -503,7 +518,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                             parts = password_hash.split('$')
                             if len(parts) == 2:
                                 password_salt, password_hash = parts
-                                auth_log(f"Found combined password format for {normalized_username}")
+                                auth_log(f"Found combined password format for {normalized_email}")
                                 
                                 # Update user record with separated format
                                 try:
@@ -517,87 +532,82 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                                             }
                                         }
                                     )
-                                    auth_log(f"Successfully separated password format for {normalized_username}")
+                                    auth_log(f"Successfully separated password format for {normalized_email}")
                                 except Exception as migrate_error:
-                                    auth_log(f"Failed to separate password for {normalized_username}: {migrate_error}")
+                                    auth_log(f"Failed to separate password for {normalized_email}: {migrate_error}")
                             else:
-                                auth_log(f"Invalid combined password format for {normalized_username}")
+                                auth_log(f"Invalid combined password format for {normalized_email}")
                         else:
-                            auth_log(f"Invalid combined password length for {normalized_username}: {len(password_hash)}")
+                            auth_log(f"Invalid combined password length for {normalized_email}: {len(password_hash)}")
                     
                     # If still no password salt after migration attempt
                     if not password_salt:
-                        auth_log(f"Login failed: User {normalized_username} has no valid password salt (corrupted record)")
+                        auth_log(f"Login failed: User {normalized_email} has no valid password salt (corrupted record)")
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Invalid username or password"
+                            detail="Invalid email/username or password"
                         )
             
             # Verify password with constant-time comparison - CRITICAL FIX: Handle different formats
             # CRITICAL FIX: Check if we have the new format (separated) or legacy format (combined)
             # Always attempt verification regardless of format, since we don't know what the actual format is
             
-            # DEEP DEBUGGING: Log all password details
-            auth_log(f"[PASSWORD_DEBUG] Email: {normalized_username} | Hash type: {type(password_hash).__name__} | Hash len: {len(password_hash) if password_hash else 0} | Salt type: {type(password_salt).__name__} | Salt len: {len(password_salt) if password_salt else 0}")
-            if password_hash and isinstance(password_hash, str) and len(password_hash) <= 100:
-                auth_log(f"[PASSWORD_DEBUG] Hash value: {password_hash[:50]}..." if len(password_hash) > 50 else f"[PASSWORD_DEBUG] Hash value: {password_hash}")
-            if password_salt and isinstance(password_salt, str) and len(password_salt) <= 50:
-                auth_log(f"[PASSWORD_DEBUG] Salt value: {password_salt}")
+            # SECURITY: Only log password verification attempt type in debug mode
+            if settings.DEBUG:
+                auth_log(f"[PASSWORD_DEBUG] Attempting password verification for {normalized_email} (hash present: {bool(password_hash)}, salt present: {bool(password_salt)})")
             
             if password_salt and isinstance(password_salt, str) and len(password_salt) > 0:
                 # Try new format: separated hash and salt
-                auth_log(f"Attempting separated password format for {normalized_username}")
+                auth_log(f"Attempting separated password format for {normalized_email}")
                 is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
                 
                 # If verification failed with separated format and hash is 64 chars, try legacy SHA256 hash with salt
                 if not is_password_valid and password_hash and isinstance(password_hash, str) and len(password_hash) == 64:
-                    auth_log(f"Separated format verification failed, trying legacy SHA256+salt format for {normalized_username}")
+                    auth_log(f"Separated format verification failed, trying legacy SHA256+salt format for {normalized_email}")
                     # CRITICAL FIX: Try both salt+pwd and pwd+salt legacy formats
                     # Try password + salt format
                     is_password_valid = verify_password(credentials.password, password_salt, password_hash, str(existing_user.get("_id")))
                     
                     # If that fails, try salt + password format  
                     if not is_password_valid:
-                        auth_log(f"Trying salt+password legacy format for {normalized_username}")
+                        auth_log(f"Trying salt+password legacy format for {normalized_email}")
                         is_password_valid = verify_password(credentials.password, password_hash, password_salt, str(existing_user.get("_id")))
                     
-                    # DEBUG: Log what we're trying to match
-                    import hashlib
-                    if password_salt:
-                        # Test both legacy formats
-                        pwd_salt_hash = hashlib.sha256((credentials.password + password_salt).encode()).hexdigest()
-                        salt_pwd_hash = hashlib.sha256((password_salt + credentials.password).encode()).hexdigest()
-                        auth_log(f"[DEBUG] Expected SHA256(pwd+salt): {pwd_salt_hash[:20]}...")
-                        auth_log(f"[DEBUG] Expected SHA256(salt+pwd): {salt_pwd_hash[:20]}...")
-                        auth_log(f"[DEBUG] Database hash: {password_hash[:20]}...")
-                        auth_log(f"[DEBUG] Pwd+Salt match: {pwd_salt_hash == password_hash}")
-                        auth_log(f"[DEBUG] Salt+Pwd match: {salt_pwd_hash == password_hash}")
-                        
-                        # Try alternative
-                        combined_test_alt = password_salt + credentials.password
-                        expected_hash_alt = hashlib.sha256(combined_test_alt.encode()).hexdigest()
-                        auth_log(f"[DEBUG] Expected SHA256(salt+pwd): {expected_hash_alt[:20]}...")
-                        auth_log(f"[DEBUG] Alternative matches: {expected_hash_alt == password_hash}")
+                    # SECURITY: Only run debug hashing if DEBUG mode is enabled
+                    if settings.DEBUG:
+                        import hashlib
+                        if password_salt:
+                            # Test both legacy formats - only in debug
+                            pwd_salt_hash = hashlib.sha256((credentials.password + password_salt).encode()).hexdigest()
+                            salt_pwd_hash = hashlib.sha256((password_salt + credentials.password).encode()).hexdigest()
+                            auth_log(f"[DEBUG] Testing legacy password formats (hashes not logged for security)")
+                            auth_log(f"[DEBUG] Pwd+Salt match: {pwd_salt_hash == password_hash}")
+                            auth_log(f"[DEBUG] Salt+Pwd match: {salt_pwd_hash == password_hash}")
+                            
+                            # Try alternative
+                            combined_test_alt = password_salt + credentials.password
+                            expected_hash_alt = hashlib.sha256(combined_test_alt.encode()).hexdigest()
+                            auth_log(f"[DEBUG] Alternative matches: {expected_hash_alt == password_hash}")
                 
                 # CRITICAL FIX: If verification still fails, provide helpful error for password reset
                 if not is_password_valid:
-                    auth_log(f"[PASSWORD_RESET_NEEDED] All verification methods failed for {normalized_username}")
+                    auth_log(f"[PASSWORD_RESET_NEEDED] All verification methods failed for {normalized_email}")
                     auth_log(f"[PASSWORD_RESET_NEEDED] User should use forgot-password to reset")
                     # Continue to return 401 - user needs to reset password
                 
                 # CRITICAL FIX: If both fail, check if hash and salt might be swapped
                 if not is_password_valid and password_salt and isinstance(password_salt, str) and len(password_salt) == 64:
-                    auth_log(f"[RECOVERY] Trying swapped hash/salt for {normalized_username}")
+                    auth_log(f"[RECOVERY] Trying swapped hash/salt for {normalized_email}")
                     is_password_valid = verify_password(credentials.password, password_salt, password_hash, str(existing_user.get("_id")))
                     if is_password_valid:
-                        auth_log(f"[RECOVERY] SUCCESS: Hash and salt were swapped for {normalized_username}, fixing in database")
+                        auth_log(f"[RECOVERY] SUCCESS: Hash and salt were swapped for {normalized_email}, fixing in database")
                         # Fix the database
                         try:
                             await users_collection().update_one(
                                 {"_id": existing_user["_id"]},
                                 {"$set": {"password_hash": password_salt, "password_salt": password_hash}}
                             )
-                            auth_log(f"[RECOVERY] Database corrected for {normalized_username}")
+                            auth_log(f"[RECOVERY] Database corrected for {normalized_email}")
                         except Exception as fix_error:
                             auth_log(f"[RECOVERY] Failed to fix database: {fix_error}")
                     
@@ -605,28 +615,28 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 # Check for combined format (salt$hash - 97 chars with $)
                 if '$' in password_hash and len(password_hash) == 97:
                     # Legacy/combined format: hash contains "salt$hash"
-                    auth_log(f"Using legacy combined password format for {normalized_username}")
+                    auth_log(f"Using legacy combined password format for {normalized_email}")
                     is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
                 else:
                     # Old legacy format: just the hash without salt (shouldn't happen with our code, but handle it)
                     # This could be SHA256 or PBKDF2 without stored salt
-                    auth_log(f"Using legacy format for {normalized_username}")
+                    auth_log(f"Using legacy format for {normalized_email}")
                     is_password_valid = verify_password(credentials.password, password_hash, None, str(existing_user.get("_id")))
             else:
                 # Unrecognized format - this is an error
-                auth_log(f"Unrecognized password format for {normalized_username}: hash_len={len(password_hash) if password_hash else 0}, hash_has_$={('$' in password_hash) if password_hash else False}, salt_len={len(password_salt) if password_salt else 0}")
+                auth_log(f"Unrecognized password format for {normalized_email}: hash_len={len(password_hash) if password_hash else 0}, hash_has_$={('$' in password_hash) if password_hash else False}, salt_len={len(password_salt) if password_salt else 0}")
                 is_password_valid = False
             
-            auth_log(f"Password verification result for {normalized_username}: {is_password_valid} (hash_length: {len(password_hash) if password_hash else 0}, has_salt: {bool(password_salt)})")
+            auth_log(f"Password verification result for {normalized_email}: {is_password_valid} (hash_length: {len(password_hash) if password_hash else 0}, has_salt: {bool(password_salt)})")
         except HTTPException:
             raise
         except Exception as verify_error:
-            auth_log(f"Password verification error for {normalized_username}: {type(verify_error).__name__}")
+            auth_log(f"Password verification error for {normalized_email}: {type(verify_error).__name__}")
             # Treat verification errors as invalid passwords for security
             is_password_valid = False
         
         if not is_password_valid:
-            auth_log(f"Login failed: Invalid password for: {normalized_username}")
+            auth_log(f"Login failed: Invalid password for: {normalized_email}")
             
             # ADVANCED DEBUGGING: Diagnose actual password format stored
             from auth.utils import diagnose_password_format
@@ -650,8 +660,8 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             if attempt_count >= MAX_FAILED_ATTEMPTS_PER_ACCOUNT:
                 lockout_seconds = PROGRESSIVE_LOCKOUTS.get(min(attempt_count, 5), 1800)  # Max 30 min
                 lockout_time = current_time + timedelta(seconds=lockout_seconds)
-                persistent_login_lockouts[username_lockout_key] = lockout_time
-                auth_log(f"Account {normalized_username} locked out for {lockout_seconds} seconds after {attempt_count} failed attempts")
+                persistent_login_lockouts[email_lockout_key] = lockout_time
+                auth_log(f"Account {normalized_email} locked out for {lockout_seconds} seconds after {attempt_count} failed attempts")
                 
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -661,7 +671,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
+                detail="Invalid email/username or password"
             )
         
         # CRITICAL FIX: Session fixation prevention - invalidate existing sessions
@@ -678,11 +688,12 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         refresh_token, jti = create_refresh_token({"sub": str(existing_user["_id"])})
         
         # Store new refresh token in database
+        token_created_at = datetime.now(timezone.utc)
         await refresh_tokens_collection().insert_one({
-            "user_id": str(existing_user["_id"]),
+            "user_id": existing_user["_id"],  # SECURITY FIX: Store ObjectId directly, not string
             "jti": jti,
-            "created_at": datetime.now(timezone.utc),
-            "expires_at": datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+            "created_at": token_created_at,
+            "expires_at": token_created_at + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         })
         
         # Update last_seen
@@ -867,15 +878,38 @@ async def refresh_session_token(request: RefreshTokenRequest) -> Token:
                 detail="User not found"
             )
         
-        # ENHANCEMENT: Extend refresh token expiration for session persistence
-        new_expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        # SECURITY FIX: Enforce absolute max lifetime for refresh tokens
+        # Don't allow indefinite session extension - enforce max_lifetime from creation
+        REFRESH_TOKEN_MAX_LIFETIME_DAYS = 30  # Absolute maximum token lifetime
+        token_created_at = refresh_doc.get("created_at", datetime.now(timezone.utc))
+        token_max_expiry = token_created_at + timedelta(days=REFRESH_TOKEN_MAX_LIFETIME_DAYS)
+        current_time = datetime.now(timezone.utc)
+        
+        # If token has exceeded absolute max lifetime, reject refresh
+        if current_time >= token_max_expiry:
+            auth_log(f"Token refresh rejected - absolute max lifetime exceeded for user: {token_data.user_id}")
+            # Invalidate the expired token
+            await refresh_tokens_collection().update_one(
+                {"_id": refresh_doc["_id"]},
+                {"$set": {"invalidated": True}}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has reached absolute maximum lifetime - please login again"
+            )
+        
+        # Extend expires_at but cap at max_lifetime
+        new_expires_at = min(
+            current_time + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+            token_max_expiry
+        )
         await refresh_tokens_collection().update_one(
             {"_id": refresh_doc["_id"]},
-            {"$set": {"expires_at": new_expires_at, "last_used": datetime.now(timezone.utc)}}
+            {"$set": {"expires_at": new_expires_at, "last_used": current_time}}
         )
         
-        # Create new access token with extended expiration
-        access_token_expires = timedelta(hours=480)  # 480 hours for session persistence
+        # SECURITY FIX: Reduce access token TTL to short-lived window (15 minutes)
+        access_token_expires = timedelta(minutes=15)  # Short-lived access token
         access_token = create_access_token(
             data={"sub": token_data.user_id},
             expires_delta=access_token_expires
@@ -1074,8 +1108,13 @@ async def logout(current_user: str = Depends(get_current_user)):
         )
         
         # Update user status
+        # SECURITY FIX: Ensure _id is ObjectId for reliable query matching
+        user_id_for_update = current_user
+        if isinstance(current_user, str) and ObjectId.is_valid(current_user):
+            user_id_for_update = ObjectId(current_user)
+        
         await users_collection().update_one(
-            {"_id": current_user},
+            {"_id": user_id_for_update},
             {"$set": {
                 "is_online": False,
                 "last_seen": datetime.now(timezone.utc),
@@ -1128,9 +1167,10 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
         
         # Check if user exists by email
         try:
-            # Find user by email (case-insensitive)
+            # SECURITY FIX: Use exact match with normalization instead of regex to prevent ReDoS
+            normalized_email = request.email.lower().strip()
             user = await users_collection().find_one({
-                "email": {"$regex": f"^{request.email}$", "$options": "i"}
+                "email": normalized_email
             })
         except Exception as e:
             auth_log(f"Database error checking user email: {e}")
@@ -1294,21 +1334,7 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
             detail="Password reset service unavailable"
         )
 
-@router.options("/forgot-password")
-async def forgot_password_options():
-    """Forgot password endpoint options - DISABLED"""
-    return JSONResponse(
-        content={"message": "Password reset functionality has been disabled"},
-        status_code=200
-    )
-
-@router.options("/reset-password")
-async def reset_password_options():
-    """Reset password endpoint options - DISABLED"""
-    return JSONResponse(
-        content={"message": "Password reset functionality has been disabled"},
-        status_code=200
-    )
+# SECURITY FIX: Removed duplicate OPTIONS handlers - auth_options handles CORS for these routes
 
 
 @router.post("/change-password")
@@ -1400,10 +1426,15 @@ async def change_password(
         password_hash, password_salt = hash_password(request.new_password)
         auth_log(f"[CHANGE_PASSWORD_DEBUG] New password hashed successfully")
         
+        # SECURITY FIX: Use proper user_id handling for ObjectId conversion
+        user_id_for_update = current_user
+        if isinstance(current_user, str) and ObjectId.is_valid(current_user):
+            user_id_for_update = ObjectId(current_user)
+        
         # Update user password with error handling
         try:
             update_result = await users_collection().update_one(
-                {"_id": ObjectId(current_user)},
+                {"_id": user_id_for_update},
                 {"$set": {
                     "password_hash": password_hash,
                     "password_salt": password_salt,

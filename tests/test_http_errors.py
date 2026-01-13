@@ -77,7 +77,7 @@ class TestAuthenticationErrors:
             "password": "password123"
         })
         assert response.status_code == 401
-        assert "Invalid username or password" in response.json()["detail"]
+        assert "Invalid email/username or password" in response.json()["detail"]
     
     def test_register_invalid_username_format(self):
         """Test 400 error for invalid username in registration"""
