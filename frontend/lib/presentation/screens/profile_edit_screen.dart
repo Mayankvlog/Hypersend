@@ -291,11 +291,15 @@ Future<void> _saveProfile() async {
                 children: [
                    Builder(
                     builder: (context) {
-                      // FIXED: Don't copy old avatar text - use clean user data
-                      final tempUser = _initialUser.copyWith(avatar: ''); // Always use empty avatar
-                      // FIXED: Always use initials from name when no image URL, never from old avatar field
-                      final isUrl = _currentAvatar.startsWith('http') || _currentAvatar.startsWith('/');
-                      final displayInitials = isUrl ? tempUser.initials : tempUser.initials;
+                      // FIXED: Preserve actual avatar URL in tempUser so fullAvatarUrl works correctly
+                      final tempUser = _initialUser.copyWith(
+                        avatar: _currentAvatar.isNotEmpty ? _currentAvatar : _initialUser.avatar
+                      );
+                      // FIXED: Check if _currentAvatar is a URL by examining its content
+                      final isUrl = _currentAvatar.isNotEmpty && 
+                          (_currentAvatar.startsWith('http') || _currentAvatar.startsWith('/'));
+                      // FIXED: Always use tempUser.initials - no redundant ternary needed
+                      final displayInitials = tempUser.initials;
                                          
                       return CircleAvatar(
                         radius: 60,

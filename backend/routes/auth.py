@@ -1366,6 +1366,9 @@ async def change_password(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Database error occurred"
                 )
+        except HTTPException:
+            # Re-raise HTTP exceptions (like the ones from inner try block)
+            raise
         except Exception as e:
             auth_log(f"[CHANGE_PASSWORD_ERROR] Unexpected error: {e}")
             raise HTTPException(
