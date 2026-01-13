@@ -173,7 +173,7 @@ async def auth_options(request: Request):
 async def register(user: UserCreate) -> UserResponse:
     """Register a new user account"""
     try:
-        auth_log(f"Registration attempt for username: {user.username}")
+        auth_log(f"Registration attempt for email: {user.email}")
         
         # Username and password validation is now handled in the model validator
         
@@ -185,17 +185,17 @@ async def register(user: UserCreate) -> UserResponse:
                 detail="Name is required"
             )
         
-        # Check if user already exists with case-insensitive username lookup
+        # Check if user already exists with case-insensitive email lookup
         users_col = users_collection()
-        # Use case-insensitive username lookup to prevent duplicates
-        normalized_email = user.username.lower().strip()
+        # Use case-insensitive email lookup to prevent duplicates
+        normalized_email = user.email.lower().strip()
         
-        # Check for existing username
+        # Check for existing email
         existing_user = None
         try:
             users_col = users_collection()
             existing_user = await asyncio.wait_for(
-                users_col.find_one({"username": normalized_email}),
+                users_col.find_one({"email": normalized_email}),
                 timeout=5.0
             )
         except asyncio.TimeoutError:
@@ -219,15 +219,15 @@ async def register(user: UserCreate) -> UserResponse:
         
         if existing_user:
             user_id = existing_user.get('_id') if isinstance(existing_user, dict) else None
-            auth_log(f"Registration failed: Found existing user with username: {normalized_email} (ID: {user_id})")
+            auth_log(f"Registration failed: Found existing user with email: {normalized_email} (ID: {user_id})")
         else:
-            auth_log(f"Registration: No existing user found for username: {normalized_email}")
+            auth_log(f"Registration: No existing user found for email: {normalized_email}")
         
         if existing_user:
-            auth_log(f"Registration failed: Username already exists: {user.username}")
+            auth_log(f"Registration failed: Email already exists: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Username already registered. Please login or use a different username."
+                detail="Email already registered. Please login or use a different email."
             )
         
         # Hash password - CRITICAL FIX: Store hash and salt separately
@@ -237,12 +237,11 @@ async def register(user: UserCreate) -> UserResponse:
         initials = None  # FIXED: Don't generate 2-letter avatar
         
         # Create user document
-        # SECURITY FIX: Store normalized email as username for consistency with lookups
-        normalized_email_value = user.email.lower().strip() if hasattr(user, 'email') else user.username.lower().strip()
         user_doc = {
             "_id": str(ObjectId()),
             "name": user.name,
-            "username": normalized_email_value,  # Store normalized value for lookup consistency
+            "email": user.email,  # Store email for login
+            "username": user.email.lower().strip(),  # Keep username for backward compatibility
             "password_hash": password_hash,  # CRITICAL FIX: Store hash separately
             "password_salt": salt,  # CRITICAL FIX: Store salt separately
             "avatar": initials,  # FIXED: No avatar initials
@@ -283,7 +282,7 @@ async def register(user: UserCreate) -> UserResponse:
             if hasattr(inserted_id, '__await__') or asyncio.isfuture(inserted_id):
                 raise RuntimeError(f"Critical async error: inserted_id is a Future object: {type(inserted_id)}")
             
-            auth_log(f"SUCCESS: User registered successfully: {user.username} (ID: {inserted_id})")
+            auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {inserted_id})")
         except asyncio.TimeoutError:
             auth_log(f"Database timeout during user insertion")
             raise HTTPException(
@@ -301,7 +300,7 @@ async def register(user: UserCreate) -> UserResponse:
             if "duplicate" in str(db_error).lower():
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Username already registered. Please use a different username."
+                    detail="Email already registered. Please use a different email."
                 )
             else:
                 raise HTTPException(
@@ -313,7 +312,8 @@ async def register(user: UserCreate) -> UserResponse:
         return UserResponse(
             id=str(inserted_id),
             name=user.name,
-            username=user.username,
+            email=user.email,
+            username=user.email.lower().strip(),
             bio=None,
             avatar=initials,  
             avatar_url=None,
@@ -324,12 +324,6 @@ async def register(user: UserCreate) -> UserResponse:
             last_seen=None,
             is_online=False,
             status=None,
-            permissions={
-                "location": False,
-                "camera": False,
-                "microphone": False,
-                "storage": False
-            },
             pinned_chats=[],
             is_contact=False
         )
@@ -355,7 +349,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 detail="Password is required"
             )
         
-        auth_log(f"Login attempt for email: {credentials.username}")
+        auth_log(f"Login attempt for email: {credentials.email}")
         
         # Clean up expired lockouts periodically
         cleanup_expired_lockouts()
@@ -388,13 +382,13 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             ts for ts in login_attempts[client_ip] if ts > cutoff_time
         ]
         
-        # SECURITY FIX: Track login attempts by both IP and username for proper rate limiting
-        email_lockout_key = f"email:{credentials.username}"
+        # SECURITY FIX: Track login attempts by both IP and email for proper rate limiting
+        email_lockout_key = f"email:{credentials.email}"
         if email_lockout_key in persistent_login_lockouts:
             lockout_expiry = persistent_login_lockouts[email_lockout_key]
             if current_time < lockout_expiry:
                 remaining_seconds = int((lockout_expiry - current_time).total_seconds())
-                auth_log(f"Email {credentials.username} is locked out for {remaining_seconds} more seconds")
+                auth_log(f"Email {credentials.email} is locked out for {remaining_seconds} more seconds")
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=f"Too many failed login attempts for this account. Please try again in {remaining_seconds} seconds.",
@@ -417,16 +411,15 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         # Record this login attempt
         login_attempts[client_ip].append(current_time)
         
-        # Find user by email or username - Use case-insensitive lookup
-        normalized_email = credentials.username.lower().strip()
+        # Find user by email - Use case-insensitive lookup
+        normalized_email = credentials.email.lower().strip()
         
         try:
             users_col = users_collection()
             # Add timeout to database query to prevent 503 Service Unavailable
             try:
-                # Try to find user by email first, then by username
                 existing_user = await asyncio.wait_for(
-                    users_col.find_one({"$or": [{"email": normalized_email}, {"username": normalized_email}]}),
+                    users_col.find_one({"email": normalized_email}),
                     timeout=5.0
                 )
             except asyncio.TimeoutError:
@@ -706,7 +699,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             }}
         )
         
-        auth_log(f"SUCCESS: Login successful: {credentials.username}")
+        auth_log(f"SUCCESS: Login successful: {credentials.email}")
         
         return Token(
             access_token=access_token,

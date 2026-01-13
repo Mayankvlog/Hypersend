@@ -85,7 +85,7 @@ class TestAuthenticationIntegration:
         # Test registration
         register_data = {
             "name": "Test User",
-            "username": "test",
+            "email": "test@example.com",
             "password": "TestPass123"
         }
         
@@ -96,7 +96,7 @@ class TestAuthenticationIntegration:
             
             assert response.status_code == 201
             data = response.json()
-            assert data["username"] == "test"
+            assert data["email"] == "test@example.com"
             assert data["name"] == "Test User"
             assert data["avatar"] is None  # FIXED: No avatar initials
         
@@ -108,7 +108,8 @@ class TestAuthenticationIntegration:
         user_data = {
             "_id": "507f1f77bcf86cd799439011",
             "name": "Test User",
-            "username": "test",
+            "email": "test@example.com",
+            "username": "test@example.com",  # Keep for backward compatibility
             "password_hash": "a" * 64,  # Proper 64-char hex hash
             "password_salt": "b" * 32,  # Proper 32-char hex salt
             "avatar": "TU",
@@ -128,7 +129,7 @@ class TestAuthenticationIntegration:
             mock_refresh.return_value = ("refresh_token_123", "jti_123")
             
             login_data = {
-                "username": "test",
+                "email": "test@example.com",
                 "password": "TestPass123"
             }
             
@@ -147,7 +148,8 @@ class TestAuthenticationIntegration:
         # Setup existing user
         existing_user = {
             "_id": "507f1f77bcf86cd799439011",
-            "username": "existing",
+            "email": "existing@example.com",
+            "username": "existing@example.com",
             "name": "Existing User"
         }
         
@@ -157,7 +159,7 @@ class TestAuthenticationIntegration:
         
         register_data = {
             "name": "New User",
-            "username": "existing",
+            "email": "existing@example.com",
             "password": "TestPass123"
         }
         
@@ -165,7 +167,7 @@ class TestAuthenticationIntegration:
         
         assert response.status_code == 409
         data = response.json()
-        assert "Username already registered" in data["detail"]
+        assert "Email already registered" in data["detail"]
         
         print("✓ Duplicate username registration flow handled correctly")
     
@@ -174,7 +176,8 @@ class TestAuthenticationIntegration:
         # Setup user data
         user_data = {
             "_id": "507f1f77bcf86cd799439011",
-            "username": "test",
+            "email": "test@example.com",
+            "username": "test@example.com",
             "password_hash": "a" * 64,  # Proper 64-char hex hash
             "password_salt": "b" * 32,  # Proper 32-char hex salt
         }
@@ -185,7 +188,7 @@ class TestAuthenticationIntegration:
             mock_verify.return_value = False  # Password verification fails
             
             login_data = {
-                "username": "test",
+                "email": "test@example.com",
                 "password": "wrongpassword"
             }
             
@@ -205,7 +208,7 @@ class TestAuthenticationIntegration:
         
         register_data = {
             "name": "Test User",
-            "username": "test",
+            "email": "test@example.com",
             "password": "TestPass123"
         }
         
@@ -223,7 +226,7 @@ class TestAuthenticationIntegration:
         mock_database_setup['users_mock'].find_one.side_effect = ConnectionError("Connection failed")
         
         login_data = {
-            "username": "test",
+            "email": "test@example.com",
             "password": "TestPass123"
         }
         
@@ -260,7 +263,7 @@ class TestPasswordStrengthValidation:
             try:
                 user_data = UserCreate(
                     name="Test User",
-                    username="test",
+                    email="test@example.com",
                     password=password
                 )
                 # If we get here, password passed model validation

@@ -103,7 +103,7 @@ class TestMongoDBConnectionFixes:
             try:
                 user_data = UserCreate(
                     name="Test User",
-                    username="testuser",
+                    email="testuser@example.com",
                     password=password
                 )
                 # If we get here, validation passed

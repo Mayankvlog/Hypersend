@@ -1265,7 +1265,7 @@ async def bins_get(bin_id: str):
 
 # Add endpoint aliases for frontend compatibility
 # Import models for alias endpoints
-from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse, PasswordChangeRequest, PasswordResetRequest
+from models import UserLogin, UserCreate, Token, RefreshTokenRequest, UserResponse, ForgotPasswordRequest, PasswordChangeRequest, PasswordResetRequest
 from auth.utils import get_current_user
 
 # Unified OPTIONS handler for all alias endpoints
@@ -1373,6 +1373,12 @@ async def forgot_password_removed():
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Forgot password functionality has been removed"
     )
+
+@app.post("/api/v1/forgot-password")
+async def forgot_password_alias(request: ForgotPasswordRequest):
+    """Alias for /api/v1/auth/forgot-password - delegates to auth router"""
+    from routes.auth import forgot_password as auth_forgot_password
+    return await auth_forgot_password(request)
 
 @app.post("/api/v1/reset-password")
 async def reset_password_alias(request: PasswordResetRequest):

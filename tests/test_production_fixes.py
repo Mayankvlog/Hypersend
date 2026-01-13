@@ -137,7 +137,7 @@ class TestProductionFixes:
     def test_registration_with_real_db(self):
         """Test registration works with real database connection"""
         user_data = {
-            "username": "productiontest",
+            "email": "productiontest@example.com",
             "password": "TestPassword123",
             "name": "Production Test User"
         }
@@ -154,13 +154,13 @@ class TestProductionFixes:
             data = response.json()
             assert "username" in data
             assert "name" in data
-            assert data["username"] == user_data["username"].lower()
+            assert data["email"] == user_data["email"].lower()
     
     def test_login_with_migrated_user(self):
         """Test login works for users with migrated passwords"""
         # First register a user
         user_data = {
-            "username": "migratedlogin",
+            "email": "migratedlogin@example.com",
             "password": "TestPassword123",
             "name": "Migrated Login User"
         }
@@ -173,7 +173,7 @@ class TestProductionFixes:
         
         # Now try to login
         login_data = {
-            "username": "migratedlogin@example.com",
+            "email": "migratedlogin@example.com",
             "password": "TestPassword123"
         }
         

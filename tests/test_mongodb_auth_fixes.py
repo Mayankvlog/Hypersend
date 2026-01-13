@@ -199,7 +199,7 @@ class TestAuthenticationFixes:
         # Test registration
         user_data = UserCreate(
             name="Test User",
-            username="testuser",
+            email="testuser@example.com",
             password="TestPass123"
         )
         
@@ -207,7 +207,7 @@ class TestAuthenticationFixes:
         result = await register(user_data)
         
         # Verify user was created
-        assert result.username == "testuser"
+        assert result.email == "testuser@example.com"
         assert result.name == "Test User"
         assert result.avatar is None  # FIXED: No avatar initials
         
@@ -225,7 +225,7 @@ class TestAuthenticationFixes:
         
         user_data = UserCreate(
             name="Test User",
-            username="testuser",
+            email="testuser@example.com",
             password="TestPass123"
         )
         
@@ -262,14 +262,14 @@ class TestAuthenticationFixes:
         with pytest.raises(ValidationError) as exc_info:
             UserCreate(
                 name="Test User",
-                username="ab",  # Too short (less than 3 chars)
+                email="ab",  # Invalid email format
                 password="TestPass123"
             )
         
         # Check the validation error message
-        assert "at least 3 characters" in str(exc_info.value)
+        assert "Invalid email format" in str(exc_info.value)
         
-        print("✓ Invalid username validation works")
+        print("✓ Invalid email validation works")
     
     @pytest.mark.asyncio
     async def test_login_success(self, mock_users_collection, mock_user_data):
@@ -288,7 +288,7 @@ class TestAuthenticationFixes:
             mock_refresh.return_value = ("test_refresh_token", "test_jti")
             
             credentials = UserLogin(
-                username="testuser@example.com",
+                email="testuser@example.com",
                 password="TestPass123"
             )
             
@@ -314,7 +314,7 @@ class TestAuthenticationFixes:
             mock_verify.return_value = False
             
             credentials = UserLogin(
-                username="testuser",
+                email="testuser@example.com",
                 password="wrongpassword"
             )
             
@@ -336,7 +336,7 @@ class TestAuthenticationFixes:
         mock_users_collection.return_value.find_one.return_value = None
         
         credentials = UserLogin(
-            username="nonexistentuser@example.com",
+            email="nonexistentuser@example.com",
             password="TestPass123"
         )
         

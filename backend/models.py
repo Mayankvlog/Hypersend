@@ -40,7 +40,7 @@ class Role:
 # ... existing PyObjectId ...
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    username: str = Field(..., min_length=3, max_length=50)  # Required username field
+    email: str = Field(..., max_length=255)  # Email field instead of username
     password: str = Field(..., min_length=8, max_length=128)
     
     @field_validator('name')
@@ -55,17 +55,15 @@ class UserCreate(BaseModel):
         v = re.sub(r'[<>"\']', '', v)
         return v.strip()
     
-    @field_validator('username')
+    @field_validator('email')
     @classmethod
-    def validate_username(cls, v):
+    def validate_email(cls, v):
         if not v or not v.strip():
-            raise ValueError('Username is required')
-        v = v.strip()
-        # Username validation - alphanumeric, dots, hyphens, underscores
-        if not re.match(r'^[a-zA-Z0-9_.-]+$', v):
-            raise ValueError('Username can only contain letters, numbers, dots, hyphens, and underscores')
-        if len(v) < 3:
-            raise ValueError('Username must be at least 3 characters')
+            raise ValueError('Email is required')
+        v = v.strip().lower()
+        # Email validation
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format')
         return v
     
     @field_validator('password')
@@ -84,28 +82,18 @@ class UserCreate(BaseModel):
         return v
     
 class UserLogin(BaseModel):
-    username: str = Field(..., max_length=255)
+    email: str = Field(..., max_length=255)
     password: str = Field(..., min_length=1)
     
-    @field_validator('username')
+    @field_validator('email')
     @classmethod
-    def validate_login_username(cls, v):
+    def validate_login_email(cls, v):
         if not v or not isinstance(v, str) or not v.strip():
-            raise ValueError('Username cannot be empty')
+            raise ValueError('Email cannot be empty')
         v = v.strip().lower()
-        # Allow email format or username format for login flexibility
-        # Email: contains @ and .
-        # Username: alphanumeric, dots, hyphens, underscores
-        if '@' in v:
-            # Email format - basic validation
-            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
-                raise ValueError('Invalid email format')
-        else:
-            # Username format
-            if not re.match(r'^[a-zA-Z0-9_.-]+$', v):
-                raise ValueError('Invalid username format')
-            if len(v) < 3:
-                raise ValueError('Username must be at least 3 characters')
+        # Email validation
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format')
         return v
     
     @field_validator('password')
@@ -159,6 +147,7 @@ class UserInDB(BaseModel):
 class UserResponse(BaseModel):
     id: str
     name: str
+    email: str
     username: str
     bio: Optional[str] = None
     avatar: Optional[str] = None  # Avatar initials like 'JD'
@@ -177,6 +166,7 @@ class UserResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     """Profile update request model"""
     name: Optional[str] = Field(None, min_length=2, max_length=100)
+    email: Optional[str] = Field(None, max_length=255)
     username: Optional[str] = Field(None, min_length=3, max_length=50)  # Fixed: min_length must be at least 3
     avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
     bio: Optional[str] = Field(None, max_length=500)
@@ -213,6 +203,17 @@ class ProfileUpdate(BaseModel):
         # Prevent directory traversal
         if '..' in v or '\x00' in v:
             raise ValueError('Avatar URL contains invalid characters')
+        return v
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if v is None:
+            return None  # Email is optional for profile update
+        v = v.strip().lower()
+        # Email validation
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format')
         return v
     
     @field_validator('name')

@@ -134,7 +134,8 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         return UserResponse(
             id=user["_id"],
             name=user["name"],
-            username=user["username"],
+            email=user.get("email", user.get("username", "")),  # Use email if available, fallback to username
+            username=user.get("username", ""),
             bio=user.get("bio"),
             avatar="",  # FIXED: Always empty string for WhatsApp compatibility
             avatar_url=user.get("avatar_url"),
@@ -145,6 +146,12 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             last_seen=user.get("last_seen"),
             is_online=user.get("is_online", False),
             status=user.get("status"),
+            permissions=user.get("permissions", {
+                "location": False,
+                "camera": False,
+                "microphone": False,
+                "storage": False
+            }),
             pinned_chats=user.get("pinned_chats", []),
             is_contact=False  # Current user can't be a contact of themselves
         )
@@ -405,7 +412,8 @@ async def update_profile(
         return UserResponse(
             id=updated_user["_id"],
             name=updated_user["name"],
-            username=updated_user.get("username", updated_user.get("_id")),  # Use ID as fallback
+            email=updated_user.get("email", updated_user.get("username", "")),  # Use email if available, fallback to username or empty
+            username=updated_user.get("username", ""),
             bio=updated_user.get("bio"),
             avatar="",  # FIXED: Always empty string for WhatsApp compatibility
             avatar_url=updated_user.get("avatar_url"),

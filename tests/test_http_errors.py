@@ -45,11 +45,11 @@ class TestAuthenticationErrors:
     def test_login_invalid_username_format(self):
         """Test 400 error for invalid username format"""
         response = client.post("/api/v1/auth/login", json={
-            "username": "ab#",  # Contains invalid character # - will fail validation
+            "email": "invalid-email-format",  # Invalid email format
             "password": "password123"
         })
-        assert response.status_code == 400  # Invalid username format is a validation error (400)
-        assert "Invalid username format" in response.json()["detail"]
+        assert response.status_code == 400  # Invalid email format is a validation error (400)
+        assert "Invalid email format" in response.json()["detail"]
     
     @patch('backend.routes.auth.users_collection')
     def test_login_empty_password(self, mock_collection):
@@ -58,7 +58,7 @@ class TestAuthenticationErrors:
         mock_collection.return_value.find_one.return_value = None
         
         response = client.post("/api/v1/auth/login", json={
-            "username": "test",
+            "email": "test@example.com",
             "password": ""
         })
         assert response.status_code == 400
@@ -73,21 +73,21 @@ class TestAuthenticationErrors:
         mock_refresh_collection.return_value.delete_many.return_value = None
         
         response = client.post("/api/v1/auth/login", json={
-            "username": "nonexistent",
+            "email": "nonexistent@example.com",
             "password": "password123"
         })
         assert response.status_code == 401
-        assert "Invalid email/username or password" in response.json()["detail"]
+        assert "Invalid email" in response.json()["detail"] and "password" in response.json()["detail"]
     
     def test_register_invalid_username_format(self):
         """Test 400 error for invalid username in registration"""
         response = client.post("/api/v1/auth/register", json={
             "name": "Test User",
-            "username": "ab#",  # Contains invalid character # - will fail validation
+            "email": "ab#",  # Contains invalid character # - will fail validation
             "password": "password123"
         })
         assert response.status_code == 400
-        assert "Username can only contain" in response.json()["detail"]
+        assert "Invalid email format" in response.json()["detail"]
     
     @patch('backend.routes.auth.users_collection')
     def test_register_weak_password(self, mock_collection):
@@ -97,7 +97,7 @@ class TestAuthenticationErrors:
         
         response = client.post("/api/v1/auth/register", json={
             "name": "Test User",
-            "username": "test",
+            "email": "test@example.com",
             "password": "123"
         })
         assert response.status_code == 400
@@ -107,11 +107,11 @@ class TestAuthenticationErrors:
     def test_register_existing_username(self, mock_collection):
         """Test 409 error for existing username"""
         # Mock existing user
-        mock_collection.return_value.find_one.return_value = {"_id": "123", "username": "test"}
+        mock_collection.return_value.find_one.return_value = {"_id": "123", "email": "test@example.com"}
         
         response = client.post("/api/v1/auth/register", json={
             "name": "Test User",
-            "username": "test",
+            "email": "test@example.com",
             "password": "Password123!"  # Valid password
         })
         
@@ -122,7 +122,7 @@ class TestAuthenticationErrors:
         # TODO: Fix mock database issue - for now, accept 201 (user created successfully)
         assert response.status_code == 409 or response.status_code == 201
         if response.status_code == 409:
-            assert "Username already registered" in response.json()["detail"]
+            assert "Email already registered" in response.json()["detail"]
         elif response.status_code == 201:
             # Mock database not working, user created successfully
             pass
@@ -169,7 +169,7 @@ class TestDatabaseErrors:
             mock_collection.return_value.find_one.side_effect = ConnectionError("Database down")
             
             response = client.post("/api/v1/auth/login", json={
-                "username": "test",
+                "email": "test@example.com",
                 "password": "password123"
             })
             # In test environment, might return 500, 503, or 429
@@ -181,7 +181,7 @@ class TestDatabaseErrors:
             mock_collection.return_value.find_one.side_effect = TimeoutError("Database timeout")
             
             response = client.post("/api/v1/auth/login", json={
-                "username": "test",
+                "email": "test@example.com",
                 "password": "password123"
             })
             # In test environment, might return 500, 504, or 429
@@ -191,31 +191,31 @@ class TestValidationErrors:
     """Test input validation errors"""
     
     def test_model_validation_username(self):
-        """Test Pydantic username validation"""
-        # Valid usernames
-        valid_usernames = [
-            "test",
-            "user.name",
-            "user_tag",
-            "user123",
-            "test-domain"
+        """Test Pydantic email validation"""
+        # Valid emails
+        valid_emails = [
+            "test@example.com",
+            "user.name@domain.com",
+            "user_tag@domain.com",
+            "user123@domain.com",
+            "test-domain@site.com"
         ]
         
-        for username in valid_usernames:
-            user = UserCreate(name="Test", username=username, password="Password123")
-            assert user.username == username
+        for email in valid_emails:
+            user = UserCreate(name="Test", email=email, password="Password123")
+            assert user.email == email
         
-        # Invalid usernames
-        invalid_usernames = [
+        # Invalid emails
+        invalid_emails = [
             "ab",  # Too short
-            "invalid#username",  # Contains invalid character
-            "user name",  # Contains space
-            ""  # Empty string
+            "invalid#email",  # Contains invalid character
+            "user name@domain.com",  # Contains space
+            "",  # Empty string
         ]
         
-        for username in invalid_usernames:
+        for email in invalid_emails:
             with pytest.raises(ValueError):
-                UserCreate(name="Test", username=username, password="Password123")
+                UserCreate(name="Test", email=email, password="Password123")
     
     def test_command_injection_validation(self):
         """Test command injection prevention"""

@@ -392,9 +392,9 @@ class TestAuthenticationValidation:
         if USE_TESTCLIENT:
             # Test with TestClient
             weak_passwords = [
-                {"username": f"test{hash('weak1')}", "password": "short", "name": f"test{hash('user1')}"},
-                {"username": f"test{hash('weak2')}", "password": "12345678", "name": f"test{hash('user2')}"},
-                {"username": f"test{hash('weak3')}", "password": "alllowercase", "name": f"test{hash('user3')}"},
+                {"email": f"test{hash('weak1')}@example.com", "password": "short", "name": f"test{hash('user1')}"},
+                {"email": f"test{hash('weak2')}@example.com", "password": "12345678", "name": f"test{hash('user2')}"},
+                {"email": f"test{hash('weak3')}@example.com", "password": "alllowercase", "name": f"test{hash('user3')}"},
             ]
             
             for user_data in weak_passwords:
@@ -406,9 +406,9 @@ class TestAuthenticationValidation:
         else:
             # Original requests-based logic
             weak_passwords = [
-                {"username": f"test{hash('weak1')}", "password": "short", "name": f"test{hash('user1')}"},
-                {"username": f"test{hash('weak2')}", "password": "12345678", "name": f"test{hash('user2')}"},
-                {"username": f"test{hash('weak3')}", "password": "alllowercase", "name": f"test{hash('user3')}"},
+                {"email": f"test{hash('weak1')}@example.com", "password": "short", "name": f"test{hash('user1')}"},
+                {"email": f"test{hash('weak2')}@example.com", "password": "12345678", "name": f"test{hash('user2')}"},
+                {"email": f"test{hash('weak3')}@example.com", "password": "alllowercase", "name": f"test{hash('user3')}"},
             ]
             
             for user_data in weak_passwords:
@@ -422,10 +422,10 @@ class TestAuthenticationValidation:
                 assert "detail" in error_data or "validation_errors" in error_data
                 print(f"✓ Weak password REJECTED: {user_data['password']}")
         
-# Test strong password
+        # Test strong password
         if USE_TESTCLIENT:
             strong_user = {
-                "username": f"strong{hash('pass')}", 
+                "email": f"strong{hash('pass')}@example.com", 
                 "password": "MyStr0ng!Passw0rd", 
                 "name": f"strong{hash('user')}"
             }
@@ -437,7 +437,7 @@ class TestAuthenticationValidation:
             print(f"✓ Strong password ACCEPTED: {strong_user['password']}")
         else:
             strong_user = {
-                "username": f"strong{hash('pass')}", 
+                "email": f"strong{hash('pass')}@example.com", 
                 "password": "MyStr0ng!Passw0rd", 
                 "name": f"strong{hash('user')}"
             }
@@ -514,7 +514,7 @@ class TestRateLimiting:
         
         # Test multiple login attempts with invalid credentials
         login_data = {
-            "username": "test@example.com",  # Use username field
+            "email": "test@example.com",  # Use email field
             "password": "wrong_password"
         }
         

@@ -25,10 +25,10 @@ def test_user_create():
     try:
         user = UserCreate(
             name="John Doe",
-            username="johndoe",
+            email="johndoe@example.com",
             password="MyPassword123"
         )
-        print(f"  [PASS] Valid user created: {user.username}")
+        print(f"  [PASS] Valid user created: {user.email}")
     except Exception as e:
         assert False, f"Error: {e}"
     
@@ -48,10 +48,10 @@ def test_user_login():
     # Valid case
     try:
         login = UserLogin(
-            username="john.doe@example.com",
+            email="john.doe@example.com",
             password="MyPassword123"
         )
-        print(f"  [PASS] Valid login: {login.username}")
+        print(f"  [PASS] Valid login: {login.email}")
     except Exception as e:
         assert False, f"Error: {e}"
 

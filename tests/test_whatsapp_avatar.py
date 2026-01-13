@@ -42,8 +42,8 @@ class TestWhatsAppAvatarCompatibility:
         
         # Register user
         register_data = {
-            "name": "John Doe",
-            "username": "john",
+            "name": "Test User",
+            "email": "testuser@example.com",
             "password": "Test@123"
         }
         
@@ -61,14 +61,15 @@ class TestWhatsAppAvatarCompatibility:
     @pytest.mark.asyncio
     async def test_profile_update_clears_initials(self, client, test_user_id):
         """Test that profile update clears existing initials"""
-        print("\n📱 Test: Profile Update - Clears Initials")
+        print("\nTest: Profile Update - Clears Initials")
         
         # Create user with existing initials
         users_collection().data.clear()
         test_user_doc = {
             "_id": test_user_id,
             "name": "Test User",
-            "username": "testuser",
+            "email": "testuser@example.com",
+            "username": "testuser@example.com",
             "avatar": "TU",  # Existing initials
             "avatar_url": None,
             "created_at": datetime.now()
@@ -180,13 +181,13 @@ class TestWhatsAppAvatarCompatibility:
             from models import UserCreate
             user_data = UserCreate(
                 name=scenario["name"],
-                username=f"test_{scenario['name'].lower().replace(' ', '_')}",
+                email=f"test_{scenario['name'].lower().replace(' ', '_')}@example.com",
                 password="Test@123"
             )
             
             # Verify user creation works (avatar is handled in registration endpoint)
             assert user_data.name == scenario["name"]
-            assert user_data.username == f"test_{scenario['name'].lower().replace(' ', '_')}"
+            assert user_data.email == f"test_{scenario['name'].lower().replace(' ', '_')}@example.com"
             
             print(f"✅ {scenario['name']}: user creation works")
         

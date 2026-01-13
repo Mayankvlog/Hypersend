@@ -188,14 +188,14 @@ class TestValidationErrorHandling:
         response = client.post(
             "/api/v1/auth/register",
             json={
-                "username": "invalid-username@",
+                "email": "invalid-username@",  # Invalid email format (no domain)
                 "password": "password123",
                 "name": "Test User"
             },
             headers={"Content-Type": "application/json"}
         )
         
-        assert response.status_code == 400  # Invalid username returns 400
+        assert response.status_code == 400  # Invalid email returns 400
         data = response.json()
         assert data["status_code"] == 400
 

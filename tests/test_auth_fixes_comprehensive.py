@@ -75,7 +75,7 @@ class TestRegistrationFixes:
     def test_registration_with_valid_data(self):
         """Test registration with valid data"""
         user_data = {
-            "username": "testuser",
+            "email": "testuser@example.com",
             "password": "TestPassword123",
             "name": "Test User"
         }
@@ -90,14 +90,14 @@ class TestRegistrationFixes:
         
         if response.status_code == 201:
             data = response.json()
-            assert "username" in data
+            assert "email" in data
             assert "name" in data
-            assert data["username"] == user_data["username"].lower()
+            assert data["email"] == user_data["email"].lower()
     
     def test_registration_with_weak_password(self):
         """Test registration with weak password"""
         user_data = {
-            "username": "weakuser",
+            "email": "weakuser@example.com",
             "password": "weak",  # Too short and no complexity
             "name": "Weak User"
         }
@@ -113,11 +113,11 @@ class TestRegistrationFixes:
         assert "detail" in data
     
     def test_registration_with_invalid_email(self):
-        """Test registration with invalid username"""
+        """Test registration with invalid email"""
         user_data = {
-            "username": "ab",  # Too short (less than 3 chars)
+            "email": "ab",  # Too short (less than basic email format)
             "password": "TestPassword123",
-            "name": "Invalid Username User"
+            "name": "Invalid Email User"
         }
         
         response = client.post("/api/v1/auth/register", 
@@ -134,7 +134,7 @@ class TestRegistrationFixes:
         """Test registration with missing fields"""
         # Test missing password
         user_data = {
-            "username": "missinguser",
+            "email": "missinguser@example.com",
             "name": "Missing Field User"
         }
         
@@ -182,7 +182,7 @@ class TestLoginFixes:
         
         # Now try to login
         login_data = {
-            "username": "logintest",
+            "email": "logintest@example.com",
             "password": "TestPassword123"
         }
         
@@ -206,7 +206,7 @@ class TestLoginFixes:
     def test_login_with_invalid_credentials(self):
         """Test login with invalid credentials"""
         login_data = {
-            "username": "nonexistentuser",
+            "email": "nonexistent@example.com",
             "password": "WrongPassword123"
         }
         
@@ -221,9 +221,9 @@ class TestLoginFixes:
         assert "detail" in data
     
     def test_login_with_invalid_email_format(self):
-        """Test login with invalid username format"""
+        """Test login with invalid email format"""
         login_data = {
-            "username": "ab#",  # Contains invalid character #
+            "email": "invalid-email",  # Invalid email format
             "password": "TestPassword123"
         }
         
@@ -304,7 +304,7 @@ class TestDatabaseErrorHandling:
     def test_user_not_found_handling(self):
         """Test handling of user not found scenarios"""
         login_data = {
-            "username": "definitelydoesnotexist",
+            "email": "definitelydoesnotexist@example.com",
             "password": "TestPassword123"
         }
         
@@ -323,7 +323,7 @@ class TestDatabaseErrorHandling:
     def test_duplicate_user_registration(self):
         """Test handling of duplicate user registration"""
         user_data = {
-            "username": "duplicate",
+            "email": "duplicate@example.com",
             "password": "TestPassword123",
             "name": "Duplicate User"
         }
