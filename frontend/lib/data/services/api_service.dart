@@ -1116,12 +1116,20 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
     return List<Map<String, dynamic>>.from(response.data?['messages'] ?? []);
   }
 
-  Future<List<Map<String, dynamic>>> searchUsers(String query) async {
+Future<List<Map<String, dynamic>>> searchUsers(String query) async {
     final response = await _dio.get(
         '${ApiConstants.usersEndpoint}/search',
         queryParameters: {'q': query},
     );
     return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
+  }
+
+  Future<List<Map<String, dynamic>>> getContacts({int limit = 50}) async {
+    final response = await _dio.get(
+        '${ApiConstants.usersEndpoint}/contacts',
+        queryParameters: {'limit': limit},
+    );
+    return List<Map<String, dynamic>>.from(response.data?['contacts'] ?? []);
   }
 
   Future<List<Map<String, dynamic>>> searchUsersByEmail(String email) async {

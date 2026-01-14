@@ -37,6 +37,14 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
       return null;
     }
     
+    // FIXED: Enhanced validation to prevent filename rendering glitches
+    // Check if this looks like a filename pattern (like "YenSurferUserSetup")
+    if (_isLikelyFilename(avatarUrl)) {
+      debugPrint('[PROFILE_PHOTO] Detected filename pattern, preventing rendering glitch: $avatarUrl');
+      return null; // This is a filename, not a URL - prevent glitch
+    }
+    
+    // Check if this looks like a valid URL or path
     if (avatarUrl.startsWith('http')) {
       debugPrint('[PROFILE_PHOTO] Loading HTTP avatar: $avatarUrl');
       return NetworkImage(avatarUrl);
@@ -47,16 +55,81 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
         return null;  // Don't load POST endpoints
       }
       
-      // Only load GET endpoints with filename
-      if (!avatarUrl.contains('/avatar/') || avatarUrl.contains('?')) {
+      // Check for valid avatar paths that contain 'avatar/' and have a filename with extension
+      if (avatarUrl.contains('/avatar/') && 
+          avatarUrl.split('/').last.contains('.')) {
         debugPrint('[PROFILE_PHOTO] Loading GET avatar: ${ApiConstants.serverBaseUrl}$avatarUrl');
         return NetworkImage('${ApiConstants.serverBaseUrl}$avatarUrl');
       }
       
-      debugPrint('[PROFILE_PHOTO] Blocking potentially invalid avatar URL: $avatarUrl');
-      return null;
+      debugPrint('[PROFILE_PHOTO] Invalid avatar URL format: $avatarUrl');
+      return null; // Invalid format - don't try to load
     }
+    
+    debugPrint('[PROFILE_PHOTO] Unknown avatar format: $avatarUrl');
     return null;
+  }
+
+  // FIXED: Helper method to detect filename patterns that cause rendering glitches
+  bool _isLikelyFilename(String text) {
+    // Check for common filename patterns that would cause rendering glitches
+    // 1. Contains dots but no slashes (like "YenSurferUserSetup-x64-13.5.exe")
+    if (text.contains('.') && !text.contains('/')) {
+      // Additional check for executable-like patterns
+      if (text.contains('-') && text.contains('x64') || text.contains('Setup')) {
+        return true;
+      }
+      // Check for common filename extensions
+      final extensions = ['.exe', '.jpg', '.png', '.gif', '.webp', '.jpeg', '.bmp'];
+      for (final ext in extensions) {
+        if (text.toLowerCase().endsWith(ext)) {
+          return true;
+        }
+      }
+      // Check if it looks like a filename (contains dots and no URL-like structure)
+      if (text.split('.').length >= 2) {
+        return true;
+      }
+    }
+    
+    // 2. Check for specific patterns that cause glitches
+    if (text.contains('YenSurferUserSetup') || 
+        text.contains('UserSetup') ||
+        text.contains('x64') ||
+        (text.contains('-') && text.split('-').length >= 2)) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  // FIXED: Helper method to determine if initials should be shown
+  bool _shouldShowInitials() {
+    // Show initials if:
+    // 1. No picked file bytes AND
+    // 2. Network image failed to load (either null or invalid filename)
+    return _pickedFileBytes == null && _buildNetworkImage(widget.currentAvatar) == null;
+  }
+
+  // FIXED: Helper method to get user initials safely
+  String _getUserInitials() {
+    try {
+      final user = serviceProvider.profileService.currentUser;
+      if (user != null && user.name.isNotEmpty) {
+        final parts = user.name.trim().split(' ').where((p) => p.isNotEmpty).toList();
+        if (parts.length >= 2) {
+          final first = parts[0].isNotEmpty ? parts[0][0] : '';
+          final second = parts[1].isNotEmpty ? parts[1][0] : '';
+          return (first + second).toUpperCase();
+        } else {
+          return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
+        }
+      }
+      return '??';
+    } catch (e) {
+      debugPrint('[PROFILE_PHOTO] Error getting user initials: $e');
+      return '??';
+    }
   }
 
   @override
@@ -121,37 +194,23 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                         ),
                   ),
                   const SizedBox(height: 12),
-                  CircleAvatar(
-                    radius: 60,
-                    backgroundColor: AppTheme.primaryCyan,
-                    backgroundImage: _pickedFileBytes != null
-                        ? MemoryImage(_pickedFileBytes!)
-                        : _buildNetworkImage(widget.currentAvatar),
-                    child: _pickedFileBytes == null && !(widget.currentAvatar.startsWith('http') || widget.currentAvatar.startsWith('/'))
-                        ? Text(
-                            // FIXED: Always use user initials from name, not stored avatar
-                            (() {
-                              final user = serviceProvider.profileService.currentUser;
-                              if (user != null && user.name.isNotEmpty) {
-                                final parts = user.name.trim().split(' ').where((p) => p.isNotEmpty).toList();
-                                if (parts.length >= 2) {
-                                  final first = parts[0].isNotEmpty ? parts[0][0] : '';
-                                  final second = parts[1].isNotEmpty ? parts[1][0] : '';
-                                  return (first + second).toUpperCase();
-                                } else {
-                                  return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
-                                }
-                              }
-                              return '??';
-                            })(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          )
-                        : null,
-                  ),
+CircleAvatar(
+                     radius: 60,
+                     backgroundColor: AppTheme.primaryCyan,
+                     backgroundImage: _pickedFileBytes != null
+                         ? MemoryImage(_pickedFileBytes!)
+                         : _buildNetworkImage(widget.currentAvatar),
+                     child: _shouldShowInitials()
+                         ? Text(
+                             _getUserInitials(),
+                             style: const TextStyle(
+                               color: Colors.white,
+                               fontSize: 32,
+                               fontWeight: FontWeight.w600,
+                             ),
+                           )
+                         : null,
+                   ),
                 ],
               ),
             ),

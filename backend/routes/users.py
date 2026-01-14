@@ -525,8 +525,68 @@ async def search_users(q: str, search_type: str = None, current_user: str = Depe
         current_user: Current authenticated user ID
     """
     
-    if len(q) < 2:
+# FIXED: Allow empty query for group creation (load all available users)
+    if q and len(q) < 2:
         return {"users": []}
+    
+    # If no query provided, return all available users for group creation
+    if not q:
+        debugPrint(f"[SEARCH_USERS] Empty query - returning all available users for group creation")
+        try:
+            # Get current user's contacts if they exist
+            user = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0
+            )
+            
+            # Try to get contacts list
+            contact_ids = []
+            if user:
+                contact_ids = user.get("contacts", [])  # FIXED: Use contacts field, not blocked_users
+                # If user has contacts, prioritize them
+                # For group creation, we want all users except current user
+            
+            # Build query to get all users except current user
+            query = {"_id": {"$ne": current_user}}
+            
+            users = await asyncio.wait_for(
+                users_collection().find(query)
+                .project({
+                    "_id": 1,
+                    "name": 1, 
+                    "email": 1,
+                    "username": 1,
+                    "avatar_url": 1,
+                    "is_online": 1,
+                    "last_seen": 1
+                })
+                .limit(50)
+                .to_list(None),
+                timeout=5.0
+            )
+            
+            # Format response
+            formatted_users = []
+            for user in users:
+                formatted_users.append({
+                    "id": str(user.get("_id", "")),
+                    "name": user.get("name", ""),
+                    "email": user.get("email", ""),
+                    "username": user.get("username", ""),
+                    "avatar_url": user.get("avatar_url"),
+                    "is_online": user.get("is_online", False),
+                    "last_seen": user.get("last_seen")
+                })
+            
+            debugPrint(f"[SEARCH_USERS] Returned {len(formatted_users)} users for group creation")
+            return {"users": formatted_users}
+            
+        except asyncio.TimeoutError:
+            debugPrint("[SEARCH_USERS] Database timeout while loading users for group creation")
+            return {"users": []}
+        except Exception as e:
+            debugPrint(f"[SEARCH_USERS] Error loading users for group creation: {e}")
+            return {"users": []}
     
     try:
         # Sanitize input for regex search to prevent injection

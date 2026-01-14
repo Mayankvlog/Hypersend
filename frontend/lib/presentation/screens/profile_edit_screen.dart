@@ -46,6 +46,23 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _statusController = TextEditingController(text: 'Available');
   }
 
+  // Helper method to validate avatar URL format
+  bool _isValidAvatarUrl(String avatarUrl) {
+    if (avatarUrl.isEmpty) return false;
+    
+    // HTTP URLs are valid
+    if (avatarUrl.startsWith('http')) return true;
+    
+    // Check for valid avatar paths starting with /
+    if (avatarUrl.startsWith('/')) {
+      // Should contain /avatar/ and have a file with extension
+      return avatarUrl.contains('/avatar/') && 
+             avatarUrl.split('/').last.contains('.');
+    }
+    
+    return false;
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -305,26 +322,27 @@ Future<void> _saveProfile() async {
                 children: [
                    Builder(
                      builder: (context) {
-                       // FIXED: Check if _currentAvatar is a URL by examining its content
-                       final isUrl = _currentAvatar.isNotEmpty && 
-                           (_currentAvatar.startsWith('http') || _currentAvatar.startsWith('/'));
+                       // FIXED: Improved URL validation and fallback logic
+                       final isUrl = _isValidAvatarUrl(_currentAvatar);
                        // FIXED: Always use user initials from name, never from stored avatar
                        final displayInitials = _initialUser.initials;
-                                          
+                       final backgroundImage = isUrl && _currentAvatar.isNotEmpty
+                           ? NetworkImage(
+                               _currentAvatar.startsWith('http') 
+                                   ? _currentAvatar 
+                                   : '${ApiConstants.serverBaseUrl}$_currentAvatar'
+                             )
+                           : null;
+                                           
                        return CircleAvatar(
                          radius: 60,
                          backgroundColor: AppTheme.primaryCyan,
-                         backgroundImage: isUrl && _currentAvatar.isNotEmpty
-                             ? NetworkImage(
-                                 _currentAvatar.startsWith('http') 
-                                     ? _currentAvatar 
-                                     : '${ApiConstants.serverBaseUrl}$_currentAvatar'
-                               )
-                             : null,
-                         onBackgroundImageError: isUrl 
+                         backgroundImage: backgroundImage,
+                         onBackgroundImageError: backgroundImage != null
                              ? (e, s) {
                                  debugPrint('Avatar image load failed: $e');
                                  debugPrint('Image source: $_currentAvatar');
+                                 debugPrint('Falling back to initials: $displayInitials');
                                }
                              : null,
                          child: Center(

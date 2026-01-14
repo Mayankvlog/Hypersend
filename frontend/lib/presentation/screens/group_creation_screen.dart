@@ -45,21 +45,35 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       _error = null;
     });
     try {
-      // Contacts functionality removed - get all users instead
-      final users = await serviceProvider.apiService.searchUsers('');
-      debugPrint('[GROUP_CREATE] Loaded ${users.length} users for group creation');
+      // FIXED: Use contacts endpoint instead of search for group creation
+      final contacts = await serviceProvider.apiService.getContacts(limit: 50);
+      debugPrint('[GROUP_CREATE] Loaded ${contacts.length} contacts for group creation');
+      
       if (!mounted) return;
       setState(() {
-        _users = users;
+        _users = contacts;
         _loading = false;
       });
     } catch (e) {
-      debugPrint('[GROUP_CREATE] Error loading users: $e');
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      debugPrint('[GROUP_CREATE] Error loading contacts: $e');
+      // Fallback to searchUsers if contacts endpoint fails
+      try {
+        debugPrint('[GROUP_CREATE] Falling back to searchUsers for available users');
+        final users = await serviceProvider.apiService.searchUsers('');
+        debugPrint('[GROUP_CREATE] Loaded ${users.length} users from search fallback');
+        if (!mounted) return;
+        setState(() {
+          _users = users;
+          _loading = false;
+        });
+      } catch (fallbackError) {
+        debugPrint('[GROUP_CREATE] Both contacts and search failed: $fallbackError');
+        if (!mounted) return;
+        setState(() {
+          _error = 'Failed to load contacts. Please try again.';
+          _loading = false;
+        });
+      }
     }
   }
 
