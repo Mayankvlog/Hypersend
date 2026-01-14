@@ -18,10 +18,107 @@ from validators import validate_user_id
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from collections import defaultdict
 from typing import Dict, Tuple, List, Optional
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Password reset token expiry
+PASSWORD_RESET_TOKEN_EXPIRY_HOURS = 1
+
+# Password reset collection
+def password_reset_collection():
+    """Get password reset tokens collection"""
+    return reset_tokens_collection()
+
+async def send_password_reset_email(email: str, token: str, user_name: str):
+    """Send password reset email to user"""
+    try:
+        # Create reset link
+        reset_link = f"https://zaply.in.net/reset-password?token={token}"
+        
+        # If email service is not properly configured, provide development fallback
+        if not settings.EMAIL_SERVICE_ENABLED:
+            auth_log(f"EMAIL SERVICE NOT CONFIGURED - Password reset link for {email}: {reset_link}")
+            # In development, you can use this link to test password reset
+            return True
+        
+        # Create email message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = 'Reset your zaply password'
+        msg['From'] = settings.EMAIL_FROM
+        msg['To'] = email
+        
+        # HTML email content
+        html_content = f"""
+        <html>
+        <body>
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background-color: #00bcd4; padding: 20px; text-align: center;">
+                    <h1 style="color: white; margin: 0;">zaply</h1>
+                    <p style="color: white; margin: 5px 0;">Fast. Secure. Chat.</p>
+                </div>
+                
+                <div style="padding: 30px; background-color: #f9f9f9;">
+                    <h2 style="color: #333;">Hello {user_name},</h2>
+                    <p style="color: #666; line-height: 1.6;">
+                        We received a request to reset your zaply password. Click the button below to reset your password:
+                    </p>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="{reset_link}" 
+                           style="background-color: #00bcd4; color: white; padding: 12px 30px; 
+                                  text-decoration: none; border-radius: 5px; display: inline-block;">
+                            Reset Password
+                        </a>
+                    </div>
+                    
+                    <p style="color: #666; font-size: 14px;">
+                        Or copy and paste this link in your browser:<br>
+                        <a href="{reset_link}" style="color: #00bcd4;">{reset_link}</a>
+                    </p>
+                    
+                    <p style="color: #999; font-size: 12px; margin-top: 30px;">
+                        This link will expire in 1 hour for security reasons.<br>
+                        If you didn't request this password reset, you can safely ignore this email.
+                    </p>
+                </div>
+                
+                <div style="background-color: #333; color: white; padding: 20px; text-align: center;">
+                    <p style="margin: 0; font-size: 12px;">
+                        © 2026 zaply. All rights reserved.<br>
+                        Fast. Secure. Chat.
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        msg.attach(MIMEText(html_content, 'html'))
+        
+        # Send email using SMTP
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            if settings.SMTP_USE_TLS:
+                server.starttls()
+            
+            if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
+                server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            
+            server.send_message(msg)
+            
+        auth_log(f"Password reset email successfully sent to: {email}")
+        return True
+        
+    except Exception as e:
+        auth_log(f"Email sending failed: {type(e).__name__}: {str(e)}")
+        # Fallback: log the reset link for development
+        reset_link = f"https://zaply.in.net/reset-password?token={token}"
+        auth_log(f"FALLBACK - Password reset link for {email}: {reset_link}")
+        return False
 
 
 
@@ -1131,13 +1228,13 @@ async def logout(current_user: str = Depends(get_current_user)):
 async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetResponse:
     """Forgot password endpoint"""
     try:
-        auth_log(f"Forgot password request for email: {request.email}")
+        auth_log(f"Zaply forgot password request for email: {request.email}")
         
-        # Check if password reset functionality is disabled
+        # FIXED: Password reset functionality enabled for Zaply
         if not settings.ENABLE_PASSWORD_RESET:
-            auth_log("Password reset functionality is disabled")
+            auth_log("Zaply password reset functionality is disabled")
             return PasswordResetResponse(
-                message="Password reset functionality has been disabled. Please contact support.",
+                message="Password reset functionality has been disabled. Please contact Zaply support.",
                 success=False
             )
         
@@ -1172,18 +1269,63 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
                 detail="Failed to process request"
             )
         
-        # Always return success to prevent email enumeration
+# FIXED: Always return success to prevent email enumeration for Zaply
         # Only actually send email if user exists and email service is enabled
         if user and settings.EMAIL_SERVICE_ENABLED:
-            # TODO: Send actual password reset email
-            auth_log(f"Password reset email would be sent to: {request.email}")
+            # Generate reset token
+            reset_token = str(ObjectId())
+            expiry_time = datetime.now(timezone.utc) + timedelta(hours=PASSWORD_RESET_TOKEN_EXPIRY_HOURS)
+            
+            # Store reset token in database
+            await password_reset_collection().insert_one({
+                "_id": str(ObjectId()),
+                "email": normalized_email,
+                "token": reset_token,
+                "expires_at": expiry_time,
+                "created_at": datetime.now(timezone.utc),
+                "used": False
+            })
+            
+            # Send password reset email
+            email_sent = await send_password_reset_email(normalized_email, reset_token, user.get("name", "User"))
+            
+            if email_sent:
+                auth_log(f"Zaply password reset email sent to {normalized_email}")
+            else:
+                auth_log(f"Zaply failed to send password reset email to {normalized_email} - but returning success for security")
+            
+            # Always return success for security (prevent email enumeration)
+            return PasswordResetResponse(
+                message="If an account with this email exists, a Zaply password reset link has been sent to your email.",
+                success=True
+            )
         else:
-            auth_log(f"Password reset requested for non-existent email: {request.email}")
-        
-        return PasswordResetResponse(
-            message="If an account with this email exists, a password reset link has been sent.",
-            success=True
-        )
+            # If email service is disabled, return success for security but log the token
+            if user:
+                reset_token = str(ObjectId())
+                expiry_time = datetime.now(timezone.utc) + timedelta(hours=PASSWORD_RESET_TOKEN_EXPIRY_HOURS)
+                
+                # Store reset token in database
+                await password_reset_collection().insert_one({
+                    "_id": str(ObjectId()),
+                    "email": normalized_email,
+                    "token": reset_token,
+                    "expires_at": expiry_time,
+                    "created_at": datetime.now(timezone.utc),
+                    "used": False
+                })
+                
+                auth_log(f"Zaply password reset token generated for {normalized_email} (email service disabled)")
+                return PasswordResetResponse(
+                    message="If an account with this email exists, a Zaply password reset link has been sent to your email.",
+                    success=True
+                )
+            else:
+                auth_log(f"Zaply user not found for email: {normalized_email}")
+                return PasswordResetResponse(
+                    message="If an account with this email exists, a Zaply password reset link has been sent to your email.",
+                    success=True
+                )
         
     except HTTPException:
         raise
@@ -1198,14 +1340,14 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
 async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse:
     """Reset password using token"""
     try:
-        auth_log(f"Password reset request for token: {request.token[:10]}...")
+        auth_log(f"Zaply password reset request for token: {request.token[:10]}...")
         
-        # Check if password reset functionality is disabled
+        # FIXED: Password reset functionality enabled for Zaply
         if not settings.ENABLE_PASSWORD_RESET:
-            auth_log("Password reset functionality is disabled")
+            auth_log("Zaply password reset functionality is disabled")
             raise HTTPException(
                 status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-                detail="Password reset functionality has been disabled. Please contact support."
+                detail="Zaply password reset functionality has been disabled. Please contact Zaply support."
             )
         
         # Validate token
@@ -1216,29 +1358,12 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                 detail="Invalid or expired reset token"
             )
         
-        try:
-            token_data = decode_token(request.token)
-        except Exception:
-            auth_log("Failed to decode reset token")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired reset token"
-            )
-        
-        # Validate token type
-        if token_data.token_type != "password_reset":
-            auth_log(f"Invalid token type: {token_data.token_type}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type"
-            )
-        
         # Check if token exists and is not used
         try:
-            reset_token_doc = await reset_tokens_collection().find_one({
+            reset_token_doc = await password_reset_collection().find_one({
                 "token": request.token,
                 "used": False,
-                "expires_at": {"$gt": datetime.now(timezone.utc)}
+                "expires_at": {"$gt": datetime.utcnow()}
             })
         except Exception as e:
             auth_log(f"Database error checking reset token: {e}")
@@ -1254,18 +1379,19 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                 detail="Invalid or expired reset token"
             )
         
-        # Get user
+        # Get user by email from token
         try:
-            user = await users_collection().find_one({"_id": ObjectId(token_data.user_id)})
+            user = await users_collection().find_one({
+                "email": reset_token_doc["email"]
+            })
         except Exception as e:
-            auth_log(f"Database error fetching user: {e}")
+            auth_log(f"Database error finding user: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to fetch user"
+                detail="Failed to find user account"
             )
-        
         if not user:
-            auth_log(f"User not found: {token_data.user_id}")
+            auth_log(f"User not found for email: {reset_token_doc['email']}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid reset token"
@@ -1277,11 +1403,11 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         # Update user password
         try:
             await users_collection().update_one(
-                {"_id": ObjectId(token_data.user_id)},
+                {"_id": user["_id"]},
                 {"$set": {
                     "password_hash": password_hash,
                     "password_salt": password_salt,
-                    "updated_at": datetime.now(timezone.utc)
+                    "updated_at": datetime.utcnow()
                 }}
             )
         except Exception as e:
@@ -1293,9 +1419,9 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         
         # Mark reset token as used
         try:
-            await reset_tokens_collection().update_one(
+            await password_reset_collection().update_one(
                 {"_id": reset_token_doc["_id"]},
-                {"$set": {"used": True, "used_at": datetime.now(timezone.utc)}}
+                {"$set": {"used": True, "used_at": datetime.utcnow()}}
             )
         except Exception as e:
             auth_log(f"Failed to mark reset token as used: {e}")
@@ -1305,13 +1431,13 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         try:
             await refresh_tokens_collection().update_many(
                 {"user_id": str(user["_id"])},
-                {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
+                {"$set": {"invalidated": True, "invalidated_at": datetime.utcnow()}}
             )
         except Exception as e:
             auth_log(f"Failed to invalidate refresh tokens: {e}")
             # Don't fail the operation if this fails
         
-        auth_log(f"Password reset successful for user: {token_data.user_id}")
+        auth_log(f"Password reset successful for user: {user['_id']}")
         
         return PasswordResetResponse(
             message="Password reset successfully",

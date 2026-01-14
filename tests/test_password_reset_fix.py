@@ -13,6 +13,12 @@ from datetime import datetime, timedelta, timezone
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+# Set mock DB before imports
+os.environ['USE_MOCK_DB'] = 'True'
+
+# Enable password reset for this test file (it tests the actual functionality)
+os.environ['ENABLE_PASSWORD_RESET'] = 'True'
+
 class TestPasswordResetFunctionality:
     """Test password reset functionality end-to-end"""
     
@@ -39,14 +45,15 @@ class TestPasswordResetFunctionality:
                 self.user = test_user
             
             async def find_one(self, query):
-                # Handle regex query for email
-                email_query = query.get("email", {})
-                if isinstance(email_query, dict) and "$regex" in email_query:
-                    regex_pattern = email_query["$regex"]
-                    # Extract email from regex pattern like "^test@example.com$"
-                    if regex_pattern.startswith("^") and regex_pattern.endswith("$"):
-                        email = regex_pattern[1:-1]
-                        if email == "test@example.com":
+                # Handle both direct email match and regex queries
+                if isinstance(query, dict):
+                    email_query = query.get("email")
+                    if email_query == "test@example.com":
+                        return self.user
+                    # Handle regex queries
+                    elif "$regex" in query:
+                        regex_pattern = query["$regex"]
+                        if regex_pattern == "^test@example\.com$":  # Changed to use regex pattern
                             return self.user
                 return None
         
@@ -80,9 +87,8 @@ class TestPasswordResetFunctionality:
             assert response.success is True
             assert "Password reset" in response.message or "password reset link has been sent" in response.message.lower()
             
-            # Check that token was NOT created (functionality not implemented yet)
-            # This is expected since the endpoint has a TODO comment
-            assert len(mock_reset_tokens.tokens) == 0
+            # Check that token was created (functionality is now implemented)
+            assert len(mock_reset_tokens.tokens) >= 1
     
     @pytest.mark.asyncio
     async def test_reset_password_with_valid_token(self):
@@ -110,11 +116,17 @@ class TestPasswordResetFunctionality:
             
             async def find_one(self, query):
                 from bson import ObjectId
-                user_id = query.get("_id")
-                if isinstance(user_id, str):
-                    user_id = ObjectId(user_id)
-                if str(user_id) == "507f1f77bcf86cd799439011":
-                    return self.user
+                # Handle both _id and email queries
+                if "_id" in query:
+                    user_id = query.get("_id")
+                    if isinstance(user_id, str):
+                        user_id = ObjectId(user_id)
+                    if str(user_id) == "507f1f77bcf86cd799439011":
+                        return self.user
+                elif "email" in query:
+                    email = query.get("email")
+                    if email == "test@example.com":
+                        return self.user
                 return None
             
             async def update_one(self, query, update):
@@ -136,7 +148,7 @@ class TestPasswordResetFunctionality:
                     return {
                         "_id": "mock_token_id",  # Add _id for update query
                         "token": reset_token,
-                        "user_id": "507f1f77bcf86cd799439011",
+                        "email": "test@example.com",  # Changed to email field
                         "used": False,
                         "expires_at": datetime.now(timezone.utc) + timedelta(minutes=30)
                     }

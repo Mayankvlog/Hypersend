@@ -120,7 +120,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
               """Check if request is from localhost, Docker internal, or production domain"""
               client_host = request.client.host if request.client else ''
               host_header = request.headers.get('host', '').lower()
-              localhost_patterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
+              localhost_patterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', 'zaply_frontend', 'zaply_backend', 'frontend', 'backend']
               production_patterns = ['zaply.in.net', 'www.zaply.in.net']
               return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
 
@@ -705,7 +705,7 @@ async def lifespan(app: FastAPI):
 
 
 # Setup logger
-logger = logging.getLogger("hypersend")
+logger = logging.getLogger("zaply")
 logger.setLevel(logging.INFO)
 
 app = FastAPI(
@@ -1089,8 +1089,8 @@ async def handle_options_request(full_path: str, request: Request):
                 "http://[::1]:8000",
                 "https://[::1]:8000",
                 # Docker environments
-                "http://hypersend_frontend:3000",
-                "http://hypersend_backend:8000",
+"http://zaply_frontend:3000",
+                "http://zaply_backend:8000",
                 "http://frontend:3000",
                 "http://backend:8000",
             ])
@@ -1136,7 +1136,7 @@ async def api_status(request: Request):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     
-    # In debug mode, return detailed information
+# In debug mode, return detailed information
     return {
         "status": "operational",
         "service": "zaply-api",
@@ -1160,7 +1160,7 @@ async def api_status(request: Request):
 async def root():
     """Root endpoint - verify API is responding"""
     return {
-        "app": "Hypersend",
+        "app": "Zaply",
         "version": "1.0.0",
         "status": "running",
         "environment": "debug" if settings.DEBUG else "production",
@@ -1296,8 +1296,8 @@ async def preflight_alias_endpoints(request: Request):
             r'^https?://127\.0\.0\.1(:[0-9]+)?$',
             r'^https?://\[::1\](:[0-9]+)?$',  # IPv6 loopback
             # Docker container names (HTTP only)
-            r'^http://hypersend_frontend(:[0-9]+)?$',
-            r'^http://hypersend_backend(:[0-9]+)?$',
+r'^http://zaply_frontend(:[0-9]+)?$',
+            r'^http://zaply_backend(:[0-9]+)?$',
             # Docker service names (HTTP only)
             r'^http://frontend(:[0-9]+)?$',
             r'^http://backend(:[0-9]+)?$',

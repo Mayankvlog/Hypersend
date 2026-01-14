@@ -75,8 +75,8 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
                    _buildContactTile(
                      icon: Icons.email_outlined,
                      title: 'Email',
-                     subtitle: 'support@hypersend.com',
-                     onTap: () => _launchEmail(context, 'support@hypersend.com'),
+subtitle: 'support@zaply.in.net',
+                      onTap: () => _launchEmail(context, 'support@zaply.in.net'),
                     ),
                    const SizedBox(height: 12),
                    _buildContactTile(
@@ -89,8 +89,8 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
                    _buildContactTile(
                       icon: Icons.language_outlined,
                       title: 'Community Forum',
-                      subtitle: 'discuss.hypersend.com',
-                      onTap: () => _launchUrl(context, 'https://discuss.hypersend.com'),
+subtitle: 'discuss.zaply.in.net',
+                       onTap: () => _launchUrl(context, 'https://discuss.zaply.in.net'),
                     ),
                  ],
               ),

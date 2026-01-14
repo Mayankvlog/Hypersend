@@ -30,8 +30,8 @@ class Settings:
     # MongoDB Connection
     # For development, use MongoDB Atlas or local MongoDB
     # Read MongoDB credentials from environment
-    _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
-    _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
+    _MONGO_USER: str = os.getenv("MONGO_USER", "zaply")
+    _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "zaply_secure_password")
     
     # CRITICAL FIX: Detect if running in Docker or local development
     # Check for Docker environment indicators
@@ -63,7 +63,7 @@ class Settings:
         print(f"[CONFIG] Local environment detected, using MongoDB host: {_MONGO_HOST}")
     
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
-    _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
+    _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "zaply")
     
     # CRITICAL FIX: In Docker, always use internal networking regardless of any MONGODB_URI
     if is_docker:
@@ -108,7 +108,7 @@ class Settings:
         "your-secret-key-change-in-production", 
         "your-secret-key",
         "test-secret-key",
-        "Prod_Secret_Key_For_Zaply_Hypersend_2025_Secure_Fixed",  # Previous hardcoded value
+        "Prod_Secret_Key_For_Zaply_2025_Secure_Fixed",  # FIXED: Removed Hypersend reference
         "hypersend_secure_password",  # Default MongoDB password
         "secret",
         "password",
@@ -208,15 +208,15 @@ class Settings:
     RATE_LIMIT_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 
     # Email / SMTP (optional - used for password reset emails)
-    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() in ("true", "1", "yes")
-    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "noreply@zaply.in.net")
     
     # Password reset functionality
-    ENABLE_PASSWORD_RESET: bool = os.getenv("ENABLE_PASSWORD_RESET", "False").lower() in ("true", "1", "yes")
+    ENABLE_PASSWORD_RESET: bool = os.getenv("ENABLE_PASSWORD_RESET", "True").lower() in ("true", "1", "yes")
     
     # Email service validation with enhanced checking
     EMAIL_SERVICE_ENABLED: bool = bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and EMAIL_FROM)

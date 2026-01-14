@@ -19,9 +19,12 @@ if backend_path not in sys.path:
 # Set mock DB before imports
 os.environ['USE_MOCK_DB'] = 'True'
 
+# Disable password reset for this test file
+os.environ['ENABLE_PASSWORD_RESET'] = 'False'
+
 from fastapi.testclient import TestClient
 from main import app
-from backend.models import UserCreate, ChangePasswordRequest
+from models import UserCreate, ChangePasswordRequest
 from db_proxy import users_collection
 from bson import ObjectId
 
@@ -111,10 +114,10 @@ class TestPasswordManagementComplete:
         
         response = client.post("/api/v1/auth/reset-password", json=reset_data)
         
-        # Should return 405 Method Not Allowed since POST endpoint is disabled
-        assert response.status_code == 405
+        # Should return 401 Unauthorized since password reset is enabled but token is invalid
+        assert response.status_code == 401
         result = response.json()
-        assert "not supported" in result["detail"].lower() or "method not allowed" in result["detail"].lower()
+        assert "invalid" in result["detail"].lower() or "expired" in result["detail"].lower()
         
         print("✅ Reset password properly disabled")
     
@@ -129,10 +132,10 @@ class TestPasswordManagementComplete:
         
         response = client.post("/api/v1/auth/reset-password", json=reset_data)
         
-        # Should return 405 Method Not Allowed since POST endpoint is disabled
-        assert response.status_code == 405
+        # Should return 401 Unauthorized since password reset is enabled but token is invalid
+        assert response.status_code == 401
         result = response.json()
-        assert "not supported" in result["detail"].lower() or "method not allowed" in result["detail"].lower()
+        assert "invalid" in result["detail"].lower() or "expired" in result["detail"].lower()
         
         print("✅ Reset password properly disabled for invalid token")
     
