@@ -104,7 +104,7 @@ class _AuthScreenState extends State<AuthScreen> {
             children: [
               const SizedBox(height: 24),
               Text(
-                'Zaply',
+                'zaply',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),

@@ -45,13 +45,13 @@ class ApiService {
         baseUrl: url,
         // CRITICAL FIX: Adaptive timeouts for large file operations
         connectTimeout: const Duration(minutes: 10),  // Increased for 40GB files
-        receiveTimeout: const Duration(hours: 4),    // Increased for slow networks
-        sendTimeout: const Duration(minutes: 10),     // Increased for large uploads
+        receiveTimeout: const Duration(hours: 2),    // Decreased for faster networks
+        sendTimeout: const Duration(minutes: 5),     // Decreased for smaller uploads
           contentType: 'application/json',
           // Allow only 2xx and 3xx status codes - treat 4xx as errors
           validateStatus: (status) => status != null && (status >= 200 && status < 400),
         headers: {
-          'User-Agent': 'Zaply-Flutter-Web/1.0',
+          'User-Agent': 'zaply-Flutter-Web/1.0',
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },

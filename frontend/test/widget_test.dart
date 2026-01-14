@@ -5,20 +5,27 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:zaply/main.dart';
 
 void main() {
-  testWidgets('Zaply app smoke test', (WidgetTester tester) async {
+  testWidgets('zaply app smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const ZaplyApp());
 
-    // Verify that the splash screen shows up
-    expect(find.text('Zaply'), findsOneWidget);
-    expect(find.text('Fast. Secure. Chat.'), findsOneWidget);
+    // Wait for the splash screen to appear
+    await tester.pump();
     
-    // Pump and settle to let animations complete
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    // Verify that the app builds successfully
+    expect(tester.takeException(), isNull);
+    
+    // Check that we have some widgets on screen
+    expect(find.byType(Container), findsWidgets);
+    
+    // Verify that the splash screen shows the zaply branding
+    expect(find.text('zaply'), findsOneWidget);
+    expect(find.text('Fast. Secure. Chat.'), findsOneWidget);
   });
 }

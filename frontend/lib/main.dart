@@ -31,6 +31,7 @@ class ZaplyApp extends StatefulWidget {
 class _ZaplyAppState extends State<ZaplyApp> {
   late bool _darkMode;
   String? _initError;
+  bool _disposed = false;
 
   @override
   void initState() {
@@ -48,7 +49,7 @@ class _ZaplyAppState extends State<ZaplyApp> {
   void _setupThemeListener() {
     Future.doWhile(() async {
       await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
+      if (mounted && !_disposed) {
         try {
           final newDarkMode = serviceProvider.settingsService.darkMode;
           if (_darkMode != newDarkMode) {
@@ -60,8 +61,14 @@ class _ZaplyAppState extends State<ZaplyApp> {
           debugPrint('[ZaplyApp] Theme listener error: $e');
         }
       }
-      return mounted;
+      return mounted && !_disposed;
     });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   @override
