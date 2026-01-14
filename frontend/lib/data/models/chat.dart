@@ -67,20 +67,10 @@ class Chat extends Equatable {
     final avatarUrlRaw = json['avatar_url']?.toString() ?? '';
     if (avatarUrlRaw.isNotEmpty) {
       avatar = avatarUrlRaw;
+    // FIXED: Never generate initials to prevent 2 words avatar
     } else {
-      // Compute initials strictly from displayName (never from backend avatar field)
-      final parts = displayName.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-      if (chatType == ChatType.group || chatType == ChatType.supergroup || chatType == ChatType.channel) {
-        avatar = parts.length >= 2
-            ? (parts[0][0] + parts[1][0]).toUpperCase()
-            : (displayName.isNotEmpty ? displayName.substring(0, displayName.length >= 2 ? 2 : 1).toUpperCase() : 'GR');
-      } else if (chatType == ChatType.saved) {
-        avatar = 'SM';
-      } else {
-        avatar = parts.isNotEmpty
-            ? parts.first.substring(0, 1).toUpperCase()
-            : (displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : 'U');
-      }
+      // Always use empty string for avatar to prevent initials
+      avatar = ''; // No initials - just empty string
     }
 
     DateTime fallbackTime() {
