@@ -352,33 +352,49 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
     print(f"[ADD_MEMBERS] Payload: {payload}")
     print(f"[ADD_MEMBERS] Payload Type: {type(payload)}")
     
-    # Check if payload has user_ids attribute
-    if hasattr(payload, 'user_ids'):
-        user_ids = payload.user_ids or []
+    # Extract user_ids from payload with better error handling
+    try:
+        user_ids = payload.user_ids if payload.user_ids else []
         print(f"[ADD_MEMBERS] User IDs from payload.user_ids: {user_ids}")
-    else:
-        user_ids = payload.get('user_ids', []) if isinstance(payload, dict) else []
-        print(f"[ADD_MEMBERS] User IDs from fallback: {user_ids}")
+    except AttributeError as e:
+        print(f"[ADD_MEMBERS] Error accessing payload.user_ids: {e}")
+        user_ids = []
+    except Exception as e:
+        print(f"[ADD_MEMBERS] Unexpected error with payload: {e}")
+        user_ids = []
     
     print(f"[ADD_MEMBERS] Final user_ids: {user_ids}")
     print(f"[ADD_MEMBERS] User IDs Type: {type(user_ids)}")
     
-    group = await _require_group(group_id, current_user)
-    print(f"[ADD_MEMBERS] Group found: {group.get('_id')}")
-    print(f"[ADD_MEMBERS] Group members: {group.get('members', [])}")
-    print(f"[ADD_MEMBERS] Group admins: {group.get('admins', [])}")
+    # Validate group exists and user is member
+    try:
+        group = await _require_group(group_id, current_user)
+        print(f"[ADD_MEMBERS] Group found: {group.get('_id')}")
+        print(f"[ADD_MEMBERS] Group members: {group.get('members', [])}")
+        print(f"[ADD_MEMBERS] Group admins: {group.get('admins', [])}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ADD_MEMBERS] Error fetching group: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch group")
     
+    # Check admin permissions with detailed logging
     if not _is_admin(group, current_user):
         print(f"[ADD_MEMBERS] User {current_user} is NOT admin!")
         print(f"[ADD_MEMBERS] Admins list: {group.get('admins', [])}")
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can add members")
+        print(f"[ADD_MEMBERS] User ID type: {type(current_user)}")
+        print(f"[ADD_MEMBERS] Admin IDs types: {[type(admin) for admin in group.get('admins', [])]}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Only admins can add members"
+        )
     
     print(f"[ADD_MEMBERS] User {current_user} IS admin - proceeding...")
 
     # Validate and filter user_ids
     if not user_ids:
         print(f"[ADD_MEMBERS] No user_ids provided in payload")
-        return {"added": 0}
+        return {"added": 0, "message": "No user IDs provided"}
     
     # Remove duplicates, empty strings, and current user
     filtered_ids = []
@@ -392,60 +408,68 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
     
     if not filtered_ids:
         print(f"[ADD_MEMBERS] No valid user_ids after filtering")
-        return {"added": 0}
+        return {"added": 0, "message": "No valid user IDs to add"}
     
     print(f"[ADD_MEMBERS] Processing {len(filtered_ids)} valid user_ids: {filtered_ids}")
 
-    # Get current members from cache or database
-    current_members = await GroupCacheService.get_group_members(group_id)
-    if not current_members:
-        current_members = group.get("members", [])
-        await GroupCacheService.set_group_members(group_id, current_members)
-        print(f"[ADD_MEMBERS] Set initial group members: {current_members}")
-
-    print(f"[ADD_MEMBERS] Current group members: {current_members}")
-
-    # Filter out already added members
-    new_members = [uid for uid in filtered_ids if uid not in current_members]
-    if not new_members:
-        print(f"[ADD_MEMBERS] No new members to add. All users already in group.")
-        return {"added": 0}
-
-    print(f"[ADD_MEMBERS] New members to add: {new_members}")
-
-    # Atomic operation: add members not already present
-    update_result = await chats_collection().update_one(
-        {"_id": group_id}, 
-        {"$addToSet": {"members": {"$each": new_members}}}
-    )
-    print(f"[ADD_MEMBERS] Database update result: {update_result}")
-
-    # Update cache with new members
-    updated_members = current_members + new_members
-    await GroupCacheService.set_group_members(group_id, updated_members)
-    print(f"[ADD_MEMBERS] Updated group members: {updated_members}")
-    
-    # Invalidate group info cache if method exists
     try:
-        await GroupCacheService.invalidate_group_info(group_id)
-    except AttributeError:
-        # Method doesn't exist, continue without cache invalidation
-        print(f"[ADD_MEMBERS] Group info cache invalidation method not found, continuing...")
-    
-    # Log activity for each new member
-    for uid in new_members:
-        await _log_activity(group_id, current_user, "member_added", {"user_id": uid})
+        # Get current members from cache or database
+        current_members = await GroupCacheService.get_group_members(group_id)
+        if not current_members:
+            current_members = group.get("members", [])
+            await GroupCacheService.set_group_members(group_id, current_members)
+            print(f"[ADD_MEMBERS] Set initial group members: {current_members}")
 
-    print(f"[ADD_MEMBERS] Successfully added {len(new_members)} members to group {group_id}")
-    print(f"[ADD_MEMBERS] ===== ADD MEMBERS REQUEST END =====")
-    
-    # Return updated member count for frontend
-    final_members = current_members + new_members
-    return {
-        "added": len(new_members),
-        "member_count": len(final_members),
-        "members": final_members
-    }
+        print(f"[ADD_MEMBERS] Current group members: {current_members}")
+
+        # Filter out already added members
+        new_members = [uid for uid in filtered_ids if uid not in current_members]
+        if not new_members:
+            print(f"[ADD_MEMBERS] No new members to add. All users already in group.")
+            return {"added": 0, "message": "All users are already group members"}
+
+        print(f"[ADD_MEMBERS] New members to add: {new_members}")
+
+        # Atomic operation: add members not already present
+        update_result = await chats_collection().update_one(
+            {"_id": group_id}, 
+            {"$addToSet": {"members": {"$each": new_members}}}
+        )
+        print(f"[ADD_MEMBERS] Database update result: {update_result}")
+
+        # Update cache with new members
+        updated_members = current_members + new_members
+        await GroupCacheService.set_group_members(group_id, updated_members)
+        print(f"[ADD_MEMBERS] Updated group members: {updated_members}")
+        
+        # Invalidate group info cache if method exists
+        try:
+            await GroupCacheService.invalidate_group_info(group_id)
+        except AttributeError:
+            # Method doesn't exist, continue without cache invalidation
+            print(f"[ADD_MEMBERS] Group info cache invalidation method not found, continuing...")
+        
+        # Log activity for each new member
+        for uid in new_members:
+            await _log_activity(group_id, current_user, "member_added", {"user_id": uid})
+
+        print(f"[ADD_MEMBERS] Successfully added {len(new_members)} members to group {group_id}")
+        print(f"[ADD_MEMBERS] ===== ADD MEMBERS REQUEST END =====")
+        
+        # Return updated member count for frontend
+        return {
+            "added": len(new_members),
+            "member_count": len(updated_members),
+            "members": updated_members,
+            "message": f"Successfully added {len(new_members)} members"
+        }
+        
+    except Exception as e:
+        print(f"[ADD_MEMBERS] Database error: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add members to group"
+        )
 
 
 @router.delete("/{group_id}/members/{member_id}")

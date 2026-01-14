@@ -135,7 +135,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             id=user["_id"],
             name=user["name"],
             email=user.get("email", user.get("username", "")),  # Use email if available, fallback to username
-            username=user.get("username", ""),
+            username=user.get("username") or user.get("email", "").lower(),  # Fallback to email lowercased if username missing
             bio=user.get("bio"),
             avatar="",  # FIXED: Always empty string for WhatsApp compatibility
             avatar_url=user.get("avatar_url"),
@@ -413,7 +413,7 @@ async def update_profile(
             id=updated_user["_id"],
             name=updated_user["name"],
             email=updated_user.get("email", updated_user.get("username", "")),  # Use email if available, fallback to username or empty
-            username=updated_user.get("username", ""),
+            username=updated_user.get("username") or updated_user.get("email", "").lower(),  # Fallback to email lowercased if username missing
             bio=updated_user.get("bio"),
             avatar="",  # FIXED: Always empty string for WhatsApp compatibility
             avatar_url=updated_user.get("avatar_url"),
@@ -1332,6 +1332,7 @@ async def upload_avatar(
         logger.debug("Avatar URL generated")
         
         # Clean up old avatar files AFTER saving new file
+        current_avatar = None
         try:
             user = await asyncio.wait_for(
                 users_collection().find_one({"_id": current_user}),
@@ -1348,6 +1349,8 @@ async def upload_avatar(
                             logger.debug("Cleaned up old avatar file")
                         except Exception as delete_error:
                             logger.warning(f"Could not delete old avatar: {delete_error}")
+            # Store current avatar for response
+            current_avatar = user.get("avatar", "") if user else None
         except Exception as cleanup_error:
             logger.warning(f"Cleanup error while checking old avatar: {cleanup_error}")
             # Continue anyway - new file is already saved
