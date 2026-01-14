@@ -4,6 +4,7 @@ import 'profile_service.dart';
 import 'settings_service.dart';
 import 'file_transfer_service.dart';
 import '../models/user.dart';
+import 'package:flutter/foundation.dart';
 
 class ServiceProvider {
   static final ServiceProvider _instance = ServiceProvider._internal();
@@ -38,7 +39,7 @@ class ServiceProvider {
       try {
         await authService.init();
       } catch (e) {
-        print('[ServiceProvider] Auth initialization error (non-blocking): $e');
+        debugPrint('[ServiceProvider] Auth initialization error (non-blocking): $e');
         // Non-blocking - app continues even if auth fails initially
       }
 
@@ -48,13 +49,13 @@ class ServiceProvider {
           final me = await apiService.getMe();
           profileService.setUser(User.fromApi(me));
         } catch (e) {
-          print('[ServiceProvider] Profile fetch error: $e');
+          debugPrint('[ServiceProvider] Profile fetch error: $e');
           // User will be prompted to log in again
         }
       }
-      print('[ServiceProvider] Initialization complete');
+      debugPrint('[ServiceProvider] Initialization complete');
     } catch (e) {
-      print('[ServiceProvider] Critical initialization error: $e');
+      debugPrint('[ServiceProvider] Critical initialization error: $e');
       // Allow app to continue - user can retry login
     }
   }

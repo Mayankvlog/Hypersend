@@ -32,10 +32,10 @@ class _SplashScreenState extends State<SplashScreen>
         try {
           final isLoggedIn = serviceProvider.authService.isLoggedIn;
           final nextRoute = isLoggedIn ? '/chats' : '/auth';
-          print('[SplashScreen] Navigating to: $nextRoute (isLoggedIn: $isLoggedIn)');
+          debugPrint('[SplashScreen] Navigating to: $nextRoute (isLoggedIn: $isLoggedIn)');
           context.go(nextRoute);
         } catch (e) {
-          print('[SplashScreen] Navigation error: $e');
+          debugPrint('[SplashScreen] Navigation error: $e');
           // Fallback to auth screen on error
           if (mounted) {
             context.go('/auth');

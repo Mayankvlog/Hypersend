@@ -1424,16 +1424,6 @@ Future<void> postToChannel(String channelId, String text) async {
     }
   }
 
-  bool _isRetryableError(DioException e) {
-    final statusCode = e.response?.statusCode;
-    // Retry on network errors and 5xx server errors
-    return e.type == DioExceptionType.connectionError ||
-           e.type == DioExceptionType.connectionTimeout ||
-           e.type == DioExceptionType.receiveTimeout ||
-           e.type == DioExceptionType.sendTimeout ||
-           (statusCode != null && statusCode >= 500 && statusCode < 600);
-  }
-
   Future<void> uploadChunk({
     required String uploadId,
     required int chunkIndex,

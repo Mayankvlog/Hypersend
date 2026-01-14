@@ -196,7 +196,7 @@ class ChatListItem extends StatelessWidget {
     // Handle avatar URL safely - prevent GET requests to POST endpoints
     String? fullUrl;
     final avatar = chat.avatar;
-    if (avatar != null && avatar.isNotEmpty) {
+    if (avatar.isNotEmpty) {
       if (avatar.startsWith('/')) {
         fullUrl = '${ApiConstants.serverBaseUrl}$avatar';
       } else {

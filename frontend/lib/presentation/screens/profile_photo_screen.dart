@@ -68,12 +68,12 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
     } else {
       // Extract initials from name instead of using old avatar text
       final user = serviceProvider.profileService.currentUser;
-      if (user != null && user!.name.isNotEmpty) {
-        final parts = user!.name.trim().split(' ');
+      if (user != null && user.name.isNotEmpty) {
+        final parts = user.name.trim().split(' ');
         if (parts.length >= 2) {
           _selectedPhoto = (parts[0][0] + parts[1][0]).toUpperCase();
         } else {
-          _selectedPhoto = user!.name.substring(0, user!.name.length >= 2 ? 2 : 1).toUpperCase();
+          _selectedPhoto = user.name.substring(0, user.name.length >= 2 ? 2 : 1).toUpperCase();
         }
       } else {
         _selectedPhoto = '??'; // Fallback
@@ -144,7 +144,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                         : _buildNetworkImage(widget.currentAvatar),
                     child: _pickedFileBytes == null && !(widget.currentAvatar.startsWith('http') || widget.currentAvatar.startsWith('/'))
                         ? Text(
-                            // FIXED: Use proper initials instead of _selectedPhoto
+                            // FIXED: Use proper initials from _selectedPhoto, not old avatar text
                             _selectedPhoto.length <= 3 ? _selectedPhoto : '??',
                             style: const TextStyle(
                               color: Colors.white,

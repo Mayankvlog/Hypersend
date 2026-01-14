@@ -10,11 +10,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   try {
-    print('[MAIN] Initializing service provider...');
+    debugPrint('[MAIN] Initializing service provider...');
     await serviceProvider.init();
-    print('[MAIN] Service provider initialized successfully');
+    debugPrint('[MAIN] Service provider initialized successfully');
   } catch (e) {
-    print('[MAIN] ERROR during service provider init: $e');
+    debugPrint('[MAIN] ERROR during service provider init: $e');
     // Continue anyway - app can still load with fallback state
   }
   
@@ -39,7 +39,7 @@ class _ZaplyAppState extends State<ZaplyApp> {
       _darkMode = serviceProvider.settingsService.darkMode;
       _setupThemeListener();
     } catch (e) {
-      print('[ZaplyApp] Initialization error: $e');
+      debugPrint('[ZaplyApp] Initialization error: $e');
       _initError = e.toString();
       _darkMode = false; // Fallback to light theme
     }
@@ -57,7 +57,7 @@ class _ZaplyAppState extends State<ZaplyApp> {
             });
           }
         } catch (e) {
-          print('[ZaplyApp] Theme listener error: $e');
+          debugPrint('[ZaplyApp] Theme listener error: $e');
         }
       }
       return mounted;

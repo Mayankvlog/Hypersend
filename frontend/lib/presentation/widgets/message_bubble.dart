@@ -49,10 +49,8 @@ class MessageBubble extends StatelessWidget {
                   ? null
                   : Center(
                       child: Text(
-                        // FIXED: Use proper initials from avatarUrl if it's text, or fallback
-                        avatarUrl!.length <= 3 && avatarUrl!.isNotEmpty 
-                            ? avatarUrl!.toUpperCase()
-                            : '??',
+                        // FIXED: Use fallback initials instead of avatar text
+                        '??',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,

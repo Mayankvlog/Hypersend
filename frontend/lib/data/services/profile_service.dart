@@ -229,9 +229,6 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       final avatarUrl = responseMap['avatar_url'].toString();
       debugPrint('[PROFILE_SERVICE] Avatar uploaded successfully: $avatarUrl');
       
-      // Extract avatar field if available (for initials)
-      final String avatar = responseMap.containsKey('avatar') ? responseMap['avatar'].toString() : '';
-      
       // Update local user with new avatar URL and clear avatar field
       if (_currentUser != null) {
         _currentUser = _currentUser!.copyWith(

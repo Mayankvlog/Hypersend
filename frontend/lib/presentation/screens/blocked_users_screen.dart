@@ -109,7 +109,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                             radius: 24,
                             backgroundColor: AppTheme.primaryCyan,
                             child: Text(
-                              user['avatar']!,
+                              // FIXED: Use proper initials from user name, not avatar text
+                              user['name'] != null && user['name'].toString().isNotEmpty
+                                  ? user['name'].toString().substring(0, user['name'].toString().length >= 2 ? 2 : 1).toUpperCase()
+                                  : '??',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,
