@@ -62,18 +62,25 @@ class Chat extends Equatable {
     final displayName = (json['display_name'] ?? json['name'] ?? (chatType == ChatType.group ? 'Group' : 'Chat')).toString();
     final senderName = json['last_message_sender_name']?.toString();
 
+    // avatar_url from backend is the only source of image; otherwise use initials from name
     String avatar;
-    if (json['avatar_url'] != null && json['avatar_url'].toString().isNotEmpty) {
-      avatar = json['avatar_url'].toString();
-    } else if (chatType == ChatType.group || chatType == ChatType.supergroup || chatType == ChatType.channel) {
-      final parts = displayName.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-      avatar = parts.length >= 2
-          ? (parts[0][0] + parts[1][0]).toUpperCase()
-          : (displayName.isNotEmpty ? displayName.substring(0, displayName.length >= 2 ? 2 : 1).toUpperCase() : 'GR');
-    } else if (chatType == ChatType.saved) {
-       avatar = 'SM';
+    final avatarUrlRaw = json['avatar_url']?.toString() ?? '';
+    if (avatarUrlRaw.isNotEmpty) {
+      avatar = avatarUrlRaw;
     } else {
-      avatar = displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : 'U';
+      // Compute initials strictly from displayName (never from backend avatar field)
+      final parts = displayName.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+      if (chatType == ChatType.group || chatType == ChatType.supergroup || chatType == ChatType.channel) {
+        avatar = parts.length >= 2
+            ? (parts[0][0] + parts[1][0]).toUpperCase()
+            : (displayName.isNotEmpty ? displayName.substring(0, displayName.length >= 2 ? 2 : 1).toUpperCase() : 'GR');
+      } else if (chatType == ChatType.saved) {
+        avatar = 'SM';
+      } else {
+        avatar = parts.isNotEmpty
+            ? parts.first.substring(0, 1).toUpperCase()
+            : (displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : 'U');
+      }
     }
 
     DateTime fallbackTime() {

@@ -155,7 +155,7 @@ Future<void> _saveProfile() async {
         );
       } else {
         // No profile changes needed, just return current user
-        updatedUser = serviceProvider.profileService.currentUser!;
+        updatedUser = serviceProvider.profileService.currentUser ?? _initialUser;
       }
 
       if (!mounted) return;
@@ -166,7 +166,7 @@ Future<void> _saveProfile() async {
       if (usernameToSend != null) updatedFields.add('Username');
       if (emailToSend != null) updatedFields.add('Email');
       if (bioToSend != null) updatedFields.add('Status');
-      if (_avatarChanged && _currentAvatar != _initialUser.avatar) updatedFields.add('Profile Photo');
+      if (_avatarChanged && _currentAvatar != (_initialUser.avatarUrl ?? '')) updatedFields.add('Profile Photo');
       
       final successMessage = updatedFields.isNotEmpty 
           ? 'Saved! ${updatedFields.join(', ')} updated'
@@ -182,6 +182,9 @@ Future<void> _saveProfile() async {
 
       // Update state and navigation atomically
       setState(() {
+        // Keep baseline in sync so subsequent edits/compares are correct
+        _initialUser = updatedUser;
+        _currentAvatar = updatedUser.avatarUrl ?? '';
         _nameChanged = false;
         _usernameChanged = false;
         _emailChanged = false;
@@ -350,8 +353,9 @@ if (result != null && result is String) {
                           setState(() {
                             final newAvatar = result.trim();
                             // Only mark as changed if avatar actually changed
-                            _avatarChanged = newAvatar != _currentAvatar;
-                            _currentAvatar = ''; // ALWAYS clear to empty string when image is uploaded
+                            _avatarChanged = newAvatar != (_initialUser.avatarUrl ?? '');
+                            // Keep the returned value (usually /api/v1/users/avatar/...) so UI can render the image
+                            _currentAvatar = newAvatar;
                           });
                           
                           // Show success message
