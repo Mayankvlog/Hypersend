@@ -105,19 +105,11 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                       padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
+                          // FIXED: Never show initials to prevent 2 words avatar
                           CircleAvatar(
                             radius: 24,
                             backgroundColor: AppTheme.primaryCyan,
-                            child: Text(
-                              // FIXED: Use proper initials from user name, not avatar text
-                              user['name'] != null && user['name'].toString().isNotEmpty
-                                  ? user['name'].toString().substring(0, user['name'].toString().length >= 2 ? 2 : 1).toUpperCase()
-                                  : '??',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                            child: null, // No initials - just empty circle
                           ),
                           const SizedBox(width: 12),
                           Expanded(

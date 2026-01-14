@@ -103,7 +103,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         backgroundImage: displayUser.isAvatarPath
                             ? NetworkImage(displayUser.fullAvatarUrl)
                             : null,
-                        child: !displayUser.isAvatarPath
+                        // FIXED: Never show initials to prevent 2 words avatar
+                        child: !displayUser.isAvatarPath && displayUser.initials.isNotEmpty
                             ? Text(
                                 displayUser.initials,
                                 style: const TextStyle(color: Colors.white, fontSize: 18),

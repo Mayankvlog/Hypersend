@@ -207,10 +207,8 @@ class ChatListItem extends StatelessWidget {
       fullUrl = null;
     }
 
-    // Use a temporary user object (or simple logic) to get initials
-    final initials = chat.name.length >= 2 
-        ? chat.name.substring(0, 2).toUpperCase() 
-        : chat.name.toUpperCase();
+    // FIXED: Never use initials to prevent 2 words avatar
+    final initials = ''; // chat.name.length >= 2 ? chat.name.substring(0, 2).toUpperCase() : chat.name.toUpperCase();
 
     return CircleAvatar(
       radius: 28,
@@ -220,14 +218,16 @@ class ChatListItem extends StatelessWidget {
         debugPrint('Error loading avatar: $exception');
       },
       child: Center(
-        child: Text(
-          initials,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        child: initials.isNotEmpty
+            ? Text(
+                initials,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              )
+            : null,
       ),
     );
   }

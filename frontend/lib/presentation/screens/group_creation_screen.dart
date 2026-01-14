@@ -226,10 +226,20 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _createGroup,
-                          child: const Text(
-                            'Create Group',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          onPressed: _selectedMemberIds.isEmpty ? null : _createGroup,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _selectedMemberIds.isEmpty 
+                                ? Colors.grey.shade300 
+                                : AppTheme.primaryCyan,
+                            foregroundColor: _selectedMemberIds.isEmpty 
+                                ? Colors.grey.shade600 
+                                : Colors.white,
+                          ),
+                          child: Text(
+                            _selectedMemberIds.isEmpty 
+                                ? 'Select at least 1 member'
+                                : 'Create Group',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),

@@ -24,7 +24,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   bool _isUploading = false;
   Uint8List? _pickedFileBytes;
   String? _pickedFileName;
-  bool _previewImageLoadFailed = false;
+  // REMOVED: _previewImageLoadFailed - not needed since we never show initials
   
   // Add debouncing to prevent infinite requests
   DateTime? _lastSaveAttempt;
@@ -104,26 +104,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
     return false;
   }
 
-  // FIXED: Helper method to get user initials safely
-  String _getUserInitials() {
-    try {
-      final user = serviceProvider.profileService.currentUser;
-      if (user != null && user.name.isNotEmpty) {
-        final parts = user.name.trim().split(' ').where((p) => p.isNotEmpty).toList();
-        if (parts.length >= 2) {
-          final first = parts[0].isNotEmpty ? parts[0][0] : '';
-          final second = parts[1].isNotEmpty ? parts[1][0] : '';
-          return (first + second).toUpperCase();
-        } else {
-          return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
-        }
-      }
-      return '??';
-    } catch (e) {
-      debugPrint('[PROFILE_PHOTO] Error getting user initials: $e');
-      return '??';
-    }
-  }
+  // REMOVED: _getUserInitials - not needed since we never show initials
 
   @override
   void initState() {
@@ -194,31 +175,16 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                           ? MemoryImage(_pickedFileBytes!)
                           : networkImage;
 
-                      // Initials only when there is no image to show.
-                      final showInitials = backgroundImage == null || _previewImageLoadFailed;
-
+                      // FIXED: Never show initials to prevent 2 words avatar
                       return CircleAvatar(
                         radius: 60,
                         backgroundColor: AppTheme.primaryCyan,
                         backgroundImage: backgroundImage,
                         onBackgroundImageError: (error, stackTrace) {
-                          if (mounted) {
-                            setState(() {
-                              _previewImageLoadFailed = true;
-                            });
-                          }
+                          // FIXED: No need to track load failure since we never show initials
                           debugPrint('[PROFILE_PHOTO] Preview image load failed: $error');
                         },
-                        child: showInitials
-                            ? Text(
-                                _getUserInitials(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              )
-                            : null,
+                        child: null, // Always null - no initials ever
                       );
                     },
                   ),
@@ -286,6 +252,7 @@ Future<void> _pickImage() async {
         setState(() {
           _pickedFileBytes = file.bytes;
           _pickedFileName = file.name;
+          // reset fallback when new image is chosen
         });
         debugPrint('[PROFILE_PHOTO] State updated');
         

@@ -325,8 +325,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                      builder: (context) {
                        // FIXED: Improved URL validation and fallback logic
                        final isUrl = _isValidAvatarUrl(_currentAvatar);
-                       // FIXED: Always use user initials from name, never from stored avatar
-                       final displayInitials = _initialUser.initials;
+                       // FIXED: Disable 2 words avatar - never show initials
+                       final displayInitials = ''; // _initialUser.initials;
                        final backgroundImage = isUrl && _currentAvatar.isNotEmpty
                            ? NetworkImage(
                                _currentAvatar.startsWith('http') 
@@ -351,7 +351,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                  }
                                }
                              : null,
-                         child: (_avatarImageLoadFailed || backgroundImage == null)
+                         // FIXED: Never show initials to prevent 2 words avatar
+                         child: (_avatarImageLoadFailed || backgroundImage == null) && displayInitials.isNotEmpty
                              ? Text(
                                  displayInitials,
                                  style: const TextStyle(

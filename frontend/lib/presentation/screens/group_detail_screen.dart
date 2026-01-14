@@ -31,11 +31,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   }
 
   String _initials(String name) {
-    final t = name.trim();
-    if (t.isEmpty) return 'GR';
-    final parts = t.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return t.length >= 2 ? t.substring(0, 2).toUpperCase() : t.substring(0, 1).toUpperCase();
+    // FIXED: Never return initials to prevent 2 words avatar
+    return ''; // Always return empty to disable initials
   }
 
   Future<void> _load() async {
@@ -283,7 +280,8 @@ final g = _group!;
                     onBackgroundImageError: (exception, stackTrace) {
                       debugPrint('Group avatar load failed: $exception');
                     },
-                    child: avatarUrl.isEmpty || !(avatarUrl.startsWith('http') || avatarUrl.startsWith('/'))
+                    // FIXED: Never show initials to prevent 2 words avatar
+                    child: avatarUrl.isEmpty || !(avatarUrl.startsWith('http') || avatarUrl.startsWith('/')) && _initials(name).isNotEmpty
                         ? Text(
                             _initials(name),
                             style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
@@ -338,9 +336,10 @@ final g = _group!;
             ),
             for (final m in _members)
               ListTile(
+                // FIXED: Never show initials to prevent 2 words avatar
                 leading: CircleAvatar(
                   backgroundColor: AppTheme.cardDark,
-                  child: Text(((m['name'] ?? 'U').toString()).substring(0, 1).toUpperCase(), style: const TextStyle(color: Colors.white)),
+                  child: null, // No initials - just empty circle
                 ),
                 title: Text((m['name'] ?? m['user_id'] ?? '').toString()),
                 subtitle: Text((m['role'] ?? 'member').toString() == 'admin' ? 'Admin' : 'Member'),

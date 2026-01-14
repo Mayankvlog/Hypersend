@@ -103,15 +103,17 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
                   child: user.avatarUrl != null
                       ? null
                       : Center(
-                          child: Text(
-                            // FIXED: Use proper initials from user name, not avatar text
-                            user.initials,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          // FIXED: Never show initials to prevent 2 words avatar
+                          child: user.initials.isNotEmpty
+                              ? Text(
+                                  user.initials,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : null,
                         ),
                 ),
                 if (user.isOnline)

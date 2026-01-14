@@ -900,25 +900,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           children: [
             Stack(
               children: [
+                // FIXED: Never show initials to prevent 2 words avatar
                 CircleAvatar(
                   radius: 20,
                   backgroundColor: AppTheme.cardDark,
-                  child: Center(
-                    child: Text(
-                      () {
-                        final name = (_chat?.name ?? 'Chat').trim();
-                        if (name.isEmpty) return 'C';
-                        return name.length >= 2
-                            ? name.substring(0, 2).toUpperCase()
-                            : name.substring(0, 1).toUpperCase();
-                      }(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                  child: null, // No initials - just empty circle
                 ),
               ],
             ),

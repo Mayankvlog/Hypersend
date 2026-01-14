@@ -173,23 +173,8 @@ class User extends Equatable {
 
   /// Helper to get initials from name or avatar field
   String get initials {
-    // FIXED: Never use avatar field for initials - always use name
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return '??';
-    
-    // Extract initials from name only - trim and filter empty parts
-    final parts = trimmed.split(' ').where((p) => p.isNotEmpty).toList();
-    if (parts.length >= 2) {
-      // Safely get first character from first two parts
-      final first = parts[0].isNotEmpty ? parts[0][0] : '';
-      final second = parts[1].isNotEmpty ? parts[1][0] : '';
-      return (first + second).toUpperCase();
-    } else if (parts.isNotEmpty) {
-      // Safely get up to 2 characters from first part
-      return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
-    } else {
-      return '??';
-    }
+    // FIXED: Never return initials to prevent 2 words avatar
+    return ''; // Always return empty to disable initials
   }
 
   /// Get formatted last seen text

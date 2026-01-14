@@ -49,8 +49,7 @@ class MessageBubble extends StatelessWidget {
                   ? null
                   : Center(
                       child: Text(
-                        // FIXED: Use fallback initials instead of avatar text
-                        '??',
+                        '',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,
