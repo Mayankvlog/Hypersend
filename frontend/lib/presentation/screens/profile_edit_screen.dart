@@ -141,7 +141,7 @@ Future<void> _saveProfile() async {
 
       // Only update profile if there are actual changes beyond avatar URL
       // Avatar URL is already handled by uploadAvatar endpoint
-      final hasNonAvatarChanges = _nameChanged || _usernameChanged || _emailChanged || _bioChanged;
+      final hasNonAvatarChanges = _nameChanged || _usernameChanged || _emailChanged;
       
       User updatedUser;
       if (hasNonAvatarChanges) {
@@ -155,7 +155,7 @@ Future<void> _saveProfile() async {
         );
       } else {
         // No profile changes needed, just return current user
-        updatedUser = _currentUser!;
+        updatedUser = serviceProvider.profileService.currentUser!;
       }
 
       if (!mounted) return;
