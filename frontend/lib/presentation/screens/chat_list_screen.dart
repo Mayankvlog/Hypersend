@@ -396,10 +396,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   /// Get app logo letter based on app state
-  /// Logic: Show 'Z' by default (Zaply)
+  /// Logic: Show 'Z' by default (zaply)
   /// Could be extended to show different letters based on app state/features
   String _getAppLogo() {
-    // Default: Show 'Z' for Zaply
+    // Default: Show 'Z' for zaply
     // You can extend this logic to show different letters based on:
     // - Current tab/page
     // - User status
