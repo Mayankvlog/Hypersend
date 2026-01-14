@@ -29,6 +29,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   bool _usernameChanged = false;
   bool _emailChanged = false;
   bool _avatarChanged = false;
+  bool _avatarImageLoadFailed = false;
 
   @override
   void initState() {
@@ -72,7 +73,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     super.dispose();
   }
 
-Future<void> _saveProfile() async {
+  Future<void> _saveProfile() async {
     setState(() {
       _isLoading = true;
     });
@@ -343,18 +344,23 @@ Future<void> _saveProfile() async {
                                  debugPrint('Avatar image load failed: $e');
                                  debugPrint('Image source: $_currentAvatar');
                                  debugPrint('Falling back to initials: $displayInitials');
+                                 if (mounted) {
+                                   setState(() {
+                                     _avatarImageLoadFailed = true;
+                                   });
+                                 }
                                }
                              : null,
-                         child: Center(
-                           child: Text(
-                             displayInitials,
-                             style: const TextStyle(
-                               color: Colors.white,
-                               fontSize: 28,
-                               fontWeight: FontWeight.w600,
-                             ),
-                           ),
-                         ),
+                         child: (_avatarImageLoadFailed || backgroundImage == null)
+                             ? Text(
+                                 displayInitials,
+                                 style: const TextStyle(
+                                   color: Colors.white,
+                                   fontSize: 28,
+                                   fontWeight: FontWeight.w600,
+                                 ),
+                               )
+                             : null,
                        );
                      }
                    ),
@@ -375,6 +381,7 @@ if (result != null && result is String) {
                             _avatarChanged = newAvatar != (_initialUser.avatarUrl ?? '');
                             // Keep the returned value (usually /api/v1/users/avatar/...) so UI can render the image
                             _currentAvatar = newAvatar;
+                            _avatarImageLoadFailed = false;
                           });
                           
                           // Show success message

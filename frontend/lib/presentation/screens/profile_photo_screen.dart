@@ -24,6 +24,7 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   bool _isUploading = false;
   Uint8List? _pickedFileBytes;
   String? _pickedFileName;
+  bool _previewImageLoadFailed = false;
   
   // Add debouncing to prevent infinite requests
   DateTime? _lastSaveAttempt;
@@ -101,14 +102,6 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
     }
     
     return false;
-  }
-
-  // FIXED: Helper method to determine if initials should be shown
-  bool _shouldShowInitials() {
-    // Show initials if:
-    // 1. No picked file bytes AND
-    // 2. Network image failed to load (either null or invalid filename)
-    return _pickedFileBytes == null && _buildNetworkImage(widget.currentAvatar) == null;
   }
 
   // FIXED: Helper method to get user initials safely
@@ -194,23 +187,41 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                         ),
                   ),
                   const SizedBox(height: 12),
-CircleAvatar(
-                     radius: 60,
-                     backgroundColor: AppTheme.primaryCyan,
-                     backgroundImage: _pickedFileBytes != null
-                         ? MemoryImage(_pickedFileBytes!)
-                         : _buildNetworkImage(widget.currentAvatar),
-                     child: _shouldShowInitials()
-                         ? Text(
-                             _getUserInitials(),
-                             style: const TextStyle(
-                               color: Colors.white,
-                               fontSize: 32,
-                               fontWeight: FontWeight.w600,
-                             ),
-                           )
-                         : null,
-                   ),
+                  Builder(
+                    builder: (_) {
+                      final networkImage = _buildNetworkImage(widget.currentAvatar);
+                      final backgroundImage = _pickedFileBytes != null
+                          ? MemoryImage(_pickedFileBytes!)
+                          : networkImage;
+
+                      // Initials only when there is no image to show.
+                      final showInitials = backgroundImage == null || _previewImageLoadFailed;
+
+                      return CircleAvatar(
+                        radius: 60,
+                        backgroundColor: AppTheme.primaryCyan,
+                        backgroundImage: backgroundImage,
+                        onBackgroundImageError: (error, stackTrace) {
+                          if (mounted) {
+                            setState(() {
+                              _previewImageLoadFailed = true;
+                            });
+                          }
+                          debugPrint('[PROFILE_PHOTO] Preview image load failed: $error');
+                        },
+                        child: showInitials
+                            ? Text(
+                                _getUserInitials(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              )
+                            : null,
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
