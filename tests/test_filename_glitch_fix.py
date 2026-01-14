@@ -18,27 +18,33 @@ def test_filename_pattern_detection():
     # Mock the filename detection logic (simplified version of Flutter implementation)
     def is_likely_filename(text):
         # Check for common filename patterns that would cause rendering glitches
-        if text.contains('.') and not text.contains('/'):
-            # Check for executable-like patterns
-            if text.contains('-') and text.contains('x64') or text.contains('Setup'):
-                return true
-            # Check for common filename extensions
-            extensions = ['.exe', '.jpg', '.png', '.gif', '.webp', '.jpeg', '.bmp']
-            for ext in extensions:
-                if text.lower().endswith(ext):
-                    return true
-            # Check if it looks like a filename
-            if text.split('.').length >= 2:
-                return true
-        
-        # Check for specific patterns
-        if ('YenSurferUserSetup' in text or 
-            'UserSetup' in text or
-            'x64' in text or
-            (text.contains('-') and text.split('-').length >= 2)):
-            return true
-        
-        return false
+        if not isinstance(text, str) or not text:
+            return False
+
+        lowered = text.lower()
+
+        # URLs / API paths should never be treated as filenames by this heuristic
+        if "/" in text or "://" in text:
+            return False
+
+        # Specific glitch-triggering patterns
+        if (
+            "yensurferusersetup" in lowered
+            or "usersetup" in lowered
+            or "setup" in lowered
+            or "x64" in lowered
+        ):
+            return True
+
+        # Executables are always treated as filenames
+        if lowered.endswith(".exe"):
+            return True
+
+        # Generic hyphenated tokens with an extension (e.g. file-name.ext)
+        if "-" in text and "." in text:
+            return True
+
+        return False
     
     # Test cases that should be detected as filenames
     problematic_patterns = [
