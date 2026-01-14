@@ -62,23 +62,8 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
   @override
   void initState() {
     super.initState();
-    // FIXED: Don't use currentAvatar directly, extract initials properly
-    if (widget.currentAvatar.startsWith('http') || widget.currentAvatar.startsWith('/')) {
-      _selectedPhoto = widget.currentAvatar; // Use URL if it's an image
-    } else {
-      // Extract initials from name instead of using old avatar text
-      final user = serviceProvider.profileService.currentUser;
-      if (user != null && user.name.isNotEmpty) {
-        final parts = user.name.trim().split(' ');
-        if (parts.length >= 2) {
-          _selectedPhoto = (parts[0][0] + parts[1][0]).toUpperCase();
-        } else {
-          _selectedPhoto = user.name.substring(0, user.name.length >= 2 ? 2 : 1).toUpperCase();
-        }
-      } else {
-        _selectedPhoto = '??'; // Fallback
-      }
-    }
+    // FIXED: Always use currentAvatar directly - don't create initials
+    _selectedPhoto = widget.currentAvatar; // Use current avatar as-is
   }
 
   @override
@@ -144,8 +129,21 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                         : _buildNetworkImage(widget.currentAvatar),
                     child: _pickedFileBytes == null && !(widget.currentAvatar.startsWith('http') || widget.currentAvatar.startsWith('/'))
                         ? Text(
-                            // FIXED: Use proper initials from _selectedPhoto, not old avatar text
-                            _selectedPhoto.length <= 3 ? _selectedPhoto : '??',
+                            // FIXED: Always use user initials from name, not stored avatar
+                            (() {
+                              final user = serviceProvider.profileService.currentUser;
+                              if (user != null && user.name.isNotEmpty) {
+                                final parts = user.name.trim().split(' ').where((p) => p.isNotEmpty).toList();
+                                if (parts.length >= 2) {
+                                  final first = parts[0].isNotEmpty ? parts[0][0] : '';
+                                  final second = parts[1].isNotEmpty ? parts[1][0] : '';
+                                  return (first + second).toUpperCase();
+                                } else {
+                                  return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
+                                }
+                              }
+                              return '??';
+                            })(),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 32,
@@ -277,13 +275,12 @@ Future<void> _handleSave() async {
           _pickedFileName!,
         );
         debugPrint('[PROFILE_PHOTO] Avatar uploaded successfully: $resultValue');
-      } else {
-        debugPrint('[PROFILE_PHOTO] Updating avatar to: $_selectedPhoto');
-        // Just update initials - use updateProfile to avoid validation conflicts
-        await serviceProvider.profileService.updateProfile(avatar: _selectedPhoto);
-        resultValue = _selectedPhoto;
-        debugPrint('[PROFILE_PHOTO] Avatar initials updated successfully');
-      }
+       } else {
+         debugPrint('[PROFILE_PHOTO] No file selected - no changes made');
+         // Don't send anything to backend if no file selected
+         resultValue = widget.currentAvatar; // Return original value unchanged
+         debugPrint('[PROFILE_PHOTO] No avatar changes to save');
+       }
 
       if (!mounted) return;
       

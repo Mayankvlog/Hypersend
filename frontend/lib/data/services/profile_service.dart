@@ -93,7 +93,8 @@ class ProfileService {
       if (name != null) updateMap['name'] = name;
       if (username != null) updateMap['username'] = username;
       if (email != null) updateMap['email'] = email;
-      if (avatar != null) updateMap['avatar'] = avatar;  // Add avatar field for initials
+      // FIXED: Never send avatar field - backend always sets it to None
+      // if (avatar != null) updateMap['avatar'] = avatar;  // REMOVED - don't send initials
       if (avatarUrl != null) {
         updateMap['avatar_url'] = avatarUrl;  // Add avatar_url field for image URL
         // Also send profile_picture for backend compatibility
@@ -114,7 +115,7 @@ class ProfileService {
         username: username ?? _currentUser!.username,
         email: email ?? _currentUser!.email,
         bio: bio ?? _currentUser!.bio,
-        avatar: avatar ?? _currentUser!.avatar,
+        avatar: '', // FIXED: Always clear avatar field since backend does
         avatarUrl: avatarUrl ?? _currentUser!.avatarUrl,
       );
       debugPrint('[PROFILE_UPDATE] Local user updated successfully');
@@ -252,8 +253,8 @@ Future<String> uploadAvatar(Uint8List bytes, String filename) async {
       if (avatarPath.isEmpty) {
         throw Exception('Avatar path cannot be empty');
       }
-      // Call API to update avatar - use updateProfile with only avatar field
-      await updateProfile(avatar: avatarPath);
+      // FIXED: Don't send avatar initials - backend will clear them anyway
+      debugPrint('[PROFILE_SERVICE] updateAvatar called but avatar initials are not supported');
       return avatarPath;
     } catch (e) {
       rethrow;

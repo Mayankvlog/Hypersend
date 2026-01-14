@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/constants/api_constants.dart';
 import '../../data/models/user.dart';
 import '../../data/services/service_provider.dart';
 
@@ -37,7 +38,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     
     _nameController = TextEditingController(text: _initialUser.name);
     _usernameController = TextEditingController(text: _initialUser.username);
-    _currentAvatar = _initialUser.avatar;
+    _currentAvatar = _initialUser.avatarUrl ?? ''; // Use avatarUrl for images, empty for initials
     
     final userEmail = _initialUser.email ?? '';
     final isValidEmail = (userEmail.contains('@') && userEmail.contains('.'));
@@ -303,42 +304,42 @@ Future<void> _saveProfile() async {
               child: Stack(
                 children: [
                    Builder(
-                    builder: (context) {
-                      // FIXED: Preserve actual avatar URL in tempUser so fullAvatarUrl works correctly
-                      final tempUser = _initialUser.copyWith(
-                        avatar: _currentAvatar.isNotEmpty ? _currentAvatar : _initialUser.avatar
-                      );
-                      // FIXED: Check if _currentAvatar is a URL by examining its content
-                      final isUrl = _currentAvatar.isNotEmpty && 
-                          (_currentAvatar.startsWith('http') || _currentAvatar.startsWith('/'));
-                      // FIXED: Always use tempUser.initials - no redundant ternary needed
-                      final displayInitials = tempUser.initials;
-                                         
-                      return CircleAvatar(
-                        radius: 60,
-                        backgroundColor: AppTheme.primaryCyan,
-                        backgroundImage: isUrl && tempUser.fullAvatarUrl.isNotEmpty
-                            ? NetworkImage(tempUser.fullAvatarUrl)
-                            : null,
-                        onBackgroundImageError: isUrl 
-                            ? (e, s) {
-                                debugPrint('Avatar image load failed: $e');
-                                debugPrint('Image source: ${tempUser.fullAvatarUrl}');
-                              }
-                            : null,
-                        child: Center(
-                          child: Text(
-                            displayInitials,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                  ),
+                     builder: (context) {
+                       // FIXED: Check if _currentAvatar is a URL by examining its content
+                       final isUrl = _currentAvatar.isNotEmpty && 
+                           (_currentAvatar.startsWith('http') || _currentAvatar.startsWith('/'));
+                       // FIXED: Always use user initials from name, never from stored avatar
+                       final displayInitials = _initialUser.initials;
+                                          
+                       return CircleAvatar(
+                         radius: 60,
+                         backgroundColor: AppTheme.primaryCyan,
+                         backgroundImage: isUrl && _currentAvatar.isNotEmpty
+                             ? NetworkImage(
+                                 _currentAvatar.startsWith('http') 
+                                     ? _currentAvatar 
+                                     : '${ApiConstants.serverBaseUrl}$_currentAvatar'
+                               )
+                             : null,
+                         onBackgroundImageError: isUrl 
+                             ? (e, s) {
+                                 debugPrint('Avatar image load failed: $e');
+                                 debugPrint('Image source: $_currentAvatar');
+                               }
+                             : null,
+                         child: Center(
+                           child: Text(
+                             displayInitials,
+                             style: const TextStyle(
+                               color: Colors.white,
+                               fontSize: 28,
+                               fontWeight: FontWeight.w600,
+                             ),
+                           ),
+                         ),
+                       );
+                     }
+                   ),
                   Positioned(
                     bottom: 0,
                     right: 0,

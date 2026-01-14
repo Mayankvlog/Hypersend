@@ -48,7 +48,7 @@ class TestAvatarFix:
     
     def test_profile_update_model_avatar_validation(self):
         """Test that ProfileUpdate model always sets avatar to None"""
-        print("\n🧪 Test: ProfileUpdate Avatar Validation")
+        print("\n[TEST] ProfileUpdate Avatar Validation")
         
         # Test with avatar initials
         profile_with_avatar = ProfileUpdate(
@@ -56,7 +56,7 @@ class TestAvatarFix:
             avatar="TU"  # 2-letter initials
         )
         assert profile_with_avatar.avatar is None
-        print("✅ Avatar initials set to None in model")
+        print("PASS: Avatar initials set to None in model")
         
         # Test with empty string
         profile_empty = ProfileUpdate(
@@ -64,7 +64,7 @@ class TestAvatarFix:
             avatar=""
         )
         assert profile_empty.avatar is None
-        print("✅ Empty avatar set to None in model")
+        print("PASS: Empty avatar set to None in model")
         
         # Test with None
         profile_none = ProfileUpdate(
@@ -72,11 +72,11 @@ class TestAvatarFix:
             avatar=None
         )
         assert profile_none.avatar is None
-        print("✅ None avatar remains None in model")
+        print("PASS: None avatar remains None in model")
     
     def test_user_registration_no_avatar_initials(self, client):
         """Test that user registration doesn't create 2-letter avatars"""
-        print("\n🧪 Test: User Registration - No Avatar Initials")
+        print("\n[TEST] User Registration - No Avatar Initials")
         
         # Clear test data
         users_collection().data.clear()
@@ -101,12 +101,12 @@ class TestAvatarFix:
         assert result.get("avatar") is None
         assert result.get("avatar_url") is None
         
-        print("✅ User registration has no avatar initials")
+        print("PASS: User registration has no avatar initials")
     
     @pytest.mark.asyncio
     async def test_profile_update_clears_avatar_initials(self, test_user_id):
         """Test that profile update clears existing avatar initials"""
-        print("\n🧪 Test: Profile Update - Clears Avatar Initials")
+        print("\n[TEST] Profile Update - Clears Avatar Initials")
         
         # Create user with existing avatar initials
         users_collection().data.clear()
@@ -146,12 +146,12 @@ class TestAvatarFix:
         assert updated_user.get("avatar") is None
         assert updated_user.get("avatar_url") == "/api/v1/users/avatar/test_image.jpg"
         
-        print("✅ Avatar initials cleared on profile update")
+        print("PASS: Avatar initials cleared on profile update")
     
     @pytest.mark.asyncio
     async def test_profile_update_removes_avatar(self, test_user_id):
         """Test that removing avatar URL sets both fields to None"""
-        print("\n🧪 Test: Profile Update - Remove Avatar")
+        print("\n[TEST] Profile Update - Remove Avatar")
         
         # Create user with avatar
         users_collection().data.clear()
@@ -187,11 +187,11 @@ class TestAvatarFix:
         assert updated_user.get("avatar") is None
         assert updated_user.get("avatar_url") is None
         
-        print("✅ Avatar completely removed on profile update")
+        print("PASS: Avatar completely removed on profile update")
     
     def test_avatar_field_edge_cases(self):
         """Test avatar field edge cases"""
-        print("\n🧪 Test: Avatar Field Edge Cases")
+        print("\n[TEST] Avatar Field Edge Cases")
         
         # Test with special characters
         profile_special = ProfileUpdate(
@@ -199,7 +199,7 @@ class TestAvatarFix:
             avatar="T@U"
         )
         assert profile_special.avatar is None
-        print("✅ Special characters in avatar set to None")
+        print("PASS: Special characters in avatar set to None")
         
         # Test with long string (within 10 char limit)
         profile_long = ProfileUpdate(
@@ -207,7 +207,7 @@ class TestAvatarFix:
             avatar="LONGINIT"  # 8 characters, within limit
         )
         assert profile_long.avatar is None
-        print("✅ Long avatar string set to None")
+        print("PASS: Long avatar string set to None")
         
         # Test with numbers
         profile_numbers = ProfileUpdate(
@@ -215,10 +215,10 @@ class TestAvatarFix:
             avatar="123"
         )
         assert profile_numbers.avatar is None
-        print("✅ Numeric avatar set to None")
+        print("PASS: Numeric avatar set to None")
 
 if __name__ == "__main__":
-    print("🧪 Running Avatar Fix Tests")
+    print("[TEST] Running Avatar Fix Tests")
     print("=" * 50)
     
     # Run tests

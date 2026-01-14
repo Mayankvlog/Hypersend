@@ -168,7 +168,7 @@ class ProfileUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=100)
     email: Optional[str] = Field(None, max_length=255)
     username: Optional[str] = Field(None, min_length=3, max_length=50)  # Fixed: min_length must be at least 3
-    avatar: Optional[str] = Field(None, max_length=10)  # Avatar initials like 'JD'
+    avatar: Optional[str] = Field(None)  # No length limit - validator handles it
     bio: Optional[str] = Field(None, max_length=500)
     
     @field_validator('bio')
