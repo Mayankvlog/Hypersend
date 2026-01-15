@@ -17,8 +17,6 @@ from validators import validate_user_id
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
-import secrets
-from rate_limiter import password_reset_limiter
 
 from collections import defaultdict
 from typing import Dict, Tuple, List, Optional
@@ -31,8 +29,6 @@ PASSWORD_RESET_TOKEN_EXPIRY_HOURS = 1
 def password_reset_collection():
     """Get password reset tokens collection"""
     return reset_tokens_collection()
-
-
 
 # CRITICAL FIX: Persistent login attempt tracking with better security
 # In-memory tracking resets on server restart, allowing brute force attacks
@@ -151,7 +147,6 @@ def get_safe_cors_origin(request_origin: Optional[str]) -> str:
 @router.options("/login")
 @router.options("/refresh")
 @router.options("/logout")
-@router.options("/reset-password")
 @router.options("/change-password")
 @router.options("/qrcode/generate")
 @router.options("/qrcode/verify")
@@ -593,7 +588,7 @@ async def login(credentials: UserLogin, request: Request) -> Token:
                 # CRITICAL FIX: If verification still fails, provide helpful error for password reset
                 if not is_password_valid:
                     auth_log(f"[PASSWORD_RESET_NEEDED] All verification methods failed for {normalized_email}")
-                    auth_log(f"[PASSWORD_RESET_NEEDED] User should use forgot-password to reset")
+                    auth_log(f"[PASSWORD_RESET_NEEDED] User should reset via /auth/reset-password with a token")
                     # Continue to return 401 - user needs to reset password
                 
                 # CRITICAL FIX: If both fail, check if hash and salt might be swapped
@@ -1132,101 +1127,6 @@ async def logout(current_user: str = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Logout failed"
-        )
-
-
-@router.post("/forgot-password")
-async def forgot_password(request: dict) -> dict:
-    """Initiate password reset by sending reset token to user's email"""
-    try:
-        # Rate limiting
-        if not password_reset_limiter.is_allowed(request.get("email", "unknown")):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many password reset attempts. Please try again later."
-            )
-        auth_log("Password reset request received")
-        
-        # FIXED: Password reset functionality enabled for Zaply
-        if not settings.ENABLE_PASSWORD_RESET:
-            auth_log("Zaply password reset functionality is disabled")
-            raise HTTPException(
-                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-                detail="Zaply password reset functionality has been disabled. Please contact Zaply support."
-            )
-        
-        # Extract email from request
-        email = request.get("email")
-        if not email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email is required"
-            )
-        
-        # Basic email validation
-        if "@" not in email or "." not in email or len(email) < 5:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email format"
-            )
-        
-        # Find user by email
-        try:
-            user = await users_collection().find_one({"email": email})
-        except Exception as e:
-            auth_log(f"Database error finding user: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to find user account"
-            )
-        
-        # Always return success to prevent email enumeration attacks
-        if not user:
-            auth_log(f"Password reset requested for non-existent email: {email}")
-            return {"message": "If an account with this email exists, a password reset link has been sent"}
-        
-        # Generate reset token
-        try:
-            reset_token = secrets.token_urlsafe(32)
-            expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-            
-            # Store reset token
-            await password_reset_collection().insert_one({
-                "token": reset_token,
-                "email": email,
-                "created_at": datetime.now(timezone.utc),
-                "expires_at": expires_at,
-                "used": False
-            })
-            
-            auth_log(f"Password reset token generated for user: {user['_id']}")
-            
-            # In development, just return the token (in production, send email)
-            if settings.DEBUG:
-                print(f"[DEBUG] Password reset token for {email}: {reset_token}")
-                return {
-                    "message": "Password reset initiated (development mode - token returned)",
-                    "debug_token": reset_token,
-                    "debug_expires_at": expires_at.isoformat()
-                }
-            else:
-                # Production: Send email (not implemented yet)
-                return {"message": "Password reset link has been sent to your email"}
-                
-        except Exception as e:
-            auth_log(f"Failed to generate reset token: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to initiate password reset"
-            )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        auth_log(f"Forgot password error: {type(e).__name__}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password reset service unavailable"
         )
 
 

@@ -707,6 +707,7 @@ class TestChatCreationFix:
     @pytest.mark.asyncio
     async def test_forgot_password_functionality(self, client):
         """Test forgot password functionality"""
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password")
         from unittest.mock import patch, MagicMock
         
         with patch('db_proxy.users_collection') as mock_users:

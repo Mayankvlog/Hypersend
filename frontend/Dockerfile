@@ -36,6 +36,7 @@ COPY . .
 # ✅ CRITICAL FIX: Clean + Build with PROPER dart-define
 RUN rm -rf build/ && flutter clean
 RUN flutter build web --release \
+    --source-maps \
     --no-tree-shake-icons \
     --dart-define=API_BASE_URL=${API_BASE_URL} \
     --dart-define=VALIDATE_CERTIFICATES=${VALIDATE_CERTIFICATES} \
@@ -114,11 +115,15 @@ RUN printf '%s\n' \
     '        add_header Cache-Control "no-cache, no-store, must-revalidate";' \
     '        add_header Service-Worker-Allowed "/" always;' \
     '    }' \
+    '    location ~* \.map$ {' \
+    '        add_header Cache-Control "no-cache, no-store, must-revalidate";' \
+    '        try_files $uri =404;' \
+    '        access_log off;' \
+    '    }' \
     '    location / {' \
     '        try_files $uri $uri/ /index.html;' \
     '        add_header Cache-Control "no-cache, no-store, must-revalidate";' \
     '    }' \
-    '    error_page 404 /index.html;' \
     '}' \
     > /etc/nginx/conf.d/default.conf
 
