@@ -1,7 +1,10 @@
 // ignore_for_file: deprecated_member_use
+import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
@@ -650,7 +653,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         // Native: Use FileTransferService for proper chunked download
         // Generate a safe filename and path
         final safeFileName = fileName.replaceAll(RegExp(r'[^\w\-_.]'), '_');
-        final savePath = safeFileName;
+        
+        // Get downloads directory
+        Directory? downloadsDir;
+        try {
+          downloadsDir = await getDownloadsDirectory();
+        } catch (e) {
+          debugPrint('[FILE_NATIVE] Could not get downloads directory: $e');
+        }
+        
+        downloadsDir ??= await getApplicationDocumentsDirectory();
+        final savePath = '${downloadsDir.path}/$safeFileName';
         
         debugPrint('[FILE_NATIVE] Download path: $savePath');
         
@@ -658,7 +671,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         await serviceProvider.fileTransferService.downloadFile(
           fileId: fileId,
           fileName: fileName,
-          savePath: savePath,
+          savePath: safeFileName,
           onProgress: (progress) {
             debugPrint('[FILE_NATIVE] Download progress: ${(progress * 100).toStringAsFixed(1)}%');
           },
@@ -666,12 +679,52 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         
         debugPrint('[FILE_NATIVE] Download completed, attempting to open file');
         
-        // For now, just log completion - opening file requires platform-specific handling
-        debugPrint('[FILE_NATIVE] Download completed: $savePath');
+        // Verify file exists and open it
+        final file = File(savePath);
+        if (await file.exists()) {
+          await _openDownloadedFile(savePath, contentType);
+        } else {
+          throw Exception('Downloaded file not found at: $savePath');
+        }
         debugPrint('[FILE_NATIVE] File saved successfully');
       }
     } catch (e) {
       debugPrint('[FILE_NATIVE_ERROR] $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _openDownloadedFile(String filePath, String contentType) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('File not found: $filePath');
+      }
+
+      if (Platform.isAndroid || Platform.isIOS) {
+        // For mobile platforms, use url_launcher to open file
+        final uri = Uri.file(filePath);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri);
+        } else {
+          throw Exception('Cannot open file: $filePath');
+        }
+      } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        // For desktop platforms, use Process.run to open file with default application
+        if (Platform.isWindows) {
+          await Process.run('start', [filePath], runInShell: true);
+        } else if (Platform.isMacOS) {
+          await Process.run('open', [filePath]);
+        } else if (Platform.isLinux) {
+          await Process.run('xdg-open', [filePath]);
+        }
+      } else {
+        throw Exception('Unsupported platform for file opening');
+      }
+      
+      debugPrint('[FILE_OPEN] Successfully opened file: $filePath');
+    } catch (e) {
+      debugPrint('[FILE_OPEN_ERROR] Failed to open file: $e');
       rethrow;
     }
   }

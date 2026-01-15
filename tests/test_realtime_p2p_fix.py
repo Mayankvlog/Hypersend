@@ -46,11 +46,11 @@ class TestRealtimeP2PFunctionality:
             assert retrieved.session_id == session_id
             
             print("✅ P2P session creation: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ P2P session creation: FAILED - {e}")
-            return False
+            assert False, f"P2P session creation failed: {e}"
     
     def test_p2p_websocket_readiness(self):
         """Test P2P session readiness with websockets"""
@@ -83,11 +83,11 @@ class TestRealtimeP2PFunctionality:
             assert session.is_ready()  # Now ready
             
             print("✅ P2P websocket readiness: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ P2P websocket readiness: FAILED - {e}")
-            return False
+            assert False, f"P2P websocket readiness failed: {e}"
     
     def test_p2p_thread_safety(self):
         """Test P2P thread safety implementation"""
@@ -131,14 +131,14 @@ class TestRealtimeP2PFunctionality:
             # Check if all operations succeeded
             if all(results):
                 print("✅ P2P thread safety: WORKING")
-                return True
+                assert True
             else:
                 print("❌ P2P thread safety: FAILED - Concurrent operations failed")
-                return False
+                assert False, "P2P thread safety failed - concurrent operations failed"
                 
         except Exception as e:
             print(f"❌ P2P thread safety: FAILED - {e}")
-            return False
+            assert False, f"P2P thread safety failed: {e}"
     
     @pytest.mark.asyncio
     async def test_p2p_token_decoding(self):
@@ -172,11 +172,11 @@ class TestRealtimeP2PFunctionality:
             assert none_payload is None
             
             print("✅ P2P token decoding: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ P2P token decoding: FAILED - {e}")
-            return False
+            assert False, f"P2P token decoding failed: {e}"
     
     @pytest.mark.asyncio
     async def test_p2p_websocket_message_handling(self):
@@ -210,11 +210,11 @@ class TestRealtimeP2PFunctionality:
             mock_ws.send_json.assert_called_once()
             
             print("✅ P2P WebSocket message handling: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ P2P WebSocket message handling: FAILED - {e}")
-            return False
+            assert False, f"P2P WebSocket message handling failed: {e}"
     
     @pytest.mark.asyncio
     async def test_p2p_session_lifecycle(self):
@@ -261,11 +261,11 @@ class TestRealtimeP2PFunctionality:
             assert removed is not None
             
             print("✅ P2P session lifecycle: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ P2P session lifecycle: FAILED - {e}")
-            return False
+            assert False, f"P2P session lifecycle failed: {e}"
     
     def test_p2p_cors_configuration(self):
         """Test P2P CORS configuration"""
@@ -284,11 +284,11 @@ class TestRealtimeP2PFunctionality:
             assert response.status_code == 200
             
             print("✅ P2P CORS configuration: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ P2P CORS configuration: FAILED - {e}")
-            return False
+            assert False, f"P2P CORS configuration failed: {e}"
 
 def run_realtime_tests():
     """Run all real-time P2P tests"""

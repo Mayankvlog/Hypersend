@@ -148,7 +148,7 @@ class UserResponse(BaseModel):
     id: str
     name: str
     email: str
-    username: str
+    username: Optional[str] = ""  # Make optional with default empty string
     bio: Optional[str] = None
     avatar: Optional[str] = None  # Avatar initials like 'JD'
     avatar_url: Optional[str] = None
@@ -305,6 +305,7 @@ class ChangePasswordRequest(BaseModel):
 class PasswordResetResponse(BaseModel):
     message: str
     success: bool
+    token: Optional[str] = None  # Include reset token for direct password reset
 
 
 # Permission Models

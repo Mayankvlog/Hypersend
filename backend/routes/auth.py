@@ -1226,7 +1226,7 @@ async def logout(current_user: str = Depends(get_current_user)):
 
 @router.post("/forgot-password", response_model=PasswordResetResponse)
 async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetResponse:
-    """Forgot password endpoint"""
+    """Forgot password endpoint - generates temporary token for password reset"""
     try:
         auth_log(f"Zaply forgot password request for email: {request.email}")
         
@@ -1269,9 +1269,8 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
                 detail="Failed to process request"
             )
         
-# FIXED: Always return success to prevent email enumeration for Zaply
-        # Only actually send email if user exists and email service is enabled
-        if user and settings.EMAIL_SERVICE_ENABLED:
+        # FIXED: Always generate token for existing users, return token directly
+        if user:
             # Generate reset token
             reset_token = str(ObjectId())
             expiry_time = datetime.now(timezone.utc) + timedelta(hours=PASSWORD_RESET_TOKEN_EXPIRY_HOURS)
@@ -1286,46 +1285,21 @@ async def forgot_password(request: ForgotPasswordRequest) -> PasswordResetRespon
                 "used": False
             })
             
-            # Send password reset email
-            email_sent = await send_password_reset_email(normalized_email, reset_token, user.get("name", "User"))
+            auth_log(f"Zaply password reset token generated for {normalized_email}: {reset_token}")
             
-            if email_sent:
-                auth_log(f"Zaply password reset email sent to {normalized_email}")
-            else:
-                auth_log(f"Zaply failed to send password reset email to {normalized_email} - but returning success for security")
-            
-            # Always return success for security (prevent email enumeration)
+            # FIXED: Return token directly for immediate password reset without email
             return PasswordResetResponse(
-                message="If an account with this email exists, a Zaply password reset link has been sent to your email.",
-                success=True
+                message=f"Password reset token generated: {reset_token}. Use this token to reset your password.",
+                success=True,
+                token=reset_token  # Include token in response
             )
         else:
-            # If email service is disabled, return success for security but log the token
-            if user:
-                reset_token = str(ObjectId())
-                expiry_time = datetime.now(timezone.utc) + timedelta(hours=PASSWORD_RESET_TOKEN_EXPIRY_HOURS)
-                
-                # Store reset token in database
-                await password_reset_collection().insert_one({
-                    "_id": str(ObjectId()),
-                    "email": normalized_email,
-                    "token": reset_token,
-                    "expires_at": expiry_time,
-                    "created_at": datetime.now(timezone.utc),
-                    "used": False
-                })
-                
-                auth_log(f"Zaply password reset token generated for {normalized_email} (email service disabled)")
-                return PasswordResetResponse(
-                    message="If an account with this email exists, a Zaply password reset link has been sent to your email.",
-                    success=True
-                )
-            else:
-                auth_log(f"Zaply user not found for email: {normalized_email}")
-                return PasswordResetResponse(
-                    message="If an account with this email exists, a Zaply password reset link has been sent to your email.",
-                    success=True
-                )
+            # User not found - return generic message for security
+            auth_log(f"Zaply user not found for email: {normalized_email}")
+            return PasswordResetResponse(
+                message="If an account with this email exists, a password reset token has been generated.",
+                success=False
+            )
         
     except HTTPException:
         raise

@@ -43,12 +43,16 @@ async def chats_options():
 
 @router.get("/saved", response_model=dict)
 async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)):
-    """Get or create the personal Saved Messages chat for the current user"""
+    """Get or create personal Saved Messages chat for current user"""
     logger.info(f"Looking for saved chat for user: {current_user}")
     existing = await chats_collection().find_one({"type": "saved", "members": current_user})
     if existing:
         logger.info(f"Found existing saved chat: {existing['_id']}")
-        return {"chat_id": existing["_id"], "chat": existing}
+        return {
+            "chat_id": str(existing["_id"]),
+            "name": existing.get("name", "Saved Messages"),
+            "type": existing.get("type", "saved")
+        }
 
     logger.info(f"Creating new saved chat for user: {current_user}")
     chat_doc = {
@@ -60,7 +64,11 @@ async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)
     }
     await chats_collection().insert_one(chat_doc)
     logger.info(f"Created new saved chat: {chat_doc['_id']}")
-    return {"chat_id": chat_doc["_id"], "chat": chat_doc}
+    return {
+        "chat_id": str(chat_doc["_id"]),
+        "name": chat_doc["name"],
+        "type": chat_doc["type"]
+    }
 
 
 # IMPORTANT: This route MUST come BEFORE /{chat_id}/messages
@@ -74,11 +82,15 @@ async def get_saved_messages(
     
     logger.info(f"Getting saved messages for user: {current_user}")
     messages = []
-    async for msg in messages_collection().find({"saved_by": current_user}).sort("created_at", -1).limit(limit):
+    cursor = messages_collection().find({"saved_by": current_user})
+    async for msg in cursor:
         messages.append(msg)
     
+    # Sort messages by created_at in descending order
+    messages.sort(key=lambda x: x.get("created_at", datetime.now(timezone.utc)), reverse=True)
+    
     logger.info(f"Found {len(messages)} saved messages for user: {current_user}")
-    return {"messages": list(reversed(messages))}
+    return {"messages": messages}
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -416,7 +428,7 @@ async def save_message(
 ):
     """Save a message to Saved Messages"""
     
-    # Find the message
+    # Find message
     message = await messages_collection().find_one({"_id": message_id})
     if not message:
         raise HTTPException(
@@ -424,7 +436,7 @@ async def save_message(
             detail="Message not found"
         )
     
-    # Verify user is member of the chat
+    # Verify user is member of chat
     chat = await chats_collection().find_one({"_id": message["chat_id"], "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
@@ -432,8 +444,9 @@ async def save_message(
             detail="You don't have access to this message"
         )
     
-    # Add the user to the saved_by list if not already present
-    if current_user not in message.get("saved_by", []):
+    # Add user to saved_by list if not already present
+    saved_by = message.get("saved_by", [])
+    if isinstance(saved_by, list) and current_user not in saved_by:
         await messages_collection().update_one(
             {"_id": message_id},
             {"$push": {"saved_by": current_user}}
@@ -449,7 +462,7 @@ async def unsave_message(
 ):
     """Unsave a message from Saved Messages"""
     
-    # Find the message
+    # Find message
     message = await messages_collection().find_one({"_id": message_id})
     if not message:
         raise HTTPException(
@@ -457,7 +470,7 @@ async def unsave_message(
             detail="Message not found"
         )
     
-    # Verify user is member of the chat
+    # Verify user is member of chat
     chat = await chats_collection().find_one({"_id": message["chat_id"], "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
@@ -465,13 +478,17 @@ async def unsave_message(
             detail="You don't have access to this message"
         )
     
-    # Remove user from saved_by list
-    await messages_collection().update_one(
-        {"_id": message_id},
-        {"$pull": {"saved_by": current_user}}
-    )
-    
-    return {"status": "unsaved"}
+    # Check if user is in saved_by list
+    saved_by = message.get("saved_by", [])
+    if isinstance(saved_by, list) and current_user in saved_by:
+        # Remove user from saved_by list
+        await messages_collection().update_one(
+            {"_id": message_id},
+            {"$pull": {"saved_by": current_user}}
+        )
+        return {"status": "unsaved"}
+    else:
+        return {"status": "already_unsaved"}
 
 
 @router.patch("/{message_id}/edit")

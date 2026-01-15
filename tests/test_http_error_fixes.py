@@ -376,7 +376,10 @@ class TestFileUploadFlow:
             
             request = MagicMock()
             request.method = "PUT"  # Set correct HTTP method
-            request.body = AsyncMock(return_value=b"chunk_data")
+            # Use a proper async mock for body
+            async def mock_body():
+                return b"chunk_data"
+            request.body = mock_body
             
             with pytest.raises(HTTPException) as exc_info:
                 await upload_chunk("upload_123", request, 0, "test_user")

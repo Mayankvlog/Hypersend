@@ -27,68 +27,58 @@ def test_error_response_format():
 def test_imports():
     """Test that we can import the required modules"""
     try:
-        # Just test that the modules exist without importing
-        import importlib.util
-        import os
-        
-        backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'backend'))
-        
-        # Check if key files exist
         required_files = [
-            'routes/auth.py',
-            'routes/files.py', 
-            'routes/users.py',
-            'config.py',
-            'models.py',
-            'error_handlers.py'
+            "backend/main.py",
+            "backend/routes/auth.py", 
+            "backend/models.py",
+            "backend/db_proxy.py"
         ]
         
         missing_files = []
-        for file_path in required_files:
-            full_path = os.path.join(backend_path, file_path)
-            if not os.path.exists(full_path):
-                missing_files.append(file_path)
+        for file in required_files:
+            if not os.path.exists(file):
+                missing_files.append(file)
         
         if missing_files:
             print(f"❌ Missing required files: {missing_files}")
-            return False
+            assert False, f"Missing files: {missing_files}"
         else:
             print("✅ All required files exist")
-            return True
+            assert True
     except Exception as e:
         print(f"❌ Error checking files: {e}")
-        return False
+        assert False, f"Error: {e}"
 
 def test_error_response_structure():
     """Test that error responses have the expected structure"""
-    # Test that we can create an error response like the backend
+    print("Testing error response structure...")
+    
     try:
-        # Create a mock error response similar to backend format
+        # Mock error response structure
         error_response = {
-            "status": "ERROR",
-            "message": "Test error",
-            "data": None,
+            "detail": "Test error message",
+            "status_code": 400,
             "timestamp": "2024-01-01T00:00:00Z"
         }
         
-        # Test that it has the expected structure
-        assert isinstance(error_response, dict)
-        assert "status" in error_response
-        assert "message" in error_response
-        assert "data" in error_response
+        # Verify required fields
+        assert "detail" in error_response
+        assert "status_code" in error_response
         assert "timestamp" in error_response
         
         print("✅ Error response structure test passed")
-        return True
+        assert True
     except Exception as e:
         print(f"❌ Error response structure test failed: {e}")
-        return False
+        assert False, f"Error: {e}"
 
 if __name__ == "__main__":
     print("Testing HTTP error handling fixes...")
     
     # Test 1: Check required files exist
-    if not test_imports():
+    try:
+        test_imports()
+    except AssertionError:
         print("❌ Required files check failed")
         sys.exit(1)
     
@@ -97,18 +87,5 @@ if __name__ == "__main__":
     
     # Test 3: Test error response structure
     test_error_response_structure()
-    
-    print("✅ All tests completed successfully!")
-
-if __name__ == "__main__":
-    print("Testing HTTP error handling fixes...")
-    
-    # Test 1: Verify imports work
-    if not test_imports():
-        print("❌ Import test failed")
-        sys.exit(1)
-    
-    # Test 2: Test error response format
-    test_error_response_format()
     
     print("✅ All tests completed successfully!")

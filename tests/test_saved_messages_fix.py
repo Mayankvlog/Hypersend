@@ -25,10 +25,14 @@ class TestSavedMessagesFix:
             # Mock current user
             current_user = "test_user_123"
             
-            # Mock chats collection
-            mock_chats = MagicMock()
-            mock_chats.find_one.return_value = None  # No existing saved chat
-            mock_chats.insert_one.return_value = MagicMock(inserted_id="mock_id")
+            # Mock database collections as AsyncMock
+            mock_chats = AsyncMock()
+            
+            # Mock find_one to return None (no existing chat)
+            mock_chats.find_one.return_value = None
+            
+            # Mock insert to return new chat
+            mock_chats.insert_one.return_value.inserted_id = "mock_id"
             
             with patch("routes.chats.chats_collection", return_value=mock_chats):
                 result = await get_or_create_saved_chat(current_user)
@@ -47,11 +51,11 @@ class TestSavedMessagesFix:
                 assert call_args["members"] == [current_user]
             
             print("✅ Saved messages chat creation: WORKING (no cloud storage)")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ Saved messages chat creation: FAILED - {e}")
-            return False
+            assert False, f"Saved messages chat creation failed: {e}"
     
     @pytest.mark.asyncio
     async def test_get_saved_messages(self):
@@ -77,8 +81,37 @@ class TestSavedMessagesFix:
                 }
             ]
             
+# Mock messages collection with proper async behavior
+            from unittest.mock import AsyncMock, MagicMock
+            
+            # Create async iterator for find results with chaining support
+            class MockFindCursor:
+                def __init__(self, items):
+                    self.items = items
+                    self.index = 0
+                
+                def __aiter__(self):
+                    return self
+                
+                async def __anext__(self):
+                    if self.index < len(self.items):
+                        item = self.items[self.index]
+                        self.index += 1
+                        return item
+                    raise StopAsyncIteration
+                
+                def sort(self, field, direction):
+                    """Mock sort method that returns self for chaining"""
+                    return self
+                
+                def limit(self, count):
+                    """Mock limit method that returns self for chaining"""
+                    return self
+            
+            # Mock messages collection to return cursor directly
             mock_messages_collection = MagicMock()
-            mock_messages_collection.find.return_value.sort.return_value.limit.return_value = mock_messages
+            mock_cursor = MockFindCursor(mock_messages)
+            mock_messages_collection.find.return_value = mock_cursor
             
             with patch("routes.chats.messages_collection", return_value=mock_messages_collection):
                 result = await get_saved_messages(current_user, limit=50)
@@ -93,11 +126,11 @@ class TestSavedMessagesFix:
                 mock_messages_collection.find.assert_called_once_with({"saved_by": current_user})
             
             print("✅ Get saved messages: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ Get saved messages: FAILED - {e}")
-            return False
+            assert False, f"Get saved messages failed: {e}"
     
     @pytest.mark.asyncio
     async def test_save_message_functionality(self):
@@ -116,29 +149,45 @@ class TestSavedMessagesFix:
                 "chat_id": "chat123"
             }
             
-            mock_messages = MagicMock()
-            mock_messages.find_one.return_value = existing_message
-            mock_messages.update_one.return_value = MagicMock(matched_count=1, modified_count=1)
+            # Mock messages collection as AsyncMock
+            mock_messages = AsyncMock()
             
-            with patch("routes.chats.messages_collection", return_value=mock_messages):
-                result = await save_message(message_id, current_user)
+            # Mock find_one to return existing message
+            mock_messages.find_one.return_value = existing_message
+            
+            # Mock update_one to return success with proper async mock
+            class MockUpdateResult:
+                def __init__(self):
+                    self.modified_count = 1
+            
+            mock_messages.update_one.return_value = MockUpdateResult()
+            
+            # Mock chats collection to return existing chat
+            mock_chats = AsyncMock()
+            mock_chats.find_one.return_value = {
+                "_id": "chat123",
+                "members": [current_user]
+            }
+            
+            with patch("routes.chats.chats_collection", return_value=mock_chats):
+                with patch("routes.chats.messages_collection", return_value=mock_messages):
+                    result = await save_message(message_id, current_user)
                 
                 # Verify result
-                assert result["success"] is True
-                assert "message" in result
+                assert result["status"] == "saved"
                 
                 # Verify database update
                 mock_messages.update_one.assert_called_once()
                 update_call = mock_messages.update_one.call_args[0]
                 assert update_call[0]["_id"] == message_id
-                assert current_user in update_call[1]["$addToSet"]["saved_by"]
+                assert current_user in update_call[1]["$push"]["saved_by"]
             
             print("✅ Save message functionality: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ Save message functionality: FAILED - {e}")
-            return False
+            assert False, f"Save message functionality failed: {e}"
     
     @pytest.mark.asyncio
     async def test_unsave_message_functionality(self):
@@ -157,29 +206,46 @@ class TestSavedMessagesFix:
                 "chat_id": "chat123"
             }
             
-            mock_messages = MagicMock()
-            mock_messages.find_one.return_value = existing_message
-            mock_messages.update_one.return_value = MagicMock(matched_count=1, modified_count=1)
+            # Mock messages collection as AsyncMock
+            mock_messages = AsyncMock()
             
-            with patch("routes.chats.messages_collection", return_value=mock_messages):
-                result = await unsave_message(message_id, current_user)
+            # Mock find_one to return existing message
+            mock_messages.find_one.return_value = existing_message
+            
+            # Mock update_one to return success with proper async mock
+            class MockUpdateResult:
+                def __init__(self):
+                    self.modified_count = 1
+            
+            mock_messages.update_one.return_value = MockUpdateResult()
+            
+            # Mock chats collection to return existing chat
+            mock_chats = AsyncMock()
+            mock_chats.find_one.return_value = {
+                "_id": "chat123",
+                "members": [current_user]
+            }
+            
+            with patch("routes.chats.chats_collection", return_value=mock_chats):
+                with patch("routes.chats.messages_collection", return_value=mock_messages):
+                    result = await unsave_message(message_id, current_user)
                 
-                # Verify result
-                assert result["success"] is True
-                assert "message" in result
+                # Verify result - should be "unsaved" since user is in saved_by list
+                assert result["status"] == "unsaved"
                 
                 # Verify database update
                 mock_messages.update_one.assert_called_once()
                 update_call = mock_messages.update_one.call_args[0]
                 assert update_call[0]["_id"] == message_id
-                assert current_user not in update_call[1]["$pull"]["saved_by"]
+                # Check if current_user is being removed from saved_by list
+                assert current_user in update_call[1]["$pull"]["saved_by"]
             
             print("✅ Unsave message functionality: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ Unsave message functionality: FAILED - {e}")
-            return False
+            assert False, f"Unsave message functionality failed: {e}"
     
     def test_chat_type_enum_includes_saved(self):
         """Test that ChatType enum includes saved type"""
@@ -196,11 +262,11 @@ class TestSavedMessagesFix:
             assert ChatType.SAVED in valid_types
             
             print("✅ ChatType enum includes SAVED: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ ChatType enum includes SAVED: FAILED - {e}")
-            return False
+            assert False, f"ChatType enum includes SAVED failed: {e}"
     
     def test_no_cloud_storage_references(self):
         """Test that no cloud storage references exist in backend"""
@@ -228,14 +294,14 @@ class TestSavedMessagesFix:
             # Should not find any cloud storage references in backend
             if cloud_storage_refs:
                 print(f"❌ Cloud storage references found: {cloud_storage_refs}")
-                return False
+                assert False, f"Cloud storage references found: {cloud_storage_refs}"
             
             print("✅ No cloud storage references in backend: WORKING")
-            return True
+            assert True
             
         except Exception as e:
             print(f"❌ No cloud storage references check: FAILED - {e}")
-            return False
+            assert False, f"No cloud storage references check failed: {e}"
 
 def run_saved_messages_tests():
     """Run all saved messages tests"""

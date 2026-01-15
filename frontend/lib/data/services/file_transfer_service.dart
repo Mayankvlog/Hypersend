@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 import 'dart:async';
+import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
 import '../../core/constants/api_constants.dart';
 
@@ -205,11 +207,28 @@ class FileTransferService {
     required String savePath,
     required Function(double) onProgress,
   }) async {
+    // Generate proper download path
+    String actualSavePath;
+    if (kIsWeb) {
+      throw Exception('File download not supported on web platform');
+    } else {
+      // For native platforms, get downloads directory
+      Directory? directory;
+      try {
+        directory = await getDownloadsDirectory();
+      } catch (e) {
+        debugPrint('[FILE_TRANSFER] Could not get downloads directory: $e');
+      }
+      
+      directory ??= await getApplicationDocumentsDirectory();
+      actualSavePath = '${directory.path}/$savePath';
+    }
+
     final transfer = FileTransfer(
       id: fileId,
       fileName: fileName,
       fileSize: 0,
-      filePath: savePath,
+      filePath: actualSavePath,
       chatId: '',
       status: TransferStatus.downloading,
       direction: TransferDirection.download,
@@ -219,12 +238,19 @@ class FileTransferService {
 
     try {
       debugPrint('[FILE_TRANSFER] Getting file info to determine download strategy');
+      debugPrint('[FILE_TRANSFER] Download path: $actualSavePath');
       
       // Get file info first to determine size and strategy
       final fileInfo = await _api.getFileInfo(fileId);
       final fileSize = fileInfo['size'] as int? ?? 0;
       
       debugPrint('[FILE_TRANSFER] File size: $fileSize bytes');
+      
+      // Ensure directory exists
+      final directory = File(actualSavePath).parent;
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
       
       // Use chunked download for large files (>100MB)
       if (fileSize > 100 * 1024 * 1024) {
@@ -239,7 +265,7 @@ class FileTransferService {
         int lastReportedProgress = 0;
         await _api.downloadLargeFileToPath(
           fileId: fileId,
-          savePath: savePath,
+          savePath: actualSavePath,
           onReceiveProgress: (received, total) {
             // Only update progress on significant changes to avoid too many UI updates
             if (total > 0 && (received - lastReportedProgress) >= (total ~/ 100)) {  // Update every 1%
@@ -261,7 +287,7 @@ class FileTransferService {
         
         await _api.downloadFileToPathWithProgress(
           fileId: fileId,
-          savePath: savePath,
+          savePath: actualSavePath,
           onProgress: (progress) {
             // Track progress for small files too
             _updateProgress(fileId, progress, onProgress);
@@ -272,6 +298,14 @@ class FileTransferService {
       
       _markCompleted(fileId);
       onProgress(1);
+      
+      // Verify file was downloaded successfully
+      final file = File(actualSavePath);
+      if (!await file.exists()) {
+        throw Exception('File download completed but file not found at path: $actualSavePath');
+      }
+      
+      debugPrint('[FILE_TRANSFER] Download completed successfully: $actualSavePath');
     } catch (e) {
       debugPrint('[FILE_TRANSFER] Download failed: $e');
       _markFailed(fileId);

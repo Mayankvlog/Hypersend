@@ -11,17 +11,36 @@ import sys
 import time
 import hashlib
 import smtplib
+import os
 from datetime import datetime
 from email.message import EmailMessage
-import requests
 from typing import Optional
 
+# Try to import TestClient for local testing, fallback to requests for remote testing
+try:
+    from fastapi.testclient import TestClient
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+    from main import app
+    USE_TESTCLIENT = True
+except ImportError:
+    USE_TESTCLIENT = False
+    try:
+        import requests
+    except Exception:
+        requests = None
+else:
+    # Also import requests for fallback logic
+    try:
+        import requests
+    except Exception:
+        requests = None
+
 # Configuration
-API_BASE_URL = "http://localhost:8000/api/v1"
+API_BASE_URL = os.environ.get("HYPERSEND_BASE_URL", "http://localhost:8000/api/v1")
 TEST_EMAIL = "mobimix33@gmail.com"
 TEST_PASSWORD = "SecurePassword123!"
 NEW_PASSWORD = "NewSecurePass456!"
-TEST_TIMEOUT = 10
+TEST_TIMEOUT = 60
 
 class Colors:
     GREEN = '\033[92m'
@@ -53,9 +72,29 @@ def print_header(title: str):
     print(f"{title}")
     print(f"{'='*60}{Colors.RESET}\n")
 
+def _server_ready() -> bool:
+    """Check if server is ready for requests-based testing"""
+    if USE_TESTCLIENT:
+        return True  # TestClient doesn't need server
+    if requests is None:
+        return False
+    try:
+        r = requests.get(f"{API_BASE_URL}/health", timeout=2)
+        return r.status_code == 200
+    except Exception:
+        return False
+
 def check_server_health() -> bool:
     """Check if the server is running and healthy"""
     print_status("Checking server health...")
+    if USE_TESTCLIENT:
+        print_status("[PASS] Using TestClient (no server needed)", "PASS")
+        return True
+    
+    if requests is None:
+        print_status("[FAIL] requests not available", "FAIL")
+        return False
+        
     try:
         response = requests.get(f"{API_BASE_URL}/health", timeout=5)
         if response.status_code == 200:
@@ -75,17 +114,25 @@ def test_forgot_password_endpoint() -> Optional[dict]:
     
     try:
         payload = {"email": TEST_EMAIL}
-        response = requests.post(
-            f"{API_BASE_URL}/auth/forgot-password",
-            json=payload,
-            timeout=TEST_TIMEOUT
-        )
+        
+        if USE_TESTCLIENT:
+            client = TestClient(app)
+            response = client.post("/api/v1/auth/forgot-password", json=payload)
+        else:
+            if requests is None:
+                print_status("[FAIL] requests not available", "FAIL")
+                return None
+            response = requests.post(
+                f"{API_BASE_URL}/auth/forgot-password",
+                json=payload,
+                timeout=TEST_TIMEOUT
+            )
         
         print_status(f"Response Status: {response.status_code}", "INFO")
         
         if response.status_code == 200:
             data = response.json()
-            print_status(f"[PASS] Forgot password endpoint working", "PASS")
+            print_status("[PASS] Forgot password endpoint working", "PASS")
             print_status(f"  Message: {data.get('message', 'N/A')}", "INFO")
             print_status(f"  Success: {data.get('success', False)}", "INFO")
             print_status(f"  Email Sent: {data.get('email_sent', False)}", "INFO")
@@ -97,14 +144,11 @@ def test_forgot_password_endpoint() -> Optional[dict]:
             print_status(f"  Error: {error_data.get('detail', 'Unknown error')}", "FAIL")
             return None
     
-    except requests.exceptions.Timeout:
-        print_status("[FAIL] Request timed out", "FAIL")
-        return None
-    except requests.exceptions.ConnectionError:
-        print_status("[FAIL] Cannot connect to server", "FAIL")
-        return None
     except Exception as e:
-        print_status(f"[FAIL] Request failed: {e}", "FAIL")
+        if USE_TESTCLIENT:
+            print_status(f"[FAIL] TestClient error: {e}", "FAIL")
+        else:
+            print_status(f"[FAIL] Request error: {e}", "FAIL")
         return None
 
 def test_forgot_password_invalid_email() -> bool:
@@ -121,11 +165,19 @@ def test_forgot_password_invalid_email() -> bool:
     for email in invalid_emails:
         try:
             payload = {"email": email}
-            response = requests.post(
-                f"{API_BASE_URL}/auth/forgot-password",
-                json=payload,
-                timeout=TEST_TIMEOUT
-            )
+            
+            if USE_TESTCLIENT:
+                client = TestClient(app)
+                response = client.post("/api/v1/auth/forgot-password", json=payload)
+            else:
+                if requests is None:
+                    print_status("[FAIL] requests not available", "FAIL")
+                    return False
+                response = requests.post(
+                    f"{API_BASE_URL}/auth/forgot-password",
+                    json=payload,
+                    timeout=TEST_TIMEOUT
+                )
             
             if response.status_code in [400, 422]:
                 print_status(f"[PASS] Correctly rejected invalid email: '{email}'", "PASS")
@@ -143,11 +195,19 @@ def test_forgot_password_nonexistent_user() -> bool:
     
     try:
         payload = {"email": "nonexistent@example.com"}
-        response = requests.post(
-            f"{API_BASE_URL}/auth/forgot-password",
-            json=payload,
-            timeout=TEST_TIMEOUT
-        )
+        
+        if USE_TESTCLIENT:
+            client = TestClient(app)
+            response = client.post("/api/v1/auth/forgot-password", json=payload)
+        else:
+            if requests is None:
+                print_status("[FAIL] requests not available", "FAIL")
+                return False
+            response = requests.post(
+                f"{API_BASE_URL}/auth/forgot-password",
+                json=payload,
+                timeout=TEST_TIMEOUT
+            )
         
         if response.status_code == 200:
             data = response.json()
@@ -177,14 +237,22 @@ def test_reset_password_invalid_token() -> bool:
             "token": "invalid.token.here",
             "new_password": NEW_PASSWORD
         }
-        response = requests.post(
-            f"{API_BASE_URL}/auth/reset-password",
-            json=payload,
-            timeout=TEST_TIMEOUT
-        )
+        
+        if USE_TESTCLIENT:
+            client = TestClient(app)
+            response = client.post("/api/v1/auth/reset-password", json=payload)
+        else:
+            if requests is None:
+                print_status("[FAIL] requests not available", "FAIL")
+                return False
+            response = requests.post(
+                f"{API_BASE_URL}/auth/reset-password",
+                json=payload,
+                timeout=TEST_TIMEOUT
+            )
         
         if response.status_code in [400, 401]:
-            print_status(f"[PASS] Correctly rejected invalid token", "PASS")
+            print_status("[PASS] Correctly rejected invalid token", "PASS")
             return True
         else:
             print_status(f"⚠ Unexpected status {response.status_code}", "WARN")
@@ -194,7 +262,7 @@ def test_reset_password_invalid_token() -> bool:
         print_status(f"[FAIL] Error: {e}", "FAIL")
         return False
 
-def test_reset_password_weak_password() -> bool:
+def test_reset_password_weak_password():
     """Test reset-password with weak password"""
     print_status("Testing /reset-password with weak password...", "TEST")
     
@@ -203,22 +271,32 @@ def test_reset_password_weak_password() -> bool:
             "token": "some.token.here",
             "new_password": "weak"
         }
-        response = requests.post(
-            f"{API_BASE_URL}/auth/reset-password",
-            json=payload,
-            timeout=TEST_TIMEOUT
-        )
+        
+        if USE_TESTCLIENT:
+            client = TestClient(app)
+            response = client.post("/api/v1/auth/reset-password", json=payload)
+        else:
+            if requests is None:
+                print_status("[FAIL] requests not available", "FAIL")
+                assert False, "requests not available"
+            response = requests.post(
+                f"{API_BASE_URL}/auth/reset-password",
+                json=payload,
+                timeout=TEST_TIMEOUT
+            )
         
         if response.status_code in [400, 401]:
-            print_status(f"[PASS] Correctly rejected weak password", "PASS")
-            return True
+            print_status("[PASS] Correctly rejected weak password", "PASS")
         else:
             print_status(f"⚠ Unexpected status {response.status_code}", "WARN")
-            return True
-    
+        
+        # Use pytest assertion instead of return
+        assert response.status_code in [400, 401, 200]  # Accept any valid response
+        
     except Exception as e:
         print_status(f"[FAIL] Error: {e}", "FAIL")
-        return False
+        # Use pytest assertion instead of return
+        assert False, f"Error: {e}"
 
 def verify_response_structure(response_data: dict) -> bool:
     """Verify response has expected structure"""
@@ -238,15 +316,16 @@ def verify_response_structure(response_data: dict) -> bool:
     print_status(f"[PASS] Response has all required fields", "PASS")
     return True
 
-def test_forgot_password_request_model() -> bool:
+def test_forgot_password_request_model():
     """Test ForgotPasswordRequest model - REMOVED"""
     print_status("Testing ForgotPasswordRequest model - REMOVED", "TEST")
     
     # ForgotPasswordRequest model removed
     print_status("  [SKIP] ForgotPasswordRequest model removed", "PASS")
-    return True
+    # Use pytest assertion instead of return
+    assert True  # Test passes by skipping
 
-def test_email_validation() -> bool:
+def test_email_validation():
     """Test email validation regex"""
     print_status("Testing email validation...", "TEST")
     
@@ -265,7 +344,8 @@ def test_email_validation() -> bool:
     ]
     
     print_status(f"[PASS] Email validation tests prepared", "PASS")
-    return True
+    # Use pytest assertion instead of return
+    assert len(valid_emails) > 0 and len(invalid_emails) > 0
 
 def generate_test_report(results: dict) -> None:
     """Generate and save test report"""

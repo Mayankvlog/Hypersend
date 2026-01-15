@@ -46,7 +46,9 @@ async def test_large_file_upload_token_extension():
         mock_uploads.return_value = mock_collection
         
         # Mock find_one to return our test document
-        mock_collection.find_one.return_value = upload_doc
+        async def mock_find_one(query):
+            return upload_doc
+        mock_collection.find_one = mock_find_one
         
         # Mock update_one to capture the extension
         mock_collection.update_one.return_value = AsyncMock()

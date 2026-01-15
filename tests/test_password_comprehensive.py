@@ -18,8 +18,8 @@ if backend_path not in sys.path:
 # Set mock DB before imports
 os.environ['USE_MOCK_DB'] = 'True'
 
-# Disable password reset for this test file
-os.environ['ENABLE_PASSWORD_RESET'] = 'False'
+# Enable password reset for this test file to match actual backend behavior
+os.environ['ENABLE_PASSWORD_RESET'] = 'True'
 
 from fastapi.testclient import TestClient
 from main import app
@@ -42,8 +42,8 @@ class TestPasswordManagementComprehensive:
         return str(ObjectId())
     
     def test_forgot_password_disabled_message(self, client):
-        """Test forgot password returns proper 404 since endpoint is removed"""
-        print("\\n\U0001f510 Test: Forgot Password Removed Message")
+        """Test forgot password returns proper success message since endpoint is enabled"""
+        print("\n\U0001f510 Test: Forgot Password Enabled Message")
     
         forgot_data = {
             "email": "test@example.com"
@@ -84,11 +84,11 @@ class TestPasswordManagementComprehensive:
     
         response = client.post("/api/v1/auth/reset-password", json=reset_data)
     
-        assert response.status_code == 401  # Invalid token
+        assert response.status_code == 401  # Invalid token since password reset is enabled
         result = response.json()
         assert "invalid" in result["detail"].lower() or "expired" in result["detail"].lower()
         
-        print("✅ Reset password POST is disabled")
+        print("✅ Reset password POST validates invalid token")
     
     def test_reset_password_options_works(self, client):
         """Test reset password OPTIONS works"""

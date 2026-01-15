@@ -1282,7 +1282,7 @@ Future<void> postToChannel(String channelId, String text) async {
   }
 
   Future<Map<String, dynamic>> addGroupMembers(String groupId, List<String> userIds) async {
-    final response = await _dio.post('groups/$groupId/members', data: {'user_ids': userIds});
+    final response = await _dio.post('groups/$groupId/members', data: {'user_ids': userIds.map((id) => id.toString()).toList()});
     return response.data;
   }
 
@@ -1652,9 +1652,9 @@ Future<void> postToChannel(String channelId, String text) async {
     try {
       _log('[DOWNLOAD_LARGE] Starting chunked download for file: $fileId');
       
-      // Get file info first
+// Get file info first
       final fileInfo = await getFileInfo(fileId);
-      final totalSize = fileInfo['size']?.toString().length ?? 0;
+      final totalSize = fileInfo['size'] as int? ?? 0;
       final fileName = fileInfo['filename']?.toString() ?? 'unknown';
       
       _log('[DOWNLOAD_LARGE] File info: size=$totalSize, name=$fileName');
