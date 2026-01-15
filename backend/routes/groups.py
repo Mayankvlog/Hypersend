@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
 from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone
 from bson import ObjectId
@@ -9,9 +9,19 @@ from auth.utils import get_current_user
 from db_proxy import chats_collection, users_collection, messages_collection, get_db
 from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
 from redis_cache import GroupCacheService, UserCacheService, SearchCacheService
+from pydantic import BaseModel
 
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
+
+
+class _ToggleMemberAddPermissionBody(BaseModel):
+    enabled: bool
+
+
+class _AddMembersBody(BaseModel):
+    participant_ids: List[str] = []
+
 
 # OPTIONS handlers for CORS preflight requests
 @router.options("")
@@ -679,28 +689,42 @@ async def restrict_member(
 @router.put("/{group_id}/permissions/member-add")
 async def toggle_member_add_permission(
     group_id: str,
-    enabled: bool = True,
+    body: Optional[_ToggleMemberAddPermissionBody] = Body(None),
+    enabled: Optional[bool] = None,
     current_user: str = Depends(get_current_user)
 ):
     """Enable/disable member add permission for non-admin members"""
     group = await _require_group(group_id, current_user)
     if not _is_admin(group, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can change permissions")
+
+    effective_enabled = body.enabled if body is not None else (enabled if enabled is not None else True)
     
     # Update group permissions
     await chats_collection().update_one(
         {"_id": group_id},
-        {"$set": {"permissions.allow_member_add": enabled}}
+        {"$set": {"permissions.allow_member_add": effective_enabled}}
     )
     
-    await _log_activity(group_id, current_user, "member_add_permission_toggled", {"enabled": enabled})
+    await _log_activity(group_id, current_user, "member_add_permission_toggled", {"enabled": effective_enabled})
     
     return {
         "success": True,
-        "message": f"Member add permission {'enabled' if enabled else 'disabled'}",
+        "message": f"Member add permission {'enabled' if effective_enabled else 'disabled'}",
         "permissions": {
-            "allow_member_add": enabled
+            "allow_member_add": effective_enabled
         }
+    }
+
+
+@router.post("/{group_id}/is-admin")
+async def is_admin_endpoint(group_id: str, current_user: str = Depends(get_current_user)):
+    group = await _require_group(group_id, current_user)
+    return {
+        "group_id": group_id,
+        "user_id": current_user,
+        "is_admin": _is_admin(group, current_user),
+        "allow_member_add": group.get("permissions", {}).get("allow_member_add", False),
     }
 
 
@@ -874,11 +898,19 @@ async def search_contacts_for_group(
 @router.post("/{group_id}/participants/add-multiple")
 async def add_multiple_participants(
     group_id: str,
-    participant_ids: List[str],
+    payload: Any = Body(...),
     current_user: str = Depends(get_current_user)
 ):
     """Add multiple participants to group at once (WhatsApp-style)"""
     group = await _require_group(group_id, current_user)
+
+    if isinstance(payload, dict):
+        participant_ids = payload.get("participant_ids")
+    else:
+        participant_ids = payload
+
+    if participant_ids is None:
+        participant_ids = []
     
     # Check if current user is admin or if member add is allowed
     is_admin = _is_admin(group, current_user)
@@ -976,7 +1008,7 @@ async def add_multiple_participants(
             "message": f"Successfully added {len(final_participants)} participants",
             "added_count": len(final_participants),
             "participants": added_participants_details,
-            "total_members": len(current_members) + len(final_participants)
+            "total_members": len(current_members)
         }
         
     except Exception as e:
@@ -987,9 +1019,15 @@ async def add_multiple_participants(
         )
 
 
+@router.post("/{group_id}/add-members")
+async def add_members_alias(group_id: str, body: _AddMembersBody, current_user: str = Depends(get_current_user)):
+    return await add_multiple_participants(group_id=group_id, payload={"participant_ids": body.participant_ids}, current_user=current_user)
+
+
 @router.get("/{group_id}/info/add-participants")
 async def get_add_participants_info(
     group_id: str,
+    toggle_member_add: Optional[bool] = Query(None, alias="toggle_member_add"),
     current_user: str = Depends(get_current_user)
 ):
     """Get group info with add participants option (WhatsApp-style)"""

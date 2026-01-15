@@ -4,6 +4,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, JSONResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.routing import Match
 import logging
 from pathlib import Path
 import os
@@ -910,6 +911,45 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc: HTTPException):
     """Handle 404 Not Found errors - resource or endpoint doesn't exist"""
+    path = str(request.url.path)
+    method = request.method
+ 
+    # Distinguish between:
+    # - true route-miss 404s (wrong URL) vs
+    # - intentional 404s raised inside a matched endpoint (e.g. "User not found")
+    matches_existing_route = False
+    try:
+        scope = request.scope
+        for route in app.routes:
+            if hasattr(route, "matches"):
+                match, _ = route.matches(scope)
+                if match in (Match.FULL, Match.PARTIAL):
+                    matches_existing_route = True
+                    break
+    except Exception:
+        matches_existing_route = False
+ 
+    if matches_existing_route:
+        detail_obj = getattr(exc, "detail", "Not Found")
+        detail_msg = detail_obj
+        if isinstance(detail_obj, dict):
+            detail_msg = detail_obj.get("message") or detail_obj.get("detail") or str(detail_obj)
+        else:
+            detail_msg = str(detail_obj)
+ 
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "status_code": 404,
+                "error": "Not Found",
+                "detail": detail_msg,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "path": path,
+                "method": method,
+                "hints": ["Verify the resource identifier", "Check permissions", "Review API documentation"]
+            }
+        )
+ 
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content={
@@ -917,8 +957,8 @@ async def not_found_handler(request: Request, exc: HTTPException):
             "error": "Not Found",
             "detail": "The requested resource doesn't exist. Check the URL path.",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "path": str(request.url.path),
-            "method": request.method,
+            "path": path,
+            "method": method,
             "hints": ["Check the URL spelling", "Verify the endpoint exists", "Review API documentation"]
         }
     )

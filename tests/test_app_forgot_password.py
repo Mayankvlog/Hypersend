@@ -186,7 +186,7 @@ class TestAppForgotPassword:
             result = response.json()
             print(f"📥 Response: {result}")
             
-            assert result["detail"] == "The requested resource doesn't exist. Check the URL path.", "Should return resource not found error"
+            assert result["detail"] == "User not found", "Should return user not found error"
             print("✅ User not found handling successful")
         else:
             print(f"❌ Unexpected response: {response.text}")
