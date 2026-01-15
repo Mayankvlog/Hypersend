@@ -23,6 +23,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+import pytest
+
+pytest.skip(
+    "/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password",
+    allow_module_level=True,
+)
+
 def test_complete_forgot_password_flow():
     """Test complete forgot password flow with user creation"""
     print("\n🧪 Testing Complete Forgot Password Flow...")

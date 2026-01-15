@@ -258,21 +258,6 @@ class ProfileUpdate(BaseModel):
 
 
 # Password Reset Models
-class ForgotPasswordRequest(BaseModel):
-    email: str = Field(..., description="Email address for password reset")
-    
-    @field_validator('email')
-    @classmethod
-    def validate_email(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Email is required')
-        v = v.strip().lower()
-        # Basic email validation
-        if not re.match(r'^[^@]+@[^@]+\.[^@]+$', v):
-            raise ValueError('Invalid email format')
-        return v
-
-
 class PasswordResetRequest(BaseModel):
     token: str
     new_password: str = Field(..., min_length=8)

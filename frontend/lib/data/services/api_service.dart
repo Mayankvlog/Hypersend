@@ -697,36 +697,22 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> resetPassword({required String email}) async {
+  Future<Map<String, dynamic>> resetPasswordWithToken({
+    required String token,
+    required String newPassword,
+  }) async {
     try {
-      _log('[API_RESET_PASSWORD] Sending password reset request for: $email');
+      _log('[API_RESET_PASSWORD_WITH_TOKEN] Sending password reset with token');
       final response = await _dio.post(
-        '${ApiConstants.authEndpoint}/forgot-password',
-        data: {'email': email},
+        '${ApiConstants.authEndpoint}/reset-password',
+        data: {'token': token, 'new_password': newPassword},
       );
       return response.data ?? {};
     } on DioException catch (e) {
-      _log('[API_RESET_PASSWORD_ERROR] Dio error: ${e.message}');
+      _log('[API_RESET_PASSWORD_WITH_TOKEN_ERROR] Dio error: ${e.message}');
       rethrow;
     } catch (e) {
-      _log('[API_RESET_PASSWORD_ERROR] Failed: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> resetPasswordWithDetails({required String email}) async {
-    try {
-      _log('[API_RESET_PASSWORD] Sending forgot-password request for: $email');
-      final response = await _dio.post(
-        '${ApiConstants.authEndpoint}/forgot-password',
-        data: {'email': email},
-      );
-      return response.data ?? {};
-    } on DioException catch (e) {
-      _log('[API_RESET_PASSWORD_ERROR] Dio error: ${e.message}');
-      rethrow;
-    } catch (e) {
-      _log('[API_RESET_PASSWORD_ERROR] Failed: $e');
+      _log('[API_RESET_PASSWORD_WITH_TOKEN_ERROR] Failed: $e');
       rethrow;
     }
   }
@@ -747,20 +733,6 @@ class ApiService {
       rethrow;
     } catch (e) {
       _log('[API_CHANGE_PASSWORD_ERROR] Failed: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> testEmailService() async {
-    try {
-      _log('[API_TEST_EMAIL] Testing email service configuration');
-      final response = await _dio.get('${ApiConstants.authEndpoint}/test-email');
-      return response.data ?? {};
-    } on DioException catch (e) {
-      _log('[API_TEST_EMAIL_ERROR] Dio error: ${e.message}');
-      rethrow;
-    } catch (e) {
-      _log('[API_TEST_EMAIL_ERROR] Failed: $e');
       rethrow;
     }
   }

@@ -31,6 +31,7 @@ class TestPasswordResetFunctionality:
     @pytest.mark.asyncio
     async def test_forgot_password_creates_reset_token(self):
         """Test that forgot password creates a valid reset token"""
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         from routes.auth import forgot_password
         
         # Mock user

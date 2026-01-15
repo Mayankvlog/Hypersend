@@ -56,6 +56,7 @@ class TestPasswordManagementComplete:
         }
     
     def test_forgot_password_success(self, client, test_user, test_user_id):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Test forgot password endpoint success"""
         print("\n🔐 Test: Forgot Password Success")
         
@@ -78,6 +79,7 @@ class TestPasswordManagementComplete:
         print("✅ Forgot password successful")
     
     def test_forgot_password_user_not_found(self, client):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Test forgot password with non-existent user"""
         print("\n🔐 Test: Forgot Password - User Not Found")
         

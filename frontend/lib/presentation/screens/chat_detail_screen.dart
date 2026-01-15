@@ -696,35 +696,59 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _openDownloadedFile(String filePath, String contentType) async {
     try {
+      debugPrint('[FILE_OPEN] Attempting to open file: $filePath');
+      debugPrint('[FILE_OPEN] File exists check starting...');
+      
       final file = File(filePath);
-      if (!await file.exists()) {
-        throw Exception('File not found: $filePath');
+      final fileExists = await file.exists();
+      debugPrint('[FILE_OPEN] File exists: $fileExists');
+      
+      if (!fileExists) {
+        debugPrint('[FILE_OPEN] File not found error: $filePath');
+        throw Exception('Downloaded file not found at: $filePath');
       }
+
+      debugPrint('[FILE_OPEN] Platform: ${Platform.operatingSystem}');
+      debugPrint('[FILE_OPEN] File size: ${await file.length()} bytes');
 
       if (Platform.isAndroid || Platform.isIOS) {
         // For mobile platforms, use url_launcher to open file
+        debugPrint('[FILE_OPEN] Using mobile platform file opening');
         final uri = Uri.file(filePath);
+        debugPrint('[FILE_OPEN] File URI: $uri');
+        
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri);
+          debugPrint('[FILE_OPEN] Successfully launched file via url_launcher');
         } else {
+          debugPrint('[FILE_OPEN] Failed to launch file via url_launcher');
           throw Exception('Cannot open file: $filePath');
         }
       } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         // For desktop platforms, use Process.run to open file with default application
+        debugPrint('[FILE_OPEN] Using desktop platform file opening');
+        
         if (Platform.isWindows) {
+          debugPrint('[FILE_OPEN] Opening with Windows start command');
           await Process.run('start', [filePath], runInShell: true);
         } else if (Platform.isMacOS) {
+          debugPrint('[FILE_OPEN] Opening with macOS open command');
           await Process.run('open', [filePath]);
         } else if (Platform.isLinux) {
+          debugPrint('[FILE_OPEN] Opening with Linux xdg-open command');
           await Process.run('xdg-open', [filePath]);
         }
+        
+        debugPrint('[FILE_OPEN] Desktop file opening command executed');
       } else {
-        throw Exception('Unsupported platform for file opening');
+        debugPrint('[FILE_OPEN] Unsupported platform: ${Platform.operatingSystem}');
+        throw Exception('Unsupported platform for file opening: ${Platform.operatingSystem}');
       }
       
       debugPrint('[FILE_OPEN] Successfully opened file: $filePath');
     } catch (e) {
       debugPrint('[FILE_OPEN_ERROR] Failed to open file: $e');
+      debugPrint('[FILE_OPEN_ERROR] Stack trace: ${StackTrace.current}');
       rethrow;
     }
   }

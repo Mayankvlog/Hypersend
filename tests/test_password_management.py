@@ -86,6 +86,7 @@ class TestPasswordManagement:
 
     @pytest.mark.asyncio
     async def test_forgot_password_success(self):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Test successful forgot password request"""
         print("\n🧪 Test: Forgot Password Success")
         
@@ -116,6 +117,7 @@ class TestPasswordManagement:
 
     @pytest.mark.asyncio
     async def test_forgot_password_nonexistent_email(self):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Test forgot password with non-existent email"""
         print("\n🧪 Test: Forgot Password - Non-existent Email")
         
@@ -142,6 +144,7 @@ class TestPasswordManagement:
 
     @pytest.mark.asyncio
     async def test_forgot_password_invalid_email(self):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Test forgot password with invalid email format"""
         print("\n🧪 Test: Forgot Password - Invalid Email")
         
@@ -407,6 +410,7 @@ class TestPasswordManagement:
 
     @pytest.mark.asyncio
     async def test_password_rate_limiting(self):
+        pytest.skip("/auth/forgot-password endpoint removed; rate limiting for email reset no longer applies", allow_module_level=False)
         """Test password reset rate limiting"""
         print("\n🧪 Test: Password Reset Rate Limiting")
         

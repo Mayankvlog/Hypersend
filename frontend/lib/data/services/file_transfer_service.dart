@@ -222,6 +222,10 @@ class FileTransferService {
       
       directory ??= await getApplicationDocumentsDirectory();
       actualSavePath = '${directory.path}/$savePath';
+      
+      debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
+      debugPrint('[FILE_TRANSFER] Directory exists: ${await directory.exists()}');
+      debugPrint('[FILE_TRANSFER] Directory path: ${directory.path}');
     }
 
     final transfer = FileTransfer(
@@ -249,8 +253,11 @@ class FileTransferService {
       // Ensure directory exists
       final directory = File(actualSavePath).parent;
       if (!await directory.exists()) {
+        debugPrint('[FILE_TRANSFER] Creating directory: ${directory.path}');
         await directory.create(recursive: true);
       }
+      
+      debugPrint('[FILE_TRANSFER] Directory created: ${await directory.exists()}');
       
       // Use chunked download for large files (>100MB)
       if (fileSize > 100 * 1024 * 1024) {

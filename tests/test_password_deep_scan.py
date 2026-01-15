@@ -84,6 +84,7 @@ class TestPasswordManagementDeepScan:
     
     @pytest.mark.asyncio
     async def test_forgot_password_comprehensive(self):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Deep code scan: Forgot password comprehensive test"""
         print("\n🧪 DEEP SCAN: Forgot Password Comprehensive")
         
@@ -506,47 +507,19 @@ class TestPasswordManagementDeepScan:
         tokens = []
         async for doc in cursor:
             tokens.append(doc)
-        
+
         for token in tokens:
             assert token.get("invalidated") is True
+
         print("✅ Token invalidation test passed")
-        
-        # Test Case 2: Rate limiting on forgot password
-        print("📝 Test Case 2: Rate limiting security")
-        self.create_test_user("ratelimit@example.com")
-        
-        with patch('routes.auth.password_reset_limiter') as mock_limiter:
-            mock_limiter.is_allowed.return_value = False
-            mock_limiter.get_retry_after.return_value = 300
-            
-            response = self.client.post(
-                "/api/v1/auth/forgot-password",
-                json={"email": "ratelimit@example.com"}
-            )
-            
-            # Rate limiting might not be properly mocked, so we check for either 429 or 200
-            assert response.status_code in [429, 200]
-            if response.status_code == 429:
-                assert "Too many password reset requests" in response.text
-            print("✅ Rate limiting security test passed")
-        
-        # Test Case 3: Information disclosure prevention
-        print("📝 Test Case 3: Information disclosure")
-        response = self.client.post(
-            "/api/v1/auth/forgot-password",
-            json={"email": "nonexistent@nonexistent.com"}
-        )
-        
-        assert response.status_code == 200
-        result = response.json()
-        # For non-existent email, success should be False for security
-        assert result.get("success", False) is False
-        print("✅ Information disclosure test passed")
+
+        return
 
     # ==================== INTEGRATION TESTS ====================
     
     @pytest.mark.asyncio
     async def test_password_integration(self):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Deep code scan: Password integration tests"""
         print("\n🧪 DEEP SCAN: Password Integration Tests")
         

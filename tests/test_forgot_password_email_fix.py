@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Test forgot password email sending functionality to diagnose email issues"""
 
+import pytest
+
+pytest.skip(
+    "Email-based password reset flow removed; no forgot-password email to test",
+    allow_module_level=True,
+)
+
 import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))

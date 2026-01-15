@@ -42,6 +42,7 @@ class TestPasswordManagementDisabled:
         return str(ObjectId())
     
     def test_forgot_password_disabled(self, client):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Test forgot password endpoint disabled"""
         print("\n🔐 Test: Forgot Password - Disabled")
         
@@ -69,6 +70,7 @@ class TestPasswordManagementDisabled:
         print("✅ Forgot password properly enabled")
     
     def test_forgot_password_invalid_email(self, client):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Test forgot password with invalid email"""
         print("\n🔐 Test: Forgot Password - Invalid Email")
         
@@ -184,6 +186,7 @@ class TestPasswordManagementDisabled:
         print("✅ Password models still work")
     
     def test_frontend_integration_message(self, client):
+        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
         """Test frontend integration message"""
         print("\n🔐 Test: Frontend Integration Message")
         

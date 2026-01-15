@@ -164,27 +164,81 @@ class _AuthScreenState extends State<AuthScreen> {
                     onPressed: _loading
                         ? null
                         : () async {
-                            final email = _email.text.trim();
-                            if (email.isEmpty) {
+                            final tokenController = TextEditingController();
+                            final newPasswordController = TextEditingController();
+
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (context) {
+                                return AlertDialog(
+                                  title: const Text('Reset password'),
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      TextField(
+                                        controller: tokenController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Reset token',
+                                          prefixIcon: Icon(Icons.key_outlined),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller: newPasswordController,
+                                        obscureText: true,
+                                        decoration: const InputDecoration(
+                                          labelText: 'New password',
+                                          prefixIcon: Icon(Icons.lock_reset_outlined),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () => Navigator.of(context).pop(true),
+                                      child: const Text('Reset'),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+
+                            final token = tokenController.text.trim();
+                            final newPassword = newPasswordController.text;
+                            tokenController.dispose();
+                            newPasswordController.dispose();
+
+                            if (confirmed != true) {
+                              return;
+                            }
+
+                            if (token.isEmpty || newPassword.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Enter your email first to reset password')),
+                                const SnackBar(content: Text('Enter reset token and new password')),
                               );
                               return;
                             }
-                            
+
                             setState(() => _loading = true);
                             try {
-                              await serviceProvider.authService.resetPassword(email: email);
+                              await serviceProvider.authService.resetPasswordWithToken(
+                                token: token,
+                                newPassword: newPassword,
+                              );
                               if (!mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Password reset link has been sent to your email.'),
+                                  content: Text('Password reset successfully.'),
                                   backgroundColor: AppTheme.successGreen,
                                 ),
                               );
                             } catch (e) {
                               if (!mounted) return;
-                              String error = 'Failed to send reset link';
+                              String error = 'Failed to reset password';
                               if (e is DioException) {
                                 error = ApiService.getErrorMessage(e);
                               }
@@ -198,7 +252,7 @@ class _AuthScreenState extends State<AuthScreen> {
                               if (mounted) setState(() => _loading = false);
                             }
                           },
-                    child: const Text('Forgot password?'),
+                    child: const Text('Reset password'),
                   ),
                 ),
               TextButton(

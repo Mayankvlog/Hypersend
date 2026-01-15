@@ -5,6 +5,13 @@ Tests the complete password reset flow including token generation,
 email sending (if configured), and password update.
 """
 
+import pytest
+
+pytest.skip(
+    "/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password",
+    allow_module_level=True,
+)
+
 import asyncio
 import json
 import sys

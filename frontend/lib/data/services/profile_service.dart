@@ -150,20 +150,6 @@ class ProfileService {
     }
   }
 
-  // Reset password (send reset email)
-  Future<bool> resetPassword({required String email}) async {
-    try {
-      if (email.isEmpty || !email.contains('@')) {
-        throw Exception('Please provide a valid email address');
-      }
-      // Call API to send reset email
-      await _apiService.resetPassword(email: email);
-      return true;
-    } catch (e) {
-      rethrow;
-    }
-  }
-
   // Change email
   Future<bool> changeEmail({
     required String newEmail,

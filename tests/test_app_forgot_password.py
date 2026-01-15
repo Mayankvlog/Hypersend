@@ -5,6 +5,11 @@ Tests all forgot password functions without email service
 """
 
 import pytest
+
+pytest.skip(
+    "App-only forgot/reset password endpoints were removed; password reset is token-only via /auth/reset-password",
+    allow_module_level=True,
+)
 import sys
 import os
 import asyncio
