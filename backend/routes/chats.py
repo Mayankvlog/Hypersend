@@ -27,6 +27,9 @@ router = APIRouter(prefix="/chats", tags=["Chats"])
 @router.options("/messages/{message_id}/pin")
 @router.options("/{chat_id}/messages/{message_id}")
 @router.options("/{message_id}")
+@router.options("/{chat_id}/ban")
+@router.options("/{chat_id}/unban")
+@router.options("/{chat_id}/banned")
 async def chats_options():
     """Handle CORS preflight for chats endpoints"""
     from fastapi.responses import Response
@@ -593,3 +596,146 @@ async def delete_message(
     await messages_collection().delete_one({"_id": message_id})
     
     return {"status": "deleted", "message_id": message_id}
+
+
+@router.post("/{chat_id}/ban")
+async def ban_member(
+    chat_id: str,
+    ban_data: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Ban a member from group chat"""
+    user_to_ban = ban_data.get("user_id")
+    reason = ban_data.get("reason", "")
+    
+    if not user_to_ban:
+        raise HTTPException(status_code=400, detail="User ID to ban is required")
+    
+    # Check if user_to_ban is current user (can't ban yourself)
+    if user_to_ban == current_user:
+        raise HTTPException(status_code=400, detail="Cannot ban yourself")
+    
+    # Verify chat exists and current user is admin
+    chat = await chats_collection().find_one({"_id": chat_id})
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    
+    # Validate chat type - only group or channel chats support banning
+    chat_type = chat.get("type")
+    if chat_type not in ("group", "channel"):
+        raise HTTPException(status_code=400, detail="Banning is only supported for group or channel chats")
+    
+    # Check if current user is admin/owner
+    members = chat.get("members", [])
+    admins = chat.get("admins", [])
+    owner = chat.get("created_by", chat.get("owner"))
+    
+    is_admin = current_user in admins or current_user == owner
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can ban members")
+    
+    # Check if user to ban is a member
+    if user_to_ban not in members:
+        raise HTTPException(status_code=404, detail="User is not a member of this chat")
+    
+    # Prevent privilege escalation: cannot ban admins or the owner
+    if user_to_ban in admins or user_to_ban == owner:
+        raise HTTPException(status_code=403, detail="Cannot ban another admin or the chat owner")
+    
+    # Check if user is already banned
+    banned_users = chat.get("banned_users", [])
+    if user_to_ban in banned_users:
+        raise HTTPException(status_code=400, detail="User is already banned")
+    
+    # Remove user from members and add to banned_users
+    await chats_collection().update_one(
+        {"_id": chat_id},
+        {
+            "$pull": {"members": user_to_ban},
+            "$addToSet": {"banned_users": user_to_ban}
+        }
+    )
+    
+    logger.info(f"User {user_to_ban} banned from chat {chat_id} by {current_user}. Reason: {reason}")
+    
+    return {
+        "status": "banned",
+        "user_id": user_to_ban,
+        "chat_id": chat_id,
+        "reason": reason
+    }
+
+
+@router.post("/{chat_id}/unban")
+async def unban_member(
+    chat_id: str,
+    unban_data: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Unban a member from group chat"""
+    user_to_unban = unban_data.get("user_id")
+    
+    if not user_to_unban:
+        raise HTTPException(status_code=400, detail="User ID to unban is required")
+    
+    # Verify chat exists and current user is admin
+    chat = await chats_collection().find_one({"_id": chat_id})
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    
+    # Check if current user is admin/owner
+    members = chat.get("members", [])
+    admins = chat.get("admins", [])
+    owner = chat.get("created_by", chat.get("owner"))
+    
+    is_admin = current_user in admins or current_user == owner
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can unban members")
+    
+    # Check if user is banned
+    banned_users = chat.get("banned_users", [])
+    if user_to_unban not in banned_users:
+        raise HTTPException(status_code=400, detail="User is not banned")
+    
+    # Add user back to members and remove from banned_users
+    await chats_collection().update_one(
+        {"_id": chat_id},
+        {
+            "$addToSet": {"members": user_to_unban},
+            "$pull": {"banned_users": user_to_unban}
+        }
+    )
+    
+    logger.info(f"User {user_to_unban} unbanned from chat {chat_id} by {current_user}")
+    
+    return {
+        "status": "unbanned",
+        "user_id": user_to_unban,
+        "chat_id": chat_id
+    }
+
+
+@router.get("/{chat_id}/banned")
+async def get_banned_users(
+    chat_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get list of banned users in chat"""
+    # Verify chat exists and current user is admin
+    chat = await chats_collection().find_one({"_id": chat_id})
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    
+    # Check if current user is admin/owner
+    members = chat.get("members", [])
+    admins = chat.get("admins", [])
+    owner = chat.get("created_by", chat.get("owner"))
+    
+    is_admin = current_user in admins or current_user == owner
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can view banned users")
+    
+    return {
+        "chat_id": chat_id,
+        "banned_users": chat.get("banned_users", [])
+    }
