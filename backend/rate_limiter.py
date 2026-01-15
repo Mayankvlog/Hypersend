@@ -81,3 +81,4 @@ class RateLimiter:
 # Global rate limiters for different auth operations
 auth_rate_limiter = RateLimiter(max_requests=5, window_seconds=300)  # 5 requests per 5 minutes
 qr_code_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 requests per minute
+password_reset_limiter = RateLimiter(max_requests=3, window_seconds=900)  # 3 requests per 15 minutes

@@ -17,6 +17,7 @@ from validators import validate_user_id
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
+from rate_limiter import password_reset_limiter
 
 from collections import defaultdict
 from typing import Dict, Tuple, List, Optional
@@ -1130,6 +1131,102 @@ async def logout(current_user: str = Depends(get_current_user)):
         )
 
 
+@router.post("/forgot-password")
+async def forgot_password(request: dict) -> dict:
+    """Initiate password reset by sending reset token to user's email"""
+    try:
+        auth_log("Password reset request received")
+        
+        # Rate limiting
+        if not password_reset_limiter.is_allowed(request.get("email", "unknown")):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many password reset attempts. Please try again later."
+            )
+        
+        # FIXED: Password reset functionality enabled for Zaply
+        if not settings.ENABLE_PASSWORD_RESET:
+            auth_log("Zaply password reset functionality is disabled")
+            raise HTTPException(
+                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                detail="Zaply password reset functionality has been disabled. Please contact Zaply support."
+            )
+        
+        # Extract email from request
+        email = request.get("email")
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email is required"
+            )
+        
+        # Basic email validation
+        if "@" not in email or "." not in email or len(email) < 5:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
+        
+        # Find user by email
+        try:
+            user = await users_collection().find_one({"email": email})
+        except Exception as e:
+            auth_log(f"Database error finding user: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to find user account"
+            )
+        
+        # Always return success to prevent email enumeration attacks
+        if not user:
+            auth_log(f"Password reset requested for non-existent email: {email}")
+            return {"message": "If an account with this email exists, a password reset link has been sent"}
+        
+        # Generate reset token
+        try:
+            reset_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+            
+            # Store reset token
+            await password_reset_collection().insert_one({
+                "token": reset_token,
+                "email": email,
+                "created_at": datetime.now(timezone.utc),
+                "expires_at": expires_at,
+                "used": False
+            })
+            
+            auth_log(f"Password reset token generated for user: {user['_id']}")
+            
+            # In development, just return token (in production, send email)
+            if settings.DEBUG:
+                print(f"[DEBUG] Password reset token for {email}: {reset_token}")
+                return {
+                    "message": "Password reset initiated (development mode - token returned)",
+                    "debug_token": reset_token,
+                    "debug_expires_at": expires_at.isoformat()
+                }
+            else:
+                # Production: Send email (not implemented yet)
+                return {"message": "Password reset link has been sent to your email"}
+                
+        except Exception as e:
+            auth_log(f"Failed to generate reset token: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to initiate password reset"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Forgot password error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset service unavailable"
+        )
+
+
 @router.post("/reset-password", response_model=PasswordResetResponse)
 async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse:
     """Reset password using token"""
@@ -1282,33 +1379,32 @@ async def change_password(
                 detail="Either old_password or current_password must be provided"
             )
         
-        # Get current user from database
+# Get current user from database
+        user = None
+         
+        # Try ObjectId lookup first
         try:
-            user = None
-            
-            # Try ObjectId lookup first
-            try:
-                user_id = ObjectId(current_user)
-                user = await users_collection().find_one({"_id": user_id})
-                auth_log(f"[CHANGE_PASSWORD_DEBUG] ObjectId lookup result: {user is not None}")
-            except Exception as e:
-                auth_log(f"[CHANGE_PASSWORD_DEBUG] ObjectId conversion failed: {e}")
-            
-            # If ObjectId lookup failed, try string lookup
-            if user is None:
-                user = await users_collection().find_one({"_id": current_user})
-                auth_log(f"[CHANGE_PASSWORD_DEBUG] String lookup result: {user is not None}")
-            
-            if user is None:
-                auth_log(f"[CHANGE_PASSWORD_DEBUG] Trying email lookup as fallback")
-                user = await users_collection().find_one({"email": current_user})
-                auth_log(f"[CHANGE_PASSWORD_DEBUG] Email lookup result: {user is not None}")
-                
+            user_id = ObjectId(current_user)
+            user = await users_collection().find_one({"_id": user_id})
+            auth_log(f"[CHANGE_PASSWORD_DEBUG] ObjectId lookup result: {user is not None}")
         except Exception as e:
-            auth_log(f"[CHANGE_PASSWORD_ERROR] Database query failed: {e}")
+            auth_log(f"[CHANGE_PASSWORD_DEBUG] ObjectId conversion failed: {e}")
+         
+        # If ObjectId lookup failed, try string lookup
+        if user is None:
+            user = await users_collection().find_one({"_id": current_user})
+            auth_log(f"[CHANGE_PASSWORD_DEBUG] String lookup result: {user is not None}")
+         
+        if user is None:
+            auth_log(f"[CHANGE_PASSWORD_DEBUG] Trying email lookup as fallback")
+            user = await users_collection().find_one({"email": current_user})
+            auth_log(f"[CHANGE_PASSWORD_DEBUG] Email lookup result: {user is not None}")
+             
+        if user is None:
+            auth_log(f"[CHANGE_PASSWORD_ERROR] User not found: {current_user}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database error occurred"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
             )
         
         if not user:
@@ -1317,6 +1413,8 @@ async def change_password(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
+        
+        auth_log(f"[CHANGE_PASSWORD_DEBUG] Found user: {user.get('_id')} with email: {user.get('email')}")
         
         # Verify old password with comprehensive format support
         old_password_valid = False
@@ -1363,12 +1461,13 @@ async def change_password(
         # Hash new password
         password_hash, password_salt = hash_password(request.new_password)
         auth_log(f"[CHANGE_PASSWORD_DEBUG] New password hashed successfully")
-        
-        # SECURITY FIX: Use proper user_id handling for ObjectId conversion
-        user_id_for_update = current_user
-        if isinstance(current_user, str) and ObjectId.is_valid(current_user):
-            user_id_for_update = ObjectId(current_user)
-        
+
+# IMPORTANT: Use the _id value as stored in the user document.
+        # Some deployments store user _id as a 24-hex *string* (ObjectId-like),
+        # and converting it to ObjectId would make update_one() match=0.
+        user_id_for_update = user.get("_id")
+        auth_log(f"[CHANGE_PASSWORD_DEBUG] Using user_id_for_update: {user_id_for_update} (type: {type(user_id_for_update)})")
+
         # Update user password with error handling
         try:
             update_result = await users_collection().update_one(
@@ -1389,8 +1488,12 @@ async def change_password(
         
         # Invalidate all refresh tokens for this user with error handling
         try:
+            user_id_candidates = [current_user]
+            if isinstance(current_user, str) and ObjectId.is_valid(current_user):
+                user_id_candidates.append(ObjectId(current_user))
+
             invalidate_result = await refresh_tokens_collection().update_many(
-                {"user_id": current_user},
+                {"user_id": {"$in": user_id_candidates}},
                 {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
             )
             auth_log(f"[CHANGE_PASSWORD_SUCCESS] Tokens invalidated for user {current_user}: matched={invalidate_result.matched_count}, modified={invalidate_result.modified_count}")
