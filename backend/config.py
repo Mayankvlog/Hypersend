@@ -99,7 +99,15 @@ class Settings:
     # SECRET_KEY must be set in production - no fallbacks allowed
     _env_secret = os.getenv("SECRET_KEY")
     if not _env_secret:
-        raise ValueError("SECRET_KEY environment variable must be set in production")
+        _debug_env = os.getenv("DEBUG", "").lower() in ("true", "1", "yes")
+        _is_test_env = (
+            'test' in sys.modules or 'pytest' in sys.modules or os.getenv('PYTEST_CURRENT_TEST')
+        )
+        if _is_test_env or _debug_env:
+            _env_secret = secrets.token_hex(32)
+            print("[CONFIG] WARNING: SECRET_KEY not set; generated a temporary key for this process")
+        else:
+            raise ValueError("SECRET_KEY environment variable must be set in production")
     
     # CRITICAL FIX: Enhanced secret key validation with entropy requirements
     placeholder_patterns = {

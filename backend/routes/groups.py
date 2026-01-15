@@ -108,6 +108,9 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
         "created_by": current_user,
         "created_at": _now(),
         "muted_by": [],
+        "permissions": {
+            "allow_member_add": False
+        },
     }
     
     print(f"[GROUP_CREATE] Final chat_doc members: {chat_doc['members']}")
@@ -637,10 +640,15 @@ async def update_group_permissions(
     group = await _require_group(group_id, current_user)
     if not _is_admin(group, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can change permissions")
-        
+
+    # Preserve non-ChatPermissions fields stored under permissions (e.g. allow_member_add)
+    existing_permissions = group.get("permissions", {}) or {}
+    merged_permissions = dict(existing_permissions)
+    merged_permissions.update(permissions.model_dump())
+
     await chats_collection().update_one(
         {"_id": group_id},
-        {"$set": {"permissions": permissions.model_dump()}}
+        {"$set": {"permissions": merged_permissions}}
     )
     
     await _log_activity(group_id, current_user, "permissions_updated", {})

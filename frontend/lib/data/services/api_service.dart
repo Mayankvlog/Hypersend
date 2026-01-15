@@ -24,6 +24,16 @@ class ApiService {
     }
   }
 
+  Map<String, dynamic> _mergeAuthHeaders(Map<String, dynamic> headers) {
+    final merged = <String, dynamic>{};
+    final auth = _dio.options.headers['Authorization'];
+    if (auth != null) {
+      merged['Authorization'] = auth;
+    }
+    merged.addAll(headers);
+    return merged;
+  }
+
   // Token refresh will be handled by error interceptor
 
   ApiService() {
@@ -1606,7 +1616,7 @@ Future<void> postToChannel(String channelId, String text) async {
       savePath,
       onReceiveProgress: onReceiveProgress,
       options: Options(
-        headers: {},  // Remove Range header to get full file
+        headers: _mergeAuthHeaders({}),
       ),
     );
   }
@@ -1626,7 +1636,7 @@ Future<void> postToChannel(String channelId, String text) async {
         }
       },
       options: Options(
-        headers: {'Range': 'bytes=0-'},  // Request range, not Accept-Ranges
+        headers: _mergeAuthHeaders({'Range': 'bytes=0-'}),
       ),
     );
   }
@@ -1637,7 +1647,7 @@ Future<void> postToChannel(String channelId, String text) async {
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: false,
-        headers: {'Range': 'bytes=0-'},  // Request range, not Accept-Ranges
+        headers: _mergeAuthHeaders({'Range': 'bytes=0-'}),
       ),
     );
   }
@@ -1692,9 +1702,7 @@ Future<void> postToChannel(String channelId, String text) async {
             '${ApiConstants.filesEndpoint}/$fileId/download',
             options: Options(
               responseType: ResponseType.bytes,
-              headers: {
-                'Range': 'bytes=$downloadedBytes-$endByte',
-              },
+              headers: _mergeAuthHeaders({'Range': 'bytes=$downloadedBytes-$endByte'}),
             ),
           );
           

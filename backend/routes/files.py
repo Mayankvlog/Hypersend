@@ -2330,7 +2330,10 @@ async def download_file(
                     
                     # 4. User directory enforcement - ensure user can only access their own files
                     # SPECIAL CASE: Allow access to anonymously uploaded files by any authenticated user
-                    expected_user_prefix = Path("files") / current_user[:2] / current_user
+                    expected_user_id = file_doc.get("owner_id") or file_doc.get("uploaded_by") or file_doc.get("user_id") or current_user
+                    if not isinstance(expected_user_id, str) or not expected_user_id:
+                        expected_user_id = current_user
+                    expected_user_prefix = Path("files") / expected_user_id[:2] / expected_user_id
                     anonymous_prefix_new = Path("files") / "an" / "anonymous"  # New anonymous path
                     anonymous_prefix_old = Path("files") / "No" / "None"      # Old anonymous path for backward compatibility
                     

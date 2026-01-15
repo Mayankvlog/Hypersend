@@ -3,6 +3,7 @@
 
 import os
 import sys
+from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 # Set mock database
@@ -21,6 +22,117 @@ import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def test_chat_member_can_download_other_users_file():
+    """Regression: chat member should be able to download another member's file."""
+    client = TestClient(app)
+
+    # Register + login user A
+    reg_a = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "uploader_a@example.com",
+            "password": "TestPass123",
+            "username": "uploader_a@example.com",
+            "name": "Uploader A"
+        },
+    )
+    assert reg_a.status_code in (200, 201, 409)
+    if reg_a.status_code in (200, 201):
+        user_a_id = reg_a.json().get("id")
+    else:
+        # If already registered, login will still work; we will fetch id from /me
+        user_a_id = None
+
+    login_a = client.post(
+        "/api/v1/auth/login",
+        json={"email": "uploader_a@example.com", "password": "TestPass123"},
+    )
+    assert login_a.status_code == 200
+    token_a = login_a.json().get("access_token")
+    assert token_a
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    if user_a_id is None:
+        me_a = client.get("/api/v1/users/me", headers=headers_a)
+        assert me_a.status_code == 200
+        user_a_id = me_a.json().get("id") or me_a.json().get("_id")
+    assert user_a_id
+
+    # Register + login user B
+    reg_b = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "downloader_b@example.com",
+            "password": "TestPass123",
+            "username": "downloader_b@example.com",
+            "name": "Downloader B"
+        },
+    )
+    assert reg_b.status_code in (200, 201, 409)
+    if reg_b.status_code in (200, 201):
+        user_b_id = reg_b.json().get("id")
+    else:
+        user_b_id = None
+
+    login_b = client.post(
+        "/api/v1/auth/login",
+        json={"email": "downloader_b@example.com", "password": "TestPass123"},
+    )
+    assert login_b.status_code == 200
+    token_b = login_b.json().get("access_token")
+    assert token_b
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    if user_b_id is None:
+        me_b = client.get("/api/v1/users/me", headers=headers_b)
+        assert me_b.status_code == 200
+        user_b_id = me_b.json().get("id") or me_b.json().get("_id")
+    assert user_b_id
+
+    # Create a chat including both members
+    chat_response = client.post(
+        "/api/v1/chats",
+        json={"name": "Download Shared Chat", "type": "private", "member_ids": [user_b_id]},
+        headers=headers_a,
+    )
+    assert chat_response.status_code in (200, 201)
+    chat_id = chat_response.json().get("chat_id") or chat_response.json().get("_id")
+    assert chat_id
+
+    # Create a file on disk under uploader's folder
+    from config import settings
+    file_id = "file_test_id_001"
+    rel_path = Path("files") / user_a_id[:2] / user_a_id / "shared.txt"
+    abs_path = Path(settings.DATA_ROOT) / rel_path
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    abs_path.write_bytes(b"hello-from-a")
+
+    # Insert file metadata into mock DB
+    from db_proxy import files_collection
+    awaitable = files_collection().insert_one({
+        "_id": file_id,
+        "filename": "shared.txt",
+        "size": 12,
+        "mime_type": "text/plain",
+        "owner_id": user_a_id,
+        "chat_id": chat_id,
+        "storage_path": str(abs_path),
+        "shared_with": [],
+    })
+    # Handle async mock insert
+    try:
+        import asyncio
+        if hasattr(awaitable, '__await__'):
+            asyncio.get_event_loop().run_until_complete(awaitable)
+    except RuntimeError:
+        # No running loop in pytest default; fallback
+        import asyncio
+        asyncio.run(awaitable)
+
+    # Downloader B should be able to download (as chat member)
+    r = client.get(f"/api/v1/files/{file_id}/download", headers=headers_b)
+    assert r.status_code == 200
+    assert r.content == b"hello-from-a"
 
 def test_file_download_endpoint():
     """Test file download endpoint with proper authentication"""
