@@ -707,11 +707,18 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             f"HTTP Error {status_code}"
         )
         # CRITICAL FIX: Sanitize detail in production mode to prevent information disclosure
-        if 500 <= status_code < 600:
+        # BUT preserve important authentication/security messages
+        original_detail = getattr(exc, "detail", "")
+        important_messages = ["User not found", "Invalid email or password", "Email already exists", "Account locked"]
+        
+        if original_detail in important_messages:
+            # ALWAYS preserve important authentication/security messages (even in production)
+            detail = original_detail
+        elif 500 <= status_code < 600:
             # Server errors - generic message only
             detail = "Internal server error. Please try again later."
         elif 400 <= status_code < 500:
-            # Client errors - safe generic message
+            # Safe generic messages for other client errors
             safe_details = {
                 400: "Bad request. Please check your input.",
                 401: "Authentication required.",

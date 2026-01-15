@@ -1580,3 +1580,293 @@ async def change_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to change password"
         )
+
+
+# ============================================================================
+# APP-ONLY FORGOT PASSWORD FUNCTIONS (No Email Service Required)
+# ============================================================================
+
+def generate_app_reset_token(email: str) -> str:
+    """Generate JWT reset token for app (30 minutes expiry)"""
+    try:
+        from datetime import datetime, timedelta, timezone
+        import jwt
+        
+        payload = {
+            "sub": email,
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+            "type": "password_reset",
+            "iat": datetime.now(timezone.utc)
+        }
+        
+        token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+        auth_log(f"Generated app reset token for {email} (expires in 30 mins)")
+        return token
+        
+    except Exception as e:
+        auth_log(f"Failed to generate reset token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate reset token"
+        )
+
+
+def verify_app_reset_token(token: str) -> Optional[str]:
+    """Verify JWT reset token and return email"""
+    try:
+        import jwt
+        
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        
+        # Check if this is a password reset token
+        if payload.get("type") != "password_reset":
+            auth_log(f"Invalid token type: {payload.get('type')}")
+            return None
+        
+        email = payload.get("sub")
+        if not email:
+            auth_log(f"No email in token payload")
+            return None
+        
+        auth_log(f"Reset token verified for {email}")
+        return email
+        
+    except jwt.ExpiredSignatureError:
+        auth_log(f"Reset token expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        auth_log(f"Invalid reset token: {e}")
+        return None
+    except Exception as e:
+        auth_log(f"Token verification error: {e}")
+        return None
+
+
+async def reset_password_with_token(email: str, new_password: str) -> bool:
+    """Reset password using email and new password"""
+    try:
+        # Hash new password
+        new_hash, new_salt = hash_password(new_password)
+        
+        # Update user password in database
+        result = await users_collection().update_one(
+            {"email": email},
+            {
+                "$set": {
+                    "password_hash": new_hash,
+                    "password_salt": new_salt,
+                    "password_updated_at": datetime.now(timezone.utc),
+                    "password_migrated": True  # Mark as using new format
+                }
+            }
+        )
+        
+        if result.modified_count == 0:
+            auth_log(f"No user found with email: {email}")
+            return False
+        
+        auth_log(f"Password reset successful for {email}")
+        return True
+        
+    except Exception as e:
+        auth_log(f"Password reset failed: {e}")
+        return False
+
+
+def invalidate_reset_token(token: str) -> bool:
+    """Invalidate a reset token by adding it to used tokens collection"""
+    try:
+        # Add token to used tokens collection
+        asyncio.run(reset_tokens_collection().insert_one({
+            "_id": str(ObjectId()),
+            "token": token,
+            "used_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1)  # Keep for 1 hour
+        }))
+        
+        auth_log(f"Reset token invalidated")
+        return True
+        
+    except Exception as e:
+        auth_log(f"Failed to invalidate token: {e}")
+        return False
+
+
+@router.post("/forgot-password-app")
+async def forgot_password_app(request: ForgotPasswordRequest) -> dict:
+    """
+    Generate reset token for app (no email required)
+    Returns token directly to app for display
+    """
+    try:
+        email = request.email
+        
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email is required"
+            )
+        
+        # Check if user exists
+        user = await users_collection().find_one({"email": email})
+        if not user:
+            # For security, still return a response but don't reveal user doesn't exist
+            auth_log(f"Fogot password attempt for non-existent email: {email}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Generate reset token
+        reset_token = generate_app_reset_token(email)
+        
+        # Store token in database for verification
+        await reset_tokens_collection().insert_one({
+            "_id": str(ObjectId()),
+            "email": email,
+            "token": reset_token,
+            "created_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=30),
+            "used": False
+        })
+        
+        auth_log(f"App reset token generated for {email}")
+        
+        return {
+            "success": True,
+            "message": "Reset token generated successfully",
+            "reset_token": reset_token,
+            "expires_in_minutes": 30
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"App forgot password error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate reset token"
+        )
+
+
+@router.get("/verify-reset-token/{token}")
+async def verify_reset_token_app(token: str) -> dict:
+    """Verify if reset token is valid"""
+    try:
+        # Verify JWT token
+        email = verify_app_reset_token(token)
+        
+        if not email:
+            return {
+                "valid": False,
+                "message": "Invalid or expired token"
+            }
+        
+        # Check if token exists in database and not used
+        token_doc = await reset_tokens_collection().find_one({
+            "token": token,
+            "used": False
+        })
+        
+        if not token_doc:
+            return {
+                "valid": False,
+                "message": "Token not found or already used"
+            }
+        
+        # Check if token is expired
+        if token_doc.get("expires_at", datetime.now(timezone.utc)) < datetime.now(timezone.utc):
+            return {
+                "valid": False,
+                "message": "Token expired"
+            }
+        
+        return {
+            "valid": True,
+            "message": "Token is valid",
+            "email": email
+        }
+        
+    except Exception as e:
+        auth_log(f"Token verification error: {e}")
+        return {
+            "valid": False,
+            "message": "Token verification failed"
+        }
+
+
+@router.post("/reset-password-app")
+async def reset_password_app(request: PasswordResetRequest) -> dict:
+    """Reset password using token (app-only flow)"""
+    try:
+        token = request.token
+        new_password = request.new_password
+        
+        if not token or not new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Token and new password are required"
+            )
+        
+        # Verify token
+        email = verify_app_reset_token(token)
+        
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired token"
+            )
+        
+        # Check if token exists in database and not used
+        token_doc = await reset_tokens_collection().find_one({
+            "token": token,
+            "used": False
+        })
+        
+        if not token_doc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Token not found or already used"
+            )
+        
+        # Reset password
+        success = await reset_password_with_token(email, new_password)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reset password"
+            )
+        
+        # Mark token as used
+        await reset_tokens_collection().update_one(
+            {"token": token},
+            {"$set": {"used": True, "used_at": datetime.now(timezone.utc)}}
+        )
+        
+        # Invalidate all refresh tokens for this user
+        try:
+            user = await users_collection().find_one({"email": email})
+            if user:
+                await refresh_tokens_collection().update_many(
+                    {"user_id": str(user["_id"])},
+                    {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
+                )
+        except Exception as e:
+            auth_log(f"Failed to invalidate refresh tokens: {e}")
+        
+        auth_log(f"Password reset completed for {email}")
+        
+        return {
+            "success": True,
+            "message": "Password reset successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"App reset password error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset password"
+        )

@@ -670,3 +670,353 @@ async def restrict_member(
     
     await _log_activity(group_id, current_user, "member_restricted", {"user_id": member_id})
     return {"status": "restricted", "permissions": permissions}
+
+
+# ============================================================================
+# WHATSAPP-STYLE GROUP ADMIN FUNCTIONS
+# ============================================================================
+
+@router.put("/{group_id}/permissions/member-add")
+async def toggle_member_add_permission(
+    group_id: str,
+    enabled: bool = True,
+    current_user: str = Depends(get_current_user)
+):
+    """Enable/disable member add permission for non-admin members"""
+    group = await _require_group(group_id, current_user)
+    if not _is_admin(group, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can change permissions")
+    
+    # Update group permissions
+    await chats_collection().update_one(
+        {"_id": group_id},
+        {"$set": {"permissions.allow_member_add": enabled}}
+    )
+    
+    await _log_activity(group_id, current_user, "member_add_permission_toggled", {"enabled": enabled})
+    
+    return {
+        "success": True,
+        "message": f"Member add permission {'enabled' if enabled else 'disabled'}",
+        "permissions": {
+            "allow_member_add": enabled
+        }
+    }
+
+
+@router.get("/{group_id}/participants")
+async def get_group_participants(
+    group_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """View all group participants with roles and permissions"""
+    group = await _require_group(group_id, current_user)
+    
+    member_ids = group.get("members", [])
+    admins = group.get("admins", [])
+    
+    # Fetch member details
+    participants = []
+    
+    async def fetch_participant(uid: str) -> Optional[dict]:
+        # Try cache first
+        user_profile = await UserCacheService.get_user_profile(uid)
+        if user_profile:
+            return user_profile
+        # Fallback to database
+        return await users_collection().find_one({"_id": uid})
+    
+    # Use gather for parallel fetching
+    tasks = [fetch_participant(uid) for uid in member_ids]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    for uid, user in zip(member_ids, results):
+        if isinstance(user, Exception) or not user:
+            # Create basic participant info if user not found
+            participant = {
+                "user_id": uid,
+                "name": "Unknown User",
+                "email": uid,
+                "role": "admin" if uid in admins else "member",
+                "is_admin": uid in admins,
+                "added_at": group.get("created_at"),
+                "status": "unknown"
+            }
+        else:
+            participant = {
+                "user_id": uid,
+                "name": user.get("name", "Unknown User"),
+                "email": user.get("email", uid),
+                "username": user.get("username"),
+                "avatar_url": user.get("avatar_url"),
+                "role": "admin" if uid in admins else "member",
+                "is_admin": uid in admins,
+                "is_online": user.get("is_online", False),
+                "last_seen": user.get("last_seen"),
+                "status": user.get("status", "available"),
+                "added_at": group.get("created_at")
+            }
+        
+        participants.append(participant)
+    
+    # Sort by role (admins first) then by name
+    participants.sort(key=lambda x: (0 if x["is_admin"] else 1, x["name"].lower()))
+    
+    return {
+        "group_id": group_id,
+        "participants": participants,
+        "total_count": len(participants),
+        "admin_count": len(admins),
+        "member_count": len(member_ids) - len(admins),
+        "permissions": {
+            "allow_member_add": group.get("permissions", {}).get("allow_member_add", False),
+            "current_user_is_admin": _is_admin(group, current_user)
+        }
+    }
+
+
+@router.get("/{group_id}/contacts/search")
+async def search_contacts_for_group(
+    group_id: str,
+    q: str = "",
+    limit: int = 50,
+    current_user: str = Depends(get_current_user)
+):
+    """Search contacts from phonebook for adding to group"""
+    group = await _require_group(group_id, current_user)
+    
+    # Get current members to exclude them from suggestions
+    current_members = set(group.get("members", []))
+    
+    # Get user's contacts
+    contacts = await UserCacheService.get_user_contacts(current_user)
+    if not contacts:
+        # Fallback to database
+        user_data = await users_collection().find_one({"_id": current_user})
+        contacts = user_data.get("contacts", []) if user_data else []
+        await UserCacheService.set_user_contacts(current_user, contacts)
+    
+    # Filter out current members
+    available_contacts = [uid for uid in contacts if uid not in current_members]
+    
+    if not available_contacts:
+        return {
+            "contacts": [],
+            "total_count": 0,
+            "query": q,
+            "message": "No contacts available to add"
+        }
+    
+    # Get contact details
+    cursor = users_collection().find(
+        {"_id": {"$in": available_contacts}},
+        {
+            "_id": 1,
+            "name": 1,
+            "email": 1,
+            "username": 1,
+            "avatar_url": 1,
+            "is_online": 1,
+            "last_seen": 1,
+            "status": 1,
+            "phone": 1  # Include phone for WhatsApp-like experience
+        }
+    )
+    
+    # Handle cursor (mock vs real DB)
+    if hasattr(cursor, '__await__'):
+        cursor = await cursor
+    
+    contacts_list = []
+    async for contact in cursor:
+        contact_data = {
+            "id": contact.get("_id"),
+            "name": contact.get("name", "Unknown"),
+            "email": contact.get("email", ""),
+            "username": contact.get("username", ""),
+            "avatar_url": contact.get("avatar_url"),
+            "phone": contact.get("phone", ""),
+            "is_online": contact.get("is_online", False),
+            "last_seen": contact.get("last_seen"),
+            "status": contact.get("status", "available")
+        }
+        
+        # Apply search filter if provided
+        if q:
+            q_lower = q.lower()
+            search_fields = [
+                contact_data["name"].lower(),
+                contact_data["username"].lower() if contact_data["username"] else "",
+                contact_data["email"].lower(),
+                contact_data["phone"].lower() if contact_data["phone"] else ""
+            ]
+            
+            if any(q_lower in field for field in search_fields if field):
+                contacts_list.append(contact_data)
+        else:
+            contacts_list.append(contact_data)
+    
+    # Sort by online status first, then by name
+    contacts_list.sort(key=lambda x: (0 if x["is_online"] else 1, x["name"].lower()))
+    
+    # Apply limit
+    contacts_list = contacts_list[:limit]
+    
+    return {
+        "contacts": contacts_list,
+        "total_count": len(contacts_list),
+        "query": q,
+        "limit": limit,
+        "group_id": group_id
+    }
+
+
+@router.post("/{group_id}/participants/add-multiple")
+async def add_multiple_participants(
+    group_id: str,
+    participant_ids: List[str],
+    current_user: str = Depends(get_current_user)
+):
+    """Add multiple participants to group at once (WhatsApp-style)"""
+    group = await _require_group(group_id, current_user)
+    
+    # Check if current user is admin or if member add is allowed
+    is_admin = _is_admin(group, current_user)
+    allow_member_add = group.get("permissions", {}).get("allow_member_add", False)
+    
+    if not is_admin and not allow_member_add:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can add members (or member add permission required)"
+        )
+    
+    if not participant_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No participant IDs provided"
+    )
+    
+    # Validate and filter participant IDs
+    valid_participants = []
+    for pid in participant_ids:
+        if pid and pid.strip() and pid != current_user:
+            pid = pid.strip()
+            if pid not in group.get("members", []) and pid not in valid_participants:
+                valid_participants.append(pid)
+    
+    if not valid_participants:
+        return {
+            "success": True,
+            "message": "No new participants to add",
+            "added_count": 0,
+            "participants": []
+        }
+    
+    # Verify participants exist in database
+    existing_users = []
+    cursor = users_collection().find({"_id": {"$in": valid_participants}})
+    
+    if hasattr(cursor, '__await__'):
+        cursor = await cursor
+    
+    async for user in cursor:
+        existing_users.append(user["_id"])
+    
+    # Filter to only existing users
+    final_participants = [pid for pid in valid_participants if pid in existing_users]
+    
+    if not final_participants:
+        return {
+            "success": True,
+            "message": "No valid participants found",
+            "added_count": 0,
+            "participants": []
+        }
+    
+    try:
+        # Add participants to group
+        update_result = await chats_collection().update_one(
+            {"_id": group_id},
+            {"$addToSet": {"members": {"$each": final_participants}}}
+        )
+        
+        # Update cache
+        current_members = group.get("members", []) + final_participants
+        await GroupCacheService.set_group_members(group_id, current_members)
+        
+        # Invalidate group info cache
+        try:
+            await GroupCacheService.invalidate_group_cache(group_id)
+        except AttributeError:
+            pass  # Method doesn't exist, continue
+        
+        # Log activity for each added participant
+        for pid in final_participants:
+            await _log_activity(group_id, current_user, "member_added", {"user_id": pid})
+        
+        # Get details of added participants
+        added_participants_details = []
+        cursor = users_collection().find({"_id": {"$in": final_participants}})
+        
+        if hasattr(cursor, '__await__'):
+            cursor = await cursor
+        
+        async for user in cursor:
+            added_participants_details.append({
+                "user_id": user["_id"],
+                "name": user.get("name", "Unknown User"),
+                "email": user.get("email", ""),
+                "username": user.get("username", ""),
+                "avatar_url": user.get("avatar_url"),
+                "phone": user.get("phone", "")
+            })
+        
+        return {
+            "success": True,
+            "message": f"Successfully added {len(final_participants)} participants",
+            "added_count": len(final_participants),
+            "participants": added_participants_details,
+            "total_members": len(current_members) + len(final_participants)
+        }
+        
+    except Exception as e:
+        auth_log(f"Error adding multiple participants: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add participants"
+        )
+
+
+@router.get("/{group_id}/info/add-participants")
+async def get_add_participants_info(
+    group_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get group info with add participants option (WhatsApp-style)"""
+    group = await _require_group(group_id, current_user)
+    
+    is_admin = _is_admin(group, current_user)
+    allow_member_add = group.get("permissions", {}).get("allow_member_add", False)
+    can_add_members = is_admin or allow_member_add
+    
+    member_count = len(group.get("members", []))
+    max_group_size = 256  # WhatsApp-like limit
+    
+    return {
+        "group_id": group_id,
+        "group_name": group.get("name", ""),
+        "group_description": group.get("description", ""),
+        "member_count": member_count,
+        "max_group_size": max_group_size,
+        "can_add_more": member_count < max_group_size,
+        "can_add_members": can_add_members,
+        "current_user_is_admin": is_admin,
+        "permissions": {
+            "allow_member_add": allow_member_add
+        },
+        "add_participants_button": {
+            "visible": can_add_members and member_count < max_group_size,
+            "text": f"+ Add Participants ({max_group_size - member_count} remaining)",
+            "enabled": can_add_members
+        }
+    }

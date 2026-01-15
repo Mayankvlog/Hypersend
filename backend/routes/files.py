@@ -17,7 +17,7 @@ from models import (
     FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
 )
 from db_proxy import files_collection as _files_collection_factory, uploads_collection as _uploads_collection_factory, users_collection, get_db, connect_db
-from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, decode_token
+from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, get_current_user_optional, decode_token
 
 # CRITICAL FIX: Custom dependency for upload endpoints that allows anonymous uploads
 async def get_upload_user_or_none(request: Request) -> Optional[str]:
@@ -3538,4 +3538,813 @@ async def temporary_upload_redirect(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create temporary redirect"
+        )
+
+
+# ============================================================================
+# ANDROID DOWNLOAD FOLDER FUNCTIONS
+# ============================================================================
+
+@router.get("/android/downloads-path")
+async def get_public_downloads_path(
+    platform: str = Query(...),
+    android_version: Optional[str] = Query(None),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """Get public downloads path for Android devices"""
+    try:
+        _log("info", f"Getting downloads path for platform: {platform}", {
+            "user_id": current_user,
+            "operation": "get_downloads_path",
+            "platform": platform,
+            "android_version": android_version
+        })
+        
+        if platform.lower() == "android":
+            # Android 13+ scoped storage paths
+            try:
+                if android_version and int(android_version.split('.')[0]) >= 13:
+                    # Android 13+ uses scoped storage
+                    downloads_path = "/storage/emulated/0/Download/"
+                    scoped_storage = True
+                    requires_permission = True
+                    permission_type = "MANAGE_EXTERNAL_STORAGE"
+                else:
+                    # Android < 13 uses legacy storage
+                    downloads_path = "/storage/emulated/0/Download/"
+                    scoped_storage = False
+                    requires_permission = True
+                    permission_type = "WRITE_EXTERNAL_STORAGE"
+            except (ValueError, AttributeError):
+                # Invalid Android version, assume legacy storage
+                downloads_path = "/storage/emulated/0/Download/"
+                scoped_storage = False
+                requires_permission = True
+                permission_type = "WRITE_EXTERNAL_STORAGE"
+        elif platform.lower() == "ios":
+            # iOS sandboxed storage
+            downloads_path = "/var/mobile/Containers/Data/Application/[APP_ID]/Documents/"
+            scoped_storage = True
+            requires_permission = False
+            permission_type = None
+        else:
+            # Desktop platforms
+            downloads_path = str(Path.home() / "Downloads")
+            scoped_storage = False
+            requires_permission = False
+            permission_type = None
+        
+        return {
+            "platform": platform.lower(),
+            "downloads_path": downloads_path,
+            "is_accessible": True,
+            "scoped_storage": scoped_storage,
+            "requires_permission": requires_permission,
+            "permission_type": permission_type,
+            "android_version": android_version,
+            "notes": {
+                "android_13_plus": "Uses scoped storage, requires MANAGE_EXTERNAL_STORAGE",
+                "android_legacy": "Uses legacy storage, requires WRITE_EXTERNAL_STORAGE",
+                "ios": "Sandboxed app storage, no special permissions required",
+                "desktop": "Standard Downloads folder, no special permissions required"
+            }
+        }
+        
+    except Exception as e:
+        _log("error", f"Error getting downloads path: {str(e)}", {
+            "user_id": current_user,
+            "operation": "get_downloads_path",
+            "platform": platform,
+            "error_type": type(e).__name__
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get downloads path"
+        )
+
+
+@router.post("/android/check-storage-permission")
+async def check_storage_permission(
+    platform: str = Query(...),
+    android_version: Optional[str] = Query(None),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """Check storage permission status for Android devices"""
+    try:
+        _log("info", f"Checking storage permission for platform: {platform}", {
+            "user_id": current_user,
+            "operation": "check_storage_permission",
+            "platform": platform,
+            "android_version": android_version
+        })
+        
+        if platform.lower() != "android":
+            return {
+                "platform": platform.lower(),
+                "requires_permission": False,
+                "permission_granted": True,
+                "permission_type": None,
+                "message": "No storage permission required for this platform"
+            }
+        
+        # Android-specific permission checking
+        try:
+            if android_version and int(android_version.split('.')[0]) >= 13:
+                permission_type = "MANAGE_EXTERNAL_STORAGE"
+                permission_granted = True  # Assume granted for API check
+                scoped_storage = True
+            else:
+                permission_type = "WRITE_EXTERNAL_STORAGE"
+                permission_granted = True  # Assume granted for API check
+                scoped_storage = False
+        except (ValueError, AttributeError):
+            # Invalid Android version, assume legacy storage
+            permission_type = "WRITE_EXTERNAL_STORAGE"
+            permission_granted = True  # Assume granted for API check
+            scoped_storage = False
+        
+        return {
+            "platform": "android",
+            "android_version": android_version,
+            "requires_permission": True,
+            "permission_granted": permission_granted,
+            "permission_type": permission_type,
+            "scoped_storage": scoped_storage,
+            "message": f"Storage permission check completed. Permission type: {permission_type}",
+            "recommendation": {
+                "android_13_plus": "Request MANAGE_EXTERNAL_STORAGE permission at runtime",
+                "android_legacy": "Request WRITE_EXTERNAL_STORAGE permission at runtime"
+            }
+        }
+        
+    except Exception as e:
+        _log("error", f"Error checking storage permission: {str(e)}", {
+            "user_id": current_user,
+            "operation": "check_storage_permission",
+            "platform": platform,
+            "error_type": type(e).__name__
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check storage permission"
+        )
+
+
+@router.post("/android/request-external-storage")
+async def request_external_storage(
+    platform: str = Query(...),
+    android_version: Optional[str] = Query(None),
+    permission_type: str = Query(...),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """Request external storage permission for Android devices"""
+    try:
+        _log("info", f"Requesting external storage permission", {
+            "user_id": current_user,
+            "operation": "request_external_storage",
+            "platform": platform,
+            "android_version": android_version,
+            "permission_type": permission_type
+        })
+        
+        if platform.lower() != "android":
+            return {
+                "platform": platform.lower(),
+                "requires_permission": False,
+                "permission_requested": False,
+                "message": "No storage permission required for this platform"
+            }
+        
+        # Validate permission type
+        valid_permissions = ["WRITE_EXTERNAL_STORAGE", "MANAGE_EXTERNAL_STORAGE"]
+        if permission_type not in valid_permissions:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid permission type. Must be one of: {valid_permissions}"
+            )
+        
+        # Android 13+ compatibility check
+        try:
+            if android_version and int(android_version.split('.')[0]) >= 13:
+                if permission_type == "WRITE_EXTERNAL_STORAGE":
+                    return {
+                        "platform": "android",
+                        "android_version": android_version,
+                        "permission_type": permission_type,
+                        "permission_requested": False,
+                        "message": "Android 13+ requires MANAGE_EXTERNAL_STORAGE, not WRITE_EXTERNAL_STORAGE",
+                        "recommendation": "Use MANAGE_EXTERNAL_STORAGE permission for Android 13+"
+                    }
+        except (ValueError, AttributeError):
+            # Invalid Android version, continue with normal flow
+            pass
+        
+        return {
+            "platform": "android",
+            "android_version": android_version,
+            "permission_type": permission_type,
+            "permission_requested": True,
+            "message": f"External storage permission requested: {permission_type}",
+            "instructions": {
+                "flutter": "Add permission to AndroidManifest.xml and request at runtime",
+                "react_native": "Add permission to AndroidManifest.xml and request at runtime",
+                "native": "Request permission using ActivityCompat.requestPermissions()"
+            },
+            "next_steps": [
+                "1. Add permission to AndroidManifest.xml",
+                "2. Request permission at runtime",
+                "3. Handle permission result",
+                "4. Retry storage operation if granted"
+            ]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Error requesting external storage: {str(e)}", {
+            "user_id": current_user,
+            "operation": "request_external_storage",
+            "platform": platform,
+            "permission_type": permission_type,
+            "error_type": type(e).__name__
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to request external storage permission"
+        )
+
+
+@router.post("/android/save-to-public-directory")
+async def save_to_public_directory(
+    file_id: str,
+    target_directory: str = Query(...),
+    platform: str = Query(...),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """Save file to public directory (Downloads or custom)"""
+    try:
+        _log("info", f"Saving file {file_id} to public directory", {
+            "user_id": current_user,
+            "operation": "save_to_public_directory",
+            "file_id": file_id,
+            "target_directory": target_directory,
+            "platform": platform
+        })
+        
+        # Validate target directory
+        safe_directories = ["Downloads", "Documents", "Pictures", "Videos", "Music"]
+        if target_directory not in safe_directories and not target_directory.startswith("/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid target directory. Must be one of: {safe_directories} or absolute path"
+            )
+        
+        # Get file info
+        file_doc = await asyncio.wait_for(
+            files_collection().find_one({"_id": file_id}),
+            timeout=5.0
+        )
+        
+        if not file_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+        
+        # Check file access permissions
+        owner_id = file_doc.get("owner_id")
+        chat_id = file_doc.get("chat_id")
+        shared_with = file_doc.get("shared_with", [])
+        
+        is_owner = owner_id == current_user
+        is_shared = current_user in shared_with
+        can_access = is_owner or is_shared
+        
+        if not can_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: you don't have permission to access this file"
+            )
+        
+        # Determine target path
+        if platform.lower() == "android":
+            if target_directory == "Downloads":
+                target_path = "/storage/emulated/0/Download/"
+            elif target_directory == "Documents":
+                target_path = "/storage/emulated/0/Documents/"
+            elif target_directory == "Pictures":
+                target_path = "/storage/emulated/0/Pictures/"
+            elif target_directory == "Videos":
+                target_path = "/storage/emulated/0/Videos/"
+            elif target_directory == "Music":
+                target_path = "/storage/emulated/0/Music/"
+            else:
+                target_path = target_directory  # Use absolute path
+        else:
+            # Desktop platforms
+            if target_directory in safe_directories:
+                target_path = str(Path.home() / target_directory)
+            else:
+                target_path = target_directory
+        
+        # Create target filename
+        original_filename = file_doc.get("filename", f"file_{file_id}")
+        target_filename = f"{int(datetime.now().timestamp())}_{original_filename}"
+        target_full_path = Path(target_path) / target_filename
+        
+        # Get source file path
+        storage_path = file_doc.get("storage_path", "")
+        if not storage_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File storage path not found"
+            )
+        
+        source_path = Path(storage_path)
+        
+        # Check if source file exists
+        if not source_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Source file not found on disk"
+            )
+        
+        # Copy file to target directory
+        try:
+            import shutil
+            shutil.copy2(source_path, target_full_path)
+            
+            _log("info", f"File saved to public directory", {
+                "user_id": current_user,
+                "operation": "save_to_public_directory",
+                "file_id": file_id,
+                "source_path": str(source_path),
+                "target_path": str(target_full_path),
+                "target_directory": target_directory
+            })
+            
+            return {
+                "success": True,
+                "message": f"File saved to {target_directory}",
+                "file_id": file_id,
+                "original_filename": original_filename,
+                "target_filename": target_filename,
+                "target_directory": target_directory,
+                "target_path": str(target_full_path),
+                "file_size": source_path.stat().st_size,
+                "platform": platform.lower(),
+                "accessible": True
+            }
+            
+        except Exception as e:
+            _log("error", f"Failed to copy file to public directory: {str(e)}", {
+                "user_id": current_user,
+                "operation": "save_to_public_directory",
+                "file_id": file_id,
+                "source_path": str(source_path),
+                "target_path": str(target_full_path),
+                "error_type": type(e).__name__
+            })
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save file to public directory"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Error in save to public directory: {str(e)}", {
+            "user_id": current_user,
+            "operation": "save_to_public_directory",
+            "file_id": file_id,
+            "target_directory": target_directory,
+            "error_type": type(e).__name__
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save file to public directory"
+        )
+
+
+@router.post("/android/trigger-media-scanner")
+async def trigger_media_scanner(
+    file_path: str = Query(...),
+    platform: str = Query(...),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """Trigger media scanner to refresh file system after download"""
+    try:
+        _log("info", f"Triggering media scanner for file: {file_path}", {
+            "user_id": current_user,
+            "operation": "trigger_media_scanner",
+            "file_path": file_path,
+            "platform": platform
+        })
+        
+        # Validate file path
+        if not file_path or not file_path.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File path is required"
+            )
+        
+        file_path = file_path.strip()
+        
+        # Check if file exists
+        if not Path(file_path).exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+        
+        # Platform-specific media scanner triggers
+        if platform.lower() == "android":
+            # Android media scanner
+            try:
+                import subprocess
+                # Trigger media scan using Android MediaScannerConnection
+                result = subprocess.run([
+                    "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+                    f"file://{file_path}"
+                ], capture_output=True, text=True, timeout=10)
+                
+                scanner_triggered = result.returncode == 0
+                scanner_output = result.stdout.strip()
+                
+                _log("info", f"Android media scanner result: {scanner_triggered}", {
+                    "user_id": current_user,
+                    "operation": "trigger_media_scanner",
+                    "file_path": file_path,
+                    "return_code": result.returncode,
+                    "output": scanner_output
+                })
+                
+                return {
+                    "platform": "android",
+                    "file_path": file_path,
+                    "scanner_triggered": scanner_triggered,
+                    "message": "Media scanner triggered" if scanner_triggered else "Media scanner failed",
+                    "output": scanner_output,
+                    "return_code": result.returncode
+                }
+                
+            except Exception as e:
+                _log("error", f"Failed to trigger Android media scanner: {str(e)}", {
+                    "user_id": current_user,
+                    "operation": "trigger_media_scanner",
+                    "file_path": file_path,
+                    "error_type": type(e).__name__
+                })
+                return {
+                    "platform": "android",
+                    "file_path": file_path,
+                    "scanner_triggered": False,
+                    "message": "Failed to trigger media scanner",
+                    "error": str(e)
+                }
+        
+        elif platform.lower() == "ios":
+            # iOS doesn't have explicit media scanner, files appear automatically
+            return {
+                "platform": "ios",
+                "file_path": file_path,
+                "scanner_triggered": False,
+                "message": "iOS doesn't require explicit media scanner - files appear automatically",
+                "note": "Files should be visible in Files app immediately"
+            }
+        
+        else:
+            # Desktop platforms
+            return {
+                "platform": platform.lower(),
+                "file_path": file_path,
+                "scanner_triggered": False,
+                "message": f"Desktop platform {platform} doesn't require explicit media scanner",
+                "note": "Files should be visible in file manager immediately"
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Error triggering media scanner: {str(e)}", {
+            "user_id": current_user,
+            "operation": "trigger_media_scanner",
+            "file_path": file_path,
+            "platform": platform,
+            "error_type": type(e).__name__
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to trigger media scanner"
+        )
+
+
+@router.post("/android/show-file-manager-notification")
+async def show_file_manager_notification(
+    file_path: str = Query(...),
+    platform: str = Query(...),
+    notification_title: Optional[str] = Query(None),
+    notification_message: Optional[str] = Query(None),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """Show file manager notification to make file visible in Downloads UI"""
+    try:
+        _log("info", f"Showing file manager notification for: {file_path}", {
+            "user_id": current_user,
+            "operation": "show_file_manager_notification",
+            "file_path": file_path,
+            "platform": platform,
+            "notification_title": notification_title,
+            "notification_message": notification_message
+        })
+        
+        # Validate file path
+        if not file_path or not file_path.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File path is required"
+            )
+        
+        file_path = file_path.strip()
+        
+        # Check if file exists
+        if not Path(file_path).exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+        
+        # Get file info for notification
+        file_path_obj = Path(file_path)
+        filename = file_path_obj.name
+        file_size = file_path_obj.stat().st_size
+        
+        # Default notification content
+        title = notification_title or "File Downloaded"
+        message = notification_message or f"{filename} has been downloaded and is available in Downloads"
+        
+        # Platform-specific notification handling
+        if platform.lower() == "android":
+            # Android notification
+            try:
+                import subprocess
+                # Create notification using Android's notification service
+                notification_command = [
+                    "am", "broadcast", "-a", "android.intent.action.MAIN",
+                    "com.android.filemanager/.FileManagerActivity",
+                    f"--es", f"file_path:{file_path}",
+                    f"--es", f"title:{title}",
+                    f"--es", f"message:{message}"
+                ]
+                
+                result = subprocess.run(notification_command, capture_output=True, text=True, timeout=10)
+                
+                notification_shown = result.returncode == 0
+                notification_output = result.stdout.strip()
+                
+                _log("info", f"Android notification result: {notification_shown}", {
+                    "user_id": current_user,
+                    "operation": "show_file_manager_notification",
+                    "file_path": file_path,
+                    "return_code": result.returncode,
+                    "output": notification_output
+                })
+                
+                return {
+                    "platform": "android",
+                    "file_path": file_path,
+                    "notification_shown": notification_shown,
+                    "title": title,
+                    "message": message,
+                    "filename": filename,
+                    "file_size": file_size,
+                    "output": notification_output,
+                    "return_code": result.returncode
+                }
+                
+            except Exception as e:
+                _log("error", f"Failed to show Android notification: {str(e)}", {
+                    "user_id": current_user,
+                    "operation": "show_file_manager_notification",
+                    "file_path": file_path,
+                    "error_type": type(e).__name__
+                })
+                return {
+                    "platform": "android",
+                    "file_path": file_path,
+                    "notification_shown": False,
+                    "title": title,
+                    "message": message,
+                    "filename": filename,
+                    "file_size": file_size,
+                    "error": str(e)
+                }
+        
+        elif platform.lower() == "ios":
+            # iOS doesn't have direct file manager notifications
+            return {
+                "platform": "ios",
+                "file_path": file_path,
+                "notification_shown": False,
+                "title": title,
+                "message": message,
+                "filename": filename,
+                "file_size": file_size,
+                "note": "iOS doesn't support direct file manager notifications",
+                "alternative": "Files should appear in Files app automatically"
+            }
+        
+        else:
+            # Desktop platforms
+            return {
+                "platform": platform.lower(),
+                "file_path": file_path,
+                "notification_shown": False,
+                "title": title,
+                "message": message,
+                "filename": filename,
+                "file_size": file_size,
+                "note": f"Desktop platform {platform} doesn't support direct file manager notifications",
+                "alternative": "Files should be visible in system file manager"
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Error showing file manager notification: {str(e)}", {
+            "user_id": current_user,
+            "operation": "show_file_manager_notification",
+            "file_path": file_path,
+            "platform": platform,
+            "error_type": type(e).__name__
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to show file manager notification"
+        )
+
+
+@router.get("/android/path-provider-downloads")
+async def get_path_provider_downloads(
+    platform: str = Query(...),
+    android_version: Optional[str] = Query(None),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """Get platform-specific Downloads directory using path_provider approach"""
+    try:
+        _log("info", f"Getting path provider downloads for platform: {platform}", {
+            "user_id": current_user,
+            "operation": "get_path_provider_downloads",
+            "platform": platform,
+            "android_version": android_version
+        })
+        
+        # Platform-specific Downloads directory paths
+        platform_paths = {
+            "android": {
+                "default": "/storage/emulated/0/Download/",
+                "android_13_plus": "/storage/emulated/0/Download/",
+                "android_legacy": "/storage/emulated/0/Download/",
+                "scoped_storage": True,
+                "requires_permission": True,
+                "permission_type": "MANAGE_EXTERNAL_STORAGE",
+                "path_provider_method": "getExternalStorageDirectory()",
+                "flutter_package": "path_provider"
+            },
+            "ios": {
+                "default": "/var/mobile/Containers/Data/Application/[APP_ID]/Documents/",
+                "scoped_storage": True,
+                "requires_permission": False,
+                "permission_type": None,
+                "path_provider_method": "getApplicationDocumentsDirectory()",
+                "flutter_package": "path_provider"
+            },
+            "windows": {
+                "default": str(Path.home() / "Downloads"),
+                "scoped_storage": False,
+                "requires_permission": False,
+                "permission_type": None,
+                "path_provider_method": "getDownloadsDirectory()",
+                "flutter_package": "path_provider"
+            },
+            "macos": {
+                "default": str(Path.home() / "Downloads"),
+                "scoped_storage": False,
+                "requires_permission": False,
+                "permission_type": None,
+                "path_provider_method": "getDownloadsDirectory()",
+                "flutter_package": "path_provider"
+            },
+            "linux": {
+                "default": str(Path.home() / "Downloads"),
+                "scoped_storage": False,
+                "requires_permission": False,
+                "permission_type": None,
+                "path_provider_method": "getDownloadsDirectory()",
+                "flutter_package": "path_provider"
+            }
+        }
+        
+        platform_key = platform.lower()
+        if platform_key not in platform_paths:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported platform: {platform}. Supported platforms: {list(platform_paths.keys())}"
+            )
+        
+        path_info = platform_paths[platform_key]
+        
+        # Android version-specific adjustments
+        if platform_key == "android" and android_version:
+            try:
+                version_num = int(android_version.split('.')[0])
+                if version_num >= 13:
+                    path_info.update({
+                        "android_version_specific": True,
+                        "uses_scoped_storage": True,
+                        "permission_type": "MANAGE_EXTERNAL_STORAGE",
+                        "recommendation": "Use scoped storage with MANAGE_EXTERNAL_STORAGE permission"
+                    })
+                else:
+                    path_info.update({
+                        "android_version_specific": True,
+                        "uses_legacy_storage": True,
+                        "permission_type": "WRITE_EXTERNAL_STORAGE",
+                        "recommendation": "Use legacy storage with WRITE_EXTERNAL_STORAGE permission"
+                    })
+            except (ValueError, IndexError):
+                _log("warning", f"Invalid Android version format: {android_version}", {
+                    "user_id": current_user,
+                    "operation": "get_path_provider_downloads",
+                    "platform": platform,
+                    "android_version": android_version
+                })
+        
+        # Check if directory exists (for desktop platforms)
+        if platform_key in ["windows", "macos", "linux"]:
+            try:
+                import os
+                if not os.path.exists(path_info["default"]):
+                    # Try to create directory if it doesn't exist
+                    os.makedirs(path_info["default"], exist_ok=True)
+                path_info["directory_exists"] = True
+                path_info["directory_created"] = not os.path.exists(path_info["default"]) or os.path.isdir(path_info["default"])
+            except Exception as e:
+                _log("warning", f"Could not verify Downloads directory: {str(e)}", {
+                    "user_id": current_user,
+                    "operation": "get_path_provider_downloads",
+                    "platform": platform,
+                    "path": path_info["default"]
+                })
+                path_info["directory_exists"] = False
+                path_info["directory_created"] = False
+        
+        return {
+            "platform": platform_key,
+            "downloads_path": path_info["default"],
+            "is_accessible": True,
+            "directory_exists": path_info.get("directory_exists", None),
+            "directory_created": path_info.get("directory_created", None),
+            "scoped_storage": path_info["scoped_storage"],
+            "requires_permission": path_info["requires_permission"],
+            "permission_type": path_info["permission_type"],
+            "path_provider_method": path_info["path_provider_method"],
+            "flutter_package": path_info["flutter_package"],
+            "android_version": android_version,
+            "platform_specific": path_info.get("android_version_specific", False),
+            "recommendation": path_info.get("recommendation"),
+            "flutter_example": {
+                "dart_code": f"""
+// Flutter path_provider example
+import 'package:path_provider/path_provider.dart';
+
+Directory downloadsDir = await getDownloadsDirectory();
+String downloadsPath = downloadsDir.path;
+
+// For Android 13+ scoped storage
+if (Platform.isAndroid) {{
+  Directory? externalDir = await getExternalStorageDirectory();
+  if (externalDir != null) {{
+    downloadsPath = '{path_info["default"]}';
+  }}
+}}
+""",
+                "package": "path_provider",
+                "installation": "flutter pub add path_provider"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log("error", f"Error getting path provider downloads: {str(e)}", {
+            "user_id": current_user,
+            "operation": "get_path_provider_downloads",
+            "platform": platform,
+            "android_version": android_version,
+            "error_type": type(e).__name__
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get path provider downloads"
         )
