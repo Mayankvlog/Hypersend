@@ -2371,10 +2371,93 @@ async def download_file(
                 )
             
             # Return file for download
+            # Handle range requests BEFORE returning response
+            range_header = request.headers.get("range")
+            file_size = file_path.stat().st_size
+            
+            if range_header:
+                # Parse range header safely
+                try:
+                    if not range_header.startswith("bytes="):
+                        raise ValueError("Invalid range header format")
+                    
+                    range_part = range_header.replace("bytes=", "")
+                    parts = range_part.split("-")
+                    
+                    if len(parts) != 2:
+                        raise ValueError("Invalid range header format")
+                        
+                    start = int(parts[0].strip()) if parts[0].strip() else 0
+                    end = int(parts[1].strip()) if parts[1].strip() else file_size - 1
+                    
+                    if start < 0 or end >= file_size or start > end:
+                        raise ValueError("Invalid range values")
+                except (ValueError, IndexError) as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid range header: {str(e)}"
+                    )
+                
+                async def file_iterator():
+                    async with aiofiles.open(file_path, "rb") as f:
+                        await f.seek(start)
+                        remaining = end - start + 1
+                        chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
+                        while remaining > 0:
+                            read_size = min(chunk_size, remaining)
+                            data = await f.read(read_size)
+                            if not data:
+                                break
+                            remaining -= len(data)
+                            yield data
+                
+                return StreamingResponse(
+                    file_iterator(),
+                    status_code=206,
+                    headers={
+                        "Content-Range": f"bytes {start}-{end}/{file_size}",
+                        "Content-Length": str(end - start + 1),
+                        "Content-Type": file_doc["mime"],
+                        "Accept-Ranges": "bytes",
+                        "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
+                        "Cache-Control": "no-cache"
+                    }
+                )
+            
+            # Full file download - use streaming for large files to avoid memory issues
+            if file_size > 100 * 1024 * 1024:  # 100MB threshold
+                async def file_iterator():
+                    async with aiofiles.open(file_path, "rb") as f:
+                        chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
+                        remaining = file_size
+                        while remaining > 0:
+                            read_size = min(chunk_size, remaining)
+                            data = await f.read(read_size)
+                            if not data:
+                                break
+                            remaining -= len(data)
+                            yield data
+                
+                return StreamingResponse(
+                    file_iterator(),
+                    headers={
+                        "Content-Length": str(file_size),
+                        "Content-Type": file_doc["mime"],
+                        "Accept-Ranges": "bytes",
+                        "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
+                        "Cache-Control": "no-cache"
+                    }
+                )
+            
+            # Small files - use FileResponse
             return FileResponse(
-                path=str(file_path),
-                filename=file_doc.get("filename", "download"),
-                media_type=file_doc.get("mime_type", "application/octet-stream")
+                file_path,
+                media_type=file_doc["mime"],
+                filename=file_doc["filename"],
+                headers={
+                    "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
+                    "Cache-Control": "no-cache"
+                }
             )
         
         # Check if it's an avatar file
@@ -2421,95 +2504,6 @@ async def download_file(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Failed to download file - service temporarily unavailable"
         )
-    
-    # Handle range requests
-    range_header = request.headers.get("range")
-    file_size = file_path.stat().st_size
-    
-    if range_header:
-        # Parse range header safely
-        try:
-            if not range_header.startswith("bytes="):
-                raise ValueError("Invalid range header format")
-            
-            range_part = range_header.replace("bytes=", "")
-            parts = range_part.split("-")
-            
-            if len(parts) != 2:
-                raise ValueError("Invalid range header format")
-                
-            start = int(parts[0].strip()) if parts[0].strip() else 0
-            end = int(parts[1].strip()) if parts[1].strip() else file_size - 1
-            
-            if start < 0 or end >= file_size or start > end:
-                raise ValueError("Invalid range values")
-        except (ValueError, IndexError) as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid range header: {str(e)}"
-            )
-        
-        async def file_iterator():
-            async with aiofiles.open(file_path, "rb") as f:
-                await f.seek(start)
-                remaining = end - start + 1
-                chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
-                while remaining > 0:
-                    read_size = min(chunk_size, remaining)
-                    data = await f.read(read_size)
-                    if not data:
-                        break
-                    remaining -= len(data)
-                    yield data
-        
-        return StreamingResponse(
-            file_iterator(),
-            status_code=206,
-            headers={
-                "Content-Range": f"bytes {start}-{end}/{file_size}",
-                "Content-Length": str(end - start + 1),
-                "Content-Type": file_doc["mime"],
-                "Accept-Ranges": "bytes",
-                "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
-                "Cache-Control": "no-cache"
-            }
-        )
-    
-    # Full file download - use streaming for large files to avoid memory issues
-    if file_size > 100 * 1024 * 1024:  # 100MB threshold
-        async def file_iterator():
-            async with aiofiles.open(file_path, "rb") as f:
-                chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
-                remaining = file_size
-                while remaining > 0:
-                    read_size = min(chunk_size, remaining)
-                    data = await f.read(read_size)
-                    if not data:
-                        break
-                    remaining -= len(data)
-                    yield data
-        
-        return StreamingResponse(
-            file_iterator(),
-            headers={
-                "Content-Length": str(file_size),
-                "Content-Type": file_doc["mime"],
-                "Accept-Ranges": "bytes",
-                "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
-                "Cache-Control": "no-cache"
-            }
-        )
-    
-    # Small files - use FileResponse
-    return FileResponse(
-        file_path,
-        media_type=file_doc["mime"],
-        filename=file_doc["filename"],
-        headers={
-            "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
-            "Cache-Control": "no-cache"
-        }
-    )
 
 
 @router.post("/{file_id}/share")

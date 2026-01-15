@@ -352,12 +352,35 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
     print(f"[ADD_MEMBERS] Payload: {payload}")
     print(f"[ADD_MEMBERS] Payload Type: {type(payload)}")
     
-    # Extract user_ids from payload with better error handling
+    # Extract user_ids from payload with better error handling and support for different field names
     try:
-        user_ids = payload.user_ids if payload.user_ids else []
-        print(f"[ADD_MEMBERS] User IDs from payload.user_ids: {user_ids}")
+        # Try multiple possible field names that frontend might send
+        user_ids = None
+        if hasattr(payload, 'user_ids'):
+            user_ids = payload.user_ids
+        elif hasattr(payload, 'user_ids'):
+            user_ids = payload.user_ids
+        elif hasattr(payload, 'member_ids'):
+            user_ids = payload.member_ids
+        elif hasattr(payload, 'member_ids'):
+            user_ids = payload.member_ids
+        elif hasattr(payload, 'user_ids'):
+            user_ids = payload.user_ids
+        else:
+            print(f"[ADD_MEMBERS] Warning: No user_ids field found in payload. Available fields: {list(payload.keys())}")
+            user_ids = []
+        
+        # Convert string to list if needed
+        if user_ids and isinstance(user_ids, str):
+            # Handle comma-separated user IDs: "user1@example.com,user2@example.com"
+            user_ids = [uid.strip() for uid in user_ids.split(',') if uid.strip()]
+        elif user_ids and not isinstance(user_ids, list):
+            # Convert single string to list
+            user_ids = [user_ids]
+        
+        print(f"[ADD_MEMBERS] Extracted user_ids: {user_ids}")
     except AttributeError as e:
-        print(f"[ADD_MEMBERS] Error accessing payload.user_ids: {e}")
+        print(f"[ADD_MEMBERS] Error accessing user_ids field: {e}")
         user_ids = []
     except Exception as e:
         print(f"[ADD_MEMBERS] Unexpected error with payload: {e}")
@@ -391,15 +414,27 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
     
     print(f"[ADD_MEMBERS] User {current_user} IS admin - proceeding...")
 
-    # Validate and filter user_ids
+    # Validate and filter user_ids - improved logic
     if not user_ids:
         print(f"[ADD_MEMBERS] No user_ids provided in payload")
         return {"added": 0, "message": "No user IDs provided"}
     
-    # Remove duplicates, empty strings, and current user
+    # Convert to list if string and handle different formats
+    if isinstance(user_ids, str):
+        # Handle comma-separated user IDs: "user1@example.com,user2@example.com"
+        if ',' in user_ids:
+            user_ids = [uid.strip() for uid in user_ids.split(',') if uid.strip()]
+        else:
+            # Handle single user ID string
+            user_ids = [user_ids.strip()] if user_ids.strip() else []
+    elif not isinstance(user_ids, list):
+        print(f"[ADD_MEMBERS] Invalid user_ids format: {type(user_ids)}. Expected list or string.")
+        return {"added": 0, "message": "Invalid user_ids format"}
+    
+    # Remove empty strings and whitespace
     filtered_ids = []
     for uid in user_ids:
-        if uid and uid.strip() and uid != current_user:
+        if uid and uid.strip() and uid.strip() != current_user:
             if uid not in filtered_ids:  # Remove duplicates
                 filtered_ids.append(uid.strip())
     

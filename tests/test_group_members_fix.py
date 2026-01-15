@@ -11,9 +11,20 @@ import os
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+# Set mock database
+os.environ['USE_MOCK_DB'] = 'True'
+os.environ['DEBUG'] = 'True'
+
 from fastapi.testclient import TestClient
-from main import app
-from models import GroupCreate, GroupMembersUpdate
+try:
+    from main import app
+    from models import GroupCreate, GroupMembersUpdate
+except ImportError as e:
+    print(f"Import error: {e}")
+    sys.exit(1)
+
+import json
+from datetime import datetime
 
 
 class TestGroupMembersFix:

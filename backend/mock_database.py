@@ -14,6 +14,12 @@ class MockDatabase:
     def __init__(self):
         self.collections = {}
     
+    def clear_all(self):
+        """Clear all collections"""
+        for collection in self.collections.values():
+            collection.clear()
+        print(f"[MOCK_DB] Cleared all collections")
+    
     def __getattr__(self, name):
         """Create collections on demand"""
         if name == '__await__':
@@ -76,6 +82,12 @@ class MockCollection:
     
     def _generate_id(self):
         return str(self._id_counter)
+    
+    def clear(self):
+        """Clear all data from the collection"""
+        self.data.clear()
+        self._id_counter = 1
+        print(f"[MOCK_DB] Cleared collection: {self.name}")
     
     async def insert_one(self, document: Dict) -> MagicMock:
         # Use provided _id or generate one

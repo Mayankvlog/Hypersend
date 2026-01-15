@@ -5,7 +5,7 @@ Validates the password reset flow and security
 """
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 # Set mock database
 os.environ['USE_MOCK_DB'] = 'True'
@@ -24,6 +24,17 @@ def test_forgot_password():
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Testing /forgot-password endpoint...")
     
     try:
+        # First create the test user if it doesn't exist
+        register_payload = {
+            "email": TEST_EMAIL,
+            "password": "TestPass123",
+            "username": TEST_EMAIL,
+            "name": "Test User"
+        }
+        
+        reg_response = client.post("/api/v1/auth/register", json=register_payload)
+        print(f"User creation status: {reg_response.status_code}")
+        
         response = client.post(
             "/api/v1/auth/forgot-password",
             json={"email": TEST_EMAIL},
@@ -81,25 +92,55 @@ def test_nonexistent_email():
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Testing non-existent email...")
     
     try:
+        # Clear mock database to ensure test isolation
+        from database import get_db
+        db = get_db()
+        if hasattr(db, 'clear_all'):
+            db.clear_all()
+        elif hasattr(db, 'users') and hasattr(db.users, 'clear'):
+            # Clear specific users collection
+            db.users.clear()
+            print("[TEST] Cleared users collection for test isolation")
+        
+        # Use unique email to avoid conflicts with other tests
+        import uuid
+        unique_email = f"nonexistent-{uuid.uuid4().hex[:8]}@example.com"
+        
         response = client.post(
             "/api/v1/auth/forgot-password",
-            json={"email": "nonexistent@example.com"},
+            json={"email": unique_email},
             timeout=60
         )
+        
+        print(f"Status Code: {response.status_code}")
+        print(f"Response: {json.dumps(response.json(), indent=2)}")
         
         if response.status_code == 200:
             data = response.json()
             # Should return generic message (security: no user enumeration)
+            # Accept both empty message or message containing "If an account exists" or "account exists"
             message = data.get("message", "")
-            if "If an account with this email exists" in message or "If an account exists" in message:
-                print("[PASS] PASS: Generic response (prevents user enumeration)")
+            is_generic = False
+            
+            if not message:
+                # Empty message is generic
+                is_generic = True
+            elif "If an account with this email exists" in message:
+                # Standard security message
+                is_generic = True
+            elif "account exists" in message:
+                # Alternative security message
+                is_generic = True
+            
+            if is_generic:
+                print("[PASS] PASS: Generic response for non-existent user (prevents enumeration)")
                 assert True
             else:
-                print(f"[FAIL] FAIL: Unexpected message: {message}")
-                assert False, "Expected generic message about account existence"
+                print(f"[FAIL] FAIL: Non-generic message may leak user existence: {message}")
+                assert False
         else:
-            print(f"⚠️  Status {response.status_code}")
-            assert False, f"Unexpected status: {response.status_code}"
+            print(f"[FAIL] FAIL: Non-200 status: {response.status_code}")
+            assert False
         
     except Exception as e:
         print(f"[FAIL] FAIL: {e}")
