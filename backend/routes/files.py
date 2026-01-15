@@ -2417,7 +2417,7 @@ async def download_file(
                     headers={
                         "Content-Range": f"bytes {start}-{end}/{file_size}",
                         "Content-Length": str(end - start + 1),
-                        "Content-Type": file_doc["mime"],
+                        "Content-Type": file_doc.get("mime_type", "application/octet-stream"),
                         "Accept-Ranges": "bytes",
                         "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
                         "Cache-Control": "no-cache"
@@ -2442,7 +2442,7 @@ async def download_file(
                     file_iterator(),
                     headers={
                         "Content-Length": str(file_size),
-                        "Content-Type": file_doc["mime"],
+                        "Content-Type": file_doc.get("mime_type", "application/octet-stream"),
                         "Accept-Ranges": "bytes",
                         "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
                         "Cache-Control": "no-cache"
@@ -2452,7 +2452,7 @@ async def download_file(
             # Small files - use FileResponse
             return FileResponse(
                 file_path,
-                media_type=file_doc["mime"],
+                media_type=file_doc.get("mime_type", "application/octet-stream"),
                 filename=file_doc["filename"],
                 headers={
                     "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
