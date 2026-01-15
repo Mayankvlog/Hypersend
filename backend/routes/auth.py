@@ -17,6 +17,7 @@ from validators import validate_user_id
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
+import secrets
 from rate_limiter import password_reset_limiter
 
 from collections import defaultdict

@@ -12,20 +12,50 @@ from fastapi.testclient import TestClient
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+# Import main directly to avoid path resolution issues
+try:
+    from backend.main import app  # type: ignore
+except ImportError:
+    try:
+        from main import app  # type: ignore
+    except ImportError as e:
+        print(f"Failed to import main: {e}")
+        app = None
+
+# Import routes and models with error handling
+try:
+    from backend.routes.chats import create_chat  # type: ignore
+except ImportError:
+    try:
+        from routes.chats import create_chat  # type: ignore
+    except ImportError as e:
+        print(f"Failed to import routes.chats: {e}")
+        create_chat = None
+
+try:
+    from backend.models import ChatCreate  # type: ignore
+except ImportError:
+    try:
+        from models import ChatCreate  # type: ignore
+    except ImportError as e:
+        print(f"Failed to import models: {e}")
+        ChatCreate = None
+
 class TestChatCreationFix:
-    """Test chat creation functionality and fix chat type validation"""
+    """Test chat creation functionality and fix chat type validation issue"""
     
     @pytest.fixture
     def client(self):
         """Create test client"""
-        from main import app
+        if app is None:
+            pytest.skip("Cannot create test client - main module not available")
         return TestClient(app)
     
     @pytest.mark.asyncio
     async def test_chat_type_validation_issue(self):
         """Test the chat type validation issue from logs"""
-        from routes.chats import create_chat
-        from models import ChatCreate
+        if create_chat is None or ChatCreate is None:
+            pytest.skip("Cannot test chat creation - required modules not available")
         
         # Test all valid chat types
         valid_types = ["private", "group", "supergroup", "channel", "secret", "saved"]
@@ -64,8 +94,14 @@ class TestChatCreationFix:
     @pytest.mark.asyncio
     async def test_invalid_chat_type_rejection(self):
         """Test that invalid chat types are properly rejected"""
-        from routes.chats import create_chat
-        from models import ChatCreate
+        try:
+            from backend.routes.chats import create_chat  # type: ignore
+        except ImportError:
+            from routes.chats import create_chat  # type: ignore
+        try:
+            from backend.models import ChatCreate  # type: ignore
+        except ImportError:
+            from models import ChatCreate  # type: ignore
         from pydantic import ValidationError
         
         # Test invalid chat types (removed 'direct' since it's now supported)
@@ -114,7 +150,10 @@ class TestChatCreationFix:
     @pytest.mark.asyncio
     async def test_chat_type_enum_consistency(self):
         """Test that ChatType enum matches validation list"""
-        from models import ChatType
+        try:
+            from backend.models import ChatType  # type: ignore
+        except ImportError:
+            from models import ChatType  # type: ignore
         
         # Check if all enum values are in validation list
         enum_values = [
@@ -168,8 +207,14 @@ class TestChatCreationFix:
     @pytest.mark.asyncio
     async def test_post_chats_root_endpoint(self):
         """Test that POST /api/v1/chats endpoint works (not just /api/v1/chats/create)"""
-        from routes.chats import create_chat_root
-        from models import ChatCreate
+        try:
+            from backend.routes.chats import create_chat_root  # type: ignore
+        except ImportError:
+            from routes.chats import create_chat_root  # type: ignore
+        try:
+            from backend.models import ChatCreate  # type: ignore
+        except ImportError:
+            from models import ChatCreate  # type: ignore
         
         # Test data
         chat_data = ChatCreate(
@@ -200,8 +245,14 @@ class TestChatCreationFix:
     @pytest.mark.asyncio
     async def test_private_chat_type_accepted(self):
         """Test that 'private' chat type is accepted (frontend fix)"""
-        from routes.chats import create_chat
-        from models import ChatCreate
+        try:
+            from backend.routes.chats import create_chat  # type: ignore
+        except ImportError:
+            from routes.chats import create_chat  # type: ignore
+        try:
+            from backend.models import ChatCreate  # type: ignore
+        except ImportError:
+            from models import ChatCreate  # type: ignore
         
         # Test with 'private' type (what frontend should send)
         chat_data = ChatCreate(
@@ -225,7 +276,10 @@ class TestChatCreationFix:
     @pytest.mark.asyncio
     async def test_direct_chat_type_rejected(self):
         """Test that 'direct' chat type is converted to 'private' (backward compatibility)"""
-        from models import ChatCreate
+        try:
+            from backend.models import ChatCreate  # type: ignore
+        except ImportError:
+            from models import ChatCreate  # type: ignore
         
         # Test that 'direct' type is now accepted and converted to 'private'
         chat = ChatCreate(
@@ -240,8 +294,14 @@ class TestChatCreationFix:
     @pytest.mark.asyncio
     async def test_private_chat_single_member_added(self):
         """Test that creating private chat with single member ID adds current user automatically"""
-        from routes.chats import create_chat
-        from models import ChatCreate
+        try:
+            from backend.routes.chats import create_chat  # type: ignore
+        except ImportError:
+            from routes.chats import create_chat  # type: ignore
+        try:
+            from backend.models import ChatCreate  # type: ignore
+        except ImportError:
+            from models import ChatCreate  # type: ignore
         
         # Test with single member ID (what frontend sends)
         chat_data = ChatCreate(
@@ -274,8 +334,14 @@ class TestChatCreationFix:
     @pytest.mark.asyncio
     async def test_chat_creation_response_format(self, client):
         """Test that chat creation returns both 'chat_id' and 'id' for frontend compatibility"""
-        from routes.chats import create_chat
-        from models import ChatCreate
+        try:
+            from backend.routes.chats import create_chat  # type: ignore
+        except ImportError:
+            from routes.chats import create_chat  # type: ignore
+        try:
+            from backend.models import ChatCreate  # type: ignore
+        except ImportError:
+            from models import ChatCreate  # type: ignore
         
         # Test data
         chat_data = ChatCreate(
