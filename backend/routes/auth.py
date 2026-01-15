@@ -1134,7 +1134,11 @@ async def logout(current_user: str = Depends(get_current_user)):
 
 @router.post("/forgot-password")
 async def forgot_password(request: dict) -> dict:
-    """Initiate password reset by sending reset token to user's email"""
+    """
+    Initiate password reset by generating a reset token.
+    In development mode, token is returned in response.
+    In production, token would be sent via email.
+    """
     try:
         auth_log("Password reset request received")
         
@@ -1178,45 +1182,46 @@ async def forgot_password(request: dict) -> dict:
                 detail="Failed to find user account"
             )
         
-        # Always return success to prevent email enumeration attacks
-        if not user:
-            auth_log(f"Password reset requested for non-existent email: {email}")
-            return {"message": "If an account with this email exists, a password reset link has been sent"}
-        
-        # Generate reset token
-        try:
-            reset_token = secrets.token_urlsafe(32)
-            expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-            
-            # Store reset token
-            await password_reset_collection().insert_one({
-                "token": reset_token,
-                "email": email,
-                "created_at": datetime.now(timezone.utc),
-                "expires_at": expires_at,
-                "used": False
-            })
-            
-            auth_log(f"Password reset token generated for user: {user['_id']}")
-            
-            # In development, just return token (in production, send email)
-            if settings.DEBUG:
-                print(f"[DEBUG] Password reset token for {email}: {reset_token}")
-                return {
-                    "message": "Password reset initiated (development mode - token returned)",
-                    "debug_token": reset_token,
-                    "debug_expires_at": expires_at.isoformat()
-                }
-            else:
-                # Production: Send email (not implemented yet)
-                return {"message": "Password reset link has been sent to your email"}
+        # Always generate token for security (prevent email enumeration)
+        # but only if user exists to avoid creating tokens for non-existent users
+        reset_token = None
+        if user:
+            # Generate reset token
+            try:
+                reset_token = secrets.token_urlsafe(32)
+                expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
                 
-        except Exception as e:
-            auth_log(f"Failed to generate reset token: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to initiate password reset"
-            )
+                # Store reset token in database
+                await password_reset_collection().insert_one({
+                    "token": reset_token,
+                    "email": email,
+                    "created_at": datetime.now(timezone.utc),
+                    "expires_at": expires_at,
+                    "used": False
+                })
+                
+                auth_log(f"Password reset token generated for user: {user['_id']}")
+                
+            except Exception as e:
+                auth_log(f"Failed to generate reset token: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to initiate password reset"
+                )
+        
+        # Always return a success message to prevent email enumeration
+        response = {
+            "message": "If an account with this email exists, a password reset token has been generated",
+            "success": True
+        }
+        
+        # In development mode, include token in response for testing
+        if reset_token and settings.DEBUG:
+            response["token"] = reset_token
+            response["expires_in"] = 3600  # 1 hour in seconds
+            auth_log(f"[DEBUG] Password reset token for {email}: {reset_token}")
+        
+        return response
         
     except HTTPException:
         raise
@@ -1307,12 +1312,13 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         
         # Update user password
         try:
+            auth_log(f"[RESET_PASSWORD] Updating password for user: {user['_id']}")
             await users_collection().update_one(
                 {"_id": user["_id"]},
                 {"$set": {
                     "password_hash": password_hash,
                     "password_salt": password_salt,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 }}
             )
         except Exception as e:
@@ -1326,7 +1332,7 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         try:
             await password_reset_collection().update_one(
                 {"_id": reset_token_doc["_id"]},
-                {"$set": {"used": True, "used_at": datetime.utcnow()}}
+                {"$set": {"used": True, "used_at": datetime.now(timezone.utc)}}
             )
         except Exception as e:
             auth_log(f"Failed to mark reset token as used: {e}")
@@ -1334,19 +1340,21 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         
         # Invalidate all refresh tokens for this user
         try:
+            auth_log(f"[RESET_PASSWORD] Invalidating refresh tokens for user: {user['_id']}")
             await refresh_tokens_collection().update_many(
                 {"user_id": str(user["_id"])},
-                {"$set": {"invalidated": True, "invalidated_at": datetime.utcnow()}}
+                {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
             )
         except Exception as e:
             auth_log(f"Failed to invalidate refresh tokens: {e}")
             # Don't fail the operation if this fails
         
-        auth_log(f"Password reset successful for user: {user['_id']}")
+        auth_log(f"[SUCCESS] Password reset successful for user: {user['_id']}")
         
         return PasswordResetResponse(
             message="Password reset successfully",
-            success=True
+            success=True,
+            token=None  # Token is not returned after reset
         )
         
     except HTTPException:

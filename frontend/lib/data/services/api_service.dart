@@ -697,6 +697,23 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> requestPasswordReset(String email) async {
+    try {
+      _log('[API_REQUEST_PASSWORD_RESET] Requesting password reset for: $email');
+      final response = await _dio.post(
+        '${ApiConstants.authEndpoint}/forgot-password',
+        data: {'email': email},
+      );
+      return response.data ?? {};
+    } on DioException catch (e) {
+      _log('[API_REQUEST_PASSWORD_RESET_ERROR] Dio error: ${e.message}');
+      rethrow;
+    } catch (e) {
+      _log('[API_REQUEST_PASSWORD_RESET_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> resetPasswordWithToken({
     required String token,
     required String newPassword,

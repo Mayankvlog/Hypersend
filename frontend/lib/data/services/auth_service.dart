@@ -310,6 +310,24 @@ class AuthService {
     await login(email: email, password: password);
   }
 
+  Future<Map<String, dynamic>> requestPasswordReset(String email) async {
+    try {
+      debugPrint('[AUTH_REQUEST_PASSWORD_RESET] Requesting password reset for: $email');
+      final result = await _api.requestPasswordReset(email);
+      debugPrint('[AUTH_REQUEST_PASSWORD_RESET] Result: $result');
+
+      if (result.containsKey('detail') || result.containsKey('error')) {
+        final errorDetail = result['detail'] as String? ?? result['error'] as String? ?? 'Unknown error';
+        throw Exception(errorDetail);
+      }
+
+      return result;
+    } catch (e) {
+      debugPrint('[AUTH_REQUEST_PASSWORD_RESET_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
   Future<void> resetPasswordWithToken({
     required String token,
     required String newPassword,
