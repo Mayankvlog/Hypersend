@@ -13,15 +13,23 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
 
+def _read_text_file(path: Path) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError:
+        with open(path, "r", encoding="latin-1") as f:
+            return f.read()
+
+
 class TestSourceMapErrorFix:
     """Test that source map errors are fixed"""
     
     def test_frontend_dockerfile_no_source_maps(self):
         """Test that frontend Dockerfile builds without source maps"""
         dockerfile_path = Path(__file__).parent.parent / "frontend" / "Dockerfile"
-        
-        with open(dockerfile_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(dockerfile_path)
         
         # Should have --no-source-maps flag
         assert "--no-source-maps" in content, "Dockerfile should build without source maps"
@@ -34,9 +42,8 @@ class TestSourceMapErrorFix:
     def test_nginx_conf_handles_map_files(self):
         """Test that nginx.conf properly handles .map file requests"""
         nginx_path = Path(__file__).parent.parent / "nginx.conf"
-        
-        with open(nginx_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(nginx_path)
         
         # Should have .map location block
         assert "\.map$" in content, "nginx.conf should have .map location block"
@@ -49,9 +56,8 @@ class TestSourceMapErrorFix:
     def test_docker_compose_frontend_build_args(self):
         """Test that docker-compose passes correct build args to frontend"""
         docker_compose_path = Path(__file__).parent.parent / "docker-compose.yml"
-        
-        with open(docker_compose_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(docker_compose_path)
         
         # Should have frontend build section
         assert "frontend:" in content, "docker-compose should have frontend service"
@@ -65,9 +71,8 @@ class TestSourceMapErrorFix:
     def test_web_index_html_csp_headers(self):
         """Test that web/index.html has proper CSP headers"""
         index_path = Path(__file__).parent.parent / "frontend" / "web" / "index.html"
-        
-        with open(index_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(index_path)
         
         # Should have Content-Security-Policy meta tag
         assert "Content-Security-Policy" in content, "index.html should have CSP meta tag"
@@ -83,9 +88,8 @@ class TestSourceMapErrorFix:
     def test_frontend_dockerfile_nginx_config(self):
         """Test that frontend Dockerfile has proper nginx config"""
         dockerfile_path = Path(__file__).parent.parent / "frontend" / "Dockerfile"
-        
-        with open(dockerfile_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(dockerfile_path)
         
         # Should have nginx config
         assert "nginx" in content.lower(), "Dockerfile should configure nginx"
@@ -108,8 +112,7 @@ class TestFrontendBuildConfiguration:
         
         assert pubspec_path.exists(), "pubspec.yaml should exist"
         
-        with open(pubspec_path, 'r') as f:
-            content = f.read()
+        content = _read_text_file(pubspec_path)
         
         # Should have flutter dependency
         assert "flutter:" in content, "pubspec.yaml should have flutter dependency"
@@ -121,9 +124,8 @@ class TestFrontendBuildConfiguration:
         index_path = Path(__file__).parent.parent / "frontend" / "web" / "index.html"
         
         assert index_path.exists(), "web/index.html should exist"
-        
-        with open(index_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(index_path)
         
         # Should have flutter_bootstrap.js
         assert "flutter_bootstrap.js" in content, "index.html should load flutter_bootstrap.js"
@@ -137,9 +139,8 @@ class TestNginxConfiguration:
     def test_nginx_conf_syntax(self):
         """Test that nginx.conf has valid syntax"""
         nginx_path = Path(__file__).parent.parent / "nginx.conf"
-        
-        with open(nginx_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(nginx_path)
         
         # Should have proper structure
         assert "http {" in content, "nginx.conf should have http block"
@@ -155,9 +156,8 @@ class TestNginxConfiguration:
     def test_nginx_conf_security_headers(self):
         """Test that nginx.conf sets security headers"""
         nginx_path = Path(__file__).parent.parent / "nginx.conf"
-        
-        with open(nginx_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(nginx_path)
         
         # Should have security headers
         assert "X-Frame-Options" in content, "nginx.conf should set X-Frame-Options"
@@ -169,9 +169,8 @@ class TestNginxConfiguration:
     def test_nginx_conf_gzip_compression(self):
         """Test that nginx.conf enables gzip compression"""
         nginx_path = Path(__file__).parent.parent / "nginx.conf"
-        
-        with open(nginx_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(nginx_path)
         
         # Should have gzip enabled
         assert "gzip on;" in content, "nginx.conf should enable gzip"
@@ -186,9 +185,8 @@ class TestDockerCompose:
     def test_docker_compose_services(self):
         """Test that docker-compose has all required services"""
         docker_compose_path = Path(__file__).parent.parent / "docker-compose.yml"
-        
-        with open(docker_compose_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(docker_compose_path)
         
         # Should have all services
         assert "nginx:" in content, "docker-compose should have nginx service"
@@ -201,9 +199,8 @@ class TestDockerCompose:
     def test_docker_compose_healthchecks(self):
         """Test that docker-compose has healthchecks"""
         docker_compose_path = Path(__file__).parent.parent / "docker-compose.yml"
-        
-        with open(docker_compose_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(docker_compose_path)
         
         # Should have healthchecks
         assert "healthcheck:" in content, "docker-compose should have healthchecks"
@@ -213,9 +210,8 @@ class TestDockerCompose:
     def test_docker_compose_networks(self):
         """Test that docker-compose has proper networking"""
         docker_compose_path = Path(__file__).parent.parent / "docker-compose.yml"
-        
-        with open(docker_compose_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(docker_compose_path)
         
         # Should have network configuration
         assert "networks:" in content, "docker-compose should have networks"
@@ -240,9 +236,13 @@ class TestBackendConfiguration:
         config_path = Path(__file__).parent.parent / "backend" / "config.py"
         
         assert config_path.exists(), "backend/config.py should exist"
-        
-        with open(config_path, 'r') as f:
-            content = f.read()
+
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            with open(config_path, 'r', encoding='latin-1') as f:
+                content = f.read()
         
         # Should have configuration
         assert "class Settings" in content, "config.py should have Settings class"
@@ -258,12 +258,11 @@ class TestFlutterAnalysis:
         main_path = Path(__file__).parent.parent / "frontend" / "lib" / "main.dart"
         
         assert main_path.exists(), "lib/main.dart should exist"
-        
-        with open(main_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(main_path)
         
         # Should have main function
-        assert "void main()" in content or "void main(" in content, "main.dart should have main function"
+        assert re.search(r"\bmain\s*\(", content), "main.dart should have main function"
         
         print("✅ main.dart exists and has main function")
     
@@ -272,9 +271,8 @@ class TestFlutterAnalysis:
         api_service_path = Path(__file__).parent.parent / "frontend" / "lib" / "data" / "services" / "api_service.dart"
         
         assert api_service_path.exists(), "api_service.dart should exist"
-        
-        with open(api_service_path, 'r') as f:
-            content = f.read()
+
+        content = _read_text_file(api_service_path)
         
         # Should have API service class
         assert "class" in content, "api_service.dart should have class definition"

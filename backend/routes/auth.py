@@ -1222,7 +1222,7 @@ async def forgot_password(request: dict) -> dict:
                         "sub": str(user["_id"]),
                         "email": user["email"],
                         "jti": jti,
-                        "type": "password_reset"
+                        "token_type": "password_reset"
                     },
                     expires_delta=timedelta(hours=1)
                 )
