@@ -1582,13 +1582,6 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Password reset service unavailable"
         )
-        raise
-    except Exception as e:
-        auth_log(f"Reset password error: {type(e).__name__}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password reset service unavailable"
-        )
 
 # SECURITY FIX: Removed duplicate OPTIONS handlers - auth_options handles CORS for these routes
 
