@@ -553,13 +553,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     try {
       // Get file metadata first to determine file type
       final fileInfo = await _getFileInfo(fileId);
-      final contentType = fileInfo['content_type'] ?? 'application/octet-stream';
+
+      // Prefer backend-reported content type, but fall back to filename-based guess
+      String contentType;
+      final dynamic rawContentType = fileInfo['content_type'];
+      if (rawContentType is String && rawContentType.trim().isNotEmpty) {
+        contentType = rawContentType;
+      } else {
+        contentType = _guessMimeTypeFromName(fileName);
+        debugPrint('[FILE_DOWNLOAD] Falling back to extension-based MIME: $contentType');
+      }
+
       // Enhanced file type detection for better download handling
       final isPDF = contentType.toLowerCase().contains('pdf');
       final isImage = contentType.toLowerCase().contains('image');
       final isVideo = contentType.toLowerCase().contains('video');
 
-      
       debugPrint('[FILE_DOWNLOAD] File type: $contentType, isPDF: $isPDF, isImage: $isImage, isVideo: $isVideo');
       
       if (kIsWeb) {
@@ -613,9 +622,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final response = await serviceProvider.apiService.getFileInfo(fileId);
       return response;
     } catch (e) {
+      // Gracefully handle timeouts / gateway errors so UI can still attempt download
       debugPrint('[FILE_INFO_ERROR] Failed to get file info: $e');
       return {};
     }
+  }
+
+  /// Best-effort MIME type guess based on filename extension.
+  /// Used when the backend cannot return file info (e.g. 504/timeout).
+  String _guessMimeTypeFromName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.pdf')) return 'application/pdf';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.mp4')) return 'video/mp4';
+    if (lower.endsWith('.zip')) return 'application/zip';
+    if (lower.endsWith('.dmg')) return 'application/x-apple-diskimage';
+    return 'application/octet-stream';
   }
 
   Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {

@@ -378,6 +378,53 @@ final g = _group!;
                 ],
               ),
             ),
+            if (_isAdmin)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _addMembers,
+                        icon: const Icon(Icons.person_add, size: 18),
+                        label: const Text('Add Members'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryCyan,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _leaveGroup,
+                        icon: const Icon(Icons.exit_to_app, size: 18),
+                        label: const Text('Leave Group'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.textSecondary,
+                          side: const BorderSide(color: AppTheme.dividerColor),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _deleteGroup,
+                        icon: const Icon(Icons.delete_forever, size: 18, color: AppTheme.errorRed),
+                        label: const Text('Delete Group', style: TextStyle(color: AppTheme.errorRed)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.errorRed,
+                          side: const BorderSide(color: AppTheme.errorRed),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
               child: Row(

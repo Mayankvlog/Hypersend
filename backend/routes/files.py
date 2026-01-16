@@ -1922,7 +1922,7 @@ async def complete_upload(
                 
                 await asyncio.wait_for(
                     files_collection().insert_one(file_record),
-                    timeout=5.0
+                    timeout=30.0
                 )
             except asyncio.TimeoutError:
                 _log("error", f"Database timeout inserting file record: {file_id}", {
@@ -1961,7 +1961,7 @@ async def complete_upload(
                 else:
                     await asyncio.wait_for(
                         uploads_collection().delete_one({"_id": upload_id}),
-                        timeout=5.0
+                        timeout=30.0
                     )
             except asyncio.TimeoutError:
                 _log("error", f"Database timeout deleting upload record: {upload_id}", {
@@ -2029,7 +2029,7 @@ async def get_file_info(
         import asyncio
         file_doc = await asyncio.wait_for(
             files_collection().find_one({"_id": file_id}),
-            timeout=5.0
+            timeout=30.0
         )
         
         if file_doc:
@@ -2051,7 +2051,7 @@ async def get_file_info(
                 try:
                     chat_doc = await asyncio.wait_for(
                         chats_collection().find_one({"_id": chat_id}),
-                        timeout=5.0
+                        timeout=30.0
                     )
                 except asyncio.TimeoutError:
                     _log("error", f"Database timeout checking chat membership: {chat_id}", {
@@ -2157,7 +2157,7 @@ async def get_file_info(
             import asyncio
             user_doc = await asyncio.wait_for(
                 users_collection().find_one({"_id": current_user}),
-                timeout=5.0
+                timeout=30.0
             )
             
             # Get content type from file extension for better avatar serving
@@ -2227,7 +2227,7 @@ async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
         import asyncio
         user_doc = await asyncio.wait_for(
             users_collection().find_one({"_id": current_user}),
-            timeout=5.0
+            timeout=30.0
         )
         
         # Handle None user_doc to prevent AttributeError
@@ -2273,7 +2273,7 @@ async def download_file(
         import asyncio
         file_doc = await asyncio.wait_for(
             files_collection().find_one({"_id": file_id}),
-            timeout=5.0
+            timeout=30.0
         )
         
         if file_doc:
@@ -2599,7 +2599,7 @@ async def share_file(
     try:
         file_doc = await asyncio.wait_for(
             files_collection().find_one({"_id": file_id}),
-            timeout=5.0
+            timeout=30.0
         )
     except asyncio.TimeoutError:
         _log("error", f"Database timeout finding file: {file_id}", {
@@ -2633,7 +2633,7 @@ async def share_file(
                 {"_id": file_id},
                 {"$addToSet": {"shared_with": {"$each": user_ids}}}
             ),
-            timeout=5.0
+            timeout=30.0
         )
     except asyncio.TimeoutError:
         _log("error", f"Database timeout sharing file: {file_id}", {
@@ -2658,7 +2658,7 @@ async def get_shared_users(file_id: str, current_user: str = Depends(get_current
     try:
         file_doc = await asyncio.wait_for(
             files_collection().find_one({"_id": file_id}),
-            timeout=5.0
+            timeout=30.0
         )
     except asyncio.TimeoutError:
         _log("error", f"Database timeout finding file: {file_id}", {
@@ -2702,7 +2702,7 @@ async def revoke_file_access(
     try:
         file_doc = await asyncio.wait_for(
             files_collection().find_one({"_id": file_id}),
-            timeout=5.0
+            timeout=30.0
         )
     except asyncio.TimeoutError:
         _log("error", f"Database timeout finding file: {file_id}", {
@@ -2736,7 +2736,7 @@ async def revoke_file_access(
                 {"_id": file_id},
                 {"$pull": {"shared_with": user_id}}
             ),
-            timeout=5.0
+            timeout=30.0
         )
     except asyncio.TimeoutError:
         _log("error", f"Database timeout revoking file access: {file_id}", {
@@ -2761,7 +2761,7 @@ async def refresh_upload_token(upload_id: str, current_user: str = Depends(get_c
     try:
         upload = await asyncio.wait_for(
             uploads_collection().find_one({"_id": upload_id}),
-            timeout=5.0
+            timeout=30.0
         )
     except asyncio.TimeoutError:
         _log("error", f"Database timeout finding upload: {upload_id}", {
@@ -2826,7 +2826,7 @@ async def cancel_upload(upload_id: str, request: Request, current_user: str = De
         try:
             upload = await asyncio.wait_for(
                 uploads_collection().find_one({"_id": upload_id}),
-                timeout=5.0
+                timeout=30.0
             )
         except asyncio.TimeoutError:
             _log("error", f"Database timeout finding upload for cancel: {upload_id}", {
@@ -3883,7 +3883,7 @@ async def save_to_public_directory(
         # Get file info
         file_doc = await asyncio.wait_for(
             files_collection().find_one({"_id": file_id}),
-            timeout=5.0
+            timeout=30.0
         )
         
         if not file_doc:
