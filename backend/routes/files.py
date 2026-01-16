@@ -2507,16 +2507,29 @@ async def download_file(
                             detail="Range streaming error - please try again"
                         )
                 
+                # Determine if browser should download or display inline
+                # SECURITY: Only allow safe inline types - exclude text/html to prevent stored XSS
+                dl_param = request.query_params.get("dl", "0") == "1"
+                inline_types = {"image/", "application/pdf", "text/plain"}
+                mime_type = file_doc.get("mime_type", "application/octet-stream")
+                should_inline = any(mime_type.startswith(t) for t in inline_types) and not dl_param
+                # Always force attachment for HTML and other potentially dangerous types
+                disposition = "inline" if should_inline else "attachment"
+                
                 return StreamingResponse(
                     file_iterator(),
                     status_code=206,
                     headers={
                         "Content-Range": f"bytes {start}-{end}/{file_size}",
                         "Content-Length": str(end - start + 1),
-                        "Content-Type": file_doc.get("mime_type", "application/octet-stream"),
+                        "Content-Type": mime_type,
                         "Accept-Ranges": "bytes",
-                        "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
-                        "Cache-Control": "no-cache"
+                        "Content-Disposition": f'{disposition}; filename="{quote(file_doc["filename"])}"',
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "X-Content-Type-Options": "nosniff",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET, OPTIONS",
+                        "Access-Control-Allow-Headers": "Content-Type, Authorization"
                     }
                 )
             
@@ -2543,30 +2556,57 @@ async def download_file(
                             detail="File streaming error - please try again"
                         )
                 
+                # Determine if browser should download or display inline
+                dl_param = request.query_params.get("dl", "0") == "1"
+                # SECURITY: Only allow safe inline types - exclude text/html to prevent stored XSS
+                inline_types = {"image/", "application/pdf", "text/plain"}
+                mime_type = file_doc.get("mime_type", "application/octet-stream")
+                should_inline = any(mime_type.startswith(t) for t in inline_types) and not dl_param
+                disposition = "inline" if should_inline else "attachment"
+                
                 return StreamingResponse(
                     file_iterator(),
                     headers={
                         "Content-Length": str(file_size),
-                        "Content-Type": file_doc.get("mime_type", "application/octet-stream"),
+                        "Content-Type": mime_type,
                         "Accept-Ranges": "bytes",
-                        "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
-                        "Cache-Control": "no-cache",
-                        "ETag": f'"{file_id}"'  # Add ETag for cache validation
+                        "Content-Disposition": f'{disposition}; filename="{quote(file_doc["filename"])}"',
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "X-Content-Type-Options": "nosniff",
+                        "ETag": f'"{file_id}"',
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET, OPTIONS",
+                        "Access-Control-Allow-Headers": "Content-Type, Authorization"
                     }
                 )
             
             # Small files - use FileResponse with enhanced headers
             file_size = file_path.stat().st_size
+            
+            # Determine if browser should download or display inline
+            # SECURITY: Only allow safe inline types - exclude text/html to prevent stored XSS
+            dl_param = request.query_params.get("dl", "0") == "1"
+            inline_types = {"image/", "application/pdf", "text/plain"}
+            mime_type = file_doc.get("mime_type", "application/octet-stream")
+            should_inline = any(mime_type.startswith(t) for t in inline_types) and not dl_param
+            
+            # Always force attachment for HTML and other potentially dangerous types
+            disposition = "inline" if should_inline else "attachment"
+            
             return FileResponse(
                 file_path,
-                media_type=file_doc.get("mime_type", "application/octet-stream"),
+                media_type=mime_type,
                 filename=file_doc["filename"],
                 headers={
                     "Content-Length": str(file_size),
-                    "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
-                    "Cache-Control": "no-cache",
+                    "Content-Disposition": f'{disposition}; filename="{quote(file_doc["filename"])}"',
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
                     "Accept-Ranges": "bytes",
-                    "ETag": f'"{file_id}"'  # Add ETag for cache validation
+                    "ETag": f'"{file_id}"',
+                    "X-Content-Type-Options": "nosniff",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization"
                 }
             )
         

@@ -651,23 +651,35 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         throw Exception('Web-only download helper called on non-web platform');
       }
 
-      // Prefer direct HTTP download so the browser saves to the user's Downloads folder
+      // Use browser's native download capability with proper headers
       final base = ApiConstants.serverBaseUrl; // e.g. https://zaply.in.net
-      final downloadUri = Uri.parse('$base/api/v1/${ApiConstants.filesEndpoint}/$fileId/download');
+      final downloadUri = Uri.parse('$base/api/v1/${ApiConstants.filesEndpoint}/$fileId/download?dl=1');
 
-      debugPrint('[FILE_WEB] Opening direct download URL: $downloadUri');
-      final launched = await launchUrl(downloadUri);
+      debugPrint('[FILE_WEB] Triggering browser download: $downloadUri');
+      
+      // Try native URL launcher with externalApplication mode for better browser handling
+      try {
+        final launched = await launchUrl(
+          downloadUri,
+          mode: LaunchMode.externalApplication,
+        );
+        
+        if (launched) {
+          debugPrint('[FILE_WEB] Browser download initiated via launchUrl');
+          return;
+        }
+      } catch (e) {
+        debugPrint('[FILE_WEB] launchUrl failed: $e');
+      }
+      
+      // Fallback: fetch bytes and create download blob with proper MIME type
+      debugPrint('[FILE_WEB] Using bytes + blob fallback for $fileName');
 
-      if (!launched) {
-        // Fallback: if for some reason the browser blocks the navigation, fall back
-        // to the older data-URI approach using a one-shot bytes download.
-        debugPrint('[FILE_WEB] launchUrl() failed – falling back to bytes + data URI');
-
-        final response = await serviceProvider.apiService.downloadFileBytes(fileId);
-        final data = response.data;
-        final bytes = data is Uint8List
-            ? data
-            : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
+      final response = await serviceProvider.apiService.downloadFileBytes(fileId);
+      final data = response.data;
+      final bytes = data is Uint8List
+          ? data
+          : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
 
         if (bytes.isEmpty) {
           throw Exception('No data received or file is empty');
@@ -680,10 +692,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         if (!secondLaunch) {
           throw Exception('Unable to trigger browser download');
         }
-        debugPrint('[FILE_WEB] Triggered browser download for $fileName via data URI fallback');
-      } else {
-        debugPrint('[FILE_WEB] Browser navigating to direct download URL for $fileName');
-      }
+        debugPrint('[FILE_WEB] Triggered browser download for $fileName via blob/data URI fallback');
     } catch (e) {
       debugPrint('[FILE_WEB_ERROR] $e');
       rethrow;
