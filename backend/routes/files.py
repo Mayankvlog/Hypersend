@@ -2047,8 +2047,11 @@ async def get_file_info(
                 _log("info", f"Shared user accessing file info: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
             # Chat members can access files in their chats
             elif chat_id:
-                from ..db_proxy import chats_collection
                 try:
+                    try:
+                        from ..db_proxy import chats_collection
+                    except ImportError:
+                        from db_proxy import chats_collection
                     chat_doc = await asyncio.wait_for(
                         chats_collection().find_one({"_id": chat_id}),
                         timeout=30.0
@@ -2304,7 +2307,10 @@ async def download_file(
             # Chat members can access files in their chats
             elif chat_id:
                 try:
-                    from db_proxy import chats_collection
+                    try:
+                        from ..db_proxy import chats_collection
+                    except ImportError:
+                        from db_proxy import chats_collection
                     chat_doc = await chats_collection().find_one({"_id": chat_id})
                     if chat_doc and current_user in chat_doc.get("members", []):
                         _log("info", f"Chat member downloading file: user={current_user}, chat={chat_id}, file={file_id}", {"user_id": current_user, "operation": "file_download"})
