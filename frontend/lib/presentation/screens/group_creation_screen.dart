@@ -50,20 +50,29 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       _error = null;
     });
     try {
-      // FIXED: Use contacts endpoint instead of search for group creation
+      // First try the contacts endpoint (user's saved contacts)
       final contacts = await serviceProvider.apiService.getContacts(limit: 100);
       debugPrint('[GROUP_CREATE] Loaded ${contacts.length} contacts for group creation');
+
+      List<Map<String, dynamic>> users = contacts;
+
+      // If there are no contacts, fall back to simple users list so group can still be created
+      if (users.isEmpty) {
+        debugPrint('[GROUP_CREATE] No contacts found, falling back to /users/simple');
+        users = await serviceProvider.apiService.getSimpleUsers(limit: 100);
+        debugPrint('[GROUP_CREATE] Loaded ${users.length} simple users for group creation');
+      }
       
       if (!mounted) return;
       setState(() {
-        _users = contacts;
+        _users = users;
         _loading = false;
       });
     } catch (e) {
-      debugPrint('[GROUP_CREATE] Error loading contacts: $e');
+      debugPrint('[GROUP_CREATE] Error loading contacts/users: $e');
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load contacts. Please try again.';
+        _error = 'Failed to load users. Please try again.';
         _loading = false;
       });
     }

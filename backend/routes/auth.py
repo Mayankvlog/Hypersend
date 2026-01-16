@@ -1457,14 +1457,28 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                     detail="Reset token has expired - request a new one"
                 )
         
-        # Get user by ID from token
+        # Get user by ID from token (support both string and ObjectId _id fields)
         try:
-            user_id_for_query = token_data.user_id
-            if isinstance(user_id_for_query, str) and ObjectId.is_valid(user_id_for_query):
-                user_id_for_query = ObjectId(user_id_for_query)
-            
+            raw_user_id = token_data.user_id
+            candidate_ids = []
+            # Always try the raw ID first (most deployments store _id as string)
+            if raw_user_id is not None:
+                candidate_ids.append(raw_user_id)
+            # If it looks like an ObjectId, also try the BSON ObjectId variant
+            if isinstance(raw_user_id, str) and ObjectId.is_valid(raw_user_id):
+                try:
+                    candidate_ids.append(ObjectId(raw_user_id))
+                except Exception as conv_error:
+                    auth_log(f"[RESET_PASSWORD_DEBUG] ObjectId conversion failed for {raw_user_id}: {conv_error}")
+
+            if not candidate_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid reset token: missing user identifier"
+                )
+
             user = await asyncio.wait_for(
-                users_collection().find_one({"_id": user_id_for_query}),
+                users_collection().find_one({"_id": {"$in": candidate_ids}}),
                 timeout=5.0
             )
         except asyncio.TimeoutError:

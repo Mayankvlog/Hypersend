@@ -620,19 +620,29 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {
     try {
       final response = await serviceProvider.apiService.downloadFileBytes(fileId);
-      final bytes = response.data ?? [];
-      
+      final data = response.data;
+      final bytes = data is Uint8List ? data : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
+
       if (bytes.isEmpty) {
         throw Exception('No data received or file is empty');
       }
-      
+
       if (kIsWeb) {
-        // Web-specific file download - deferred to avoid import issues
-        // Files are handled by the browser's native download mechanism
-        debugPrint('[FILE_WEB] Web download not directly supported in this context');
+        // On web, use a data URI and url_launcher so the browser handles download/open
+        final mimeType = isPDF ? 'application/pdf' : 'application/octet-stream';
+        final uri = Uri.dataFromBytes(
+          bytes,
+          mimeType: mimeType,
+        );
+
+        final launched = await launchUrl(uri);
+        if (!launched) {
+          throw Exception('Unable to trigger browser download');
+        }
+        debugPrint('[FILE_WEB] Triggered browser download for $fileName via data URI');
         return;
       }
-      
+
       debugPrint('[FILE_WEB] Downloaded ${bytes.length} bytes as $fileName');
     } catch (e) {
       debugPrint('[FILE_WEB_ERROR] $e');

@@ -289,20 +289,6 @@ final g = _group!;
       appBar: AppBar(
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
         title: const Text('Group Info'),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'add_members') _addMembers();
-              if (value == 'leave') _leaveGroup();
-              if (value == 'delete') _deleteGroup();
-            },
-            itemBuilder: (_) => [
-              if (_isAdmin) const PopupMenuItem(value: 'add_members', child: Text('Add Members')),
-              const PopupMenuItem(value: 'leave', child: Text('Leave Group')),
-              if (_isAdmin) const PopupMenuItem(value: 'delete', child: Text('Delete Group')),
-            ],
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         child: Column(

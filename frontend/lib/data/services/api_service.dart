@@ -9,8 +9,8 @@ import 'dart:math';
 // Conditional import: dart:io only available on mobile/desktop platforms
 import '../../core/constants/api_constants.dart';
 
-// Platform-specific imports
-import 'dart:io' as io if (dart.library.io) 'dart:io';
+// Platform-specific imports (dart:io is only used when not running on web)
+import 'dart:io' as io;
 
 class ApiService {
   late final Dio _dio;
@@ -339,7 +339,7 @@ class ApiService {
   // Handle connection errors
   static String _handleConnectionErrors(DioException error) {
     final message = error.message ?? '';
-    
+
     if (message.contains('SocketException')) {
       return 'Network error. Please check internet connection and ensure ${ApiConstants.serverBaseUrl} is accessible.';
     } else if (message.contains('Connection refused')) {
@@ -351,20 +351,19 @@ class ApiService {
     } else if (message.contains('No Internet connection')) {
       return 'No internet connection. Please check your network settings.';
     } else if (message.contains('Host is down')) {
-      return 'Server ${ApiConstants.serverBaseUrl} is down. Please try again later.';
+      return 'Server at ${ApiConstants.serverBaseUrl} is down. Please try again later.';
     } else if (message.contains('Network is unreachable')) {
       return 'Network unreachable. Please check your internet connection.';
     } else if (message.contains('DNS resolution failed')) {
       return 'DNS resolution failed. Please check the server URL: ${ApiConstants.serverBaseUrl}';
     }
-    
+
     return 'Cannot connect to server. Please check:\n'
         '1. ✓ Internet connection is active\n'
         '2. Server is running: ${ApiConstants.serverBaseUrl}\n'
         '3. API endpoint (${ApiConstants.baseUrl}) is reachable\n'
         '4. SSL certificates are valid (${ApiConstants.validateCertificates ? "enabled" : "disabled"})\n'
-        '5. Security mode: ${ApiConstants.validateCertificates ? "SECURE 🔒" : "DEBUG MODE ⚠️"}\n'
-        '6. Platform: ${kIsWeb ? "Flutter Web (browser controls SSL)" : "Mobile"}\n\n'
+        '5. Security mode: ${ApiConstants.validateCertificates ? "SECURE 🔒" : "DEBUG MODE ⚠️"}\n\n'
         'Debug info: $message\n\n'
         'If you continue seeing this error:\n'
         '• Verify: ${ApiConstants.serverBaseUrl}/health\n'
@@ -664,8 +663,8 @@ class ApiService {
       // Deprecated: use AuthService directly instead
       return false;
     } catch (e) {
-      debugPrint('[API_REFRESH] Token refresh error: $e');
-      return false;
+      debugPrint('[AVATAR_UPLOAD] Error: \$e');
+      throw Exception('Failed to upload chat avatar: \$e');
     }
   }
 
@@ -1125,10 +1124,22 @@ Future<List<Map<String, dynamic>>> searchUsers(String query) async {
 
   Future<List<Map<String, dynamic>>> getContacts({int limit = 50}) async {
     final response = await _dio.get(
-        '${ApiConstants.usersEndpoint}/contacts',
-        queryParameters: {'limit': limit},
+      '${ApiConstants.usersEndpoint}/contacts',
+      queryParameters: {'limit': limit},
     );
     return List<Map<String, dynamic>>.from(response.data?['contacts'] ?? []);
+  }
+
+  /// Simple user list for group creation when contacts are empty
+  Future<List<Map<String, dynamic>>> getSimpleUsers({int limit = 50, int offset = 0}) async {
+    final response = await _dio.get(
+      '${ApiConstants.usersEndpoint}/simple',
+      queryParameters: {
+        'limit': limit,
+        'offset': offset,
+      },
+    );
+    return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
   }
 
   Future<List<Map<String, dynamic>>> searchUsersByEmail(String email) async {

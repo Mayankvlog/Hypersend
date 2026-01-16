@@ -489,7 +489,7 @@ class GroupUpdate(BaseModel):
 
 
 class GroupMembersUpdate(BaseModel):
-    user_ids: List[str] = Field(default_factory=list)
+    user_ids: Optional[List[str]] = Field(default=None)
 
 
 class GroupMemberRoleUpdate(BaseModel):
