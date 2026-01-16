@@ -39,34 +39,51 @@
 </head>
 <body>
   <script>
-    // Configure Flutter for proper CanvasKit loading with CSP compliance
-    window.flutterConfiguration = {
-      // Enable CanvasKit with proper CDN URL
-      canvasKitBaseUrl: "https://www.gstatic.com/flutter-canvaskit/",
-      renderer: "canvaskit"
-    };
-    
+// Configure Flutter for proper CanvasKit loading with CSP compliance
+     // Check if we've already set a fallback to HTML renderer
+     const htmlRendererFallback = localStorage.getItem('flutter_html_fallback');
+     const initialRenderer = htmlRendererFallback === 'true' ? "html" : "canvaskit";
+     const initialCanvasKitUrl = htmlRendererFallback === 'true' ? "" : "https://www.gstatic.com/flutter-canvaskit/";
+     
+     window.flutterConfiguration = {
+       // Use persisted fallback choice if available, otherwise default to CanvasKit
+       canvasKitBaseUrl: initialCanvasKitUrl,
+       renderer: initialRenderer
+     };
+     
+     // Clear the fallback flag if it's already set (to prevent infinite reloads)
+     if (htmlRendererFallback === 'true') {
+       localStorage.removeItem('flutter_html_fallback');
+     }
+     
     // Enhanced CSP error handling
-    window.addEventListener('error', function(e) {
-      if (e.message.includes('Content-Security-Policy') || e.message.includes('canvaskit')) {
-        console.warn('CSP blocked CanvasKit, falling back to HTML renderer');
-        // Fallback to HTML renderer if CSP blocks CanvasKit
-        window.flutterConfiguration.renderer = "html";
-        window.flutterConfiguration.canvasKitBaseUrl = "";
-        // Reload the page with new configuration
-        location.reload();
-      }
-    });
-    
+     window.addEventListener('error', function(e) {
+       if (e.message.includes('Content-Security-Policy') || e.message.includes('canvaskit')) {
+         console.warn('CSP blocked CanvasKit, falling back to HTML renderer');
+         // Persist the fallback choice before reloading
+         localStorage.setItem('flutter_html_fallback', 'true');
+         // Fallback to HTML renderer if CSP blocks CanvasKit
+         window.flutterConfiguration.renderer = "html";
+         window.flutterConfiguration.canvasKitBaseUrl = "";
+         // Reload the page with new configuration
+         location.reload();
+       }
+     });
+     
     // Handle unhandled promise rejections from CanvasKit loading
-    window.addEventListener('unhandledrejection', function(e) {
-      if (e.reason && e.reason.message && e.reason.message.includes('canvaskit')) {
-        console.warn('CanvasKit loading failed, falling back to HTML renderer');
-        window.flutterConfiguration.renderer = "html";
-        window.flutterConfiguration.canvasKitBaseUrl = "";
-        e.preventDefault(); // Prevent the error from showing in console
-      }
-    });
+     window.addEventListener('unhandledrejection', function(e) {
+       if (e.reason && e.reason.message && e.reason.message.includes('canvaskit')) {
+         console.warn('CanvasKit loading failed, falling back to HTML renderer');
+         // Persist the fallback choice before reloading
+         localStorage.setItem('flutter_html_fallback', 'true');
+         // Fallback to HTML renderer
+         window.flutterConfiguration.renderer = "html";
+         window.flutterConfiguration.canvasKitBaseUrl = "";
+         // Trigger reload to use the new configuration
+         e.preventDefault();
+         location.reload();
+       }
+     });
     
     // Ensure proper loading of external Flutter resources
     window.addEventListener('load', function() {
