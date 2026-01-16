@@ -153,6 +153,10 @@ class Settings:
     if not ENABLE_PASSWORD_RESET:
         print("[CONFIG] Password reset functionality disabled")
     
+    ENABLE_EMAIL: bool = os.getenv("ENABLE_EMAIL", "True").lower() in ("true", "1", "yes")
+    if not ENABLE_EMAIL:
+        print("[CONFIG] Email notifications disabled")
+    
     # File upload settings
     LARGE_FILE_THRESHOLD: int = int(os.getenv("LARGE_FILE_THRESHOLD", str(LARGE_FILE_THRESHOLD_GB * 1024 * 1024 * 1024)))  # 100MB default
     MAX_FILE_SIZE: int = int(os.getenv("MAX_FILE_SIZE", str(MAX_FILE_SIZE_BYTES)))  # 1GB default

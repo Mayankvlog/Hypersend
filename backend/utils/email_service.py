@@ -16,13 +16,41 @@ class EmailService:
     
     def __init__(self):
         # Email Configuration
-        self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        # CRITICAL FIX: Support both SENDER_* and SMTP_* environment variables
+        # Priority: SENDER_* > SMTP_* > defaults
+        self.smtp_server = os.getenv("SMTP_SERVER") or os.getenv("SMTP_HOST", "smtp.gmail.com")
         self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.sender_email = os.getenv("SENDER_EMAIL", "noreply@hypersend.io")
-        self.sender_password = os.getenv("SENDER_PASSWORD", "")
+        
+        # CRITICAL FIX: Try SENDER_EMAIL first, then EMAIL_FROM, then SMTP_USERNAME
+        self.sender_email = (
+            os.getenv("SENDER_EMAIL") or 
+            os.getenv("EMAIL_FROM") or 
+            os.getenv("SMTP_USERNAME") or 
+            "noreply@hypersend.io"
+        )
+        
+        # CRITICAL FIX: Try SENDER_PASSWORD first, then SMTP_PASSWORD
+        self.sender_password = (
+            os.getenv("SENDER_PASSWORD") or 
+            os.getenv("SMTP_PASSWORD") or 
+            ""
+        )
+        
         self.sender_name = os.getenv("SENDER_NAME", "Hypersend")
         self.app_url = os.getenv("APP_URL", "https://hypersend.io")
-        self.enable_email = os.getenv("ENABLE_EMAIL", "False").lower() == "true"
+        enable_email_env = os.getenv("ENABLE_EMAIL")
+        if enable_email_env is None:
+            self.enable_email = settings.ENABLE_EMAIL  # Use config setting instead of env directly
+        else:
+            self.enable_email = enable_email_env.lower() in ("true", "1", "yes")
+        
+        # Log configuration on initialization (debug mode only)
+        if settings.DEBUG:
+            print(f"[EMAIL_SERVICE] Initialized with:")
+            print(f"  SMTP Server: {self.smtp_server}:{self.smtp_port}")
+            print(f"  Sender Email: {self.sender_email}")
+            print(f"  Sender Password: {'*' * len(self.sender_password) if self.sender_password else 'NOT SET'}")
+            print(f"  Email Enabled: {self.enable_email}")
         
     def _get_email_footer(self) -> str:
         """Get standardized email footer"""

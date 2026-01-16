@@ -35,8 +35,11 @@ COPY . .
 
 # ✅ CRITICAL FIX: Clean + Build with PROPER dart-define
 RUN rm -rf build/ && flutter clean
+# CRITICAL FIX: Build without source maps for production (reduces bundle size and 404 errors)
+# Source maps are only needed for development debugging
+# In production, they expose source code and cause 404 errors when not properly served
 RUN flutter build web --release \
-    --source-maps \
+    --no-source-maps \
     --no-tree-shake-icons \
     --dart-define=API_BASE_URL=${API_BASE_URL} \
     --dart-define=VALIDATE_CERTIFICATES=${VALIDATE_CERTIFICATES} \

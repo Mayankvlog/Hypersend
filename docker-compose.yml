@@ -133,6 +133,7 @@ services:
       USE_MOCK_DB: "False"
       
       # ===== EMAIL CONFIGURATION =====
+      ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
