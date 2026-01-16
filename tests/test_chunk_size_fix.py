@@ -17,7 +17,7 @@ def test_chunk_size_configuration():
     """Test that chunk size settings are consistent"""
     
     try:
-        from config import settings
+        from backend.config import settings
         from backend.routes.files import optimize_40gb_transfer
         
         # Test chunk size configuration

@@ -5,9 +5,15 @@ from bson import ObjectId
 import logging
 
 from auth.utils import get_current_user
-from db_proxy import chats_collection, messages_collection
-from models import ChatCreate, MessageCreate, ChatType, ChatPermissions
-from database import client
+
+try:
+    from ..db_proxy import chats_collection, messages_collection
+    from ..models import ChatCreate, MessageCreate, ChatType, ChatPermissions
+    from database import client
+except ImportError:
+    from db_proxy import chats_collection, messages_collection
+    from models import ChatCreate, MessageCreate, ChatType, ChatPermissions
+    from database import client
 
 logger = logging.getLogger(__name__)
 

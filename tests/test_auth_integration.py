@@ -20,8 +20,8 @@ os.environ['USE_MOCK_DB'] = 'True'
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 # Now import backend modules after setting env var
-from routes.auth import router
-from models import UserCreate, UserLogin
+from backend.routes.auth import router
+from backend.models import UserCreate, UserLogin
 
 
 class TestAuthenticationIntegration:
@@ -244,7 +244,7 @@ class TestPasswordStrengthValidation:
     
     def test_password_requirements(self):
         """Test various password scenarios"""
-        from routes.auth import register
+        from backend.routes.auth import register
         from fastapi import HTTPException
         
         test_cases = [

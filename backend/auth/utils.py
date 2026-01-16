@@ -1084,3 +1084,24 @@ def validate_session_code(provided_code: str, stored_code: str) -> bool:
     
     # Use constant-time comparison to prevent timing attacks
     return hmac.compare_digest(provided_code, stored_code)
+
+# Fallback imports for when direct import fails
+try:
+    from .auth_utils import (
+        hash_password, verify_password, create_access_token, 
+        create_refresh_token, decode_token, get_current_user,
+        get_current_user_for_upload, get_current_user_optional, get_current_user_or_query
+    )
+except ImportError:
+    pass  # Functions are already imported above
+
+
+# Fallback imports for when direct import fails
+try:
+    from .auth_utils import (
+        hash_password, verify_password, create_access_token, 
+        create_refresh_token, decode_token, get_current_user,
+        get_current_user_for_upload, get_current_user_optional, get_current_user_or_query
+    )
+except ImportError:
+    pass  # Functions are already imported above

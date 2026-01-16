@@ -23,7 +23,7 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-from main import app
+from backend.main import app
 from backend.routes.auth import (
     generate_app_reset_token, 
     verify_app_reset_token, 

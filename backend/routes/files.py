@@ -13,20 +13,36 @@ from urllib.parse import quote, unquote
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body, Query, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse, RedirectResponse
 from typing import Optional, List
-from models import (
-    FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
-)
-from db_proxy import files_collection as _files_collection_factory, uploads_collection as _uploads_collection_factory, users_collection, get_db, connect_db
+
+try:
+    from ..models import (
+        FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
+    )
+    from ..db_proxy import files_collection as _files_collection_factory, uploads_collection as _uploads_collection_factory, users_collection, get_db, connect_db
+    from ..config import settings
+    from ..validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
+    from ..rate_limiter import RateLimiter
+except ImportError:
+    from models import (
+        FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse
+    )
+    from db_proxy import files_collection as _files_collection_factory, uploads_collection as _uploads_collection_factory, users_collection, get_db, connect_db
+    from config import settings
+    from validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
+    from rate_limiter import RateLimiter
+
 from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, get_current_user_optional, decode_token
+
+import sys
+
+sys.modules.setdefault("routes.files", sys.modules[__name__])
+sys.modules.setdefault("backend.routes.files", sys.modules[__name__])
 
 # CRITICAL FIX: Custom dependency for upload endpoints that allows anonymous uploads
 async def get_upload_user_or_none(request: Request) -> Optional[str]:
     """Get current user for upload operations, allowing anonymous access."""
     # No token provided - allow anonymous access for uploads
     return None
-from config import settings
-from validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
-from rate_limiter import RateLimiter
 
 # Lazy proxies so tests can patch methods (e.g., insert_one) directly
 class _CollectionProxy:
@@ -81,6 +97,12 @@ def _safe_collection(getter):
         find_cursor.to_list = AsyncMock(return_value=[])
         coll.find = MagicMock(return_value=find_cursor)
         return coll
+
+
+async def _await_maybe(value, timeout: float = 5.0):
+    if hasattr(value, "__await__"):
+        return await asyncio.wait_for(value, timeout=timeout)
+    return value
 
 
 async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str):
@@ -331,7 +353,7 @@ router = APIRouter(prefix="/files", tags=["Files"])
 
 def get_secure_cors_origin(request_origin: Optional[str]) -> str:
     """Get secure CORS origin based on configuration and security"""
-    from config import settings
+    from ..config import settings
     
     # In production, use strict origin validation
     if not settings.DEBUG:
@@ -1184,9 +1206,9 @@ async def upload_chunk(
         # PERFORMANCE FIX: Reduce database timeouts for faster upload completion
         try:
             uploads_col = _safe_collection(uploads_collection)
-            upload_doc = await asyncio.wait_for(
+            upload_doc = await _await_maybe(
                 uploads_col.find_one({"_id": upload_id}),
-                timeout=2.0  # Reduced from 5.0 to 2.0
+                timeout=2.0,
             )
         except asyncio.TimeoutError:
             _log("error", f"Database timeout checking upload: {upload_id}", {
@@ -1316,7 +1338,7 @@ async def upload_chunk(
         
         # PERFORMANCE FIX: Reduce database timeouts for faster upload completion
         try:
-            upload_doc = await asyncio.wait_for(
+            upload_doc = await _await_maybe(
                 uploads_collection().find_one_and_update(
                     {
                         "_id": upload_id,
@@ -1331,7 +1353,7 @@ async def upload_chunk(
                     },
                     return_document=True  # Return the updated document
                 ),
-                timeout=2.0  # Reduced from 5.0 to 2.0
+                timeout=2.0,
             )
         except asyncio.TimeoutError:
             _log("error", f"Database timeout updating upload: {upload_id}", {
@@ -2025,7 +2047,7 @@ async def get_file_info(
                 _log("info", f"Shared user accessing file info: user={current_user}, file={file_id}", {"user_id": current_user, "operation": "file_info"})
             # Chat members can access files in their chats
             elif chat_id:
-                from db_proxy import chats_collection
+                from ..db_proxy import chats_collection
                 try:
                     chat_doc = await asyncio.wait_for(
                         chats_collection().find_one({"_id": chat_id}),
@@ -3358,7 +3380,7 @@ async def get_file_versions(
     """Get multiple file versions (300 Multiple Choices)"""
     try:
         # Check if file has multiple versions
-        from db_proxy import files_collection as files_coll
+        from ..db_proxy import files_collection as files_coll
         files = await files_coll().find({
             "original_id": file_id,
             "is_deleted": False

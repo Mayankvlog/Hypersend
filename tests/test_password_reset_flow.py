@@ -20,7 +20,7 @@ try:
     from backend.main import app  # type: ignore
 except ImportError:
     try:
-        from main import app  # type: ignore
+        from backend.main import app  # type: ignore
     except ImportError as e:
         print(f"Failed to import main: {e}")
         app = None

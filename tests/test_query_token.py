@@ -16,7 +16,7 @@ sys.path.insert(0, backend_path)
 from auth.utils import (
     create_access_token, decode_token, get_current_user_from_query
 )
-from models import TokenData
+from backend.models import TokenData
 from fastapi import Query, HTTPException
 import pytest
 

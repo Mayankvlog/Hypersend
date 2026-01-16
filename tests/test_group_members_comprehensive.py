@@ -11,7 +11,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi.testclient import TestClient
-from main import app
+from backend.main import app
 from auth.utils import get_current_user
 
 

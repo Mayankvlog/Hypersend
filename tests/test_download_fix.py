@@ -12,7 +12,7 @@ os.environ['DEBUG'] = 'True'
 
 from fastapi.testclient import TestClient
 try:
-    from main import app
+    from backend.main import app
 except ImportError:
     # Fallback for testing
     app = None
@@ -100,7 +100,7 @@ def test_chat_member_can_download_other_users_file():
     assert chat_id
 
     # Create a file on disk under uploader's folder
-    from config import settings
+    from backend.config import settings
     file_id = "file_test_id_001"
     rel_path = Path("files") / user_a_id[:2] / user_a_id / "shared.txt"
     abs_path = Path(settings.DATA_ROOT) / rel_path
@@ -108,7 +108,7 @@ def test_chat_member_can_download_other_users_file():
     abs_path.write_bytes(b"hello-from-a")
 
     # Insert file metadata into mock DB
-    from db_proxy import files_collection
+    from backend.db_proxy import files_collection
     awaitable = files_collection().insert_one({
         "_id": file_id,
         "filename": "shared.txt",

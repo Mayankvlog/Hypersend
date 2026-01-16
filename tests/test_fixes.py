@@ -9,7 +9,7 @@ backend_dir = Path(__file__).resolve().parent.parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
 from fastapi.testclient import TestClient
-from main import app
+from backend.main import app
 
 @pytest.fixture
 def client():
@@ -251,7 +251,7 @@ class TestHTTPStatusCodes:
         
         # Reset rate limiter state after test to avoid affecting later tests
         try:
-            from main import app
+            from backend.main import app
             if hasattr(app, 'state') and hasattr(app.state, 'limiter'):
                 app.state.limiter.reset()
         except Exception:

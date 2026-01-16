@@ -1,29 +1,60 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.responses import JSONResponse
-from models import (
-    UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
-    PasswordResetRequest, PasswordResetResponse,
-    EmailChangeRequest, EmailVerificationRequest,
-    QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
-    QRCodeSession, TokenData, ChangePasswordRequest
-)
-from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+
+try:
+    from ..models import (
+        UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
+        PasswordResetRequest, PasswordResetResponse,
+        EmailChangeRequest, EmailVerificationRequest,
+        QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
+        QRCodeSession, TokenData, ChangePasswordRequest
+    )
+    from ..db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+    from ..config import settings
+except ImportError:
+    from models import (
+        UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
+        PasswordResetRequest, PasswordResetResponse,
+        EmailChangeRequest, EmailVerificationRequest,
+        QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
+        QRCodeSession, TokenData, ChangePasswordRequest
+    )
+    from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+    from config import settings
+
 from auth.utils import (
     hash_password, verify_password, create_access_token, 
     create_refresh_token, decode_token, get_current_user
 )
-from config import settings
-from validators import validate_user_id
+
+try:
+    from ..validators import validate_user_id
+    from ..rate_limiter import password_reset_limiter
+    from ..utils.email_service import email_service
+except ImportError:
+    from validators import validate_user_id
+    from rate_limiter import password_reset_limiter
+    from utils.email_service import email_service
+
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import asyncio
 import secrets
-from rate_limiter import password_reset_limiter
-from utils.email_service import email_service
 
 from collections import defaultdict
 from typing import Dict, Tuple, List, Optional
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+import sys
+
+sys.modules.setdefault("routes.auth", sys.modules[__name__])
+sys.modules.setdefault("backend.routes.auth", sys.modules[__name__])
+
+
+async def _await_maybe(value, timeout: float = 5.0):
+    if hasattr(value, "__await__"):
+        return await asyncio.wait_for(value, timeout=timeout)
+    return value
 
 # Password reset token expiry
 PASSWORD_RESET_TOKEN_EXPIRY_HOURS = 1
@@ -160,7 +191,7 @@ async def auth_options(request: Request):
     """Handle CORS preflight for auth endpoints"""
     from fastapi.responses import Response
     # SECURITY: Restrict CORS origins in production for authenticated endpoints
-    from config import settings
+    from ..config import settings
     
     cors_origin = get_safe_cors_origin(request.headers.get("origin", ""))
     
@@ -200,9 +231,9 @@ async def register(user: UserCreate) -> UserResponse:
         existing_user = None
         try:
             users_col = users_collection()
-            existing_user = await asyncio.wait_for(
+            existing_user = await _await_maybe(
                 users_col.find_one({"email": normalized_email}),
-                timeout=5.0
+                timeout=5.0,
             )
         except asyncio.TimeoutError:
             auth_log(f"Database timeout checking existing user")
@@ -274,10 +305,7 @@ async def register(user: UserCreate) -> UserResponse:
         try:
             users_col = users_collection()
             # CRITICAL FIX: Motor MongoDB operations are always async, await them directly
-            result = await asyncio.wait_for(
-                users_col.insert_one(user_doc),
-                timeout=5.0
-            )
+            result = await _await_maybe(users_col.insert_one(user_doc), timeout=5.0)
             
             # CRITICAL FIX: Extract inserted_id safely - motor returns result directly
             if result is None:
@@ -424,9 +452,9 @@ async def login(credentials: UserLogin, request: Request) -> Token:
             users_col = users_collection()
             # Add timeout to database query to prevent 503 Service Unavailable
             try:
-                existing_user = await asyncio.wait_for(
+                existing_user = await _await_maybe(
                     users_col.find_one({"email": normalized_email}),
-                    timeout=5.0
+                    timeout=5.0,
                 )
             except asyncio.TimeoutError:
                 raise HTTPException(

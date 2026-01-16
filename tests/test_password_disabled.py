@@ -11,7 +11,7 @@ import os
 from datetime import datetime
 
 # Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), 'backend')
+backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
@@ -22,9 +22,9 @@ os.environ['USE_MOCK_DB'] = 'True'
 os.environ['ENABLE_PASSWORD_RESET'] = 'True'
 
 from fastapi.testclient import TestClient
-from main import app
-from models import PasswordResetRequest
-from db_proxy import users_collection
+from backend.main import app
+from backend.models import PasswordResetRequest
+from backend.db_proxy import users_collection
 from bson import ObjectId
 from unittest.mock import patch
 
@@ -143,7 +143,7 @@ class TestPasswordManagementDisabled:
         
         # Mock authentication
         from fastapi import Depends
-        from routes.auth import get_current_user
+        from backend.routes.auth import get_current_user
         app.dependency_overrides[get_current_user] = lambda: test_user_id
         
         # Mock password verification

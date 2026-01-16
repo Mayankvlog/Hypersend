@@ -19,12 +19,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
 try:
-    from main import app
+    from backend.main import app
     from auth.utils import create_access_token, decode_token, get_current_user_or_query
-    from config import settings
+    from backend.config import settings
     from routes.files import download_file
-    from routes.auth import refresh_session_token
-    from models import RefreshTokenRequest
+    from backend.routes.auth import refresh_session_token
+    from backend.models import RefreshTokenRequest
 except ImportError as e:
     print(f"Import error: {e}")
     pytest.skip("Backend modules not available", allow_module_level=True)

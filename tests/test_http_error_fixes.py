@@ -277,7 +277,7 @@ class TestDatabaseConnectionHandling:
     @pytest.mark.asyncio
     async def test_database_timeout_handling(self):
         """Test database timeout handling"""
-        from routes.users import get_current_user_profile
+        from backend.routes.users import get_current_user_profile
         
         # Mock database timeout
         with patch('routes.users.asyncio.wait_for') as mock_wait:

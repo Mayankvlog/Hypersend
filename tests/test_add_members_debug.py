@@ -17,7 +17,7 @@ if backend_path not in sys.path:
 
 # Import required modules
 try:
-    from main import app
+    from backend.main import app
 except ImportError:
     print("❌ Could not import main.py. Trying alternative...")
     sys.path.insert(0, os.path.dirname(__file__))
@@ -30,7 +30,7 @@ except ImportError:
     from backend.auth.utils import get_current_user
 
 try:
-    from routes.groups import GroupMembersUpdate
+    from backend.routes.groups import GroupMembersUpdate
 except ImportError:
     print("❌ Could not import routes.groups. Trying alternative...")
     from backend.routes.groups import GroupMembersUpdate

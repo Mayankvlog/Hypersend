@@ -11,8 +11,8 @@ os.environ['DEBUG'] = 'True'
 
 from fastapi.testclient import TestClient
 try:
-    from main import app
-    from config import settings
+    from backend.main import app
+    from backend.config import settings
 except ImportError:
     app = None
     settings = None

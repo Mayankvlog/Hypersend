@@ -2,8 +2,14 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from typing import Optional
 from datetime import datetime, timezone
 from bson import ObjectId
-from models import ChatCreate, MessageCreate, ChatType
-from db_proxy import chats_collection, messages_collection, users_collection
+
+try:
+    from ..models import ChatCreate, MessageCreate, ChatType
+    from ..db_proxy import chats_collection, messages_collection, users_collection
+except ImportError:
+    from models import ChatCreate, MessageCreate, ChatType
+    from db_proxy import chats_collection, messages_collection, users_collection
+
 from auth.utils import get_current_user, get_current_user_for_upload
 import logging
 

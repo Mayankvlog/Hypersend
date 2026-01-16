@@ -18,8 +18,8 @@ os.environ['DEBUG'] = 'True'
 
 from fastapi.testclient import TestClient
 try:
-    from main import app
-    from config import settings
+    from backend.main import app
+    from backend.config import settings
 except ImportError:
     app = None
     settings = None
@@ -116,7 +116,7 @@ def test_email_sending_directly():
     
     # Import the email sending function
     try:
-        from routes.auth import send_password_reset_email
+        from backend.routes.auth import send_password_reset_email
     except ImportError:
         print("❌ Could not import email sending function")
         return False

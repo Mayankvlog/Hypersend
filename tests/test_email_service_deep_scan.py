@@ -48,7 +48,7 @@ def test_email_service_configuration():
     print("\n2. CONFIG SETTINGS CHECK:")
     print("-" * 80)
     
-    from config import settings
+    from backend.config import settings
     
     config_attrs = {
         "ENABLE_EMAIL": settings.ENABLE_EMAIL,
@@ -70,7 +70,7 @@ def test_email_service_configuration():
     print("\n3. EMAIL SERVICE INSTANCE CHECK:")
     print("-" * 80)
     
-    from utils.email_service import email_service
+    from backend.utils.email_service import email_service
     
     service_attrs = {
         "smtp_server": email_service.smtp_server,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/service_provider.dart';
 
@@ -17,6 +19,9 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _users = [];
+
+  Uint8List? _pickedGroupAvatarBytes;
+  String? _pickedGroupAvatarName;
 
   @override
   void dispose() {
@@ -48,19 +53,6 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       // FIXED: Use contacts endpoint instead of search for group creation
       final contacts = await serviceProvider.apiService.getContacts(limit: 100);
       debugPrint('[GROUP_CREATE] Loaded ${contacts.length} contacts for group creation');
-      // If user has no saved contacts yet, fallback to all users so group creation works.
-      if (contacts.isEmpty) {
-        debugPrint('[GROUP_CREATE] No contacts found, loading all users via search');
-        final users = await serviceProvider.apiService.searchUsers('');
-        debugPrint('[GROUP_CREATE] Loaded ${users.length} users from search fallback');
-
-        if (!mounted) return;
-        setState(() {
-          _users = users;
-          _loading = false;
-        });
-        return;
-      }
       
       if (!mounted) return;
       setState(() {
@@ -69,25 +61,39 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       });
     } catch (e) {
       debugPrint('[GROUP_CREATE] Error loading contacts: $e');
-      // Fallback to searchUsers if contacts endpoint fails
-      try {
-        debugPrint('[GROUP_CREATE] Falling back to searchUsers for available users');
-        final users = await serviceProvider.apiService.searchUsers('');
-        debugPrint('[GROUP_CREATE] Loaded ${users.length} users from search fallback');
-        
-        if (!mounted) return;
-        setState(() {
-          _users = users;
-          _loading = false;
-        });
-      } catch (fallbackError) {
-        debugPrint('[GROUP_CREATE] Both contacts and search failed: $fallbackError');
-        if (!mounted) return;
-        setState(() {
-          _error = 'Failed to load contacts. Please try again.';
-          _loading = false;
-        });
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load contacts. Please try again.';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _pickGroupAvatar() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+        allowMultiple: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.single;
+      if (file.bytes == null) return;
+
+      if (file.bytes != null && file.bytes!.length > 10 * 1024 * 1024) {
+        throw Exception('Image size must be less than 10MB');
       }
+
+      if (!mounted) return;
+      setState(() {
+        _pickedGroupAvatarBytes = file.bytes;
+        _pickedGroupAvatarName = file.name;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to select image: $e')),
+      );
     }
   }
 
@@ -128,6 +134,22 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       debugPrint('[GROUP_CREATE] API response: $res');
       final groupId = (res['group_id'] ?? res['groupId'] ?? '').toString();
       debugPrint('[GROUP_CREATE] Group created with ID: $groupId');
+
+      if (groupId.isNotEmpty && _pickedGroupAvatarBytes != null && (_pickedGroupAvatarName ?? '').isNotEmpty) {
+        try {
+          final uploadRes = await serviceProvider.apiService.uploadGroupAvatar(
+            groupId: groupId,
+            bytes: _pickedGroupAvatarBytes!,
+            filename: _pickedGroupAvatarName!,
+          );
+          final avatarUrl = (uploadRes['avatar_url'] ?? '').toString();
+          if (avatarUrl.isNotEmpty) {
+            await serviceProvider.apiService.updateGroup(groupId, {'avatar_url': avatarUrl});
+          }
+        } catch (e) {
+          debugPrint('[GROUP_CREATE] Group avatar upload failed: $e');
+        }
+      }
       
       if (!mounted) return;
       context.pop();
@@ -182,6 +204,36 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Center(
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 44,
+                              backgroundColor: AppTheme.cardDark,
+                              backgroundImage: _pickedGroupAvatarBytes != null ? MemoryImage(_pickedGroupAvatarBytes!) : null,
+                              child: null,
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: InkWell(
+                                onTap: _pickGroupAvatar,
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryCyan,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: AppTheme.dividerColor),
+                                  ),
+                                  child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
                       TextField(
                         controller: _groupNameController,
                         decoration: const InputDecoration(
@@ -204,6 +256,14 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 12),
+                      if (_users.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            'No contacts found. Add contacts first, then create a group.',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
+                          ),
+                        ),
                       Container(
                         height: 360,
                         decoration: BoxDecoration(

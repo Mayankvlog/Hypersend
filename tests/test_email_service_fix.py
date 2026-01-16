@@ -27,7 +27,7 @@ class TestEmailServiceConfiguration:
         
         # Reimport to get fresh instance
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -44,7 +44,7 @@ class TestEmailServiceConfiguration:
         os.environ["SMTP_USERNAME"] = "smtp@example.com"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -60,7 +60,7 @@ class TestEmailServiceConfiguration:
         os.environ["SMTP_USERNAME"] = "smtp@example.com"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -81,7 +81,7 @@ class TestPasswordResetEmailFlow:
         os.environ["ENABLE_EMAIL"] = "True"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -114,7 +114,7 @@ class TestPasswordResetEmailFlow:
         os.environ["ENABLE_EMAIL"] = "True"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -135,7 +135,7 @@ class TestPasswordResetEmailFlow:
         os.environ["ENABLE_EMAIL"] = "False"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -161,7 +161,7 @@ class TestEmailServiceIntegration:
         os.environ["DEBUG"] = "True"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -180,7 +180,7 @@ class TestEmailServiceIntegration:
         os.environ["ENABLE_EMAIL"] = "True"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -215,7 +215,7 @@ class TestEmailServiceErrorHandling:
         os.environ["ENABLE_EMAIL"] = "True"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()
@@ -242,7 +242,7 @@ class TestEmailServiceErrorHandling:
         os.environ["ENABLE_EMAIL"] = "True"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         service = email_module.EmailService()

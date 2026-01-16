@@ -111,7 +111,7 @@ def test_all_security_fixes_integration():
     
     # Test database error handling
     from database import connect_db
-    from routes.auth import cleanup_expired_lockouts
+    from backend.routes.auth import cleanup_expired_lockouts
     
     # 7. Cleanup function exists
     try:
@@ -157,7 +157,7 @@ def test_error_response_format():
     print("Testing error response format...")
     
     try:
-        from main import app
+        from backend.main import app
         from fastapi.testclient import TestClient
         client = TestClient(app)
         
@@ -291,7 +291,7 @@ def test_comprehensive_error_scenarios():
 def check_email_validation(email):
     """Helper function to test email validation"""
     try:
-        from models import UserCreate
+        from backend.models import UserCreate
         username = email.split('@')[0] if '@' in email else 'testuser'
         UserCreate(name="Test", username=username, password="password123")
         return False  # No exception means validation passed

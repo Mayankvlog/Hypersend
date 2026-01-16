@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 try:
-    from models import (
+    from backend.models import (
         UserCreate, UserLogin, UserInDB, ProfileUpdate
     )
 except ImportError:

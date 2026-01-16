@@ -15,7 +15,7 @@ def test_file_upload_scenarios():
     
     app = None
     try:
-        from main import app
+        from backend.main import app
         client = TestClient(app)
         
         print("=== Testing File Upload Authentication Scenarios ===")

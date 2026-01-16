@@ -9,7 +9,7 @@ import sys
 import os
 
 # Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), 'backend')
+backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
@@ -20,8 +20,8 @@ async def test_avatar_fix():
     print("=" * 50)
     
     try:
-        from main import app
-        from models import ProfileUpdate, UserResponse
+        from backend.main import app
+        from backend.models import ProfileUpdate, UserResponse
         from fastapi.testclient import TestClient
         from unittest.mock import patch
         from bson import ObjectId
@@ -52,8 +52,8 @@ async def test_avatar_fix():
         print("\n📝 Test 2: User Registration")
         print("-" * 40)
         
-        from models import UserCreate
-        from db_proxy import users_collection
+        from backend.models import UserCreate
+        from backend.db_proxy import users_collection
         
         # Clear test data
         users_collection().data.clear()
@@ -93,7 +93,7 @@ async def test_avatar_fix():
         # Mock authentication for profile update
         test_user_id = "test_user_id"
         from fastapi import Depends
-        from routes.users import get_current_user
+        from backend.routes.users import get_current_user
         app.dependency_overrides[get_current_user] = lambda: test_user_id
         
         # Create test user in database

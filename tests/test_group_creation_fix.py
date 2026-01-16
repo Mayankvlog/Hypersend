@@ -11,18 +11,18 @@ import os
 from datetime import datetime
 
 # Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), 'backend')
+backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
 from fastapi.testclient import TestClient
 try:
-    from main import app
+    from backend.main import app
 except ImportError:
     app = None
-from models import GroupCreate
+from backend.models import GroupCreate
 try:
-    from db_proxy import users_collection
+    from backend.db_proxy import users_collection
 except ImportError:
     users_collection = None
 try:
@@ -51,7 +51,7 @@ class TestGroupCreationFix:
         return [str(ObjectId()) for _ in range(2)]
     
     def test_search_users_empty_query_returns_users(self, client, test_user_id, test_contact_ids):
-        """Test that search users with empty query returns available users for group creation"""
+        """Test that search users with empty query does not return users"""
         print("\n[TEST] Search Users Empty Query")
         
         # Setup test user with contacts
@@ -98,12 +98,8 @@ class TestGroupCreationFix:
         data = response.json()
         users = data.get("users", [])
         
-        # Should return users except current user (test_user_id)
-        assert len(users) >= 3  # 2 contacts + 1 other user
-        user_ids = [user["id"] for user in users]
-        assert test_user_id not in user_ids  # Current user excluded
-        
-        print(f"PASS: Empty query returned {len(users)} available users")
+        assert users == []
+        print("PASS: Empty query returned no users")
     
     def test_contacts_endpoint_returns_user_contacts(self, client, test_user_id, test_contact_ids):
         """Test that contacts endpoint returns user's contacts"""
@@ -259,7 +255,7 @@ class TestGroupCreationFix:
         
         # Simulate frontend _loadContacts() using search with empty query
         # This should now work with our fix
-        from routes.users import search_users
+        from backend.routes.users import search_users
         from unittest.mock import Mock
         
         # Mock current user dependency

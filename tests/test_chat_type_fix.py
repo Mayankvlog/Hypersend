@@ -17,7 +17,7 @@ try:
     from backend.main import app  # type: ignore
 except ImportError:
     try:
-        from main import app  # type: ignore
+        from backend.main import app  # type: ignore
     except ImportError as e:
         print(f"Failed to import main: {e}")
         app = None
@@ -36,7 +36,7 @@ try:
     from backend.models import ChatCreate  # type: ignore
 except ImportError:
     try:
-        from models import ChatCreate  # type: ignore
+        from backend.models import ChatCreate  # type: ignore
     except ImportError as e:
         print(f"Failed to import models: {e}")
         ChatCreate = None
@@ -102,7 +102,7 @@ class TestChatCreationFix:
         try:
             from backend.models import ChatCreate  # type: ignore
         except ImportError:
-            from models import ChatCreate  # type: ignore
+            from backend.models import ChatCreate  # type: ignore
         from pydantic import ValidationError
         
         # Test invalid chat types (removed 'direct' since it's now supported)
@@ -160,7 +160,7 @@ class TestChatCreationFix:
         try:
             from backend.models import ChatType  # type: ignore
         except ImportError:
-            from models import ChatType  # type: ignore
+            from backend.models import ChatType  # type: ignore
         
         # Check if all enum values are in validation list
         enum_values = [
@@ -221,7 +221,7 @@ class TestChatCreationFix:
         try:
             from backend.models import ChatCreate  # type: ignore
         except ImportError:
-            from models import ChatCreate  # type: ignore
+            from backend.models import ChatCreate  # type: ignore
         
         # Test data
         chat_data = ChatCreate(
@@ -260,7 +260,7 @@ class TestChatCreationFix:
         try:
             from backend.models import ChatCreate  # type: ignore
         except ImportError:
-            from models import ChatCreate  # type: ignore
+            from backend.models import ChatCreate  # type: ignore
         
         # Test with 'private' type (what frontend should send)
         chat_data = ChatCreate(
@@ -288,7 +288,7 @@ class TestChatCreationFix:
         try:
             from backend.models import ChatCreate  # type: ignore
         except ImportError:
-            from models import ChatCreate  # type: ignore
+            from backend.models import ChatCreate  # type: ignore
         
         # Test that 'direct' type is now accepted and converted to 'private'
         chat = ChatCreate(
@@ -310,7 +310,7 @@ class TestChatCreationFix:
         try:
             from backend.models import ChatCreate  # type: ignore
         except ImportError:
-            from models import ChatCreate  # type: ignore
+            from backend.models import ChatCreate  # type: ignore
         
         # Test with single member ID (what frontend sends)
         chat_data = ChatCreate(
@@ -351,7 +351,7 @@ class TestChatCreationFix:
         try:
             from backend.models import ChatCreate  # type: ignore
         except ImportError:
-            from models import ChatCreate  # type: ignore
+            from backend.models import ChatCreate  # type: ignore
         
         # Test data
         chat_data = ChatCreate(

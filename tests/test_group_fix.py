@@ -36,7 +36,7 @@ class TestGroupCreationFix:
     @pytest.mark.asyncio
     async def test_group_creation_with_members(self, client):
         """Test that group creation properly adds members"""
-        from models import GroupCreate
+        from backend.models import GroupCreate
         from fastapi.security import HTTPAuthorizationCredentials
         
         # Test group creation with 2 members
@@ -88,7 +88,7 @@ class TestGroupCreationFix:
     @pytest.mark.asyncio
     async def test_group_creation_via_users_endpoint(self, client):
         """Test group creation via users endpoint"""
-        from models import GroupCreate
+        from backend.models import GroupCreate
         
         # Test group creation with 2 members
         group_data = {
@@ -131,7 +131,7 @@ class TestGroupCreationFix:
     @pytest.mark.asyncio
     async def test_deep_code_scan_group_creation_edge_cases(self, client):
         """Deep code scan: Test all edge cases for group creation"""
-        from models import GroupCreate
+        from backend.models import GroupCreate
         
         test_cases = [
             # Case 1: Empty group name
@@ -233,7 +233,7 @@ class TestGroupCreationFix:
     @pytest.mark.asyncio 
     async def test_deep_code_scan_member_addition_logic(self, client):
         """Deep code scan: Test member addition logic in detail"""
-        from models import GroupCreate
+        from backend.models import GroupCreate
         
         # Test with various member combinations
         member_test_cases = [
@@ -302,7 +302,7 @@ class TestGroupCreationFix:
     @pytest.mark.asyncio
     async def test_deep_code_scan_response_structure(self, client):
         """Deep code scan: Test response structure and data integrity"""
-        from models import GroupCreate
+        from backend.models import GroupCreate
         
         group_data = {
             "name": "Response Structure Test",

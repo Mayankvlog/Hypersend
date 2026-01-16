@@ -25,14 +25,14 @@ class TestPasswordResetFunctionality:
     @pytest.fixture
     def client(self):
         """Create test client"""
-        from main import app
+        from backend.main import app
         return TestClient(app)
     
     @pytest.mark.asyncio
     async def test_forgot_password_creates_reset_token(self):
         """Test that forgot password creates a valid reset token"""
         pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password", allow_module_level=False)
-        from routes.auth import forgot_password
+        from backend.routes.auth import forgot_password
         
         # Mock user
         test_user = {
@@ -69,7 +69,7 @@ class TestPasswordResetFunctionality:
         mock_reset_tokens = MockResetTokensCollection()
         
         # ForgotPasswordRequest model removed - create simple dict
-        from models import ForgotPasswordRequest
+        from backend.models import ForgotPasswordRequest
         request_data = ForgotPasswordRequest(email="test@example.com")
         
         with patch("routes.auth.users_collection", return_value=MockUsersCollection()), \
@@ -94,8 +94,8 @@ class TestPasswordResetFunctionality:
     @pytest.mark.asyncio
     async def test_reset_password_with_valid_token(self):
         """Test password reset with valid token"""
-        from routes.auth import reset_password
-        from models import PasswordResetRequest
+        from backend.routes.auth import reset_password
+        from backend.models import PasswordResetRequest
         from auth.utils import create_access_token
         
         # Create a valid reset token
@@ -125,6 +125,11 @@ class TestPasswordResetFunctionality:
                 # Handle both _id and email queries
                 if "_id" in query:
                     user_id = query.get("_id")
+                    if isinstance(user_id, dict) and "$in" in user_id:
+                        for candidate in user_id.get("$in", []):
+                            if str(candidate) == "507f1f77bcf86cd799439011":
+                                return self.user
+                        return None
                     if isinstance(user_id, str):
                         user_id = ObjectId(user_id)
                     if str(user_id) == "507f1f77bcf86cd799439011":
@@ -203,8 +208,8 @@ class TestPasswordResetFunctionality:
     @pytest.mark.asyncio
     async def test_reset_password_with_invalid_token(self):
         """Test password reset with invalid token"""
-        from routes.auth import reset_password
-        from models import PasswordResetRequest
+        from backend.routes.auth import reset_password
+        from backend.models import PasswordResetRequest
         
         class MockUsersCollection:
             async def find_one(self, query):

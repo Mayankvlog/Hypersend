@@ -7,7 +7,12 @@ import sys
 from unittest.mock import Mock, AsyncMock, MagicMock
 from bson import ObjectId
 from fastapi import HTTPException, status
-from config import settings
+
+try:
+    from .config import settings
+except ImportError:
+    from config import settings
+
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # Global database connection variables

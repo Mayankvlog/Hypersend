@@ -86,7 +86,7 @@ class TestMemberSuggestionsFix:
         with patch('backend.routes.groups.UserCacheService.get_user_contacts', return_value=["user1", "user2"]):
             with patch('backend.routes.groups.users_collection') as mock_users_collection:
                 # Pre-populate mock database with test group and users
-                from db_proxy import chats_collection, users_collection
+                from backend.db_proxy import chats_collection, users_collection
                 await chats_collection().insert_one(mock_group)
                 
                 # Clear and add only the specific users we want for this test
@@ -158,7 +158,7 @@ class TestMemberSuggestionsFix:
         with patch('backend.routes.groups.UserCacheService.get_user_contacts', return_value=["user1"]):
             with patch('backend.routes.groups.users_collection') as mock_users_collection:
                 # Pre-populate mock database with test group and users
-                from db_proxy import chats_collection, users_collection
+                from backend.db_proxy import chats_collection, users_collection
                 await chats_collection().insert_one(mock_group)
                 
                 # Clear and add only the specific user we want for this test
@@ -213,7 +213,7 @@ class TestMemberSuggestionsFix:
         new_members = ["user1", "user2"]
         
         # Pre-populate mock database
-        from db_proxy import chats_collection
+        from backend.db_proxy import chats_collection
         await chats_collection().insert_one(mock_group)
         
         with patch('backend.routes.groups.GroupCacheService.get_group_members') as mock_get_members:
@@ -600,7 +600,7 @@ class TestMemberSuggestionsFix:
         with patch('backend.routes.groups.UserCacheService.get_user_contacts', return_value=["user1"]):
             with patch('backend.routes.groups.users_collection') as mock_users_collection:
                 # Pre-populate mock database with test group and users
-                from db_proxy import chats_collection, users_collection
+                from backend.db_proxy import chats_collection, users_collection
                 await chats_collection().insert_one(mock_group)
                 
                 # Clear and add only the specific user we want for this test

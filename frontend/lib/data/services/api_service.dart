@@ -1280,6 +1280,55 @@ Future<void> postToChannel(String channelId, String text) async {
     return response.data;
   }
 
+  Future<Map<String, dynamic>> uploadGroupAvatar({
+    required String groupId,
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    try {
+      debugPrint('[API_SERVICE] Uploading group avatar: $filename (${bytes.length} bytes)');
+
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: filename),
+      });
+
+      final uploadUrl = 'groups/$groupId/avatar';
+      debugPrint('[API_SERVICE] Group avatar upload URL: ${_dio.options.baseUrl}$uploadUrl');
+
+      final response = await _dio.post(
+        uploadUrl,
+        data: formData,
+        options: Options(
+          method: 'POST',
+          sendTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+          headers: {
+            'Accept': 'application/json',
+          },
+          followRedirects: false,
+          validateStatus: (status) => status != null && status >= 200 && status < 300,
+        ),
+      );
+
+      final data = response.data;
+      if (data is Map<String, dynamic>) return data;
+      if (data is Map) return Map<String, dynamic>.from(data);
+      if (data is String) {
+        final parsed = jsonDecode(data);
+        if (parsed is Map) return Map<String, dynamic>.from(parsed);
+      }
+      return {};
+    } on DioException catch (e) {
+      debugPrint('[API_SERVICE] DioException during group avatar upload: ${e.type} - ${e.message}');
+      debugPrint('[API_SERVICE] Response status: ${e.response?.statusCode}');
+      debugPrint('[API_SERVICE] Response data: ${e.response?.data}');
+      rethrow;
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error during group avatar upload: $e');
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> addGroupMembers(String groupId, List<String> userIds) async {
     final response = await _dio.post('groups/$groupId/members', data: {'user_ids': userIds.map((id) => id.toString()).toList()});
     return response.data;

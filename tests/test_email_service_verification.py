@@ -33,8 +33,8 @@ def test_email_service_configuration_fix():
     print("\n1. TESTING FALLBACK LOGIC:")
     print("-" * 80)
     
-    from config import settings
-    from utils.email_service import email_service
+    from backend.config import settings
+    from backend.utils.email_service import email_service
     
     print(f"SMTP_PASSWORD from config: {settings.SMTP_PASSWORD}")
     print(f"Email service sender_password: {'*' * len(email_service.sender_password) if email_service.sender_password else 'NOT SET'}")
@@ -109,7 +109,7 @@ def test_email_service_configuration_fix():
     print("\n6. TESTING AUTH ROUTES INTEGRATION:")
     print("-" * 80)
     
-    from routes.auth import forgot_password, reset_password
+    from backend.routes.auth import forgot_password, reset_password
     
     print("✅ PASS: Auth routes imported successfully")
     print("✅ PASS: forgot_password route available")

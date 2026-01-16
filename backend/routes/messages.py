@@ -6,8 +6,13 @@ import logging
 from pydantic import BaseModel, Field
 
 from auth.utils import get_current_user
-from db_proxy import chats_collection, messages_collection
-from models import MessageEditRequest, MessageReactionRequest
+
+try:
+    from ..db_proxy import chats_collection, messages_collection
+    from ..models import MessageEditRequest, MessageReactionRequest
+except ImportError:
+    from db_proxy import chats_collection, messages_collection
+    from models import MessageEditRequest, MessageReactionRequest
 
 logger = logging.getLogger(__name__)
 

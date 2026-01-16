@@ -27,7 +27,7 @@ from typing import Optional
 try:
     from fastapi.testclient import TestClient
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
-    from main import app
+    from backend.main import app
     USE_TESTCLIENT = True
 except ImportError:
     USE_TESTCLIENT = False

@@ -12,12 +12,12 @@ from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
 # Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), 'backend')
+backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-from main import app
-from models import GroupCreate, GroupMembersUpdate
+from backend.main import app
+from backend.models import GroupCreate, GroupMembersUpdate
 from backend.mock_database import users_collection, chats_collection, messages_collection
 
 class TestAllFixes:

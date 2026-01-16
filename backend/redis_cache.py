@@ -8,12 +8,25 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
 import asyncio
+import importlib
 
-try:
-    import redis.asyncio as redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
+def _import_redis_asyncio():
+    try:
+        return importlib.import_module("redis.asyncio")
+    except ModuleNotFoundError:
+        pass
+
+    try:
+        redis_mod = importlib.import_module("redis")
+    except ModuleNotFoundError:
+        return None
+
+    return getattr(redis_mod, "asyncio", redis_mod)
+
+
+redis = _import_redis_asyncio()
+REDIS_AVAILABLE = redis is not None
+if not REDIS_AVAILABLE:
     logging.warning("Redis not available, using mock cache")
 
 logger = logging.getLogger(__name__)

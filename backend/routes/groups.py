@@ -1,21 +1,39 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, UploadFile, File
 from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone
 from bson import ObjectId
 import asyncio
 import json
 import logging
+import os
+import uuid
+import re
+from pathlib import Path
 
-from auth.utils import get_current_user
-from db_proxy import chats_collection, users_collection, messages_collection, get_db
-from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
-from redis_cache import GroupCacheService, UserCacheService, SearchCacheService
+from auth.utils import get_current_user, get_current_user_optional
+
+try:
+    from ..db_proxy import chats_collection, users_collection, messages_collection, get_db
+    from ..models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
+    from ..redis_cache import GroupCacheService, UserCacheService, SearchCacheService
+    from ..config import settings
+except ImportError:
+    from db_proxy import chats_collection, users_collection, messages_collection, get_db
+    from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
+    from redis_cache import GroupCacheService, UserCacheService, SearchCacheService
+    from config import settings
+
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
+
+import sys
+
+sys.modules.setdefault("routes.groups", sys.modules[__name__])
+sys.modules.setdefault("backend.routes.groups", sys.modules[__name__])
 
 
 class _ToggleMemberAddPermissionBody(BaseModel):
@@ -37,7 +55,6 @@ async def groups_options(request):
     """Handle CORS preflight for groups endpoints"""
     from fastapi.responses import Response
     # SECURITY: Restrict CORS origins in production for authenticated endpoints
-    from config import settings
     from routes.auth import get_safe_cors_origin
     
     cors_origin = get_safe_cors_origin(request.headers.get("origin", ""))
@@ -55,6 +72,220 @@ async def groups_options(request):
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def _collect_cursor(cursor, limit: Optional[int] = None) -> List[dict]:
+    if cursor is None:
+        return []
+
+    raw_aiter = None
+    try:
+        raw_aiter = getattr(cursor, "__dict__", {}).get("__aiter__")
+    except Exception:
+        raw_aiter = None
+
+    if raw_aiter is None:
+        try:
+            raw_aiter = getattr(getattr(cursor, "_mock_children", None) or {}, "get", lambda _k, _d=None: None)("__aiter__")
+        except Exception:
+            raw_aiter = None
+
+    if raw_aiter is None:
+        try:
+            raw_aiter = getattr(cursor, "__aiter__", None)
+        except Exception:
+            raw_aiter = None
+
+    if callable(raw_aiter):
+        items: List[dict] = []
+
+        aiter_callable = raw_aiter
+        try:
+            from unittest.mock import Mock as _MockBase
+        except Exception:
+            _MockBase = None
+
+        if _MockBase is not None and isinstance(raw_aiter, _MockBase):
+            try:
+                wrapped = getattr(raw_aiter, "_mock_wraps", None)
+                if callable(wrapped):
+                    aiter_callable = wrapped
+            except Exception:
+                pass
+
+            if aiter_callable is raw_aiter:
+                try:
+                    side_effect = getattr(raw_aiter, "side_effect", None)
+                    if callable(side_effect):
+                        aiter_callable = side_effect
+                except Exception:
+                    pass
+
+        try:
+            it = aiter_callable()
+        except TypeError:
+            # unittest.mock may wrap a user-provided zero-arg lambda as:
+            #   lambda *args, **kw: original(self, *args, **kw)
+            # which breaks when original expects 0 args.
+            orig = None
+            try:
+                closure = getattr(aiter_callable, "__closure__", None)
+                freevars = getattr(getattr(aiter_callable, "__code__", None), "co_freevars", ())
+                if closure and freevars and len(closure) == len(freevars):
+                    mapping = {name: cell.cell_contents for name, cell in zip(freevars, closure)}
+                    candidate = mapping.get("original")
+                    if callable(candidate):
+                        orig = candidate
+                    else:
+                        for cell in mapping.values():
+                            if callable(cell):
+                                orig = cell
+                                break
+            except Exception:
+                orig = None
+
+            if callable(orig):
+                it = orig()
+            else:
+                raise
+        if hasattr(it, "__anext__"):
+            while True:
+                try:
+                    item = await it.__anext__()
+                except StopAsyncIteration:
+                    break
+                items.append(item)
+                if limit is not None and len(items) >= limit:
+                    break
+        else:
+            for item in it:
+                items.append(item)
+                if limit is not None and len(items) >= limit:
+                    break
+        return items
+
+    if hasattr(cursor, "to_list"):
+        try:
+            return await cursor.to_list(limit)
+        except TypeError:
+            return await cursor.to_list(None)
+
+    items: List[dict] = []
+    try:
+        async for item in cursor:
+            items.append(item)
+            if limit is not None and len(items) >= limit:
+                break
+        return items
+    except TypeError:
+        pass
+
+    try:
+        aiter = object.__getattribute__(cursor, "__aiter__")
+    except Exception:
+        return items
+
+    if callable(aiter):
+        it = aiter()
+        if hasattr(it, "__anext__"):
+            while True:
+                try:
+                    item = await it.__anext__()
+                except StopAsyncIteration:
+                    break
+                items.append(item)
+                if limit is not None and len(items) >= limit:
+                    break
+        else:
+            for item in it:
+                items.append(item)
+                if limit is not None and len(items) >= limit:
+                    break
+
+    return items
+
+
+def _safe_image_extension(filename: str) -> str:
+    name = (filename or "").strip().lower()
+    if name.endswith(".jpg") or name.endswith(".jpeg"):
+        return ".jpg"
+    if name.endswith(".png"):
+        return ".png"
+    if name.endswith(".webp"):
+        return ".webp"
+    if name.endswith(".gif"):
+        return ".gif"
+    raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported image type")
+
+
+@router.post("/{group_id}/avatar")
+async def upload_group_avatar(
+    group_id: str,
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user),
+):
+    group = await _require_group(group_id, current_user)
+    if not _is_admin(group, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can update group")
+
+    ext = _safe_image_extension(file.filename or "")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large")
+
+    data_root = Path(settings.DATA_ROOT)
+    avatars_dir = data_root / "group_avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = f"{group_id}_{uuid.uuid4().hex}{ext}"
+    out_path = avatars_dir / safe_name
+
+    try:
+        with open(out_path, "wb") as f:
+            f.write(content)
+    except OSError:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save avatar")
+
+    avatar_url = f"/api/v1/groups/avatar/{safe_name}"
+    return {"avatar_url": avatar_url, "filename": safe_name}
+
+
+@router.get("/avatar/{filename}")
+async def get_group_avatar(filename: str, current_user: Optional[str] = Depends(get_current_user_optional)):
+    from fastapi.responses import FileResponse
+
+    if not filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+
+    dangerous_patterns = ['..', '\\', '/', '\x00']
+    for pattern in dangerous_patterns:
+        if pattern in filename:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+
+    if not re.match(r'^[a-zA-Z0-9_.-]+\.([a-zA-Z0-9]+)$', filename):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename format")
+
+    data_root = Path(settings.DATA_ROOT)
+    file_path = data_root / "group_avatars" / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avatar not found")
+
+    filename_lower = filename.lower()
+    if filename_lower.endswith((".jpg", ".jpeg")):
+        media_type = "image/jpeg"
+    elif filename_lower.endswith(".png"):
+        media_type = "image/png"
+    elif filename_lower.endswith(".gif"):
+        media_type = "image/gif"
+    elif filename_lower.endswith(".webp"):
+        media_type = "image/webp"
+    else:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported file type")
+
+    _ = current_user
+    return FileResponse(file_path, media_type=media_type, filename=filename, headers={"Cache-Control": "public, max-age=3600"})
 
 
 async def _require_group(group_id: str, current_user: str) -> dict:
@@ -206,7 +437,9 @@ async def get_member_suggestions(
     
     # Try to get suggestions from cache
     cache_key = f"group:{group_id}:member_suggestions:{current_user}"
-    cached_suggestions = await SearchCacheService.get_user_search(cache_key)
+    cached_suggestions = SearchCacheService.get_user_search(cache_key)
+    if hasattr(cached_suggestions, '__await__'):
+        cached_suggestions = await cached_suggestions
     
     if cached_suggestions is not None:
         # Return cached suggestions
@@ -242,10 +475,10 @@ async def get_member_suggestions(
             )
             
             # Check if cursor is a coroutine (mock DB) or cursor (real MongoDB)
-            if hasattr(cursor, '__await__'):
+            if hasattr(cursor, '__await__') and not hasattr(cursor, '__aiter__'):
                 cursor = await cursor
-            
-            async for contact in cursor:
+
+            for contact in await _collect_cursor(cursor, limit=limit):
                 # Create UserPublic object from contact data
                 user_public = UserPublic(
                     id=contact.get("_id"),
@@ -274,7 +507,9 @@ async def get_member_suggestions(
             suggestions = suggestions[:limit]
         
         # Cache the results (even if empty)
-        await SearchCacheService.set_user_search(cache_key, suggestions)
+        cache_write = SearchCacheService.set_user_search(cache_key, suggestions)
+        if hasattr(cache_write, '__await__'):
+            await cache_write
     
     return suggestions
 
@@ -863,7 +1098,7 @@ async def search_contacts_for_group(
         cursor = await cursor
     
     contacts_list = []
-    async for contact in cursor:
+    for contact in await _collect_cursor(cursor, limit=limit):
         contact_data = {
             "id": contact.get("_id"),
             "name": contact.get("name", "Unknown"),

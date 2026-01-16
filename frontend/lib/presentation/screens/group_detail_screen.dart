@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
@@ -17,6 +19,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   bool _loading = true;
   String? _error;
 
+  bool _avatarUploading = false;
+  Uint8List? _pickedGroupAvatarBytes;
+
   String _meId = '';
   bool _isAdmin = false;
   Map<String, dynamic>? _group;
@@ -28,11 +33,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   void initState() {
     super.initState();
     _load();
-  }
-
-  String _initials(String name) {
-    // FIXED: Never return initials to prevent 2 words avatar
-    return ''; // Always return empty to disable initials
   }
 
   Future<void> _load() async {
@@ -89,8 +89,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   Future<void> _addMembers() async {
     if (!_isAdmin) return;
-    // Contacts functionality removed - get all users instead
-    final users = await serviceProvider.apiService.searchUsers('');
+    final users = await serviceProvider.apiService.getContacts(limit: 200);
     final existing = _members.map((m) => (m['user_id'] ?? '').toString()).toSet();
     final candidates = users.where((u) => !existing.contains((u['id'] ?? '').toString())).toList();
     if (candidates.isEmpty) return;
@@ -164,6 +163,53 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     if (added == null || added.isEmpty) return;
     await serviceProvider.apiService.addGroupMembers(widget.groupId, added);
     await _load();
+  }
+
+  Future<void> _changeGroupAvatar() async {
+    if (!_isAdmin || _avatarUploading) return;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+        allowMultiple: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.single;
+      if (file.bytes == null) return;
+
+      if (file.bytes != null && file.bytes!.length > 10 * 1024 * 1024) {
+        throw Exception('Image size must be less than 10MB');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _avatarUploading = true;
+        _pickedGroupAvatarBytes = file.bytes;
+      });
+
+      final uploadRes = await serviceProvider.apiService.uploadGroupAvatar(
+        groupId: widget.groupId,
+        bytes: file.bytes!,
+        filename: file.name,
+      );
+      final avatarUrl = (uploadRes['avatar_url'] ?? '').toString();
+      if (avatarUrl.isNotEmpty) {
+        await serviceProvider.apiService.updateGroup(widget.groupId, {'avatar_url': avatarUrl});
+      }
+
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update group photo: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _avatarUploading = false;
+        });
+      }
+    }
   }
 
   Future<void> _toggleAdmin(String memberId, String currentRole) async {
@@ -270,23 +316,46 @@ final g = _group!;
               ),
               child: Column(
                 children: [
-// Enhanced group avatar display with URL support
-                  CircleAvatar(
-                    radius: 48,
-                    backgroundColor: AppTheme.cardDark,
-                    backgroundImage: avatarUrl.isNotEmpty && !avatarUrl.endsWith('/') && (avatarUrl.startsWith('http') || avatarUrl.startsWith('/'))
-                        ? NetworkImage(avatarUrl.startsWith('http') ? avatarUrl : '${ApiConstants.serverBaseUrl}$avatarUrl')
-                        : null,
-                    onBackgroundImageError: (exception, stackTrace) {
-                      debugPrint('Group avatar load failed: $exception');
-                    },
-                    // FIXED: Never show initials to prevent 2 words avatar
-                    child: avatarUrl.isEmpty || !(avatarUrl.startsWith('http') || avatarUrl.startsWith('/')) && _initials(name).isNotEmpty
-                        ? Text(
-                            _initials(name),
-                            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
-                          )
-                        : null,
+                  Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 48,
+                        backgroundColor: AppTheme.cardDark,
+                        backgroundImage: _pickedGroupAvatarBytes != null
+                            ? MemoryImage(_pickedGroupAvatarBytes!)
+                            : (avatarUrl.isNotEmpty && !avatarUrl.endsWith('/') && (avatarUrl.startsWith('http') || avatarUrl.startsWith('/'))
+                                ? NetworkImage(avatarUrl.startsWith('http') ? avatarUrl : '${ApiConstants.serverBaseUrl}$avatarUrl')
+                                : null),
+                        onBackgroundImageError: (exception, stackTrace) {
+                          debugPrint('Group avatar load failed: $exception');
+                        },
+                        child: null,
+                      ),
+                      if (_isAdmin)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: InkWell(
+                            onTap: _avatarUploading ? null : _changeGroupAvatar,
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryCyan,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: AppTheme.dividerColor),
+                              ),
+                              child: _avatarUploading
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Text(name, style: Theme.of(context).textTheme.titleLarge),

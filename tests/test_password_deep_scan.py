@@ -10,7 +10,7 @@ import os
 from unittest.mock import patch, AsyncMock
 
 # Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), 'backend')
+backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
@@ -24,10 +24,10 @@ async def test_password_endpoints_deep_scan():
     print("=" * 60)
     
     try:
-        from main import app
+        from backend.main import app
         from fastapi.testclient import TestClient
-        from models import UserCreate, ForgotPasswordRequest, ChangePasswordRequest
-        from db_proxy import users_collection
+        from backend.models import UserCreate, ForgotPasswordRequest, ChangePasswordRequest
+        from backend.db_proxy import users_collection
         from datetime import datetime
         
         client = TestClient(app)
@@ -97,7 +97,7 @@ async def test_password_endpoints_deep_scan():
         
         # Mock authentication
         from fastapi import Depends
-        from routes.auth import get_current_user
+        from backend.routes.auth import get_current_user
         app.dependency_overrides[get_current_user] = lambda: test_user_id
         
         change_data = {

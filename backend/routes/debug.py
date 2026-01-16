@@ -4,9 +4,15 @@ These endpoints are only available in DEBUG mode
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends
-from config import settings
+
+try:
+    from ..config import settings
+    from ..models import ProfileUpdate, PasswordChangeRequest
+except ImportError:
+    from config import settings
+    from models import ProfileUpdate, PasswordChangeRequest
+
 from auth.utils import get_current_user
-from models import ProfileUpdate, PasswordChangeRequest
 from pydantic import BaseModel
 from typing import Dict, Any
 import json

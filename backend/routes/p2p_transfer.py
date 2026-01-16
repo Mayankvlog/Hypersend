@@ -12,7 +12,12 @@ import asyncio
 import uuid
 import json
 from datetime import datetime, timedelta, timezone
-from db_proxy import files_collection, chats_collection
+
+try:
+    from ..db_proxy import files_collection, chats_collection
+except ImportError:
+    from db_proxy import files_collection, chats_collection
+
 from auth.utils import get_current_user
 
 def decode_token_safely(token: str) -> Optional[dict]:

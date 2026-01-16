@@ -15,10 +15,10 @@ from datetime import datetime, timezone
 # Add backend to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-from config import settings
+from backend.config import settings
 from database import connect_db, get_db, users_collection, close_db
-from routes.auth import register, login
-from models import UserCreate, UserLogin
+from backend.routes.auth import register, login
+from backend.models import UserCreate, UserLogin
 
 
 class TestMongoDBConnection:
@@ -154,7 +154,7 @@ class TestAuthenticationFixes:
     @pytest.fixture(autouse=True)
     def clear_lockouts(self):
         """Clear lockouts before each test"""
-        from routes.auth import clear_all_lockouts
+        from backend.routes.auth import clear_all_lockouts
         clear_all_lockouts()
         yield
     
@@ -413,7 +413,7 @@ class TestConfigurationFixes:
             mock_settings._MONGO_DB = "hypersend"
             
             # Create settings instance directly
-            from config import Settings
+            from backend.config import Settings
             test_settings = Settings()
             
             # Override Docker detection to force True
@@ -447,7 +447,7 @@ class TestConfigurationFixes:
             mock_settings._MONGO_DB = "hypersend"
             
             # Create settings instance directly
-            from config import Settings
+            from backend.config import Settings
             test_settings = Settings()
             
             # Override Docker detection to force False

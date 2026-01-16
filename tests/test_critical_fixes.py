@@ -15,7 +15,7 @@ def test_critical_fixes():
     
     app = None
     try:
-        from main import app
+        from backend.main import app
         client = TestClient(app)
         
         print("=== Testing Critical Authentication & Upload Fixes ===")

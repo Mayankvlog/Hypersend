@@ -21,8 +21,8 @@ class TestPasswordResetEmailFlow:
     @pytest.mark.asyncio
     async def test_forgot_password_sends_email(self):
         """Test that forgot-password endpoint sends email"""
-        from routes.auth import forgot_password
-        from utils.email_service import email_service
+        from backend.routes.auth import forgot_password
+        from backend.utils.email_service import email_service
         
         # Mock the email service
         with patch.object(email_service, 'send_password_reset_email', new_callable=AsyncMock) as mock_send:
@@ -40,7 +40,7 @@ class TestPasswordResetEmailFlow:
     @pytest.mark.asyncio
     async def test_password_reset_email_contains_token(self):
         """Test that password reset email contains the reset token"""
-        from utils.email_service import email_service
+        from backend.utils.email_service import email_service
         
         # Mock SMTP
         with patch('smtplib.SMTP') as mock_smtp:
@@ -71,7 +71,7 @@ class TestPasswordResetEmailFlow:
     @pytest.mark.asyncio
     async def test_password_changed_email_sent_after_reset(self):
         """Test that password changed email is sent after successful reset"""
-        from utils.email_service import email_service
+        from backend.utils.email_service import email_service
         
         # Mock SMTP
         with patch('smtplib.SMTP') as mock_smtp:
@@ -92,8 +92,8 @@ class TestPasswordResetEmailFlow:
     
     def test_email_service_configuration_complete(self):
         """Test that email service has all required configuration"""
-        from utils.email_service import email_service
-        from config import settings
+        from backend.utils.email_service import email_service
+        from backend.config import settings
         
         # Check all required fields
         assert email_service.smtp_server, "SMTP server not configured"
@@ -106,7 +106,7 @@ class TestPasswordResetEmailFlow:
     
     def test_email_service_has_required_methods(self):
         """Test that email service has all required methods"""
-        from utils.email_service import email_service
+        from backend.utils.email_service import email_service
         import asyncio
         
         # Check methods exist
@@ -122,7 +122,7 @@ class TestPasswordResetEmailFlow:
     
     def test_auth_routes_use_email_service(self):
         """Test that auth routes properly use email service"""
-        from routes.auth import forgot_password, reset_password
+        from backend.routes.auth import forgot_password, reset_password
         import inspect
         
         # Check forgot_password uses email_service
@@ -140,7 +140,7 @@ class TestPasswordResetEmailFlow:
     @pytest.mark.asyncio
     async def test_email_service_error_handling(self):
         """Test that email service handles errors gracefully"""
-        from utils.email_service import email_service
+        from backend.utils.email_service import email_service
         
         # Test 1: Connection error
         with patch('smtplib.SMTP') as mock_smtp:
@@ -172,7 +172,7 @@ class TestPasswordResetEmailFlow:
     
     def test_email_service_fallback_configuration(self):
         """Test that email service uses fallback configuration"""
-        from utils.email_service import EmailService
+        from backend.utils.email_service import EmailService
         
         # Test SENDER_PASSWORD fallback to SMTP_PASSWORD
         os.environ["SENDER_PASSWORD"] = ""
@@ -195,9 +195,9 @@ class TestEmailServiceIntegration:
     
     def test_password_reset_flow_integration(self):
         """Test complete password reset flow integration"""
-        from routes.auth import forgot_password, reset_password
-        from utils.email_service import email_service
-        from config import settings
+        from backend.routes.auth import forgot_password, reset_password
+        from backend.utils.email_service import email_service
+        from backend.config import settings
         
         # Verify all components are available
         assert email_service is not None, "Email service not initialized"

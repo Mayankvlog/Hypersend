@@ -20,7 +20,7 @@ class TestSavedMessagesFix:
         """Test saved messages chat creation"""
         try:
             from routes.chats import get_or_create_saved_chat
-            from models import ChatType
+            from backend.models import ChatType
             
             # Mock current user
             current_user = "test_user_123"
@@ -250,7 +250,7 @@ class TestSavedMessagesFix:
     def test_chat_type_enum_includes_saved(self):
         """Test that ChatType enum includes saved type"""
         try:
-            from models import ChatType
+            from backend.models import ChatType
             
             # Verify saved type exists
             assert hasattr(ChatType, 'SAVED')

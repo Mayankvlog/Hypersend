@@ -28,10 +28,10 @@ os.environ['EMAIL_FROM'] = 'test@test.com'
 
 # Import required modules
 try:
-    from main import app
-    from models import PasswordResetRequest, ChangePasswordRequest
+    from backend.main import app
+    from backend.models import PasswordResetRequest, ChangePasswordRequest
     from auth.utils import get_current_user, hash_password, create_access_token, decode_token
-    from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+    from backend.db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
     from bson import ObjectId
     from datetime import datetime, timedelta, timezone
 except ImportError as e:

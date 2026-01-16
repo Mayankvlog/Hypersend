@@ -19,7 +19,7 @@ def test_http_errors():
     print("\n📋 CONFIGURATION VERIFICATION:")
     
     try:
-        from config import settings
+        from backend.config import settings
         
         # Check token expiration
         access_minutes = getattr(settings, 'ACCESS_TOKEN_EXPIRE_MINUTES', 0)

@@ -272,7 +272,7 @@ class TestRealtimeP2PFunctionality:
         try:
             from routes.p2p_transfer import router
             from fastapi.testclient import TestClient
-            from main import app
+            from backend.main import app
             
             client = TestClient(app)
             

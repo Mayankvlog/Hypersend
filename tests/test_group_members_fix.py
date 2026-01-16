@@ -17,8 +17,8 @@ os.environ['DEBUG'] = 'True'
 
 from fastapi.testclient import TestClient
 try:
-    from main import app
-    from models import GroupCreate, GroupMembersUpdate
+    from backend.main import app
+    from backend.models import GroupCreate, GroupMembersUpdate
 except ImportError as e:
     print(f"Warning: Import error: {e}")
     app = None

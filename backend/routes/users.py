@@ -1,16 +1,27 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
 from fastapi.responses import JSONResponse
-from models import (
-    UserResponse, UserInDB, PasswordChangeRequest, ProfileUpdate,
-    UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions,
-    ContactAddRequest, ContactResponse
-)
-from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
+
+try:
+    from ..models import (
+        UserResponse, UserInDB, PasswordChangeRequest, ProfileUpdate,
+        UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions,
+        ContactAddRequest, ContactResponse
+    )
+    from ..db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
+    from ..config import settings
+except ImportError:
+    from models import (
+        UserResponse, UserInDB, PasswordChangeRequest, ProfileUpdate,
+        UserSearchResponse, GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions,
+        ContactAddRequest, ContactResponse
+    )
+    from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
+    from config import settings
+
 from auth.utils import get_current_user, get_current_user_optional, get_current_user_or_query
 import asyncio
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, timezone
-from config import settings
 from typing import Optional
 import re
 import json
@@ -525,85 +536,11 @@ async def search_users(q: str, search_type: str = None, current_user: str = Depe
         current_user: Current authenticated user ID
     """
 
-    # FIXED: Allow empty query for group creation (load all available users)
-    if q and len(q) < 2:
+    if not q:
         return {"users": []}
 
-    # If no query provided, return all available users for group creation
-    if not q:
-        print("[SEARCH_USERS] Empty query - returning all available users for group creation")
-        try:
-            # Get current user's contacts if they exist
-            user = await asyncio.wait_for(
-                users_collection().find_one({"_id": current_user}),
-                timeout=5.0
-            )
-
-            # Try to get contacts list
-            contact_ids = []
-            if user:
-                contact_ids = user.get("contacts", [])
-
-            # Fetch users and filter out current user in application code.
-            # The mock DB used in tests does not fully implement nested Mongo operators (e.g. {"_id": {"$ne": ...}}).
-            query = {}
-
-            # Support both Motor (cursor) and mock DB (async cursor) without relying on .project()
-            projection = {
-                "_id": 1,
-                "name": 1,
-                "email": 1,
-                "username": 1,
-                "avatar_url": 1,
-                "is_online": 1,
-                "last_seen": 1,
-            }
-
-            try:
-                find_result = users_collection().find(query, projection)
-            except TypeError:
-                find_result = users_collection().find(query)
-
-            if hasattr(find_result, '__await__'):
-                cursor = await find_result
-            else:
-                cursor = find_result
-
-            if hasattr(cursor, "limit"):
-                cursor = cursor.limit(50)
-
-            if hasattr(cursor, "to_list"):
-                users = await asyncio.wait_for(cursor.to_list(None), timeout=5.0)
-            else:
-                users = list(cursor)
-
-            # Format response
-            formatted_users = []
-            for u in users:
-                if str(u.get("_id", "")) == str(current_user):
-                    continue
-                formatted_users.append({
-                    "id": str(u.get("_id", "")),
-                    "name": u.get("name", ""),
-                    "email": u.get("email", ""),
-                    "username": u.get("username", ""),
-                    "avatar_url": u.get("avatar_url"),
-                    "is_online": u.get("is_online", False),
-                    "last_seen": u.get("last_seen"),
-                })
-
-            # Optional: contacts can be prioritized by the client; keep endpoint simple.
-            _ = contact_ids
-
-            print(f"[SEARCH_USERS] Returned {len(formatted_users)} users for group creation")
-            return {"users": formatted_users}
-
-        except asyncio.TimeoutError:
-            print("[SEARCH_USERS] Database timeout while loading users for group creation")
-            return {"users": []}
-        except Exception as e:
-            print(f"[SEARCH_USERS] Error loading users for group creation: {e}")
-            return {"users": []}
+    if len(q) < 2:
+        return {"users": []}
     
     try:
         # Sanitize input for regex search to prevent injection

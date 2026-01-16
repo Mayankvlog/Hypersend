@@ -84,8 +84,8 @@ class TestMongoDBConnectionFixes:
     
     def test_password_validation(self):
         """Test password strength validation"""
-        from routes.auth import register
-        from models import UserCreate
+        from backend.routes.auth import register
+        from backend.models import UserCreate
         from pydantic import ValidationError
 
         test_cases = [
