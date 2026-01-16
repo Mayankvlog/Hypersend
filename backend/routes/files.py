@@ -2206,19 +2206,32 @@ async def get_file_info(
     
     except HTTPException:
         raise
-    except TimeoutError:
+    except asyncio.TimeoutError:
         _log("error", f"Timeout getting file info", {"user_id": current_user, "operation": "file_info"})
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Database timeout while getting file information"
         )
-    except Exception as e:
-        _log("error", f"Failed to get file info", {"user_id": current_user, "operation": "file_info"})
-        # Database timeouts should be 504, internal errors 500
+    except (ConnectionError, TimeoutError) as conn_error:
+        _log("error", f"Connection error getting file info: {type(conn_error).__name__}", {"user_id": current_user, "operation": "file_info"})
         raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="File information request timed out"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database service temporarily unavailable"
         )
+    except Exception as e:
+        _log("error", f"Failed to get file info: {type(e).__name__}: {str(e)}", {"user_id": current_user, "operation": "file_info"})
+        # Only return 504 for actual timeout-like errors, not general exceptions
+        error_msg = str(e).lower()
+        if any(keyword in error_msg for keyword in ["timeout", "timed out", "deadline", "expired"]):
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="File information request timed out"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to get file information"
+            )
 
 
 async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
