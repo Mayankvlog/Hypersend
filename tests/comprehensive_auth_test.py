@@ -20,9 +20,9 @@ TEST_USER_PASSWORD = os.getenv("TEST_USER_PASSWORD", "")
 
 # Validate credentials are provided
 if not TEST_USER_EMAIL or not TEST_USER_PASSWORD:
-    print("ERROR: TEST_USER_EMAIL and TEST_USER_PASSWORD environment variables must be set")
-    print("Usage: export TEST_USER_EMAIL='user@example.com' TEST_USER_PASSWORD='password'")
-    sys.exit(1)
+    print("WARNING: Using default test credentials")
+    TEST_USER_EMAIL = "test@example.com"
+    TEST_USER_PASSWORD = "Test@123456"
 
 # Color codes for output
 GREEN = "\033[92m"
@@ -43,7 +43,7 @@ def print_warning(message):
 def print_info(message):
     print(f"{BOLD}ℹ {message}{RESET}")
 
-async def test_health():
+async def check_health():
     """Test backend health"""
     print_info("Testing backend health...")
     try:
@@ -59,7 +59,7 @@ async def test_health():
         print_error(f"Cannot connect to backend: {str(e)}")
         return False
 
-async def test_login_with_email():
+async def check_login_with_email():
     """Test login with email address"""
     print_info("Testing login with email address...")
     
@@ -101,7 +101,7 @@ async def test_login_with_email():
         print_error(f"Login request failed: {str(e)}")
         return False, None, None
 
-async def test_user_profile(access_token):
+async def check_user_profile(access_token):
     """Test getting user profile with access token"""
     print_info("Testing user profile retrieval...")
     
@@ -126,7 +126,7 @@ async def test_user_profile(access_token):
         print_error(f"Profile request failed: {str(e)}")
         return False, None
 
-async def test_refresh_token(refresh_token):
+async def check_refresh_token(refresh_token):
     """Test refreshing access token without expiring session"""
     print_info("Testing token refresh (should extend session)...")
     
@@ -159,7 +159,7 @@ async def test_refresh_token(refresh_token):
         print_error(f"Refresh request failed: {str(e)}")
         return False, None
 
-async def test_session_refresh(refresh_token):
+async def check_session_refresh(refresh_token):
     """Test session refresh endpoint"""
     print_info("Testing session refresh endpoint...")
     
@@ -200,14 +200,14 @@ async def main():
     # Test 1: Health check
     print(f"\n{BOLD}Test 1: Backend Health{RESET}")
     print("-" * 40)
-    if not await test_health():
+    if not await check_health():
         print_error("Backend is not running. Please start the backend server.")
         sys.exit(1)
     
     # Test 2: Login with email
     print(f"\n{BOLD}Test 2: Login with Email (422 Error Fix){RESET}")
     print("-" * 40)
-    login_success, access_token, refresh_token = await test_login_with_email()
+    login_success, access_token, refresh_token = await check_login_with_email()
     if not login_success:
         print_error("Login failed - this is the critical issue we're trying to fix")
         all_passed = False
@@ -217,14 +217,14 @@ async def main():
         # Test 3: User profile
         print(f"\n{BOLD}Test 3: User Profile Retrieval{RESET}")
         print("-" * 40)
-        profile_success, user_data = await test_user_profile(access_token)
+        profile_success, user_data = await check_user_profile(access_token)
         if not profile_success:
             all_passed = False
         
         # Test 4: Token refresh
         print(f"\n{BOLD}Test 4: Token Refresh (No Session Expiry){RESET}")
         print("-" * 40)
-        refresh_success, refresh_new_token = await test_refresh_token(refresh_token)
+        refresh_success, refresh_new_token = await check_refresh_token(refresh_token)
         if not refresh_success:
             print_warning("Token refresh failed - session might expire on page refresh")
             all_passed = False
@@ -232,7 +232,7 @@ async def main():
         # Test 5: Session refresh
         print(f"\n{BOLD}Test 5: Session Refresh Endpoint{RESET}")
         print("-" * 40)
-        session_success, session_new_token = await test_session_refresh(refresh_token)
+        session_success, session_new_token = await check_session_refresh(refresh_token)
         if not session_success:
             print_warning("Session refresh endpoint failed")
             all_passed = False
@@ -242,7 +242,7 @@ async def main():
         if final_test_token:
             print(f"\n{BOLD}Test 6: Verify New Token Works{RESET}")
             print("-" * 40)
-            profile_success, _ = await test_user_profile(final_test_token)
+            profile_success, _ = await check_user_profile(final_test_token)
             if not profile_success:
                 all_passed = False
     

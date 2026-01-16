@@ -19,6 +19,7 @@ from bson import ObjectId
 import asyncio
 import secrets
 from rate_limiter import password_reset_limiter
+from utils.email_service import email_service
 
 from collections import defaultdict
 from typing import Dict, Tuple, List, Optional
@@ -1135,9 +1136,22 @@ async def logout(current_user: str = Depends(get_current_user)):
 @router.post("/forgot-password")
 async def forgot_password(request: dict) -> dict:
     """
-    Initiate password reset by generating a reset token.
-    In development mode, token is returned in response.
-    In production, token would be sent via email.
+    Initiate password reset by generating a JWT reset token.
+    
+    Step 1 of JWT Forgot Password Flow:
+    1. User enters email on forgot password page
+    2. System verifies user exists and is active
+    3. Generates unique JWT token with claims (user_id, jti, exp)
+    4. Stores jti in database with expiry (for revocation tracking)
+    5. Sends reset link via email with token as parameter
+    6. Returns success message (prevents email enumeration)
+    
+    Security Features:
+    - Rate limiting to prevent abuse
+    - Email enumeration prevention
+    - JWT expiry (1 hour)
+    - JTI tracking for revocation
+    - Secure token transmission via email only
     """
     try:
         auth_log("Password reset request received")
@@ -1149,15 +1163,15 @@ async def forgot_password(request: dict) -> dict:
                 detail="Too many password reset attempts. Please try again later."
             )
         
-        # FIXED: Password reset functionality enabled for Zaply
+        # FIXED: Password reset functionality enabled
         if not settings.ENABLE_PASSWORD_RESET:
-            auth_log("Zaply password reset functionality is disabled")
+            auth_log("Password reset functionality is disabled")
             raise HTTPException(
                 status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-                detail="Zaply password reset functionality has been disabled. Please contact Zaply support."
+                detail="Password reset functionality has been disabled. Please contact support."
             )
         
-        # Extract email from request
+        # Extract and validate email
         email = request.get("email")
         if not email:
             raise HTTPException(
@@ -1165,7 +1179,8 @@ async def forgot_password(request: dict) -> dict:
                 detail="Email is required"
             )
         
-        # Basic email validation
+        # Validate email format
+        email = email.strip().lower()
         if "@" not in email or "." not in email or len(email) < 5:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1173,54 +1188,94 @@ async def forgot_password(request: dict) -> dict:
             )
         
         # Find user by email
+        user = None
         try:
-            user = await users_collection().find_one({"email": email})
-        except Exception as e:
-            auth_log(f"Database error finding user: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to find user account"
+            user = await asyncio.wait_for(
+                users_collection().find_one({"email": email}),
+                timeout=5.0
             )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - please try again"
+            )
+        except Exception as e:
+            auth_log(f"Database error finding user: {type(e).__name__}: {str(e)}")
+            # Don't expose internal errors
+            pass
         
-        # Always generate token for security (prevent email enumeration)
-        # but only if user exists to avoid creating tokens for non-existent users
-        reset_token = None
+        # Always return success message to prevent email enumeration
+        response = {
+            "message": "If an account with this email exists, a password reset link has been sent to that email",
+            "success": True,
+            "expires_in": 3600  # 1 hour in seconds
+        }
+        
+        # Only generate and send token if user exists
         if user:
-            # Generate reset token
             try:
-                reset_token = secrets.token_urlsafe(32)
-                expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+                # Generate JWT reset token with unique JTI
+                jti = secrets.token_urlsafe(32)
+                reset_token = create_access_token(
+                    data={
+                        "sub": str(user["_id"]),
+                        "email": user["email"],
+                        "jti": jti,
+                        "type": "password_reset"
+                    },
+                    expires_delta=timedelta(hours=1)
+                )
                 
-                # Store reset token in database
-                await password_reset_collection().insert_one({
-                    "token": reset_token,
-                    "email": email,
-                    "created_at": datetime.now(timezone.utc),
-                    "expires_at": expires_at,
-                    "used": False
-                })
+                # Store JTI in database for revocation tracking
+                try:
+                    await reset_tokens_collection().insert_one({
+                        "jti": jti,
+                        "user_id": user["_id"],
+                        "email": user["email"],
+                        "token_type": "password_reset",
+                        "created_at": datetime.now(timezone.utc),
+                        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+                        "used": False,
+                        "ip_address": request.get("client_ip", "unknown") if isinstance(request, dict) else "unknown"
+                    })
+                except Exception as e:
+                    auth_log(f"Warning: Failed to store JTI: {type(e).__name__}")
+                    # Continue anyway - token still valid
                 
                 auth_log(f"Password reset token generated for user: {user['_id']}")
                 
+                # Send email with reset link
+                try:
+                    user_name = user.get("name", user.get("email", "User"))
+                    email_sent = await email_service.send_password_reset_email(
+                        to_email=user["email"],
+                        reset_token=reset_token,
+                        user_name=user_name
+                    )
+                    
+                    if email_sent:
+                        auth_log(f"✅ Password reset email sent to {user['email']}")
+                    else:
+                        auth_log(f"⚠️ Failed to send password reset email to {user['email']}")
+                        # In debug mode, include token for testing
+                        if settings.DEBUG:
+                            response["token"] = reset_token
+                            response["debug_message"] = "Email disabled - token provided in response"
+                
+                except Exception as e:
+                    auth_log(f"Error sending reset email: {type(e).__name__}: {str(e)}")
+                    # In debug mode, include token for testing
+                    if settings.DEBUG:
+                        response["token"] = reset_token
+                        response["debug_message"] = f"Email error - token provided in response: {str(e)}"
+                
             except Exception as e:
-                auth_log(f"Failed to generate reset token: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to initiate password reset"
-                )
+                auth_log(f"Failed to generate reset token: {type(e).__name__}: {str(e)}")
+                # Still return success to prevent enumeration
+                if settings.DEBUG:
+                    response["error"] = str(e)
         
-        # Always return a success message to prevent email enumeration
-        response = {
-            "message": "If an account with this email exists, a password reset token has been generated",
-            "success": True
-        }
-        
-        # In development mode, include token in response for testing
-        if reset_token and settings.DEBUG:
-            response["token"] = reset_token
-            response["expires_in"] = 3600  # 1 hour in seconds
-            auth_log(f"[DEBUG] Password reset token for {email}: {reset_token}")
-        
+        # Return success for both existing and non-existing emails (prevents enumeration)
         return response
         
     except HTTPException:
@@ -1235,73 +1290,167 @@ async def forgot_password(request: dict) -> dict:
 
 @router.post("/reset-password", response_model=PasswordResetResponse)
 async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse:
-    """Reset password using token"""
+    """
+    Reset password using JWT reset token.
+    
+    Step 4-6 of JWT Forgot Password Flow:
+    4. User receives email and clicks reset link
+    5. Application receives JWT token from URL
+    6. Verifies JWT signature and checks JTI in database (not invalidated)
+    7. If valid, allows password reset
+    8. Updates password and marks JTI as used
+    9. Invalidates all refresh tokens (forces re-login)
+    10. Returns success and redirect to login
+    
+    Security Features:
+    - JWT signature verification (can't be forged)
+    - JTI validation against database (prevents replay attacks)
+    - Token expiry check (1 hour)
+    - Invalidates all active sessions on successful reset
+    - Sends confirmation email
+    """
     try:
-        auth_log(f"Zaply password reset request for token: {request.token[:10]}...")
+        auth_log(f"Password reset request for token")
         
-        # FIXED: Password reset functionality enabled for Zaply
+        # FIXED: Password reset functionality enabled
         if not settings.ENABLE_PASSWORD_RESET:
-            auth_log("Zaply password reset functionality is disabled")
+            auth_log("Password reset functionality is disabled")
             raise HTTPException(
                 status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-                detail="Zaply password reset functionality has been disabled. Please contact Zaply support."
+                detail="Password reset functionality has been disabled. Please contact support."
             )
         
-        # Validate token
-        if not request.token or len(request.token) < 10:
+        # Validate token format
+        if not request.token or not isinstance(request.token, str) or len(request.token) < 10:
             auth_log("Invalid reset token format")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired reset token"
             )
         
-        # Check if token exists and is not used
-        try:
-            now_utc = datetime.now(timezone.utc)
-            reset_token_doc = await password_reset_collection().find_one({
-                "token": request.token,
-                "used": False,
-            })
-        except Exception as e:
-            auth_log(f"Database error checking reset token: {e}")
+        # Validate new password
+        if not request.new_password or len(request.new_password) < 6:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to validate reset token"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be at least 6 characters"
             )
-
-        # Validate expiry in Python to avoid naive/aware datetime comparison issues across DB backends
-        if reset_token_doc:
-            expires_at = reset_token_doc.get("expires_at")
-            if expires_at is not None:
-                try:
-                    if isinstance(expires_at, datetime):
-                        if expires_at.tzinfo is None:
-                            expires_at = expires_at.replace(tzinfo=timezone.utc)
-                        if expires_at <= now_utc:
-                            reset_token_doc = None
-                except Exception:
-                    reset_token_doc = None
         
-        if not reset_token_doc:
-            auth_log("Reset token not found or expired")
+        # Decode and validate JWT token
+        token_data = None
+        try:
+            token_data = decode_token(request.token)
+        except HTTPException as e:
+            auth_log(f"JWT validation failed: {e.detail}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired reset token"
+                detail="Invalid or expired reset token - please request a new one"
+            )
+        except Exception as e:
+            auth_log(f"Token decode error: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid reset token format"
             )
         
-        # Get user by email from token
+        # Verify token is a password reset token
+        if token_data.token_type != "password_reset":
+            auth_log(f"Invalid token type: {token_data.token_type}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type - expected password reset token"
+            )
+        
+        # Verify user ID exists in token
+        if not token_data.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid reset token: missing user identifier"
+            )
+        
+        # Check JTI in database - prevent replay attacks
         try:
-            user = await users_collection().find_one({
-                "email": reset_token_doc["email"]
-            })
+            jti = getattr(token_data, 'jti', None)
+            if not jti:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid reset token: missing JTI"
+                )
+            
+            reset_doc = await asyncio.wait_for(
+                reset_tokens_collection().find_one({
+                    "jti": jti,
+                    "token_type": "password_reset",
+                    "used": False,
+                    "$or": [
+                        {"invalidated": {"$exists": False}},
+                        {"invalidated": False}
+                    ]
+                }),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - please try again"
+            )
         except Exception as e:
-            auth_log(f"Database error finding user: {e}")
+            auth_log(f"Database error checking reset token: {type(e).__name__}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to verify reset token"
+            )
+        
+        if not reset_doc:
+            auth_log("Reset token not found or already used")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset token - token may have already been used"
+            )
+        
+        # Verify token not expired
+        expires_at = reset_doc.get("expires_at")
+        if not expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid reset token: no expiration"
+            )
+        
+        now_utc = datetime.now(timezone.utc)
+        # Handle both naive and aware datetimes
+        if isinstance(expires_at, datetime):
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= now_utc:
+                auth_log("Reset token expired")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Reset token has expired - request a new one"
+                )
+        
+        # Get user by ID from token
+        try:
+            user_id_for_query = token_data.user_id
+            if isinstance(user_id_for_query, str) and ObjectId.is_valid(user_id_for_query):
+                user_id_for_query = ObjectId(user_id_for_query)
+            
+            user = await asyncio.wait_for(
+                users_collection().find_one({"_id": user_id_for_query}),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Database timeout - please try again"
+            )
+        except Exception as e:
+            auth_log(f"Database error finding user: {type(e).__name__}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to find user account"
             )
+        
         if not user:
-            auth_log(f"User not found for email: {reset_token_doc['email']}")
+            auth_log(f"User not found for reset: {token_data.user_id}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid reset token"
@@ -1321,43 +1470,74 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                     "updated_at": datetime.now(timezone.utc)
                 }}
             )
+            auth_log(f"✅ Password updated for user: {user['_id']}")
         except Exception as e:
-            auth_log(f"Failed to update password: {e}")
+            auth_log(f"Failed to update password: {type(e).__name__}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to reset password"
             )
         
-        # Mark reset token as used
+        # Mark reset token as used - prevent reuse
         try:
-            await password_reset_collection().update_one(
-                {"_id": reset_token_doc["_id"]},
-                {"$set": {"used": True, "used_at": datetime.now(timezone.utc)}}
+            await reset_tokens_collection().update_one(
+                {"_id": reset_doc["_id"]},
+                {"$set": {
+                    "used": True,
+                    "used_at": datetime.now(timezone.utc),
+                    "completed": True
+                }}
             )
+            auth_log(f"Reset token marked as used: {jti}")
         except Exception as e:
-            auth_log(f"Failed to mark reset token as used: {e}")
+            auth_log(f"Warning: Failed to mark reset token as used: {type(e).__name__}")
             # Don't fail the operation if this fails
         
-        # Invalidate all refresh tokens for this user
+        # Invalidate all refresh tokens for this user - forces re-login
         try:
-            auth_log(f"[RESET_PASSWORD] Invalidating refresh tokens for user: {user['_id']}")
+            auth_log(f"[RESET_PASSWORD] Invalidating all refresh tokens for user: {user['_id']}")
             await refresh_tokens_collection().update_many(
-                {"user_id": str(user["_id"])},
-                {"$set": {"invalidated": True, "invalidated_at": datetime.now(timezone.utc)}}
+                {"user_id": user["_id"]},
+                {"$set": {
+                    "invalidated": True,
+                    "invalidated_at": datetime.now(timezone.utc),
+                    "invalidation_reason": "password_reset"
+                }}
             )
+            auth_log(f"✅ All sessions invalidated for user: {user['_id']}")
         except Exception as e:
-            auth_log(f"Failed to invalidate refresh tokens: {e}")
+            auth_log(f"Warning: Failed to invalidate refresh tokens: {type(e).__name__}")
             # Don't fail the operation if this fails
+        
+        # Send password changed confirmation email
+        try:
+            user_name = user.get("name", user.get("email", "User"))
+            await email_service.send_password_changed_email(
+                to_email=user["email"],
+                user_name=user_name
+            )
+            auth_log(f"✅ Password change confirmation email sent to {user['email']}")
+        except Exception as e:
+            auth_log(f"Warning: Failed to send confirmation email: {type(e).__name__}")
+            # Don't fail if email sending fails
         
         auth_log(f"[SUCCESS] Password reset successful for user: {user['_id']}")
         
         return PasswordResetResponse(
-            message="Password reset successfully",
+            message="Password reset successfully! All your sessions have been logged out. Please login with your new password.",
             success=True,
-            token=None  # Token is not returned after reset
+            token=None,
+            redirect_url="/login"  # Frontend should redirect to login
         )
         
     except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Reset password error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset service unavailable"
+        )
         raise
     except Exception as e:
         auth_log(f"Reset password error: {type(e).__name__}: {str(e)}")

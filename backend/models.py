@@ -291,6 +291,7 @@ class PasswordResetResponse(BaseModel):
     message: str
     success: bool
     token: Optional[str] = None  # Include reset token for direct password reset
+    redirect_url: Optional[str] = None  # URL to redirect after successful reset
 
 
 # Permission Models

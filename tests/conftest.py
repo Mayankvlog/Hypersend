@@ -6,6 +6,7 @@ Automatically sets up test environment
 
 import os
 import sys
+import pytest
 
 # Set USE_MOCK_DB for all tests
 os.environ['USE_MOCK_DB'] = 'True'
@@ -15,6 +16,17 @@ os.environ['TEST_TIMEOUT'] = '60'
 
 # Set connection timeout for tests to prevent retries
 os.environ['TEST_TIMEOUT'] = '30'
+
+# Set default test credentials if not provided
+if not os.getenv('TEST_USER_EMAIL'):
+    os.environ['TEST_USER_EMAIL'] = 'test@example.com'
+if not os.getenv('TEST_USER_PASSWORD'):
+    os.environ['TEST_USER_PASSWORD'] = 'Test@123456'
+
+if not os.getenv('TEST_EMAIL'):
+    os.environ['TEST_EMAIL'] = 'test@example.com'
+if not os.getenv('TEST_PASSWORD'):
+    os.environ['TEST_PASSWORD'] = 'Test@123456'
 
 # Add the backend directory to Python path
 backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')

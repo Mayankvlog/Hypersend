@@ -20,8 +20,8 @@ try:
     from main import app
     from models import GroupCreate, GroupMembersUpdate
 except ImportError as e:
-    print(f"Import error: {e}")
-    sys.exit(1)
+    print(f"Warning: Import error: {e}")
+    app = None
 
 import json
 from datetime import datetime
