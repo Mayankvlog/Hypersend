@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/constants/api_constants.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
@@ -645,31 +646,44 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {
     try {
-      final response = await serviceProvider.apiService.downloadFileBytes(fileId);
-      final data = response.data;
-      final bytes = data is Uint8List ? data : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
-
-      if (bytes.isEmpty) {
-        throw Exception('No data received or file is empty');
+      if (!kIsWeb) {
+        // Safety: this helper is meant for web only; native platforms use _downloadAndOpenFile
+        throw Exception('Web-only download helper called on non-web platform');
       }
 
-      if (kIsWeb) {
-        // On web, use a data URI and url_launcher so the browser handles download/open
-        final mimeType = isPDF ? 'application/pdf' : 'application/octet-stream';
-        final uri = Uri.dataFromBytes(
-          bytes,
-          mimeType: mimeType,
-        );
+      // Prefer direct HTTP download so the browser saves to the user's Downloads folder
+      final base = ApiConstants.serverBaseUrl; // e.g. https://zaply.in.net
+      final downloadUri = Uri.parse('$base/api/v1/${ApiConstants.filesEndpoint}/$fileId/download');
 
-        final launched = await launchUrl(uri);
-        if (!launched) {
+      debugPrint('[FILE_WEB] Opening direct download URL: $downloadUri');
+      final launched = await launchUrl(downloadUri);
+
+      if (!launched) {
+        // Fallback: if for some reason the browser blocks the navigation, fall back
+        // to the older data-URI approach using a one-shot bytes download.
+        debugPrint('[FILE_WEB] launchUrl() failed – falling back to bytes + data URI');
+
+        final response = await serviceProvider.apiService.downloadFileBytes(fileId);
+        final data = response.data;
+        final bytes = data is Uint8List
+            ? data
+            : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
+
+        if (bytes.isEmpty) {
+          throw Exception('No data received or file is empty');
+        }
+
+        final mimeType = isPDF ? 'application/pdf' : 'application/octet-stream';
+        final dataUri = Uri.dataFromBytes(bytes, mimeType: mimeType);
+
+        final secondLaunch = await launchUrl(dataUri);
+        if (!secondLaunch) {
           throw Exception('Unable to trigger browser download');
         }
-        debugPrint('[FILE_WEB] Triggered browser download for $fileName via data URI');
-        return;
+        debugPrint('[FILE_WEB] Triggered browser download for $fileName via data URI fallback');
+      } else {
+        debugPrint('[FILE_WEB] Browser navigating to direct download URL for $fileName');
       }
-
-      debugPrint('[FILE_WEB] Downloaded ${bytes.length} bytes as $fileName');
     } catch (e) {
       debugPrint('[FILE_WEB_ERROR] $e');
       rethrow;

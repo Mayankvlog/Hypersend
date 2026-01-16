@@ -28,6 +28,21 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 
+def _log(level: str, message: str, meta: Optional[dict] = None) -> None:
+    """Lightweight structured logging helper used throughout this module.
+
+    The function is intentionally defensive so that logging can never break
+    the main request handling logic.
+    """
+    meta = meta or {}
+    try:
+        log_level = getattr(logging, level.upper(), logging.INFO)
+        logger.log(log_level, message, extra={"meta": meta})
+    except Exception:
+        # Fallback that never raises in case logging configuration is broken
+        logger.error(f"[GROUPS_LOG_FAIL] {level}: {message} | meta={meta}")
+
+
 router = APIRouter(prefix="/groups", tags=["Groups"])
 
 import sys

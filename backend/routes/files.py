@@ -2363,23 +2363,47 @@ async def download_file(
                             detail="Access denied - invalid file path"
                         )
                     
-                    # 4. User directory enforcement - ensure user can only access their own files
-                    # SPECIAL CASE: Allow access to anonymously uploaded files by any authenticated user
-                    expected_user_id = file_doc.get("owner_id") or file_doc.get("uploaded_by") or file_doc.get("user_id") or current_user
-                    if not isinstance(expected_user_id, str) or not expected_user_id:
-                        expected_user_id = current_user
-                    expected_user_prefix = Path("files") / expected_user_id[:2] / expected_user_id
-                    anonymous_prefix_new = Path("files") / "an" / "anonymous"  # New anonymous path
-                    anonymous_prefix_old = Path("files") / "No" / "None"      # Old anonymous path for backward compatibility
-                    
-                    if (not str(relative_path).startswith(str(expected_user_prefix)) and 
-                        not str(relative_path).startswith(str(anonymous_prefix_new)) and
-                        not str(relative_path).startswith(str(anonymous_prefix_old))):
-                        _log("error", f"Cross-user file access attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Access denied - unauthorized file access"
+                    # 4. Backwards compatibility: allow legacy flat paths like
+                    #    DATA_ROOT/files/<file_id>.<ext>
+                    #    These were created before per-user subdirectories existed.
+                    try:
+                        parts = list(relative_path.parts)
+                    except Exception:
+                        parts = []
+                    if len(parts) == 2 and parts[0] == "files":
+                        _log("info", f"[DOWNLOAD_LEGACY_PATH] Allowing legacy file path: {relative_path}", {
+                            "user_id": current_user,
+                            "operation": "file_download",
+                            "storage_path": storage_path,
+                        })
+                        file_path = normalized_path
+                    else:
+                        # 5. User directory enforcement - ensure user can only access their own files
+                        # SPECIAL CASE: Allow access to anonymously uploaded files by any authenticated user
+                        expected_user_id = (
+                            file_doc.get("owner_id")
+                            or file_doc.get("uploaded_by")
+                            or file_doc.get("user_id")
+                            or current_user
                         )
+                        if not isinstance(expected_user_id, str) or not expected_user_id:
+                            expected_user_id = current_user
+                        expected_user_prefix = Path("files") / expected_user_id[:2] / expected_user_id
+                        anonymous_prefix_new = Path("files") / "an" / "anonymous"  # New anonymous path
+                        anonymous_prefix_old = Path("files") / "No" / "None"      # Old anonymous path for backward compatibility
+                        
+                        if (
+                            not str(relative_path).startswith(str(expected_user_prefix))
+                            and not str(relative_path).startswith(str(anonymous_prefix_new))
+                            and not str(relative_path).startswith(str(anonymous_prefix_old))
+                        ):
+                            _log("error", f"Cross-user file access attempt: {storage_path}", {"user_id": current_user, "operation": "file_download"})
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Access denied - unauthorized file access"
+                            )
+                        
+                        file_path = normalized_path
                     
                     # 5. Additional character-level validation - validate all path components
                     path_parts = normalized_path.parts

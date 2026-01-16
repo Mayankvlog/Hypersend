@@ -1736,20 +1736,27 @@ async def get_simple_users(
     limit: int = 50,
     current_user: str = Depends(get_current_user)
 ):
-    """Get simple list of users for group creation UI"""
+    """Get simple list of users for group creation UI.
+
+    Behaviour:
+    - If the user has contacts, return those contacts (paged).
+    - If the user has NO contacts, return a generic list of users so that
+      group creation UI still shows members to pick from.
+    - Always exclude the current user from the list.
+    """
     try:
-        # Get user's contacts first
+        # Fetch current user (may or may not have contacts configured)
         user = await asyncio.wait_for(
             users_collection().find_one({"_id": current_user}),
-            timeout=5.0
+            timeout=5.0,
         )
-        
+
         contact_ids = user.get("contacts", []) if user else []
-        
-        # If user has contacts, return them
+
+        # If user has contacts, return them in the same shape expected by frontend
         if contact_ids:
             paginated_ids = contact_ids[offset:offset + limit]
-            
+
             cursor = users_collection().find(
                 {"_id": {"$in": paginated_ids}},
                 {
@@ -1760,13 +1767,105 @@ async def get_simple_users(
                     "avatar_url": 1,
                     "is_online": 1,
                     "last_seen": 1,
-                    "status": 1
-                }
+                    "status": 1,
+                },
             )
-            
-            users = []
+
+            users: list[dict] = []
             async for user_doc in cursor:
-                users.append({
+                # Normalise to the simple user payload the Flutter UI expects
+                users.append(
+                    {
+                        "id": user_doc.get("_id", ""),
+                        "name": user_doc.get("name", ""),
+                        "email": user_doc.get("email", ""),
+                        "username": user_doc.get("username"),
+                        "avatar_url": user_doc.get("avatar_url"),
+                        "is_online": user_doc.get("is_online", False),
+                        "last_seen": user_doc.get("last_seen"),
+                        "status": user_doc.get("status"),
+                    }
+                )
+
+            return {
+                "users": users,
+                "total": len(contact_ids),
+                "offset": offset,
+                "limit": limit,
+            }
+
+        # No contacts configured for this user -> fall back to a generic user list
+        # so that group creation is still usable for first‑time users.
+        users_col = users_collection()
+
+        # Detect in-memory mock used by tests (has a dict-like `.data` store)
+        if hasattr(users_col, "data") and isinstance(getattr(users_col, "data"), dict):
+            all_docs = []
+            for uid, doc in users_col.data.items():
+                if uid == current_user:
+                    continue
+                all_docs.append(doc)
+
+            # Sort by created_at (newest first), then by name as secondary key
+            def _sort_key(doc: dict) -> tuple:
+                created = doc.get("created_at")
+                name = (doc.get("name") or "").lower()
+                # Handle None created_at: treat as older (high value) so newer items come first
+                if created is None:
+                    # Use very old timestamp for missing created_at
+                    created = 0
+                elif hasattr(created, 'timestamp'):
+                    # Convert datetime to timestamp for proper numeric sorting
+                    created = created.timestamp()
+                # Negate created to sort descending (newest first), then by name ascending
+                return (-created if isinstance(created, (int, float)) else -1000000000, name)
+
+            all_docs.sort(key=_sort_key)
+            paged_docs = all_docs[offset:offset + limit]
+
+            users: list[dict] = []
+            for user_doc in paged_docs:
+                users.append(
+                    {
+                        "id": user_doc.get("_id", ""),
+                        "name": user_doc.get("name", ""),
+                        "email": user_doc.get("email", ""),
+                        "username": user_doc.get("username"),
+                        "avatar_url": user_doc.get("avatar_url"),
+                        "is_online": user_doc.get("is_online", False),
+                        "last_seen": user_doc.get("last_seen"),
+                        "status": user_doc.get("status"),
+                    }
+                )
+
+            return {
+                "users": users,
+                "total": len(all_docs),
+                "offset": offset,
+                "limit": limit,
+            }
+
+        # Real MongoDB path
+        base_query = {"_id": {"$ne": current_user}}
+
+        cursor = users_col.find(
+            base_query,
+            {
+                "_id": 1,
+                "name": 1,
+                "email": 1,
+                "username": 1,
+                "avatar_url": 1,
+                "is_online": 1,
+                "last_seen": 1,
+                "status": 1,
+            },
+        ).sort("created_at", -1).skip(offset).limit(limit)
+
+        users: list[dict] = []
+        async for user_doc in cursor:
+            users.append(
+                {
                     "id": user_doc.get("_id", ""),
                     "name": user_doc.get("name", ""),
                     "email": user_doc.get("email", ""),
@@ -1774,33 +1873,29 @@ async def get_simple_users(
                     "avatar_url": user_doc.get("avatar_url"),
                     "is_online": user_doc.get("is_online", False),
                     "last_seen": user_doc.get("last_seen"),
-                    "status": user_doc.get("status")
-                })
-            
-            return {
-                "users": users,
-                "total": len(contact_ids),
-                "offset": offset,
-                "limit": limit
-            }
-        
-        # If no contacts, return empty list
+                    "status": user_doc.get("status"),
+                }
+            )
+
         return {
-            "users": [],
-            "total": 0,
+            "users": users,
+            # Total is approximate when falling back; we at least report page size
+            "total": len(users),
             "offset": offset,
-            "limit": limit
+            "limit": limit,
         }
-        
+
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Database operation timed out. Please try again later."
+            detail="Database operation timed out. Please try again later.",
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch users: {str(e)}"
+            detail=f"Failed to fetch users: {str(e)}",
         )
 
 

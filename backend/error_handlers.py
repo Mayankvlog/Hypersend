@@ -1,7 +1,7 @@
 import logging
 import json
-from typing import Any, Dict, List, Union
-from fastapi import FastAPI, Request, status, HTTPException
+from typing import Any, Dict, List, Union, Optional
+from fastapi import FastAPI, Request, status, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -85,6 +85,422 @@ class ValidationErrorDetail:
             error_details["validation_errors"].append(detailed_error)
         
         return error_details
+
+
+def create_success_response(
+    data: Any = None,
+    status_code: int = 200,
+    message: str = None,
+    headers: Optional[Dict[str, str]] = None,
+    request: Optional[Request] = None
+) -> JSONResponse:
+    """
+    Create standardized success responses for all 2xx status codes
+    
+    Args:
+        data: Response data (can be dict, list, or single object)
+        status_code: HTTP status code (200-299)
+        message: Optional success message
+        headers: Optional response headers
+        request: Optional request object for context
+        
+    Returns:
+        JSONResponse with proper success format
+    """
+    # Validate status code is in 2xx range
+    if not (200 <= status_code < 300):
+        raise ValueError(f"Status code {status_code} is not a success code (2xx)")
+    
+    # Default success messages for different codes
+    default_messages = {
+        200: "Request successful",
+        201: "Resource created successfully", 
+        202: "Request accepted for processing",
+        204: "Request successful, no content to return"
+    }
+    
+    # Use provided message or default
+    success_message = message or default_messages.get(status_code, "Request successful")
+    
+    # Build response data
+    response_data = {
+        "status": "SUCCESS",
+        "status_code": status_code,
+        "message": success_message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    # Add data if provided (except for 204 which should have no body)
+    if data is not None and status_code != 204:
+        response_data["data"] = data
+    
+    # Add request context if available
+    if request:
+        response_data["path"] = str(request.url.path)
+        response_data["method"] = request.method
+    
+    # Default headers
+    response_headers = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+    }
+    
+    # Add custom headers
+    if headers:
+        response_headers.update(headers)
+    
+    # Special handling for 204 No Content
+    if status_code == 204:
+        return Response(
+            status_code=status.HTTP_204_NO_CONTENT,
+            headers=response_headers
+        )
+    
+    return JSONResponse(
+        status_code=status_code,
+        content=response_data,
+        headers=response_headers
+    )
+
+
+def create_redirect_response(
+    location: str,
+    status_code: int = 302,
+    message: str = None,
+    headers: Optional[Dict[str, str]] = None,
+    request: Optional[Request] = None
+) -> JSONResponse:
+    """
+    Create standardized redirect responses for all 3xx status codes
+    
+    Args:
+        location: Target URL for redirect
+        status_code: HTTP status code (300-399)
+        message: Optional redirect message
+        headers: Optional response headers
+        request: Optional request object for context
+        
+    Returns:
+        JSONResponse with proper redirect format and Location header
+    """
+    # Validate status code is in 3xx range
+    if not (300 <= status_code < 400):
+        raise ValueError(f"Status code {status_code} is not a redirect code (3xx)")
+    
+    # Default redirect messages for different codes
+    default_messages = {
+        300: "Multiple choices available",
+        301: "Resource moved permanently",
+        302: "Resource found temporarily",
+        303: "See other resource",
+        304: "Not modified - use cached version",
+        305: "Use proxy",
+        307: "Temporary redirect - preserve method",
+        308: "Permanent redirect - preserve method"
+    }
+    
+    # Use provided message or default
+    redirect_message = message or default_messages.get(status_code, "Redirect required")
+    
+    # Build response data (not used for 304 bodies, see below)
+    response_data = {
+        "status": "REDIRECT",
+        "status_code": status_code,
+        "message": redirect_message,
+        "location": location,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    # Add request context if available
+    if request:
+        response_data["path"] = str(request.url.path)
+        response_data["method"] = request.method
+        response_data["original_url"] = str(request.url)
+    
+    # Default headers with Location
+    response_headers = {
+        "Location": location,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+    }
+    
+    # Add custom headers
+    if headers:
+        response_headers.update(headers)
+    
+    # Cache control and body handling for 304 Not Modified
+    if status_code == 304:
+        # 304 responses must not include a message body
+        response_headers["Cache-Control"] = "no-cache"
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED,
+            headers=response_headers
+        )
+    
+    return JSONResponse(
+        status_code=status_code,
+        content=response_data,
+        headers=response_headers
+    )
+
+
+def create_client_error_response(
+    status_code: int,
+    detail: str,
+    field_errors: Optional[List[Dict]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    request: Optional[Request] = None,
+    hints: Optional[List[str]] = None
+) -> JSONResponse:
+    """
+    Create standardized client error responses for all 4xx status codes
+    
+    Args:
+        status_code: HTTP status code (400-499)
+        detail: Error detail message
+        field_errors: Optional list of field-specific validation errors
+        headers: Optional response headers
+        request: Optional request object for context
+        hints: Optional list of helpful hints
+        
+    Returns:
+        JSONResponse with proper client error format
+    """
+    # Validate status code is in 4xx range
+    if not (400 <= status_code < 500):
+        raise ValueError(f"Status code {status_code} is not a client error code (4xx)")
+    
+    # Default error descriptions for different codes
+    error_descriptions = {
+        400: "Bad Request",
+        401: "Unauthorized",
+        402: "Payment Required",
+        403: "Forbidden",
+        404: "Not Found",
+        405: "Method Not Allowed",
+        406: "Not Acceptable",
+        407: "Proxy Authentication Required",
+        408: "Request Timeout",
+        409: "Conflict",
+        410: "Gone",
+        411: "Length Required",
+        412: "Precondition Failed",
+        413: "Payload Too Large",
+        414: "URI Too Long",
+        415: "Unsupported Media Type",
+        416: "Range Not Satisfiable",
+        417: "Expectation Failed",
+        418: "I'm a teapot",
+        421: "Misdirected Request",
+        422: "Unprocessable Entity",
+        423: "Locked",
+        424: "Failed Dependency",
+        425: "Too Early",
+        426: "Upgrade Required",
+        428: "Precondition Required",
+        429: "Too Many Requests",
+        431: "Request Header Fields Too Large",
+        451: "Unavailable For Legal Reasons",
+        499: "Client Closed Request"
+    }
+    
+    # Default hints for different codes
+    default_hints = {
+        400: ["Check request syntax", "Verify all required fields", "Ensure data types are correct"],
+        401: ["Check authentication credentials", "Verify token validity", "Try logging in again"],
+        403: ["Verify permissions", "Check resource access", "Contact administrator"],
+        404: ["Verify resource ID", "Check if resource exists", "Verify URL path"],
+        405: ["Check allowed HTTP methods", "Verify API documentation", "Use correct method"],
+        408: ["Check network connection", "Try again quickly", "Reduce request size"],
+        409: ["Refresh resource state", "Check for conflicts", "Try with different data"],
+        422: ["Check validation errors", "Verify data format", "Review field constraints"],
+        429: ["Wait before retrying", "Implement backoff", "Check rate limits"]
+    }
+    
+    # Build response data
+    response_data = {
+        "status": "ERROR",
+        "status_code": status_code,
+        "error": error_descriptions.get(status_code, "Client Error"),
+        "detail": detail,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "error_type": "client_error"
+    }
+    
+    # Add request context if available
+    if request:
+        response_data["path"] = str(request.url.path)
+        response_data["method"] = request.method
+    
+    # Add field errors if provided
+    if field_errors:
+        response_data["field_errors"] = field_errors
+        response_data["error_count"] = len(field_errors)
+    
+    # Add hints
+    combined_hints = hints or default_hints.get(status_code, ["Check request and try again"])
+    response_data["hints"] = combined_hints
+    
+    # Default headers
+    response_headers = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+    }
+    
+    # Add custom headers
+    if headers:
+        response_headers.update(headers)
+    
+    # Add Retry-After for rate limiting
+    if status_code == 429:
+        # Safely read from optional headers dict
+        retry_after = (headers or {}).get("Retry-After", "60")
+        response_headers["Retry-After"] = retry_after
+    elif status_code == 408:
+        response_headers["Retry-After"] = "30"
+    
+    return JSONResponse(
+        status_code=status_code,
+        content=response_data,
+        headers=response_headers
+    )
+
+
+def create_server_error_response(
+    status_code: int,
+    detail: str = None,
+    headers: Optional[Dict[str, str]] = None,
+    request: Optional[Request] = None,
+    debug_mode: bool = False,
+    original_error: Optional[Exception] = None
+) -> JSONResponse:
+    """
+    Create standardized server error responses for all 5xx status codes
+    
+    Args:
+        status_code: HTTP status code (500-599)
+        detail: Optional error detail message
+        headers: Optional response headers
+        request: Optional request object for context
+        debug_mode: Whether to include detailed error information
+        original_error: Optional original exception for debugging
+        
+    Returns:
+        JSONResponse with proper server error format
+    """
+    # Validate status code is in 5xx range
+    if not (500 <= status_code < 600):
+        raise ValueError(f"Status code {status_code} is not a server error code (5xx)")
+    
+    # Default error descriptions for different codes
+    error_descriptions = {
+        500: "Internal Server Error",
+        501: "Not Implemented",
+        502: "Bad Gateway",
+        503: "Service Unavailable",
+        504: "Gateway Timeout",
+        505: "HTTP Version Not Supported",
+        506: "Variant Also Negotiates",
+        507: "Insufficient Storage",
+        508: "Loop Detected",
+        510: "Not Extended",
+        511: "Network Authentication Required"
+    }
+    
+    # Default messages (production-safe)
+    safe_messages = {
+        500: "Internal server error. Please try again later.",
+        501: "Feature not implemented. Check API documentation.",
+        502: "Upstream service error. Try again later.",
+        503: "Service temporarily unavailable. Try again later.",
+        504: "Gateway timeout. Try with smaller request.",
+        505: "HTTP version not supported. Use HTTP/1.1.",
+        506: "Content negotiation failed. Check headers.",
+        507: "Server storage full. Contact administrator.",
+        508: "Request loop detected. Simplify request.",
+        510: "Extension not required. Use standard HTTP.",
+        511: "Network authentication required. Check settings."
+    }
+    
+    # Default hints for different codes
+    default_hints = {
+        500: ["Try again in moments", "Contact support if persistent", "Check system status"],
+        502: ["Upstream server issues", "Try again later", "Check service status"],
+        503: ["Server overloaded", "Try again later", "Check maintenance schedule"],
+        504: ["Request too large", "Try with smaller data", "Check server load"],
+        507: ["Storage full", "Contact admin", "Try with smaller data"]
+    }
+    
+    # Build response data
+    response_data = {
+        "status": "ERROR",
+        "status_code": status_code,
+        "error": error_descriptions.get(status_code, "Server Error"),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "error_type": "server_error"
+    }
+    
+    # Add request context if available
+    if request:
+        response_data["path"] = str(request.url.path)
+        response_data["method"] = request.method
+    
+    # Determine detail message based on debug mode
+    if debug_mode:
+        # In debug mode, provide detailed information
+        if detail:
+            response_data["detail"] = detail
+        elif original_error:
+            response_data["detail"] = str(original_error)
+        else:
+            response_data["detail"] = safe_messages.get(status_code, "Server error occurred")
+        
+        # Add debug information
+        if original_error:
+            response_data["debug"] = {
+                "exception_type": type(original_error).__name__,
+                "exception_message": str(original_error)
+            }
+    else:
+        # In production, use safe generic messages
+        response_data["detail"] = safe_messages.get(status_code, "Internal server error. Please try again later.")
+    
+    # Add hints
+    response_data["hints"] = default_hints.get(status_code, ["Try again later", "Contact support if persistent"])
+    
+    # Default headers
+    response_headers = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+    }
+    
+    # Add custom headers
+    if headers:
+        response_headers.update(headers)
+    
+    # Add Retry-After for server errors that might recover
+    if status_code in [502, 503, 504]:
+        # Safely read from optional headers dict
+        retry_after = (headers or {}).get("Retry-After", "120")
+        response_headers["Retry-After"] = retry_after
+    elif status_code == 507:
+        response_headers["Retry-After"] = "300"  # 5 minutes for storage issues
+    
+    return JSONResponse(
+        status_code=status_code,
+        content=response_data,
+        headers=response_headers
+    )
 
 
 def log_validation_error(request_path: str, method: str, body: Any, errors: List[Dict]) -> None:

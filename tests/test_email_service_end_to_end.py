@@ -211,7 +211,7 @@ class TestEmailServiceIntegration:
         os.environ["DEBUG"] = "True"
         
         import importlib
-        import utils.email_service as email_module
+        import backend.utils.email_service as email_module
         importlib.reload(email_module)
         
         # Capture output
