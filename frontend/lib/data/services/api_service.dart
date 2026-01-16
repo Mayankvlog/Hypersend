@@ -1600,14 +1600,46 @@ Future<void> postToChannel(String channelId, String text) async {
     required String savePath,
     void Function(int, int)? onReceiveProgress,
   }) async {
-    await _dio.download(
-      '${ApiConstants.filesEndpoint}/$fileId/download',
-      savePath,
-      onReceiveProgress: onReceiveProgress,
-      options: Options(
-        headers: _mergeAuthHeaders({}),
-      ),
-    );
+    try {
+      await _dio.download(
+        '${ApiConstants.filesEndpoint}/$fileId/download',
+        savePath,
+        onReceiveProgress: onReceiveProgress,
+        options: Options(
+          headers: _mergeAuthHeaders({
+            'Accept': 'application/octet-stream',
+            'Cache-Control': 'no-cache',
+          }),
+          receiveTimeout: Duration(minutes: 30),
+          sendTimeout: Duration(minutes: 30),
+        ),
+      );
+    } on DioException catch (e) {
+      debugPrint('[DOWNLOAD] Error downloading file: ${e.type} - ${e.message}');
+      
+      // Enhanced error handling
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw Exception('Download timeout - Please check your connection and try again');
+      } else if (e.type == DioExceptionType.badResponse) {
+        final statusCode = e.response?.statusCode;
+        if (statusCode == 404) {
+          throw Exception('File not found - The file may have been deleted');
+        } else if (statusCode == 403) {
+          throw Exception('Access denied - You do not have permission to download this file');
+        } else if (statusCode == 416) {
+          throw Exception('Invalid range request - Please try downloading again');
+        } else if (statusCode != null && statusCode >= 500) {
+          throw Exception('Server error - Please try again later');
+        } else {
+          throw Exception('Download failed: ${e.response?.data ?? 'Unknown error'}');
+        }
+      } else if (e.type == DioExceptionType.connectionError) {
+        throw Exception('Network error - Please check your internet connection');
+      } else {
+        throw Exception('Download failed: ${e.message}');
+      }
+    }
   }
 
   // Convenience method that accepts double progress callback
@@ -1625,7 +1657,12 @@ Future<void> postToChannel(String channelId, String text) async {
         }
       },
       options: Options(
-        headers: _mergeAuthHeaders({'Range': 'bytes=0-'}),
+        headers: _mergeAuthHeaders({
+          'Accept': 'application/octet-stream',
+          'Cache-Control': 'no-cache',
+        }),
+        receiveTimeout: Duration(minutes: 30),
+        sendTimeout: Duration(minutes: 30),
       ),
     );
   }
@@ -1651,10 +1688,15 @@ Future<void> postToChannel(String channelId, String text) async {
     try {
       _log('[DOWNLOAD_LARGE] Starting chunked download for file: $fileId');
       
-// Get file info first
+      // Get file info first
       final fileInfo = await getFileInfo(fileId);
       final totalSize = fileInfo['size'] as int? ?? 0;
       final fileName = fileInfo['filename']?.toString() ?? 'unknown';
+      
+      // Validate file size
+      if (totalSize <= 0) {
+        throw Exception('Invalid file size: $totalSize bytes');
+      }
       
       _log('[DOWNLOAD_LARGE] File info: size=$totalSize, name=$fileName');
       

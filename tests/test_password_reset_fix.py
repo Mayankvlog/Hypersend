@@ -103,6 +103,11 @@ class TestPasswordResetFunctionality:
             data={"sub": "507f1f77bcf86cd799439011", "token_type": "password_reset"},
             expires_delta=timedelta(minutes=30)
         )
+
+        from auth.utils import decode_token
+        token_data = decode_token(reset_token)
+        jti = getattr(token_data, "jti", None)
+        assert jti, "Password reset token must include jti"
         
         test_user = {
             "_id": "507f1f77bcf86cd799439011",
@@ -145,22 +150,19 @@ class TestPasswordResetFunctionality:
                 self.token_used = False
             
             async def find_one(self, query):
-                if query.get("token") == reset_token:
+                if query.get("jti") == jti and query.get("token_type") == "password_reset" and query.get("used") is False:
                     return {
                         "_id": "mock_token_id",  # Add _id for update query
-                        "token": reset_token,
-                        "email": "test@example.com",  # Changed to email field
+                        "jti": jti,
+                        "token_type": "password_reset",
                         "used": False,
+                        "invalidated": False,
                         "expires_at": datetime.now(timezone.utc) + timedelta(minutes=30)
                     }
                 return None
             
             async def update_one(self, query, update):
-                if query.get("token") == reset_token:
-                    self.token_used = True
-                    return MagicMock(matched_count=1, modified_count=1)
-                # Also handle case where query uses _id
-                elif query.get("_id") == "mock_token_id":
+                if query.get("_id") == "mock_token_id":
                     self.token_used = True
                     return MagicMock(matched_count=1, modified_count=1)
                 return MagicMock(matched_count=0, modified_count=0)

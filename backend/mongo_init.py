@@ -2,6 +2,7 @@
 MongoDB initialization - Creates admin and application users on first startup
 """
 import asyncio
+import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import settings
 

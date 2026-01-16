@@ -292,6 +292,7 @@ class PasswordResetResponse(BaseModel):
     success: bool
     token: Optional[str] = None  # Include reset token for direct password reset
     redirect_url: Optional[str] = None  # URL to redirect after successful reset
+    expires_in: Optional[int] = None  # Token expiry time in seconds
 
 
 # Permission Models

@@ -7,6 +7,7 @@ import logging
 from auth.utils import get_current_user
 from db_proxy import chats_collection, messages_collection
 from models import ChatCreate, MessageCreate, ChatType, ChatPermissions
+from database import client
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,7 @@ async def remove_channel(channel_id: str, current_user: str = Depends(get_curren
         raise HTTPException(status_code=403, detail="Only the owner can remove the channel")
 
     # Use MongoDB transaction for atomicity
-    async with await db.client.start_session() as s:
+    async with await client.start_session() as s:
         async with s.start_transaction():
             await messages_collection().delete_many({"chat_id": channel_id}, session=s)
             await chats_collection().delete_one({"_id": channel_id}, session=s)

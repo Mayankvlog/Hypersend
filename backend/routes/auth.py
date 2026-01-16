@@ -40,7 +40,8 @@ login_attempts: Dict[str, List[datetime]] = defaultdict(list)
 failed_login_attempts: Dict[str, Tuple[int, datetime]] = {}
 
 # Additional tracking for cross-server restart protection
-persistent_login_lockouts: Dict[str, datetime] = {}  # Store in database in production
+# This is used elsewhere in the module for tracking persistent lockouts
+persistent_login_lockouts: Dict[str, datetime] = {}
 
 # SECURITY: Clean old lockout entries periodically
 def cleanup_expired_lockouts():
@@ -55,7 +56,6 @@ def cleanup_expired_lockouts():
 
 def clear_all_lockouts():
     """Clear all lockout entries - useful for testing"""
-    global persistent_login_lockouts, login_attempts, failed_login_attempts
     persistent_login_lockouts.clear()
     login_attempts.clear()
     failed_login_attempts.clear()
@@ -1181,7 +1181,8 @@ async def forgot_password(request: dict) -> dict:
         
         # Validate email format
         email = email.strip().lower()
-        if "@" not in email or "." not in email or len(email) < 5:
+        # Check for valid email format: no multiple @, must have @ and domain
+        if email.count("@") != 1 or "." not in email.split("@")[1] or len(email) < 5:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid email format"
@@ -1368,14 +1369,15 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
             )
         
         # Check JTI in database - prevent replay attacks
+        jti = getattr(token_data, 'jti', None)
+        if not jti:
+            auth_log("Reset token missing JTI")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid reset token: missing JTI"
+            )
+        
         try:
-            jti = getattr(token_data, 'jti', None)
-            if not jti:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid reset token: missing JTI"
-                )
-            
             reset_doc = await asyncio.wait_for(
                 reset_tokens_collection().find_one({
                     "jti": jti,

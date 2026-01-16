@@ -31,7 +31,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     _loadContacts();
   }
 
-Future<void> _loadContacts() async {
+  Future<void> _loadContacts() async {
     debugPrint('[GROUP_CREATE] Loading contacts for group creation');
     
     if (!serviceProvider.authService.isLoggedIn) {
@@ -48,6 +48,19 @@ Future<void> _loadContacts() async {
       // FIXED: Use contacts endpoint instead of search for group creation
       final contacts = await serviceProvider.apiService.getContacts(limit: 100);
       debugPrint('[GROUP_CREATE] Loaded ${contacts.length} contacts for group creation');
+      // If user has no saved contacts yet, fallback to all users so group creation works.
+      if (contacts.isEmpty) {
+        debugPrint('[GROUP_CREATE] No contacts found, loading all users via search');
+        final users = await serviceProvider.apiService.searchUsers('');
+        debugPrint('[GROUP_CREATE] Loaded ${users.length} users from search fallback');
+
+        if (!mounted) return;
+        setState(() {
+          _users = users;
+          _loading = false;
+        });
+        return;
+      }
       
       if (!mounted) return;
       setState(() {
@@ -78,9 +91,9 @@ Future<void> _loadContacts() async {
     }
   }
 
-Future<void> _createGroup() async {
+  Future<void> _createGroup() async {
     final name = _groupNameController.text.trim();
-debugPrint('[GROUP_CREATE] Creating group with name: "$name"');
+    debugPrint('[GROUP_CREATE] Creating group with name: "$name"');
     debugPrint('[GROUP_CREATE] Available users in UI: ${_users.length}');
     debugPrint('[GROUP_CREATE] Selected members: ${_selectedMemberIds.toList()}');
     debugPrint('[GROUP_CREATE] Current user: ${serviceProvider.authService.isLoggedIn}');
@@ -102,14 +115,6 @@ debugPrint('[GROUP_CREATE] Creating group with name: "$name"');
       return;
     }
     
-    // Hardcode current user ID for now since authService.currentUser might be null
-    final currentUserId = 'current_user_id_hardcoded';
-    
-    // Add current user to members if not already selected
-    if (!_selectedMemberIds.contains(currentUserId)) {
-      _selectedMemberIds.add(currentUserId);
-    }
-    
     debugPrint('[GROUP_CREATE] Proceeding to create group with selected members');
 
     try {
@@ -117,6 +122,7 @@ debugPrint('[GROUP_CREATE] Creating group with name: "$name"');
       final res = await serviceProvider.apiService.createGroup(
         name: name,
         description: _groupDescriptionController.text.trim(),
+        // Backend automatically adds current user; send only the selected member IDs.
         memberIds: _selectedMemberIds.toList(),
       );
       debugPrint('[GROUP_CREATE] API response: $res');

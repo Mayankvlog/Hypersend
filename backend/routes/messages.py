@@ -353,7 +353,7 @@ async def search_messages(
         dangerous_chars = r'[$\\]'
         cleaned_query = re.sub(dangerous_chars, '', q)
         if cleaned_query != q:
-            _log("warning", f"Potentially dangerous characters in search query", {
+            logger.warning(f"Potentially dangerous characters in search query", extra={
                 "user_id": current_user,
                 "operation": "message_search",
                 "query_length": len(q)

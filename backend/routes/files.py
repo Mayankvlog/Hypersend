@@ -2379,40 +2379,74 @@ async def download_file(
             file_size = file_path.stat().st_size
             
             if range_header:
-                # Parse range header safely
+                # Enhanced range header parsing with better validation
                 try:
                     if not range_header.startswith("bytes="):
-                        raise ValueError("Invalid range header format")
+                        raise ValueError("Range header must start with 'bytes='")
                     
                     range_part = range_header.replace("bytes=", "")
                     parts = range_part.split("-")
                     
                     if len(parts) != 2:
-                        raise ValueError("Invalid range header format")
+                        raise ValueError("Range header must contain exactly one dash")
                         
-                    start = int(parts[0].strip()) if parts[0].strip() else 0
-                    end = int(parts[1].strip()) if parts[1].strip() else file_size - 1
+                    # Handle different range formats: "bytes=0-499", "bytes=500-", "bytes=-500"
+                    start_str = parts[0].strip()
+                    end_str = parts[1].strip()
                     
-                    if start < 0 or end >= file_size or start > end:
-                        raise ValueError("Invalid range values")
+                    if start_str and end_str:
+                        # Normal range: "bytes=0-499"
+                        start = int(start_str)
+                        end = int(end_str)
+                    elif start_str and not end_str:
+                        # Open-ended range: "bytes=500-"
+                        start = int(start_str)
+                        end = file_size - 1
+                    elif not start_str and end_str:
+                        # Suffix range: "bytes=-500" (last 500 bytes)
+                        start = max(0, file_size - int(end_str))
+                        end = file_size - 1
+                    else:
+                        raise ValueError("Invalid range format")
+                    
+                    # Enhanced validation
+                    if start < 0 or end < 0:
+                        raise ValueError("Range values cannot be negative")
+                    if start >= file_size:
+                        raise ValueError("Start byte exceeds file size")
+                    if end >= file_size:
+                        end = file_size - 1  # Clamp to file size
+                    if start > end:
+                        raise ValueError("Start byte cannot be greater than end byte")
+                        
                 except (ValueError, IndexError) as e:
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Invalid range header: {str(e)}"
+                        status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+                        detail=f"Invalid range header: {str(e)}. Available range: 0-{file_size - 1}",
+                        headers={"Content-Range": f"bytes */{file_size}"}
                     )
                 
                 async def file_iterator():
-                    async with aiofiles.open(file_path, "rb") as f:
-                        await f.seek(start)
-                        remaining = end - start + 1
-                        chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
-                        while remaining > 0:
-                            read_size = min(chunk_size, remaining)
-                            data = await f.read(read_size)
-                            if not data:
-                                break
-                            remaining -= len(data)
-                            yield data
+                    try:
+                        async with aiofiles.open(file_path, "rb") as f:
+                            await f.seek(start)
+                            remaining = end - start + 1
+                            chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
+                            total_sent = 0
+                            while remaining > 0:
+                                read_size = min(chunk_size, remaining)
+                                data = await f.read(read_size)
+                                if not data:
+                                    break
+                                remaining -= len(data)
+                                total_sent += len(data)
+                                yield data
+                    except Exception as e:
+                        _log("error", f"Error streaming range file: {e}", {"user_id": current_user, "operation": "file_download"})
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Range streaming error - please try again"
+                        )
                 
                 return StreamingResponse(
                     file_iterator(),
@@ -2430,16 +2464,25 @@ async def download_file(
             # Full file download - use streaming for large files to avoid memory issues
             if file_size > 100 * 1024 * 1024:  # 100MB threshold
                 async def file_iterator():
-                    async with aiofiles.open(file_path, "rb") as f:
-                        chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
-                        remaining = file_size
-                        while remaining > 0:
-                            read_size = min(chunk_size, remaining)
-                            data = await f.read(read_size)
-                            if not data:
-                                break
-                            remaining -= len(data)
-                            yield data
+                    try:
+                        async with aiofiles.open(file_path, "rb") as f:
+                            chunk_size = settings.CHUNK_SIZE  # Use configured chunk size (16MB)
+                            remaining = file_size
+                            total_sent = 0
+                            while remaining > 0:
+                                read_size = min(chunk_size, remaining)
+                                data = await f.read(read_size)
+                                if not data:
+                                    break
+                                remaining -= len(data)
+                                total_sent += len(data)
+                                yield data
+                    except Exception as e:
+                        _log("error", f"Error streaming file: {e}", {"user_id": current_user, "operation": "file_download"})
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="File streaming error - please try again"
+                        )
                 
                 return StreamingResponse(
                     file_iterator(),
@@ -2448,18 +2491,23 @@ async def download_file(
                         "Content-Type": file_doc.get("mime_type", "application/octet-stream"),
                         "Accept-Ranges": "bytes",
                         "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
-                        "Cache-Control": "no-cache"
+                        "Cache-Control": "no-cache",
+                        "ETag": f'"{file_id}"'  # Add ETag for cache validation
                     }
                 )
             
-            # Small files - use FileResponse
+            # Small files - use FileResponse with enhanced headers
+            file_size = file_path.stat().st_size
             return FileResponse(
                 file_path,
                 media_type=file_doc.get("mime_type", "application/octet-stream"),
                 filename=file_doc["filename"],
                 headers={
+                    "Content-Length": str(file_size),
                     "Content-Disposition": f'inline; filename="{quote(file_doc["filename"])}"',
-                    "Cache-Control": "no-cache"
+                    "Cache-Control": "no-cache",
+                    "Accept-Ranges": "bytes",
+                    "ETag": f'"{file_id}"'  # Add ETag for cache validation
                 }
             )
         
@@ -2474,10 +2522,18 @@ async def download_file(
                     detail="Avatar file not found"
                 )
             
+            # Enhanced avatar file response with proper headers
+            avatar_size = avatar_path.stat().st_size
             return FileResponse(
                 path=str(avatar_path),
                 filename=f"avatar_{current_user}",
-                media_type="image/jpeg"
+                media_type="image/jpeg",
+                headers={
+                    "Content-Length": str(avatar_size),
+                    "Content-Disposition": f'inline; filename="avatar_{current_user}"',
+                    "Cache-Control": "public, max-age=3600",  # Cache avatars for 1 hour
+                    "Accept-Ranges": "bytes"
+                }
             )
         
         # File not found

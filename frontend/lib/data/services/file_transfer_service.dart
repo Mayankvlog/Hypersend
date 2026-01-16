@@ -207,25 +207,59 @@ class FileTransferService {
     required String savePath,
     required Function(double) onProgress,
   }) async {
-    // Generate proper download path
+    // Enhanced download path generation with proper validation
     String actualSavePath;
     if (kIsWeb) {
       throw Exception('File download not supported on web platform');
     } else {
-      // For native platforms, get downloads directory
+      // For native platforms, get downloads directory with fallback chain
       Directory? directory;
       try {
         directory = await getDownloadsDirectory();
+        debugPrint('[FILE_TRANSFER] Primary downloads directory: ${directory?.path}');
       } catch (e) {
         debugPrint('[FILE_TRANSFER] Could not get downloads directory: $e');
       }
       
-      directory ??= await getApplicationDocumentsDirectory();
-      actualSavePath = '${directory.path}/$savePath';
+      // Fallback to application documents if downloads directory fails
+      if (directory == null) {
+        try {
+          directory = await getApplicationDocumentsDirectory();
+          debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory.path}');
+        } catch (e) {
+          debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
+          throw Exception('Unable to determine save location for downloaded file');
+        }
+      }
+      
+      // Sanitize and construct final path
+      final sanitizedSavePath = _sanitizeFileName(savePath);
+      actualSavePath = '${directory.path}/$sanitizedSavePath';
+      
+      // Enhanced path validation
+      final file = File(actualSavePath);
+      final parentDir = file.parent;
       
       debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
-      debugPrint('[FILE_TRANSFER] Directory exists: ${await directory.exists()}');
-      debugPrint('[FILE_TRANSFER] Directory path: ${directory.path}');
+      debugPrint('[FILE_TRANSFER] Parent directory exists: ${await parentDir.exists()}');
+      debugPrint('[FILE_TRANSFER] Parent directory path: ${parentDir.path}');
+      
+      // Ensure parent directory exists with proper permissions
+      try {
+        if (!await parentDir.exists()) {
+          debugPrint('[FILE_TRANSFER] Creating parent directory: ${parentDir.path}');
+          await parentDir.create(recursive: true);
+        }
+        
+        // Verify directory is writable
+        final testFile = File('${parentDir.path}/.download_test_${DateTime.now().millisecondsSinceEpoch}');
+        await testFile.writeAsString('test');
+        await testFile.delete();
+        debugPrint('[FILE_TRANSFER] Directory is writable: ✅');
+      } catch (e) {
+        debugPrint('[FILE_TRANSFER] Directory creation/writability failed: $e');
+        throw Exception('Cannot create or write to download directory: $e');
+      }
     }
 
     final transfer = FileTransfer(
@@ -359,6 +393,32 @@ class FileTransferService {
       // Then call external callback with consistent value
       onProgress(clamped);
     }
+  }
+
+  // Sanitize file name to prevent directory traversal and invalid characters
+  String _sanitizeFileName(String fileName) {
+    // Remove path traversal attempts
+    String sanitized = fileName
+        .replaceAll(RegExp(r'\.\.[\\/]'), '') // Remove ../
+        .replaceAll(RegExp(r'^[\\/]'), '') // Remove leading /
+        .replaceAll(RegExp(r'[<>:"|?*]'), '_') // Replace invalid characters
+        .trim();
+    
+    // Ensure filename is not empty
+    if (sanitized.isEmpty) {
+      sanitized = 'download_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    
+    // Limit filename length
+    if (sanitized.length > 255) {
+      final extension = sanitized.contains('.') ? 
+          sanitized.substring(sanitized.lastIndexOf('.')) : '';
+      final nameWithoutExt = sanitized.contains('.') ? 
+          sanitized.substring(0, sanitized.lastIndexOf('.')) : sanitized;
+      sanitized = '${nameWithoutExt.substring(0, 255 - extension.length)}$extension';
+    }
+    
+    return sanitized;
   }
 
   void _markCompleted(String transferId) {

@@ -81,15 +81,12 @@ else:
     # Runtime mode - actual imports
     try:
         import qrcode
-        from qrcode import QRCode
-        from qrcode.constants import ERROR_CORRECT_L
+        from qrcode.image.pil import PilImage
         QR_CODE_AVAILABLE = True
-    except ImportError as e:
-        # Create fallback classes for runtime when qrcode is not available
-        class QRCode:
-            def __init__(self, **kwargs):
-                raise ImportError(f"QR code library not available: {e}")
-            
+    except ImportError as qrcode_error:
+        QR_CODE_AVAILABLE = False
+        
+        class MockQRCode:
             def add_data(self, data):
                 pass
             
@@ -99,11 +96,9 @@ else:
             def make_image(self, **kwargs):
                 raise ImportError("QR code library not installed")
         
-        class ERROR_CORRECT_L:
-            pass
-        
-        QR_CODE_AVAILABLE = False
-        print(f"QR code library not available: {e}")
+        qrcode = MockQRCode
+        PilImage = None
+        print(f"QR code library not available: {qrcode_error}")
 
 logger = logging.getLogger("auth")
 security = HTTPBearer(
@@ -406,6 +401,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     
     # Add expiration to the token payload
     to_encode.update({"exp": expire})
+
+    # Password reset tokens must have a jti to support replay protection.
+    # If caller didn't provide one, generate it.
+    if to_encode.get("token_type") == "password_reset" and not to_encode.get("jti"):
+        to_encode["jti"] = str(uuid.uuid4())
     
     # Only set token_type to "access" if not already specified
     if "token_type" not in to_encode:

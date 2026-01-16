@@ -30,7 +30,7 @@ os.environ['EMAIL_FROM'] = 'test@test.com'
 try:
     from main import app
     from models import PasswordResetRequest, ChangePasswordRequest
-    from auth.utils import get_current_user, hash_password, create_access_token
+    from auth.utils import get_current_user, hash_password, create_access_token, decode_token
     from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
     from bson import ObjectId
     from datetime import datetime, timedelta, timezone
@@ -181,14 +181,20 @@ class TestPasswordManagement:
             data={"sub": self.test_user_id, "token_type": "password_reset"},
             expires_delta=timedelta(minutes=30)
         )
+
+        token_data = decode_token(reset_token)
+        jti = getattr(token_data, "jti", None)
+        assert jti, "Password reset token must include jti"
         
-        # Store reset token with email field (matching our implementation)
+        # Store reset token record as expected by backend (lookup by jti)
         await reset_tokens_collection().insert_one({
-            "email": "reset@example.com",
-            "token": reset_token,
+            "_id": str(ObjectId()),
+            "jti": jti,
+            "token_type": "password_reset",
+            "used": False,
+            "invalidated": False,
             "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=30),
-            "used": False
         })
         
         # Test password reset

@@ -4,12 +4,15 @@ from datetime import datetime, timezone
 from bson import ObjectId
 import asyncio
 import json
+import logging
 
 from auth.utils import get_current_user
 from db_proxy import chats_collection, users_collection, messages_collection, get_db
 from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
 from redis_cache import GroupCacheService, UserCacheService, SearchCacheService
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
@@ -1020,7 +1023,7 @@ async def add_multiple_participants(
         }
         
     except Exception as e:
-        auth_log(f"Error adding multiple participants: {e}")
+        logger.error(f"Error adding multiple participants: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to add participants"

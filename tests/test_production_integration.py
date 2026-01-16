@@ -21,8 +21,14 @@ class TestDockerEnvironment:
         
         assert env_path.exists(), f".env file not found at {env_path}"
         
-        with open(env_path, 'r') as f:
-            content = f.read()
+        # Read file with UTF-8 encoding explicitly
+        try:
+            with open(env_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            # Fallback to latin-1 if UTF-8 fails
+            with open(env_path, 'r', encoding='latin-1') as f:
+                content = f.read()
         
         # Should have CHUNK_SIZE= line
         chunk_size_match = re.search(r'CHUNK_SIZE=(\d+)', content)
@@ -44,8 +50,14 @@ class TestDockerEnvironment:
         
         assert files_path.exists(), f"files.py not found at {files_path}"
         
-        with open(files_path, 'r') as f:
-            content = f.read()
+        # Read file with UTF-8 encoding explicitly
+        try:
+            with open(files_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            # Fallback to latin-1 if UTF-8 fails
+            with open(files_path, 'r', encoding='latin-1') as f:
+                content = f.read()
         
         # Count occurrences of hardcoded 4MB chunk size
         # Should not have: chunk_size_mb = 4
@@ -98,8 +110,14 @@ class TestSessionPersistenceIntegration:
         
         assert auth_path.exists(), f"auth.py not found at {auth_path}"
         
-        with open(auth_path, 'r') as f:
-            content = f.read()
+        # Read file with UTF-8 encoding explicitly
+        try:
+            with open(auth_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            # Fallback to latin-1 if UTF-8 fails
+            with open(auth_path, 'r', encoding='latin-1') as f:
+                content = f.read()
         
         # Should have refresh endpoint
         assert '@router.post("/refresh"' in content, "Refresh endpoint not found"
@@ -109,12 +127,16 @@ class TestSessionPersistenceIntegration:
             "Refresh endpoint should return same refresh token"
         
         # Should NOT invalidate on refresh
-        refresh_section = content[content.find('@router.post("/refresh"'):content.find('@router.post("/refresh"')+5000]
-        
-        # Count invalidations in refresh endpoint (should be 0)
-        invalidate_count = refresh_section.count('invalidated": True')
-        assert invalidate_count == 0, \
-            f"Refresh endpoint should not invalidate token, found {invalidate_count} invalidations"
+        refresh_start = content.find('@router.post("/refresh"')
+        if refresh_start != -1:
+            refresh_section = content[refresh_start:refresh_start+5000]
+            
+            # Count invalidations in refresh endpoint (should be 0)
+            invalidate_count = refresh_section.count('invalidated": True')
+            assert invalidate_count == 0, \
+                f"Refresh endpoint should not invalidate token, found {invalidate_count} invalidations"
+        else:
+            pytest.fail("Could not find refresh endpoint in auth.py")
 
 
 class TestErrorStatusCodes:
@@ -124,8 +146,14 @@ class TestErrorStatusCodes:
         """Oversized chunk should return 413, not 400"""
         files_path = Path(__file__).parent.parent / "backend" / "routes" / "files.py"
         
-        with open(files_path, 'r') as f:
-            content = f.read()
+        # Read file with UTF-8 encoding explicitly
+        try:
+            with open(files_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            # Fallback to latin-1 if UTF-8 fails
+            with open(files_path, 'r', encoding='latin-1') as f:
+                content = f.read()
         
         # Find the chunk size validation
         if 'len(chunk_data) > settings.UPLOAD_CHUNK_SIZE' in content:
@@ -146,8 +174,14 @@ class TestProductionDeployment:
         docker_compose_path = Path(__file__).parent.parent / "docker-compose.yml"
         
         if docker_compose_path.exists():
-            with open(docker_compose_path, 'r') as f:
-                content = f.read()
+            # Read file with UTF-8 encoding explicitly
+            try:
+                with open(docker_compose_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except UnicodeDecodeError:
+                # Fallback to latin-1 if UTF-8 fails
+                with open(docker_compose_path, 'r', encoding='latin-1') as f:
+                    content = f.read()
             
             # Should have env_file or environment setup
             assert '.env' in content or 'environment:' in content, \

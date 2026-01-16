@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from typing import Optional
 from datetime import datetime, timezone
 from bson import ObjectId
-from models import ChatCreate, MessageCreate
+from models import ChatCreate, MessageCreate, ChatType
 from db_proxy import chats_collection, messages_collection, users_collection
 from auth.utils import get_current_user, get_current_user_for_upload
 import logging
@@ -114,6 +114,20 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
     # Backward compatibility: convert 'direct' to 'private' at route level too
     if chat.type == 'direct':
         chat.type = 'private'
+
+    valid_types = [
+        ChatType.PRIVATE,
+        ChatType.GROUP,
+        ChatType.SUPERGROUP,
+        ChatType.CHANNEL,
+        ChatType.SECRET,
+        ChatType.SAVED,
+    ]
+    if chat.type not in valid_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid chat type. Must be one of: {', '.join(valid_types)}",
+        )
     
     # Chat type validation is now handled by the model validator
     # Ensure current user is in members FIRST, before validation
