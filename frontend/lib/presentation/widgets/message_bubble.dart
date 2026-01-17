@@ -138,8 +138,6 @@ class MessageBubble extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.download, color: Colors.white70, size: 16),
                           ],
                         ),
                       ),
