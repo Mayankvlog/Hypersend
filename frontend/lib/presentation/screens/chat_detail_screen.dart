@@ -534,19 +534,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final fileName = message.content ?? 'file';
     debugPrint('[FILE_DOWNLOAD] Processing file download: $fileName (ID: $fileId)');
     
-    // Show loading dialog
+    // Show loading dialog without spinner
     if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 16),
-            Text('Downloading $fileName...'),
-          ],
-        ),
+        content: Text('Downloading $fileName...'),
       ),
     );
     
