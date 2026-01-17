@@ -1662,7 +1662,7 @@ Future<void> postToChannel(String channelId, String text) async {
   }) async {
     try {
       await _dio.download(
-        '${ApiConstants.filesEndpoint}/$fileId/download?dl=1',
+        '${ApiConstants.filesEndpoint}/$fileId/download',
         savePath,
         onReceiveProgress: onReceiveProgress,
         options: Options(
@@ -1760,7 +1760,7 @@ Future<void> postToChannel(String channelId, String text) async {
 
   Future<Response<Uint8List>> downloadFileBytes(String fileId) async {
     return await _dio.get<Uint8List>(
-      '${ApiConstants.filesEndpoint}/$fileId/download?dl=1',
+      '${ApiConstants.filesEndpoint}/$fileId/download',
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: false,
