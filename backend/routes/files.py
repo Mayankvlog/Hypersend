@@ -2305,9 +2305,14 @@ async def download_file(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Invalid or expired download token"
                     )
-        
-        # If still no user after token check, require authentication
-        if not current_user:
+            else:
+                # For dl=1 without token, still require auth
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required - use Authorization header with Bearer token"
+                )
+        elif not current_user:
+            # For non-dl=1 requests, require authentication
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication required - use Authorization header with Bearer token"

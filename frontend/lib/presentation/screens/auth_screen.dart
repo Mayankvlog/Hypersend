@@ -159,231 +159,176 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 12),
               if (_isLogin)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: _loading
-                            ? null
-                            : () async {
-                                final emailController = TextEditingController();
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () async {
+                            // Combined "Forgot password" + "Reset with token" flow
+                            final emailController = TextEditingController(text: _email.text.trim());
+                            final tokenController = TextEditingController();
+                            final newPasswordController = TextEditingController();
 
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (context) {
-                                    return AlertDialog(
-                                      title: const Text('Forgot Password'),
-                                      content: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Text('Enter your email to receive a password reset token'),
-                                          const SizedBox(height: 16),
-                                          TextField(
-                                            controller: emailController,
-                                            keyboardType: TextInputType.emailAddress,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Email',
-                                              prefixIcon: Icon(Icons.email_outlined),
-                                            ),
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (context) {
+                                return AlertDialog(
+                                  title: const Text('Forgot Password'),
+                                  content: SingleChildScrollView(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Text('1. Enter your email and tap "Send Token" to receive a reset code.'),
+                                        const SizedBox(height: 8),
+                                        const Text('2. Paste the token and choose a new password, then tap "Reset Password".'),
+                                        const SizedBox(height: 16),
+                                        TextField(
+                                          controller: emailController,
+                                          keyboardType: TextInputType.emailAddress,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Email',
+                                            prefixIcon: Icon(Icons.email_outlined),
                                           ),
-                                        ],
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.of(context).pop(false),
-                                          child: const Text('Cancel'),
                                         ),
-                                        ElevatedButton(
-                                          onPressed: () => Navigator.of(context).pop(true),
-                                          child: const Text('Send Token'),
+                                        const SizedBox(height: 12),
+                                        TextField(
+                                          controller: tokenController,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Reset token',
+                                            prefixIcon: Icon(Icons.key_outlined),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        TextField(
+                                          controller: newPasswordController,
+                                          obscureText: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'New password',
+                                            prefixIcon: Icon(Icons.lock_reset_outlined),
+                                          ),
                                         ),
                                       ],
-                                    );
-                                  },
-                                );
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(false),
+                                      child: const Text('Close'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () async {
+                                        final email = emailController.text.trim();
+                                        if (email.isEmpty) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Enter email to send reset token')),
+                                          );
+                                          return;
+                                        }
 
-                                final email = emailController.text.trim();
-                                emailController.dispose();
+                                        // Send reset token
+                                        try {
+                                          final response = await serviceProvider.authService.requestPasswordReset(email);
 
-                                if (confirmed != true || email.isEmpty) {
-                                  return;
-                                }
-
-                                setState(() => _loading = true);
-                                try {
-                                  final response = await serviceProvider.authService.requestPasswordReset(email);
-                                  if (!mounted) return;
-
-                                  // Extract token from response if in debug mode
-                                  String? token = response['token'];
-                                  
-                                  if (token != null && token.isNotEmpty) {
-                                    // Show token to user (development mode)
-                                    showDialog(
-                                      context: context,
-                                      builder: (context) {
-                                        return AlertDialog(
-                                          title: const Text('Password Reset Token'),
-                                          content: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Text('Your password reset token (valid for 1 hour):'),
-                                              const SizedBox(height: 12),
-                                              SelectableText(
-                                                token,
-                                                style: const TextStyle(
-                                                  fontFamily: 'monospace',
-                                                  fontSize: 12,
+                                          // Extract token from response if backend returns it (dev/debug mode)
+                                          final String? token = response['token'] as String?;
+                                          if (token != null && token.isNotEmpty) {
+                                            tokenController.text = token;
+                                            await Clipboard.setData(ClipboardData(text: token));
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('Token copied to clipboard (dev mode)'),
+                                                  backgroundColor: AppTheme.successGreen,
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                          actions: [
-                                            ElevatedButton(
-                                              onPressed: () async {
-                                                await Clipboard.setData(ClipboardData(text: token));
-                                                if (!mounted) return;
-                                                Navigator.of(context).pop();
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  const SnackBar(content: Text('Token copied to clipboard')),
-                                                );
-                                              },
-                                              child: const Text('Copy Token'),
+                                              );
+                                            }
+                                          } else {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('Check your email for password reset instructions'),
+                                                  backgroundColor: AppTheme.successGreen,
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        } catch (e) {
+                                          if (!mounted) return;
+                                          String error = 'Failed to request password reset';
+                                          if (e is DioException) {
+                                            error = ApiService.getErrorMessage(e);
+                                          }
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text(error),
+                                              backgroundColor: AppTheme.errorRed,
                                             ),
-                                            TextButton(
-                                              onPressed: () => Navigator.of(context).pop(),
-                                              child: const Text('Close'),
-                                            ),
-                                          ],
-                                        );
+                                          );
+                                        }
                                       },
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Check your email for password reset instructions'),
-                                        backgroundColor: AppTheme.successGreen,
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (!mounted) return;
-                                  String error = 'Failed to request password reset';
-                                  if (e is DioException) {
-                                    error = ApiService.getErrorMessage(e);
-                                  }
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(error),
-                                      backgroundColor: AppTheme.errorRed,
+                                      child: const Text('Send Token'),
                                     ),
-                                  );
-                                } finally {
-                                  if (mounted) setState(() => _loading = false);
-                                }
-                              },
-                        child: const Text('Forgot Password?'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: _loading
-                            ? null
-                            : () async {
-                                final tokenController = TextEditingController();
-                                final newPasswordController = TextEditingController();
+                                    ElevatedButton(
+                                      onPressed: () async {
+                                        final email = emailController.text.trim();
+                                        final token = tokenController.text.trim();
+                                        final newPassword = newPasswordController.text;
 
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (context) {
-                                    return AlertDialog(
-                                      title: const Text('Reset password'),
-                                      content: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          TextField(
-                                            controller: tokenController,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Reset token',
-                                              prefixIcon: Icon(Icons.key_outlined),
+                                        if (email.isEmpty || token.isEmpty || newPassword.isEmpty) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Enter email, reset token and new password'),
                                             ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          TextField(
-                                            controller: newPasswordController,
-                                            obscureText: true,
-                                            decoration: const InputDecoration(
-                                              labelText: 'New password',
-                                              prefixIcon: Icon(Icons.lock_reset_outlined),
+                                          );
+                                          return;
+                                        }
+
+                                        try {
+                                          await serviceProvider.authService.resetPasswordWithToken(
+                                            token: token,
+                                            newPassword: newPassword,
+                                          );
+                                          if (!mounted) return;
+                                          Navigator.of(context).pop(true);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Password reset successfully.'),
+                                              backgroundColor: AppTheme.successGreen,
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.of(context).pop(false),
-                                          child: const Text('Cancel'),
-                                        ),
-                                        ElevatedButton(
-                                          onPressed: () => Navigator.of(context).pop(true),
-                                          child: const Text('Reset'),
-                                        ),
-                                      ],
-                                    );
-                                  },
+                                          );
+                                        } catch (e) {
+                                          if (!mounted) return;
+                                          String error = 'Failed to reset password';
+                                          if (e is DioException) {
+                                            error = ApiService.getErrorMessage(e);
+                                          }
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text(error),
+                                              backgroundColor: AppTheme.errorRed,
+                                            ),
+                                          );
+                                        }
+                                      },
+                                      child: const Text('Reset Password'),
+                                    ),
+                                  ],
                                 );
-
-                                final token = tokenController.text.trim();
-                                final newPassword = newPasswordController.text;
-                                tokenController.dispose();
-                                newPasswordController.dispose();
-
-                                if (confirmed != true) {
-                                  return;
-                                }
-
-                                if (token.isEmpty || newPassword.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Enter reset token and new password')),
-                                  );
-                                  return;
-                                }
-
-                                setState(() => _loading = true);
-                                try {
-                                  await serviceProvider.authService.resetPasswordWithToken(
-                                    token: token,
-                                    newPassword: newPassword,
-                                  );
-                                  if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Password reset successfully.'),
-                                      backgroundColor: AppTheme.successGreen,
-                                    ),
-                                  );
-                                } catch (e) {
-                                  if (!mounted) return;
-                                  String error = 'Failed to reset password';
-                                  if (e is DioException) {
-                                    error = ApiService.getErrorMessage(e);
-                                  }
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(error),
-                                      backgroundColor: AppTheme.errorRed,
-                                    ),
-                                  );
-                                } finally {
-                                  if (mounted) setState(() => _loading = false);
-                                }
                               },
-                        child: const Text('Reset with token'),
-                      ),
-                    ),
-                  ],
+                            );
+
+                            emailController.dispose();
+                            tokenController.dispose();
+                            newPasswordController.dispose();
+
+                            // confirmed is only used to close the dialog; no extra handling needed here
+                            if (confirmed != true) {
+                              return;
+                            }
+                          },
+                    child: const Text('Forgot Password?'),
+                  ),
                 ),
               TextButton(
                 onPressed: _loading

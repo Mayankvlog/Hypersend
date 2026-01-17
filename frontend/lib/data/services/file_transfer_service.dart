@@ -212,23 +212,34 @@ class FileTransferService {
     if (kIsWeb) {
       throw Exception('File download not supported on web platform');
     } else {
-      // For native platforms, get downloads directory with fallback chain
+      // For native platforms, use karo directory as specified
       Directory? directory;
       try {
-        directory = await getDownloadsDirectory();
-        debugPrint('[FILE_TRANSFER] Primary downloads directory: ${directory?.path}');
+        // Try to use karo directory first
+        directory = Directory('/karo');
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        debugPrint('[FILE_TRANSFER] Using karo directory: ${directory.path}');
       } catch (e) {
-        debugPrint('[FILE_TRANSFER] Could not get downloads directory: $e');
-      }
-      
-      // Fallback to application documents if downloads directory fails
-      if (directory == null) {
+        debugPrint('[FILE_TRANSFER] Could not create karo directory: $e');
+        // Fallback to downloads directory
         try {
-          directory = await getApplicationDocumentsDirectory();
-          debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory.path}');
+          directory = await getDownloadsDirectory();
+          debugPrint('[FILE_TRANSFER] Primary downloads directory: ${directory?.path}');
         } catch (e) {
-          debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
-          throw Exception('Unable to determine save location for downloaded file');
+          debugPrint('[FILE_TRANSFER] Could not get downloads directory: $e');
+        }
+        
+        // Fallback to application documents if downloads directory fails
+        if (directory == null) {
+          try {
+            directory = await getApplicationDocumentsDirectory();
+            debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory.path}');
+          } catch (e) {
+            debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
+            throw Exception('Unable to determine save location for downloaded file');
+          }
         }
       }
       

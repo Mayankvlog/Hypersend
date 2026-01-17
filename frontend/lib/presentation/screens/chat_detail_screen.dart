@@ -740,12 +740,21 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         // Generate a safe filename and path
         final safeFileName = fileName.replaceAll(RegExp(r'[^\w\-_.]'), '_');
         
-        // Get downloads directory
+        // Get downloads directory - use karo directory as specified
         Directory? downloadsDir;
         try {
-          downloadsDir = await getDownloadsDirectory();
+          downloadsDir = Directory('/karo');
+          if (!await downloadsDir.exists()) {
+            await downloadsDir.create(recursive: true);
+          }
         } catch (e) {
-          debugPrint('[FILE_NATIVE] Could not get downloads directory: $e');
+          debugPrint('[FILE_NATIVE] Could not create karo directory: $e');
+          // Fallback to default downloads directory
+          try {
+            downloadsDir = await getDownloadsDirectory();
+          } catch (fallbackError) {
+            debugPrint('[FILE_NATIVE] Could not get fallback downloads directory: $fallbackError');
+          }
         }
         
         downloadsDir ??= await getApplicationDocumentsDirectory();
