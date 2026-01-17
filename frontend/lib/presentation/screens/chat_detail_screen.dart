@@ -132,25 +132,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return null;
   }
 
-  /// Get the appropriate menu callback based on chat type
-  VoidCallback? _getMenuCallback() {
-    if (_chat == null || _chat?.type == ChatType.saved) {
-      return null;
-    }
-    
-    switch (_chat?.type) {
-      case ChatType.channel:
-        return _showChannelOptions;
-      case ChatType.direct:
-        return _showP2pChatOptions;
-      case ChatType.group:
-      case ChatType.supergroup:
-        return _showGroupOptions;
-      default:
-        return null;
-    }
-  }
-
+  
   void _showP2pChatOptions() {
     if (_chat?.type != ChatType.direct) return;
     
@@ -247,14 +229,26 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final mutedBy = List<String>.from(group['muted_by'] ?? []);
       final isCurrentlyMuted = mutedBy.contains(meId);
       
+      // Show loading feedback
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isCurrentlyMuted ? 'Unmuting notifications...' : 'Muting notifications...'),
+            duration: const Duration(milliseconds: 500),
+          ),
+        );
+      }
+      
       // Toggle mute status
       await serviceProvider.apiService.muteGroup(widget.chatId, mute: !isCurrentlyMuted);
       
       if (mounted) {
-        setState(() {});
+        // Refresh the chat data to update the UI state
+        await _loadMessages();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(isCurrentlyMuted ? 'Notifications unmuted' : 'Notifications muted'),
+            backgroundColor: isCurrentlyMuted ? Colors.green : Colors.orange,
             duration: const Duration(seconds: 2),
           ),
         );
@@ -263,7 +257,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to toggle notifications: $e'),
+            content: Text('Failed to toggle notifications: ${e.toString().replaceAll('Exception: ', '')}'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -1271,10 +1265,65 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               onPressed: () {}, // Channel Info/Stats
             ),
           if (_chat != null && _chat?.type != ChatType.saved)
-            IconButton(
+            PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               tooltip: 'More options',
-              onPressed: _getMenuCallback(),
+              onSelected: (value) {
+                switch (value) {
+                  case 'group_options':
+                    _showGroupOptions();
+                    break;
+                  case 'p2p_options':
+                    _showP2pChatOptions();
+                    break;
+                  case 'channel_options':
+                    _showChannelOptions();
+                    break;
+                }
+              },
+              itemBuilder: (context) {
+                if (_chat?.type == ChatType.group || _chat?.type == ChatType.supergroup) {
+                  return [
+                    const PopupMenuItem(
+                      value: 'group_options',
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline),
+                          SizedBox(width: 8),
+                          Text('Group Options'),
+                        ],
+                      ),
+                    ),
+                  ];
+                } else if (_chat?.type == ChatType.direct) {
+                  return [
+                    const PopupMenuItem(
+                      value: 'p2p_options',
+                      child: Row(
+                        children: [
+                          Icon(Icons.person_add),
+                          SizedBox(width: 8),
+                          Text('Contact Options'),
+                        ],
+                      ),
+                    ),
+                  ];
+                } else if (_chat?.type == ChatType.channel) {
+                  return [
+                    const PopupMenuItem(
+                      value: 'channel_options',
+                      child: Row(
+                        children: [
+                          Icon(Icons.analytics_outlined),
+                          SizedBox(width: 8),
+                          Text('Channel Options'),
+                        ],
+                      ),
+                    ),
+                  ];
+                }
+                return [];
+              },
             ),
         ],
       ),
