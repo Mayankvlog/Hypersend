@@ -44,6 +44,71 @@ async def get_upload_user_or_none(request: Request) -> Optional[str]:
     # No token provided - allow anonymous access for uploads
     return None
 
+
+# CRITICAL FIX: Custom dependency for download endpoints that accepts tokens from both headers and query params
+async def get_current_user_for_download(
+    request: Request,
+    token: Optional[str] = Query(None)
+) -> str:
+    """
+    Get current user from Authorization header OR query parameter token.
+    
+    RATIONALE: Downloads triggered directly from URLs may not have the token
+    in the Authorization header (browser downloads, proxied requests, etc).
+    Accepts token in both places for maximum compatibility while maintaining
+    security through JWT validation.
+    
+    Priority:
+    1. Authorization header (Bearer <token>)
+    2. Query parameter (?token=<token>)
+    
+    Args:
+        request: The request object
+        token: Optional JWT token from query parameter
+        
+    Returns:
+        The user_id from the validated token
+        
+    Raises:
+        HTTPException: If no valid token found in either location
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Try Authorization header first
+    auth_header = request.headers.get("authorization", "")
+    if auth_header and auth_header.startswith("Bearer "):
+        header_token = auth_header.replace("Bearer ", "").strip()
+        if header_token:
+            try:
+                token_data = decode_token(header_token)
+                if token_data.token_type == "access":
+                    logger.debug(f"Download authenticated via Authorization header for user {token_data.user_id}")
+                    return token_data.user_id
+            except Exception as e:
+                logger.warning(f"Invalid token in Authorization header: {e}")
+                # Fall through to try query parameter
+    
+    # Try query parameter as fallback
+    if token:
+        try:
+            token_data = decode_token(token)
+            if token_data.token_type == "access":
+                logger.debug(f"Download authenticated via query parameter token for user {token_data.user_id}")
+                return token_data.user_id
+            else:
+                logger.warning(f"Invalid token type in query parameter: {token_data.token_type}")
+        except Exception as e:
+            logger.warning(f"Invalid token in query parameter: {e}")
+    
+    # No valid token found
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing or invalid authentication token. Provide token via Authorization header or query parameter.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 # Lazy proxies so tests can patch methods (e.g., insert_one) directly
 class _CollectionProxy:
     def __init__(self, getter):
@@ -2275,7 +2340,7 @@ async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
 async def download_file(
     file_id: str,
     request: Request,
-    current_user: str = Depends(get_current_user)
+    current_user: str = Depends(get_current_user_for_download)
     ):
     """Download file with proper authorization"""
     
