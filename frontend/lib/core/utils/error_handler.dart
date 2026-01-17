@@ -58,8 +58,24 @@ class HttpErrorHandler {
         return 'Service temporarily unavailable - please try again later';
       case 504:
         return 'Gateway timeout - request took too long';
+      case 505:
+        return 'HTTP version not supported - try HTTP/1.1';
+      case 506:
+        return 'Content negotiation failed - check headers';
+      case 507:
+        return 'Server storage full - contact administrator';
+      case 508:
+        return 'Request loop detected - simplify request';
+      case 509:
+        return 'Extension not required - use standard HTTP';
+      case 510:
+        return 'Extension not required - use standard HTTP';
       case 511:
         return 'Network authentication required';
+      case 598:
+        return 'Network read timeout - check connection';
+      case 599:
+        return 'Network connection timeout - verify server';
       
       default:
         return detail ?? 'An error occurred - please try again';
@@ -252,6 +268,15 @@ class HttpErrorHandler {
       case 502:
       case 503:
       case 504:
+      case 505:
+      case 506:
+      case 507:
+      case 508:
+      case 509:
+      case 510:
+      case 511:
+      case 598:
+      case 599:
         return [
           'Try again in a few moments',
           'Check if there\'s ongoing maintenance',
@@ -271,6 +296,15 @@ class HttpErrorHandler {
       502, // Bad Gateway
       503, // Service Unavailable
       504, // Gateway Timeout
+      505, // HTTP Version Not Supported
+      506, // Variant Also Negotiates
+      507, // Insufficient Storage
+      508, // Loop Detected
+      509, // Not Extended
+      510, // Not Extended
+      511, // Network Authentication Required
+      598, // Network Read Timeout
+      599, // Network Connect Timeout
     ].contains(statusCode);
   }
 
@@ -289,6 +323,23 @@ class HttpErrorHandler {
         return 60; // 1 minute for service unavailable
       case 504:
         return 30; // 30 seconds for gateway timeout
+      case 505:
+        return 15; // 15 seconds for HTTP version error
+      case 506:
+        return 20; // 20 seconds for content negotiation
+      case 507:
+        return 300; // 5 minutes for storage issues
+      case 508:
+        return 10; // 10 seconds for loop detection
+      case 509:
+      case 510:
+        return 15; // 15 seconds for extension errors
+      case 511:
+        return 45; // 45 seconds for network auth
+      case 598:
+        return 20; // 20 seconds for read timeout
+      case 599:
+        return 25; // 25 seconds for connect timeout
       default:
         return 5;
     }

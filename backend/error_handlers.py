@@ -1096,8 +1096,11 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             506: "Variant Also Negotiates - server error, configuration problem",
             507: "Insufficient Storage - server error, no storage available",
             508: "Loop Detected - server error, infinite loop detected",
+            509: "Not Extended - server error, further extensions required",
             510: "Not Extended - server error, further extensions required",
             511: "Network Authentication Required - server error, network auth needed",
+            598: "Network Read Timeout Error - server error, network read timeout",
+            599: "Network Connect Timeout Error - server error, connection timeout"
         }
         hints = [
             "This is a server error - not your fault",
@@ -1342,8 +1345,11 @@ def get_error_hints(status_code: int) -> List[str]:
         506: ["Content negotiation failed", "Check Accept headers", "Try different content format", "server error"],
         507: ["Server storage full", "Contact administrator", "Try with smaller data", "server error"],
         508: ["Infinite loop detected in request processing", "Check request dependencies and redirects", "Simplify request structure", "server error"],
+        509: ["Extension not required for this request", "Remove extension headers", "Use standard HTTP", "server error"],
         510: ["Extension not required", "Remove extension headers", "Use standard HTTP", "server error"],
         511: ["Network authentication required", "Check network settings", "Configure proxy authentication", "server error"],
+        598: ["Network read timeout occurred", "Check your network connection", "Try with a smaller request", "server error"],
+        599: ["Network connection timeout", "Verify server is reachable", "Check your internet connection", "server error"],
     }
     
     return hints_map.get(status_code, [])

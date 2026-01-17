@@ -1922,7 +1922,75 @@ async def get_contacts(
         contact_ids = user.get("contacts", [])
         
         if not contact_ids:
-            return {"contacts": [], "total": 0}
+            # CRITICAL FIX: Fallback to all users when no contacts available
+            _log("info", f"No contacts found for user {current_user}, loading all users as fallback")
+            
+            # Get all users except current user
+            users_col = users_collection()
+            
+            # Check if using mock DB or real MongoDB
+            if hasattr(users_col, "data") and isinstance(getattr(users_col, "data"), dict):
+                # Mock DB - filter manually
+                all_users = []
+                for uid, doc in users_col.data.items():
+                    if uid != current_user:  # Exclude current user
+                        all_users.append({
+                            "id": doc.get("_id", ""),
+                            "name": doc.get("name", ""),
+                            "email": doc.get("email", ""),
+                            "username": doc.get("username"),
+                            "avatar_url": doc.get("avatar_url"),
+                            "is_online": doc.get("is_online", False),
+                            "last_seen": doc.get("last_seen"),
+                            "status": doc.get("status", "")
+                        })
+                
+                # Sort by online status first, then by name
+                all_users.sort(key=lambda x: (0 if x["is_online"] else 1, x["name"].lower()))
+                
+                # Apply pagination
+                paginated_users = all_users[offset:offset + limit]
+                
+                return {
+                    "contacts": paginated_users,
+                    "total": len(all_users),
+                    "fallback_used": True
+                }
+            else:
+                # Real MongoDB - use aggregation
+                pipeline = [
+                    {"$match": {"_id": {"$ne": current_user}}},
+                    {"$sort": {"is_online": -1, "name": 1}},
+                    {"skip": offset},
+                    {"limit": limit},
+                    {"project": {
+                        "id": "$_id",
+                        "name": 1,
+                        "email": 1,
+                        "username": 1,
+                        "avatar_url": 1,
+                        "is_online": {"$ifNull": ["$is_online", False]},
+                        "last_seen": 1,
+                        "status": {"$ifNull": ["$status", ""]}
+                    }}
+                ]
+                
+                cursor = users_col.aggregate(pipeline)
+                if hasattr(cursor, '__await__'):
+                    cursor = await cursor
+                
+                contacts = []
+                async for doc in cursor:
+                    contacts.append(doc)
+                
+                # Get total count
+                total_count = await users_col.count_documents({"_id": {"$ne": current_user}})
+                
+                return {
+                    "contacts": contacts,
+                    "total": total_count,
+                    "fallback_used": True
+                }
         
         # Paginate contacts
         paginated_ids = contact_ids[offset:offset + limit]

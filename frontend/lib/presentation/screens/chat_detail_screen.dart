@@ -672,27 +672,53 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         debugPrint('[FILE_WEB] launchUrl failed: $e');
       }
       
-      // Fallback: fetch bytes and create download blob with proper MIME type
-      debugPrint('[FILE_WEB] Using bytes + blob fallback for $fileName');
-
-      final response = await serviceProvider.apiService.downloadFileBytes(fileId);
-      final data = response.data;
-      final bytes = data is Uint8List
-          ? data
-          : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
+      // Enhanced fallback: Use direct download with proper error handling
+      debugPrint('[FILE_WEB] Using enhanced download fallback for $fileName');
+      
+      try {
+        // First try to get file info to verify file exists
+        final fileInfo = await serviceProvider.apiService.getFileInfo(fileId);
+        // File info is guaranteed to be non-null by the API service
+        debugPrint('[FILE_WEB] File info retrieved: ${fileInfo['filename']}');
+        
+        // Download file bytes with proper error handling
+        final response = await serviceProvider.apiService.downloadFileBytes(fileId);
+        final data = response.data;
+        final bytes = data is Uint8List
+            ? data
+            : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
 
         if (bytes.isEmpty) {
           throw Exception('No data received or file is empty');
         }
 
-        final mimeType = isPDF ? 'application/pdf' : 'application/octet-stream';
+        // Create proper MIME type based on file extension
+        String mimeType = 'application/octet-stream';
+        final fileNameLower = fileName.toLowerCase();
+        if (fileNameLower.endsWith('.pdf')) {
+          mimeType = 'application/pdf';
+        } else if (fileNameLower.endsWith('.jpg') || fileNameLower.endsWith('.jpeg')) {
+          mimeType = 'image/jpeg';
+        } else if (fileNameLower.endsWith('.png')) {
+          mimeType = 'image/png';
+        } else if (fileNameLower.endsWith('.txt')) {
+          mimeType = 'text/plain';
+        } else if (fileNameLower.endsWith('.exe')) {
+          mimeType = 'application/octet-stream';
+        }
+        
         final dataUri = Uri.dataFromBytes(bytes, mimeType: mimeType);
 
         final secondLaunch = await launchUrl(dataUri);
         if (!secondLaunch) {
           throw Exception('Unable to trigger browser download');
         }
-        debugPrint('[FILE_WEB] Triggered browser download for $fileName via blob/data URI fallback');
+        debugPrint('[FILE_WEB] Triggered browser download for $fileName via enhanced blob fallback');
+      } catch (downloadError) {
+        debugPrint('[FILE_WEB_DOWNLOAD_ERROR] $downloadError');
+        // Provide user-friendly error message
+        throw Exception('Failed to download file: ${downloadError.toString()}');
+      }
     } catch (e) {
       debugPrint('[FILE_WEB_ERROR] $e');
       rethrow;

@@ -520,6 +520,60 @@ async def get_member_suggestions(
             
             # Limit results
             suggestions = suggestions[:limit]
+        else:
+            # CRITICAL FIX: Fallback to all users when no contacts available
+            _log("info", f"No contacts found for user {current_user}, loading all users as fallback")
+            
+            # Get all users except current user and current members
+            exclude_ids = set(current_members)
+            exclude_ids.add(current_user)  # Exclude current user
+            
+            cursor = users_collection().find(
+                {"_id": {"$nin": list(exclude_ids)}},
+                {
+                    "_id": 1,
+                    "name": 1,
+                    "email": 1,
+                    "username": 1,
+                    "avatar_url": 1,
+                    "is_online": 1,
+                    "last_seen": 1,
+                    "status": 1
+                }
+            ).limit(limit * 2)  # Get more to account for filtering
+            
+            # Check if cursor is a coroutine (mock DB) or cursor (real MongoDB)
+            if hasattr(cursor, '__await__') and not hasattr(cursor, '__aiter__'):
+                cursor = await cursor
+            
+            for user in await _collect_cursor(cursor, limit=limit * 2):
+                # Create UserPublic object from user data
+                user_public = UserPublic(
+                    id=user.get("_id"),
+                    name=user.get("name"),
+                    email=user.get("email"),
+                    username=user.get("username"),
+                    avatar_url=user.get("avatar_url"),
+                    is_online=user.get("is_online", False),
+                    last_seen=user.get("last_seen"),
+                    status=user.get("status")
+                )
+                
+                user_data = user_public.model_dump()
+                
+                # Apply search filter if provided
+                if q:
+                    q_lower = q.lower()
+                    if (q_lower in user_data["name"].lower() or 
+                        q_lower in (user_data["username"] or "").lower() or
+                        q_lower in user_data["email"].lower()):
+                        suggestions.append(user_data)
+                else:
+                    suggestions.append(user_data)
+            
+            # Limit results and sort by online status and name
+            suggestions = suggestions[:limit]
+            suggestions.sort(key=lambda x: (0 if x.get("is_online", False) else 1, x["name"].lower()))
         
         # Cache the results (even if empty)
         cache_write = SearchCacheService.set_user_search(cache_key, suggestions)
@@ -1403,11 +1457,74 @@ async def search_contacts_for_group(
     available_contacts = [uid for uid in contacts if uid not in current_members]
     
     if not available_contacts:
+        # CRITICAL FIX: Fallback to all users when no contacts available
+        _log("info", f"No contacts found for user {current_user}, loading all users as fallback")
+        
+        # Get all users except current user and current members
+        exclude_ids = set(current_members)
+        exclude_ids.add(current_user)  # Exclude current user
+        
+        cursor = users_collection().find(
+            {"_id": {"$nin": list(exclude_ids)}},
+            {
+                "_id": 1,
+                "name": 1,
+                "email": 1,
+                "username": 1,
+                "avatar_url": 1,
+                "is_online": 1,
+                "last_seen": 1,
+                "status": 1
+            }
+        ).limit(limit * 2)  # Get more to account for filtering
+        
+        # Check if cursor is a coroutine (mock DB) or cursor (real MongoDB)
+        if hasattr(cursor, '__await__') and not hasattr(cursor, '__aiter__'):
+            cursor = await cursor
+        
+        contacts_list = []
+        for user in await _collect_cursor(cursor, limit=limit * 2):
+            # Create UserPublic object from user data
+            user_public = UserPublic(
+                id=user.get("_id"),
+                name=user.get("name"),
+                email=user.get("email"),
+                username=user.get("username"),
+                avatar_url=user.get("avatar_url"),
+                is_online=user.get("is_online", False),
+                last_seen=user.get("last_seen"),
+                status=user.get("status")
+            )
+            
+            user_data = user_public.model_dump()
+            
+            # Apply search filter if provided
+            if q:
+                q_lower = q.lower()
+                search_fields = [
+                    user_data.get("name", ""),
+                    user_data.get("username", ""),
+                    user_data.get("email", "")
+                ]
+                
+                if any(q_lower in field.lower() for field in search_fields if field):
+                    contacts_list.append(user_data)
+            else:
+                contacts_list.append(user_data)
+        
+        # Sort by online status first, then by name
+        contacts_list.sort(key=lambda x: (0 if x["is_online"] else 1, x["name"].lower()))
+        
+        # Apply limit
+        contacts_list = contacts_list[:limit]
+        
         return {
-            "contacts": [],
-            "total_count": 0,
+            "contacts": contacts_list,
+            "total_count": len(contacts_list),
             "query": q,
-            "message": "No contacts available to add"
+            "limit": limit,
+            "group_id": group_id,
+            "fallback_used": True
         }
     
     # Get contact details
