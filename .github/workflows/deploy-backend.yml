@@ -55,7 +55,7 @@ jobs:
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:latest
-          cache-to: type=inline
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:latest,mode=max
           build-args: |
             BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
             BUILDKIT_INLINE_CACHE=1
