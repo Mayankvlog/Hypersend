@@ -87,24 +87,29 @@ jobs:
             # Configure Docker daemon with increased timeouts to handle network issues
             echo "🔧 Configuring Docker daemon for network resilience..."
             if [ ! -d "/etc/docker" ]; then
-              sudo mkdir -p /etc/docker
+              sudo mkdir -p /etc/docker || {
+                echo "⚠️  Could not create /etc/docker directory, skipping Docker daemon config"
+              }
             fi
             
             # Add timeout configuration to Docker daemon (only if not exists)
             if [ ! -f "/etc/docker/daemon.json" ]; then
-              echo '{"default-ulimit": {"nofile": {"Name": "nofile", "Hard": 65535, "Soft": 65535}}, "log-driver": "json-file", "log-opts": {"max-size": "100m"}, "registry-mirrors": ["https://mirror.gcr.io"], "max-concurrent-uploads": 5}' | sudo tee /etc/docker/daemon.json > /dev/null
+              echo '{"default-ulimit": {"nofile": {"Name": "nofile", "Hard": 65535, "Soft": 65535}}, "log-driver": "json-file", "log-opts": {"max-size": "100m"}, "registry-mirrors": ["https://mirror.gcr.io"], "max-concurrent-uploads": 5}' | sudo tee /etc/docker/daemon.json > /dev/null || {
+                echo "⚠️  Could not write Docker daemon config, continuing without it"
+              }
+              
               # Check if docker is running before restart
-              if sudo systemctl is-active --quiet docker; then
+              if sudo systemctl is-active --quiet docker 2>/dev/null; then
                 echo "🔄 Restarting Docker daemon..."
-                sudo systemctl restart docker || {
+                sudo systemctl restart docker 2>/dev/null || {
                   echo "⚠️  Docker restart failed, trying reload..."
-                  sudo systemctl reload docker || {
+                  sudo systemctl reload docker 2>/dev/null || {
                     echo "⚠️  Docker reload failed, continuing with current configuration..."
                   }
                 }
               else
                 echo "🚀 Starting Docker daemon..."
-                sudo systemctl start docker || {
+                sudo systemctl start docker 2>/dev/null || {
                   echo "⚠️  Docker start failed, continuing anyway..."
                 }
               fi
@@ -112,6 +117,13 @@ jobs:
             else
               echo "✅ Docker daemon configuration already exists"
             fi
+            
+            # Verify Docker is accessible
+            if ! docker --version 2>/dev/null; then
+              echo "❌ Docker is not accessible, aborting deployment"
+              exit 1
+            fi
+            echo "✅ Docker is accessible"
 
             # Safely sync repo with remote without creating merge commits
             # (keeps untracked files like .env, but resets tracked files to origin/main)
