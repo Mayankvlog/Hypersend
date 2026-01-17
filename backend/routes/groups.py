@@ -631,6 +631,9 @@ async def get_group(group_id: str, current_user: str = Depends(get_current_user)
     group_out["member_count"] = len(member_ids)
     group_out["members"] = member_ids  # Ensure members array is included
     
+    # CRITICAL FIX: Include muted_by field for notification mute functionality
+    group_out["muted_by"] = group.get("muted_by", [])
+    
     print(f"[GET_GROUP] Group {group_id}: {len(member_ids)} members, {len(members)} member details")
     
     return {"group": group_out}

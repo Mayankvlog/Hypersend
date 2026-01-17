@@ -1,4 +1,7 @@
-FROM --platform=linux/amd64 python:3.11-slim
+FROM python:3.11-slim
+
+ENV DOCKER_BUILDKIT=1
+ENV COMPOSE_DOCKER_CLI_BUILD=1
 
 WORKDIR /app
 
