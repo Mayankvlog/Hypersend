@@ -77,201 +77,163 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           timeout: 30m
           command_timeout: 30m
-          script_stop: true
+          script_stop: false
           script: |
-            set -e
-            cd /hypersend/Hypersend || { echo "❌ Directory /hypersend/Hypersend not found"; exit 1; }
+            # Initialize exit status variable
+            EXIT_STATUS=0
+            
+            # Navigate to project directory
+            cd /hypersend/Hypersend 2>/dev/null
+            if [ $? -ne 0 ]; then
+              echo "❌ Directory /hypersend/Hypersend not found"
+              exit 1
+            fi
 
             echo "📦 Starting backend deployment..."
 
-            # Configure Docker daemon with increased timeouts to handle network issues
+            # Configure Docker daemon with increased timeouts (gracefully skip if permission denied)
             echo "🔧 Configuring Docker daemon for network resilience..."
-            if [ ! -d "/etc/docker" ]; then
-              sudo mkdir -p /etc/docker || {
-                echo "⚠️  Could not create /etc/docker directory, skipping Docker daemon config"
-              }
-            fi
-            
-            # Add timeout configuration to Docker daemon (only if not exists)
             if [ ! -f "/etc/docker/daemon.json" ]; then
-              echo '{"default-ulimit": {"nofile": {"Name": "nofile", "Hard": 65535, "Soft": 65535}}, "log-driver": "json-file", "log-opts": {"max-size": "100m"}, "registry-mirrors": ["https://mirror.gcr.io"], "max-concurrent-uploads": 5}' | sudo tee /etc/docker/daemon.json > /dev/null || {
-                echo "⚠️  Could not write Docker daemon config, continuing without it"
-              }
-              
-              # Check if docker is running before restart
-              if sudo systemctl is-active --quiet docker 2>/dev/null; then
-                echo "🔄 Restarting Docker daemon..."
-                sudo systemctl restart docker 2>/dev/null || {
-                  echo "⚠️  Docker restart failed, trying reload..."
-                  sudo systemctl reload docker 2>/dev/null || {
-                    echo "⚠️  Docker reload failed, continuing with current configuration..."
-                  }
-                }
+              # Try to create daemon.json, but don't fail if sudo is required and not available
+              echo '{"default-ulimit": {"nofile": {"Name": "nofile", "Hard": 65535, "Soft": 65535}}, "log-driver": "json-file", "log-opts": {"max-size": "100m"}, "registry-mirrors": ["https://mirror.gcr.io"], "max-concurrent-uploads": 5}' | sudo tee /etc/docker/daemon.json >/dev/null 2>&1
+              if [ $? -eq 0 ]; then
+                # Try to restart Docker daemon if config was written
+                sudo systemctl restart docker 2>/dev/null || sudo systemctl reload docker 2>/dev/null || true
               else
-                echo "🚀 Starting Docker daemon..."
-                sudo systemctl start docker 2>/dev/null || {
-                  echo "⚠️  Docker start failed, continuing anyway..."
-                }
+                echo "⚠️  Could not write Docker daemon config (may require sudo), continuing with existing config"
               fi
-              sleep 5
             else
               echo "✅ Docker daemon configuration already exists"
             fi
             
+            sleep 2
+            
             # Verify Docker is accessible
-            if ! docker --version 2>/dev/null; then
+            docker --version >/dev/null 2>&1
+            if [ $? -ne 0 ]; then
               echo "❌ Docker is not accessible, aborting deployment"
               exit 1
             fi
             echo "✅ Docker is accessible"
 
             # Safely sync repo with remote without creating merge commits
-            # (keeps untracked files like .env, but resets tracked files to origin/main)
             echo "🔄 Syncing repository..."
-            # Fix: git fetch doesn't have --timeout option, use timeout command instead
-            timeout 60 git fetch origin main || {
+            timeout 60 git fetch origin main 2>/dev/null
+            if [ $? -ne 0 ]; then
               echo "⚠️  Git fetch with timeout failed, retrying..."
               sleep 10
-              git fetch origin main || { echo "❌ Git fetch failed"; exit 1; }
-            }
-            git reset --hard origin/main
+              git fetch origin main
+              if [ $? -ne 0 ]; then
+                echo "❌ Git fetch failed"
+                EXIT_STATUS=1
+              fi
+            fi
+            
+            if [ $EXIT_STATUS -eq 0 ]; then
+              git reset --hard origin/main 2>/dev/null || {
+                echo "⚠️  Git reset failed, continuing anyway"
+              }
+            fi
 
             # Pull latest backend image with retry logic
             echo "📥 Pulling backend image (with retry logic)..."
             max_pull_attempts=3
             pull_attempt=0
-            until [ $pull_attempt -ge $max_pull_attempts ]; do
-              if timeout 300 docker compose pull backend 2>/dev/null || [ $? -eq 124 ]; then
-                # 124 = timeout, but we try to proceed anyway
+            
+            while [ $pull_attempt -lt $max_pull_attempts ]; do
+              timeout 300 docker compose pull backend 2>/dev/null
+              PULL_EXIT=$?
+              if [ $PULL_EXIT -eq 0 ] || [ $PULL_EXIT -eq 124 ]; then
                 echo "✅ Backend image pull completed"
                 break
               fi
               pull_attempt=$((pull_attempt + 1))
               if [ $pull_attempt -lt $max_pull_attempts ]; then
-                wait_time=$((10 * pull_attempt))
-                echo "⚠️  Image pull attempt $pull_attempt/$max_pull_attempts failed, waiting ${wait_time}s..."
-                sleep $wait_time
+                echo "⚠️  Image pull attempt $pull_attempt/$max_pull_attempts failed, waiting 10s..."
+                sleep 10
               fi
             done
 
             if [ $pull_attempt -ge $max_pull_attempts ]; then
-              echo "⚠️  Could not pull new image after $max_pull_attempts attempts, using existing local image..."
+              echo "⚠️  Could not pull new image, using existing local image..."
             fi
 
-            # Function to safely stop backend service
-            stop_backend_safe() {
-              echo "⏹️  Stopping backend service..."
-              
-              # Try graceful stop first
-              docker compose stop backend 2>/dev/null || true
-              sleep 2
-              
-              # Then remove with retries
-              local max_stop_attempts=5
-              local stop_attempt=0
-              while [ $stop_attempt -lt $max_stop_attempts ]; do
-                # Try to remove
-                if docker compose down 2>&1 | tee /tmp/docker_output.log; then
-                  echo "✅ Backend stopped successfully"
-                  return 0
-                fi
-                
-                # Check if error is "removal in progress"
-                if grep -q "removal.*in progress" /tmp/docker_output.log; then
-                  stop_attempt=$((stop_attempt+1))
-                  echo "⏳ Docker daemon busy (removal in progress), attempt $stop_attempt/$max_stop_attempts..."
-                  sleep 3
-                else
-                  # Different error, might be safe to continue
-                  echo "⚠️  docker compose down had issues, continuing..."
-                  break
-                fi
-              done
-              
-              if [ $stop_attempt -ge $max_stop_attempts ]; then
-                echo "⚠️  Could not cleanly stop via compose, forcing container removal..."
-                # Force remove any remaining containers
-                docker ps -a --filter "name=hypersend_backend" --format "{{.ID}}" 2>/dev/null | \
-                  while read container_id; do
-                    if [ -n "$container_id" ]; then
-                      docker rm -f "$container_id" 2>/dev/null || true
-                    fi
-                  done
-              fi
-              
-              # Wait for Docker daemon to finish all operations
-              echo "🔄 Waiting for Docker daemon to finish cleanup..."
-              sleep 3
-            }
+            # Stop and clean up existing containers
+            echo "⏹️  Stopping backend service..."
+            docker compose stop backend 2>/dev/null || true
+            sleep 1
+            docker compose down 2>/dev/null || true
+            sleep 2
 
-            # Execute safe stop
-            stop_backend_safe
-
-            # Clean up any dangling containers/images from previous deployments
+            # Clean up dangling resources
             echo "🧹 Cleaning up dangling resources..."
             docker container prune -f --filter "until=1h" 2>/dev/null || true
             docker image prune -f 2>/dev/null || true
 
-            # Start the backend service with robust retry logic
+            # Start the backend service with retry logic
             echo "🚀 Starting backend service..."
-            n=0
+            start_attempt=0
             max_start_attempts=5
-            until [ "$n" -ge $max_start_attempts ]; do
+            start_success=0
+            
+            while [ $start_attempt -lt $max_start_attempts ]; do
               if docker compose up -d backend 2>&1 | tee /tmp/start_output.log; then
-                echo "✅ Backend container created successfully"
+                echo "✅ Backend container started successfully"
+                start_success=1
                 break
               fi
               
-              # Check if it's a transient error
-              if grep -q "removal.*in progress\|bind.*address already in use" /tmp/start_output.log; then
-                n=$((n+1))
-                if [ "$n" -lt $max_start_attempts ]; then
-                  echo "⚠️  Transient error on attempt $n/$max_start_attempts, waiting 5s..."
-                  sleep 5
-                fi
-              else
-                # Unrecoverable error
-                echo "❌ Unrecoverable error starting service"
-                cat /tmp/start_output.log
-                exit 1
+              start_attempt=$((start_attempt + 1))
+              if [ $start_attempt -lt $max_start_attempts ]; then
+                echo "⚠️  Start attempt $start_attempt/$max_start_attempts failed, retrying in 5s..."
+                sleep 5
               fi
             done
 
-            if [ "$n" -ge $max_start_attempts ]; then
+            if [ $start_success -eq 0 ]; then
               echo "❌ Failed to start backend after $max_start_attempts attempts"
-              docker compose logs backend 2>/dev/null || true
-              exit 1
+              docker compose logs backend 2>/dev/null || echo "Could not retrieve logs"
+              EXIT_STATUS=1
             fi
 
-            # Wait for container to be fully running
+            # Wait for container to stabilize
             echo "⏳ Waiting for backend container to stabilize..."
             sleep 5
 
-            # Wait for service to be healthy
-            echo "🏥 Checking backend health..."
-            max_health_attempts=30
-            health_attempt=0
-            while [ $health_attempt -lt $max_health_attempts ]; do
-              if docker compose exec -T backend curl -sf http://127.0.0.1:8000/health > /dev/null 2>&1; then
-                echo "✅ Backend is healthy and responding"
-                break
-              fi
-              health_attempt=$((health_attempt+1))
-              if [ $health_attempt -lt $max_health_attempts ]; then
-                echo "⏳ Health check attempt $health_attempt/$max_health_attempts, retrying in 2s..."
-                sleep 2
-              fi
-            done
+            # Check backend health
+            if [ $EXIT_STATUS -eq 0 ]; then
+              echo "🏥 Checking backend health..."
+              max_health_attempts=30
+              health_attempt=0
+              health_success=0
+              
+              while [ $health_attempt -lt $max_health_attempts ]; do
+                if docker compose exec -T backend curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
+                  echo "✅ Backend is healthy and responding"
+                  health_success=1
+                  break
+                fi
+                health_attempt=$((health_attempt + 1))
+                if [ $health_attempt -lt $max_health_attempts ]; then
+                  echo "⏳ Health check attempt $health_attempt/$max_health_attempts, retrying in 2s..."
+                  sleep 2
+                fi
+              done
 
-            if [ $health_attempt -eq $max_health_attempts ]; then
-              echo "⚠️  Backend health check timed out after 1 minute"
-              echo "Container status:"
-              docker compose ps backend
-              echo "Recent logs:"
-              docker compose logs backend --tail 20
-            else
-              echo "✨ Backend deployment completed successfully!"
+              if [ $health_success -eq 0 ]; then
+                echo "⚠️  Backend health check timed out after 1 minute"
+                echo "Container status:"
+                docker compose ps backend 2>/dev/null || true
+                echo "Recent logs:"
+                docker compose logs backend --tail 20 2>/dev/null || true
+                EXIT_STATUS=1
+              else
+                echo "✨ Backend deployment completed successfully!"
+              fi
             fi
+
+            # Exit with final status
+            exit $EXIT_STATUS
 
 
 
