@@ -90,17 +90,34 @@ jobs:
               sudo mkdir -p /etc/docker
             fi
             
-            # Add timeout configuration to Docker daemon
+            # Add timeout configuration to Docker daemon (only if not exists)
             if [ ! -f "/etc/docker/daemon.json" ]; then
               echo '{"default-ulimit": {"nofile": {"Name": "nofile", "Hard": 65535, "Soft": 65535}}, "log-driver": "json-file", "log-opts": {"max-size": "100m"}, "registry-mirrors": ["https://mirror.gcr.io"], "max-concurrent-uploads": 5}' | sudo tee /etc/docker/daemon.json > /dev/null
-              sudo systemctl restart docker || true
+              # Check if docker is running before restart
+              if sudo systemctl is-active --quiet docker; then
+                echo "🔄 Restarting Docker daemon..."
+                sudo systemctl restart docker || {
+                  echo "⚠️  Docker restart failed, trying reload..."
+                  sudo systemctl reload docker || {
+                    echo "⚠️  Docker reload failed, continuing with current configuration..."
+                  }
+                }
+              else
+                echo "🚀 Starting Docker daemon..."
+                sudo systemctl start docker || {
+                  echo "⚠️  Docker start failed, continuing anyway..."
+                }
+              fi
               sleep 5
+            else
+              echo "✅ Docker daemon configuration already exists"
             fi
 
             # Safely sync repo with remote without creating merge commits
             # (keeps untracked files like .env, but resets tracked files to origin/main)
             echo "🔄 Syncing repository..."
-            git fetch origin main --timeout=60 || {
+            # Fix: git fetch doesn't have --timeout option, use timeout command instead
+            timeout 60 git fetch origin main || {
               echo "⚠️  Git fetch with timeout failed, retrying..."
               sleep 10
               git fetch origin main || { echo "❌ Git fetch failed"; exit 1; }
