@@ -160,8 +160,9 @@ jobs:
             fi
             
             if [ $EXIT_STATUS -eq 0 ]; then
-              max_pull_attempts=3
+              max_pull_attempts=2
               pull_attempt=0
+              pull_success=0
               
               while [ $pull_attempt -lt $max_pull_attempts ]; do
                 # Check Docker before each pull attempt
@@ -171,33 +172,57 @@ jobs:
                   sleep 5
                 fi
                 
-                timeout 300 docker compose pull backend 2>/dev/null
-                PULL_EXIT=$?
-                if [ $PULL_EXIT -eq 0 ] || [ $PULL_EXIT -eq 124 ]; then
-                  echo "✅ Backend image pull completed"
-                  break
+                echo "📥 Attempting image pull (attempt $((pull_attempt + 1))/$max_pull_attempts)..."
+                timeout 180 docker compose pull backend 2>&1 | tee /tmp/pull_output.log
+                PULL_EXIT=${PIPESTATUS[0]}
+                
+                # Check if Docker crashed during pull
+                if ! docker --version >/dev/null 2>&1; then
+                  echo "⚠️  Docker daemon crashed during image pull, restarting..."
+                  sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
+                  sleep 10
                 fi
+                
+                if [ $PULL_EXIT -eq 0 ]; then
+                  echo "✅ Backend image pull completed successfully"
+                  pull_success=1
+                  break
+                elif [ $PULL_EXIT -eq 124 ]; then
+                  echo "⚠️  Image pull timed out (timeout exit code 124), will retry..."
+                fi
+                
                 pull_attempt=$((pull_attempt + 1))
                 if [ $pull_attempt -lt $max_pull_attempts ]; then
-                  echo "⚠️  Image pull attempt $pull_attempt/$max_pull_attempts failed, waiting 10s..."
-                  sleep 10
+                  echo "⚠️  Image pull attempt $pull_attempt/$max_pull_attempts failed, waiting 15s..."
+                  sleep 15
                 fi
               done
 
-              if [ $pull_attempt -ge $max_pull_attempts ]; then
-                echo "⚠️  Could not pull new image, using existing local image..."
+              if [ $pull_success -eq 0 ]; then
+                echo "⚠️  Could not pull new image after $max_pull_attempts attempts, using existing local image..."
               fi
             fi
 
-            # More aggressive cleanup after pulling to free up resources
-            echo "🧹 Cleaning up after image pull..."
-            docker system prune -f --volumes 2>/dev/null || true
-            
-            # Ensure Docker is still healthy
-            echo "🔍 Verifying Docker daemon health..."
-            if ! ensure_docker; then
-              echo "❌ Docker daemon is not responding after image pull"
-              EXIT_STATUS=1
+            # Targeted cleanup of backend resources only (safe approach)
+            if [ $EXIT_STATUS -eq 0 ]; then
+              echo "🧹 Cleaning up backend-specific resources..."
+              sleep 2
+              # Only remove backend containers and volumes, not all system volumes
+              docker compose down -v --remove-orphans 2>/dev/null || true
+              sleep 2
+              # Clean up only dangling images and containers (no --volumes flag for safety)
+              docker image prune -f 2>/dev/null || true
+              docker container prune -f 2>/dev/null || true
+              sleep 2
+              
+              # Ensure Docker is still healthy
+              echo "🔍 Verifying Docker daemon health after image pull..."
+              if ! ensure_docker; then
+                echo "❌ Docker daemon is not responding after image pull"
+                EXIT_STATUS=1
+              else
+                echo "✅ Docker daemon confirmed healthy"
+              fi
             fi
 
             # Stop and clean up existing containers
@@ -226,7 +251,7 @@ jobs:
               
               if [ $EXIT_STATUS -eq 0 ]; then
                 start_attempt=0
-                max_start_attempts=5
+                max_start_attempts=3
                 start_success=0
                 
                 while [ $start_attempt -lt $max_start_attempts ]; do
@@ -234,24 +259,35 @@ jobs:
                   if ! docker --version >/dev/null 2>&1; then
                     echo "⚠️  Docker not accessible on attempt $start_attempt, restarting..."
                     sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
-                    sleep 5
+                    sleep 10
                   fi
                   
-                  if docker compose up -d backend 2>&1 | tee /tmp/start_output.log; then
+                  echo "🚀 Start attempt $((start_attempt + 1))/$max_start_attempts..."
+                  docker compose up -d backend 2>&1 | tee /tmp/start_output.log
+                  START_EXIT=${PIPESTATUS[0]}
+                  
+                  if [ $START_EXIT -eq 0 ]; then
                     echo "✅ Backend container started successfully"
                     start_success=1
                     break
+                  else
+                    echo "⚠️  Docker compose up failed with exit code $START_EXIT"
+                    if grep -q "Cannot connect to the Docker daemon" /tmp/start_output.log; then
+                      echo "⚠️  Docker daemon not accessible, will restart before retry"
+                    fi
                   fi
                   
                   start_attempt=$((start_attempt + 1))
                   if [ $start_attempt -lt $max_start_attempts ]; then
-                    echo "⚠️  Start attempt $start_attempt/$max_start_attempts failed, retrying in 5s..."
-                    sleep 5
+                    echo "⚠️  Start attempt failed, retrying in 10s..."
+                    sleep 10
                   fi
                 done
 
                 if [ $start_success -eq 0 ]; then
                   echo "❌ Failed to start backend after $max_start_attempts attempts"
+                  echo "Last start output:"
+                  cat /tmp/start_output.log 2>/dev/null || echo "(no output)"
                   docker compose logs backend 2>/dev/null || echo "Could not retrieve logs"
                   EXIT_STATUS=1
                 fi
