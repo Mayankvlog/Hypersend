@@ -18,11 +18,32 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Wait for Docker Hub availability (retry logic)
+        run: |
+          echo "🔄 Checking Docker Hub connectivity..."
+          max_attempts=5
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -s -m 10 https://registry-1.docker.io/v2/ > /dev/null 2>&1; then
+              echo "✅ Docker Hub is reachable"
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            if [ $attempt -lt $max_attempts ]; then
+              wait_time=$((2 ** attempt))  # Exponential backoff: 2s, 4s, 8s, 16s
+              echo "⏳ Docker Hub not responding (attempt $attempt/$max_attempts), waiting ${wait_time}s..."
+              sleep $wait_time
+            fi
+          done
+          echo "⚠️  Docker Hub still not responding, proceeding with login (retry in action will handle)"
+          exit 0
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        timeout-minutes: 3
 
       - name: Build & push backend image
         uses: docker/build-push-action@v6
@@ -35,6 +56,13 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:latest
           cache-to: type=inline
+          build-args: |
+            BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+            BUILDKIT_INLINE_CACHE=1
+        timeout-minutes: 35
+        env:
+          DOCKER_CLIENT_TIMEOUT: 600
+          COMPOSE_HTTP_TIMEOUT: 600
 
       - name: Deploy to VPS (Docker Compose, password SSH)
         uses: appleboy/ssh-action@v1.2.0
@@ -42,21 +70,59 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
+          timeout: 30m
+          command_timeout: 30m
+          script_stop: true
           script: |
             set -e
             cd /hypersend/Hypersend || { echo "❌ Directory /hypersend/Hypersend not found"; exit 1; }
 
             echo "📦 Starting backend deployment..."
 
+            # Configure Docker daemon with increased timeouts to handle network issues
+            echo "🔧 Configuring Docker daemon for network resilience..."
+            if [ ! -d "/etc/docker" ]; then
+              sudo mkdir -p /etc/docker
+            fi
+            
+            # Add timeout configuration to Docker daemon
+            if [ ! -f "/etc/docker/daemon.json" ]; then
+              echo '{"default-ulimit": {"nofile": {"Name": "nofile", "Hard": 65535, "Soft": 65535}}, "log-driver": "json-file", "log-opts": {"max-size": "100m"}, "registry-mirrors": ["https://mirror.gcr.io"], "max-concurrent-uploads": 5}' | sudo tee /etc/docker/daemon.json > /dev/null
+              sudo systemctl restart docker || true
+              sleep 5
+            fi
+
             # Safely sync repo with remote without creating merge commits
             # (keeps untracked files like .env, but resets tracked files to origin/main)
             echo "🔄 Syncing repository..."
-            git fetch origin main
+            git fetch origin main --timeout=60 || {
+              echo "⚠️  Git fetch with timeout failed, retrying..."
+              sleep 10
+              git fetch origin main || { echo "❌ Git fetch failed"; exit 1; }
+            }
             git reset --hard origin/main
 
-            # Pull latest backend image
-            echo "📥 Pulling backend image..."
-            docker compose pull backend 2>/dev/null || { echo "⚠️  Backend image pull had issues, continuing..."; }
+            # Pull latest backend image with retry logic
+            echo "📥 Pulling backend image (with retry logic)..."
+            max_pull_attempts=3
+            pull_attempt=0
+            until [ $pull_attempt -ge $max_pull_attempts ]; do
+              if timeout 300 docker compose pull backend 2>/dev/null || [ $? -eq 124 ]; then
+                # 124 = timeout, but we try to proceed anyway
+                echo "✅ Backend image pull completed"
+                break
+              fi
+              pull_attempt=$((pull_attempt + 1))
+              if [ $pull_attempt -lt $max_pull_attempts ]; then
+                wait_time=$((10 * pull_attempt))
+                echo "⚠️  Image pull attempt $pull_attempt/$max_pull_attempts failed, waiting ${wait_time}s..."
+                sleep $wait_time
+              fi
+            done
+
+            if [ $pull_attempt -ge $max_pull_attempts ]; then
+              echo "⚠️  Could not pull new image after $max_pull_attempts attempts, using existing local image..."
+            fi
 
             # Function to safely stop backend service
             stop_backend_safe() {

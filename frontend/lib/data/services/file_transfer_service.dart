@@ -236,30 +236,39 @@ class FileTransferService {
       final sanitizedSavePath = _sanitizeFileName(savePath);
       actualSavePath = '${directory.path}/$sanitizedSavePath';
       
-      // Enhanced path validation
-      final file = File(actualSavePath);
-      final parentDir = file.parent;
-      
-      debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
-      debugPrint('[FILE_TRANSFER] Parent directory exists: ${await parentDir.exists()}');
-      debugPrint('[FILE_TRANSFER] Parent directory path: ${parentDir.path}');
-      
-      // Ensure parent directory exists with proper permissions
-      try {
-        if (!await parentDir.exists()) {
-          debugPrint('[FILE_TRANSFER] Creating parent directory: ${parentDir.path}');
-          await parentDir.create(recursive: true);
-        }
-        
-        // Verify directory is writable
-        final testFile = File('${parentDir.path}/.download_test_${DateTime.now().millisecondsSinceEpoch}');
-        await testFile.writeAsString('test');
-        await testFile.delete();
-        debugPrint('[FILE_TRANSFER] Directory is writable: ✅');
-      } catch (e) {
-        debugPrint('[FILE_TRANSFER] Directory creation/writability failed: $e');
-        throw Exception('Cannot create or write to download directory: $e');
-      }
+       // Enhanced path validation
+       final file = File(actualSavePath);
+       final parentDir = file.parent;
+       
+       debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
+       debugPrint('[FILE_TRANSFER] Parent directory exists: ${await parentDir.exists()}');
+       debugPrint('[FILE_TRANSFER] Parent directory path: ${parentDir.path}');
+       
+       // CRITICAL FIX: Ensure parent directory exists with proper error handling
+       try {
+         if (!await parentDir.exists()) {
+           debugPrint('[FILE_TRANSFER] Creating parent directory: ${parentDir.path}');
+           await parentDir.create(recursive: true);
+         }
+         
+         // CRITICAL FIX: Test write permissions more robustly
+         final testFile = File('${parentDir.path}/.download_test_${DateTime.now().millisecondsSinceEpoch}');
+         try {
+           await testFile.writeAsString('test');
+           final writtenContent = await testFile.readAsString();
+           if (writtenContent != 'test') {
+             throw Exception('Directory write test failed - content mismatch');
+           }
+           await testFile.delete();
+           debugPrint('[FILE_TRANSFER] Directory is writable: ✅');
+         } catch (writeError) {
+           debugPrint('[FILE_TRANSFER] Write permission test failed: $writeError');
+           throw Exception('Directory is not writable: $writeError');
+         }
+       } catch (e) {
+         debugPrint('[FILE_TRANSFER] Directory creation/writability failed: $e');
+         throw Exception('Cannot create or write to download directory: $e');
+       }
     }
 
     final transfer = FileTransfer(
@@ -284,14 +293,24 @@ class FileTransferService {
       
       debugPrint('[FILE_TRANSFER] File size: $fileSize bytes');
       
-      // Ensure directory exists
-      final directory = File(actualSavePath).parent;
-      if (!await directory.exists()) {
-        debugPrint('[FILE_TRANSFER] Creating directory: ${directory.path}');
-        await directory.create(recursive: true);
-      }
-      
-      debugPrint('[FILE_TRANSFER] Directory created: ${await directory.exists()}');
+       // CRITICAL FIX: Ensure directory exists with proper error handling
+       final directory = File(actualSavePath).parent;
+       try {
+         if (!await directory.exists()) {
+           debugPrint('[FILE_TRANSFER] Creating directory: ${directory.path}');
+           await directory.create(recursive: true);
+         }
+         
+         // Verify directory is writable
+         if (!await directory.exists()) {
+           throw Exception('Failed to create download directory: ${directory.path}');
+         }
+         
+         debugPrint('[FILE_TRANSFER] Directory ready: ${directory.path}');
+       } catch (e) {
+         debugPrint('[FILE_TRANSFER] Directory setup failed: $e');
+         throw Exception('Cannot setup download directory: $e');
+       }
       
       // Use chunked download for large files (>100MB)
       if (fileSize > 100 * 1024 * 1024) {

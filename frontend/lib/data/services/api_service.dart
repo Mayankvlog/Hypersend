@@ -1122,10 +1122,10 @@ Future<List<Map<String, dynamic>>> searchUsers(String query) async {
     return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
   }
 
-  Future<List<Map<String, dynamic>>> getContacts({int limit = 50}) async {
+  Future<List<Map<String, dynamic>>> getContacts({int limit = 50, int offset = 0}) async {
     final response = await _dio.get(
       '${ApiConstants.usersEndpoint}/contacts',
-      queryParameters: {'limit': limit},
+      queryParameters: {'limit': limit, 'offset': offset},
     );
     return List<Map<String, dynamic>>.from(response.data?['contacts'] ?? []);
   }
@@ -1708,23 +1708,54 @@ Future<void> postToChannel(String channelId, String text) async {
     required String savePath,
     required Function(double) onProgress,
   }) async {
-    await _dio.download(
-      '${ApiConstants.filesEndpoint}/$fileId/download',
-      savePath,
-      onReceiveProgress: (received, total) {
-        if (total > 0) {
-          onProgress(received / total);
+    // CRITICAL FIX: Ensure parent directory exists
+    final file = io.File(savePath);
+    final parentDir = file.parent;
+    if (!await parentDir.exists()) {
+      _log('[DOWNLOAD] Creating parent directory: ${parentDir.path}');
+      await parentDir.create(recursive: true);
+    }
+    
+    try {
+      _log('[DOWNLOAD] Starting download: $fileId -> $savePath');
+      
+      await _dio.download(
+        '${ApiConstants.filesEndpoint}/$fileId/download',
+        savePath,
+        onReceiveProgress: (received, total) {
+          if (total > 0) {
+            onProgress(received / total);
+          }
+        },
+        options: Options(
+          headers: _mergeAuthHeaders({
+            'Accept': 'application/octet-stream',
+            'Cache-Control': 'no-cache',
+          }),
+          receiveTimeout: Duration(minutes: 30),
+          sendTimeout: Duration(minutes: 30),
+        ),
+      );
+      
+      // CRITICAL FIX: Verify file was downloaded
+      if (await file.exists()) {
+        final actualSize = await file.length();
+        _log('[DOWNLOAD] Download completed: $savePath (Size: $actualSize bytes)');
+      } else {
+        throw Exception('File was not created after download: $savePath');
+      }
+    } catch (e) {
+      _log('[DOWNLOAD] Failed: $e');
+      
+      // Cleanup on error
+      try {
+        if (await file.exists()) {
+          await file.delete();
         }
-      },
-      options: Options(
-        headers: _mergeAuthHeaders({
-          'Accept': 'application/octet-stream',
-          'Cache-Control': 'no-cache',
-        }),
-        receiveTimeout: Duration(minutes: 30),
-        sendTimeout: Duration(minutes: 30),
-      ),
-    );
+      } catch (_) {} // Ignore cleanup errors
+      
+      rethrow;
+    }
   }
 
   Future<Response<Uint8List>> downloadFileBytes(String fileId) async {
@@ -1775,11 +1806,25 @@ Future<void> postToChannel(String channelId, String text) async {
       int downloadedBytes = 0;
       final file = io.File(savePath);
       
-      // Create/clear file
-      if (file.existsSync()) {
-        await file.delete();
+      // CRITICAL FIX: Ensure parent directory exists first
+      final parentDir = file.parent;
+      if (!await parentDir.exists()) {
+        _log('[DOWNLOAD_LARGE] Creating parent directory: ${parentDir.path}');
+        await parentDir.create(recursive: true);
       }
-      await file.create(recursive: true);
+      
+      // Create/clear file with proper error handling
+      try {
+        if (file.existsSync()) {
+          await file.delete();
+        }
+        // CRITICAL FIX: Use writeAsBytes for more reliable file writing
+        _log('[DOWNLOAD_LARGE] Initializing file: $savePath');
+        await file.writeAsBytes([]);
+      } catch (e) {
+        _log('[DOWNLOAD_LARGE] File initialization failed: $e');
+        throw Exception('Failed to initialize download file: $e');
+      }
       
       final sink = file.openWrite();
       
@@ -1794,38 +1839,65 @@ Future<void> postToChannel(String channelId, String text) async {
             options: Options(
               responseType: ResponseType.bytes,
               headers: _mergeAuthHeaders({'Range': 'bytes=$downloadedBytes-$endByte'}),
+              receiveTimeout: Duration(minutes: 10),
+              sendTimeout: Duration(minutes: 5),
             ),
           );
           
-          // Write chunk directly to file with proper type checking
-          List<int> chunkBytes;
-          if (response.data is List<int>) {
-            chunkBytes = response.data as List<int>;
-          } else if (response.data is Uint8List) {
-            chunkBytes = (response.data as Uint8List).toList();
+          // CRITICAL FIX: Proper data type handling and validation
+          Uint8List chunkData;
+          if (response.data is Uint8List) {
+            chunkData = response.data as Uint8List;
+          } else if (response.data is List<int>) {
+            chunkData = Uint8List.fromList(response.data as List<int>);
           } else {
-            debugPrint('[DOWNLOAD_LARGE] Unexpected response type: ${response.data.runtimeType}');
-            chunkBytes = <int>[];
+            throw Exception('Invalid response data type: ${response.data.runtimeType}');
           }
-          sink.add(Uint8List.fromList(chunkBytes));
+          
+          // CRITICAL FIX: Validate response status
+          if (response.statusCode != 200 && response.statusCode != 206) {
+            throw Exception('HTTP ${response.statusCode}: Failed to download chunk $downloadedBytes-$endByte');
+          }
+          
+          // CRITICAL FIX: Write data with proper flushing
+          sink.add(chunkData);
+          await sink.flush(); // Ensure data is written to disk
           
           downloadedBytes = endByte + 1;
           
           // Update progress
           onReceiveProgress?.call(downloadedBytes, totalSize);
           
-          _log('[DOWNLOAD_LARGE] Chunk downloaded: $downloadedBytes/$totalSize bytes');
+          _log('[DOWNLOAD_LARGE] Chunk written: ${chunkData.length} bytes, Total: $downloadedBytes/$totalSize');
         }
         
         await sink.close();
-        _log('[DOWNLOAD_LARGE] Download completed: $savePath');
+        
+        // CRITICAL FIX: Verify file was written correctly
+        if (await file.exists()) {
+          final actualSize = await file.length();
+          _log('[DOWNLOAD_LARGE] Download completed: $savePath (Size: $actualSize bytes)');
+          
+          if (actualSize != totalSize) {
+            throw Exception('File size mismatch: expected $totalSize, got $actualSize');
+          }
+        } else {
+          throw Exception('File was not created after download: $savePath');
+        }
         
       } catch (e) {
-        await sink.close();
+        try {
+          sink.close();
+        } catch (_) {} // Ignore close errors
+        
         // Cleanup on error
-        if (file.existsSync()) {
-          await file.delete();
-        }
+        try {
+          if (await file.exists()) {
+            await file.delete();
+            _log('[DOWNLOAD_LARGE] Cleaned up failed download: $savePath');
+          }
+        } catch (_) {} // Ignore cleanup errors
+        
         rethrow;
       }
       

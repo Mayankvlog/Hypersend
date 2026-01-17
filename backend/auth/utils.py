@@ -1087,7 +1087,7 @@ def validate_session_code(provided_code: str, stored_code: str) -> bool:
 
 # Fallback imports for when direct import fails
 try:
-    from .auth_utils import (
+    from . import (
         hash_password, verify_password, create_access_token, 
         create_refresh_token, decode_token, get_current_user,
         get_current_user_for_upload, get_current_user_optional, get_current_user_or_query
@@ -1098,7 +1098,7 @@ except ImportError:
 
 # Fallback imports for when direct import fails
 try:
-    from .auth_utils import (
+    from . import (
         hash_password, verify_password, create_access_token, 
         create_refresh_token, decode_token, get_current_user,
         get_current_user_for_upload, get_current_user_optional, get_current_user_or_query

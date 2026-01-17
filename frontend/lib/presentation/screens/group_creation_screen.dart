@@ -15,10 +15,17 @@ class GroupCreationScreen extends StatefulWidget {
 class _GroupCreationScreenState extends State<GroupCreationScreen> {
   final _groupNameController = TextEditingController();
   final _groupDescriptionController = TextEditingController();
+  final _searchController = TextEditingController();
   final Set<String> _selectedMemberIds = {};
   bool _loading = true;
+  bool _searching = false;
   String? _error;
   List<Map<String, dynamic>> _users = [];
+  List<Map<String, dynamic>> _filteredUsers = [];
+  int _currentOffset = 0;
+  final int _pageSize = 50;
+  bool _hasMore = true;
+  final ScrollController _scrollController = ScrollController();
 
   Uint8List? _pickedGroupAvatarBytes;
   String? _pickedGroupAvatarName;
@@ -27,6 +34,8 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
   void dispose() {
     _groupNameController.dispose();
     _groupDescriptionController.dispose();
+    _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -34,10 +43,44 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
   void initState() {
     super.initState();
     _loadContacts();
+    _scrollController.addListener(_onScroll);
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _loadContacts() async {
-    debugPrint('[GROUP_CREATE] Loading contacts for group creation');
+  void _onScroll() {
+    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
+      if (_hasMore && !_searching && !_loading) {
+        _currentOffset += _pageSize;
+        _loadContacts(loadMore: true);
+      }
+    }
+  }
+
+  void _onSearchChanged() {
+    _filterUsers();
+  }
+
+  void _filterUsers() {
+    final query = _searchController.text.trim().toLowerCase();
+    
+    setState(() {
+      if (query.isEmpty) {
+        _filteredUsers = List.from(_users);
+      } else {
+        _filteredUsers = _users.where((user) {
+          final name = user['name']?.toString().toLowerCase() ?? '';
+          final email = user['email']?.toString().toLowerCase() ?? '';
+          final username = user['username']?.toString().toLowerCase() ?? '';
+          return name.contains(query) || 
+                 email.contains(query) || 
+                 username.contains(query);
+        }).toList();
+      }
+    });
+  }
+
+  Future<void> _loadContacts({bool loadMore = false}) async {
+    debugPrint('[GROUP_CREATE] Loading contacts for group creation (loadMore: $loadMore)');
     
     if (!serviceProvider.authService.isLoggedIn) {
       debugPrint('[GROUP_CREATE] User not logged in, redirecting to auth');
@@ -45,28 +88,56 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       context.go('/auth');
       return;
     }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    
+    if (loadMore) {
+      setState(() {
+        _searching = true;
+      });
+    } else {
+      setState(() {
+        _loading = true;
+        _error = null;
+        _currentOffset = 0;
+        _hasMore = true;
+        _users = [];
+        _filteredUsers = [];
+      });
+    }
+    
     try {
-      // First try the contacts endpoint (user's saved contacts)
-      final contacts = await serviceProvider.apiService.getContacts(limit: 100);
+      // First try to contacts endpoint (user's saved contacts)
+      final contacts = await serviceProvider.apiService.getContacts(
+        limit: _pageSize,
+        offset: _currentOffset,
+      );
       debugPrint('[GROUP_CREATE] Loaded ${contacts.length} contacts for group creation');
 
       List<Map<String, dynamic>> users = contacts;
 
       // If there are no contacts, fall back to simple users list so group can still be created
-      if (users.isEmpty) {
+      if (users.isEmpty && !loadMore) {
         debugPrint('[GROUP_CREATE] No contacts found, falling back to /users/simple');
-        users = await serviceProvider.apiService.getSimpleUsers(limit: 100);
+        users = await serviceProvider.apiService.getSimpleUsers(
+          limit: _pageSize,
+          offset: _currentOffset,
+        );
         debugPrint('[GROUP_CREATE] Loaded ${users.length} simple users for group creation');
       }
       
       if (!mounted) return;
+      
       setState(() {
-        _users = users;
+        if (loadMore) {
+          _users.addAll(users);
+        } else {
+          _users = users;
+        }
+        _hasMore = users.length == _pageSize;
         _loading = false;
+        _searching = false;
+        
+        // Update filtered list based on current search
+        _filterUsers();
       });
     } catch (e) {
       debugPrint('[GROUP_CREATE] Error loading contacts/users: $e');
@@ -74,6 +145,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       setState(() {
         _error = 'Failed to load users. Please try again.';
         _loading = false;
+        _searching = false;
       });
     }
   }
@@ -178,6 +250,37 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     }
   }
 
+  Widget _buildUserAvatar(Map<String, dynamic> user) {
+    final avatarUrl = user['avatar_url']?.toString();
+    final name = user['name']?.toString() ?? 'User';
+    final firstLetter = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: 20,
+        backgroundImage: NetworkImage(avatarUrl),
+        backgroundColor: AppTheme.cardDark,
+        onBackgroundImageError: (exception, stackTrace) {
+          // Fallback to initials if image fails to load
+        },
+        child: null,
+      );
+    } else {
+      return CircleAvatar(
+        radius: 20,
+        backgroundColor: AppTheme.primaryCyan.withValues(alpha: 0.8),
+        child: Text(
+          firstLetter,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -187,6 +290,19 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
           onPressed: () => context.pop(),
         ),
         title: const Text('Create Group'),
+        actions: [
+          if (_selectedMemberIds.isNotEmpty)
+            TextButton(
+              onPressed: _createGroup,
+              child: Text(
+                'Create (${_selectedMemberIds.length})',
+                style: const TextStyle(
+                  color: AppTheme.primaryCyan,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -203,139 +319,246 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
                         const SizedBox(height: 8),
                         Text(_error!, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
                         const SizedBox(height: 16),
-                        ElevatedButton(onPressed: _loadContacts, child: const Text('Retry')),
+                        ElevatedButton(onPressed: () => _loadContacts(), child: const Text('Retry')),
                       ],
                     ),
                   ),
                 )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppTheme.spacing16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Stack(
-                          children: [
-                            CircleAvatar(
-                              radius: 44,
-                              backgroundColor: AppTheme.cardDark,
-                              backgroundImage: _pickedGroupAvatarBytes != null ? MemoryImage(_pickedGroupAvatarBytes!) : null,
-                              child: null,
-                            ),
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: InkWell(
-                                onTap: _pickGroupAvatar,
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.primaryCyan,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: AppTheme.dividerColor),
-                                  ),
-                                  child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+              : Column(
+                  children: [
+                    // Group Info Section
+                    Container(
+                      padding: const EdgeInsets.all(AppTheme.spacing16),
+                      child: Column(
+                        children: [
+                          // Group Avatar
+                          Center(
+                            child: Stack(
+                              children: [
+                                CircleAvatar(
+                                  radius: 44,
+                                  backgroundColor: AppTheme.cardDark,
+                                  backgroundImage: _pickedGroupAvatarBytes != null ? MemoryImage(_pickedGroupAvatarBytes!) : null,
+                                  child: _pickedGroupAvatarBytes == null
+                                      ? const Icon(Icons.group, size: 44, color: AppTheme.textSecondary)
+                                      : null,
                                 ),
+                                Positioned(
+                                  right: 0,
+                                  bottom: 0,
+                                  child: InkWell(
+                                    onTap: _pickGroupAvatar,
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryCyan,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: AppTheme.dividerColor),
+                                      ),
+                                      child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          // Group Name
+                          TextField(
+                            controller: _groupNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Group Name *',
+                              prefixIcon: Icon(Icons.group),
+                              hintText: 'Enter group name',
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          // Group Description
+                          TextField(
+                            controller: _groupDescriptionController,
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              labelText: 'Group Description (Optional)',
+                              prefixIcon: Icon(Icons.description_outlined),
+                              hintText: 'What\'s this group about?',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    // Search Bar
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing16),
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          labelText: 'Search contacts',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: AppTheme.dividerColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: AppTheme.primaryCyan),
+                          ),
+                          filled: true,
+                          fillColor: AppTheme.cardDark.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // Members Section Header
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing16),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Select Members',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const Spacer(),
+                          if (_selectedMemberIds.isNotEmpty)
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedMemberIds.clear();
+                                });
+                              },
+                              child: const Text(
+                                'Clear All',
+                                style: TextStyle(color: AppTheme.errorRed),
                               ),
                             ),
-                          ],
-                        ),
+                        ],
                       ),
-                      const SizedBox(height: 18),
-                      TextField(
-                        controller: _groupNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Group Name *',
-                          prefixIcon: Icon(Icons.group),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _groupDescriptionController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Group Description',
-                          prefixIcon: Icon(Icons.description_outlined),
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      Text(
-                        'Add Members (${_selectedMemberIds.length} selected)',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      if (_users.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            'No contacts found. Add contacts first, then create a group.',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
-                          ),
-                        ),
-                      Container(
-                        height: 360,
-                        decoration: BoxDecoration(
-                          color: AppTheme.cardDark.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.dividerColor),
-                        ),
-                        child: ListView.separated(
-                          itemCount: _users.length,
-                          separatorBuilder: (_, __) => const Divider(height: 0),
-                          itemBuilder: (context, index) {
-                            final u = _users[index];
-                            final id = u['id']?.toString() ?? '';
-                            final name = u['name']?.toString() ?? id;
-                            final email = u['email']?.toString() ?? '';
-                            final selected = _selectedMemberIds.contains(id);
-                            return CheckboxListTile(
-                              value: selected,
-                              onChanged: id.isEmpty
-                                  ? null
-                                  : (v) {
-                                      setState(() {
-                                        if (v == true) {
-                                          _selectedMemberIds.add(id);
-                                        } else {
-                                          _selectedMemberIds.remove(id);
-                                        }
-                                      });
-                                    },
-                              title: Text(name),
-                              subtitle: Text(email),
-                              activeColor: AppTheme.primaryCyan,
-                              checkColor: Colors.white,
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _selectedMemberIds.isEmpty ? null : _createGroup,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _selectedMemberIds.isEmpty 
-                                ? Colors.grey.shade300 
-                                : AppTheme.primaryCyan,
-                            foregroundColor: _selectedMemberIds.isEmpty 
-                                ? Colors.grey.shade600 
-                                : Colors.white,
-                          ),
-                          child: Text(
-                            _selectedMemberIds.isEmpty 
-                                ? 'Select at least 1 member'
-                                : 'Create Group',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    
+                    // Members List
+                    Expanded(
+                      child: _filteredUsers.isEmpty && !_loading
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.people_outline,
+                                    size: 64,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _searchController.text.isNotEmpty
+                                        ? 'No contacts found matching "${_searchController.text}"'
+                                        : 'No contacts available',
+                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  if (_searchController.text.isEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Add contacts first, then create a group',
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: _scrollController,
+                              itemCount: _filteredUsers.length + (_searching ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (index >= _filteredUsers.length) {
+                                  return const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Center(child: CircularProgressIndicator()),
+                                  );
+                                }
+                                
+                                final user = _filteredUsers[index];
+                                final id = user['id']?.toString() ?? '';
+                                final name = user['name']?.toString() ?? 'Unknown User';
+                                final email = user['email']?.toString() ?? '';
+                                final username = user['username']?.toString();
+                                final selected = _selectedMemberIds.contains(id);
+                                
+                                return ListTile(
+                                  leading: _buildUserAvatar(user),
+                                  title: Text(
+                                    name,
+                                    style: const TextStyle(fontWeight: FontWeight.w500),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (email.isNotEmpty)
+                                        Text(
+                                          email,
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: AppTheme.textSecondary,
+                                          ),
+                                        ),
+                                      if (username != null && username.isNotEmpty)
+                                        Text(
+                                          '@$username',
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: AppTheme.primaryCyan,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  trailing: Checkbox(
+                                    value: selected,
+                                    onChanged: id.isEmpty
+                                        ? null
+                                        : (value) {
+                                            setState(() {
+                                              if (value == true) {
+                                                _selectedMemberIds.add(id);
+                                              } else {
+                                                _selectedMemberIds.remove(id);
+                                              }
+                                            });
+                                          },
+                                    activeColor: AppTheme.primaryCyan,
+                                    checkColor: Colors.white,
+                                  ),
+                                  onTap: id.isEmpty
+                                      ? null
+                                      : () {
+                                          setState(() {
+                                            if (selected) {
+                                              _selectedMemberIds.remove(id);
+                                            } else {
+                                              _selectedMemberIds.add(id);
+                                            }
+                                          });
+                                        },
+                                );
+                              },
+                            ),
+                    ),
+                    
+                    // Bottom Padding
+                    const SizedBox(height: 16),
+                  ],
                 ),
     );
   }
 }
-
-
