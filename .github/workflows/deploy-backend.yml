@@ -203,6 +203,20 @@ jobs:
             # Wait additional time for backend start period
             echo "⏳ Allowing backend 180s start period to complete..."
             sleep 60
+            
+            # Check if backend container is actually running
+            echo "🔍 Checking backend container status..."
+            container_running=$(docker compose ps -q backend | xargs docker inspect --format='{{.State.Running}}' 2>/dev/null || echo "false")
+            echo "Container running: $container_running"
+            
+            if [ "$container_running" != "true" ]; then
+              echo "❌ Backend container is not running!"
+              echo "Container status:"
+              docker compose ps backend 2>/dev/null || true
+              echo "Container logs:"
+              docker compose logs backend --tail 30 2>/dev/null || true
+              EXIT_STATUS=1
+            fi
 
             # Check backend health
             if [ $EXIT_STATUS -eq 0 ]; then
@@ -212,26 +226,42 @@ jobs:
               health_success=0
               
               while [ $health_attempt -lt $max_health_attempts ]; do
+                echo "🔍 Health check attempt $((health_attempt + 1))/$max_health_attempts..."
+                
                 # Try container health check first
+                echo "  Trying internal health check..."
                 if docker compose exec -T backend curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
                   echo "✅ Backend is healthy and responding (internal check)"
                   health_success=1
                   break
+                else
+                  echo "  ❌ Internal health check failed"
                 fi
                 
                 # Fallback: Check external health
+                echo "  Trying external health check..."
                 if curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
                   echo "✅ Backend is healthy and responding (external check)"
                   health_success=1
                   break
+                else
+                  echo "  ❌ External health check failed"
                 fi
                 
                 # Fallback: Check if container is running and not in unhealthy state
+                echo "  Checking container health status..."
                 container_status=$(docker compose ps -q backend | xargs docker inspect --format='{{.State.Health.Status}}' 2>/dev/null || echo "unknown")
+                echo "  Container health status: $container_status"
                 if [ "$container_status" = "healthy" ]; then
                   echo "✅ Backend container reports healthy status"
                   health_success=1
                   break
+                fi
+                
+                # Additional debugging every 5 attempts
+                if [ $((health_attempt % 5)) -eq 0 ]; then
+                  echo "  📊 Debug info (attempt $((health_attempt + 1))):"
+                  docker compose ps backend 2>/dev/null || true
                 fi
                 
                 health_attempt=$((health_attempt + 1))
@@ -245,8 +275,16 @@ jobs:
                 echo "⚠️  Backend health check timed out after 1 minute"
                 echo "Container status:"
                 docker compose ps backend 2>/dev/null || true
+                echo "Container health status:"
+                docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' backend 2>/dev/null || true
                 echo "Recent logs:"
-                docker compose logs backend --tail 20 2>/dev/null || true
+                docker compose logs backend --tail 50 2>/dev/null || true
+                echo "Container inspect:"
+                docker compose ps -q backend | xargs docker inspect --format='{{json .State}}' 2>/dev/null || true
+                echo "Network info:"
+                docker network ls 2>/dev/null || true
+                echo "Port binding:"
+                docker compose ps --format '{{.Name}}: {{.Ports}}' backend 2>/dev/null || true
                 EXIT_STATUS=1
               else
                 echo "✨ Backend deployment completed successfully!"
