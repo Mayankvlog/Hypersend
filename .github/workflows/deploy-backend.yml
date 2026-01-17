@@ -38,6 +38,11 @@ jobs:
           echo "⚠️  Docker Hub still not responding, proceeding with login (retry in action will handle)"
           exit 0
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+        
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
