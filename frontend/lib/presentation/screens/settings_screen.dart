@@ -244,7 +244,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildSettingsTile(
               icon: Icons.description_outlined,
               title: 'Terms & Conditions',
-              onTap: () {
+              onTap: () async {
                 showDialog(
                   context: context,
                   builder: (dialogContext) => AlertDialog(
@@ -256,8 +256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         '2. Usage: zaply is for personal use only.\n'
                         '3. Content: You are responsible for content you share.\n'
                         '4. Compliance: Follow all applicable laws and regulations.\n'
-                        '5. Disclaimer: We are not liable for service interruptions.\n\n'
-                        'For full terms, visit: terms.zaply.com',
+                        '5. Disclaimer: We are not liable for service interruptions.',
                       ),
                     ),
                     actions: [
