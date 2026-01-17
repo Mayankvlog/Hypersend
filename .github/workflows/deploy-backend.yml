@@ -196,9 +196,13 @@ jobs:
               EXIT_STATUS=1
             fi
 
-            # Wait for container to stabilize
+            # Wait for container to stabilize (backend needs 180s start period)
             echo "⏳ Waiting for backend container to stabilize..."
-            sleep 5
+            sleep 30
+
+            # Wait additional time for backend start period
+            echo "⏳ Allowing backend 180s start period to complete..."
+            sleep 60
 
             # Check backend health
             if [ $EXIT_STATUS -eq 0 ]; then
@@ -208,11 +212,28 @@ jobs:
               health_success=0
               
               while [ $health_attempt -lt $max_health_attempts ]; do
+                # Try container health check first
                 if docker compose exec -T backend curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
-                  echo "✅ Backend is healthy and responding"
+                  echo "✅ Backend is healthy and responding (internal check)"
                   health_success=1
                   break
                 fi
+                
+                # Fallback: Check external health
+                if curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
+                  echo "✅ Backend is healthy and responding (external check)"
+                  health_success=1
+                  break
+                fi
+                
+                # Fallback: Check if container is running and not in unhealthy state
+                container_status=$(docker compose ps -q backend | xargs docker inspect --format='{{.State.Health.Status}}' 2>/dev/null || echo "unknown")
+                if [ "$container_status" = "healthy" ]; then
+                  echo "✅ Backend container reports healthy status"
+                  health_success=1
+                  break
+                fi
+                
                 health_attempt=$((health_attempt + 1))
                 if [ $health_attempt -lt $max_health_attempts ]; then
                   echo "⏳ Health check attempt $health_attempt/$max_health_attempts, retrying in 2s..."
