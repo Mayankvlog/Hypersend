@@ -241,34 +241,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'App Version',
               subtitle: '1.0.0',
             ),
-            _buildSettingsTile(
-              icon: Icons.description_outlined,
-              title: 'Terms & Conditions',
-              onTap: () async {
-                showDialog(
-                  context: context,
-                  builder: (dialogContext) => AlertDialog(
-                    title: const Text('Terms & Conditions'),
-                    content: const SingleChildScrollView(
-                      child: Text(
-                        'By using zaply, you agree to our Terms & Conditions.\n\n'
-                        '1. Privacy: We protect your data with end-to-end encryption.\n'
-                        '2. Usage: zaply is for personal use only.\n'
-                        '3. Content: You are responsible for content you share.\n'
-                        '4. Compliance: Follow all applicable laws and regulations.\n'
-                        '5. Disclaimer: We are not liable for service interruptions.',
-                      ),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: const Text('Close'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+
             const SizedBox(height: 24),
             // Account section
             _buildSectionHeader('ACCOUNT'),
