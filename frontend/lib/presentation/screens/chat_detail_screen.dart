@@ -653,7 +653,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
       // Use browser's native download capability with proper headers
       final base = ApiConstants.serverBaseUrl; // e.g. https://zaply.in.net
-      final downloadUri = Uri.parse('$base/api/v1/${ApiConstants.filesEndpoint}/$fileId/download?dl=1');
+      final accessToken = serviceProvider.authService.accessToken;
+      final downloadUri = Uri.parse('$base/api/v1/${ApiConstants.filesEndpoint}/$fileId/download?dl=1&token=$accessToken');
 
       debugPrint('[FILE_WEB] Triggering browser download: $downloadUri');
       

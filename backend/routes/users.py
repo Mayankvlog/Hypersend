@@ -1961,9 +1961,9 @@ async def get_contacts(
                 pipeline = [
                     {"$match": {"_id": {"$ne": current_user}}},
                     {"$sort": {"is_online": -1, "name": 1}},
-                    {"skip": offset},
-                    {"limit": limit},
-                    {"project": {
+                    {"$skip": offset},
+                    {"$limit": limit},
+                    {"$project": {
                         "id": "$_id",
                         "name": 1,
                         "email": 1,
