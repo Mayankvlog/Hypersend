@@ -216,25 +216,26 @@ jobs:
               start_attempt=0
               max_start_attempts=5
               start_success=0
-            
-            while [ $start_attempt -lt $max_start_attempts ]; do
-              if docker compose up -d backend 2>&1 | tee /tmp/start_output.log; then
-                echo "✅ Backend container started successfully"
-                start_success=1
-                break
-              fi
               
-              start_attempt=$((start_attempt + 1))
-              if [ $start_attempt -lt $max_start_attempts ]; then
-                echo "⚠️  Start attempt $start_attempt/$max_start_attempts failed, retrying in 5s..."
-                sleep 5
-              fi
-            done
+              while [ $start_attempt -lt $max_start_attempts ]; do
+                if docker compose up -d backend 2>&1 | tee /tmp/start_output.log; then
+                  echo "✅ Backend container started successfully"
+                  start_success=1
+                  break
+                fi
+                
+                start_attempt=$((start_attempt + 1))
+                if [ $start_attempt -lt $max_start_attempts ]; then
+                  echo "⚠️  Start attempt $start_attempt/$max_start_attempts failed, retrying in 5s..."
+                  sleep 5
+                fi
+              done
 
-            if [ $start_success -eq 0 ]; then
-              echo "❌ Failed to start backend after $max_start_attempts attempts"
-              docker compose logs backend 2>/dev/null || echo "Could not retrieve logs"
-              EXIT_STATUS=1
+              if [ $start_success -eq 0 ]; then
+                echo "❌ Failed to start backend after $max_start_attempts attempts"
+                docker compose logs backend 2>/dev/null || echo "Could not retrieve logs"
+                EXIT_STATUS=1
+              fi
             fi
 
             # Wait for container to stabilize (backend needs 180s start period)
