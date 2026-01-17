@@ -109,10 +109,29 @@ jobs:
             sleep 2
             
             # Verify Docker is accessible
+            echo "🔍 Checking Docker daemon accessibility..."
             docker --version >/dev/null 2>&1
             if [ $? -ne 0 ]; then
-              echo "❌ Docker is not accessible, aborting deployment"
-              exit 1
+              echo "❌ Docker is not accessible, attempting to start Docker daemon..."
+              # Try to start Docker daemon
+              sudo systemctl start docker 2>/dev/null || {
+                echo "⚠️  Could not start Docker daemon with systemctl, trying service command..."
+                sudo service docker start 2>/dev/null || {
+                  echo "❌ Failed to start Docker daemon"
+                  exit 1
+                }
+              }
+              
+              # Wait for Docker to start
+              echo "⏳ Waiting for Docker daemon to start..."
+              sleep 10
+              
+              # Verify again
+              docker --version >/dev/null 2>&1
+              if [ $? -ne 0 ]; then
+                echo "❌ Docker is still not accessible after restart attempt"
+                exit 1
+              fi
             fi
             echo "✅ Docker is accessible"
 
@@ -137,6 +156,15 @@ jobs:
 
             # Pull latest backend image with retry logic
             echo "📥 Pulling backend image (with retry logic)..."
+            
+            # Verify Docker is still accessible before pulling
+            docker --version >/dev/null 2>&1
+            if [ $? -ne 0 ]; then
+              echo "❌ Docker daemon became inaccessible, attempting restart..."
+              sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || true
+              sleep 5
+            fi
+            
             max_pull_attempts=3
             pull_attempt=0
             
@@ -172,9 +200,22 @@ jobs:
 
             # Start the backend service with retry logic
             echo "🚀 Starting backend service..."
-            start_attempt=0
-            max_start_attempts=5
-            start_success=0
+            
+            # Verify Docker is accessible before starting
+            docker --version >/dev/null 2>&1
+            if [ $? -ne 0 ]; then
+              echo "❌ Docker daemon not accessible before starting containers, attempting restart..."
+              sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || {
+                echo "❌ Failed to start Docker daemon"
+                EXIT_STATUS=1
+              }
+              sleep 5
+            fi
+            
+            if [ $EXIT_STATUS -eq 0 ]; then
+              start_attempt=0
+              max_start_attempts=5
+              start_success=0
             
             while [ $start_attempt -lt $max_start_attempts ]; do
               if docker compose up -d backend 2>&1 | tee /tmp/start_output.log; then
@@ -206,16 +247,30 @@ jobs:
             
             # Check if backend container is actually running
             echo "🔍 Checking backend container status..."
-            container_running=$(docker compose ps -q backend | xargs docker inspect --format='{{.State.Running}}' 2>/dev/null || echo "false")
-            echo "Container running: $container_running"
             
-            if [ "$container_running" != "true" ]; then
-              echo "❌ Backend container is not running!"
-              echo "Container status:"
-              docker compose ps backend 2>/dev/null || true
-              echo "Container logs:"
-              docker compose logs backend --tail 30 2>/dev/null || true
-              EXIT_STATUS=1
+            # Verify Docker is accessible before checking container
+            docker --version >/dev/null 2>&1
+            if [ $? -ne 0 ]; then
+              echo "❌ Docker daemon not accessible before container check, attempting restart..."
+              sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || {
+                echo "❌ Failed to start Docker daemon"
+                EXIT_STATUS=1
+              }
+              sleep 5
+            fi
+            
+            if [ $EXIT_STATUS -eq 0 ]; then
+              container_running=$(docker compose ps -q backend | xargs docker inspect --format='{{.State.Running}}' 2>/dev/null || echo "false")
+              echo "Container running: $container_running"
+              
+              if [ "$container_running" != "true" ]; then
+                echo "❌ Backend container is not running!"
+                echo "Container status:"
+                docker compose ps backend 2>/dev/null || true
+                echo "Container logs:"
+                docker compose logs backend --tail 30 2>/dev/null || true
+                EXIT_STATUS=1
+              fi
             fi
 
             # Check backend health
