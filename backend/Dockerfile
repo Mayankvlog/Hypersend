@@ -1,17 +1,17 @@
-FROM python:3.11-slim
+FROM --platform=linux/amd64 python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies with IPv4 enforcement
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     tzdata \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies with IPv4 enforcement and timeout
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt --timeout=60 --retries=3
 
 # Create the directory structure for proper imports
 RUN mkdir -p /app/backend

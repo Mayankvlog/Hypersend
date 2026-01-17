@@ -8,6 +8,7 @@ import 'dart:math';
 
 // Conditional import: dart:io only available on mobile/desktop platforms
 import '../../core/constants/api_constants.dart';
+import 'service_provider.dart';
 
 // Platform-specific imports (dart:io is only used when not running on web)
 import 'dart:io' as io;
@@ -1661,8 +1662,16 @@ Future<void> postToChannel(String channelId, String text) async {
     void Function(int, int)? onReceiveProgress,
   }) async {
     try {
+      // Get current access token for query parameter authentication
+      final accessToken = serviceProvider.authService.accessToken;
+      
+      String url = '${ApiConstants.filesEndpoint}/$fileId/download';
+      if (accessToken != null) {
+        url += '?dl=1&token=$accessToken';
+      }
+      
       await _dio.download(
-        '${ApiConstants.filesEndpoint}/$fileId/download',
+        url,
         savePath,
         onReceiveProgress: onReceiveProgress,
         options: Options(
@@ -1759,8 +1768,16 @@ Future<void> postToChannel(String channelId, String text) async {
   }
 
   Future<Response<Uint8List>> downloadFileBytes(String fileId) async {
+    // Get current access token for query parameter authentication
+    final accessToken = serviceProvider.authService.accessToken;
+    
+    String url = '${ApiConstants.filesEndpoint}/$fileId/download';
+    if (accessToken != null) {
+      url += '?dl=1&token=$accessToken';
+    }
+    
     return await _dio.get<Uint8List>(
-      '${ApiConstants.filesEndpoint}/$fileId/download',
+      url,
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: false,
