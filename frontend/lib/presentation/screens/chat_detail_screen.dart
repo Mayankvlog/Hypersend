@@ -132,6 +132,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return null;
   }
 
+  /// Get the appropriate menu callback based on chat type
+  VoidCallback? _getMenuCallback() {
+    if (_chat == null || _chat?.type == ChatType.saved) {
+      return null;
+    }
+    
+    switch (_chat?.type) {
+      case ChatType.channel:
+        return _showChannelOptions;
+      case ChatType.direct:
+        return _showP2pChatOptions;
+      case ChatType.group:
+      case ChatType.supergroup:
+        return _showGroupOptions;
+      default:
+        return null;
+    }
+  }
+
   void _showP2pChatOptions() {
     if (_chat?.type != ChatType.direct) return;
     
@@ -151,6 +170,171 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         ],
       ),
     );
+  }
+
+  void _showGroupOptions() {
+    if (_chat?.type != ChatType.group && _chat?.type != ChatType.supergroup) return;
+    
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => FutureBuilder<Map<String, dynamic>>(
+        future: _getGroupMuteStatus(),
+        builder: (context, snapshot) {
+          final isMuted = snapshot.data?['isMuted'] ?? false;
+          
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('Group Info'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/group/${widget.chatId}');
+                },
+              ),
+              ListTile(
+                leading: Icon(isMuted ? Icons.notifications : Icons.notifications_off_outlined),
+                title: Text(isMuted ? 'Unmute Notifications' : 'Mute Notifications'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _toggleMuteNotifications();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.exit_to_app, color: Colors.red),
+                title: const Text('Leave Group', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showLeaveGroupConfirmation();
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> _getGroupMuteStatus() async {
+    try {
+      final groupRes = await serviceProvider.apiService.getGroup(widget.chatId);
+      final group = groupRes['group'] as Map<String, dynamic>?;
+      if (group == null) return {'isMuted': false};
+      
+      final me = await serviceProvider.apiService.getMe();
+      final meId = me['id']?.toString() ?? '';
+      final mutedBy = List<String>.from(group['muted_by'] ?? []);
+      final isMuted = mutedBy.contains(meId);
+      
+      return {'isMuted': isMuted};
+    } catch (e) {
+      return {'isMuted': false};
+    }
+  }
+
+  Future<void> _toggleMuteNotifications() async {
+    try {
+      // Get current group info to check mute status
+      final groupRes = await serviceProvider.apiService.getGroup(widget.chatId);
+      final group = groupRes['group'] as Map<String, dynamic>?;
+      if (group == null) {
+        throw Exception('Group not found');
+      }
+      
+      final me = await serviceProvider.apiService.getMe();
+      final meId = me['id']?.toString() ?? '';
+      final mutedBy = List<String>.from(group['muted_by'] ?? []);
+      final isCurrentlyMuted = mutedBy.contains(meId);
+      
+      // Toggle mute status
+      await serviceProvider.apiService.muteGroup(widget.chatId, mute: !isCurrentlyMuted);
+      
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isCurrentlyMuted ? 'Notifications unmuted' : 'Notifications muted'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to toggle notifications: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showLeaveGroupConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Leave Group?'),
+        content: const Text('Are you sure you want to leave this group? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Leave', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true) {
+      try {
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(width: 16),
+                  Text('Leaving group...'),
+                ],
+              ),
+            ),
+          );
+        }
+        
+        await serviceProvider.apiService.leaveGroup(widget.chatId);
+        
+        if (mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Left group successfully'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          context.go('/chats');
+        }
+      } catch (e) {
+        if (mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to leave group: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
   }
 
   void _showAddToContactsDialog() {
@@ -1089,9 +1273,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           if (_chat != null && _chat?.type != ChatType.saved)
             IconButton(
               icon: const Icon(Icons.more_vert),
-              onPressed: _chat?.type == ChatType.channel 
-                ? _showChannelOptions 
-                : (_chat?.type == ChatType.direct ? _showP2pChatOptions : null),
+              tooltip: 'More options',
+              onPressed: _getMenuCallback(),
             ),
         ],
       ),

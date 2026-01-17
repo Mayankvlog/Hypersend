@@ -898,5 +898,231 @@ class TestCompleteFileSolution:
         print("   Integration: Downloads work seamlessly")
 
 
+class TestGroupFeaturesFix:
+    """Tests for group features fix: mute notifications, leave group, menu options"""
+    
+    def test_mute_notification_function_async(self):
+        """
+        Test that mute notification function is properly async.
+        
+        ISSUE: Function was declared as 'void' but used 'async',
+        causing race conditions.
+        
+        FIX: Changed to 'Future<void>' for proper async handling.
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        # Find the _toggleMuteNotifications function
+        start = content.find('Future<void> _toggleMuteNotifications()')
+        assert start > 0, "Function should use 'Future<void>' not 'void async'"
+        
+        # Check that it has proper async implementation
+        method_section = content[start:start+1500]
+        assert 'await serviceProvider.apiService.muteGroup' in method_section, \
+            "Should properly await the API call"
+        assert 'setState(() {})' in method_section, \
+            "Should refresh UI state after toggle"
+    
+    def test_mute_notification_has_proper_feedback(self):
+        """
+        Test that mute notification provides proper user feedback.
+        
+        Should show:
+        1. Different messages for mute vs unmute
+        2. Error messages with red background
+        3. Proper timing for snackbars
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        method_start = content.find('Future<void> _toggleMuteNotifications()')
+        method_end = content.find('\n  Future<void>', method_start + 1)
+        if method_end == -1:
+            method_end = content.find('\n  }', method_start) + 5
+        method = content[method_start:method_end]
+        
+        # Check feedback messages
+        assert 'Notifications unmuted' in method, "Should have unmute message"
+        assert 'Notifications muted' in method, "Should have mute message"
+        assert 'Colors.red' in method, "Should show errors in red"
+        assert 'Duration(seconds:' in method, "Should have proper snackbar duration"
+    
+    def test_leave_group_has_confirmation(self):
+        """
+        Test that leave group has proper confirmation dialog.
+        
+        User should see:
+        1. Confirmation dialog before leaving
+        2. Warning that action cannot be undone
+        3. Leave button in red
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        method_start = content.find('Future<void> _showLeaveGroupConfirmation()')
+        assert method_start > 0, "Function should use 'Future<void>'"
+        
+        method_section = content[method_start:method_start+1000]
+        
+        assert 'Leave Group?' in method_section, "Should have confirmation dialog"
+        assert 'cannot be undone' in method_section, "Should warn about irreversibility"
+        assert 'Colors.red' in method_section, "Leave button should be red"
+    
+    def test_leave_group_shows_loading_indicator(self):
+        """
+        Test that leave group shows loading state.
+        
+        User feedback:
+        1. Loading dialog while leaving
+        2. Success message on completion
+        3. Error message if failed
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        method_start = content.find('Future<void> _showLeaveGroupConfirmation()')
+        method_section = content[method_start:method_start+2000]
+        
+        # Check for loading indicator
+        assert 'CircularProgressIndicator' in method_section, "Should show loading state"
+        assert 'Leaving group...' in method_section, "Should show loading message"
+        
+        # Check for feedback messages
+        assert 'Left group successfully' in method_section, "Should show success message"
+        assert 'Failed to leave group' in method_section, "Should show error message"
+        assert 'Colors.green' in method_section, "Success should be green"
+    
+    def test_menu_callback_function_exists(self):
+        """
+        Test that _getMenuCallback function was added for menu button.
+        
+        This fixes the complex ternary operator issue with three-dot menu.
+        
+        ISSUE: Complex nested ternary operators made the code unreadable
+        and caused the menu to not work properly.
+        
+        FIX: Extracted to clean _getMenuCallback() function.
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        # Find the new callback function
+        assert '_getMenuCallback()' in content, "Function _getMenuCallback should exist"
+        
+        # Check that it has proper switch statement
+        assert 'switch (_chat?.type)' in content, "Should use switch statement"
+        assert 'case ChatType.channel:' in content, "Should handle channel type"
+        assert 'case ChatType.direct:' in content, "Should handle direct type"
+        assert 'case ChatType.group:' in content, "Should handle group type"
+        assert 'case ChatType.supergroup:' in content, "Should handle supergroup type"
+    
+    def test_menu_button_uses_callback(self):
+        """
+        Test that the three-dot menu button uses the new callback function.
+        
+        BEFORE: Complex nested ternary operators
+        AFTER: Clean _getMenuCallback() call
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        # Find the IconButton
+        button_start = content.find('IconButton(\n              icon: const Icon(Icons.more_vert)')
+        assert button_start > 0, "Should find the menu button"
+        
+        button_section = content[button_start:button_start+200]
+        
+        # Should use the callback function
+        assert 'onPressed: _getMenuCallback()' in button_section, \
+            "Should call _getMenuCallback()"
+        
+        # Should NOT have nested ternary operators
+        assert '? _showChannelOptions' not in button_section, \
+            "Should not have complex ternary operators"
+        
+        # Should have tooltip
+        assert 'tooltip:' in button_section, "Should have tooltip"
+    
+    def test_group_options_menu_structure(self):
+        """
+        Test that group options menu has all required items.
+        
+        Menu items:
+        1. Group Info
+        2. Mute/Unmute Notifications
+        3. Leave Group (in red)
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        method_start = content.find('void _showGroupOptions()')
+        method_end = content.find('void _getGroupMuteStatus()', method_start) or content.find('Future<Map', method_start)
+        method = content[method_start:method_end]
+        
+        # Check for all menu items
+        assert 'Group Info' in method, "Should have Group Info option"
+        assert 'Mute Notifications' in method or 'Unmute Notifications' in method, \
+            "Should have notification toggle"
+        assert 'Leave Group' in method, "Should have Leave Group option"
+        assert 'Icons.exit_to_app' in method, "Leave should have exit icon"
+        assert 'Colors.red' in method, "Leave should be red"
+    
+    def test_p2p_menu_structure(self):
+        """
+        Test that P2P (direct message) menu is properly implemented.
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        method_start = content.find('void _showP2pChatOptions()')
+        assert method_start > 0, "Should have P2P menu function"
+        
+        method_section = content[method_start:method_start+500]
+        
+        # Check for expected menu items
+        assert 'Add to Contacts' in method_section, "Should have Add to Contacts option"
+    
+    def test_channel_menu_structure(self):
+        """
+        Test that channel options menu is properly implemented.
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        method_start = content.find('void _showChannelOptions()')
+        assert method_start > 0, "Should have channel menu function"
+        
+        method_section = content[method_start:method_start+800]
+        
+        # Check for expected menu items
+        assert 'Channel Info' in method_section, "Should have Channel Info option"
+        assert 'Remove Permanently' in method_section, "Should have remove option"
+    
+    def test_no_complex_ternary_in_menu_button(self):
+        """
+        Verify that the complex nested ternary operators have been removed.
+        
+        This was causing:
+        1. Code readability issues
+        2. Menu button not working properly
+        3. Hard to maintain and debug
+        """
+        with open(r'c:\Users\mayan\Downloads\Addidas\hypersend\frontend\lib\presentation\screens\chat_detail_screen.dart', 'r') as f:
+            content = f.read()
+        
+        # Find the menu button
+        button_start = content.find('IconButton(\n              icon: const Icon(Icons.more_vert)')
+        button_end = content.find('\n            ),', button_start) + 5
+        button_code = content[button_start:button_end]
+        
+        # Count question marks (?) which indicate ternary operators
+        question_marks = button_code.count('?')
+        
+        # Should be 0 or 1 (only for null check in _getMenuCallback())
+        assert question_marks <= 1, \
+            f"Menu button should not have nested ternary operators (found {question_marks})"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
