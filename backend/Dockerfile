@@ -1,20 +1,21 @@
 FROM python:3.11-slim
 
-ENV DOCKER_BUILDKIT=1
-ENV COMPOSE_DOCKER_CLI_BUILD=1
-
-WORKDIR /app
-
-# Install system dependencies with IPv4 enforcement
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# BuildKit configuration to prevent cache conflicts
+RUN --mount=type=cache,target=/var/cache/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
     curl \
     tzdata \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies with IPv4 enforcement and timeout
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt --timeout=60 --retries=3
+ENV DOCKER_BUILDKIT=1
+ENV COMPOSE_DOCKER_CLI_BUILD=1
+
+WORKDIR /app
+
+# Install Python dependencies with cache mount
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirements.txt --timeout=60 --retries=3
 
 # Create the directory structure for proper imports
 RUN mkdir -p /app/backend
