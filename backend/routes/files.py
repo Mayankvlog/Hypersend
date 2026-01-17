@@ -2275,48 +2275,12 @@ async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
 async def download_file(
     file_id: str,
     request: Request,
-    dl: Optional[str] = Query(None),  # Download parameter for browser downloads
-    current_user: str = Depends(get_current_user_or_query)
+    current_user: str = Depends(get_current_user)
     ):
     """Download file with proper authorization"""
     
     try:
-        _log("info", f"File download request", {"user_id": current_user, "operation": "file_download", "file_id": file_id, "dl_param": dl})
-        
-        # CRITICAL FIX: Handle browser downloads with dl=1 parameter
-        # For browser downloads, we need to allow token-based authentication via query params
-        if dl == "1" and not current_user:
-            # Try to get user from query token for browser downloads
-            from urllib.parse import parse_qs
-            query_string = str(request.url.query) if hasattr(request.url, 'query') else ""
-            query_params = parse_qs(query_string)
-            token = query_params.get("token", [None])[0]
-            
-            if token:
-                try:
-                    # Validate token and extract user
-                    from security import verify_token
-                    payload = verify_token(token)
-                    current_user = payload.get("sub")
-                    _log("info", f"Browser download authenticated via token: user={current_user}", {"user_id": current_user, "operation": "file_download"})
-                except Exception as token_error:
-                    _log("warning", f"Invalid token for browser download: {token_error}", {"operation": "file_download"})
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid or expired download token"
-                    )
-            else:
-                # For dl=1 without token, still require auth
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required - use Authorization header with Bearer token"
-                )
-        elif not current_user:
-            # For non-dl=1 requests, require authentication
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required - use Authorization header with Bearer token"
-            )
+        _log("info", f"File download request", {"user_id": current_user, "operation": "file_download", "file_id": file_id})
         
         # First try to find file in files_collection (regular chat files)
         import asyncio

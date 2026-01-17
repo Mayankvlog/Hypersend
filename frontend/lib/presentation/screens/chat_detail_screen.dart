@@ -9,7 +9,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/constants/api_constants.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
@@ -651,75 +650,57 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         throw Exception('Web-only download helper called on non-web platform');
       }
 
-      // Use browser's native download capability with proper headers
-      final base = ApiConstants.serverBaseUrl; // e.g. https://zaply.in.net
-      final accessToken = serviceProvider.authService.accessToken;
-      final downloadUri = Uri.parse('$base/api/v1/${ApiConstants.filesEndpoint}/$fileId/download?dl=1&token=$accessToken');
+      // IMPORTANT:
+      // We MUST use the authorized API client (Dio) so the Authorization: Bearer <token>
+      // header is sent. The backend explicitly rejects query-parameter auth such as
+      // ?token=... for security reasons and will return 401 otherwise.
+      // Therefore we do NOT open the raw /download URL directly in the browser.
 
-      debugPrint('[FILE_WEB] Triggering browser download: $downloadUri');
-      
-      // Try native URL launcher with externalApplication mode for better browser handling
+      debugPrint('[FILE_WEB] Downloading file bytes via authorized API client for $fileName');
+
+      // Verify file exists (best-effort); ignore failures here because we will
+      // get a better error when downloading bytes.
       try {
-        final launched = await launchUrl(
-          downloadUri,
-          mode: LaunchMode.externalApplication,
-        );
-        
-        if (launched) {
-          debugPrint('[FILE_WEB] Browser download initiated via launchUrl');
-          return;
-        }
-      } catch (e) {
-        debugPrint('[FILE_WEB] launchUrl failed: $e');
+        await serviceProvider.apiService.getFileInfo(fileId);
+      } catch (infoError) {
+        debugPrint('[FILE_WEB] getFileInfo failed (continuing to bytes download): $infoError');
       }
-      
-      // Enhanced fallback: Use direct download with proper error handling
-      debugPrint('[FILE_WEB] Using enhanced download fallback for $fileName');
-      
-      try {
-        // First try to get file info to verify file exists
-        final fileInfo = await serviceProvider.apiService.getFileInfo(fileId);
-        // File info is guaranteed to be non-null by the API service
-        debugPrint('[FILE_WEB] File info retrieved: ${fileInfo['filename']}');
-        
-        // Download file bytes with proper error handling
-        final response = await serviceProvider.apiService.downloadFileBytes(fileId);
-        final data = response.data;
-        final bytes = data is Uint8List
-            ? data
-            : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
 
-        if (bytes.isEmpty) {
-          throw Exception('No data received or file is empty');
-        }
+      // Download bytes with Authorization header handled by ApiService
+      final response = await serviceProvider.apiService.downloadFileBytes(fileId);
+      final data = response.data;
+      final bytes = data is Uint8List
+          ? data
+          : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
 
-        // Create proper MIME type based on file extension
-        String mimeType = 'application/octet-stream';
-        final fileNameLower = fileName.toLowerCase();
-        if (fileNameLower.endsWith('.pdf')) {
-          mimeType = 'application/pdf';
-        } else if (fileNameLower.endsWith('.jpg') || fileNameLower.endsWith('.jpeg')) {
-          mimeType = 'image/jpeg';
-        } else if (fileNameLower.endsWith('.png')) {
-          mimeType = 'image/png';
-        } else if (fileNameLower.endsWith('.txt')) {
-          mimeType = 'text/plain';
-        } else if (fileNameLower.endsWith('.exe')) {
-          mimeType = 'application/octet-stream';
-        }
-        
-        final dataUri = Uri.dataFromBytes(bytes, mimeType: mimeType);
-
-        final secondLaunch = await launchUrl(dataUri);
-        if (!secondLaunch) {
-          throw Exception('Unable to trigger browser download');
-        }
-        debugPrint('[FILE_WEB] Triggered browser download for $fileName via enhanced blob fallback');
-      } catch (downloadError) {
-        debugPrint('[FILE_WEB_DOWNLOAD_ERROR] $downloadError');
-        // Provide user-friendly error message
-        throw Exception('Failed to download file: ${downloadError.toString()}');
+      if (bytes.isEmpty) {
+        throw Exception('No data received or file is empty');
       }
+
+      // Infer MIME type from filename so the browser knows how to handle it.
+      String mimeType = 'application/octet-stream';
+      final fileNameLower = fileName.toLowerCase();
+      if (fileNameLower.endsWith('.pdf')) {
+        mimeType = 'application/pdf';
+      } else if (fileNameLower.endsWith('.jpg') || fileNameLower.endsWith('.jpeg')) {
+        mimeType = 'image/jpeg';
+      } else if (fileNameLower.endsWith('.png')) {
+        mimeType = 'image/png';
+      } else if (fileNameLower.endsWith('.gif')) {
+        mimeType = 'image/gif';
+      } else if (fileNameLower.endsWith('.webp')) {
+        mimeType = 'image/webp';
+      } else if (fileNameLower.endsWith('.txt')) {
+        mimeType = 'text/plain';
+      }
+
+      final dataUri = Uri.dataFromBytes(bytes, mimeType: mimeType);
+      final launched = await launchUrl(dataUri);
+      if (!launched) {
+        throw Exception('Unable to open downloaded file in browser');
+      }
+
+      debugPrint('[FILE_WEB] Opened file in browser via data URI for $fileName');
     } catch (e) {
       debugPrint('[FILE_WEB_ERROR] $e');
       rethrow;

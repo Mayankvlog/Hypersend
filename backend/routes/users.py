@@ -527,7 +527,7 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
 
 
 @router.get("/search")
-async def search_users(q: str, search_type: str = None, current_user: str = Depends(get_current_user_or_query)):
+async def search_users(q: str, search_type: str = None, current_user: str = Depends(get_current_user)):
     """Search users by name, email, or username with intelligent prioritization
     
     Args:
@@ -1157,7 +1157,7 @@ async def delete_account(
 async def upload_avatar(
     file: UploadFile = File(...),
     request: Request = None,
-    current_user: str = Depends(get_current_user_or_query)
+    current_user: str = Depends(get_current_user)
 ):
     """Upload user avatar - POST endpoint (requires authentication, returns avatar_url)"""
     try:
@@ -1364,7 +1364,7 @@ async def upload_avatar(
 @router.post("/avatar-upload/")
 async def upload_avatar_alt(
     file: UploadFile = File(...),
-    current_user: str = Depends(get_current_user_or_query)
+    current_user: str = Depends(get_current_user)
 ):
     """Alternative avatar upload endpoint - same as /avatar/ but with different name"""
     try:
