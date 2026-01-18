@@ -81,7 +81,6 @@ backend/
 - Flutter SDK 3.0+
 - Python 3.8+
 - MongoDB 5.0+
-- Node.js (for development tools)
 
 ### Installation
 
