@@ -81,7 +81,6 @@ backend/
 - Flutter SDK 3.0+
 - Python 3.8+
 - MongoDB 5.0+
-- Node.js (for development tools)
 
 ### Installation
 
@@ -648,4 +647,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 📚 [Documentation](http://localhost:8000/docs)  
 - 🐛 [Report Issues](https://github.com/zaply/zaply/issues)
 - 💬 [Discussions](https://github.com/zaply/zaply/discussions)
-- 📧 [Contact](mailto:support@localhost)
+- 📧 [Contact](mailto:support@zaply.in.net)
