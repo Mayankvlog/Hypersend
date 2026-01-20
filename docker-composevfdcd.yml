@@ -21,17 +21,14 @@ services:
       - sh
       - -c
       - |
-        # Install openssl for certificate generation
-        apk add --no-cache openssl;
-        
-        if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
+          if [ ! -d '/etc/letsencrypt/live/localhost' ]; then
           echo '[NGINX] Creating self-signed certificate for initial deployment...';
-          mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
-          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
-          cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
+          mkdir -p /etc/letsencrypt/live/localhost /etc/letsencrypt/private;
+          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/localhost/fullchain.pem -days 365 -nodes -subj '/CN=localhost';
+          cp /etc/letsencrypt/live/localhost/fullchain.pem /etc/letsencrypt/live/localhost/chain.pem;
           echo '[NGINX] Self-signed certificate created';
-        fi;
-        nginx -g 'daemon off;'
+           fi;
+           nginx -g 'daemon off;'
     depends_on:
       backend:
         condition: service_healthy
@@ -62,11 +59,6 @@ services:
       - NGINX_ERROR_PAGE_TIMEOUT=30  # Error page timeout
       - NGINX_MAX_RETRIES=7  # Maximum retry attempts
       - NGINX_RETRY_DELAY=5  # Delay between retries
-      # Production domain configuration
-      - DOMAIN_NAME=zaply.in.net
-      - SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
-      - SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
-
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
@@ -129,15 +121,15 @@ services:
       CHUNK_SIZE: 33554432
       MAX_PARALLEL_CHUNKS: 4
       FILE_RETENTION_HOURS: 0
-      DEBUG: "False"
+      DEBUG: "True"
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
       
       # ===== CORS CONFIGURATION =====
-      # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
+# PROD: localhost:8000 (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
       # Structure: HTTPS production first, then Docker HTTP, then Dev HTTP
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,http://localhost:3000,http://127.0.0.1:3000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8000,http://localhost:3000}
       
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
@@ -180,8 +172,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # SECURITY: Use relative URL for nginx proxy routing in production
-        API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+        # SECURITY: Always use HTTPS for production API calls
+API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+        # SECURITY: SSL certificate validation default = true (PRODUCTION SECURE)
+        # DEVELOPMENT: Override with VALIDATE_CERTIFICATES=false for self-signed certs
+        # WARNING: Allowing SSL bypass in production exposes to MITM attacks!
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     container_name: hypersend_frontend
     restart: unless-stopped
@@ -198,7 +193,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
-    logging:
+      logging:
       driver: "json-file"
       options:
         max-size: "10m"

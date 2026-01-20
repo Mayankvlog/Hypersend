@@ -125,7 +125,18 @@ class ApiService {
           }
           return handler.next(options);
         },
-          onError: (error, handler) {
+        onError: (error, handler) async {
+          // PERMANENT FIX: Implement automatic retry with exponential backoff for connection errors
+          // This ensures transient errors (server starting up, temporary network issues) don't cause permanent failures
+          
+          final isConnectionError = error.type == DioExceptionType.connectionError ||
+                                   error.type == DioExceptionType.connectionTimeout ||
+                                   error.type == DioExceptionType.receiveTimeout;
+          
+          final isRetryable = isConnectionError ||
+                             (error.response?.statusCode != null && 
+                              [502, 503, 504].contains(error.response?.statusCode));
+          
           // Log network errors with detailed info
           if (error.response?.statusCode == null) {
             _log('[API_ERROR] Network/Connection error: ${error.message}');
@@ -133,8 +144,99 @@ class ApiService {
             _log('[API_ERROR] Method: ${error.requestOptions.method}');
             _log('[API_ERROR] Type: ${error.type}');
             _log('[API_ERROR] Backend unreachable - ensure server is running');
+            
+            // PERMANENT FIX: Retry with exponential backoff (max 3 attempts with 2s, 4s, 8s delays)
+            if (isRetryable) {
+              int retryCount = (error.requestOptions.extra['retryCount'] as int?) ?? 0;
+              const maxRetries = 3;
+              
+              if (retryCount < maxRetries) {
+                retryCount++;
+                final delaySeconds = pow(2, retryCount).toInt(); // 2s, 4s, 8s
+                
+                _log('[API_RETRY] Attempt $retryCount/$maxRetries - Retrying in ${delaySeconds}s...');
+                await Future.delayed(Duration(seconds: delaySeconds));
+                
+                // Update retry count and retry
+                error.requestOptions.extra['retryCount'] = retryCount;
+                try {
+                  final response = await _dio.request<dynamic>(
+                    error.requestOptions.path,
+                    cancelToken: error.requestOptions.cancelToken,
+                    data: error.requestOptions.data,
+                    onReceiveProgress: error.requestOptions.onReceiveProgress,
+                    onSendProgress: error.requestOptions.onSendProgress,
+                    queryParameters: error.requestOptions.queryParameters,
+                    options: Options(
+                      method: error.requestOptions.method,
+                      sendTimeout: error.requestOptions.sendTimeout,
+                      receiveTimeout: error.requestOptions.receiveTimeout,
+                      extra: error.requestOptions.extra,
+                      headers: error.requestOptions.headers,
+                      responseType: error.requestOptions.responseType,
+                      contentType: error.requestOptions.contentType,
+                      validateStatus: error.requestOptions.validateStatus,
+                      receiveDataWhenStatusError: error.requestOptions.receiveDataWhenStatusError,
+                      followRedirects: error.requestOptions.followRedirects,
+                      maxRedirects: error.requestOptions.maxRedirects,
+                      persistentConnection: error.requestOptions.persistentConnection,
+                    ),
+                  );
+                  return handler.resolve(response);
+                } catch (e) {
+                  _log('[API_RETRY] Retry failed: $e');
+                  return handler.next(error);
+                }
+              } else {
+                _log('[API_RETRY] Max retries ($maxRetries) reached - giving up');
+              }
+            }
           } else {
             _log('[API_ERROR] HTTP ${error.response?.statusCode}: ${error.message}');
+            
+            // PERMANENT FIX: Retry 502/503/504 server errors with backoff
+            if (isRetryable && error.response?.statusCode != null) {
+              int retryCount = (error.requestOptions.extra['retryCount'] as int?) ?? 0;
+              const maxRetries = 3;
+              
+              if (retryCount < maxRetries) {
+                retryCount++;
+                final delaySeconds = pow(2, retryCount).toInt();
+                
+                _log('[API_RETRY] Server error ${error.response?.statusCode} - Attempt $retryCount/$maxRetries - Retrying in ${delaySeconds}s...');
+                await Future.delayed(Duration(seconds: delaySeconds));
+                
+                error.requestOptions.extra['retryCount'] = retryCount;
+                try {
+                  final response = await _dio.request<dynamic>(
+                    error.requestOptions.path,
+                    cancelToken: error.requestOptions.cancelToken,
+                    data: error.requestOptions.data,
+                    onReceiveProgress: error.requestOptions.onReceiveProgress,
+                    onSendProgress: error.requestOptions.onSendProgress,
+                    queryParameters: error.requestOptions.queryParameters,
+                    options: Options(
+                      method: error.requestOptions.method,
+                      sendTimeout: error.requestOptions.sendTimeout,
+                      receiveTimeout: error.requestOptions.receiveTimeout,
+                      extra: error.requestOptions.extra,
+                      headers: error.requestOptions.headers,
+                      responseType: error.requestOptions.responseType,
+                      contentType: error.requestOptions.contentType,
+                      validateStatus: error.requestOptions.validateStatus,
+                      receiveDataWhenStatusError: error.requestOptions.receiveDataWhenStatusError,
+                      followRedirects: error.requestOptions.followRedirects,
+                      maxRedirects: error.requestOptions.maxRedirects,
+                      persistentConnection: error.requestOptions.persistentConnection,
+                    ),
+                  );
+                  return handler.resolve(response);
+                } catch (e) {
+                  _log('[API_RETRY] Retry failed: $e');
+                  return handler.next(error);
+                }
+              }
+            }
             
             // Special handling for 405 Method Not Allowed to prevent infinite loops
             if (error.response?.statusCode == 405) {

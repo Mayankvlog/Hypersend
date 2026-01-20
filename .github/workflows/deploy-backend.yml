@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/hypersend-backend
+      IMAGE_NAME: hypersend-backend
 
     steps:
       - name: Checkout repo
@@ -42,32 +42,22 @@ jobs:
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
-        
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        timeout-minutes: 3
 
       - name: Build & push backend image
         uses: docker/build-push-action@v6
         with:
           context: ./backend
           file: ./backend/Dockerfile
-          push: true
+          push: true  # Push to registry
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:latest
-          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:latest,mode=max
+          cache-from: type=registry,mode=max
+          cache-to: type=registry,mode=max
           build-args: |
-            BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
             BUILDKIT_INLINE_CACHE=1
-        timeout-minutes: 35
-        env:
-          DOCKER_CLIENT_TIMEOUT: 600
-          COMPOSE_HTTP_TIMEOUT: 600
+            BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+        timeout-minutes: 30
 
       - name: Deploy to VPS (Docker Compose, password SSH)
         uses: appleboy/ssh-action@v1.2.0
@@ -75,342 +65,54 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
-          timeout: 30m
-          command_timeout: 30m
-          script_stop: false
+          timeout: 20m
+          command_timeout: 20m
+          script_stop: true
           script: |
-            # Initialize exit status variable
-            EXIT_STATUS=0
+            # Use optimized deployment scripts with production environment
+            echo "📋 Starting deployment with optimized scripts..."
             
-            # Function to ensure Docker daemon is running
-            ensure_docker() {
-              local max_retries=3
-              local attempt=0
-              
-              while [ $attempt -lt $max_retries ]; do
-                if docker --version >/dev/null 2>&1; then
-                  return 0
-                fi
-                
-                echo "⚠️  Docker not responding, restarting (attempt $((attempt + 1))/$max_retries)..."
-                sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
-                sleep 10
-                attempt=$((attempt + 1))
-              done
-              
-              return 1
-            }
+            # Set production environment variables for zaply.in.net
+            export API_BASE_URL=https://zaply.in.net/api/v1
+            export APP_URL=https://zaply.in.net
+            export DEBUG=false
+            export DOMAIN_NAME=zaply.in.net
+            export SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
+            export SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
+            export CORS_ORIGINS='["https://zaply.in.net", "https://www.zaply.in.net", "http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8000", "http://127.0.0.1:8000"]'
+            export EMAIL_FROM=noreply@zaply.in.net
+            export SENDER_NAME=Zaply Support
+            export RATE_LIMIT_ENABLED=true
+            export USE_MOCK_DB=false
             
-            # Navigate to project directory
-            cd /hypersend/Hypersend 2>/dev/null
-            if [ $? -ne 0 ]; then
-              echo "❌ Directory /hypersend/Hypersend not found"
-              exit 1
-            fi
-
-            echo "📦 Starting backend deployment..."
-
-            # Ensure Docker daemon is running from the start
-            echo "🔍 Ensuring Docker daemon is running..."
-            if ! ensure_docker; then
-              echo "❌ Failed to ensure Docker daemon is running"
-              exit 1
-            fi
-            echo "✅ Docker daemon is running"
-
-            # Clean up Docker system resources to prevent daemon issues
-            echo "🧹 Aggressive cleanup of Docker resources..."
-            docker container prune -af --filter "until=0h" 2>/dev/null || true
-            docker image prune -af 2>/dev/null || true
-            docker volume prune -f 2>/dev/null || true
-            docker network prune -f 2>/dev/null || true
-            
-            # Show Docker disk usage before starting
-            echo "📊 Docker disk usage before deployment:"
-            docker system df 2>/dev/null || echo "  (could not retrieve)"
-            
-            sleep 2
-
-            # Safely sync repo with remote without creating merge commits
-            echo "🔄 Syncing repository..."
-            timeout 60 git fetch origin main 2>/dev/null
-            if [ $? -ne 0 ]; then
-              echo "⚠️  Git fetch with timeout failed, retrying..."
-              sleep 10
-              git fetch origin main
-              if [ $? -ne 0 ]; then
-                echo "❌ Git fetch failed"
-                EXIT_STATUS=1
-              fi
-            fi
-            
-            if [ $EXIT_STATUS -eq 0 ]; then
-              git reset --hard origin/main 2>/dev/null || {
-                echo "⚠️  Git reset failed, continuing anyway"
-              }
-            fi
-
-            # Pull latest backend image with retry logic and Docker health checks
-            echo "📥 Pulling backend image (with retry logic)..."
-            
-            # Ensure Docker is still running
-            if ! ensure_docker; then
-              echo "❌ Docker daemon became unavailable before image pull"
-              EXIT_STATUS=1
-            fi
-            
-            if [ $EXIT_STATUS -eq 0 ]; then
-              max_pull_attempts=2
-              pull_attempt=0
-              pull_success=0
-              
-              while [ $pull_attempt -lt $max_pull_attempts ]; do
-                # Check Docker before each pull attempt
-                if ! docker --version >/dev/null 2>&1; then
-                  echo "⚠️  Docker not accessible, attempting restart..."
-                  sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
-                  sleep 5
-                fi
-                
-                echo "📥 Attempting image pull (attempt $((pull_attempt + 1))/$max_pull_attempts)..."
-                timeout 180 docker compose pull backend 2>&1 | tee /tmp/pull_output.log
-                PULL_EXIT=${PIPESTATUS[0]}
-                
-                # Check if Docker crashed during pull
-                if ! docker --version >/dev/null 2>&1; then
-                  echo "⚠️  Docker daemon crashed during image pull, restarting..."
-                  sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
-                  sleep 10
-                fi
-                
-                if [ $PULL_EXIT -eq 0 ]; then
-                  echo "✅ Backend image pull completed successfully"
-                  pull_success=1
-                  break
-                elif [ $PULL_EXIT -eq 124 ]; then
-                  echo "⚠️  Image pull timed out (timeout exit code 124), will retry..."
-                fi
-                
-                pull_attempt=$((pull_attempt + 1))
-                if [ $pull_attempt -lt $max_pull_attempts ]; then
-                  echo "⚠️  Image pull attempt $pull_attempt/$max_pull_attempts failed, waiting 15s..."
-                  sleep 15
-                fi
-              done
-
-              if [ $pull_success -eq 0 ]; then
-                echo "⚠️  Could not pull new image after $max_pull_attempts attempts, using existing local image..."
-              fi
-            fi
-
-            # Targeted cleanup of backend resources only (safe approach)
-            if [ $EXIT_STATUS -eq 0 ]; then
-              echo "🧹 Cleaning up backend-specific resources..."
-              sleep 2
-              # Only remove backend containers and volumes, not all system volumes
-              docker compose down -v --remove-orphans 2>/dev/null || true
-              sleep 2
-              # Clean up only dangling images and containers (no --volumes flag for safety)
-              docker image prune -f 2>/dev/null || true
-              docker container prune -f 2>/dev/null || true
-              sleep 2
-              
-              # Ensure Docker is still healthy
-              echo "🔍 Verifying Docker daemon health after image pull..."
-              if ! ensure_docker; then
-                echo "❌ Docker daemon is not responding after image pull"
-                EXIT_STATUS=1
-              else
-                echo "✅ Docker daemon confirmed healthy"
-              fi
-            fi
-
-            # Stop and clean up existing containers
-            if [ $EXIT_STATUS -eq 0 ]; then
-              echo "⏹️  Stopping backend service..."
-              docker compose stop backend 2>/dev/null || true
-              sleep 1
-              docker compose down 2>/dev/null || true
-              sleep 2
-            fi
-
-            # Clean up dangling resources
-            echo "🧹 Cleaning up dangling resources..."
-            docker container prune -f --filter "until=1h" 2>/dev/null || true
-            docker image prune -f 2>/dev/null || true
-
-            # Start the backend service with retry logic
-            if [ $EXIT_STATUS -eq 0 ]; then
-              echo "🚀 Starting backend service..."
-              
-              # Ensure Docker is accessible before starting
-              if ! ensure_docker; then
-                echo "❌ Docker daemon not accessible before starting containers"
-                EXIT_STATUS=1
-              fi
-              
-              if [ $EXIT_STATUS -eq 0 ]; then
-                start_attempt=0
-                max_start_attempts=3
-                start_success=0
-                
-                while [ $start_attempt -lt $max_start_attempts ]; do
-                  # Check Docker health before each attempt
-                  if ! docker --version >/dev/null 2>&1; then
-                    echo "⚠️  Docker not accessible on attempt $start_attempt, restarting..."
-                    sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
-                    sleep 10
-                  fi
-                  
-                  echo "🚀 Start attempt $((start_attempt + 1))/$max_start_attempts..."
-                  docker compose up -d backend 2>&1 | tee /tmp/start_output.log
-                  START_EXIT=${PIPESTATUS[0]}
-                  
-                  if [ $START_EXIT -eq 0 ]; then
-                    echo "✅ Backend container started successfully"
-                    start_success=1
-                    break
-                  else
-                    echo "⚠️  Docker compose up failed with exit code $START_EXIT"
-                    if grep -q "Cannot connect to the Docker daemon" /tmp/start_output.log; then
-                      echo "⚠️  Docker daemon not accessible, will restart before retry"
-                    fi
-                  fi
-                  
-                  start_attempt=$((start_attempt + 1))
-                  if [ $start_attempt -lt $max_start_attempts ]; then
-                    echo "⚠️  Start attempt failed, retrying in 10s..."
-                    sleep 10
-                  fi
-                done
-
-                if [ $start_success -eq 0 ]; then
-                  echo "❌ Failed to start backend after $max_start_attempts attempts"
-                  echo "Last start output:"
-                  cat /tmp/start_output.log 2>/dev/null || echo "(no output)"
-                  docker compose logs backend 2>/dev/null || echo "Could not retrieve logs"
-                  EXIT_STATUS=1
-                fi
-              fi
-            fi
-
-            # Wait for container to stabilize (backend needs 180s start period)
-            if [ $EXIT_STATUS -eq 0 ]; then
-              echo "⏳ Waiting for backend container to stabilize..."
+            if [ -f "/hypersend/Hypersend/deploy-all.sh" ]; then
+              echo "🔄 Using full deployment script..."
+              chmod +x /hypersend/Hypersend/deploy-all.sh
+              /hypersend/Hypersend/deploy-all.sh
+            elif [ -f "/hypersend/Hypersend/deploy-backend.sh" ]; then
+              echo "🔄 Using backend deployment script..."
+              chmod +x /hypersend/Hypersend/deploy-backend.sh
+              /hypersend/Hypersend/deploy-backend.sh
+            else
+              echo "❌ Deployment scripts not found, using manual deployment..."
+              set -e
+              cd /hypersend/Hypersend
+              sudo systemctl start docker || true
+              docker compose down --remove-orphans 2>/dev/null || true
+              docker compose up -d --build backend
               sleep 30
-
-              # Wait additional time for backend start period
-              echo "⏳ Allowing backend 180s start period to complete..."
-              sleep 60
               
-              # Check if backend container is actually running
-              echo "🔍 Checking backend container status..."
-              
-              # Ensure Docker is accessible before checking container
-              if ! ensure_docker; then
-                echo "❌ Docker daemon not accessible before container check"
-                EXIT_STATUS=1
-              fi
-              
-              if [ $EXIT_STATUS -eq 0 ]; then
-                container_running=$(docker compose ps -q backend | xargs docker inspect --format='{{.State.Running}}' 2>/dev/null || echo "false")
-                echo "Container running: $container_running"
-                
-                if [ "$container_running" != "true" ]; then
-                  echo "❌ Backend container is not running!"
-                  echo "Container status:"
-                  docker compose ps backend 2>/dev/null || true
-                  echo "Container logs:"
-                  docker compose logs backend --tail 30 2>/dev/null || true
-                  EXIT_STATUS=1
+              # Health check with retry (production endpoint)
+              for i in {1..20}; do
+                if curl -sf https://zaply.in.net/api/v1/health >/dev/null 2>&1; then
+                  echo "✅ Backend deployment completed!"
+                  exit 0
                 fi
-              fi
-
-              # Check backend health
-              if [ $EXIT_STATUS -eq 0 ]; then
-                echo "🏥 Checking backend health..."
-                max_health_attempts=30
-                health_attempt=0
-                health_success=0
-                
-                while [ $health_attempt -lt $max_health_attempts ]; do
-                  # Verify Docker is still accessible during health checks
-                  if ! docker --version >/dev/null 2>&1; then
-                    echo "⚠️  Docker not accessible during health check, restarting..."
-                    sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
-                    sleep 5
-                    continue
-                  fi
-                  
-                  echo "🔍 Health check attempt $((health_attempt + 1))/$max_health_attempts..."
-                  
-                  # Try container health check first
-                  echo "  Trying internal health check..."
-                  if docker compose exec -T backend curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
-                    echo "✅ Backend is healthy and responding (internal check)"
-                    health_success=1
-                    break
-                  else
-                    echo "  ❌ Internal health check failed"
-                  fi
-                  
-                  # Fallback: Check external health
-                  echo "  Trying external health check..."
-                  if curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
-                    echo "✅ Backend is healthy and responding (external check)"
-                    health_success=1
-                    break
-                  else
-                    echo "  ❌ External health check failed"
-                  fi
-                  
-                  # Fallback: Check if container is running and not in unhealthy state
-                  echo "  Checking container health status..."
-                  container_status=$(docker compose ps -q backend | xargs docker inspect --format='{{.State.Health.Status}}' 2>/dev/null || echo "unknown")
-                  echo "  Container health status: $container_status"
-                  if [ "$container_status" = "healthy" ]; then
-                    echo "✅ Backend container reports healthy status"
-                    health_success=1
-                    break
-                  fi
-                  
-                  # Additional debugging every 5 attempts
-                  if [ $((health_attempt % 5)) -eq 0 ]; then
-                    echo "  📊 Debug info (attempt $((health_attempt + 1))):"
-                    docker compose ps backend 2>/dev/null || true
-                  fi
-                  
-                  health_attempt=$((health_attempt + 1))
-                  if [ $health_attempt -lt $max_health_attempts ]; then
-                    echo "⏳ Health check attempt $health_attempt/$max_health_attempts, retrying in 2s..."
-                    sleep 2
-                  fi
-                done
-
-                if [ $health_success -eq 0 ]; then
-                  echo "⚠️  Backend health check timed out after 1 minute"
-                  echo "Container status:"
-                  docker compose ps backend 2>/dev/null || true
-                  echo "Container health status:"
-                  docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' backend 2>/dev/null || true
-                  echo "Recent logs:"
-                  docker compose logs backend --tail 50 2>/dev/null || true
-                  echo "Container inspect:"
-                  docker compose ps -q backend | xargs docker inspect --format='{{json .State}}' 2>/dev/null || true
-                  echo "Network info:"
-                  docker network ls 2>/dev/null || true
-                  echo "Port binding:"
-                  docker compose ps --format '{{.Name}}: {{.Ports}}' backend 2>/dev/null || true
-                  EXIT_STATUS=1
-                else
-                  echo "✨ Backend deployment completed successfully!"
-                fi
-              fi
-            fi
-
-            # Exit with final status
-            exit $EXIT_STATUS
-
-
-
+                echo "⏳ Health check $i/20, waiting 3s..."
+                sleep 3
+              done
+              
+              echo "❌ Backend health check failed"
+              docker compose logs backend --tail 50 2>/dev/null || true
+              exit 1
             

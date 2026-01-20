@@ -644,8 +644,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **Quick Links**
-- 🌐 [Live Demo](https://zaply.in.net)
-- 📚 [Documentation](https://docs.zaply.in.net)  
+- 🌐 [Local Demo](http://localhost:8000)
+- 📚 [Documentation](http://localhost:8000/docs)  
 - 🐛 [Report Issues](https://github.com/zaply/zaply/issues)
 - 💬 [Discussions](https://github.com/zaply/zaply/discussions)
-- 📧 [Contact](mailto:support@zaply.in.net)
+- 📧 [Contact](mailto:support@localhost)

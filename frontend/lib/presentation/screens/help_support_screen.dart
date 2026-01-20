@@ -75,8 +75,8 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
                    _buildContactTile(
                      icon: Icons.email_outlined,
                      title: 'Email',
-subtitle: 'support@zaply.in.net',
-                      onTap: () => _launchEmail(context, 'support@zaply.in.net'),
+subtitle: 'support@localhost',
+                      onTap: () => _launchEmail(context, 'support@localhost'),
                     ),
                    const SizedBox(height: 12),
                    _buildContactTile(
@@ -89,8 +89,8 @@ subtitle: 'support@zaply.in.net',
                    _buildContactTile(
                       icon: Icons.language_outlined,
                       title: 'Community Forum',
-subtitle: 'discuss.zaply.in.net',
-                       onTap: () => _launchUrl(context, 'https://discuss.zaply.in.net'),
+subtitle: 'localhost:3000',
+                        onTap: () => _launchUrl(context, 'http://localhost:3000'),
                     ),
                  ],
               ),

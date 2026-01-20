@@ -122,7 +122,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
               client_host = request.client.host if request.client else ''
               host_header = request.headers.get('host', '').lower()
               localhost_patterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', 'zaply_frontend', 'zaply_backend', 'frontend', 'backend']
-              production_patterns = ['zaply.in.net', 'www.zaply.in.net']
+              production_patterns = ['localhost:8000', 'localhost:3000']
               return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
 
             # CRITICAL FIX: Less aggressive security patterns to avoid false positives
@@ -208,7 +208,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 
                 # Also check for production domain in host header
                 host_header = request.headers.get('host', '').lower()
-                production_patterns = ['zaply.in.net', 'www.zaply.in.net']
+                production_patterns = ['zaply.in.net', 'www.zaply.in.net', 'localhost:8000', 'localhost:3000']
                 
                 return (any(pattern in client_host for pattern in localhost_patterns) or
                         any(pattern in host_header for pattern in production_patterns))
@@ -226,7 +226,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     continue
                     
                 # Skip production domain patterns
-                if pattern in ['zaply.in.net'] and 'zaply.in.net' in url_lower:
+                if pattern in ['localhost:8000', 'zaply.in.net'] and ('localhost:8000' in url_lower or 'zaply.in.net' in url_lower):
                     continue
                     
                 if pattern in url_lower and not is_internal:
@@ -273,7 +273,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     # Only allow exact trusted hostnames
                     allowed_hostnames = {
                         'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend',
-                        'zaply.in.net', 'www.zaply.in.net', 'localhost', '127.0.0.1', '::1'
+                        'zaply.in.net', 'www.zaply.in.net', 'localhost:8000', 'localhost:3000', 'localhost', '127.0.0.1', '::1'
                     }
                     
                     # Reject IP addresses and link-local ranges
@@ -315,7 +315,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         continue
                         
                     # Skip production domain patterns  
-                    if pattern in ['zaply.in.net'] and 'zaply.in.net' in header_value:
+                    if pattern in ['localhost:8000', 'zaply.in.net'] and ('localhost:8000' in header_value or 'zaply.in.net' in header_value):
                         continue
                         
                     if pattern in header_value:
@@ -637,7 +637,11 @@ async def lifespan(app: FastAPI):
         if cache_connected:
             print("[CACHE] Redis cache initialized successfully")
         else:
-            print("[CACHE] Redis cache not available, using in-memory fallback")
+            # Only show warning in debug mode
+            if settings.DEBUG:
+                print("[CACHE] Redis cache not available, using in-memory fallback")
+            else:
+                print("[CACHE] Using in-memory cache (Redis not configured)")
         
         # Validate production settings
         try:
@@ -1063,7 +1067,9 @@ if settings.DEBUG:
         "http://localhost:3000",
         "http://localhost:8000", 
         "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:8000",
+        "https://zaply.in.net",
+        "https://www.zaply.in.net"
     ]
     
     # Merge origins without duplicates
@@ -1090,7 +1096,7 @@ async def handle_options_request(full_path: str, request: Request):
     Handle CORS preflight OPTIONS requests.
     These must succeed without authentication for CORS to work in browsers.
     SECURITY: Use exact regex matching to prevent origin bypass attacks
-    (e.g., https://evildomain.zaply.in.net would bypass substring matching)
+    (e.g., https://evildomain.localhost would bypass substring matching)
     """
     import re
     origin = request.headers.get("Origin")
@@ -1109,17 +1115,17 @@ async def handle_options_request(full_path: str, request: Request):
             allowed_origins.extend([
                 "https://zaply.in.net",
                 "https://www.zaply.in.net",
+                "http://localhost:8000",
+                "http://localhost:3000",
             ])
         
         # Development environments
         if settings.DEBUG:
             allowed_origins.extend([
-                "http://zaply.in.net",
-                "https://zaply.in.net",
-                "http://localhost:3000",
-                "https://localhost:3000",
                 "http://localhost:8000",
-                "https://localhost:8000",
+                "http://localhost:3000",
+                "https://zaply.in.net",
+                "https://www.zaply.in.net",
                 "http://127.0.0.1:3000",
                 "https://127.0.0.1:3000",
                 "http://127.0.0.1:8000", 
@@ -1129,7 +1135,7 @@ async def handle_options_request(full_path: str, request: Request):
                 "http://[::1]:8000",
                 "https://[::1]:8000",
                 # Docker environments
-"http://zaply_frontend:3000",
+                "http://zaply_frontend:3000",
                 "http://zaply_backend:8000",
                 "http://frontend:3000",
                 "http://backend:8000",

@@ -163,18 +163,18 @@ def _is_valid_origin_format(origin: str) -> bool:
 def get_safe_cors_origin(request_origin: Optional[str]) -> str:
     """Get safe CORS origin with validation - NO code duplication"""
     if not request_origin:
-        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
+        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net"
     
     # Validate origin format strictly
     if not _is_valid_origin_format(request_origin):
-        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
+        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net"
     
     # Check if origin is explicitly in allowed list
     if request_origin in settings.CORS_ORIGINS:
         return request_origin
     
     # Return first allowed origin as safe fallback
-    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
+    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net"
 
 # OPTIONS handlers for CORS preflight requests
 @router.options("/register")

@@ -27,7 +27,10 @@ def _import_redis_asyncio():
 redis = _import_redis_asyncio()
 REDIS_AVAILABLE = redis is not None
 if not REDIS_AVAILABLE:
-    logging.warning("Redis not available, using mock cache")
+    # Only show warning in debug mode or when explicitly requested
+    import os
+    if os.getenv('DEBUG', '').lower() in ('true', '1', 'yes') or os.getenv('REDIS_DEBUG', '').lower() in ('true', '1', 'yes'):
+        logging.warning("Redis not available, using mock cache")
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,10 @@ class RedisCache:
     async def connect(self, host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None):
         """Connect to Redis server"""
         if not REDIS_AVAILABLE:
-            logger.warning("Redis not installed, using mock cache")
+            # Only log if debug mode is enabled
+            import os
+            if os.getenv('DEBUG', '').lower() in ('true', '1', 'yes') or os.getenv('REDIS_DEBUG', '').lower() in ('true', '1', 'yes'):
+                logger.warning("Redis not installed, using mock cache")
             return False
             
         try:
@@ -64,7 +70,10 @@ class RedisCache:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
+            # Only log connection errors in debug mode
+            import os
+            if os.getenv('DEBUG', '').lower() in ('true', '1', 'yes') or os.getenv('REDIS_DEBUG', '').lower() in ('true', '1', 'yes'):
+                logger.error(f"Failed to connect to Redis: {e}")
             self.is_connected = False
             return False
     
@@ -270,17 +279,22 @@ async def init_cache():
     redis_host = getattr(settings, 'REDIS_HOST', 'localhost')
     redis_port = getattr(settings, 'REDIS_PORT', 6379)
     redis_password = getattr(settings, 'REDIS_PASSWORD', None)
+    redis_db = getattr(settings, 'REDIS_DB', 0)
     
     connected = await cache.connect(
         host=redis_host,
         port=redis_port,
-        password=redis_password
+        password=redis_password if redis_password else None,
+        db=redis_db
     )
     
     if connected:
         logger.info("Redis cache initialized successfully")
     else:
-        logger.warning("Redis cache not available, using in-memory fallback")
+        # Only show warning in debug mode or when explicitly requested
+        import os
+        if os.getenv('DEBUG', '').lower() in ('true', '1', 'yes') or os.getenv('REDIS_DEBUG', '').lower() in ('true', '1', 'yes'):
+            logger.warning("Redis cache not available, using in-memory fallback")
     
     return connected
 

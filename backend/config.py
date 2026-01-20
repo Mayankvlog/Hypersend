@@ -36,7 +36,7 @@ class Settings:
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     
-    # Try to get MongoDB URI from environment first, fallback to local development setup
+    # Docker environment takes priority - always use internal MongoDB in Docker
     if _IS_DOCKER:
         # Construct MONGODB_URI with proper URL encoding for special characters in password
         from urllib.parse import quote_plus
@@ -47,6 +47,7 @@ class Settings:
         print(f"[CONFIG] MongoDB connection: docker internal")
     elif os.getenv("MONGODB_URI"):
         MONGODB_URI: str = os.getenv("MONGODB_URI")
+        print(f"[CONFIG] MongoDB connection: from environment")
     else:
         # Construct MONGODB_URI with proper URL encoding for special characters in password
         from urllib.parse import quote_plus
@@ -54,7 +55,7 @@ class Settings:
         # Connect directly to target database with admin authentication
         # Include replicaSet and retry logic for VPS deployments
         MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false"
-        print(f"[CONFIG] MongoDB connection: authenticated")
+        print(f"[CONFIG] MongoDB connection: constructed")
     
     # Log connection info without exposing credentials
     if '@' in MONGODB_URI:
@@ -125,6 +126,13 @@ class Settings:
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() in ("true", "1", "yes")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
     
+    # Redis Configuration
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    REDIS_URL: str = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+    
     # Email service validation with enhanced checking
     EMAIL_SERVICE_ENABLED: bool = bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and EMAIL_FROM)
     
@@ -169,7 +177,7 @@ class Settings:
     # ENHANCED: Load from environment with secure defaults
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
-        "https://zaply.in.net",       # Production domain (primary)
+        "https://zaply.in.net",         # Production domain (primary)
         "https://www.zaply.in.net",   # Production domain with www
         "http://hypersend_frontend:80",  # Docker internal: frontend container
         "http://hypersend_frontend",     # Docker internal: frontend (port 80 default)

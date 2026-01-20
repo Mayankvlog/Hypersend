@@ -61,9 +61,17 @@ class UserCreate(BaseModel):
         if not v or not v.strip():
             raise ValueError('Email is required')
         v = v.strip().lower()
-        # Email validation
-        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+        # Email validation - reject emails starting/ending with dots or having consecutive dots
+        if not re.match(r'^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
             raise ValueError('Invalid email format')
+        # Additional checks
+        if v.startswith('.') or v.endswith('.'):
+            raise ValueError('Invalid email format')
+        if '..' in v:
+            raise ValueError('Invalid email format')
+        # Length check
+        if len(v) > 254:
+            raise ValueError('Email is too long')
         return v
     
     @field_validator('password')
@@ -73,7 +81,7 @@ class UserCreate(BaseModel):
             raise ValueError('Password is required')
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters')
-        # Check password strength
+        # Check password strength requirements
         has_upper = any(c.isupper() for c in v)
         has_lower = any(c.islower() for c in v)
         has_digit = any(c.isdigit() for c in v)
