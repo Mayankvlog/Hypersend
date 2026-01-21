@@ -1255,10 +1255,14 @@ async def forgot_password(request: dict) -> dict:
                     expires_delta=timedelta(hours=1)
                 )
                 
-                # Store JTI in database for revocation tracking
+                # Generate simple reset token for easier use
+                simple_reset_token = secrets.token_urlsafe(32)
+                
+                # Store both tokens in database for revocation tracking
                 try:
                     await reset_tokens_collection().insert_one({
                         "jti": jti,
+                        "simple_token": simple_reset_token,
                         "user_id": user["_id"],
                         "email": user["email"],
                         "token_type": "password_reset",
@@ -1268,10 +1272,11 @@ async def forgot_password(request: dict) -> dict:
                         "ip_address": request.get("client_ip", "unknown") if isinstance(request, dict) else "unknown"
                     })
                 except Exception as e:
-                    auth_log(f"Warning: Failed to store JTI: {type(e).__name__}")
-                    # Continue anyway - token still valid
+                    auth_log(f"Warning: Failed to store reset tokens: {type(e).__name__}")
+                    # Continue anyway - tokens still valid
                 
-                auth_log(f"Password reset token generated for user: {user['_id']}")
+                auth_log(f"Password reset tokens generated for user: {user['_id']}")
+                auth_log(f"Simple reset token: {simple_reset_token[:8]}...")
                 
                 # Send email with reset link
                 try:
@@ -1286,17 +1291,19 @@ async def forgot_password(request: dict) -> dict:
                         auth_log(f"✅ Password reset email sent to {user['email']}")
                     else:
                         auth_log(f"⚠️ Failed to send password reset email to {user['email']}")
-                        # In debug mode, include token for testing
+                        # In debug mode, include both tokens for testing
                         if settings.DEBUG:
                             response["token"] = reset_token
-                            response["debug_message"] = "Email disabled - token provided in response"
+                            response["simple_reset_token"] = simple_reset_token
+                            response["debug_message"] = "Email disabled - tokens provided in response"
                 
                 except Exception as e:
                     auth_log(f"Error sending reset email: {type(e).__name__}: {str(e)}")
-                    # In debug mode, include token for testing
+                    # In debug mode, include both tokens for testing
                     if settings.DEBUG:
                         response["token"] = reset_token
-                        response["debug_message"] = f"Email error - token provided in response: {str(e)}"
+                        response["simple_reset_token"] = simple_reset_token
+                        response["debug_message"] = f"Email error - tokens provided in response: {str(e)}"
                 
             except Exception as e:
                 auth_log(f"Failed to generate reset token: {type(e).__name__}: {str(e)}")
@@ -1364,51 +1371,16 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                 detail="New password must be at least 6 characters"
             )
         
-        # Decode and validate JWT token
-        token_data = None
-        try:
-            token_data = decode_token(request.token)
-        except HTTPException as e:
-            auth_log(f"JWT validation failed: {e.detail}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired reset token - please request a new one"
-            )
-        except Exception as e:
-            auth_log(f"Token decode error: {type(e).__name__}: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid reset token format"
-            )
-        
-        # Verify token is a password reset token
-        if token_data.token_type != "password_reset":
-            auth_log(f"Invalid token type: {token_data.token_type}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type - expected password reset token"
-            )
-        
-        # Verify user ID exists in token
-        if not token_data.user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid reset token: missing user identifier"
-            )
-        
-        # Check JTI in database - prevent replay attacks
-        jti = getattr(token_data, 'jti', None)
-        if not jti:
-            auth_log("Reset token missing JTI")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid reset token: missing JTI"
-            )
+        # Try to validate as simple reset token first
+        simple_reset_token = request.token
+        reset_doc = None
+        user = None
+        token_type = "simple"
         
         try:
             reset_doc = await asyncio.wait_for(
                 reset_tokens_collection().find_one({
-                    "jti": jti,
+                    "simple_token": simple_reset_token,
                     "token_type": "password_reset",
                     "used": False,
                     "$or": [
@@ -1424,20 +1396,163 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                 detail="Database timeout - please try again"
             )
         except Exception as e:
-            auth_log(f"Database error checking reset token: {type(e).__name__}: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to verify reset token"
-            )
+            auth_log(f"Database error checking simple reset token: {type(e).__name__}: {str(e)}")
         
+        # If simple token not found, try JWT validation
         if not reset_doc:
-            auth_log("Reset token not found or already used")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired reset token - token may have already been used"
-            )
+            token_type = "jwt"
+            auth_log("Simple token not found, trying JWT validation")
+            
+            # Decode and validate JWT token
+            token_data = None
+            try:
+                token_data = decode_token(request.token)
+            except HTTPException as e:
+                auth_log(f"JWT validation failed: {e.detail}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired reset token - please request a new one"
+                )
+            except Exception as e:
+                auth_log(f"Token decode error: {type(e).__name__}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid reset token format"
+                )
+            
+            # Verify token is a password reset token
+            if token_data.token_type != "password_reset":
+                auth_log(f"Invalid token type: {token_data.token_type}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type - expected password reset token"
+                )
+            
+            # Verify user ID exists in token
+            if not token_data.user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid reset token: missing user identifier"
+                )
+            
+            # Check JTI in database - prevent replay attacks
+            jti = getattr(token_data, 'jti', None)
+            if not jti:
+                auth_log("Reset token missing JTI")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid reset token: missing JTI"
+                )
+            
+            try:
+                reset_doc = await asyncio.wait_for(
+                    reset_tokens_collection().find_one({
+                        "jti": jti,
+                        "token_type": "password_reset",
+                        "used": False,
+                        "$or": [
+                            {"invalidated": {"$exists": False}},
+                            {"invalidated": False}
+                        ]
+                    }),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Database timeout - please try again"
+                )
+            except Exception as e:
+                auth_log(f"Database error checking reset token: {type(e).__name__}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to verify reset token"
+                )
+            
+            if not reset_doc:
+                auth_log("Reset token not found or already used")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired reset token - token may have already been used"
+                )
+            
+            # Get user by ID from token (support both string and ObjectId _id fields)
+            try:
+                raw_user_id = token_data.user_id
+                candidate_ids = []
+                # Always try raw ID first (most deployments store _id as string)
+                if raw_user_id is not None:
+                    candidate_ids.append(raw_user_id)
+                # If it looks like an ObjectId, also try BSON ObjectId variant
+                if isinstance(raw_user_id, str) and ObjectId.is_valid(raw_user_id):
+                    try:
+                        candidate_ids.append(ObjectId(raw_user_id))
+                    except Exception as conv_error:
+                        auth_log(f"[RESET_PASSWORD_DEBUG] ObjectId conversion failed for {raw_user_id}: {conv_error}")
+
+                if not candidate_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid reset token: missing user identifier"
+                    )
+
+                user = await asyncio.wait_for(
+                    users_collection().find_one({"_id": {"$in": candidate_ids}}),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Database timeout - please try again"
+                )
+            except Exception as e:
+                auth_log(f"Database error finding user: {type(e).__name__}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to find user account"
+                )
+            
+            if not user:
+                auth_log(f"User not found for reset: {token_data.user_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid reset token"
+                )
+        else:
+            # Simple token found - get user from reset document
+            auth_log("Simple reset token found, validating user")
+            user_id = reset_doc.get("user_id")
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid reset token: missing user identifier"
+                )
+            
+            try:
+                user = await asyncio.wait_for(
+                    users_collection().find_one({"_id": user_id}),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Database timeout - please try again"
+                )
+            except Exception as e:
+                auth_log(f"Database error finding user: {type(e).__name__}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to find user account"
+                )
+            
+            if not user:
+                auth_log(f"User not found for reset: {user_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid reset token"
+                )
         
-        # Verify token not expired
+        # Verify token not expired (for both simple and JWT tokens)
         expires_at = reset_doc.get("expires_at")
         if not expires_at:
             raise HTTPException(
@@ -1457,48 +1572,7 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                     detail="Reset token has expired - request a new one"
                 )
         
-        # Get user by ID from token (support both string and ObjectId _id fields)
-        try:
-            raw_user_id = token_data.user_id
-            candidate_ids = []
-            # Always try the raw ID first (most deployments store _id as string)
-            if raw_user_id is not None:
-                candidate_ids.append(raw_user_id)
-            # If it looks like an ObjectId, also try the BSON ObjectId variant
-            if isinstance(raw_user_id, str) and ObjectId.is_valid(raw_user_id):
-                try:
-                    candidate_ids.append(ObjectId(raw_user_id))
-                except Exception as conv_error:
-                    auth_log(f"[RESET_PASSWORD_DEBUG] ObjectId conversion failed for {raw_user_id}: {conv_error}")
-
-            if not candidate_ids:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid reset token: missing user identifier"
-                )
-
-            user = await asyncio.wait_for(
-                users_collection().find_one({"_id": {"$in": candidate_ids}}),
-                timeout=5.0
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Database timeout - please try again"
-            )
-        except Exception as e:
-            auth_log(f"Database error finding user: {type(e).__name__}: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to find user account"
-            )
-        
-        if not user:
-            auth_log(f"User not found for reset: {token_data.user_id}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid reset token"
-            )
+        auth_log(f"Password reset validated using {token_type} token for user: {user['_id']}")
         
         # Hash new password
         password_hash, password_salt = hash_password(request.new_password)
@@ -1532,7 +1606,7 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                     "completed": True
                 }}
             )
-            auth_log(f"Reset token marked as used: {jti}")
+            auth_log(f"Reset token marked as used: {token_type}")
         except Exception as e:
             auth_log(f"Warning: Failed to mark reset token as used: {type(e).__name__}")
             # Don't fail the operation if this fails
