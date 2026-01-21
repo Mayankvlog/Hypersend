@@ -45,9 +45,9 @@ class ApiService {
     if (kIsWeb) {
       return 'https://zaply.in.net/api/v1';
     } else if (!kIsWeb && io.Platform.isAndroid) {
-      return 'https://10.0.2.2:8000';
+      return 'https://zaply.in.net/api/v1';
     } else if (!kIsWeb && io.Platform.isIOS) {
-      return 'https://127.0.0.1:8000';
+      return 'https://zaply.in.net/api/v1';
     } else if (!kIsWeb && io.Platform.isWindows) {
       return 'https://zaply.in.net/api/v1';
     } else if (!kIsWeb && io.Platform.isMacOS) {

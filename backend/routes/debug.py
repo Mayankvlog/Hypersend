@@ -49,7 +49,7 @@ async def get_profile_update_schema(
         "example": {
             "name": "John Doe",
             "username": "johndoe",
-            "email": "john@localhost",
+            "email": "john@zaply.in.net",
             "bio": "Software developer",
             "avatar": "JD",
             "avatar_url": "https://zaply.in.net/api/v1/files/avatar.jpg"
@@ -140,7 +140,7 @@ async def get_validation_examples(
             {
                 "error": "email must be at least 5 characters",
                 "received": {"email": "a@b"},
-                "fix": "Provide a valid email like user@localhost"
+                "fix": "Provide a valid email like user@zaply.in.net"
             },
             {
                 "error": "email does not match pattern",

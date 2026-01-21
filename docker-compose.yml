@@ -150,10 +150,10 @@ services:
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@localhost}
+      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@zaply.in.net}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-dummy_app_password_configure_in_env}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@localhost}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
       SENDER_NAME: ${SENDER_NAME:-Zaply Support}
     volumes:
       - ./data:/data
