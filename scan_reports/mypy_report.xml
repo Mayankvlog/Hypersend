@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<testsuite errors="0" failures="1" name="mypy" skips="0" tests="1" time="7.382">
-  <testcase classname="mypy" file="mypy" line="1" name="mypy-py3_11-win32" time="7.382">
+<testsuite errors="0" failures="1" name="mypy" skips="0" tests="1" time="1.271">
+  <testcase classname="mypy" file="mypy" line="1" name="mypy-py3_11-win32" time="1.271">
     <failure message="mypy produced messages">backend\utils\email_service.py:17: error: Function is missing a return type annotation  [no-untyped-def]
 backend\utils\email_service.py:17: note: Use "-&gt; None" if function does not return a value
 backend\rate_limiter.py:76: error: Function is missing a return type annotation  [no-untyped-def]
