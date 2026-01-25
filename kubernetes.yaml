@@ -1,0 +1,969 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hypersend
+  labels:
+    name: hypersend
+
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypersend-config
+  namespace: hypersend
+data:
+  # API Configuration
+  SECRET_KEY: "Prod_Secret_Key_For_Zaply_2025_Secure_Fixed"
+  ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "28800"
+  REFRESH_TOKEN_EXPIRE_DAYS: "20"
+  UPLOAD_TOKEN_EXPIRE_HOURS: "480"
+  DATA_ROOT: "/data"
+  UPLOADS_PATH: "/app/uploads"
+  MAX_FILE_SIZE_BYTES: "42949672960"
+  CHUNK_SIZE: "33554432"
+  MAX_PARALLEL_CHUNKS: "4"
+  FILE_RETENTION_HOURS: "0"
+  DEBUG: "False"
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  API_BASE_URL: "https://zaply.in.net/api/v1"
+  
+  # CORS Configuration
+  ALLOWED_ORIGINS: "https://zaply.in.net,http://localhost:3000,http://127.0.0.1:3000"
+  
+  # Rate Limiting & Security
+  RATE_LIMIT_PER_USER: "100"
+  RATE_LIMIT_WINDOW_SECONDS: "60"
+  USE_MOCK_DB: "False"
+  
+  # Email Configuration
+  ENABLE_EMAIL: "true"
+  ENABLE_PASSWORD_RESET: "true"
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_USERNAME: "noreply@zaply.in.net"
+  SMTP_USE_TLS: "true"
+  EMAIL_FROM: "noreply@zaply.in.net"
+  SENDER_NAME: "Zaply Support"
+  
+  # Nginx Configuration
+  NGINX_ALLOW_UNSAFE_SSL: "true"
+  NGINX_API_BASE_URL: "https://zaply.in.net/api/v1"
+  NGINX_API_HOST: "0.0.0.0"
+  NGINX_API_KEY: "hypersend_secure_api_key"
+  NGINX_API_SECRET: "hypersend_secure_api_secret"
+  NGINX_PROXY_READ_TIMEOUT: "3600"
+  NGINX_PROXY_SEND_TIMEOUT: "3600"
+  NGINX_PROXY_CONNECT_TIMEOUT: "300"
+  NGINX_CLIENT_BODY_TIMEOUT: "3600"
+  NGINX_CLIENT_MAX_BODY_SIZE: "45G"
+  NGINX_ERROR_PAGE_TIMEOUT: "30"
+  NGINX_MAX_RETRIES: "7"
+  NGINX_RETRY_DELAY: "5"
+  DOMAIN_NAME: "zaply.in.net"
+  SSL_CERT_PATH: "/etc/letsencrypt/live/zaply.in.net/fullchain.pem"
+  SSL_KEY_PATH: "/etc/letsencrypt/private/privkey.pem"
+
+---
+# Secrets for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hypersend-secrets
+  namespace: hypersend
+type: Opaque
+data:
+  # MongoDB credentials (base64 encoded)
+  MONGO_USER: aHlwZXJzZW5k  # hypersend
+  MONGO_PASSWORD: aHlwZXJzZW5kX3NlY3VyZV9wYXNzd29yZA==  # hypersend_secure_password
+  MONGO_INITDB_DATABASE: aHlwZXJzZW5k  # hypersend
+  # SMTP password (base64 encoded)
+  SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=  # dummy_app_password_configure_in_env
+
+---
+# Nginx Configuration ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-configmap
+  namespace: hypersend
+data:
+  nginx.conf: |
+    # NGINX Configuration for Zaply
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+
+    events {
+        worker_connections 4096;
+        use epoll;
+        multi_accept on;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for" '
+                        'rt=$request_time uct="$upstream_connect_time" '
+                        'uht="$upstream_header_time" urt="$upstream_response_time"';
+        
+        access_log /var/log/nginx/access.log main buffer=32k flush=5s;
+
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        keepalive_requests 100;
+        
+        client_max_body_size 45g;
+        client_body_buffer_size 10m;
+        client_header_buffer_size 4k;
+        large_client_header_buffers 4 16k;
+        
+        send_timeout 3600s;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
+        
+        types_hash_max_size 2048;
+        server_names_hash_bucket_size 128;
+
+        gzip on;
+        gzip_vary on;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_min_length 1000;
+        gzip_disable "msie6";
+        gzip_types text/plain text/css text/xml text/javascript 
+                   application/javascript application/json application/xml+rss;
+
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+        map $http_upgrade $connection_upgrade {
+            default upgrade;
+            '' close;
+        }
+
+        upstream backend {
+            server backend:8000 max_fails=5 fail_timeout=30s weight=100;
+            keepalive 64;
+            keepalive_requests 200;
+            keepalive_timeout 120s;
+        }
+
+        upstream frontend {
+            server frontend:80 max_fails=3 fail_timeout=30s weight=100;
+            keepalive 32;
+            keepalive_requests 100;
+            keepalive_timeout 60s;
+        }
+
+        resolver 127.0.0.11 valid=10s;
+        resolver_timeout 5s;
+
+        limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/m;
+        limit_req_zone $binary_remote_addr zone=general_limit:10m rate=200r/m;
+        limit_req_zone $binary_remote_addr zone=upload_limit:10m rate=20r/s;
+        limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=6r/m;
+
+        limit_req_status 429;
+
+        # SECURITY: CORS origin allowlist map to restrict to authorized origins
+        map $http_origin $allowed_origin {
+            default "";
+            "~^https://zaply\.in\.net$" "https://zaply.in.net";
+            "~^https://www\.zaply\.in\.net$" "https://www.zaply.in.net";
+            "~^http://localhost:8000$" "http://localhost:8000";
+            "~^http://localhost:3000$" "http://localhost:3000";
+            "~^http://localhost(:[0-9]+)?$" $http_origin;
+            "~^http://127\.0\.0\.1(:[0-9]+)?$" $http_origin;
+        }
+
+        # HTTP to HTTPS redirect for zaply.in.net
+        server {
+            listen 80;
+            listen [::]:80;
+            server_name zaply.in.net www.zaply.in.net;
+            
+            location / {
+                return 301 https://$server_name$request_uri;
+            }
+            
+            location /.well-known/acme-challenge/ {
+                root /var/www/certbot;
+                access_log off;
+            }
+        }
+
+        # HTTP: Default fallback
+        server {
+            listen 80 default_server;
+            listen [::]:80 default_server;
+            server_name _;
+
+            location /health {
+                add_header Content-Type "text/plain";
+                return 200 "OK\n";
+                access_log off;
+            }
+
+            location /.well-known/acme-challenge/ {
+                root /var/www/certbot;
+                access_log off;
+            }
+
+            location /api/ {
+                limit_req zone=api_limit burst=20 nodelay;
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection $connection_upgrade;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_buffering off;
+                proxy_read_timeout 3600s;
+            }
+
+            location ~* \.map$ {
+                return 404;
+                access_log off;
+            }
+
+            location / {
+                limit_req zone=general_limit burst=40 nodelay;
+                proxy_pass http://frontend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_buffering off;
+                proxy_read_timeout 300s;
+                error_page 404 =200 /index.html;
+                proxy_intercept_errors on;
+            }
+        }
+
+        # HTTPS: zaply.in.net (Production with SSL)
+        server {
+            listen 443 ssl http2;
+            listen [::]:443 ssl http2;
+            server_name zaply.in.net www.zaply.in.net;
+            
+            # SSL Configuration
+            ssl_certificate /etc/letsencrypt/live/zaply.in.net/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/private/privkey.pem;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;
+            ssl_prefer_server_ciphers off;
+            ssl_session_cache shared:SSL:10m;
+            ssl_session_timeout 10m;
+            
+            # HSTS
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+            
+            # Security headers
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' wss: https:; media-src 'self' blob:; object-src 'none';" always;
+            add_header X-Frame-Options "DENY" always;
+            add_header X-Content-Type-Options "nosniff" always;
+
+            location /health {
+                add_header Content-Type "text/plain";
+                return 200 "OK\n";
+                access_log off;
+            }
+
+            location /api/v1/files/upload {
+                limit_req zone=upload_limit burst=200 nodelay;
+                client_max_body_size 45g;
+                
+                if ($request_method = 'OPTIONS') {
+                    add_header 'Access-Control-Allow-Origin' $allowed_origin always;
+                    add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+                    add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+                    add_header 'Access-Control-Allow-Credentials' 'true' always;
+                    add_header 'Access-Control-Max-Age' '3600' always;
+                    add_header 'Content-Length' '0' always;
+                    return 204;
+                }
+                
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Host $server_name;
+                proxy_buffering off;
+                proxy_request_buffering off;
+                proxy_read_timeout 3600s;
+                
+                add_header 'Access-Control-Allow-Origin' $allowed_origin always;
+                add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+                add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+                add_header 'Access-Control-Allow-Credentials' 'true' always;
+            }
+            
+            location /api/v1/files/ {
+                limit_req zone=api_limit burst=20 nodelay;
+                
+                if ($request_method = 'OPTIONS') {
+                    add_header 'Access-Control-Allow-Origin' $allowed_origin always;
+                    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+                    add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+                    add_header 'Access-Control-Max-Age' '3600' always;
+                    add_header 'Access-Control-Allow-Credentials' 'true' always;
+                    add_header 'Content-Length' '0' always;
+                    return 204;
+                }
+                
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Host $server_name;
+                proxy_buffering off;
+                proxy_request_buffering off;
+                proxy_read_timeout 3600s;
+                
+                add_header 'Access-Control-Allow-Origin' $allowed_origin always;
+                add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+                add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+                add_header 'Access-Control-Allow-Credentials' 'true' always;
+            }
+
+            location ~ ^/api/v1/(auth|login|register|password-reset)/?$ {
+                limit_req zone=auth_limit burst=3 nodelay;
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_read_timeout 30s;
+            }
+
+            location /api/ {
+                limit_req zone=api_limit burst=20 nodelay;
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection $connection_upgrade;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Host $server_name;
+                proxy_set_header X-Forwarded-Port 443;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_buffering off;
+                proxy_request_buffering off;
+                proxy_next_upstream error timeout http_502 http_503 http_504;
+                proxy_next_upstream_tries 2;
+                proxy_next_upstream_timeout 30s;
+                proxy_read_timeout 3600s;
+            }
+
+            location ~* \.map$ {
+                proxy_pass http://frontend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_buffering off;
+                proxy_read_timeout 300s;
+                proxy_intercept_errors off;
+                add_header Cache-Control "public, max-age=31536000" always;
+                add_header X-Content-Type-Options "nosniff" always;
+            }
+
+            location / {
+                limit_req zone=general_limit burst=40 nodelay;
+                proxy_pass http://frontend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_buffering off;
+                proxy_read_timeout 300s;
+                error_page 404 =200 /index.html;
+                proxy_intercept_errors on;
+            }
+        }
+    }
+
+---
+# Persistent Volume Claims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-data-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-config-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: letsencrypt-certs-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: letsencrypt-lib-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nginx-cache-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: standard
+
+---
+# MongoDB Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb
+  namespace: hypersend
+  labels:
+    app: mongodb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:7.0
+        ports:
+        - containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGO_USER
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGO_PASSWORD
+        - name: MONGO_INITDB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGO_INITDB_DATABASE
+        command:
+        - mongod
+        - --auth
+        - --bind_ip_all
+        - --wiredTigerCacheSizeGB
+        - "0.5"
+        volumeMounts:
+        - name: mongodb-data
+          mountPath: /data/db
+        - name: mongodb-config
+          mountPath: /data/configdb
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - mongosh
+            - --eval
+            - "db.adminCommand('ping')"
+          initialDelaySeconds: 40
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          exec:
+            command:
+            - mongosh
+            - --eval
+            - "db.adminCommand('ping')"
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: mongodb-data
+        persistentVolumeClaim:
+          claimName: mongodb-data-pvc
+      - name: mongodb-config
+        persistentVolumeClaim:
+          claimName: mongodb-config-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: hypersend
+  labels:
+    app: mongodb
+spec:
+  selector:
+    app: mongodb
+  ports:
+  - port: 27017
+    targetPort: 27017
+  type: ClusterIP
+
+---
+# Backend Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: hypersend
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: hypersend/backend:latest
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: hypersend-config
+        env:
+        - name: MONGO_USER
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGO_USER
+        - name: MONGO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGO_PASSWORD
+        - name: MONGO_HOST
+          value: "mongodb"
+        - name: MONGO_PORT
+          value: "27017"
+        - name: MONGO_INITDB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGO_INITDB_DATABASE
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: SMTP_PASSWORD
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+        - name: uploads-volume
+          mountPath: /app/uploads
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: data-pvc
+      - name: uploads-volume
+        persistentVolumeClaim:
+          claimName: uploads-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: hypersend
+  labels:
+    app: backend
+spec:
+  selector:
+    app: backend
+  ports:
+  - port: 8000
+    targetPort: 8000
+  type: ClusterIP
+
+---
+# Frontend Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: hypersend
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: hypersend/frontend:latest
+        ports:
+        - containerPort: 80
+        env:
+        - name: API_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: API_BASE_URL
+        - name: VALIDATE_CERTIFICATES
+          value: "true"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 20
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: hypersend
+  labels:
+    app: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP
+
+---
+# Nginx Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: hypersend
+  labels:
+    app: nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        envFrom:
+        - configMapRef:
+            name: hypersend-config
+        command:
+        - sh
+        - -c
+        - |
+          # Install openssl for certificate generation
+          apk add --no-cache openssl;
+          
+          if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
+            echo '[NGINX] Creating self-signed certificate for initial deployment...';
+            mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
+            openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
+            cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
+            echo '[NGINX] Self-signed certificate created';
+          fi;
+          nginx -g 'daemon off;'
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          readOnly: true
+        - name: letsencrypt-certs
+          mountPath: /etc/letsencrypt
+        - name: letsencrypt-lib
+          mountPath: /var/lib/letsencrypt
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: data-files
+          mountPath: /data/files
+          readOnly: true
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-configmap
+      - name: letsencrypt-certs
+        persistentVolumeClaim:
+          claimName: letsencrypt-certs-pvc
+      - name: letsencrypt-lib
+        persistentVolumeClaim:
+          claimName: letsencrypt-lib-pvc
+      - name: nginx-cache
+        persistentVolumeClaim:
+          claimName: nginx-cache-pvc
+      - name: data-files
+        persistentVolumeClaim:
+          claimName: data-pvc
+          readOnly: true
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: hypersend
+  labels:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+  - name: https
+    port: 443
+    targetPort: 443
+  type: LoadBalancer
+
+---
+# Ingress for external access (optional)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hypersend-ingress
+  namespace: hypersend
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "45g"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/client-max-body-size: "45g"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  tls:
+  - hosts:
+    - zaply.in.net
+    - www.zaply.in.net
+    secretName: hypersend-tls
+  rules:
+  - host: zaply.in.net
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+  - host: www.zaply.in.net
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
