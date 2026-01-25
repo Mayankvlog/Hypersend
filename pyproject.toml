@@ -17,19 +17,28 @@ dependencies = [
   "pydantic-settings==2.6.1",
   "python-jose[cryptography]==3.3.0",
   "passlib[bcrypt]==1.7.4",
-  "bcrypt==4.2.1",
   "python-multipart==0.0.20",
   "aiofiles==24.1.0",
   "httpx[http2]>=0.28.1",
-  "h2>=4.1.0",
   "python-dotenv==1.0.1",
   "PyJWT==2.10.1",
   "flet>=0.28.3",
-  "pytest>=8.4.2",
-  "pytest-asyncio>=0.24.0",
 ]
 
 [project.optional-dependencies]
+test = [
+  "pytest>=8.4.2",
+  "pytest-asyncio>=0.24.0",
+  "pytest-cov>=6.0.0",
+  "pytest-mock>=3.14.0",
+  "bandit[toml]>=1.7.6",
+  "flake8>=7.1.0",
+  "mypy>=1.9.0",
+  "black>=24.4.0",
+  "isort>=5.13.0",
+  "pre-commit>=3.7.0",
+]
+
 backend = [
   "fastapi==0.115.5",
   "uvicorn[standard]==0.32.1",
@@ -38,11 +47,9 @@ backend = [
   "pydantic-settings==2.6.1",
   "python-jose[cryptography]==3.3.0",
   "passlib[bcrypt]==1.7.4",
-  "bcrypt==4.2.1",
   "python-multipart==0.0.20",
   "aiofiles==24.1.0",
   "httpx[http2]>=0.28.1",
-  "h2>=4.1.0",
   "python-dotenv==1.0.1",
   "PyJWT==2.10.1",
 ]
@@ -53,7 +60,18 @@ frontend = [
   "pydantic==2.11.5",
   "python-multipart==0.0.20",
   "python-dotenv==1.0.1",
-  "h2>=4.1.0",
+]
+
+code-scan = [
+  "bandit[toml]>=1.7.6",
+  "flake8>=7.1.0",
+  "mypy>=1.9.0",
+  "black>=24.4.0",
+  "isort>=5.13.0",
+  "pylint>=3.2.0",
+  "safety>=3.2.0",
+  "semgrep>=1.78.0",
+  "ruff>=0.6.0",
 ]
 
 [tool.zaply]
@@ -114,11 +132,234 @@ target_sdk_version = 33
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q --strict-markers --strict-config"
+addopts = [
+  "-ra", 
+  "-q", 
+  "--strict-markers", 
+  "--strict-config"
+]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "integration: marks tests as integration tests",
+  "unit: marks tests as unit tests",
+  "security: marks tests as security tests",
+  "scan: marks tests for code scanning",
 ]
+
+# Pytest configuration for deep code scanning
+[tool.pytest.bandit]
+args = ["-r", "-ll"]
+exclude_dirs = ["tests", "venv", "env"]
+
+[tool.pytest.mypy]
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+# ========== DEEP CODE SCAN CONFIGURATION ==========
+[tool.code_scanner]
+enabled = true
+scan_depth = "deep"
+pytest_integration = true
+exclude_patterns = [
+  "*/__pycache__/*",
+  "*/node_modules/*",
+  "*/.git/*",
+  "*/venv/*",
+  "*/env/*",
+  "*/dist/*",
+  "*/build/*",
+  "*.pyc",
+  "*.pyo",
+  "*.pyd",
+  ".DS_Store",
+  "Thumbs.db"
+]
+
+# Security scanning with pytest integration
+[tool.code_scanner.security]
+enable_security_scan = true
+pytest_marker = "security"
+security_rules = [
+  "hardcoded_secrets",
+  "sql_injection", 
+  "xss_vulnerabilities",
+  "path_traversal",
+  "insecure_deserialization",
+  "weak_cryptography",
+  "authentication_bypass",
+  "authorization_issues",
+  "input_validation",
+  "dependency_vulnerabilities"
+]
+severity_levels = ["critical", "high", "medium", "low"]
+fail_on_critical = true
+fail_on_high = true
+bandit_integration = true
+
+# Logic analysis with pytest
+[tool.code_scanner.logic]
+enable_logic_analysis = true
+pytest_marker = "scan"
+logic_checks = [
+  "dead_code",
+  "unreachable_code", 
+  "infinite_loops",
+  "resource_leaks",
+  "race_conditions",
+  "complexity_analysis",
+  "code_duplication",
+  "performance_bottlenecks",
+  "error_handling_gaps"
+]
+max_complexity = 10
+max_duplication_percentage = 15
+mypy_integration = true
+
+# Code quality analysis
+[tool.code_scanner.quality]
+enable_quality_scan = true
+pytest_marker = "scan"
+quality_metrics = [
+  "maintainability_index",
+  "cyclomatic_complexity", 
+  "code_coverage",
+  "test_effectiveness",
+  "documentation_coverage",
+  "naming_conventions",
+  "code_formatting",
+  "import_analysis",
+  "unused_imports",
+  "unused_variables"
+]
+min_maintainability_score = 70
+min_code_coverage = 80
+flake8_integration = true
+black_integration = true
+isort_integration = true
+
+# Backend specific scanning
+[tool.code_scanner.backend]
+scan_paths = ["backend", "tests"]
+framework = "fastapi"
+check_database_queries = true
+check_api_endpoints = true
+check_authentication = true
+check_authorization = true
+check_input_validation = true
+check_error_handling = true
+check_logging = true
+check_configuration = true
+
+# Frontend specific scanning  
+[tool.code_scanner.frontend]
+scan_paths = ["frontend"]
+framework = "flet"
+check_ui_components = true
+check_state_management = true
+check_user_input = true
+check_data_validation = true
+check_network_requests = true
+check_local_storage = true
+check_permissions = true
+
+# Pytest integration configuration
+[tool.code_scanner.pytest]
+enable_pytest_integration = true
+scan_before_tests = true
+scan_after_tests = true
+parallel_scanning = true
+fail_on_scan_errors = false
+scan_test_files = true
+coverage_integration = true
+
+# Reporting configuration
+[tool.code_scanner.reporting]
+output_format = ["json", "html", "sarif"]
+output_directory = "scan_reports"
+include_source_code = true
+include_fix_suggestions = true
+generate_summary = true
+trend_analysis = true
+pytest_report_format = true
+
+# Tool integrations
+[tool.code_scanner.integrations]
+enable_bandit = true
+enable_flake8 = true
+enable_mypy = true
+enable_black = true
+enable_isort = true
+enable_pylint = true
+enable_safety = true
+enable_semgrep = true
+enable_ruff = true
+pytest_plugins = [
+  "pytest-bandit",
+  "pytest-cov",
+  "pytest-mypy"
+]
+
+# Advanced settings
+[tool.code_scanner.advanced]
+data_flow_analysis = true
+control_flow_analysis = true
+interprocedural_analysis = true
+taint_analysis = false
+symbolic_execution = false
+machine_learning_analysis = false
+cross_language_analysis = true
+dependency_graph_analysis = true
+pytest_parallel_workers = 4
+
+# ========== CODE QUALITY TOOLS CONFIGURATION ==========
+[tool.bandit]
+exclude_dirs = ["tests", "venv", "env"]
+tests = ["B201", "B301"]
+skips = ["B101", "B601"]
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"]
+exclude = [".git", "__pycache__", "venv", "env"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+include = "\\.pyi?$"
+extend-exclude = """/(
+  # directories
+  \\.eggs
+  | \\.git
+  | \\.hg
+  | \\.mypy_cache
+  | \\.tox
+  | \\.venv
+  | venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/"""
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+select = ["E", "F", "W", "C90", "I", "N", "UP", "S", "B", "A"]
+ignore = ["E501", "B008"]
+exclude = [".git", "__pycache__", "venv", "env"]
