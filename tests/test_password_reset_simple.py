@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 """
-Test Forgot Password Endpoint
-Validates the password reset flow and security
+Test Token-Based Password Reset Endpoint
+Validates the password reset flow and security using JWT tokens
 """
 import sys
 import os
 import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
-
-pytest.skip(
-    "/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password",
-    allow_module_level=True,
-)
 
 # Set mock database
 os.environ['USE_MOCK_DB'] = 'True'

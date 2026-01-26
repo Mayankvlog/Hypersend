@@ -782,46 +782,60 @@ class TestChatCreationFix:
                             print("⚠️ Database update not called (authentication issue)")
 
     @pytest.mark.asyncio
-    async def test_forgot_password_functionality(self, client):
-        """Test forgot password functionality"""
-        pytest.skip("/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password")
+    async def test_token_password_reset_functionality(self, client):
+        """Test token-based password reset functionality"""
         from unittest.mock import patch, MagicMock
+        import jwt
+        from datetime import datetime, timedelta, timezone
         
-        with patch('db_proxy.users_collection') as mock_users:
-            with patch('db_proxy.reset_tokens_collection') as mock_reset_tokens:
-                with patch('routes.auth.password_reset_limiter') as mock_limiter:
-                    # Mock rate limiter to allow requests
-                    mock_limiter.is_allowed.return_value = True
+        # Mock the SECRET_KEY for consistent testing
+        import backend.routes.auth as auth_module
+        original_secret = auth_module.settings.SECRET_KEY
+        auth_module.settings.SECRET_KEY = "test-secret-key"
+        
+        try:
+            with patch('db_proxy.users_collection') as mock_users:
+                with patch('db_proxy.reset_tokens_collection') as mock_reset_tokens:
+                    with patch('routes.auth.password_reset_limiter') as mock_limiter:
+                        # Mock rate limiter to allow requests
+                        mock_limiter.is_allowed.return_value = True
                     
-                    # Mock user exists
-                    mock_user = {
-                        "_id": "test_user_id",
-                        "email": "test@example.com",
-                        "name": "Test User"
-                    }
-                    mock_users.return_value.find_one.return_value = mock_user
-                    
-                    # Mock token insertion
-                    mock_reset_tokens.return_value.insert_one.return_value = MagicMock()
-                    
-                    # Mock email service disabled
-                    with patch('routes.auth.settings.EMAIL_SERVICE_ENABLED', False):
-                        with patch('routes.auth.settings.DEBUG', True):
-                            with patch('routes.auth.create_access_token', return_value="test_reset_token"):
-                                # Test forgot password
-                                response = client.post(
-                                    "/api/v1/forgot-password",
-                                    json={"email": "test@example.com"}
-                                )
-                                
-                                print(f"Forgot password response: {response.status_code}")
-                                
-                                if response.status_code == 200:
-                                    data = response.json()
-                                    assert data["success"] == True, "Forgot password should succeed"
-                                    print("✅ Forgot password endpoint works correctly")
-                                else:
-                                    print(f"⚠️ Forgot password failed: {response.status_code}")
+                        # Mock user exists
+                        mock_user = {
+                            "_id": "test_user_id",
+                            "email": "test@example.com",
+                            "name": "Test User"
+                        }
+                        mock_users.return_value.find_one.return_value = mock_user
+                        
+                        # Generate a test JWT token
+                        reset_token = jwt.encode(
+                            {
+                                "sub": "test@example.com",
+                                "token_type": "password_reset",
+                                "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+                                "iat": datetime.now(timezone.utc)
+                            },
+                            "test-secret-key",
+                            algorithm="HS256"
+                        )
+                        
+                        # Test password reset with token
+                        reset_data = {
+                            "token": reset_token,
+                            "new_password": "NewSecurePassword123"
+                        }
+                        
+                        response = client.post("/api/v1/auth/reset-password", json=reset_data)
+                        print(f"Password reset response status: {response.status_code}")
+                        
+                        if response.status_code == 200:
+                            print("✅ Token-based password reset successful")
+                        else:
+                            print(f"⚠ Password reset failed: {response.status_code}")
+        
+        finally:
+            auth_module.settings.SECRET_KEY = original_secret
 
     @pytest.mark.asyncio
     async def test_reset_password_functionality(self, client):

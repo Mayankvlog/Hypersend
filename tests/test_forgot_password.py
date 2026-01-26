@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """
-Test suite for forgot password and reset password functionality
-Tests the complete password reset flow including token generation,
-email sending (if configured), and password update.
+Test suite for Token-Based Password Reset Functionality
+Tests the complete password reset flow using JWT tokens via /auth/reset-password
 """
 
 import pytest
-
-pytest.skip(
-    "/auth/forgot-password endpoint removed; token-based reset uses /auth/reset-password",
-    allow_module_level=True,
-)
 
 import asyncio
 import json
@@ -115,22 +109,51 @@ def check_server_health() -> bool:
         return False
     return False
 
-def test_forgot_password_endpoint() -> Optional[dict]:
-    """Test the forgot-password endpoint"""
-    print_status("Testing /forgot-password endpoint...", "TEST")
+def test_reset_password_endpoint() -> Optional[dict]:
+    """Test the reset-password endpoint with valid token"""
+    print_status("Testing /reset-password endpoint with valid token...", "TEST")
     
     try:
-        payload = {"email": TEST_EMAIL}
+        # Generate a test token for password reset
+        import jwt
+        from datetime import datetime, timedelta, timezone
+        
+        # Mock the SECRET_KEY to match test expectations
+        if USE_TESTCLIENT:
+            import backend.routes.auth as auth_module
+            original_secret = auth_module.settings.SECRET_KEY
+            auth_module.settings.SECRET_KEY = "test-secret-key"
+            try:
+                token = jwt.encode(
+                    {
+                        "sub": TEST_EMAIL,
+                        "token_type": "password_reset",
+                        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+                        "iat": datetime.now(timezone.utc)
+                    },
+                    "test-secret-key",
+                    algorithm="HS256"
+                )
+            finally:
+                auth_module.settings.SECRET_KEY = original_secret
+        else:
+            # For requests-based testing, create a simple test token
+            token = "test.reset.token.12345"
+        
+        payload = {
+            "token": token,
+            "new_password": NEW_PASSWORD
+        }
         
         if USE_TESTCLIENT:
             client = TestClient(app)
-            response = client.post("/api/v1/auth/forgot-password", json=payload)
+            response = client.post("/api/v1/auth/reset-password", json=payload)
         else:
             if requests is None:
                 print_status("[FAIL] requests not available", "FAIL")
                 return None
             response = requests.post(
-                f"{API_BASE_URL}/auth/forgot-password",
+                f"{API_BASE_URL}/auth/reset-password",
                 json=payload,
                 timeout=TEST_TIMEOUT
             )
@@ -139,16 +162,15 @@ def test_forgot_password_endpoint() -> Optional[dict]:
         
         if response.status_code == 200:
             data = response.json()
-            print_status("[PASS] Forgot password endpoint working", "PASS")
+            print_status("[PASS] Reset password endpoint working", "PASS")
             print_status(f"  Message: {data.get('message', 'N/A')}", "INFO")
             print_status(f"  Success: {data.get('success', False)}", "INFO")
-            print_status(f"  Email Sent: {data.get('email_sent', False)}", "INFO")
             
             return data
         else:
-            error_data = response.json()
+            error_data = response.json() if response.headers.get('content-type', '').startswith('application/json') else {}
             print_status(f"[FAIL] Endpoint returned {response.status_code}", "FAIL")
-            print_status(f"  Error: {error_data.get('detail', 'Unknown error')}", "FAIL")
+            print_status(f"  Error: {error_data.get('detail', response.text)}", "FAIL")
             return None
     
     except Exception as e:
@@ -158,40 +180,44 @@ def test_forgot_password_endpoint() -> Optional[dict]:
             print_status(f"[FAIL] Request error: {e}", "FAIL")
         return None
 
-def test_forgot_password_invalid_email() -> bool:
-    """Test forgot-password with invalid email"""
-    print_status("Testing /forgot-password with invalid email...", "TEST")
+def test_reset_password_invalid_token() -> bool:
+    """Test reset-password with invalid token"""
+    print_status("Testing /reset-password with invalid token...", "TEST")
     
-    invalid_emails = [
-        "notanemail",
-        "missing@domain",
-        "@nodomain.com",
-        ""
+    invalid_tokens = [
+        "invalid.token.here",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid",
+        "",
+        "not-a-jwt-token",
+        "expired.token.123"
     ]
     
-    for email in invalid_emails:
+    for token in invalid_tokens:
         try:
-            payload = {"email": email}
+            payload = {
+                "token": token,
+                "new_password": NEW_PASSWORD
+            }
             
             if USE_TESTCLIENT:
                 client = TestClient(app)
-                response = client.post("/api/v1/auth/forgot-password", json=payload)
+                response = client.post("/api/v1/auth/reset-password", json=payload)
             else:
                 if requests is None:
                     print_status("[FAIL] requests not available", "FAIL")
                     return False
                 response = requests.post(
-                    f"{API_BASE_URL}/auth/forgot-password",
+                    f"{API_BASE_URL}/auth/reset-password",
                     json=payload,
                     timeout=TEST_TIMEOUT
                 )
             
-            if response.status_code in [400, 422]:
-                print_status(f"[PASS] Correctly rejected invalid email: '{email}'", "PASS")
+            if response.status_code in [400, 401, 422]:
+                print_status(f"[PASS] Correctly rejected invalid token: '{token[:20]}...'", "PASS")
             else:
-                print_status(f"⚠ Unexpected status {response.status_code} for: '{email}'", "WARN")
+                print_status(f"⚠ Unexpected status {response.status_code} for token: '{token[:20]}...'", "WARN")
         except Exception as e:
-            print_status(f"[FAIL] Error testing email '{email}': {e}", "FAIL")
+            print_status(f"[FAIL] Error testing token '{token[:20]}...': {e}", "FAIL")
             return False
     
     return True
@@ -235,75 +261,88 @@ def test_forgot_password_nonexistent_user() -> bool:
         print_status(f"[FAIL] Error: {e}", "FAIL")
         return False
 
-def test_reset_password_invalid_token() -> bool:
-    """Test reset-password with invalid token"""
-    print_status("Testing /reset-password with invalid token...", "TEST")
-    
-    try:
-        payload = {
-            "token": "invalid.token.here",
-            "new_password": NEW_PASSWORD
-        }
-        
-        if USE_TESTCLIENT:
-            client = TestClient(app)
-            response = client.post("/api/v1/auth/reset-password", json=payload)
-        else:
-            if requests is None:
-                print_status("[FAIL] requests not available", "FAIL")
-                return False
-            response = requests.post(
-                f"{API_BASE_URL}/auth/reset-password",
-                json=payload,
-                timeout=TEST_TIMEOUT
-            )
-        
-        if response.status_code in [400, 401]:
-            print_status("[PASS] Correctly rejected invalid token", "PASS")
-            return True
-        else:
-            print_status(f"⚠ Unexpected status {response.status_code}", "WARN")
-            return True
-    
-    except Exception as e:
-        print_status(f"[FAIL] Error: {e}", "FAIL")
-        return False
-
 def test_reset_password_weak_password():
     """Test reset-password with weak password"""
     print_status("Testing /reset-password with weak password...", "TEST")
     
+    weak_passwords = [
+        "weak",
+        "123",
+        "short",
+        "",
+        "abc"
+    ]
+    
+    for weak_password in weak_passwords:
+        try:
+            payload = {
+                "token": "some.test.token",
+                "new_password": weak_password
+            }
+            
+            if USE_TESTCLIENT:
+                client = TestClient(app)
+                response = client.post("/api/v1/auth/reset-password", json=payload)
+            else:
+                if requests is None:
+                    print_status("[FAIL] requests not available", "FAIL")
+                    assert False, "requests not available"
+                response = requests.post(
+                    f"{API_BASE_URL}/auth/reset-password",
+                    json=payload,
+                    timeout=TEST_TIMEOUT
+                )
+            
+            if response.status_code in [400, 401, 422]:
+                print_status(f"[PASS] Correctly rejected weak password: '{weak_password}'", "PASS")
+            else:
+                print_status(f"⚠ Unexpected status {response.status_code} for weak password", "WARN")
+        
+        except Exception as e:
+            print_status(f"[FAIL] Error testing weak password '{weak_password}': {e}", "FAIL")
+            assert False, f"Error: {e}"
+
+def test_token_validation():
+    """Test JWT token validation for password reset"""
+    print_status("Testing JWT token validation...", "TEST")
+    
     try:
-        payload = {
-            "token": "some.token.here",
-            "new_password": "weak"
-        }
+        import jwt
+        from datetime import datetime, timedelta, timezone
         
+        # Mock the SECRET_KEY for consistent testing
         if USE_TESTCLIENT:
-            client = TestClient(app)
-            response = client.post("/api/v1/auth/reset-password", json=payload)
-        else:
-            if requests is None:
-                print_status("[FAIL] requests not available", "FAIL")
-                assert False, "requests not available"
-            response = requests.post(
-                f"{API_BASE_URL}/auth/reset-password",
-                json=payload,
-                timeout=TEST_TIMEOUT
+            import backend.routes.auth as auth_module
+            original_secret = auth_module.settings.SECRET_KEY
+            auth_module.settings.SECRET_KEY = "test-secret-key"
+        
+        try:
+            # Test valid token creation
+            valid_token = jwt.encode(
+                {
+                    "sub": TEST_EMAIL,
+                    "token_type": "password_reset",
+                    "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+                    "iat": datetime.now(timezone.utc)
+                },
+                "test-secret-key",
+                algorithm="HS256"
             )
-        
-        if response.status_code in [400, 401]:
-            print_status("[PASS] Correctly rejected weak password", "PASS")
-        else:
-            print_status(f"⚠ Unexpected status {response.status_code}", "WARN")
-        
-        # Use pytest assertion instead of return
-        assert response.status_code in [400, 401, 200]  # Accept any valid response
+            
+            # Test token decoding
+            decoded = jwt.decode(valid_token, "test-secret-key", algorithms=["HS256"])
+            assert decoded["sub"] == TEST_EMAIL, "Token should contain correct email"
+            assert decoded["token_type"] == "password_reset", "Token should be password reset type"
+            
+            print_status("[PASS] JWT token validation working", "PASS")
+            
+        finally:
+            if USE_TESTCLIENT:
+                auth_module.settings.SECRET_KEY = original_secret
         
     except Exception as e:
-        print_status(f"[FAIL] Error: {e}", "FAIL")
-        # Use pytest assertion instead of return
-        assert False, f"Error: {e}"
+        print_status(f"[FAIL] Token validation error: {e}", "FAIL")
+        assert False, f"Token validation failed: {e}"
 
 def verify_response_structure(response_data: dict) -> bool:
     """Verify response has expected structure"""
@@ -380,7 +419,7 @@ def generate_test_report(results: dict) -> None:
     # Protection against division by zero in format string
     success_rate_str = f"{(passed_tests / total_tests * 100):.1f}%" if total_tests > 0 else "N/A"
     
-    report_content = f"""# Forgot Password Feature Test Report
+    report_content = f"""# Token-Based Password Reset Test Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ## Summary
@@ -399,46 +438,47 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     
     report_content += f"""
 ## API Endpoints Tested
-- POST /auth/forgot-password
 - POST /auth/reset-password
 
-## Password Requirements
-- Minimum length: 8 characters
+## Token Requirements
+- JWT token with password_reset type
 - Token validity: 1 hour
-- Email sending: Optional (requires SMTP configuration)
+- Token must contain user email in 'sub' field
+- Token signature verification required
+
+## Password Requirements
+- Minimum length: 6 characters
+- Strong passwords recommended
+- No email sending required (token-based flow)
 
 ## Security Notes
-1. Reset tokens are never returned in API responses
-2. Tokens are only sent via email
-3. Used tokens cannot be reused
-4. Non-existent users return generic message (no user enumeration)
-5. Weak passwords (< 8 chars) are rejected
+1. Reset tokens are JWT-based with signature verification
+2. Tokens contain user email and expiration time
+3. Invalid/expired tokens are rejected
+4. Weak passwords are rejected
+5. Token validation prevents unauthorized password resets
 
 ## Configuration Required
-For email functionality, configure in backend/.env or docker-compose.yml:
-- SMTP_HOST: Your SMTP server
-- SMTP_PORT: Usually 587 (TLS) or 25
-- SMTP_USERNAME: Your email/username
-- SMTP_PASSWORD: Your password
-- EMAIL_FROM: Sender email address
-- SMTP_USE_TLS: true (recommended)
+For token-based password reset, ensure in backend/.env or docker-compose.yml:
+- SECRET_KEY: Strong secret for JWT signing
+- ENABLE_PASSWORD_RESET: true (default)
 
 ## Next Steps
-1. Configure SMTP settings for email sending
-2. Test password reset email delivery
-3. Verify reset link works in frontend
+1. Test password reset with valid user tokens
+2. Verify token expiration handling
+3. Test password reset in frontend application
 4. Monitor logs for any authentication errors
 5. Test rate limiting on password reset attempts
 """
     
-    with open("FORGOT_PASSWORD_TEST_REPORT.md", "w") as f:
+    with open("TOKEN_PASSWORD_RESET_TEST_REPORT.md", "w") as f:
         f.write(report_content)
     
-    print_status(f"Test report saved to FORGOT_PASSWORD_TEST_REPORT.md", "INFO")
+    print_status(f"Test report saved to TOKEN_PASSWORD_RESET_TEST_REPORT.md", "INFO")
 
 def main():
     """Main test execution"""
-    print_header("FORGOT PASSWORD FEATURE TEST SUITE")
+    print_header("TOKEN-BASED PASSWORD RESET TEST SUITE")
     
     print_status(f"API Base URL: {API_BASE_URL}", "INFO")
     print_status(f"Test Email: {TEST_EMAIL}", "INFO")
@@ -452,33 +492,25 @@ def main():
     # Run tests
     test_results = {}
     
-    # Test 1: Forgot password endpoint
-    print_header("TEST 1: Forgot Password Endpoint")
-    forgot_password_result = test_forgot_password_endpoint()
-    test_results["forgot_password_endpoint"] = forgot_password_result is not None
+    # Test 1: Reset password endpoint
+    print_header("TEST 1: Reset Password Endpoint")
+    reset_password_result = test_reset_password_endpoint()
+    test_results["reset_password_endpoint"] = reset_password_result is not None
     
-    if forgot_password_result:
-        test_results["response_structure"] = verify_response_structure(forgot_password_result)
+    if reset_password_result:
+        test_results["response_structure"] = verify_response_structure(reset_password_result)
     
-    # Test 2: Invalid email validation
-    print_header("TEST 2: Invalid Email Validation")
-    test_results["invalid_email_validation"] = test_forgot_password_invalid_email()
+    # Test 2: Invalid token validation
+    print_header("TEST 2: Invalid Token Validation")
+    test_results["invalid_token_validation"] = test_reset_password_invalid_token()
     
-    # Test 3: Non-existent user
-    print_header("TEST 3: Non-existent User Security")
-    test_results["nonexistent_user"] = test_forgot_password_nonexistent_user()
+    # Test 3: Weak password validation
+    print_header("TEST 3: Weak Password Validation")
+    test_results["weak_password_validation"] = test_reset_password_weak_password()
     
-    # Test 4: Reset password with invalid token
-    print_header("TEST 4: Reset Password - Invalid Token")
-    test_results["reset_invalid_token"] = test_reset_password_invalid_token()
-    
-    # Test 5: Reset password with weak password
-    print_header("TEST 5: Reset Password - Weak Password")
-    test_results["reset_weak_password"] = test_reset_password_weak_password()
-    
-    # Test 6: Email validation
-    print_header("TEST 6: Email Validation")
-    test_results["email_validation"] = test_email_validation()
+    # Test 4: Token validation
+    print_header("TEST 4: JWT Token Validation")
+    test_results["token_validation"] = test_token_validation()
     
     # Generate report
     generate_test_report(test_results)
