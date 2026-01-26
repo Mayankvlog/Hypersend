@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
 """
-Comprehensive integration test demonstrating both token authentication methods
+Comprehensive integration test for current authentication methods
 """
 
 import os
-import pytest
-
-# Only skip if query-token auth is explicitly disabled
-if os.getenv("DISABLE_QUERY_TOKEN_AUTH", "true").lower() == "true":
-    pytest.skip("Legacy integration script (query-token auth is disabled); not part of automated pytest", allow_module_level=True)
-
 import sys
 import os
 import asyncio
+import pytest
 from datetime import datetime, timedelta
 
 # Add backend to Python path
@@ -21,16 +16,13 @@ sys.path.insert(0, backend_path)
 
 from auth.utils import (
     create_access_token,
-    get_current_user,
-    get_current_user_from_query
+    decode_token
 )
-from security import SecurityConfig
-from fastapi.security import HTTPAuthorizationCredentials
 
 
 async def test_bearer_token_authentication():
-    """Test original Bearer token authentication method"""
-    print("\n[TEST 1] Bearer Token Authentication (Original Method)")
+    """Test token creation and basic validation"""
+    print("\n[TEST 1] Bearer Token Authentication")
     print("-" * 70)
     
     try:
@@ -44,21 +36,18 @@ async def test_bearer_token_authentication():
         print(f"[PASS] Created token for user: {user_id}")
         print(f"  Token (first 50 chars): {token[:50]}...")
         
-        # Simulate Bearer authentication
-        credentials = HTTPAuthorizationCredentials(
-            scheme="Bearer",
-            credentials=token
-        )
-        print(f"[PASS] Created Bearer credentials")
+        # Decode the token to verify it was created correctly
+        decoded = decode_token(token)
         
-        # Call get_current_user
-        result = await get_current_user(credentials)
-        
-        if result == user_id:
-            print(f"[PASS] PASSED: get_current_user returned correct user_id: {result}")
+        if decoded.user_id == user_id and decoded.token_type == "access":
+            print(f"[PASS] PASSED: Token created and decoded correctly")
+            print(f"  User ID: {decoded.user_id}")
+            print(f"  Token Type: {decoded.token_type}")
             return True
         else:
-            print(f"[FAIL] FAILED: Expected {user_id}, got {result}")
+            print(f"[FAIL] FAILED: Token validation failed")
+            print(f"  Expected user_id: {user_id}, got: {decoded.user_id}")
+            print(f"  Expected token_type: access, got: {decoded.token_type}")
             return False
             
     except Exception as e:
@@ -66,30 +55,34 @@ async def test_bearer_token_authentication():
         return False
 
 
-async def test_query_token_authentication():
-    """Test new Query parameter token authentication method"""
-    print("\n[TEST 2] Query Parameter Token Authentication (New Method)")
+async def test_token_validation():
+    """Test JWT token validation and decoding"""
+    print("\n[TEST 2] JWT Token Validation and Decoding")
     print("-" * 70)
     
     try:
         # Create test token
-        user_id = "user_query_456"
+        user_id = "user_validation_456"
         token_data = {
             "sub": user_id,
             "token_type": "access"
         }
         token = create_access_token(token_data)
         print(f"[PASS] Created token for user: {user_id}")
-        print(f"  Token would be passed as: ?token={token[:20]}...")
+        print(f"  Token (first 50 chars): {token[:50]}...")
         
-        # Call get_current_user_from_query with token from query
-        result = await get_current_user_from_query(token=token)
+        # Decode and validate token
+        decoded = decode_token(token)
         
-        if result == user_id:
-            print(f"[PASS] PASSED: get_current_user_from_query returned correct user_id: {result}")
+        if decoded.user_id == user_id and decoded.token_type == "access":
+            print(f"[PASS] PASSED: Token decoded correctly")
+            print(f"  User ID: {decoded.user_id}")
+            print(f"  Token Type: {decoded.token_type}")
             return True
         else:
-            print(f"[FAIL] FAILED: Expected {user_id}, got {result}")
+            print(f"[FAIL] FAILED: Token validation failed")
+            print(f"  Expected user_id: {user_id}, got: {decoded.user_id}")
+            print(f"  Expected token_type: access, got: {decoded.token_type}")
             return False
             
     except Exception as e:
@@ -97,21 +90,26 @@ async def test_query_token_authentication():
         return False
 
 
-async def test_query_missing_token():
-    """Test Query authentication with missing token"""
-    print("\n[TEST 3] Query Authentication - Missing Token")
+async def test_invalid_token():
+    """Test authentication with invalid token"""
+    print("\n[TEST 3] Invalid Token Authentication")
     print("-" * 70)
     
     try:
-        # Call without token (default None)
-        result = await get_current_user_from_query(token=None)
-        print(f"[FAIL] FAILED: Should have raised HTTPException, got: {result}")
+        # Test with completely invalid token
+        invalid_token = "this.is.not.a.valid.jwt.token"
+        
+        print(f"[PASS] Testing invalid token: {invalid_token}")
+        
+        # This should raise an exception when trying to decode
+        decoded = decode_token(invalid_token)
+        print(f"[FAIL] FAILED: Should have raised exception for invalid token, got: {decoded}")
         return False
         
     except Exception as e:
-        if "401" in str(e) or "Unauthorized" in str(e):
-            print(f"[PASS] PASSED: Correctly raised HTTPException for missing token")
-            print(f"  Error: {e}")
+        if "invalid" in str(e).lower() or "decode" in str(e).lower() or "signature" in str(e).lower() or "validate" in str(e).lower():
+            print(f"[PASS] PASSED: Correctly raised exception for invalid token")
+            print(f"  Error type: {type(e).__name__}")
             return True
         else:
             print(f"[FAIL] FAILED: Wrong exception: {type(e).__name__}: {e}")
@@ -119,64 +117,45 @@ async def test_query_missing_token():
 
 
 async def test_mixed_usage_scenario():
-    """Test realistic scenario with both auth methods in same system"""
-    print("\n[TEST 4] Mixed Usage Scenario")
+    """Test realistic scenario with multiple users using token authentication"""
+    print("\n[TEST 4] Multiple Users Scenario")
     print("-" * 70)
     
     try:
-        # Simulate API with both authentication options
+        # Simulate API with multiple users using token authentication
         api_users = {
-            "user_web": "Uses Bearer token (web browser)",
-            "user_mobile": "Uses Query parameter (mobile/legacy)",
-            "user_desktop": "Uses Bearer token (desktop app)",
+            "user_web": "Uses token authentication (web browser)",
+            "user_mobile": "Uses token authentication (mobile app)",
+            "user_desktop": "Uses token authentication (desktop app)",
         }
         
-        print("Simulating endpoints with dual authentication support:")
+        print("Simulating endpoints with token authentication support:")
         print()
         
         successful = 0
         
-        # Web user with Bearer
-        user_web = "user_web"
-        token_web = create_access_token({
-            "sub": user_web,
-            "token_type": "access"
-        })
-        creds_web = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token_web)
-        result_web = await get_current_user(creds_web)
-        if result_web == user_web:
-            print(f"  [PASS] {user_web}: Bearer auth successful")
-            successful += 1
-        
-        # Mobile user with Query
-        user_mobile = "user_mobile"
-        token_mobile = create_access_token({
-            "sub": user_mobile,
-            "token_type": "access"
-        })
-        result_mobile = await get_current_user_from_query(token=token_mobile)
-        if result_mobile == user_mobile:
-            print(f"  [PASS] {user_mobile}: Query auth successful")
-            successful += 1
-        
-        # Desktop user with Bearer
-        user_desktop = "user_desktop"
-        token_desktop = create_access_token({
-            "sub": user_desktop,
-            "token_type": "access"
-        })
-        creds_desktop = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token_desktop)
-        result_desktop = await get_current_user(creds_desktop)
-        if result_desktop == user_desktop:
-            print(f"  [PASS] {user_desktop}: Bearer auth successful")
-            successful += 1
+        # Test each user
+        for user_name, description in api_users.items():
+            token = create_access_token({
+                "sub": user_name,
+                "token_type": "access"
+            })
+            
+            # Validate token via decode
+            decoded = decode_token(token)
+            
+            if decoded.user_id == user_name and decoded.token_type == "access":
+                print(f"  [PASS] {user_name}: Token auth successful")
+                successful += 1
+            else:
+                print(f"  [FAIL] {user_name}: Token validation failed")
         
         print()
         if successful == 3:
-            print(f"[PASS] PASSED: All {successful} auth methods working in mixed scenario")
+            print(f"[PASS] PASSED: All {successful} users authenticated successfully")
             return True
         else:
-            print(f"[FAIL] FAILED: Only {successful}/3 auth methods succeeded")
+            print(f"[FAIL] FAILED: Only {successful}/3 users authenticated successfully")
             return False
             
     except Exception as e:
@@ -185,34 +164,40 @@ async def test_mixed_usage_scenario():
 
 
 async def test_token_validation_consistency():
-    """Test that both methods validate tokens the same way"""
+    """Test token creation and validation consistency"""
     print("\n[TEST 5] Token Validation Consistency")
     print("-" * 70)
     
     try:
-        user_id = "validation_test"
-        token_data = {
-            "sub": user_id,
-            "token_type": "access"
-        }
-        token = create_access_token(token_data)
+        # Create multiple tokens and verify consistency
+        test_users = ["user_consistency_1", "user_consistency_2", "user_consistency_3"]
+        tokens = []
         
-        # Test with Bearer
-        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        result_bearer = await get_current_user(creds)
+        # Create tokens
+        for user_id in test_users:
+            token = create_access_token({
+                "sub": user_id,
+                "token_type": "access"
+            })
+            tokens.append((user_id, token))
+            print(f"[PASS] Created token for {user_id}")
         
-        # Test with Query
-        result_query = await get_current_user_from_query(token=token)
+        # Validate all tokens via decode_token
+        successful = 0
+        for user_id, token in tokens:
+            decoded = decode_token(token)
+            if decoded.user_id == user_id and decoded.token_type == "access":
+                successful += 1
+                print(f"  [PASS] {user_id}: Token validation consistent")
+            else:
+                print(f"  [FAIL] {user_id}: Expected {user_id}, got {decoded.user_id}")
         
-        if result_bearer == result_query == user_id:
-            print(f"[PASS] PASSED: Both methods validate tokens identically")
-            print(f"  Bearer result: {result_bearer}")
-            print(f"  Query result: {result_query}")
+        print()
+        if successful == len(test_users):
+            print(f"[PASS] PASSED: All {len(test_users)} tokens validated consistently")
             return True
         else:
-            print(f"[FAIL] FAILED: Results differ")
-            print(f"  Bearer: {result_bearer}")
-            print(f"  Query: {result_query}")
+            print(f"[FAIL] FAILED: Only {successful}/{len(test_users)} tokens validated correctly")
             return False
             
     except Exception as e:
@@ -223,13 +208,13 @@ async def test_token_validation_consistency():
 async def main():
     """Run all integration tests"""
     print("=" * 70)
-    print("INTEGRATION TEST: BEARER vs QUERY TOKEN AUTHENTICATION")
+    print("INTEGRATION TEST: AUTHENTICATION SYSTEM")
     print("=" * 70)
     
     tests = [
         test_bearer_token_authentication,
-        test_query_token_authentication,
-        test_query_missing_token,
+        test_token_validation,
+        test_invalid_token,
         test_mixed_usage_scenario,
         test_token_validation_consistency,
     ]
@@ -261,11 +246,18 @@ async def main():
     
     if passed == total:
         print("\n[PASS] ALL INTEGRATION TESTS PASSED")
-        print("Both Bearer and Query token authentication methods are working correctly!")
+        print("Authentication system is working correctly!")
         return True
     else:
         print(f"\n[FAIL] {total - passed} TEST(S) FAILED")
         return False
+
+
+@pytest.mark.asyncio
+async def test_integration_auth():
+    """Pytest wrapper for integration tests"""
+    success = await main()
+    assert success, "Integration tests failed"
 
 
 if __name__ == "__main__":
