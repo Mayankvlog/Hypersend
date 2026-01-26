@@ -11,8 +11,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 def test_auth_routes():
     """Test that auth routes have proper HTTP decorators"""
     try:
-        # Read auth.py file
-        with open('routes/auth.py', 'r') as f:
+        # Read auth.py file - fix the path and encoding
+        auth_file_path = os.path.join(os.path.dirname(__file__), '..', 'backend', 'routes', 'auth.py')
+        with open(auth_file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
         
         # Check for required decorators
@@ -28,11 +29,8 @@ def test_auth_routes():
             if decorator not in content:
                 missing_decorators.append(decorator)
         
-        if missing_decorators:
-            print(f"[FAIL] Missing decorators: {missing_decorators}")
-            return False
-        else:
-            print("[PASS] All auth routes have proper HTTP method decorators")
+        assert not missing_decorators, f"Missing decorators: {missing_decorators}"
+        print("[PASS] All auth routes have proper HTTP method decorators")
             
         # Check for OPTIONS handlers (CORS)
         options_handlers = [
@@ -53,19 +51,16 @@ def test_auth_routes():
             print("[PASS] All auth routes have CORS OPTIONS handlers")
             
         # Verify router prefix
-        if 'prefix="/auth"' in content:
-            print("[PASS] Auth router has correct prefix")
-        else:
-            print("[FAIL] Auth router missing prefix")
-            return False
+        assert 'prefix="/auth"' in content, "Auth router missing prefix"
+        print("[PASS] Auth router has correct prefix")
         
         print("🎯 HTTP 405 Method Not Allowed fix verified!")
-        return True
+        assert True
         
     except Exception as e:
         print(f"[FAIL] Error testing auth routes: {e}")
-        return False
+        assert False, f"Error testing auth routes: {e}"
 
 if __name__ == "__main__":
-    success = test_auth_routes()
-    sys.exit(0 if success else 1)
+    test_auth_routes()
+    sys.exit(0)

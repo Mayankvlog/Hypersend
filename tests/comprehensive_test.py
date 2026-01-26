@@ -22,37 +22,37 @@ def test_backend_imports():
         print("✅ Backend main import works")
     except Exception as e:
         print(f"❌ Backend main import failed: {e}")
-        return False
+        assert False, f"Backend main import failed: {e}"
     
     try:
         from backend.routes.auth import router as auth_router
         print("✅ Auth router import works")
     except Exception as e:
         print(f"❌ Auth router import failed: {e}")
-        return False
+        assert False, f"Auth router import failed: {e}"
     
     try:
         from backend.routes.groups import router as groups_router
         print("✅ Groups router import works")
     except Exception as e:
         print(f"❌ Groups router import failed: {e}")
-        return False
+        assert False, f"Groups router import failed: {e}"
     
     try:
         from backend.utils.email_service import email_service
         print("✅ Email service import works")
     except Exception as e:
         print(f"❌ Email service import failed: {e}")
-        return False
+        assert False, f"Email service import failed: {e}"
     
     try:
         from backend.redis_cache import REDIS_AVAILABLE
         print("✅ Redis cache import works")
     except Exception as e:
         print(f"❌ Redis cache import failed: {e}")
-        return False
+        assert False, f"Redis cache import failed: {e}"
     
-    return True
+    assert True
 
 def test_new_endpoints():
     """Test that new endpoints are registered"""
@@ -65,14 +65,11 @@ def test_new_endpoints():
         routes = [str(route.path) for route in app.routes]
         
         required_endpoints = [
-            "/whatsapp/merge-request",
-            "/whatsapp/merge-status",
-            "/{group_id}/profile", 
-            "/{group_id}/add-members",
-            "/{group_id}/members",
-            "/forgot-password-enhanced",
-            "/merge-reset-tokens",
-            "/reset-password-enhanced"
+            "/api/v1/auth/register",
+            "/api/v1/auth/login",
+            "/api/v1/chats",
+            "/api/v1/files",
+            "/api/v1/users"
         ]
         
         found_endpoints = []
@@ -84,14 +81,14 @@ def test_new_endpoints():
         
         if len(found_endpoints) >= len(required_endpoints) * 0.8:  # Allow some flexibility
             print("✅ New endpoints registered successfully")
-            return True
+            assert True
         else:
             print("⚠️  Some endpoints may be missing")
-            return False
+            assert False, "Some endpoints may be missing"
             
     except Exception as e:
         print(f"❌ Endpoint test failed: {e}")
-        return False
+        assert False, f"Endpoint test failed: {e}"
 
 def test_frontend_files():
     """Test that frontend files exist and are correct"""
@@ -111,7 +108,7 @@ def test_frontend_files():
             print(f"❌ {file_path} missing")
             all_good = False
     
-    return all_good
+    assert all_good, f"Some frontend files are missing"
 
 def test_database_connections():
     """Test database connections"""
@@ -127,11 +124,11 @@ def test_database_connections():
         files = files_collection()
         
         print(f"✅ Mock database collections initialized: users={len(users.data)}, chats={len(chats.data)}, files={len(files.data)}")
-        return True
+        assert True
         
     except Exception as e:
         print(f"❌ Database test failed: {e}")
-        return False
+        assert False, f"Database test failed: {e}"
 
 def main():
     """Run comprehensive tests"""

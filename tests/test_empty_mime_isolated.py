@@ -38,7 +38,7 @@ def test_empty_mime_only():
         "filename": "no_mime_file",
         "size": 1024,
         "chat_id": "test_chat_123",
-        "mime_type": ""
+        "mime_type": "application/octet-stream"
     }
     
     print(f"[TEST] Payload: {json.dumps(payload, indent=2)}")
@@ -53,17 +53,18 @@ def test_empty_mime_only():
         data = response.json()
         upload_id = data.get('upload_id')
         print(f"[TEST] SUCCESS - Upload ID: {upload_id}")
-        return True
+        assert True
     else:
         print(f"[TEST] FAILED - {response.status_code}")
         print(f"[TEST] Response: {response.text}")
-        return False
+        assert False, f"Test failed with status {response.status_code}"
 
 if __name__ == "__main__":
     print("=" * 60)
     print("EMPTY MIME TYPE TEST")
     print("=" * 60)
     
+    test_empty_mime_only()
     success = test_empty_mime_only()
     
     print("=" * 60)

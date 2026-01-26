@@ -11,8 +11,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 def test_datetime_fix():
     """Test that datetime comparison fix is properly implemented"""
     try:
-        # Read files.py
-        with open('routes/files.py', 'r') as f:
+        # Read files.py - fix the path
+        files_py_path = os.path.join(os.path.dirname(__file__), '..', 'backend', 'routes', 'files.py')
+        with open(files_py_path, 'r') as f:
             content = f.read()
         
         # Check for the fix
@@ -28,17 +29,17 @@ def test_datetime_fix():
             print("[PASS] File upload datetime fix is properly implemented")
             print("[PASS] Handles both offset-naive and offset-aware datetimes")
             print("[PASS] Prevents TypeError: can't compare offset-naive and offset-aware datetimes")
-            return True
+            assert True
         else:
             print("[FAIL] Fix not properly implemented")
             missing = [ind for ind in fix_indicators if ind not in content]
             print(f"Missing: {missing}")
-            return False
+            assert False, f"Fix not properly implemented. Missing: {missing}"
             
     except Exception as e:
         print(f"[FAIL] Error testing datetime fix: {e}")
-        return False
+        assert False, f"Error testing datetime fix: {e}"
 
 if __name__ == "__main__":
-    success = test_datetime_fix()
-    sys.exit(0 if success else 1)
+    test_datetime_fix()
+    sys.exit(0)

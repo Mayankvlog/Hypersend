@@ -30,14 +30,14 @@ def test_file_download_fix():
         if old_pattern_count == 0 and new_pattern_count >= 4:
             print("✅ File download fix applied successfully!")
             print("✅ All instances now use mime_type field with .get() method")
-            return True
+            assert True
         else:
             print("❌ Fix not properly applied")
-            return False
+            assert False, "Fix not properly applied"
             
     except Exception as e:
         print(f"❌ Error reading file: {e}")
-        return False
+        assert False, f"Error reading file: {e}"
 
 if __name__ == "__main__":
     success = test_file_download_fix()

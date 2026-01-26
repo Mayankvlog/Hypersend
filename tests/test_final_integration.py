@@ -339,12 +339,16 @@ def test_rate_limit_exceeded():
         limiter = RateLimiter(max_requests=1, window_seconds=1)
         limiter.is_allowed("test")
         limiter.is_allowed("test")
-        return not limiter.is_allowed("test")
+        result = not limiter.is_allowed("test")
+        assert result, "Rate limiting should block after exceeding limit"
+        return result
     except ImportError:
         # Rate limiter not available, return True (test passes)
+        assert True, "Rate limiter not available"
         return True
     except Exception:
         # Any other error means test failed
+        assert False, "Rate limiting test failed with exception"
         return False
 
 if __name__ == "__main__":

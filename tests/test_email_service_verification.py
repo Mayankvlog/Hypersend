@@ -43,7 +43,7 @@ def test_email_service_configuration_fix():
         print("✅ PASS: Email service has password (fallback working)")
     else:
         print("❌ FAIL: Email service password is empty")
-        return False
+        assert False, "Email service password is empty"
     
     # Test 2: Verify email service is enabled
     print("\n2. TESTING EMAIL SERVICE ENABLED FLAG:")
@@ -56,7 +56,7 @@ def test_email_service_configuration_fix():
         print("✅ PASS: Email service is enabled")
     else:
         print("❌ FAIL: Email service is disabled")
-        return False
+        assert False, "Email service is disabled"
     
     # Test 3: Verify SMTP configuration
     print("\n3. TESTING SMTP CONFIGURATION:")
@@ -70,7 +70,7 @@ def test_email_service_configuration_fix():
         print("✅ PASS: SMTP configuration is complete")
     else:
         print("❌ FAIL: SMTP configuration is incomplete")
-        return False
+        assert False, "SMTP configuration is incomplete"
     
     # Test 4: Verify password reset email method exists and is callable
     print("\n4. TESTING PASSWORD RESET EMAIL METHOD:")
@@ -85,10 +85,10 @@ def test_email_service_configuration_fix():
             print("✅ PASS: send_password_reset_email is an async method")
         else:
             print("❌ FAIL: send_password_reset_email is not async")
-            return False
+            assert False, "send_password_reset_email is not async"
     else:
         print("❌ FAIL: send_password_reset_email method not found")
-        return False
+        assert False, "send_password_reset_email method not found"
     
     # Test 5: Verify password changed email method exists
     print("\n5. TESTING PASSWORD CHANGED EMAIL METHOD:")
@@ -100,10 +100,10 @@ def test_email_service_configuration_fix():
             print("✅ PASS: send_password_changed_email is an async method")
         else:
             print("❌ FAIL: send_password_changed_email is not async")
-            return False
+            assert False, "send_password_changed_email is not async"
     else:
         print("❌ FAIL: send_password_changed_email method not found")
-        return False
+        assert False, "send_password_changed_email method not found"
     
     # Test 6: Verify auth routes use email service
     print("\n6. TESTING AUTH ROUTES INTEGRATION:")

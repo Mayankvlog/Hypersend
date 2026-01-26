@@ -56,10 +56,10 @@ def test_cors_preflight():
             for header in ["Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"]:
                 value = response.headers.get(header, "NOT SET")
                 print(f"     - {header}: {value}")
-            return response.status_code in [200, 204]
+            assert response.status_code in [200, 204], f"Expected 200/204, got {response.status_code}"
         except Exception as e:
             print(f"[FAIL] Error: {e}")
-            return False
+            assert False, f"Error: {e}"
     else:
         # Fallback to requests for live server testing
         url = f"{BASE_URL}/auth/register"
@@ -77,10 +77,10 @@ def test_cors_preflight():
             for header in ["Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"]:
                 value = response.headers.get(header, "NOT SET")
                 print(f"     - {header}: {value}")
-            return response.status_code == 200 or response.status_code == 204
+            assert response.status_code in [200, 204], f"Expected 200/204, got {response.status_code}"
         except Exception as e:
             print(f"[FAIL] Error: {e}")
-            return False
+            assert False, f"Error: {e}"
 
 def test_registration():
     """Test user registration"""
@@ -110,14 +110,17 @@ def test_registration():
                 print(f"   User ID: {data.get('id', 'N/A')}")
                 print(f"   Email: {data.get('email', 'N/A')}")
                 print(f"   Name: {data.get('name', 'N/A')}")
+                assert True, "Registration successful"
                 return True, data
             else:
                 print(f"   [FAIL] Registration failed!")
                 print(f"   Response: {response.text}")
+                assert False, f"Registration failed: {response.text}"
                 return False, None
                 
         except Exception as e:
             print(f"[FAIL] Error: {e}")
+            assert False, f"Error: {e}"
             return False, None
     else:
         # Fallback to requests for live server testing
@@ -144,23 +147,26 @@ def test_registration():
                 print(f"   User ID: {data.get('id', 'N/A')}")
                 print(f"   Email: {data.get('email', 'N/A')}")
                 print(f"   Name: {data.get('name', 'N/A')}")
+                assert True, "Registration successful"
                 return True, data
             else:
                 print(f"   [FAIL] Registration failed!")
                 print(f"   Response: {response.text}")
+                assert False, f"Registration failed: {response.text}"
                 return False, None
                 
         except Exception as e:
             print(f"[FAIL] Error: {e}")
+            assert False, f"Error: {e}"
             return False, None
 
 def test_login():
     """Test user login"""
     print_section("TEST 3: User Login (POST /auth/login)")
     
-    # Use test user credentials
-    email = "test@example.com"
-    password = "testpassword"
+    # Use the same test user credentials from registration
+    email = TEST_USER["email"]
+    password = TEST_USER["password"]
     
     if USE_TESTCLIENT:
         url = "/api/v1/auth/login"
@@ -188,14 +194,17 @@ def test_login():
                 print(f"   [PASS] Login successful!")
                 print(f"   Token Type: {data.get('token_type', 'N/A')}")
                 print(f"   Access Token: {data.get('access_token', 'N/A')[:50]}...")
+                assert True, "Login successful"
                 return True, data
             else:
                 print(f"   [FAIL] Login failed!")
                 print(f"   Response: {response.text}")
+                assert False, f"Login failed: {response.text}"
                 return False, None
                 
         except Exception as e:
             print(f"[FAIL] Error: {e}")
+            assert False, f"Error: {e}"
             return False, None
     else:
         # Fallback to requests for live server testing
@@ -224,14 +233,17 @@ def test_login():
                 print(f"   [PASS] Login successful!")
                 print(f"   Token Type: {data.get('token_type', 'N/A')}")
                 print(f"   Access Token: {data.get('access_token', 'N/A')[:50]}...")
+                assert True, "Login successful"
                 return True, data
             else:
                 print(f"   [FAIL] Login failed!")
                 print(f"   Response: {response.text}")
+                assert False, f"Login failed: {response.text}"
                 return False, None
                 
         except Exception as e:
             print(f"[FAIL] Error: {e}")
+            assert False, f"Error: {e}"
             return False, None
 
 def test_invalid_registration():
