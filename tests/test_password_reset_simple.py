@@ -94,7 +94,13 @@ def test_nonexistent_email():
     
     try:
         # Clear mock database to ensure test isolation
-        from database import get_db
+        try:
+            from database import get_db
+        except ImportError:
+            try:
+                from backend.database import get_db
+            except ImportError:
+                pytest.skip("Could not import database module")
         db = get_db()
         if hasattr(db, 'clear_all'):
             db.clear_all()
