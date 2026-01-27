@@ -95,8 +95,8 @@ async def get_saved_messages(
     async for msg in cursor:
         messages.append(msg)
     
-    # Sort messages by created_at in descending order
-    messages.sort(key=lambda x: x.get("created_at", datetime.now(timezone.utc)), reverse=True)
+    # Sort messages by created_at in ascending order (oldest first), preserving insertion order for equal timestamps
+    messages.sort(key=lambda x: x.get("created_at", datetime.now(timezone.utc)))
     
     logger.info(f"Found {len(messages)} saved messages for user: {current_user}")
     return {"messages": messages}
