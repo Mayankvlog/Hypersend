@@ -8,11 +8,23 @@ import os
 from unittest.mock import patch
 
 # Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+# Add project root to path for absolute imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fastapi.testclient import TestClient
-from backend.main import app
-from auth.utils import get_current_user
+try:
+    from backend.main import app
+except ImportError:
+    from main import app
+
+try:
+    from backend.auth.utils import get_current_user
+except ImportError:
+    from auth.utils import get_current_user
 
 
 class TestGroupMembersComprehensive:
@@ -21,12 +33,10 @@ class TestGroupMembersComprehensive:
     @pytest.fixture
     def client(self):
         """Create test client"""
-        # Mock authentication
-        app.dependency_overrides[get_current_user] = lambda: "test_user_123"
+        # Use TestClient with fake token for authentication
+        # The auth utils supports fake_token_for_<user_id> in test context
         client = TestClient(app)
         yield client
-        # Clean up
-        app.dependency_overrides.clear()
     
     def test_group_creation_returns_members_detail(self, client):
         """Test that group creation returns members_detail with user info"""
@@ -44,7 +54,7 @@ class TestGroupMembersComprehensive:
         response = client.post(
             "/api/v1/groups",
             json=payload,
-            headers={"Authorization": "Bearer test_token"}
+            headers={"Authorization": "Bearer fake_token_for_test_user_123"}
         )
         
         print(f"Status Code: {response.status_code}")
@@ -90,7 +100,7 @@ class TestGroupMembersComprehensive:
         
         response = client.get(
             "/api/v1/groups",
-            headers={"Authorization": "Bearer test_token"}
+            headers={"Authorization": "Bearer fake_token_for_test_user_123"}
         )
         
         print(f"Status Code: {response.status_code}")
@@ -130,7 +140,7 @@ class TestGroupMembersComprehensive:
         create_response = client.post(
             "/api/v1/groups",
             json=create_payload,
-            headers={"Authorization": "Bearer test_token"}
+            headers={"Authorization": "Bearer fake_token_for_test_user_123"}
         )
         
         if create_response.status_code != 201:
@@ -148,7 +158,7 @@ class TestGroupMembersComprehensive:
         add_response = client.post(
             f"/api/v1/groups/{group_id}/members",
             json=add_payload,
-            headers={"Authorization": "Bearer test_token"}
+            headers={"Authorization": "Bearer fake_token_for_test_user_123"}
         )
         
         print(f"Status Code: {add_response.status_code}")
@@ -186,7 +196,7 @@ class TestGroupMembersComprehensive:
         create_response = client.post(
             "/api/v1/groups",
             json=create_payload,
-            headers={"Authorization": "Bearer test_token"}
+            headers={"Authorization": "Bearer fake_token_for_test_user_123"}
         )
         
         if create_response.status_code != 201:
@@ -199,7 +209,7 @@ class TestGroupMembersComprehensive:
         # Get the group
         get_response = client.get(
             f"/api/v1/groups/{group_id}",
-            headers={"Authorization": "Bearer test_token"}
+            headers={"Authorization": "Bearer fake_token_for_test_user_123"}
         )
         
         print(f"Status Code: {get_response.status_code}")
