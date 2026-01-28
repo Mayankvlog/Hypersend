@@ -4,6 +4,7 @@ Avatar Issue Fix Test
 Test that 2-letter avatars are removed when profile image is changed
 """
 
+import pytest
 import asyncio
 import sys
 import os
@@ -13,6 +14,7 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+@pytest.mark.asyncio
 async def test_avatar_fix():
     """Test that avatar initials are properly handled"""
     

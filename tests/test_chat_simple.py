@@ -3,6 +3,7 @@
 Simple test to verify chat functionality works
 """
 
+import pytest
 import sys
 import os
 import asyncio
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+@pytest.mark.asyncio
 async def test_chat_functionality():
     """Test basic chat functionality"""
     print("=== Testing Chat Functionality ===")

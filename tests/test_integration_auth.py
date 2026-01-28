@@ -20,6 +20,7 @@ from auth.utils import (
 )
 
 
+@pytest.mark.asyncio
 async def test_bearer_token_authentication():
     """Test token creation and basic validation"""
     print("\n[TEST 1] Bearer Token Authentication")
@@ -55,6 +56,7 @@ async def test_bearer_token_authentication():
         return False
 
 
+@pytest.mark.asyncio
 async def test_token_validation():
     """Test JWT token validation and decoding"""
     print("\n[TEST 2] JWT Token Validation and Decoding")
@@ -90,6 +92,7 @@ async def test_token_validation():
         return False
 
 
+@pytest.mark.asyncio
 async def test_invalid_token():
     """Test authentication with invalid token"""
     print("\n[TEST 3] Invalid Token Authentication")
@@ -116,6 +119,7 @@ async def test_invalid_token():
             return False
 
 
+@pytest.mark.asyncio
 async def test_mixed_usage_scenario():
     """Test realistic scenario with multiple users using token authentication"""
     print("\n[TEST 4] Multiple Users Scenario")
@@ -163,6 +167,7 @@ async def test_mixed_usage_scenario():
         return False
 
 
+@pytest.mark.asyncio
 async def test_token_validation_consistency():
     """Test token creation and validation consistency"""
     print("\n[TEST 5] Token Validation Consistency")

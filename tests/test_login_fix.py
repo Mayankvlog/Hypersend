@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Test script to verify the login endpoint fix for email-based authentication"""
 
+import pytest
 import httpx
 import asyncio
 import json
@@ -22,6 +23,7 @@ if not TEST_EMAIL or not TEST_PASSWORD:
     print("Usage: export TEST_EMAIL='user@example.com' TEST_PASSWORD='password' && python test_login_fix.py")
     exit(1)
 
+@pytest.mark.asyncio
 async def test_login():
     """Test the login endpoint with email"""
     print(f"[{datetime.now().isoformat()}] Starting login test...")

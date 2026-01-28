@@ -130,7 +130,7 @@ split_per_abi = true
 min_sdk_version = 21
 target_sdk_version = 33
 
-[tool.pytest.ini_options]
+[tool.pytest]
 minversion = "8.0"
 addopts = [
   "-ra", 
@@ -147,17 +147,6 @@ markers = [
   "security: marks tests as security tests",
   "scan: marks tests for code scanning",
 ]
-
-# Pytest configuration for deep code scanning
-[tool.pytest.bandit]
-args = ["-r", "-ll"]
-exclude_dirs = ["tests", "venv", "env"]
-
-[tool.pytest.mypy]
-ignore_missing_imports = true
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
 
 # ========== DEEP CODE SCAN CONFIGURATION ==========
 [tool.code_scanner]

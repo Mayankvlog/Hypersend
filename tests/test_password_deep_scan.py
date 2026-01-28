@@ -4,6 +4,7 @@ Password Management Deep Code Scan
 Test all password endpoints with mock database
 """
 
+import pytest
 import asyncio
 import sys
 import os
@@ -17,6 +18,7 @@ if backend_path not in sys.path:
 # Set mock DB before imports
 os.environ['USE_MOCK_DB'] = 'True'
 
+@pytest.mark.asyncio
 async def test_password_endpoints_deep_scan():
     """Deep scan of all password endpoints"""
     

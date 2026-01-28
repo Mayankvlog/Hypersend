@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+@pytest.mark.asyncio
 async def test_chunk_upload_endpoint():
     """Test PUT /{upload_id}/chunk endpoint"""
     
@@ -57,6 +58,7 @@ async def test_chunk_upload_endpoint():
     print("  ✓ HANDLED")
 
 
+@pytest.mark.asyncio
 async def test_complete_upload_endpoint():
     """Test POST /{upload_id}/complete endpoint"""
     
@@ -96,6 +98,7 @@ async def test_complete_upload_endpoint():
     print("  ✓ HANDLED")
 
 
+@pytest.mark.asyncio
 async def test_file_operations_flow():
     """Test complete file upload workflow"""
     
@@ -136,6 +139,7 @@ async def test_file_operations_flow():
     print("    ✓ Sets correct MIME type")
 
 
+@pytest.mark.asyncio
 async def test_error_scenarios():
     """Test all HTTP error codes"""
     

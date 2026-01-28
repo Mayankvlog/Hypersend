@@ -3,6 +3,7 @@
 Runtime verification test for password functionality
 """
 
+import pytest
 import sys
 import os
 import asyncio
@@ -14,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 # Set environment variable for testing
 os.environ['USE_MOCK_DB'] = 'True'
 
+@pytest.mark.asyncio
 async def test_password_functionality():
     """Test actual password functionality with real database operations"""
     print("=== Testing Password Functionality ===")

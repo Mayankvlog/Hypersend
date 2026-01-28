@@ -4,6 +4,7 @@ Complete Password Management Test
 Test forget password, reset password, change password functionality
 """
 
+import pytest
 import asyncio
 import sys
 import os
@@ -16,6 +17,7 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+@pytest.mark.asyncio
 async def test_password_management_complete():
     """Complete password management test"""
     

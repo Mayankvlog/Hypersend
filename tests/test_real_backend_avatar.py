@@ -4,6 +4,7 @@ Real Backend Avatar Test
 Test avatar functionality with real backend
 """
 
+import pytest
 import asyncio
 import sys
 import os
@@ -16,6 +17,7 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+@pytest.mark.asyncio
 async def test_real_backend_avatar():
     """Test avatar functionality with real backend"""
     

@@ -4,6 +4,7 @@ WhatsApp Avatar Compatibility Test
 Test that profile image changes work without showing previous initials
 """
 
+import pytest
 import asyncio
 import sys
 import os
@@ -13,6 +14,7 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+@pytest.mark.asyncio
 async def test_whatsapp_avatar_compatibility():
     """Test WhatsApp-style avatar behavior"""
     

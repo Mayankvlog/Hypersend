@@ -3,6 +3,7 @@
 Simple password functionality test
 """
 
+import pytest
 import sys
 import os
 import asyncio
@@ -11,6 +12,7 @@ from datetime import datetime, timezone
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+@pytest.mark.asyncio
 async def test_password_functionality():
     """Test actual password functionality with real database operations"""
     print("=== Testing Password Functionality ===")

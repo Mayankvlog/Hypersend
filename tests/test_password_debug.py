@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Debug script to identify password authentication issue"""
 
+import pytest
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
@@ -8,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 from backend.routes.users import users_collection
 from backend.auth.utils import verify_password
 
+@pytest.mark.asyncio
 async def test_user_data():
     """Check what format existing users have"""
     # This will help us understand if users have password_salt field
