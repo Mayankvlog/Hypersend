@@ -9,6 +9,9 @@ import sys
 import pytest
 from pathlib import Path
 
+# Enable pytest-asyncio
+pytest_plugins = ('pytest_asyncio',)
+
 # Set USE_MOCK_DB for all tests
 os.environ['USE_MOCK_DB'] = 'True'
 

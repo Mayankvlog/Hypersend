@@ -140,6 +140,7 @@ addopts = [
 ]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_scope = "function"
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "integration: marks tests as integration tests",
@@ -147,6 +148,10 @@ markers = [
   "security: marks tests as security tests",
   "scan: marks tests for code scanning",
 ]
+
+[tool.pytest-asyncio]
+mode = "auto"
+asyncio_default_fixture_scope = "function"
 
 # ========== DEEP CODE SCAN CONFIGURATION ==========
 [tool.code_scanner]
