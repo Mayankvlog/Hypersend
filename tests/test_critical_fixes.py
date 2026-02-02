@@ -22,7 +22,7 @@ def test_critical_fixes():
         
         # Test 1: Password verification working
         print("\n1. Testing password verification...")
-        from auth.utils import verify_password
+        from backend.auth.utils import verify_password
         
         test_cases = [
             ("test123", "c3e8885a03d15dff0f1ff915820071ef9be341dc783c367116", "869e09653dd2da217688c907290b6c4c", "test-user", True),

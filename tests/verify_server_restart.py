@@ -50,7 +50,8 @@ def main():
     # Import settings
     try:
         sys.path.insert(0, str(current_dir))
-        from config import settings
+        sys.path.insert(0, os.path.join(current_dir, 'backend'))
+        from backend.config import settings
         
         print(f"\n⚙️  CONFIG SETTINGS:")
         print(f"UPLOAD_CHUNK_SIZE: {settings.UPLOAD_CHUNK_SIZE} bytes ({settings.UPLOAD_CHUNK_SIZE // (1024*1024)}MB)")

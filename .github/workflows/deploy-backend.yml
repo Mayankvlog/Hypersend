@@ -60,7 +60,7 @@ jobs:
         timeout-minutes: 30
 
       - name: Deploy to VPS (Docker Compose, password SSH)
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}

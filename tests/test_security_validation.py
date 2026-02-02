@@ -64,28 +64,13 @@ def client():
 # REAL VALIDATOR IMPORTS - These are production code!
 # ============================================================================
 try:
-    from validators import (
+    from backend.validators import (
         validate_command_injection,
         validate_path_injection,
         sanitize_input
     )
 except ImportError:
-    try:
-        from backend.validators import (
-            validate_command_injection,
-            validate_path_injection,
-            sanitize_input
-        )
-    except ImportError:
-        # Mock validators for testing if not available
-        def validate_command_injection(input_str):
-            return True, "No command injection detected"
-        
-        def validate_path_injection(input_str):
-            return True, "No path injection detected"
-        
-        def sanitize_input(input_str):
-            return input_str.strip()
+    pytest.skip("Could not import validators module")
 
 
 # ============================================================================

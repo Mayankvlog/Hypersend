@@ -19,20 +19,14 @@ from fastapi.testclient import TestClient
 try:
     from backend.main import app
 except ImportError:
-    try:
-        from main import app
-    except ImportError:
-        # If both fail, skip the test but provide a clear message
-        pytest.skip("Could not import main app module", allow_module_level=True)
+    # If backend import fails, skip the test but provide a clear message
+    pytest.skip("Could not import main app module", allow_module_level=True)
 
 try:
     from backend.auth.utils import get_current_user
 except ImportError:
-    try:
-        from auth.utils import get_current_user
-    except ImportError:
-        # If both fail, skip the test but provide a clear message
-        pytest.skip("Could not import auth utils module", allow_module_level=True)
+    # If backend import fails, skip the test but provide a clear message
+    pytest.skip("Could not import auth utils module", allow_module_level=True)
 
 
 class TestGroupMembersComprehensive:
