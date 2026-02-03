@@ -215,7 +215,7 @@ class SecurityValidator:
             # Check for proper production/development distinction
             has_strict_production_check = (
                 'if not settings.DEBUG' in content and 
-                ('https://zaply.in.net' in content or 'allowed_patterns' in content)
+                ('http://localhost:8000' in content or 'allowed_patterns' in content)
             )
             if has_strict_production_check:
                 self.log_pass("cors", "main.py", "Found strict production mode protection")

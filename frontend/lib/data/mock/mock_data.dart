@@ -81,7 +81,7 @@ class MockData {
       id: '1',
       chatId: '1',
       senderId: '1',
-      content: 'Hey! Did you check out the new zaply update?',
+      content: 'Hey! Did you check out the new hypersend update?',
       timestamp: DateTime.now().subtract(const Duration(minutes: 35)),
       status: MessageStatus.read,
       isOwn: false,
@@ -141,7 +141,7 @@ class MockData {
     id: 'jessica',
     name: 'Jessica Davis',
     username: '@jess_davis',
-    email: 'jessica.davis@zaply.in.net',
+    email: 'jessica.davis@localhost.com',
     avatar: 'https://i.pravatar.cc/150?u=jessica',
     isOnline: true,
   );

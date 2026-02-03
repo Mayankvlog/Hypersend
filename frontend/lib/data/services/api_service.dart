@@ -62,7 +62,7 @@ class ApiService {
           // Allow only 2xx and 3xx status codes - treat 4xx as errors
           validateStatus: (status) => status != null && (status >= 200 && status < 400),
         headers: {
-          'User-Agent': 'zaply-Flutter-Web/1.0',
+          'User-Agent': 'hypersend-Flutter-Web/1.0',
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
@@ -90,7 +90,7 @@ class ApiService {
         // This is intentional security boundary - Flutter Web always validates SSL
         _log('[API_SECURITY] 🔒 SSL validation ENFORCED (Flutter Web - browser controls)');
         _log('[API_SECURITY] 🔒 Browsers enforce certificate validation - cannot be disabled');
-        _log('[API_SECURITY] 💡 Use valid SSL certificates for zaply.in.net');
+        _log('[API_SECURITY] 💡 Use valid SSL certificates for localhost development');
       }
     } else {
       // Production or release mode: SSL validation ALWAYS enabled

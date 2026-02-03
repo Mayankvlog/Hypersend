@@ -427,7 +427,7 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
         elif settings.CORS_ORIGINS:
             return settings.CORS_ORIGINS[0]  # Return first allowed origin
         else:
-            return "https://zaply.in.net"  # Secure default
+            return "http://localhost:3000"  # Secure default
     
     # In debug mode, allow localhost with validation
     if request_origin:

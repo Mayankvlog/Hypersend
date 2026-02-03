@@ -8,12 +8,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:zaply/main.dart';
+import 'package:hypersend/main.dart';
 
 void main() {
-  testWidgets('zaply app smoke test', (WidgetTester tester) async {
+  testWidgets('hypersend app smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const ZaplyApp());
+    await tester.pumpWidget(const HypersendApp());
 
     // Wait for the splash screen to appear
     await tester.pump();
@@ -24,8 +24,8 @@ void main() {
     // Check that we have some widgets on screen
     expect(find.byType(Container), findsWidgets);
     
-    // Verify that the splash screen shows the zaply branding
-    expect(find.text('zaply'), findsOneWidget);
+    // Verify that the splash screen shows the hypersend branding
+    expect(find.text('hypersend'), findsOneWidget);
     expect(find.text('Fast. Secure. Chat.'), findsOneWidget);
   });
 }

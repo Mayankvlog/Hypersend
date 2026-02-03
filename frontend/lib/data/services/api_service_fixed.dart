@@ -43,19 +43,19 @@ class ApiService {
 
   String _getBaseUrl() {
     if (kIsWeb) {
-      return 'https://zaply.in.net/api/v1';
+      return 'http://localhost:8000/api/v1';
     } else if (!kIsWeb && io.Platform.isAndroid) {
-      return 'https://zaply.in.net/api/v1';
+      return 'http://localhost:8000/api/v1';
     } else if (!kIsWeb && io.Platform.isIOS) {
-      return 'https://zaply.in.net/api/v1';
+      return 'http://localhost:8000/api/v1';
     } else if (!kIsWeb && io.Platform.isWindows) {
-      return 'https://zaply.in.net/api/v1';
+      return 'http://localhost:8000/api/v1';
     } else if (!kIsWeb && io.Platform.isMacOS) {
-      return 'https://zaply.in.net/api/v1';
+      return 'http://localhost:8000/api/v1';
     } else if (!kIsWeb && io.Platform.isLinux) {
-      return 'https://zaply.in.net/api/v1';
+      return 'http://localhost:8000/api/v1';
     } else {
-      return 'https://zaply.in.net/api/v1';
+      return 'http://localhost:8000/api/v1';
     }
   }
 

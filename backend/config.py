@@ -110,9 +110,9 @@ class Settings:
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment
-    # PROD: https://zaply.in.net/api/v1 (requires DNS + SSL setup + certbot)
+    # PROD: https://localhost/api/v1 (requires DNS + SSL setup + certbot)
     # DEV: Set API_BASE_URL=http://localhost:8080/api/v1 when port 80 unavailable
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -177,8 +177,10 @@ class Settings:
     # ENHANCED: Load from environment with secure defaults
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
-        "https://zaply.in.net",         # Production domain (primary)
-        "https://www.zaply.in.net",   # Production domain with www
+        "http://localhost:3000",         # Local development
+        "http://127.0.0.1:3000",       # Local development alternative
+        "http://localhost:8000",       # Backend API
+        "http://127.0.0.1:8000",      # Backend API alternative
         "http://hypersend_frontend:80",  # Docker internal: frontend container
         "http://hypersend_frontend",     # Docker internal: frontend (port 80 default)
         "http://frontend:80",            # Docker internal: frontend service

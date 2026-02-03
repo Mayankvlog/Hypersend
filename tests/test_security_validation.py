@@ -36,7 +36,8 @@ else:
 BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8000/api/v1")
 
 # Guard against accidental use of production endpoints
-if "zaply.in.net" in BASE_URL and "staging" not in BASE_URL.lower():
+production_domains = ["zaply.in.net", "example.com", "production.com"]
+if any(domain in BASE_URL for domain in production_domains):
     raise RuntimeError(
         f"SECURITY ERROR: Tests would run against production domain '{BASE_URL}'.\n"
         f"Set TEST_BASE_URL environment variable to a safe testing URL (e.g., http://localhost:8000/api/v1)"
