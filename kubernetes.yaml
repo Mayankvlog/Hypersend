@@ -67,6 +67,15 @@ data:
   DOMAIN_NAME: "zaply.in.net"
   SSL_CERT_PATH: "/etc/letsencrypt/live/zaply.in.net/fullchain.pem"
   SSL_KEY_PATH: "/etc/letsencrypt/private/privkey.pem"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_PASSWORD: ""
+  REDIS_MAX_CONNECTIONS: "100"
+  REDIS_SOCKET_TIMEOUT: "5"
+  REDIS_SOCKET_CONNECT_TIMEOUT: "5"
 
 ---
 # Secrets for sensitive data
@@ -447,6 +456,20 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: redis-data-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: data-pvc
   namespace: hypersend
 spec:
@@ -512,6 +535,91 @@ spec:
     requests:
       storage: 2Gi
   storageClassName: standard
+
+---
+# Redis Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: hypersend
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2-alpine
+        ports:
+        - containerPort: 6379
+        command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "512mb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        envFrom:
+        - configMapRef:
+            name: hypersend-config
+            optional: true
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: hypersend
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
 
 ---
 # MongoDB Deployment and Service
@@ -667,6 +775,21 @@ spec:
             secretKeyRef:
               name: hypersend-secrets
               key: SMTP_PASSWORD
+        # Redis Configuration
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_DB
+          value: "0"
+        - name: REDIS_PASSWORD
+          value: ""
+        - name: REDIS_MAX_CONNECTIONS
+          value: "100"
+        - name: REDIS_SOCKET_TIMEOUT
+          value: "5"
+        - name: REDIS_SOCKET_CONNECT_TIMEOUT
+          value: "5"
         volumeMounts:
         - name: data-volume
           mountPath: /data
@@ -702,6 +825,9 @@ spec:
       - name: uploads-volume
         persistentVolumeClaim:
           claimName: uploads-pvc
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data-pvc
 
 ---
 apiVersion: v1

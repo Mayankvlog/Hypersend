@@ -21,6 +21,8 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
+    debugPrint('[SplashScreen] Initializing splash screen...');
+    
     _controller = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -28,23 +30,34 @@ class _SplashScreenState extends State<SplashScreen>
     _animation = Tween<double>(begin: 0.0, end: 0.6).animate(_controller);
     _controller.forward();
 
+    debugPrint('[SplashScreen] Animation started, setting up navigation timer...');
+    
     // Navigate after 3 seconds with proper error handling
     _navigationTimer = Timer(const Duration(seconds: 3), () {
+      debugPrint('[SplashScreen] Navigation timer triggered');
       if (mounted) {
         try {
+          debugPrint('[SplashScreen] Checking auth service...');
           final isLoggedIn = serviceProvider.authService.isLoggedIn;
           final nextRoute = isLoggedIn ? '/chats' : '/auth';
           debugPrint('[SplashScreen] Navigating to: $nextRoute (isLoggedIn: $isLoggedIn)');
           context.go(nextRoute);
-        } catch (e) {
+          debugPrint('[SplashScreen] Navigation completed');
+        } catch (e, stackTrace) {
           debugPrint('[SplashScreen] Navigation error: $e');
+          debugPrint('[SplashScreen] Stack trace: $stackTrace');
           // Fallback to auth screen on error
           if (mounted) {
+            debugPrint('[SplashScreen] Falling back to auth screen');
             context.go('/auth');
           }
         }
+      } else {
+        debugPrint('[SplashScreen] Widget not mounted, skipping navigation');
       }
     });
+    
+    debugPrint('[SplashScreen] Splash screen initialization complete');
   }
 
   @override

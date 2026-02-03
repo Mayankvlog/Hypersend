@@ -67,6 +67,31 @@ services:
       - SSL_CERT_PATH=/etc/letsencrypt/live/localhost/fullchain.pem
       - SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
 
+  redis:
+    image: redis:7.2-alpine
+    container_name: hypersend_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    sysctls:
+      - net.core.somaxconn=65535
+
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
@@ -158,8 +183,11 @@ services:
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
+      - redis_data:/redis
     depends_on:
       mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - hypersend_network
@@ -215,6 +243,8 @@ volumes:
   mongodb_data_v4:
     driver: local
   mongodb_config_v4:
+    driver: local
+  redis_data:
     driver: local
   nginx_cache:
     driver: local
