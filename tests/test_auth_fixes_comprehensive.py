@@ -146,7 +146,7 @@ class TestRegistrationFixes:
         # Should return 422 for missing required field (validation error)
         assert response.status_code == 422
         
-        # Test missing name
+        # Test missing name (should auto-generate from email and succeed)
         user_data = {
             "email": "missing2@example.com",
             "password": "TestPassword123"
@@ -157,8 +157,8 @@ class TestRegistrationFixes:
             headers={"User-Agent": "testclient"}
         )
         
-        # Should return 422 for missing required field (validation error)
-        assert response.status_code == 422
+        # Should return 201 since name is auto-generated from email
+        assert response.status_code == 201
 
 
 class TestLoginFixes:

@@ -418,7 +418,11 @@ class AuthService {
     await prefs.remove(_kRefreshTokenKey);
   }
   
+  void dispose() {
+    _loginCooldownTimer?.cancel();
+    _loginCooldownTimer = null;
   }
+}
 
 
 

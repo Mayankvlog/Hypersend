@@ -39,20 +39,29 @@ class Role:
 
 # ... existing PyObjectId ...
 class UserCreate(BaseModel):
-    name: str = Field(..., min_length=2, max_length=100)
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    username: Optional[str] = Field(None, max_length=255)  # Frontend sends username
     email: str = Field(..., max_length=255)  # Email field instead of username
     password: str = Field(..., min_length=8, max_length=128)
+    
+    @model_validator(mode='after')
+    def validate_user_data(self):
+        # If name is not provided, use part of email before @ as name
+        if not self.name and self.email:
+            self.name = self.email.split('@')[0].title()
+        return self
     
     @field_validator('name')
     @classmethod
     def validate_name(cls, v):
-        # Remove any HTML tags and prevent XSS
+        if v is None:
+            return v  # Will be set in model_validator
         if not v or not v.strip():
             raise ValueError('Name cannot be empty')
-        # Remove HTML tags
+        # Remove any HTML tags and prevent XSS
         v = re.sub(r'<[^>]*>', '', v)
         # Remove potentially dangerous characters
-        v = re.sub(r'[<>"\']', '', v)
+        v = re.sub(r'[<"\']', '', v)
         return v.strip()
     
     @field_validator('email')
@@ -90,19 +99,42 @@ class UserCreate(BaseModel):
         return v
     
 class UserLogin(BaseModel):
-    email: str = Field(..., max_length=255)
+    email: Optional[str] = Field(None, max_length=255)
+    username: Optional[str] = Field(None, max_length=255)
     password: str = Field(..., min_length=1)
     
     @field_validator('email')
     @classmethod
     def validate_login_email(cls, v):
-        if not v or not isinstance(v, str) or not v.strip():
-            raise ValueError('Email cannot be empty')
-        v = v.strip().lower()
-        # Email validation
-        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
-            raise ValueError('Invalid email format')
+        if v is not None:
+            if not v or not isinstance(v, str) or not v.strip():
+                raise ValueError('Email cannot be empty')
+            v = v.strip().lower()
+            # Email validation
+            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+                raise ValueError('Invalid email format')
         return v
+    
+    @field_validator('username')
+    @classmethod
+    def validate_login_username(cls, v):
+        if v is not None:
+            if not v or not isinstance(v, str) or not v.strip():
+                raise ValueError('Username cannot be empty')
+            v = v.strip().lower()
+            # Email validation for username (since username contains email)
+            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+                raise ValueError('Invalid username format')
+        return v
+    
+    @model_validator(mode='after')
+    def validate_credentials(self):
+        if not self.email and not self.username:
+            raise ValueError('Either email or username is required')
+        # Use email if provided, otherwise use username
+        if not self.email:
+            self.email = self.username
+        return self
     
     @field_validator('password')
     @classmethod

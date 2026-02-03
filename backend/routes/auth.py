@@ -212,15 +212,7 @@ async def register(user: UserCreate) -> UserResponse:
     try:
         auth_log(f"Registration attempt for email: {user.email}")
         
-        # Username and password validation is now handled in the model validator
-        
-        # Password validation is now handled in the model validator
-        
-        if not user.name or not user.name.strip():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Name is required"
-            )
+        # Name validation is now handled in the model validator (auto-derived from email if not provided)
         
         # Check if user already exists with case-insensitive email lookup
         users_col = users_collection()

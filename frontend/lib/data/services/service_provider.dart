@@ -62,8 +62,9 @@ class ServiceProvider {
 
   // Dispose all services
   void dispose() {
+    authService.dispose();
+    fileTransferService.dispose();
     profileService.clearProfile();
-    fileTransferService.clearAll();
   }
 }
 
