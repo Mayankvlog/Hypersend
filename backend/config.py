@@ -110,9 +110,9 @@ class Settings:
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment
-    # PROD: https://localhost/api/v1 (requires DNS + SSL setup + certbot)
-    # DEV: Set API_BASE_URL=http://localhost:8080/api/v1 when port 80 unavailable
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+    # PROD: https://zaply.in.net/api/v1 (requires DNS + SSL setup + certbot)
+    # DEV: Set API_BASE_URL=https://zaply.in.net/api/v1 when port 80 unavailable
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -127,7 +127,7 @@ class Settings:
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
     
     # Redis Configuration
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "redis")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
@@ -177,6 +177,10 @@ class Settings:
     # ENHANCED: Load from environment with secure defaults
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
+        # Production domain
+        "https://zaply.in.net",         # Production domain
+        "https://www.zaply.in.net",     # Production www variant
+        # Local development
         "http://localhost:3000",         # Local development
         "http://127.0.0.1:3000",       # Local development alternative
         "http://localhost:8000",       # Backend API
@@ -186,10 +190,6 @@ class Settings:
         "http://frontend:80",            # Docker internal: frontend service
         "http://frontend",               # Docker internal: frontend (port 80 default)
         "http://hypersend_backend:8000", # Docker internal: backend for testing
-        "http://localhost:3000",         # Frontend development
-        "http://localhost:8000",         # Backend direct access
-        "http://127.0.0.1:3000",        # Alternative localhost
-        "http://127.0.0.1:8000",        # Alternative localhost
     ]
 
     CORS_ORIGINS = cors_origins_default

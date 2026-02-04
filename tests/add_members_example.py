@@ -25,7 +25,7 @@ def add_members_example():
     try:
         # Login request
         login_response = requests.post(
-            "http://localhost:8000/api/v1/auth/login",
+            "https://zaply.in.net/api/v1/auth/login",
             json=login_data
         )
         

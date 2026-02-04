@@ -76,9 +76,9 @@ code-scan = [
 
 [tool.zaply]
 app_name = "Zaply"
-backend_url_dev = "http://localhost:8000"
-backend_url_prod = "https://example.com/api/v1"
-backend_url_base = "https://example.com"
+backend_url_dev = "https://zaply.in.net/api/v1"
+backend_url_prod = "https://zaply.in.net/api/v1"
+backend_url_base = "https://zaply.in.net"
 frontend_dir = "frontend"
 backend_dir = "backend"
 

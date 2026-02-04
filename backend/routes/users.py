@@ -42,19 +42,21 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
         elif settings.CORS_ORIGINS:
             return settings.CORS_ORIGINS[0]  # Return first allowed origin
         else:
-            return "http://localhost:3000"  # Secure default
+            return "https://zaply.in.net"  # Secure default
     
     # In debug mode, allow localhost with validation
     if request_origin:
         if (request_origin.startswith("http://localhost:") or 
             request_origin.startswith("http://127.0.0.1:") or
+            request_origin.startswith("http://zaply.in.net") or
             request_origin.startswith("https://localhost:") or
-            request_origin.startswith("https://127.0.0.1:")):
+            request_origin.startswith("https://127.0.0.1:") or
+            request_origin.startswith("https://zaply.in.net")):
             return request_origin
         elif request_origin in settings.CORS_ORIGINS:
             return request_origin
     
-    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:3000"
+    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net"
 
 
 async def _log_group_activity(group_id: str, actor_id: str, event: str, meta: Optional[dict] = None):

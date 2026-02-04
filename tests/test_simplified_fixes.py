@@ -124,7 +124,7 @@ class TestMongoDBConnectionFixes:
             ("user@example.com", True),
             ("test.email+tag@example.com", True),
             ("user@sub.example.com", True),
-            ("user@localhost", True),  # Valid in development
+            ("user@zaply.in.net", True),  # Valid in production
             ("invalid-email", False),
             ("@example.com", False),
             ("user@", False),
@@ -134,8 +134,8 @@ class TestMongoDBConnectionFixes:
         ]
         
         import re
-        # CRITICAL FIX: Allow localhost emails for development
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost)$'
+        # CRITICAL FIX: Allow zaply.in.net emails for production
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|zaply\.in\.net)$'
         
         for email, should_be_valid in test_cases:
             is_valid = bool(re.match(email_pattern, email))

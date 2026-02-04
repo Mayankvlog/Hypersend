@@ -21,7 +21,7 @@ from validators import validate_command_injection, validate_path_injection, sani
 class TestRealBackendIntegration:
     """Test ACTUAL backend endpoints with real HTTP requests"""
     
-    BASE_URL = "http://localhost:8000"  # Adjust as needed
+    BASE_URL = "https://zaply.in.net"
     
     def test_real_security_validator_endpoint(self):
         """Test the ACTUAL security validator endpoint"""

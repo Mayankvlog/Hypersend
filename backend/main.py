@@ -122,7 +122,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
               client_host = request.client.host if request.client else ''
               host_header = request.headers.get('host', '').lower()
               localhost_patterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
-              production_patterns = ['localhost:8000', 'localhost:3000']
+              production_patterns = ['localhost:8000', 'localhost:3000', 'zaply.in.net', 'www.zaply.in.net']
               return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
 
             # CRITICAL FIX: Less aggressive security patterns to avoid false positives
@@ -208,7 +208,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 
                 # Also check for production domain in host header
                 host_header = request.headers.get('host', '').lower()
-                production_patterns = ['localhost:8000', 'localhost:3000']
+                production_patterns = ['localhost:8000', 'localhost:3000', 'zaply.in.net', 'www.zaply.in.net']
                 
                 return (any(pattern in client_host for pattern in localhost_patterns) or
                         any(pattern in host_header for pattern in production_patterns))

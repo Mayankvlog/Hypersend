@@ -16,10 +16,10 @@ from typing import Dict, Tuple, Optional
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
 # Test configuration
-PROD_DOMAIN = "localhost"
+PROD_DOMAIN = "zaply.in.net"
 VPS_IP = "139.59.82.105"
-API_BASE_URL = f"http://{PROD_DOMAIN}:8000/api/v1"
-HEALTH_ENDPOINT = f"http://{PROD_DOMAIN}:8000/health"
+API_BASE_URL = f"https://{PROD_DOMAIN}/api/v1"
+HEALTH_ENDPOINT = f"https://{PROD_DOMAIN}/health"
 
 # Test patterns for common connection issues
 TEST_URLS = [
@@ -34,7 +34,7 @@ TEST_URLS = [
     (f"http://{VPS_IP}:8000/health", "HTTP Port 8000 (IP)"),
     
     # Direct backend port
-    (f"http://localhost:8000/health", "Local Backend Port 8000"),
+    (f"http://zaply.in.net:8000/health", "Production API Port 8000"),
 ]
 
 class Colors:

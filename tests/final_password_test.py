@@ -33,7 +33,7 @@ def test_real_password_functionality():
         USE_TESTCLIENT = False
         print("⚠️ TestClient not available, will try requests")
     
-    base_url = "http://localhost:8000"
+    base_url = "https://zaply.in.net"
     
     # Test 1: Check server health
     print("\n📝 Test 1: Server Health Check")

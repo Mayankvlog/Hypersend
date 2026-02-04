@@ -79,9 +79,9 @@ jobs:
             export DOMAIN_NAME=zaply.in.net
             export SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
             export SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
-            export CORS_ORIGINS='["https://zaply.in.net", "https://www.zaply.in.net", "http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8000", "http://127.0.0.1:8000"]'
+            export CORS_ORIGINS='["https://zaply.in.net", "https://www.zaply.in.net"]'
             export EMAIL_FROM=noreply@zaply.in.net
-            export SENDER_NAME=Zaply Support
+            export SENDER_NAME=Hypersend Support
             export RATE_LIMIT_ENABLED=true
             export USE_MOCK_DB=false
             

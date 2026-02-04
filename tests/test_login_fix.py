@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 
 # Configuration
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://zaply.in.net"
 API_BASE = f"{BASE_URL}/api/v1"
 AUTH_ENDPOINT = f"{API_BASE}/auth/login"
 

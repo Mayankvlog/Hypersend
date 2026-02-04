@@ -45,7 +45,7 @@ class _ZaplyAppState extends State<ZaplyApp> {
       _darkMode = serviceProvider.settingsService.darkMode;
       _setupThemeListener();
     } catch (e) {
-      debugPrint('[hypersendApp] Initialization error: $e');
+      debugPrint('[ZaplyApp] Initialization error: $e');
       _initError = e.toString();
       _darkMode = false; // Fallback to light theme
     }

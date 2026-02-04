@@ -18,7 +18,7 @@ import sys
 from datetime import datetime
 from typing import Dict, Any
 
-API_URL = "http://localhost:8000/api/v1"
+API_URL = "https://zaply.in.net/api/v1"
 TEST_USER_EMAIL = os.getenv("TEST_USER_EMAIL", "test@example.com")
 TEST_USER_PASSWORD = os.getenv("TEST_USER_PASSWORD", "TestPassword123!")
 

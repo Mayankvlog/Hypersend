@@ -9,7 +9,7 @@ import json
 import time
 from typing import Dict, List, Tuple
 
-BASE_URL = "http://localhost:8000/api/v1"
+BASE_URL = "https://zaply.in.net/api/v1"
 
 class ErrorTester:
     def __init__(self):

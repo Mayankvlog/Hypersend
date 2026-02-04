@@ -182,7 +182,7 @@ class TestMongoDBConnectionFixes:
         # Test other cases
         test_cases = [
             ("test@example.com", True),
-            ("user@localhost", False),  # Doesn't match pattern (no TLD)
+            ("user@zaply.in.net", True),  # Valid production domain
             ("invalid-email", False),
             ("@example.com", False),
             ("user@", False),

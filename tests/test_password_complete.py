@@ -25,7 +25,7 @@ async def test_password_management_complete():
     print("=" * 60)
     
     # Test configuration
-    base_url = "http://localhost:8000/api/v1"
+    base_url = "https://zaply.in.net/api/v1"
     
     # Test user data
     test_user = {

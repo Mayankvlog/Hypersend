@@ -23,7 +23,7 @@ except ImportError:
     client = None
 
 # Configuration
-BASE_URL = "http://localhost:8000/api/v1"
+BASE_URL = "https://zaply.in.net/api/v1"
 TEST_USER = {
     "name": "Test User",
     "email": f"testuser_{int(time.time())}@example.com",

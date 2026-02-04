@@ -315,7 +315,7 @@ class TestEmailValidation:
             ("user@example.com", True),
             ("test.email+tag@example.com", True),
             ("user@sub.example.com", True),
-            ("user@localhost", True),  # Valid in development
+            ("user@zaply.in.net", True),  # Valid in production
             ("invalid-email", False),
             ("@example.com", False),
             ("user@", False),
@@ -327,7 +327,7 @@ class TestEmailValidation:
         ]
         
         import re
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1)$'
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|zaply\.in\.net|127\.0\.0\.1)$'
         
         for email, should_be_valid in test_cases:
             is_valid = bool(re.match(email_pattern, email))

@@ -37,7 +37,7 @@ else:
         requests = None
 
 # Configuration
-API_BASE_URL = os.environ.get("HYPERSEND_BASE_URL", "http://localhost:8000/api/v1")
+API_BASE_URL = os.environ.get("HYPERSEND_BASE_URL", "https://zaply.in.net/api/v1")
 TEST_EMAIL = "mobimix33@gmail.com"
 TEST_PASSWORD = "SecurePassword123!"
 NEW_PASSWORD = "NewSecurePass456!"

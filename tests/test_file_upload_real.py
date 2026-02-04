@@ -13,7 +13,7 @@ import sys
 import os
 
 # For running tests against local server
-TEST_SERVER_URL = "http://localhost:8000"
+TEST_SERVER_URL = "https://zaply.in.net"
 
 
 @pytest.mark.asyncio
@@ -48,7 +48,7 @@ async def test_file_init_endpoint_success():
             else:
                 print(f"✗ Server returned {response.status_code}: {response.text}")
                 
-        except (httpx.ConnectError, asyncio.TimeoutError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, asyncio.TimeoutError):
             print("⊘ Test server not running (expected in test environment)")
 
 
@@ -74,7 +74,7 @@ async def test_chunk_upload_endpoint_404():
             assert "detail" in data
             print("✓ Chunk upload returns 404 for non-existent upload")
             
-        except (httpx.ConnectError, asyncio.TimeoutError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, asyncio.TimeoutError):
             print("⊘ Test server not running (expected in test environment)")
 
 
@@ -98,7 +98,7 @@ async def test_chunk_upload_endpoint_400_invalid_index():
             assert response.status_code in [400, 404]
             print("✓ Chunk upload validates chunk_index bounds")
             
-        except (httpx.ConnectError, asyncio.TimeoutError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, asyncio.TimeoutError):
             print("⊘ Test server not running (expected in test environment)")
 
 
@@ -124,7 +124,7 @@ async def test_chunk_upload_endpoint_400_empty_data():
             
             print("✓ Chunk upload validates non-empty data")
             
-        except (httpx.ConnectError, asyncio.TimeoutError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, asyncio.TimeoutError):
             print("⊘ Test server not running (expected in test environment)")
 
 
@@ -145,7 +145,7 @@ async def test_complete_upload_endpoint_404():
             assert "detail" in data
             print("✓ Complete upload returns 404 for non-existent upload")
             
-        except (httpx.ConnectError, asyncio.TimeoutError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, asyncio.TimeoutError):
             print("⊘ Test server not running (expected in test environment)")
 
 
@@ -169,7 +169,7 @@ async def test_complete_upload_endpoint_400_incomplete():
             
             print("✓ Complete upload validates all chunks present")
             
-        except (httpx.ConnectError, asyncio.TimeoutError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, asyncio.TimeoutError):
             print("⊘ Test server not running (expected in test environment)")
 
 

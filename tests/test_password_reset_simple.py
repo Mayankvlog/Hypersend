@@ -17,7 +17,7 @@ import json
 from datetime import datetime
 
 client = TestClient(app)
-API_URL = "http://localhost:8000/api/v1"
+API_URL = "https://zaply.in.net/api/v1"
 TEST_EMAIL = "mobimix33@gmail.com"
 
 def test_forgot_password():

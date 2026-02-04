@@ -24,11 +24,11 @@ services:
         # Install openssl for certificate generation
         apk add --no-cache openssl;
         
-        if [ ! -d '/etc/letsencrypt/live/localhost' ]; then
+        if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
           echo '[NGINX] Creating self-signed certificate for initial deployment...';
-          mkdir -p /etc/letsencrypt/live/localhost /etc/letsencrypt/private;
-          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/localhost/fullchain.pem -days 365 -nodes -subj '/CN=localhost';
-          cp /etc/letsencrypt/live/localhost/fullchain.pem /etc/letsencrypt/live/localhost/chain.pem;
+          mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
+          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
+          cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
           echo '[NGINX] Self-signed certificate created';
         fi;
         nginx -g 'daemon off;'
@@ -48,7 +48,7 @@ services:
     environment:
       # Suppress SSL verification warnings for self-signed certs in dev
       - NGINX_ALLOW_UNSAFE_SSL=true
-      - NGINX_API_BASE_URL=${API_BASE_URL:-http://localhost:8000/api/v1}
+      - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
@@ -63,8 +63,8 @@ services:
       - NGINX_MAX_RETRIES=7  # Maximum retry attempts
       - NGINX_RETRY_DELAY=5  # Delay between retries
       # Production domain configuration
-      - DOMAIN_NAME=localhost
-      - SSL_CERT_PATH=/etc/letsencrypt/live/localhost/fullchain.pem
+      - DOMAIN_NAME=zaply.in.net
+      - SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
       - SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
 
   redis:
@@ -143,7 +143,7 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
       
       # ===== API CONFIGURATION =====
-      SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Zaply_2025_Secure_Fixed}
+      SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 28800
       REFRESH_TOKEN_EXPIRE_DAYS: 20
@@ -157,12 +157,12 @@ services:
       DEBUG: "False"
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: ${API_BASE_URL:-http://localhost:8000/api/v1}
+      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
       
       # ===== CORS CONFIGURATION =====
-      # PROD: localhost (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
+      # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
       # Structure: HTTPS production first, then Docker HTTP, then Dev HTTP
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net}
       
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
@@ -175,11 +175,11 @@ services:
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@localhost.com}
+      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@zaply.in.net}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-dummy_app_password_configure_in_env}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@localhost.com}
-      SENDER_NAME: ${SENDER_NAME:-Hypersend Support}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
+      SENDER_NAME: ${SENDER_NAME:-Zaply Support}
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
@@ -209,7 +209,7 @@ services:
       dockerfile: Dockerfile
       args:
         # SECURITY: Use relative URL for nginx proxy routing in production
-        API_BASE_URL: ${API_BASE_URL:-http://localhost:8000/api/v1}
+        API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     container_name: hypersend_frontend
     restart: unless-stopped
