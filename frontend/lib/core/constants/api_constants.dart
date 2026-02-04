@@ -32,6 +32,54 @@ class ApiConstants {
     }
   }
   
+  // WhatsApp Storage Model URLs (Relay-only - files are not stored on server)
+  static String get filesUrl => '$serverBaseUrl/files';  // Temporary relay URLs
+  static String get mediaUrl => '$serverBaseUrl/media';  // Temporary relay URLs
+  static String get imagesUrl => '$serverBaseUrl/images';  // Temporary relay URLs
+  static String get videosUrl => '$serverBaseUrl/videos';  // Temporary relay URLs
+  static String get audioUrl => '$serverBaseUrl/audio';  // Temporary relay URLs
+  static String get documentsUrl => '$serverBaseUrl/documents';  // Temporary relay URLs
+  static String get userFilesUrl => '$serverBaseUrl/user-files';  // Temporary relay URLs
+  static String get chatFilesUrl => '$serverBaseUrl/chat-files';  // Temporary relay URLs
+  static String get thumbnailsUrl => '$serverBaseUrl/thumbnails';  // Temporary relay URLs
+  static String get uploadsUrl => '$serverBaseUrl/uploads';  // Temporary relay URLs
+  
+  // WhatsApp Storage Model File URL Generators (Relay-only)
+  static String getFileUrl(String filePath, [String fileType = 'files']) {
+    // In WhatsApp model, files are relayed directly and not stored permanently
+    // URLs are temporary and will expire after relay
+    switch (fileType.toLowerCase()) {
+      case 'image':
+        return '$imagesUrl/$filePath';
+      case 'video':
+        return '$videosUrl/$filePath';
+      case 'audio':
+        return '$audioUrl/$filePath';
+      case 'document':
+        return '$documentsUrl/$filePath';
+      case 'user_file':
+        return '$userFilesUrl/$filePath';
+      case 'chat_file':
+        return '$chatFilesUrl/$filePath';
+      case 'thumbnail':
+        return '$thumbnailsUrl/$filePath';
+      case 'media':
+        return '$mediaUrl/$filePath';
+      case 'upload':
+        return '$uploadsUrl/$filePath';
+      default:
+        return '$filesUrl/$filePath';
+    }
+  }
+  
+  // WhatsApp Storage Model Configuration
+  static const bool isUserDeviceStorage = true;  // Files permanent on user device
+  static const bool isS3TempStorage = true;  // 24h temp S3 storage
+  static const int fileTtlHours = 24;  // 24h temp only like WhatsApp
+  static const int serverStorageBytes = 0;  // 0 bytes stored on server
+  static const String costModel = "free";  // No server storage cost
+  static const String s3Bucket = "hypersend-temp";  // S3 bucket name
+  
   // API Endpoints
   static const String authEndpoint = 'auth';
   static const String chatsEndpoint = 'chats';
@@ -43,12 +91,44 @@ class ApiConstants {
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
   
-  // File size limits
+  // WhatsApp Storage Model File size limits (40GB Support - matching backend)
   static const int maxFileSizeBytes = 40 * 1024 * 1024 * 1024; // 40GB in bytes
   static const int maxFileSizeMB = 40 * 1024; // 40GB in MB
-  static const Duration uploadTimeout = Duration(minutes: 30); // 30 minutes for large files
-  static const List<String> allowedImageTypes = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
-  static const List<String> restrictedImageTypes = ['.exe', '.bat', '.cmd', '.scr', '.msi', '.dll', '.php', '.asp', '.jsp', '.js', '.zip', '.rar', '.tar', '.7z'];
+  static const Duration uploadTimeout = Duration(hours: 2); // 2 hours for 40GB files
+  
+  // WhatsApp Storage Model File type limits (40GB Support)
+  static const int maxImageSizeMB = 4096; // 4GB for high-res images
+  static const int maxVideoSizeMB = 40960; // 40GB for videos
+  static const int maxAudioSizeMB = 2048; // 2GB for audio
+  static const int maxDocumentSizeMB = 40960; // 40GB for documents
+  
+  // Convert to bytes
+  static const int maxImageSizeBytes = maxImageSizeMB * 1024 * 1024;
+  static const int maxVideoSizeBytes = maxVideoSizeMB * 1024 * 1024;
+  static const int maxAudioSizeBytes = maxAudioSizeMB * 1024 * 1024;
+  static const int maxDocumentSizeBytes = maxDocumentSizeMB * 1024 * 1024;
+  
+  // Large file threshold (1GB)
+  static const int largeFileThresholdMB = 1024;
+  static const int largeFileThresholdBytes = largeFileThresholdMB * 1024 * 1024;
+  
+  // WhatsApp Storage Model Supported file types
+  static const List<String> allowedImageTypes = [
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'
+  ];
+  static const List<String> allowedVideoTypes = [
+    '.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp', '.m4v'
+  ];
+  static const List<String> allowedAudioTypes = [
+    '.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac', '.amr'
+  ];
+  static const List<String> allowedDocumentTypes = [
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.rtf', '.zip', '.rar'
+  ];
+  
+  static const List<String> restrictedImageTypes = [
+    '.exe', '.bat', '.cmd', '.scr', '.msi', '.dll', '.php', '.asp', '.jsp', '.js'
+  ];
   
   // Security: Validate SSL certificates in production
   static const bool validateCertificates = bool.fromEnvironment(

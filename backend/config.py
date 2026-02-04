@@ -183,9 +183,97 @@ class Settings:
     if not ENABLE_EMAIL:
         print("[CONFIG] Email notifications disabled")
     
-    # File upload settings
-    LARGE_FILE_THRESHOLD: int = int(os.getenv("LARGE_FILE_THRESHOLD", str(LARGE_FILE_THRESHOLD_GB * 1024 * 1024 * 1024)))  # 100MB default
-    MAX_FILE_SIZE: int = int(os.getenv("MAX_FILE_SIZE", str(MAX_FILE_SIZE_BYTES)))  # 1GB default
+    # WhatsApp Storage Model (User Device + 24h S3 TTL)
+    STORAGE_MODE: str = os.getenv("STORAGE_MODE", "user_device_s3")  # WhatsApp: User Device + 24h S3 TTL
+    S3_BUCKET: str = os.getenv("S3_BUCKET", "hypersend-temp")
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    FILE_TTL_HOURS: int = int(os.getenv("FILE_TTL_HOURS", "24"))  # 24h temp only like WhatsApp
+    SERVER_STORAGE_BYTES: int = int(os.getenv("SERVER_STORAGE_BYTES", "0"))  # 0 bytes stored on server
+    USER_DEVICE_STORAGE: bool = os.getenv("USER_DEVICE_STORAGE", "True").lower() in ("true", "1", "yes")
+    COST_MODEL: str = os.getenv("COST_MODEL", "free")  # No server storage cost
+    
+    # For backward compatibility - define paths but they won't be used in S3 mode
+    UPLOADS_PATH: str = os.getenv("UPLOADS_PATH", "/app/uploads")
+    MEDIA_PATH: str = os.getenv("MEDIA_PATH", "/app/media")
+    DOCUMENTS_PATH: str = os.getenv("DOCUMENTS_PATH", "/app/documents")
+    IMAGES_PATH: str = os.getenv("IMAGES_PATH", "/app/images")
+    VIDEOS_PATH: str = os.getenv("VIDEOS_PATH", "/app/videos")
+    AUDIO_PATH: str = os.getenv("AUDIO_PATH", "/app/audio")
+    USER_FILES_PATH: str = os.getenv("USER_FILES_PATH", "/app/user_files")
+    CHAT_FILES_PATH: str = os.getenv("CHAT_FILES_PATH", "/app/chat_files")
+    TEMP_PATH: str = os.getenv("TEMP_PATH", "/app/temp")
+    THUMBNAILS_PATH: str = os.getenv("THUMBNAILS_PATH", "/app/thumbnails")
+    
+    # WhatsApp-like File Management with 40GB Support
+    FILE_RETENTION_HOURS: int = int(os.getenv("FILE_RETENTION_HOURS", "0"))  # 0 hours - immediate deletion
+    TEMP_FILE_RETENTION_HOURS: int = int(os.getenv("TEMP_FILE_RETENTION_HOURS", "0"))  # 0 hours - immediate deletion
+    AUTO_CLEANUP_ENABLED: bool = os.getenv("AUTO_CLEANUP_ENABLED", "True").lower() in ("true", "1", "yes")
+    MAX_STORAGE_PER_USER_GB: int = int(os.getenv("MAX_STORAGE_PER_USER_GB", "0"))  # 0GB - no server storage
+    
+    # 40GB Maximum File Size Support
+    MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "40960"))  # 40GB in MB
+    MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", str(40 * 1024 * 1024 * 1024)))  # 40GB in bytes
+    LARGE_FILE_THRESHOLD_GB: int = int(os.getenv("LARGE_FILE_THRESHOLD_GB", "1"))  # 1GB threshold
+    LARGE_FILE_THRESHOLD: int = LARGE_FILE_THRESHOLD_GB * 1024 * 1024 * 1024
+    
+    # WhatsApp-like File Type Limits (Updated for 40GB support)
+    MAX_IMAGE_SIZE_MB: int = int(os.getenv("MAX_IMAGE_SIZE_MB", "4096"))  # 4GB for high-res images
+    MAX_VIDEO_SIZE_MB: int = int(os.getenv("MAX_VIDEO_SIZE_MB", "40960"))  # 40GB for videos
+    MAX_AUDIO_SIZE_MB: int = int(os.getenv("MAX_AUDIO_SIZE_MB", "2048"))  # 2GB for audio
+    MAX_DOCUMENT_SIZE_MB: int = int(os.getenv("MAX_DOCUMENT_SIZE_MB", "40960"))  # 40GB for documents
+    
+    # Convert to bytes
+    MAX_IMAGE_SIZE_BYTES: int = MAX_IMAGE_SIZE_MB * 1024 * 1024
+    MAX_VIDEO_SIZE_BYTES: int = MAX_VIDEO_SIZE_MB * 1024 * 1024
+    MAX_AUDIO_SIZE_BYTES: int = MAX_AUDIO_SIZE_MB * 1024 * 1024
+    MAX_DOCUMENT_SIZE_BYTES: int = MAX_DOCUMENT_SIZE_MB * 1024 * 1024
+    
+    # WhatsApp-like Supported File Types
+    SUPPORTED_IMAGE_TYPES: list = os.getenv("SUPPORTED_IMAGE_TYPES", 
+        "jpg,jpeg,png,gif,webp,bmp,heic,heif").split(",")
+    SUPPORTED_VIDEO_TYPES: list = os.getenv("SUPPORTED_VIDEO_TYPES", 
+        "mp4,mov,avi,mkv,webm,3gp,m4v").split(",")
+    SUPPORTED_AUDIO_TYPES: list = os.getenv("SUPPORTED_AUDIO_TYPES", 
+        "mp3,wav,aac,m4a,ogg,flac,amr").split(",")
+    SUPPORTED_DOCUMENT_TYPES: list = os.getenv("SUPPORTED_DOCUMENT_TYPES", 
+        "pdf,doc,docx,xls,xlsx,ppt,pptx,txt,rtf,zip,rar").split(",")
+    
+    # WhatsApp-like Storage Paths by Type
+    STORAGE_PATHS: dict = {
+        "image": IMAGES_PATH,
+        "video": VIDEOS_PATH,
+        "audio": AUDIO_PATH,
+        "document": DOCUMENTS_PATH,
+        "user_file": USER_FILES_PATH,
+        "chat_file": CHAT_FILES_PATH,
+        "temp": TEMP_PATH,
+        "thumbnail": THUMBNAILS_PATH,
+        "media": MEDIA_PATH,
+        "upload": UPLOADS_PATH
+    }
+    
+    print(f"[CONFIG] WhatsApp Storage Model: {STORAGE_MODE}")
+    print(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
+    print(f"[CONFIG] AWS Region: {AWS_REGION}")
+    print(f"[CONFIG] File TTL: {FILE_TTL_HOURS} hours (24h like WhatsApp)")
+    print(f"[CONFIG] Server Storage: {SERVER_STORAGE_BYTES} bytes (0 = no storage)")
+    print(f"[CONFIG] User Device Storage: {USER_DEVICE_STORAGE}")
+    print(f"[CONFIG] Cost Model: {COST_MODEL}")
+    print(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours (immediate deletion)")
+    print(f"[CONFIG] Auto Cleanup: {AUTO_CLEANUP_ENABLED}")
+    print(f"[CONFIG] Max Storage/User: {MAX_STORAGE_PER_USER_GB}GB (0 = no server storage)")
+    print(f"[CONFIG] Max File Size: {MAX_FILE_SIZE_MB}MB ({MAX_FILE_SIZE_MB//1024}GB)")
+    print(f"[CONFIG] Large File Threshold: {LARGE_FILE_THRESHOLD_GB}GB")
+    print(f"[CONFIG] Max Image Size: {MAX_IMAGE_SIZE_MB}MB")
+    print(f"[CONFIG] Max Video Size: {MAX_VIDEO_SIZE_MB}MB")
+    print(f"[CONFIG] Max Audio Size: {MAX_AUDIO_SIZE_MB}MB")
+    print(f"[CONFIG] Max Document Size: {MAX_DOCUMENT_SIZE_MB}MB")
+    
+    # File upload settings (40GB Support)
+    # LARGE_FILE_THRESHOLD and MAX_FILE_SIZE already set above
+    # Remove duplicate assignments to avoid conflicts
     
     # CRITICAL: Production safety check
     if not DEBUG and USE_MOCK_DB:

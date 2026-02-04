@@ -16,21 +16,18 @@ metadata:
   namespace: hypersend
 data:
   # API Configuration
-  SECRET_KEY: "Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed"
+  SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
   ALGORITHM: "HS256"
   ACCESS_TOKEN_EXPIRE_MINUTES: "28800"
   REFRESH_TOKEN_EXPIRE_DAYS: "20"
   UPLOAD_TOKEN_EXPIRE_HOURS: "480"
   DATA_ROOT: "/data"
   UPLOADS_PATH: "/app/uploads"
-  MAX_FILE_SIZE_BYTES: "42949672960"
-  CHUNK_SIZE: "33554432"
-  MAX_PARALLEL_CHUNKS: "4"
-  FILE_RETENTION_HOURS: "0"
+  FILE_RETENTION_HOURS: "0"  # 0 hours - immediate deletion
   DEBUG: "False"
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
-  API_BASE_URL: "https://zaply.in.net/api/v1"
+  API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
   
   # CORS Configuration
   ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
@@ -71,6 +68,25 @@ data:
   # MongoDB Atlas Configuration
   MONGODB_ATLAS_ENABLED: "true"
   MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority"
+  
+  # WhatsApp Storage Model (User Device + 24h S3 TTL)
+  STORAGE_MODE: "user_device_s3"  # WhatsApp: User Device + 24h S3 TTL
+  S3_BUCKET: "hypersend-temp"
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  FILE_TTL_HOURS: "24"  # 24h temp only like WhatsApp
+  SERVER_STORAGE_BYTES: "0"  # ZERO bytes server pe
+  USER_DEVICE_STORAGE: "true"  # Files permanent on user device
+  COST_MODEL: "free"  # No server storage cost
+  
+  # 40GB File Size Configuration
+  MAX_FILE_SIZE_MB: "40960"  # 40GB in MB
+  LARGE_FILE_THRESHOLD_GB: "1"  # 1GB threshold for large files
+  MAX_IMAGE_SIZE_MB: "4096"  # 4GB for high-res images
+  MAX_VIDEO_SIZE_MB: "40960"  # 40GB for videos
+  MAX_AUDIO_SIZE_MB: "2048"  # 2GB for audio
+  MAX_DOCUMENT_SIZE_MB: "40960"  # 40GB for documents
   
   # Redis Configuration
   REDIS_HOST: "redis"
@@ -427,60 +443,21 @@ data:
     }
 
 ---
-# Persistent Volume Claims
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: mongodb-data-pvc
-  namespace: hypersend
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: mongodb-config-pvc
-  namespace: hypersend
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-data-pvc
-  namespace: hypersend
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
-  storageClassName: standard
-
----
+# WhatsApp-like Storage Persistent Volume Claims
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: data-pvc
   namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 20Gi
+      storage: 50Gi  # Increased for WhatsApp-like storage
   storageClassName: standard
 
 ---
@@ -489,20 +466,232 @@ kind: PersistentVolumeClaim
 metadata:
   name: uploads-pvc
   namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
+      storage: 30Gi  # Increased for user uploads
   storageClassName: standard
 
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: media-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 40Gi  # For media files (images, videos, audio)
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: documents-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi  # For documents and PDFs
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: images-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 25Gi  # For image files
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: videos-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 60Gi  # For video files (largest storage)
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audio-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 15Gi  # For audio files
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-files-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 35Gi  # For user-specific files
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chat-files-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 25Gi  # For chat attachments
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: temp-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi  # For temporary files
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: thumbnails-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: whatsapp-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi  # For thumbnail images
+  storageClassName: standard
+
+---
+# Database Storage Persistent Volume Claims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-data-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: database-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi  # Increased for MongoDB data
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-config-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: database-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi  # MongoDB configuration
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data-pvc
+  namespace: hypersend
+  labels:
+    app: hypersend
+    type: database-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi  # Increased for Redis data
+  storageClassName: standard
+
+---
+# SSL Certificate Storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: letsencrypt-certs-pvc
   namespace: hypersend
+  labels:
+    app: hypersend
+    type: ssl-storage
 spec:
   accessModes:
     - ReadWriteOnce
@@ -517,12 +706,15 @@ kind: PersistentVolumeClaim
 metadata:
   name: letsencrypt-lib-pvc
   namespace: hypersend
+  labels:
+    app: hypersend
+    type: ssl-storage
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      storage: 2Gi
   storageClassName: standard
 
 ---
@@ -531,12 +723,15 @@ kind: PersistentVolumeClaim
 metadata:
   name: nginx-cache-pvc
   namespace: hypersend
+  labels:
+    app: hypersend
+    type: cache-storage
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 2Gi
+      storage: 5Gi
   storageClassName: standard
 
 ---
@@ -778,6 +973,45 @@ spec:
             secretKeyRef:
               name: hypersend-secrets
               key: SMTP_PASSWORD
+        # WhatsApp Storage Model (User Device + 24h S3 TTL)
+        - name: STORAGE_MODE
+          value: "user_device_s3"  # WhatsApp: User Device + 24h S3 TTL
+        - name: S3_BUCKET
+          value: "hypersend-temp"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: AWS_SECRET_ACCESS_KEY
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: FILE_TTL_HOURS
+          value: "24"  # 24h temp only like WhatsApp
+        - name: SERVER_STORAGE_BYTES
+          value: "0"  # ZERO bytes server pe
+        - name: USER_DEVICE_STORAGE
+          value: "true"  # Files permanent on user device
+        - name: COST_MODEL
+          value: "free"  # No server storage cost
+        
+        # 40GB File Size Configuration
+        - name: MAX_FILE_SIZE_MB
+          value: "40960"  # 40GB in MB
+        - name: LARGE_FILE_THRESHOLD_GB
+          value: "1"  # 1GB threshold for large files
+        - name: MAX_IMAGE_SIZE_MB
+          value: "4096"  # 4GB for high-res images
+        - name: MAX_VIDEO_SIZE_MB
+          value: "40960"  # 40GB for videos
+        - name: MAX_AUDIO_SIZE_MB
+          value: "2048"  # 2GB for audio
+        - name: MAX_DOCUMENT_SIZE_MB
+          value: "40960"  # 40GB for documents
         # Redis Configuration
         - name: REDIS_HOST
           value: "redis"
@@ -794,10 +1028,29 @@ spec:
         - name: REDIS_SOCKET_CONNECT_TIMEOUT
           value: "5"
         volumeMounts:
+        # WhatsApp-like storage structure
         - name: data-volume
           mountPath: /data
         - name: uploads-volume
           mountPath: /app/uploads
+        - name: media-volume
+          mountPath: /app/media
+        - name: documents-volume
+          mountPath: /app/documents
+        - name: images-volume
+          mountPath: /app/images
+        - name: videos-volume
+          mountPath: /app/videos
+        - name: audio-volume
+          mountPath: /app/audio
+        - name: user-files-volume
+          mountPath: /app/user_files
+        - name: chat-files-volume
+          mountPath: /app/chat_files
+        - name: temp-volume
+          mountPath: /app/temp
+        - name: thumbnails-volume
+          mountPath: /app/thumbnails
         resources:
           requests:
             memory: "512Mi"
@@ -822,15 +1075,40 @@ spec:
           timeoutSeconds: 5
           failureThreshold: 3
       volumes:
+      # WhatsApp-like storage volumes
       - name: data-volume
         persistentVolumeClaim:
           claimName: data-pvc
       - name: uploads-volume
         persistentVolumeClaim:
           claimName: uploads-pvc
-      - name: redis-data
+      - name: media-volume
         persistentVolumeClaim:
-          claimName: redis-data-pvc
+          claimName: media-pvc
+      - name: documents-volume
+        persistentVolumeClaim:
+          claimName: documents-pvc
+      - name: images-volume
+        persistentVolumeClaim:
+          claimName: images-pvc
+      - name: videos-volume
+        persistentVolumeClaim:
+          claimName: videos-pvc
+      - name: audio-volume
+        persistentVolumeClaim:
+          claimName: audio-pvc
+      - name: user-files-volume
+        persistentVolumeClaim:
+          claimName: user-files-pvc
+      - name: chat-files-volume
+        persistentVolumeClaim:
+          claimName: chat-files-pvc
+      - name: temp-volume
+        persistentVolumeClaim:
+          claimName: temp-pvc
+      - name: thumbnails-volume
+        persistentVolumeClaim:
+          claimName: thumbnails-pvc
 
 ---
 apiVersion: v1

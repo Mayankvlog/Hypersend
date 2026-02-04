@@ -11,7 +11,6 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/lib/letsencrypt:/var/lib/letsencrypt
       - nginx_cache:/var/cache/nginx
-      - ./data/files:/data/files:ro
     logging:
       driver: "json-file"
       options:
@@ -53,11 +52,14 @@ services:
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
       # CRITICAL FIX: Add nginx timeout configurations for 40GB files
-      - NGINX_PROXY_READ_TIMEOUT=3600  # 1 hour for large file downloads
-      - NGINX_PROXY_SEND_TIMEOUT=3600  # 1 hour for large file uploads
-      - NGINX_PROXY_CONNECT_TIMEOUT=300  # 5 minutes for backend connection
-      - NGINX_CLIENT_BODY_TIMEOUT=3600  # 1 hour for client body upload
+      - NGINX_PROXY_READ_TIMEOUT=7200  # 2 hours for large file downloads
+      - NGINX_PROXY_SEND_TIMEOUT=7200  # 2 hours for large file uploads
+      - NGINX_PROXY_CONNECT_TIMEOUT=600  # 10 minutes for backend connection
+      - NGINX_CLIENT_BODY_TIMEOUT=7200  # 2 hours for client body upload
       - NGINX_CLIENT_MAX_BODY_SIZE=45G  # Allow 40GB files + overhead
+      - NGINX_REQUEST_TIMEOUT=7200  # 2 hours request timeout
+      - NGINX_SEND_TIMEOUT=7200  # 2 hours send timeout
+      - NGINX_READ_TIMEOUT=7200  # 2 hours read timeout
       # Enhanced error handling configuration
       - NGINX_ERROR_PAGE_TIMEOUT=30  # Error page timeout
       - NGINX_MAX_RETRIES=7  # Maximum retry attempts
@@ -158,11 +160,30 @@ services:
       MAX_FILE_SIZE_BYTES: 42949672960
       CHUNK_SIZE: 33554432
       MAX_PARALLEL_CHUNKS: 4
-      FILE_RETENTION_HOURS: 0
+      FILE_RETENTION_HOURS: 8760  # 1 year (WhatsApp-like)
       DEBUG: "False"
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+      
+      # ===== WHATSAPP STORAGE MODEL (User Device + 24h S3 TTL) =====
+      STORAGE_MODE: user_device_s3  # WhatsApp: User Device + 24h S3 TTL
+      S3_BUCKET: hypersend-temp
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      FILE_TTL_HOURS: 24  # 24h temp only like WhatsApp
+      SERVER_STORAGE_BYTES: "0"  # ZERO bytes server pe
+      USER_DEVICE_STORAGE: "true"  # Files permanent on user device
+      COST_MODEL: "free"  # No server storage cost
+      
+      # ===== 40GB FILE SIZE CONFIGURATION =====
+      MAX_FILE_SIZE_MB: 40960  # 40GB in MB
+      LARGE_FILE_THRESHOLD_GB: 1  # 1GB threshold for large files
+      MAX_IMAGE_SIZE_MB: 4096  # 4GB for high-res images
+      MAX_VIDEO_SIZE_MB: 40960  # 40GB for videos
+      MAX_AUDIO_SIZE_MB: 2048  # 2GB for audio
+      MAX_DOCUMENT_SIZE_MB: 40960  # 40GB for documents
       
       # ===== CORS CONFIGURATION =====
       # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
@@ -186,9 +207,8 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
       SENDER_NAME: ${SENDER_NAME:-Zaply Support}
     volumes:
-      - ./data:/data
-      - ./backend/uploads:/app/uploads
-      - redis_data:/redis
+      # WHATSAPP EXACT: ZERO storage volumes - only Redis for metadata
+      - redis_data:/redis  # sirf chat metadata
     depends_on:
       mongodb:
         condition: service_healthy
@@ -250,6 +270,4 @@ volumes:
   mongodb_config_v4:
     driver: local
   redis_data:
-    driver: local
-  nginx_cache:
     driver: local
