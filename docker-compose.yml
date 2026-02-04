@@ -208,8 +208,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # SECURITY: Use relative URL for nginx proxy routing in production
-        API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+        # SECURITY: Use production URL for nginx proxy routing
+        API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}     
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     container_name: hypersend_frontend
     restart: unless-stopped

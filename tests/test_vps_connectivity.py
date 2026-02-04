@@ -158,7 +158,7 @@ def check_cors_configuration() -> bool:
             timeout=5,
             verify=False,
             headers={
-                "Origin": "http://localhost:3000",
+                "Origin": "https://zaply.in.net",
                 "Access-Control-Request-Method": "POST",
             }
         )

@@ -90,7 +90,7 @@ class ApiService {
         // This is intentional security boundary - Flutter Web always validates SSL
         _log('[API_SECURITY] 🔒 SSL validation ENFORCED (Flutter Web - browser controls)');
         _log('[API_SECURITY] 🔒 Browsers enforce certificate validation - cannot be disabled');
-        _log('[API_SECURITY] 💡 Use valid SSL certificates for localhost development');
+        _log('[API_SECURITY] 💡 Use valid SSL certificates for zaply.in.net development');
       }
     } else {
       // Production or release mode: SSL validation ALWAYS enabled

@@ -43,7 +43,7 @@ def test_cors_preflight():
     if USE_TESTCLIENT:
         url = "/api/v1/auth/register"
         headers = {
-            "Origin": "http://localhost:3000",
+            "Origin": "https://zaply.in.net",
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "Content-Type",
         }
@@ -64,7 +64,7 @@ def test_cors_preflight():
         # Fallback to requests for live server testing
         url = f"{BASE_URL}/auth/register"
         headers = {
-            "Origin": "http://localhost:3000",
+            "Origin": "https://zaply.in.net",
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "Content-Type",
         }

@@ -32,7 +32,7 @@ class Settings:
     _IS_DOCKER: bool = os.path.exists("/.dockerenv")
     _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
     _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
-    _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "localhost")
+    _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "zaply.in.net")
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     
@@ -180,11 +180,11 @@ class Settings:
         # Production domain
         "https://zaply.in.net",         # Production domain
         "https://www.zaply.in.net",     # Production www variant
-        # Local development
-        "http://localhost:3000",         # Local development
-        "http://127.0.0.1:3000",       # Local development alternative
-        "http://localhost:8000",       # Backend API
-        "http://127.0.0.1:8000",      # Backend API alternative
+        # Development
+        "http://zaply.in.net:3000",         # Development
+        "https://zaply.in.net:3000",       # Development alternative
+        "http://zaply.in.net:8000",       # Backend API
+        "https://zaply.in.net:8000",      # Backend API alternative
         "http://hypersend_frontend:80",  # Docker internal: frontend container
         "http://hypersend_frontend",     # Docker internal: frontend (port 80 default)
         "http://frontend:80",            # Docker internal: frontend service
@@ -222,7 +222,7 @@ class Settings:
                     docker_http_origins = []
                     
                     for origin in http_origins:
-                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'localhost:3000', '127.0.0.1:']):
+                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'zaply.in.net:3000', 'www.zaply.in.net:']):
                             docker_http_origins.append(origin)
                         else:
                             external_http_origins.append(origin)

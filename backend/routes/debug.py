@@ -140,7 +140,7 @@ async def get_validation_examples(
             {
                 "error": "email must be at least 5 characters",
                 "received": {"email": "a@b"},
-                "fix": "Provide a valid email like user@localhost.com"
+                "fix": "Provide a valid email like user@zaply.in.net"
             },
             {
                 "error": "email does not match pattern",

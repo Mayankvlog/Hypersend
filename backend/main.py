@@ -116,14 +116,14 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             url_path = str(request.url.path)
             
             # Enhanced suspicious pattern detection with more comprehensive coverage
-            # CRITICAL FIX: Allow localhost and production domain requests without blocking
-            def is_localhost_or_production(request):
-              """Check if request is from localhost, Docker internal, or production domain"""
+            # CRITICAL FIX: Allow zaply.in.net and production domain requests without blocking
+            def is_zaply_or_production(request):
+              """Check if request is from zaply.in.net, Docker internal, or production domain"""
               client_host = request.client.host if request.client else ''
               host_header = request.headers.get('host', '').lower()
-              localhost_patterns = ['localhost', '127.0.0.1', '0.0.0.0', '::1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
-              production_patterns = ['localhost:8000', 'localhost:3000', 'zaply.in.net', 'www.zaply.in.net']
-              return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
+              zaply_patterns = ['zaply.in.net', 'www.zaply.in.net', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
+              production_patterns = ['zaply.in.net:8000', 'zaply.in.net:3000', 'zaply.in.net', 'www.zaply.in.net']
+              return (any(pattern in client_host for pattern in zaply_patterns) or any(pattern in host_header for pattern in production_patterns))
 
             # CRITICAL FIX: Less aggressive security patterns to avoid false positives
             # Focus on actual attacks, not normal text containing keywords
@@ -181,7 +181,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 'eval(base64', 'system($_POST', 'passthru($_',
                 'shell_exec($_', 'exec($_POST', 'preg_replace eval',
                  
-                # SSRF patterns (only clear SSRF, allow localhost)
+                # SSRF patterns (only clear SSRF, allow zaply.in.net)
                 '169.254.169.254', 'metadata.google.internal',
                 'file:///', 'gopher://', 'dict://',
                  
@@ -196,37 +196,37 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             url_lower = url_path.lower()
             headers_lower = {k.lower(): v.lower() if v else '' for k, v in dict(request.headers).items()}
             
-            # Enhanced security check with localhost/loopback exception for legitimate requests
-            def is_localhost_or_internal():
-                """Check if request is from localhost or internal Docker network"""
+            # Enhanced security check with zaply.in.net/loopback exception for legitimate requests
+            def is_zaply_or_internal():
+                """Check if request is from zaply.in.net or internal Docker network"""
                 client_host = request.client.host if request.client else ''
-                # Allow common localhost patterns for legitimate health checks and development
-                localhost_patterns = [
-                    'localhost', '127.0.0.1', '0.0.0.0', '::1',
+                # Allow common zaply.in.net patterns for legitimate health checks and development
+                zaply_patterns = [
+                    'zaply.in.net', 'www.zaply.in.net',
                     'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend'
                 ]
                 
                 # Also check for production domain in host header
                 host_header = request.headers.get('host', '').lower()
-                production_patterns = ['localhost:8000', 'localhost:3000', 'zaply.in.net', 'www.zaply.in.net']
+                production_patterns = ['zaply.in.net:8000', 'zaply.in.net:3000', 'zaply.in.net', 'www.zaply.in.net']
                 
-                return (any(pattern in client_host for pattern in localhost_patterns) or
+                return (any(pattern in client_host for pattern in zaply_patterns) or
                         any(pattern in host_header for pattern in production_patterns))
             
-            is_internal = is_localhost_or_internal()
+            is_internal = is_zaply_or_internal()
             
-            # Check URL path for suspicious patterns (but allow legitimate localhost and production requests)
+            # Check URL path for suspicious patterns (but allow legitimate zaply.in.net and production requests)
             # Always allow health check endpoint
             if url_path in ['/health', '/api/v1/health']:
                 is_internal = True  # Force internal for health checks
                 
             for pattern in suspicious_patterns:
-                # Skip localhost-related patterns for internal requests
-                if pattern in ['localhost', '127.0.0.1', '0.0.0.0', '::1'] and is_internal:
+                # Skip zaply.in.net-related patterns for internal requests
+                if pattern in ['zaply.in.net', 'www.zaply.in.net'] and is_internal:
                     continue
                     
-                # Skip production domain patterns
-                if pattern in ['localhost:8000'] and ('localhost:8000' in url_lower or 'localhost:8000' in url_lower):
+                # Skip production domain patterns  
+                if pattern in ['zaply.in.net:8000'] and ('zaply.in.net:8000' in url_lower or 'zaply.in.net:8000' in url_lower):
                     continue
                     
                 if pattern in url_lower and not is_internal:
@@ -244,7 +244,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         }
                     )
             
-            # Check headers for suspicious patterns (but allow common legitimate headers and localhost)
+            # Check headers for suspicious patterns (but allow common legitimate headers and zaply.in.net)
             for header_name, header_value in headers_lower.items():
                 # Skip checking certain safe headers
                 safe_headers = ['user-agent', 'accept', 'content-type', 'authorization', 'host', 'x-forwarded-for', 'x-real-ip']
@@ -273,7 +273,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     # Only allow exact trusted hostnames
                     allowed_hostnames = {
                         'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend',
-                        'localhost:8000', 'localhost:3000', 'localhost', '127.0.0.1', '::1'
+                        'zaply.in.net:8000', 'zaply.in.net:3000', 'zaply.in.net', 'www.zaply.in.net'
                     }
                     
                     # Reject IP addresses and link-local ranges
@@ -310,12 +310,12 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     continue
                     
                 for pattern in suspicious_patterns:
-                    # Skip localhost-related patterns for internal requests
-                    if pattern in ['localhost', '127.0.0.1', '0.0.0.0', '::1'] and is_internal:
+                    # Skip zaply.in.net-related patterns for internal requests
+                    if pattern in ['zaply.in.net', 'www.zaply.in.net'] and is_internal:
                         continue
                         
                     # Skip production domain patterns  
-                    if pattern in ['localhost:8000'] and ('localhost:8000' in header_value or 'localhost:8000' in header_value):
+                    if pattern in ['zaply.in.net:8000'] and ('zaply.in.net:8000' in header_value or 'zaply.in.net:8000' in header_value):
                         continue
                         
                     if pattern in header_value:
@@ -1043,7 +1043,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
 # TrustedHost middleware for additional security
 # Only enable in production with proper domain
 if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "true":
-    allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    allowed_hosts = os.getenv("ALLOWED_HOSTS", "zaply.in.net,www.zaply.in.net").split(",")
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=allowed_hosts
@@ -1063,17 +1063,14 @@ if isinstance(cors_origins, list) and len(cors_origins) > 0:
 
 # SECURITY: Only add local development origins in debug mode
 if settings.DEBUG:
-    local_dev_origins = [
-        "http://localhost:3000",
-        "http://localhost:8000", 
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000"
-    ]
-    
-    # Merge origins without duplicates
-    for origin in local_dev_origins:
-        if origin not in cors_origins:
-            cors_origins.append(origin)
+    cors_origins.extend([
+        "https://zaply.in.net",
+        "https://www.zaply.in.net",
+        "http://zaply.in.net:3000",
+        "http://zaply.in.net:8000",
+        "https://zaply.in.net:3000",
+        "https://zaply.in.net:8000",
+    ])
 
 app.add_middleware(
     CORSMiddleware,
@@ -1111,23 +1108,17 @@ async def handle_options_request(full_path: str, request: Request):
         # Production domains - exact matches only
         if not settings.DEBUG:
             allowed_origins.extend([
-                "http://localhost:8000",
-                "http://localhost:3000",
+                "https://zaply.in.net",
+                "https://www.zaply.in.net",
             ])
         
         # Development environments
         if settings.DEBUG:
             allowed_origins.extend([
-                "http://localhost:8000",
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-                "https://127.0.0.1:3000",
-                "http://127.0.0.1:8000", 
-                "https://127.0.0.1:8000",
-                "http://[::1]:3000",
-                "https://[::1]:3000",
-                "http://[::1]:8000",
-                "https://[::1]:8000",
+                "http://zaply.in.net:8000",
+                "http://zaply.in.net:3000",
+                "https://zaply.in.net:8000",
+                "https://zaply.in.net:3000",
                 # Docker environments
                 "http://hypersend_frontend:3000",
                 "http://hypersend_backend:8000",
@@ -1156,15 +1147,15 @@ async def handle_options_request(full_path: str, request: Request):
 async def api_status(request: Request):
     """
     Detailed API status endpoint for debugging connection issues.
-    RESTRICTED: Only accessible in DEBUG mode or from localhost.
+    RESTRICTED: Only accessible in DEBUG mode or from zaply.in.net.
     """
-    # Only allow access in debug mode or from localhost
+    # Only allow access in debug mode or from zaply.in.net
     client_host = request.client.host if request.client else "unknown"
     
-    if not settings.DEBUG and client_host not in ["127.0.0.1", "localhost", "::1"]:
+    if not settings.DEBUG and client_host not in ["zaply.in.net", "www.zaply.in.net"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This endpoint is only accessible in debug mode or from localhost"
+            detail="This endpoint is only accessible in debug mode or from zaply.in.net"
         )
     
     # In production, return minimal information
@@ -1326,10 +1317,9 @@ async def preflight_alias_endpoints(request: Request):
     if origin and origin != "null":
         # LOGIC: Consistent with handle_options_request patterns
         allowed_patterns = [
-            # Development localhost (all ports and protocols)
-            r'^https?://localhost(:[0-9]+)?$',
-            r'^https?://127\.0\.0\.1(:[0-9]+)?$',
-            r'^https?://\[::1\](:[0-9]+)?$',  # IPv6 loopback
+            # Development zaply.in.net (all ports and protocols)
+            r'^https?://zaply\.in\.net(:[0-9]+)?$',
+            r'^https?://www\.zaply\.in\.net(:[0-9]+)?$',
             # Docker container names (HTTP only)
             r'^http://hypersend_frontend(:[0-9]+)?$',
             r'^http://hypersend_backend(:[0-9]+)?$',
