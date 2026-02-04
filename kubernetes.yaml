@@ -70,7 +70,7 @@ data:
   
   # MongoDB Atlas Configuration
   MONGODB_ATLAS_ENABLED: "true"
-  MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:%3Cdb_password%3E@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority"
+  MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority"
   
   # Redis Configuration
   REDIS_HOST: "redis"
@@ -96,7 +96,7 @@ data:
   MONGO_INITDB_DATABASE: aHlwZXJzZW5k  # hypersend
   # MongoDB Atlas credentials (base64 encoded)
   MONGODB_ATLAS_ENABLED: "dHJ1ZQ=="  # true
-  MONGODB_URI: "bW9uZ29kYitzcnY6Ly9tYXlhbmxscjAzMTFfZGJfdXNlcjolM2NkYl9wYXNzd29yZCUzZUBjbHVzdGVyMC5ybmozdmZkLm1vbmdvZGIubmV0L2h5cGVyc2VuZD9yZXRyeVdyaXRlcz10cnVlJnd9bWFqb3JpdHk="  # mongodb+srv://...
+  MONGODB_URI: "bW9uZ29kYitzcnY6Ly9tYXlhbmxscjAzMTFfZGJfdXNlcjpKQmtBWmluOGx5dFRLNnZnQGNsdXN0ZXIwLnJuajN2ZmQubW9uZ29kYi5uZXQvaHlwZXJzZW5kP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eQ=="  # mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority
   # SMTP password (base64 encoded)
   SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=  # dummy_app_password_configure_in_env
 
