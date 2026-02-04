@@ -37,7 +37,14 @@ def test_imports():
         missing_files = []
         for file in required_files:
             if not os.path.exists(file):
-                missing_files.append(file)
+                # Try alternative path if running from tests directory
+                alt_file = "../" + file
+                if os.path.exists(alt_file):
+                    print(f"✅ {file} exists (alternative path)")
+                else:
+                    missing_files.append(file)
+            else:
+                print(f"✅ {file} exists")
         
         if missing_files:
             print(f"❌ Missing required files: {missing_files}")

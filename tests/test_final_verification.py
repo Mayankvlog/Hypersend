@@ -17,7 +17,7 @@ class TestMongoDBConnectionFixes:
     """Test MongoDB connection fixes comprehensively"""
     
     def test_env_file_configuration(self):
-        """Test that .env file is correctly configured for MongoDB Atlas"""
+        """Test that .env file is correctly configured for local MongoDB"""
         print("Testing .env file configuration...")
         
         env_path = Path(__file__).parent.parent / 'backend' / '.env'
@@ -27,15 +27,15 @@ class TestMongoDBConnectionFixes:
         with open(env_path, 'r') as f:
             env_content = f.read()
         
-        # Check that MONGODB_URI IS in .env for MongoDB Atlas
-        assert "MONGODB_URI=" in env_content, "MONGODB_URI should be set in .env file for MongoDB Atlas"
-        assert "mongodb+srv://" in env_content, "MONGODB_URI should use mongodb+srv:// for Atlas"
-        assert "cluster0.rnj3vfd.mongodb.net" in env_content, "MONGODB_URI should point to Atlas cluster"
+        # Check that MONGODB_URI IS in .env for local MongoDB
+        assert "MONGODB_URI=" in env_content, "MONGODB_URI should be set in .env file"
+        assert "mongodb://" in env_content, "MONGODB_URI should use mongodb:// for local MongoDB"
+        assert "localhost:27017" in env_content, "MONGODB_URI should point to localhost MongoDB"
         
-        # Check MongoDB Atlas is enabled
-        assert "MONGODB_ATLAS_ENABLED=true" in env_content, "MONGODB_ATLAS_ENABLED should be true"
+        # Check MongoDB Atlas is disabled for local development
+        assert "MONGODB_ATLAS_ENABLED=false" in env_content, "MONGODB_ATLAS_ENABLED should be false for local development"
         
-        print("✅ .env file configuration is correct for MongoDB Atlas")
+        print("✅ .env file configuration is correct for local MongoDB")
     
     def test_motor_client_configuration(self):
         """Test Motor client configuration fixes"""
@@ -58,6 +58,7 @@ class TestMongoDBConnectionFixes:
             with patch('database.settings') as mock_settings:
                 mock_settings.MONGODB_URI = "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&tls=false"
                 mock_settings._MONGO_DB = "hypersend"
+                mock_settings.USE_MOCK_DB = False  # Ensure real MongoDB client is used for this test
                 
                 # Run connect_db
                 asyncio.run(connect_db())

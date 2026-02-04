@@ -90,6 +90,7 @@ class TestMongoDBConnection:
         with patch('database.settings') as mock_settings:
             mock_settings.MONGODB_URI = None
             mock_settings._MONGO_DB = "test_db"
+            mock_settings.USE_MOCK_DB = False  # Ensure real database testing
             
             import database
             database.client = None

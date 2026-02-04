@@ -1,4 +1,22 @@
 import os
+import logging
+from logging import Filter
+
+# CRITICAL FIX: Suppress pymongo periodic task errors to prevent log spam
+class AtlasAuthenticationFilter(Filter):
+    """Filter to suppress repetitive MongoDB Atlas authentication errors in background tasks"""
+    
+    def filter(self, record):
+        """Suppress 'bad auth' errors from pymongo periodic tasks"""
+        msg = record.getMessage()
+        # Suppress background authentication errors that repeat
+        if "bad auth" in msg.lower() and "_process_periodic_tasks" in record.pathname:
+            return False  # Don't log these repetitive errors
+        return True
+
+# Apply filter to pymongo logger
+pymongo_logger = logging.getLogger("pymongo.connection")
+pymongo_logger.addFilter(AtlasAuthenticationFilter())
 import random
 import secrets
 import threading
@@ -25,7 +43,24 @@ _global_client = None
 async def connect_db():
     """Connect to MongoDB with improved retry logic and exponential backoff for VPS"""
     global client, db
-    max_retries = 5
+    
+    # CRITICAL FIX: Use mock database if enabled for local development/testing
+    if settings.USE_MOCK_DB:
+        print("[DB] Using mock database for local development/testing")
+        try:
+            from mock_database import MockDatabase
+            mock_db = MockDatabase()
+            client = Mock()  # Mock client for compatibility
+            db = mock_db
+            print("[DB] Mock database initialized successfully")
+            return
+        except ImportError:
+            print("[WARNING] Mock database not available, falling back to real MongoDB")
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize mock database: {e}")
+            print("[WARNING] Falling back to real MongoDB connection")
+    
+    max_retries = 3  # Reduced retries for Atlas to fail faster
     initial_retry_delay = 2
     # In test environments, when client is patched to a mock, avoid retries.
     client_class = AsyncIOMotorClient
@@ -41,27 +76,46 @@ async def connect_db():
         print("[ERROR] Invalid MongoDB URI format")
         raise ValueError("Database configuration is invalid")
 
+    last_error = None
     for attempt in range(max_retries):
         try:
             # Create client with extended timeouts for VPS connectivity
+            # CRITICAL FIX: Suppress periodic task errors for Atlas authentication issues
             client = client_class(
                 settings.MONGODB_URI,
-                serverSelectionTimeoutMS=10000,  # Reduced timeout for faster failure
-                connectTimeoutMS=10000,  # Reduced timeout
-                socketTimeoutMS=30000,   # Moderate socket timeout
-                retryWrites=False,  # Disable retryWrites to prevent Future issues
-                maxPoolSize=10,
-                minPoolSize=2
+                serverSelectionTimeoutMS=10000,
+                connectTimeoutMS=10000,
+                socketTimeoutMS=30000,
+                retryWrites=False,
+                maxPoolSize=5,
+                minPoolSize=1,
+                maxIdleTimeMS=45000,  # Close idle connections after 45s
+                heartbeatFrequencyMS=10000  # Reduce heartbeat frequency
             )
+            
             # Test connection with proper error handling
             try:
-                ping_result = client.admin.command('ping', maxTimeMS=5000)  # 5 second timeout for ping
+                ping_result = client.admin.command('ping', maxTimeMS=5000)
                 if inspect.isawaitable(ping_result):
                     await ping_result
             except Exception as ping_error:
-                print(f"[ERROR] MongoDB ping failed: {type(ping_error).__name__}: {str(ping_error)}")
-                # Align test expectation for connection failure
-                raise ConnectionError("Database connection test failed")
+                error_msg = str(ping_error).lower()
+                # CRITICAL FIX: Suppress "bad auth" logs in background tasks
+                if "bad auth" in error_msg or "authentication" in error_msg:
+                    if attempt == 0:  # Only print once
+                        print(f"[ERROR] MongoDB authentication failed on attempt {attempt + 1}")
+                        print(f"[ERROR] Check:")
+                        print(f"  1. MONGODB_URI credentials in .env file")
+                        print(f"  2. IP whitelist in MongoDB Atlas dashboard")
+                        print(f"  3. Database user exists with proper permissions")
+                    last_error = ping_error
+                    if attempt >= max_retries - 1:
+                        raise ConnectionError("MongoDB authentication failed - verify Atlas credentials and IP whitelist")
+                    await asyncio.sleep(2 ** (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    print(f"[ERROR] MongoDB ping failed: {type(ping_error).__name__}: {error_msg}")
+                    raise ConnectionError("Database connection test failed")
                 
             db = client[settings._MONGO_DB]
             
@@ -71,8 +125,18 @@ async def connect_db():
                 if inspect.isawaitable(result):
                     await result
             except Exception as db_error:
-                print(f"[ERROR] Database access failed: {type(db_error).__name__}: {str(db_error)}")
-                raise ConnectionError("Database access test failed")
+                error_msg = str(db_error).lower()
+                if "bad auth" in error_msg or "authentication" in error_msg:
+                    if attempt == 0:
+                        print(f"[ERROR] Database access authentication failed")
+                    last_error = db_error
+                    if attempt >= max_retries - 1:
+                        raise ConnectionError("MongoDB authentication failed - verify Atlas credentials and IP whitelist")
+                    await asyncio.sleep(2 ** (attempt + 1))
+                    continue
+                else:
+                    print(f"[ERROR] Database access failed: {type(db_error).__name__}: {error_msg}")
+                    raise ConnectionError("Database access test failed")
             
             if settings.DEBUG:
                 try:
@@ -88,27 +152,32 @@ async def connect_db():
             # Enhanced database error classification
             error_msg = str(e)
             error_type = type(e).__name__
-            print(f"[ERROR] MongoDB connection attempt {attempt + 1}/{max_retries} failed")
-            print(f"[ERROR] Type: {error_type}, Details: {error_msg}")
+            if attempt == 0:  # Only print detailed logs on first attempt
+                print(f"[ERROR] MongoDB connection attempt {attempt + 1}/{max_retries} failed")
+                print(f"[ERROR] Type: {error_type}, Details: {error_msg}")
             
             # Specific error categorization
             if isinstance(e, TimeoutError) or "timeout" in error_msg.lower():
-                print(f"[ERROR] Connection timeout - likely network issues")
+                if attempt == 0:
+                    print(f"[ERROR] Connection timeout - likely network issues")
                 # CRITICAL FIX: Raise TimeoutError for proper 504 response
                 if attempt >= max_retries - 1:
                     raise TimeoutError("Database connection timeout")
             elif "authentication" in error_msg.lower() or "auth" in error_msg.lower():
-                print(f"[ERROR] Authentication failure - check credentials")
+                if attempt == 0:
+                    print(f"[ERROR] Authentication failure - check credentials and IP whitelist")
                 if attempt >= max_retries - 1:
                     raise ConnectionError("Database authentication failed")
             elif "network" in error_msg.lower() or "connection" in error_msg.lower():
-                print(f"[ERROR] Network error - check MongoDB connectivity")
+                if attempt == 0:
+                    print(f"[ERROR] Network error - check MongoDB connectivity")
                 if attempt >= max_retries - 1:
                     # CRITICAL FIX: Match the expected error message in tests
                     raise ConnectionError("Database connection test failed")
             else:
                 # Default case for any other connection errors
-                print(f"[ERROR] Unknown connection error")
+                if attempt == 0:
+                    print(f"[ERROR] Unknown connection error")
                 if attempt >= max_retries - 1:
                     # CRITICAL FIX: Match the expected error message in tests
                     raise ConnectionError("Database connection test failed")

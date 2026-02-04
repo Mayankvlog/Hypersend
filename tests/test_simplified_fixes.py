@@ -262,6 +262,7 @@ class TestErrorHandling:
             with patch('database.settings') as mock_settings:
                 mock_settings.MONGODB_URI = "mongodb://test:test@localhost:27017/test"
                 mock_settings._MONGO_DB = "test_db"
+                mock_settings.USE_MOCK_DB = False  # Ensure real database testing
                 
                 # Test that ConnectionError is raised
                 with pytest.raises(ConnectionError, match="Database connection test failed"):
@@ -282,6 +283,7 @@ class TestErrorHandling:
         with patch('database.settings') as mock_settings:
             mock_settings.MONGODB_URI = None
             mock_settings._MONGO_DB = "test_db"
+            mock_settings.USE_MOCK_DB = False  # Ensure real database testing
             
             # Test that ValueError is raised
             with pytest.raises(ValueError, match="Database configuration is invalid"):

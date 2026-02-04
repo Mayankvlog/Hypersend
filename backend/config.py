@@ -43,30 +43,38 @@ class Settings:
     # 3. If MONGODB_URI is set in environment - use it (supports both Atlas and traditional)
     # 4. Otherwise - construct from individual components
     
-    if _MONGODB_ATLAS_ENABLED and os.getenv("MONGODB_URI") and "mongodb+srv://" in os.getenv("MONGODB_URI"):
-        # MongoDB Atlas (Cloud) - direct connection string
-        MONGODB_URI: str = os.getenv("MONGODB_URI")
-        print(f"[CONFIG] MongoDB connection: Atlas (Cloud)")
+    # Determine MongoDB connection method
+    from urllib.parse import quote_plus
+    
+    # First, check if MONGODB_URI environment variable is explicitly set
+    env_mongodb_uri = os.getenv("MONGODB_URI")
+    
+    if env_mongodb_uri and "mongodb+srv://" in env_mongodb_uri:
+        # MongoDB Atlas (Cloud) with SRV connection - use as-is
+        # Atlas URIs should have credentials already URL-encoded
+        MONGODB_URI: str = env_mongodb_uri
+        print(f"[CONFIG] MongoDB connection: Atlas (Cloud) - from environment")
     elif _IS_DOCKER:
-        # Docker environment takes priority - always use internal MongoDB in Docker
-        from urllib.parse import quote_plus
+        # Docker environment - use internal MongoDB container
         encoded_password = quote_plus(_MONGO_PASSWORD)
-        # Connect directly to target database with admin authentication
-        # Include replicaSet and retry logic for VPS deployments
-        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false"
-        print(f"[CONFIG] MongoDB connection: Docker internal")
-    elif os.getenv("MONGODB_URI"):
-        # Use environment-provided MONGODB_URI (can be Atlas or traditional)
-        MONGODB_URI: str = os.getenv("MONGODB_URI")
-        print(f"[CONFIG] MongoDB connection: from environment variable")
+        encoded_user = quote_plus(_MONGO_USER)
+        # For traditional MongoDB (non-Atlas), authSource=admin
+        MONGODB_URI: str = f"mongodb://{encoded_user}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false&serverSelectionTimeoutMS=5000"
+        print(f"[CONFIG] MongoDB connection: Docker internal (traditional)")
+    elif env_mongodb_uri:
+        # Use environment-provided MONGODB_URI as-is
+        # Validate it's properly formatted
+        if not (env_mongodb_uri.startswith("mongodb://") or env_mongodb_uri.startswith("mongodb+srv://")):
+            print("[CONFIG] WARNING: MONGODB_URI doesn't start with mongodb:// or mongodb+srv://")
+        MONGODB_URI: str = env_mongodb_uri
+        print(f"[CONFIG] MongoDB connection: from MONGODB_URI environment variable")
     else:
-        # Construct MONGODB_URI from individual components
-        from urllib.parse import quote_plus
+        # Construct MONGODB_URI from individual components (traditional MongoDB)
         encoded_password = quote_plus(_MONGO_PASSWORD)
-        # Connect directly to target database with admin authentication
-        # Include replicaSet and retry logic for VPS deployments
-        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false"
-        print(f"[CONFIG] MongoDB connection: constructed from components")
+        encoded_user = quote_plus(_MONGO_USER)
+        # For traditional MongoDB (non-Atlas), authSource=admin is required for remote auth
+        MONGODB_URI: str = f"mongodb://{encoded_user}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false&serverSelectionTimeoutMS=5000"
+        print(f"[CONFIG] MongoDB connection: constructed from individual components")
     
     # Log connection info without exposing credentials
     if '@' in MONGODB_URI:
