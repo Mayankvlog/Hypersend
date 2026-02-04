@@ -27,10 +27,10 @@ data:
   DEBUG: "False"
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
-  API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+  API_BASE_URL: ${API_BASE_URL:-http://localhost:8000/api/v1}
   
   # CORS Configuration
-  ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
+  ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:8000"
   
   # Rate Limiting & Security
   RATE_LIMIT_PER_USER: "100"
@@ -42,14 +42,14 @@ data:
   ENABLE_PASSWORD_RESET: "true"
   SMTP_HOST: "smtp.gmail.com"
   SMTP_PORT: "587"
-  SMTP_USERNAME: "noreply@zaply.in.net"
+  SMTP_USERNAME: "noreply@localhost.com"
   SMTP_USE_TLS: "true"
-  EMAIL_FROM: "noreply@zaply.in.net"
-  SENDER_NAME: "Zaply Support"
+  EMAIL_FROM: "noreply@localhost.com"
+  SENDER_NAME: "Hypersend Support"
   
   # Nginx Configuration
   NGINX_ALLOW_UNSAFE_SSL: "true"
-  NGINX_API_BASE_URL: "https://zaply.in.net/api/v1"
+  NGINX_API_BASE_URL: "http://localhost:8000/api/v1"
   NGINX_API_HOST: "0.0.0.0"
   NGINX_API_KEY: "hypersend_secure_api_key"
   NGINX_API_SECRET: "hypersend_secure_api_secret"
@@ -57,12 +57,12 @@ data:
   NGINX_PROXY_SEND_TIMEOUT: "3600"
   NGINX_PROXY_CONNECT_TIMEOUT: "300"
   NGINX_CLIENT_BODY_TIMEOUT: "3600"
-  NGINX_CLIENT_MAX_BODY_SIZE: "45G"
+  NGINX_CLIENT_MAX_BODY_SIZE: "10M"
   NGINX_ERROR_PAGE_TIMEOUT: "30"
   NGINX_MAX_RETRIES: "7"
   NGINX_RETRY_DELAY: "5"
-  DOMAIN_NAME: "zaply.in.net"
-  SSL_CERT_PATH: "/etc/letsencrypt/live/zaply.in.net/fullchain.pem"
+  DOMAIN_NAME: "localhost"
+  SSL_CERT_PATH: "/etc/letsencrypt/live/localhost/fullchain.pem"
   SSL_KEY_PATH: "/etc/letsencrypt/private/privkey.pem"
   
   # MongoDB Atlas Configuration
@@ -155,7 +155,7 @@ data:
         keepalive_timeout 65;
         keepalive_requests 100;
         
-        client_max_body_size 45g;
+        client_max_body_size 10m;
         client_body_buffer_size 10m;
         client_header_buffer_size 4k;
         large_client_header_buffers 4 16k;
@@ -214,15 +214,15 @@ data:
         # SECURITY: CORS origin allowlist map to restrict to authorized origins
         map $http_origin $allowed_origin {
             default "";
-            "~^https://zaply\.in\.net$" "https://zaply.in.net";
-            "~^https://www\.zaply\.in\.net$" "https://www.zaply.in.net";
+            "~^http://localhost:3000$" "http://localhost:3000";
+            "~^http://localhost:8000$" "http://localhost:8000";
         }
 
-        # HTTP to HTTPS redirect for zaply.in.net
+        # HTTP to HTTPS redirect for localhost
         server {
             listen 80;
             listen [::]:80;
-            server_name zaply.in.net www.zaply.in.net;
+            server_name localhost;
             
             location / {
                 return 301 https://$server_name$request_uri;
@@ -286,14 +286,14 @@ data:
             }
         }
 
-        # HTTPS: zaply.in.net (Production with SSL)
+        # HTTPS: localhost (Development with SSL)
         server {
             listen 443 ssl http2;
             listen [::]:443 ssl http2;
-            server_name zaply.in.net www.zaply.in.net;
+            server_name localhost;
             
             # SSL Configuration
-            ssl_certificate /etc/letsencrypt/live/zaply.in.net/fullchain.pem;
+            ssl_certificate /etc/letsencrypt/live/localhost/fullchain.pem;
             ssl_certificate_key /etc/letsencrypt/private/privkey.pem;
             ssl_protocols TLSv1.2 TLSv1.3;
             ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;
@@ -317,7 +317,7 @@ data:
 
             location /api/v1/files/upload {
                 limit_req zone=upload_limit burst=200 nodelay;
-                client_max_body_size 45g;
+                client_max_body_size 10m;
                 
                 if ($request_method = 'OPTIONS') {
                     add_header 'Access-Control-Allow-Origin' $allowed_origin always;
@@ -443,195 +443,8 @@ data:
     }
 
 ---
-# WhatsApp-like Storage Persistent Volume Claims
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: data-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 50Gi  # Increased for WhatsApp-like storage
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: uploads-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 30Gi  # Increased for user uploads
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: media-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 40Gi  # For media files (images, videos, audio)
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: documents-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 20Gi  # For documents and PDFs
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: images-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 25Gi  # For image files
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: videos-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 60Gi  # For video files (largest storage)
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: audio-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 15Gi  # For audio files
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: user-files-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 35Gi  # For user-specific files
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: chat-files-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 25Gi  # For chat attachments
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: temp-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi  # For temporary files
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: thumbnails-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: whatsapp-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi  # For thumbnail images
-  storageClassName: standard
-
----
-# Database Storage Persistent Volume Claims
+# Essential Database Storage Persistent Volume Claims (WhatsApp Architecture: $0.75/month total)
+# Only 3 PVCs needed: Redis, MongoDB, Nginx Cache
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -645,24 +458,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 20Gi  # Increased for MongoDB data
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: mongodb-config-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: database-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi  # MongoDB configuration
+      storage: 5Gi  # Reduced for WhatsApp architecture
   storageClassName: standard
 
 ---
@@ -679,42 +475,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi  # Increased for Redis data
-  storageClassName: standard
-
----
-# SSL Certificate Storage
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: letsencrypt-certs-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: ssl-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: letsencrypt-lib-pvc
-  namespace: hypersend
-  labels:
-    app: hypersend
-    type: ssl-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
+      storage: 2Gi  # Reduced for WhatsApp architecture
   storageClassName: standard
 
 ---
@@ -731,7 +492,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: 1Gi  # Reduced for WhatsApp architecture
   storageClassName: standard
 
 ---
@@ -868,8 +629,6 @@ spec:
         volumeMounts:
         - name: mongodb-data
           mountPath: /data/db
-        - name: mongodb-config
-          mountPath: /data/configdb
         resources:
           requests:
             memory: "512Mi"
@@ -901,9 +660,6 @@ spec:
       - name: mongodb-data
         persistentVolumeClaim:
           claimName: mongodb-data-pvc
-      - name: mongodb-config
-        persistentVolumeClaim:
-          claimName: mongodb-config-pvc
 
 ---
 apiVersion: v1
@@ -1027,30 +783,9 @@ spec:
           value: "5"
         - name: REDIS_SOCKET_CONNECT_TIMEOUT
           value: "5"
-        volumeMounts:
-        # WhatsApp-like storage structure
-        - name: data-volume
-          mountPath: /data
-        - name: uploads-volume
-          mountPath: /app/uploads
-        - name: media-volume
-          mountPath: /app/media
-        - name: documents-volume
-          mountPath: /app/documents
-        - name: images-volume
-          mountPath: /app/images
-        - name: videos-volume
-          mountPath: /app/videos
-        - name: audio-volume
-          mountPath: /app/audio
-        - name: user-files-volume
-          mountPath: /app/user_files
-        - name: chat-files-volume
-          mountPath: /app/chat_files
-        - name: temp-volume
-          mountPath: /app/temp
-        - name: thumbnails-volume
-          mountPath: /app/thumbnails
+        # WhatsApp Architecture: S3-only storage (no volume mounts)
+        # Files go directly to S3, not to server storage
+        volumeMounts: []
         resources:
           requests:
             memory: "512Mi"
@@ -1074,41 +809,8 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
-      volumes:
-      # WhatsApp-like storage volumes
-      - name: data-volume
-        persistentVolumeClaim:
-          claimName: data-pvc
-      - name: uploads-volume
-        persistentVolumeClaim:
-          claimName: uploads-pvc
-      - name: media-volume
-        persistentVolumeClaim:
-          claimName: media-pvc
-      - name: documents-volume
-        persistentVolumeClaim:
-          claimName: documents-pvc
-      - name: images-volume
-        persistentVolumeClaim:
-          claimName: images-pvc
-      - name: videos-volume
-        persistentVolumeClaim:
-          claimName: videos-pvc
-      - name: audio-volume
-        persistentVolumeClaim:
-          claimName: audio-pvc
-      - name: user-files-volume
-        persistentVolumeClaim:
-          claimName: user-files-pvc
-      - name: chat-files-volume
-        persistentVolumeClaim:
-          claimName: chat-files-pvc
-      - name: temp-volume
-        persistentVolumeClaim:
-          claimName: temp-pvc
-      - name: thumbnails-volume
-        persistentVolumeClaim:
-          claimName: thumbnails-pvc
+      # WhatsApp Architecture: S3-only storage (no volumes)
+      volumes: []
 
 ---
 apiVersion: v1
@@ -1233,12 +935,12 @@ spec:
           # Install openssl for certificate generation
           apk add --no-cache openssl;
           
-          if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
-            echo '[NGINX] Creating self-signed certificate for initial deployment...';
-            mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
-            openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
-            cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
-            echo '[NGINX] Self-signed certificate created';
+          if [ ! -d '/etc/letsencrypt/live/localhost' ]; then
+            echo '[NGINX] Creating self-signed certificate for localhost deployment...';
+            mkdir -p /etc/letsencrypt/live/localhost /etc/letsencrypt/private;
+            openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/localhost/fullchain.pem -days 365 -nodes -subj '/CN=localhost';
+            cp /etc/letsencrypt/live/localhost/fullchain.pem /etc/letsencrypt/live/localhost/chain.pem;
+            echo '[NGINX] Self-signed certificate created for localhost';
           fi;
           nginx -g 'daemon off;'
         volumeMounts:
@@ -1246,15 +948,8 @@ spec:
           mountPath: /etc/nginx/nginx.conf
           subPath: nginx.conf
           readOnly: true
-        - name: letsencrypt-certs
-          mountPath: /etc/letsencrypt
-        - name: letsencrypt-lib
-          mountPath: /var/lib/letsencrypt
         - name: nginx-cache
           mountPath: /var/cache/nginx
-        - name: data-files
-          mountPath: /data/files
-          readOnly: true
         resources:
           requests:
             memory: "128Mi"
@@ -1282,19 +977,9 @@ spec:
       - name: nginx-config
         configMap:
           name: nginx-configmap
-      - name: letsencrypt-certs
-        persistentVolumeClaim:
-          claimName: letsencrypt-certs-pvc
-      - name: letsencrypt-lib
-        persistentVolumeClaim:
-          claimName: letsencrypt-lib-pvc
       - name: nginx-cache
         persistentVolumeClaim:
           claimName: nginx-cache-pvc
-      - name: data-files
-        persistentVolumeClaim:
-          claimName: data-pvc
-          readOnly: true
 
 ---
 apiVersion: v1
@@ -1326,38 +1011,20 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/proxy-body-size: "45g"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
-    nginx.ingress.kubernetes.io/client-max-body-size: "45g"
+    nginx.ingress.kubernetes.io/client-max-body-size: "10m"
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/rate-limit-window: "1m"
 spec:
   tls:
   - hosts:
-    - zaply.in.net
-    - www.zaply.in.net
+    - localhost
     secretName: hypersend-tls
   rules:
-  - host: zaply.in.net
-    http:
-      paths:
-      - path: /api
-        pathType: Prefix
-        backend:
-          service:
-            name: backend
-            port:
-              number: 8000
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend
-            port:
-              number: 80
-  - host: www.zaply.in.net
+  - host: localhost
     http:
       paths:
       - path: /api
