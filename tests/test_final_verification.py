@@ -17,7 +17,7 @@ class TestMongoDBConnectionFixes:
     """Test MongoDB connection fixes comprehensively"""
     
     def test_env_file_configuration(self):
-        """Test that .env file is correctly configured"""
+        """Test that .env file is correctly configured for MongoDB Atlas"""
         print("Testing .env file configuration...")
         
         env_path = Path(__file__).parent.parent / 'backend' / '.env'
@@ -27,15 +27,15 @@ class TestMongoDBConnectionFixes:
         with open(env_path, 'r') as f:
             env_content = f.read()
         
-        # Check that MONGODB_URI is NOT in .env
-        assert "MONGODB_URI=" not in env_content, "MONGODB_URI should not be set in .env file"
+        # Check that MONGODB_URI IS in .env for MongoDB Atlas
+        assert "MONGODB_URI=" in env_content, "MONGODB_URI should be set in .env file for MongoDB Atlas"
+        assert "mongodb+srv://" in env_content, "MONGODB_URI should use mongodb+srv:// for Atlas"
+        assert "cluster0.rnj3vfd.mongodb.net" in env_content, "MONGODB_URI should point to Atlas cluster"
         
-        # Check that MongoDB config uses Docker internal values
-        assert "MONGO_HOST=mongodb" in env_content, "MONGO_HOST should be 'mongodb' for Docker"
-        assert "MONGO_PORT=27017" in env_content, "MONGO_PORT should be '27017' for Docker"
-        assert "MONGO_USER=hypersend" in env_content, "MONGO_USER should be 'hypersend'"
+        # Check MongoDB Atlas is enabled
+        assert "MONGODB_ATLAS_ENABLED=true" in env_content, "MONGODB_ATLAS_ENABLED should be true"
         
-        print("✅ .env file configuration is correct")
+        print("✅ .env file configuration is correct for MongoDB Atlas")
     
     def test_motor_client_configuration(self):
         """Test Motor client configuration fixes"""

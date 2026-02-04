@@ -68,6 +68,10 @@ data:
   SSL_CERT_PATH: "/etc/letsencrypt/live/zaply.in.net/fullchain.pem"
   SSL_KEY_PATH: "/etc/letsencrypt/private/privkey.pem"
   
+  # MongoDB Atlas Configuration
+  MONGODB_ATLAS_ENABLED: "true"
+  MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:%3Cdb_password%3E@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority"
+  
   # Redis Configuration
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
@@ -87,9 +91,12 @@ metadata:
 type: Opaque
 data:
   # MongoDB credentials (base64 encoded)
-  MONGO_USER: aHlwZXJzZW5k  # hypersend
-  MONGO_PASSWORD: aHlwZXJzZW5kX3NlY3VyZV9wYXNzd29yZA==  # hypersend_secure_password
+  MONGO_USER: bWF5YW5sbHIwMzExX2RiX3VzZXI=  # mayanllr0311_db_user
+  MONGO_PASSWORD: PGRiX3Bhc3N3b3JkPg==  # <db_password>
   MONGO_INITDB_DATABASE: aHlwZXJzZW5k  # hypersend
+  # MongoDB Atlas credentials (base64 encoded)
+  MONGODB_ATLAS_ENABLED: "dHJ1ZQ=="  # true
+  MONGODB_URI: "bW9uZ29kYitzcnY6Ly9tYXlhbmxscjAzMTFfZGJfdXNlcjolM2NkYl9wYXNzd29yZCUzZUBjbHVzdGVyMC5ybmozdmZkLm1vbmdvZGIubmV0L2h5cGVyc2VuZD9yZXRyeVdyaXRlcz10cnVlJnd9bWFqb3JpdHk="  # mongodb+srv://...
   # SMTP password (base64 encoded)
   SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=  # dummy_app_password_configure_in_env
 
@@ -1089,7 +1096,6 @@ spec:
             name: frontend
             port:
               number: 80
-
 
 
 

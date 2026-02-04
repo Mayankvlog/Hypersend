@@ -35,34 +35,52 @@ class Settings:
     _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "zaply.in.net")
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
+    _MONGODB_ATLAS_ENABLED: bool = os.getenv("MONGODB_ATLAS_ENABLED", "false").lower() in ("true", "1", "yes")
     
-    # Docker environment takes priority - always use internal MongoDB in Docker
-    if _IS_DOCKER:
-        # Construct MONGODB_URI with proper URL encoding for special characters in password
-        from urllib.parse import quote_plus
-        encoded_password = quote_plus(_MONGO_PASSWORD)
-        # Connect directly to target database with admin authentication
-        # Include replicaSet and retry logic for VPS deployments
-        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false"
-        print(f"[CONFIG] MongoDB connection: docker internal")
-    elif os.getenv("MONGODB_URI"):
+    # Priority order for MongoDB URI:
+    # 1. If MongoDB Atlas is explicitly enabled and MONGODB_URI is set from environment
+    # 2. If running in Docker - use internal MongoDB
+    # 3. If MONGODB_URI is set in environment - use it (supports both Atlas and traditional)
+    # 4. Otherwise - construct from individual components
+    
+    if _MONGODB_ATLAS_ENABLED and os.getenv("MONGODB_URI") and "mongodb+srv://" in os.getenv("MONGODB_URI"):
+        # MongoDB Atlas (Cloud) - direct connection string
         MONGODB_URI: str = os.getenv("MONGODB_URI")
-        print(f"[CONFIG] MongoDB connection: from environment")
-    else:
-        # Construct MONGODB_URI with proper URL encoding for special characters in password
+        print(f"[CONFIG] MongoDB connection: Atlas (Cloud)")
+    elif _IS_DOCKER:
+        # Docker environment takes priority - always use internal MongoDB in Docker
         from urllib.parse import quote_plus
         encoded_password = quote_plus(_MONGO_PASSWORD)
         # Connect directly to target database with admin authentication
         # Include replicaSet and retry logic for VPS deployments
         MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false"
-        print(f"[CONFIG] MongoDB connection: constructed")
+        print(f"[CONFIG] MongoDB connection: Docker internal")
+    elif os.getenv("MONGODB_URI"):
+        # Use environment-provided MONGODB_URI (can be Atlas or traditional)
+        MONGODB_URI: str = os.getenv("MONGODB_URI")
+        print(f"[CONFIG] MongoDB connection: from environment variable")
+    else:
+        # Construct MONGODB_URI from individual components
+        from urllib.parse import quote_plus
+        encoded_password = quote_plus(_MONGO_PASSWORD)
+        # Connect directly to target database with admin authentication
+        # Include replicaSet and retry logic for VPS deployments
+        MONGODB_URI: str = f"mongodb://{_MONGO_USER}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false"
+        print(f"[CONFIG] MongoDB connection: constructed from components")
     
     # Log connection info without exposing credentials
     if '@' in MONGODB_URI:
-        host_info = MONGODB_URI.split('@')[1].split('/')[0]
-        print(f"[CONFIG] MongoDB URI host: {host_info}")
-    else:
-        print(f"[CONFIG] MongoDB connection: direct connection")
+        try:
+            if "mongodb+srv://" in MONGODB_URI:
+                # For Atlas URIs, show cluster info
+                cluster_part = MONGODB_URI.split('@')[1].split('/')[0]
+                print(f"[CONFIG] MongoDB Atlas cluster: {cluster_part}")
+            else:
+                # For traditional URIs, show host:port
+                host_info = MONGODB_URI.split('@')[1].split('/')[0]
+                print(f"[CONFIG] MongoDB connection host: {host_info}")
+        except Exception as e:
+            print(f"[CONFIG] MongoDB URI configured (error parsing details: {str(e)})")
     
     # Security
     # SECRET_KEY must be set in production - no fallbacks allowed
