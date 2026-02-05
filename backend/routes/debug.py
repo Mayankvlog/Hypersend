@@ -278,6 +278,73 @@ async def diagnose_password_for_user(
     }
 
 
+@router.get("/database-status", response_model=Dict[str, Any])
+async def get_database_status():
+    """Get database connection status and information"""
+    try:
+        from ..db_proxy import get_db, users_collection
+        import asyncio
+        
+        # Get database connection
+        db = get_db()
+        
+        # Test database operations
+        try:
+            # Test users collection
+            users = users_collection()
+            
+            # Try a simple operation
+            if hasattr(users, 'count_documents'):
+                user_count = await asyncio.wait_for(users.count_documents({}), timeout=5.0)
+            else:
+                user_count = "N/A (mock database)"
+            
+            # Get database type
+            db_type = type(db).__name__
+            
+            # Check if it's real MongoDB or mock
+            if hasattr(db, 'client') and hasattr(db.client, 'admin'):
+                is_real_mongo = True
+                host = getattr(db.client, 'HOST', 'Unknown')
+            else:
+                is_real_mongo = False
+                host = "Mock Database"
+            
+            return {
+                "status": "connected",
+                "database_type": db_type,
+                "is_real_mongodb": is_real_mongo,
+                "host": host,
+                "user_count": user_count,
+                "collections_available": True,
+                "connection_healthy": True
+            }
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "database_type": type(db).__name__,
+                "is_real_mongodb": False,
+                "host": "Unknown",
+                "user_count": "Error",
+                "collections_available": False,
+                "connection_healthy": False,
+                "error": str(e)
+            }
+            
+    except Exception as e:
+        return {
+            "status": "disconnected",
+            "database_type": "Unknown",
+            "is_real_mongodb": False,
+            "host": "Not connected",
+            "user_count": "N/A",
+            "collections_available": False,
+            "connection_healthy": False,
+            "error": str(e)
+        }
+
+
 @router.get("/endpoints-info")
 async def get_endpoints_info(
     current_user: str = Depends(get_current_user)
@@ -367,6 +434,11 @@ async def get_endpoints_info(
                 "path": "/debug/diagnose-password",
                 "description": "Diagnose password format issues for a user",
                 "params": {"email": "user email address"}
+            },
+            {
+                "method": "GET",
+                "path": "/debug/database-status",
+                "description": "Get database connection status and information"
             }
         ]
     }
