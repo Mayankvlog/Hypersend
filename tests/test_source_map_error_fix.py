@@ -54,19 +54,21 @@ class TestSourceMapErrorFix:
         print("✅ Nginx.conf properly handles .map file requests")
     
     def test_docker_compose_frontend_build_args(self):
-        """Test that docker-compose passes correct build args to frontend"""
+        """Test that frontend image is properly configured for production"""
         docker_compose_path = Path(__file__).parent.parent / "docker-compose.yml"
 
         content = _read_text_file(docker_compose_path)
         
-        # Should have frontend build section
+        # Should have frontend service using pre-built image (not build)
         assert "frontend:" in content, "docker-compose should have frontend service"
         
-        # Should have build args
-        assert "API_BASE_URL" in content, "docker-compose should pass API_BASE_URL"
-        assert "VALIDATE_CERTIFICATES" in content, "docker-compose should pass VALIDATE_CERTIFICATES"
+        # Should use DockerHub image (production deployment)
+        assert "yourusername/hypersend-frontend" in content, "frontend should use pre-built DockerHub image"
         
-        print("✅ Docker-compose correctly passes build args to frontend")
+        # Frontend environment passed via Kubernetes/runtime, not build args
+        assert "API_BASE_URL" in content or "https://zaply.in.net" in content, "API configuration should be present"
+        
+        print("✅ Docker-compose correctly configures frontend image")
     
     def test_web_index_html_csp_headers(self):
         """Test that web/index.html has proper CSP headers"""
@@ -183,18 +185,21 @@ class TestDockerCompose:
     """Test docker-compose configuration"""
     
     def test_docker_compose_services(self):
-        """Test that docker-compose has all required services"""
+        """Test that docker-compose has all required services (Atlas only - no MongoDB)"""
         docker_compose_path = Path(__file__).parent.parent / "docker-compose.yml"
 
         content = _read_text_file(docker_compose_path)
         
-        # Should have all services
+        # Should have required services
         assert "nginx:" in content, "docker-compose should have nginx service"
         assert "backend:" in content, "docker-compose should have backend service"
         assert "frontend:" in content, "docker-compose should have frontend service"
-        assert "mongodb:" in content, "docker-compose should have mongodb service"
+        assert "redis:" in content, "docker-compose should have redis service"
         
-        print("✅ Docker-compose has all required services")
+        # MongoDB should NOT be present (Atlas only)
+        assert "mongodb:" not in content, "docker-compose should NOT have mongodb service (Atlas only)"
+        
+        print("✅ Docker-compose has all required services (Atlas only)")
     
     def test_docker_compose_healthchecks(self):
         """Test that docker-compose has healthchecks"""

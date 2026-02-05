@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      IMAGE_NAME: hypersend-backend
+      IMAGE_NAME: yourusername/hypersend-backend
 
     steps:
       - name: Checkout repo
@@ -60,7 +60,7 @@ jobs:
         timeout-minutes: 30
 
       - name: Deploy to VPS (Docker Compose, password SSH)
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -77,8 +77,8 @@ jobs:
             export APP_URL=https://zaply.in.net
             export DEBUG=false
             export DOMAIN_NAME=zaply.in.net
-            export SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
-            export SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
+            export SSL_CERT_PATH=/etc/nginx/ssl/zaply.in.net/fullchain.pem
+            export SSL_KEY_PATH=/etc/nginx/ssl/zaply.in.net/privkey.pem
             export CORS_ORIGINS='["https://zaply.in.net", "https://www.zaply.in.net"]'
             export EMAIL_FROM=noreply@zaply.in.net
             export SENDER_NAME=Hypersend Support

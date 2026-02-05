@@ -167,7 +167,7 @@ class TestDockerIntegration:
     """Test Docker integration scenarios"""
     
     def test_docker_network_configuration(self):
-        """Test Docker network configuration"""
+        """Test Docker network configuration - Atlas only (MongoDB removed)"""
         print("Testing Docker network configuration...")
         
         # Read docker-compose.yml
@@ -177,20 +177,21 @@ class TestDockerIntegration:
         with open(docker_compose_path, 'r') as f:
             compose_content = f.read()
         
-        # Verify MongoDB service configuration
-        assert "mongodb:" in compose_content, "MongoDB service should be defined"
-        assert "container_name: hypersend_mongodb" in compose_content
-        assert '"27018:27017"' in compose_content, "MongoDB should be exposed on 27018"
+        # Verify MongoDB is REMOVED (Atlas only)
+        assert "mongodb:" not in compose_content, "MongoDB service should NOT be defined (Atlas only)"
+        assert "MONGO_HOST" not in compose_content, "Backend should NOT reference local MongoDB"
+        assert "MONGO_PORT" not in compose_content, "Backend should NOT reference local MongoDB port"
         
-        # Verify backend service configuration
+        # Verify backend uses DATABASE_URL (Atlas)
         assert "backend:" in compose_content, "Backend service should be defined"
         assert "container_name: hypersend_backend" in compose_content
-        assert "MONGO_HOST: mongodb" in compose_content, "Backend should use MongoDB container name"
-        assert "MONGO_PORT: 27017" in compose_content, "Backend should use internal MongoDB port"
+        assert "DATABASE_URL" in compose_content, "Backend should use DATABASE_URL for MongoDB Atlas"
+        assert "mongodb+srv" in compose_content, "DATABASE_URL should use MongoDB Atlas connection string"
         
         # Verify network configuration
         assert "hypersend_network:" in compose_content, "Docker network should be defined"
-        assert "depends_on:" in compose_content, "Backend should depend on MongoDB"
+        assert "depends_on:" in compose_content, "Backend should have dependencies"
+        assert "redis:" in compose_content, "Redis service should be defined"
         
         print("✅ Docker network configuration is correct")
 
