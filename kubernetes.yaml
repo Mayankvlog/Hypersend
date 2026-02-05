@@ -15,6 +15,13 @@ metadata:
   name: hypersend-config
   namespace: hypersend
 data:
+  # ===== WHATSAPP STORAGE MODEL CONFIGURATION =====
+  SERVER_STORAGE_BYTES: "0"
+  WHATSAPP_STORAGE: "true"
+  FILE_TTL_SECONDS: "86400"
+  USER_DEVICE_ONLY: "true"
+  NO_SERVER_MEDIA: "true"
+  
   # API Configuration
   SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
   ALGORITHM: "HS256"
@@ -27,10 +34,10 @@ data:
   DEBUG: "False"
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
-  API_BASE_URL: ${API_BASE_URL:-http://localhost:8000/api/v1}
+  API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
   
   # CORS Configuration
-  ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:8000"
+  ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
   
   # Rate Limiting & Security
   RATE_LIMIT_PER_USER: "100"
@@ -42,28 +49,28 @@ data:
   ENABLE_PASSWORD_RESET: "true"
   SMTP_HOST: "smtp.gmail.com"
   SMTP_PORT: "587"
-  SMTP_USERNAME: "noreply@localhost.com"
+  SMTP_USERNAME: "noreply@zaply.in.net"
   SMTP_USE_TLS: "true"
-  EMAIL_FROM: "noreply@localhost.com"
-  SENDER_NAME: "Hypersend Support"
+  EMAIL_FROM: "noreply@zaply.in.net"
+  SENDER_NAME: "Zaply Support"
   
-  # Nginx Configuration
+  # Nginx Configuration - WHATSAPP 40GB support
   NGINX_ALLOW_UNSAFE_SSL: "true"
-  NGINX_API_BASE_URL: "http://localhost:8000/api/v1"
-  NGINX_API_HOST: "0.0.0.0"
+  NGINX_API_BASE_URL: "https://zaply.in.net/api/v1"
+  NGINX_API_HOST: "backend-service"
   NGINX_API_KEY: "hypersend_secure_api_key"
   NGINX_API_SECRET: "hypersend_secure_api_secret"
-  NGINX_PROXY_READ_TIMEOUT: "3600"
-  NGINX_PROXY_SEND_TIMEOUT: "3600"
-  NGINX_PROXY_CONNECT_TIMEOUT: "300"
-  NGINX_CLIENT_BODY_TIMEOUT: "3600"
-  NGINX_CLIENT_MAX_BODY_SIZE: "10M"
+  NGINX_PROXY_READ_TIMEOUT: "7200"
+  NGINX_PROXY_SEND_TIMEOUT: "7200"
+  NGINX_PROXY_CONNECT_TIMEOUT: "600"
+  NGINX_CLIENT_BODY_TIMEOUT: "7200"
+  NGINX_CLIENT_MAX_BODY_SIZE: "40G"
   NGINX_ERROR_PAGE_TIMEOUT: "30"
   NGINX_MAX_RETRIES: "7"
   NGINX_RETRY_DELAY: "5"
-  DOMAIN_NAME: "localhost"
-  SSL_CERT_PATH: "/etc/letsencrypt/live/localhost/fullchain.pem"
-  SSL_KEY_PATH: "/etc/letsencrypt/private/privkey.pem"
+  DOMAIN_NAME: "zaply.in.net"
+  SSL_CERT_PATH: "/etc/letsencrypt/live/zaply.in.net/fullchain.pem"
+  SSL_KEY_PATH: "/etc/letsencrypt/private/zaply.in.net/privkey.pem"
   
   # MongoDB Atlas Configuration
   MONGODB_ATLAS_ENABLED: "true"
@@ -80,6 +87,12 @@ data:
   USER_DEVICE_STORAGE: "true"  # Files permanent on user device
   COST_MODEL: "free"  # No server storage cost
   
+  # ===== WHATSAPP STORAGE CONFIGURATION =====
+  WHATSAPP_STORAGE: "true"  # Enable WhatsApp storage model
+  FILE_TTL_SECONDS: "86400"  # 24 hours in seconds
+  USER_DEVICE_ONLY: "true"  # User device only storage
+  NO_SERVER_MEDIA: "true"  # No server media storage
+  
   # 40GB File Size Configuration
   MAX_FILE_SIZE_MB: "40960"  # 40GB in MB
   LARGE_FILE_THRESHOLD_GB: "1"  # 1GB threshold for large files
@@ -88,7 +101,7 @@ data:
   MAX_AUDIO_SIZE_MB: "2048"  # 2GB for audio
   MAX_DOCUMENT_SIZE_MB: "40960"  # 40GB for documents
   
-  # Redis Configuration
+  # Redis Configuration - WHATSAPP: 2GB for 10K chats
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   REDIS_DB: "0"
@@ -96,6 +109,7 @@ data:
   REDIS_MAX_CONNECTIONS: "100"
   REDIS_SOCKET_TIMEOUT: "5"
   REDIS_SOCKET_CONNECT_TIMEOUT: "5"
+  REDIS_MAX_MEMORY: "2gb"  # 2GB for 10K chats
 
 ---
 # Secrets for sensitive data
@@ -524,7 +538,7 @@ spec:
         - --appendonly
         - "yes"
         - --maxmemory
-        - "512mb"
+        - "2gb"
         - --maxmemory-policy
         - "allkeys-lru"
         envFrom:

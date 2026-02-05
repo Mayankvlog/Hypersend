@@ -75,7 +75,7 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     networks:
@@ -176,6 +176,12 @@ services:
       SERVER_STORAGE_BYTES: "0"  # ZERO bytes server pe
       USER_DEVICE_STORAGE: "true"  # Files permanent on user device
       COST_MODEL: "free"  # No server storage cost
+      
+      # ===== WHATSAPP STORAGE CONFIGURATION =====
+      WHATSAPP_STORAGE: "true"  # Enable WhatsApp storage model
+      FILE_TTL_SECONDS: "86400"  # 24 hours in seconds
+      USER_DEVICE_ONLY: "true"  # User device only storage
+      NO_SERVER_MEDIA: "true"  # No server media storage
       
       # ===== 40GB FILE SIZE CONFIGURATION =====
       MAX_FILE_SIZE_MB: 40960  # 40GB in MB

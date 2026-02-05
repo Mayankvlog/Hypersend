@@ -197,8 +197,26 @@ class Settings:
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    
+    # WhatsApp Storage Configuration
+    SERVER_STORAGE_BYTES: int = int(os.getenv("SERVER_STORAGE_BYTES", "0"))
+    WHATSAPP_STORAGE: bool = os.getenv("WHATSAPP_STORAGE", "True").lower() in ("true", "1", "yes")
+    FILE_TTL_SECONDS: int = int(os.getenv("FILE_TTL_SECONDS", "86400"))  # 24 hours
+    USER_DEVICE_ONLY: bool = os.getenv("USER_DEVICE_ONLY", "True").lower() in ("true", "1", "yes")
+    NO_SERVER_MEDIA: bool = os.getenv("NO_SERVER_MEDIA", "True").lower() in ("true", "1", "yes")
+    
+    # WhatsApp Storage Validation
+    if WHATSAPP_STORAGE:
+        print(f"[CONFIG] WhatsApp Storage Model: ENABLED")
+        print(f"[CONFIG] Server Storage: {SERVER_STORAGE_BYTES} bytes (ZERO)")
+        print(f"[CONFIG] File TTL: {FILE_TTL_SECONDS} seconds (24h)")
+        print(f"[CONFIG] User Device Only: {USER_DEVICE_ONLY}")
+        print(f"[CONFIG] No Server Media: {NO_SERVER_MEDIA}")
+    else:
+        print(f"[CONFIG] Traditional Storage Model: ENABLED")
+    
+    # Additional WhatsApp Storage Variables
     FILE_TTL_HOURS: int = int(os.getenv("FILE_TTL_HOURS", "24"))  # 24h temp only like WhatsApp
-    SERVER_STORAGE_BYTES: int = int(os.getenv("SERVER_STORAGE_BYTES", "0"))  # 0 bytes stored on server
     USER_DEVICE_STORAGE: bool = os.getenv("USER_DEVICE_STORAGE", "True").lower() in ("true", "1", "yes")
     COST_MODEL: str = os.getenv("COST_MODEL", "free")  # No server storage cost
     
