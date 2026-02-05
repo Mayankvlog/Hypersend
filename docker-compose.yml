@@ -49,12 +49,12 @@ services:
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
-      # CRITICAL FIX: Add nginx timeout configurations for 40GB files
+      # CRITICAL FIX: Add nginx timeout configurations for 15GB files
       - NGINX_PROXY_READ_TIMEOUT=7200  # 2 hours for large file downloads
       - NGINX_PROXY_SEND_TIMEOUT=7200  # 2 hours for large file uploads
       - NGINX_PROXY_CONNECT_TIMEOUT=600  # 10 minutes for backend connection
       - NGINX_CLIENT_BODY_TIMEOUT=7200  # 2 hours for client body upload
-      - NGINX_CLIENT_MAX_BODY_SIZE=45G  # Allow 40GB files + overhead
+      - NGINX_CLIENT_MAX_BODY_SIZE=15G  # Allow 15GB files
       - NGINX_REQUEST_TIMEOUT=7200  # 2 hours request timeout
       - NGINX_SEND_TIMEOUT=7200  # 2 hours send timeout
       - NGINX_READ_TIMEOUT=7200  # 2 hours read timeout
@@ -111,7 +111,7 @@ services:
       UPLOAD_TOKEN_EXPIRE_HOURS: 480
       DATA_ROOT: /data
       UPLOADS_PATH: /app/uploads
-      MAX_FILE_SIZE_BYTES: 42949672960
+      MAX_FILE_SIZE_BYTES: 16106127360
       CHUNK_SIZE: 33554432
       MAX_PARALLEL_CHUNKS: 4
       FILE_RETENTION_HOURS: 8760  # 1 year (WhatsApp-like)
@@ -137,13 +137,13 @@ services:
       USER_DEVICE_ONLY: "true"  # User device only storage
       NO_SERVER_MEDIA: "true"  # No server media storage
       
-      # ===== 40GB FILE SIZE CONFIGURATION =====
-      MAX_FILE_SIZE_MB: 40960  # 40GB in MB
+      # ===== 15GB FILE SIZE CONFIGURATION =====
+      MAX_FILE_SIZE_MB: 15360  # 15GB in MB
       LARGE_FILE_THRESHOLD_GB: 1  # 1GB threshold for large files
       MAX_IMAGE_SIZE_MB: 4096  # 4GB for high-res images
-      MAX_VIDEO_SIZE_MB: 40960  # 40GB for videos
+      MAX_VIDEO_SIZE_MB: 15360  # 15GB for videos
       MAX_AUDIO_SIZE_MB: 2048  # 2GB for audio
-      MAX_DOCUMENT_SIZE_MB: 40960  # 40GB for documents
+      MAX_DOCUMENT_SIZE_MB: 15360  # 15GB for documents
       
       # ===== CORS CONFIGURATION =====
       # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var

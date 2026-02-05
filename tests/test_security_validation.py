@@ -289,14 +289,14 @@ class TestInputValidation:
     
     def test_file_size_validation(self):
         """Test file size limits using REAL logic"""
-        MAX_FILE_SIZE = 40 * 1024 * 1024 * 1024  # 40GB
+        MAX_FILE_SIZE = 15 * 1024 * 1024 * 1024  # 15GB
         
         # Valid sizes
         valid_sizes = [
             1024,                # 1 KB
             1024 * 1024,         # 1 MB
             100 * 1024 * 1024,   # 100 MB
-            MAX_FILE_SIZE,       # 40 GB (max)
+            MAX_FILE_SIZE,       # 15 GB (max)
         ]
         
         for size in valid_sizes:

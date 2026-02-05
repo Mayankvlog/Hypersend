@@ -421,8 +421,8 @@ class TestHTTP413PayloadTooLarge:
     
     def test_413_file_size_exceeds_limit(self):
         """File larger than limit returns 413."""
-        file_size = 100 * 1024 * 1024 * 1024  # 100GB
-        max_size = 40 * 1024 * 1024 * 1024  # 40GB limit
+        file_size = 20 * 1024 * 1024 * 1024  # 20GB (exceeds 15GB limit)
+        max_size = 15 * 1024 * 1024 * 1024  # 15GB limit
         
         if file_size > max_size:
             status = 413

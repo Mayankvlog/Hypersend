@@ -91,16 +91,16 @@ class ApiConstants {
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
   
-  // WhatsApp Storage Model File size limits (40GB Support - matching backend)
-  static const int maxFileSizeBytes = 40 * 1024 * 1024 * 1024; // 40GB in bytes
-  static const int maxFileSizeMB = 40 * 1024; // 40GB in MB
-  static const Duration uploadTimeout = Duration(hours: 2); // 2 hours for 40GB files
+  // WhatsApp Storage Model File size limits (15GB Support - matching backend)
+  static const int maxFileSizeBytes = 15 * 1024 * 1024 * 1024; // 15GB in bytes
+  static const int maxFileSizeMB = 15 * 1024; // 15GB in MB
+  static const Duration uploadTimeout = Duration(hours: 2); // 2 hours for 15GB files
   
-  // WhatsApp Storage Model File type limits (40GB Support)
+  // WhatsApp Storage Model File type limits (15GB Support)
   static const int maxImageSizeMB = 4096; // 4GB for high-res images
-  static const int maxVideoSizeMB = 40960; // 40GB for videos
+  static const int maxVideoSizeMB = 15360; // 15GB for videos
   static const int maxAudioSizeMB = 2048; // 2GB for audio
-  static const int maxDocumentSizeMB = 40960; // 40GB for documents
+  static const int maxDocumentSizeMB = 15360; // 15GB for documents
   
   // Convert to bytes
   static const int maxImageSizeBytes = maxImageSizeMB * 1024 * 1024;

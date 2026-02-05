@@ -291,10 +291,10 @@ class TestHTTPStatusCodes400:
         token = create_access_token(test_payload)
         headers = {"Authorization": f"Bearer {token}", "User-Agent": "testclient"}
         
-        # Test with file larger than 40GB limit
+        # Test with file larger than 15GB limit
         oversized_payload = {
             "filename": "huge_file.bin",
-            "size": 50 * 1024 * 1024 * 1024,  # 50GB (exceeds 40GB limit)
+            "size": 20 * 1024 * 1024 * 1024,  # 20GB (exceeds 15GB limit)
             "chat_id": "test_chat_123",
             "mime_type": "application/octet-stream"
         }

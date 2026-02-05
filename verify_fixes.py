@@ -165,7 +165,7 @@ def test_production_config():
     print('✓ Nginx image: yourusername/hypersend-nginx:latest')
     print('✓ Backend image: yourusername/hypersend-backend:latest')
     print('✓ Frontend image: yourusername/hypersend-frontend:latest')
-    print('✓ Storage: S3 + User Device (40GB support)')
+    print('✓ Storage: S3 + User Device (15GB support)')
     
     print('✅ PASS: Production configuration complete for zaply.in.net')
     return True

@@ -45,7 +45,7 @@ class SecurityConfig:
     TOKEN_LENGTH = 32
     RESET_TOKEN_LENGTH = 64
     
-    # File upload security - Comprehensive format support with 40GB limit
+    # File upload security - Comprehensive format support with 15GB limit
     ALLOWED_MIME_TYPES = {
         # Text & Document Formats
         'text/plain', 'text/csv', 'text/tab-separated-values', 'text/markdown',
@@ -132,7 +132,7 @@ class SecurityConfig:
         'application/binary', 'application/x-binary',  # Binary fallbacks
     }
     
-    MAX_FILE_SIZE = 40 * 1024 * 1024 * 1024  # 40GB
+    MAX_FILE_SIZE = 15 * 1024 * 1024 * 1024  # 15GB
     
     # Allowed file extensions - comprehensive format support
     ALLOWED_FILE_EXTENSIONS = {

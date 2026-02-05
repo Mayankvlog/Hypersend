@@ -340,7 +340,7 @@ async def test_enhanced_file_size_validation_fixes():
         "1024",         # String integer
         "1024.0",       # String float
         "1024.5",       # String float with decimal
-        42949672960,    # 40GB (max allowed)
+        16106127360,    # 15GB (max allowed)
     ]
     
     # Test cases that should FAIL
@@ -354,7 +354,7 @@ async def test_enhanced_file_size_validation_fixes():
         float('nan'),   # NaN
         -1024,          # Negative number
         0,              # Zero
-        42949672961,    # Over 40GB limit
+        16106127361,    # Over 15GB limit
     ]
     
     # Test valid sizes
@@ -380,7 +380,7 @@ async def test_enhanced_file_size_validation_fixes():
             if size_int <= 0:
                 raise ValueError("Size must be positive")
             
-            max_size = 42949672960  # 40GB
+            max_size = 16106127360  # 15GB
             if size_int > max_size:
                 raise ValueError("Size exceeds maximum")
             
@@ -412,7 +412,7 @@ async def test_enhanced_file_size_validation_fixes():
             if size_int <= 0:
                 raise ValueError("Size must be positive")
             
-            max_size = 42949672960  # 40GB
+            max_size = 16106127360  # 15GB
             if size_int > max_size:
                 raise ValueError("Size exceeds maximum")
             
@@ -917,25 +917,25 @@ async def test_all_user_requested_formats():
 
 
 @pytest.mark.asyncio
-async def test_40gb_file_size_limit():
-    """Test that 40GB file size limit is properly enforced"""
+async def test_15gb_file_size_limit():
+    """Test that 15GB file size limit is properly enforced"""
     
-    # Test 40GB limit (42949672960 bytes)
-    max_size = 42949672960  # 40GB in bytes
+    # Test 15GB limit (16106127360 bytes)
+    max_size = 16106127360  # 15GB in bytes
     
     # Test valid sizes (should pass)
     valid_sizes = [
         1024,                    # 1KB
         1048576,                 # 10MB
         1073741824,              # 1GB
-        42949672960,             # 40GB (exact limit)
+        16106127360,             # 15GB (exact limit)
     ]
     
     # Test invalid sizes (should fail)
     invalid_sizes = [
         0,                        # Zero
         -1,                       # Negative
-        42949672961,             # 40GB + 1 byte (over limit)
+        16106127361,             # 15GB + 1 byte (over limit)
         50000000000,              # 50GB (over limit)
     ]
     
@@ -989,7 +989,7 @@ async def test_40gb_file_size_limit():
         except (ValueError, TypeError, OverflowError):
             assert True  # Invalid size correctly rejected
     
-    print("✓ 40GB file size limit properly enforced")
+    print("✓ 15GB file size limit properly enforced")
 
 
 if __name__ == "__main__":
@@ -1019,7 +1019,7 @@ if __name__ == "__main__":
         test_mime_type_default_handling,
         test_comprehensive_file_format_support,
         test_all_user_requested_formats,
-        test_40gb_file_size_limit,
+        test_15gb_file_size_limit,
     ]
     
     for test_func in test_functions:

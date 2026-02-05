@@ -61,7 +61,7 @@ data:
   USER_DEVICE_STORAGE: "true"
   COST_MODEL: "free"
   
-  # ===== NGINX CONFIGURATION (40GB Support) =====
+  # ===== NGINX CONFIGURATION (15GB Support) =====
   NGINX_ALLOW_UNSAFE_SSL: "true"
   NGINX_API_BASE_URL: "https://zaply.in.net/api/v1"
   NGINX_API_HOST: "backend-service"
@@ -71,7 +71,7 @@ data:
   NGINX_PROXY_SEND_TIMEOUT: "7200"
   NGINX_PROXY_CONNECT_TIMEOUT: "600"
   NGINX_CLIENT_BODY_TIMEOUT: "7200"
-  NGINX_CLIENT_MAX_BODY_SIZE: "40G"
+  NGINX_CLIENT_MAX_BODY_SIZE: "15G"
   NGINX_ERROR_PAGE_TIMEOUT: "30"
   NGINX_MAX_RETRIES: "7"
   NGINX_RETRY_DELAY: "5"
@@ -79,13 +79,13 @@ data:
   SSL_CERT_PATH: "/etc/nginx/ssl/zaply.in.net/fullchain.pem"
   SSL_KEY_PATH: "/etc/nginx/ssl/zaply.in.net/privkey.pem"
   
-  # 40GB File Size Configuration
-  MAX_FILE_SIZE_MB: "40960"  # 40GB in MB
+  # 15GB File Size Configuration
+  MAX_FILE_SIZE_MB: "15360"  # 15GB in MB
   LARGE_FILE_THRESHOLD_GB: "1"  # 1GB threshold for large files
   MAX_IMAGE_SIZE_MB: "4096"  # 4GB for high-res images
-  MAX_VIDEO_SIZE_MB: "40960"  # 40GB for videos
+  MAX_VIDEO_SIZE_MB: "15360"  # 15GB for videos
   MAX_AUDIO_SIZE_MB: "2048"  # 2GB for audio
-  MAX_DOCUMENT_SIZE_MB: "40960"  # 40GB for documents
+  MAX_DOCUMENT_SIZE_MB: "15360"  # 15GB for documents
   
   # Redis Configuration - WHATSAPP: 2GB for 10K chats
   REDIS_HOST: "redis"
@@ -158,7 +158,7 @@ data:
         keepalive_timeout 65;
         keepalive_requests 100;
         
-        client_max_body_size 40G;
+        client_max_body_size 15G;
         client_body_buffer_size 10m;
         client_header_buffer_size 4k;
         large_client_header_buffers 4 16k;
@@ -330,7 +330,7 @@ data:
 
             location /api/v1/files/upload {
                 limit_req zone=upload_limit burst=200 nodelay;
-                client_max_body_size 40G;
+                client_max_body_size 15G;
                 
                 if ($request_method = 'OPTIONS') {
                     add_header 'Access-Control-Allow-Origin' $allowed_origin always;
@@ -658,19 +658,19 @@ spec:
         - name: COST_MODEL
           value: "free"  # No server storage cost
         
-        # 40GB File Size Configuration
+        # 15GB File Size Configuration
         - name: MAX_FILE_SIZE_MB
-          value: "40960"  # 40GB in MB
+          value: "15360"  # 15GB in MB
         - name: LARGE_FILE_THRESHOLD_GB
           value: "1"  # 1GB threshold for large files
         - name: MAX_IMAGE_SIZE_MB
           value: "4096"  # 4GB for high-res images
         - name: MAX_VIDEO_SIZE_MB
-          value: "40960"  # 40GB for videos
+          value: "15360"  # 15GB for videos
         - name: MAX_AUDIO_SIZE_MB
           value: "2048"  # 2GB for audio
         - name: MAX_DOCUMENT_SIZE_MB
-          value: "40960"  # 40GB for documents
+          value: "15360"  # 15GB for documents
         # Redis Configuration
         - name: REDIS_DB
           value: "0"

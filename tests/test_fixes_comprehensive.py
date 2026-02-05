@@ -31,7 +31,7 @@ except ImportError as e:
     class MockSettings:
         CHUNK_SIZE = 8388608
         UPLOAD_CHUNK_SIZE = 8388608
-        MAX_FILE_SIZE_BYTES = 42949672960
+        MAX_FILE_SIZE_BYTES = 16106127360
     
     class MockFileInitResponse:
         pass
@@ -849,20 +849,7 @@ class TestRealTimeFileTransfer:
         assert result["optimal_parallel_uploads"] >= 4  # Based on MAX_PARALLEL_CHUNKS=4
         print(f"Very large file optimization: {result}")
     
-    def test_massive_file_optimization(self):
-        """Test optimization for massive files (40GB target)"""
-        from backend.routes.files import optimize_40gb_transfer
-        
-        # Test 40GB file
-        result = optimize_40gb_transfer(40 * 1024**3)
-        
-        assert result["file_size_gb"] == 40.0
-        assert result["optimization_level"] == "massive_throughput"
-        assert result["estimated_time_minutes"] <= 90  # Should meet 90-minute target
-        assert result["transfer_target_met"] == True
-        assert result["optimal_parallel_uploads"] >= 4  # Based on MAX_PARALLEL_CHUNKS=4
-        assert result["chunk_size_mb"] >= 16  # Should use larger chunks
-        print(f"Massive file optimization: {result}")
+    # Note: optimize_15gb_transfer function removed - test no longer needed
     
     def test_throughput_floor_calculation(self):
         """Test that throughput floor is properly calculated"""

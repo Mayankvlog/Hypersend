@@ -45,7 +45,7 @@ class TestGroupMemberFix:
             "password_salt": "salt",
             "created_at": datetime.now(),
             "quota_used": 0,
-            "quota_limit": 42949672960
+            "quota_limit": 16106127360
         }
     
     @pytest.fixture
@@ -59,7 +59,7 @@ class TestGroupMemberFix:
             "password_salt": "salt",
             "created_at": datetime.now(),
             "quota_used": 0,
-            "quota_limit": 42949672960
+            "quota_limit": 16106127360
         }
     
     def setup_method(self):

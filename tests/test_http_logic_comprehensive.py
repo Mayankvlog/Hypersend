@@ -266,9 +266,9 @@ class TestHTTP413PayloadTooLarge:
     """Test 413 Payload Too Large logic"""
     
     def test_413_file_exceeds_max(self):
-        """File exceeding 40GB should return 413"""
-        file_size = 50 * 1024 * 1024 * 1024  # 50GB
-        max_size = 40 * 1024 * 1024 * 1024  # 40GB
+        """File exceeding 15GB should return 413"""
+        file_size = 20 * 1024 * 1024 * 1024  # 20GB (now exceeds 15GB limit)
+        max_size = 15 * 1024 * 1024 * 1024  # 15GB
         
         if file_size > max_size:
             status = 413
@@ -280,8 +280,8 @@ class TestHTTP413PayloadTooLarge:
     
     def test_413_request_body_too_large(self):
         """Request body exceeding limit should return 413"""
-        body_size = 50 * 1024 * 1024 * 1024  # 50GB
-        max_body_size = 40 * 1024 * 1024 * 1024  # 40GB
+        body_size = 20 * 1024 * 1024 * 1024  # 20GB (exceeds 15GB limit)
+        max_body_size = 15 * 1024 * 1024 * 1024  # 15GB
         
         if body_size > max_body_size:
             status = 413

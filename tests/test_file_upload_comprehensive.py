@@ -157,16 +157,16 @@ def test_invalid_mime_format():
     print("[PASS] Invalid MIME format test PASSED")
 
 def test_large_file():
-    """Test handling of very large files (40GB+)"""
+    """Test handling of very large files (15GB+)"""
     payload = {
         "filename": "large.zip",
-        "size": 40 * 1024 * 1024 * 1024,  # 40GB
+        "size": 15 * 1024 * 1024 * 1024,  # 15GB
         "chat_id": "chat_123",
         "checksum": "abc123",
         "mime_type": "application/zip"  # Use allowed MIME type
     }
     
-    # 40GB is within limit - expect either success or database error
+    # 15GB is within limit - expect either success or database error
     response = client.post(
         "/api/v1/files/init",
         json=payload,

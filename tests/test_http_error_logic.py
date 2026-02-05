@@ -179,17 +179,17 @@ class TestHTTPErrorLogic:
     def test_504_gateway_timeout_logic(self):
         """Test 504 Gateway Timeout error logic"""
         error_type = "LargeFileTimeoutError"
-        error_msg = "40GB file transfer timed out"
+        error_msg = "15GB file transfer timed out"
         operation = "file_upload"
         
         if error_type in ["GatewayTimeoutError", "NginxTimeoutError", "LargeFileTimeoutError", "ProxyTimeoutError"]:
             expected_status = status.HTTP_504_GATEWAY_TIMEOUT
             # Check if it's specifically a large file timeout
-            if "40gb" in error_msg.lower() or "large" in error_msg.lower():
-                expected_detail = "Nginx timeout on 40GB file"
+            if "15gb" in error_msg.lower() or "large" in error_msg.lower():
+                expected_detail = "Nginx timeout on 15GB file"
                 assert expected_status == 504
-                assert "40GB file" in expected_detail
-                assert "40GB" in expected_detail
+                assert "15GB file" in expected_detail
+                assert "15GB" in expected_detail
 
 
 class TestErrorHandlingPatterns:
@@ -210,11 +210,11 @@ class TestErrorHandlingPatterns:
     
     def test_large_file_timeout_detection(self):
         """Test detection of large file timeout vs general timeout"""
-        error_msg = "40GB file transfer timed out"
+        error_msg = "15GB file transfer timed out"
         error_type = "GatewayTimeoutError"
         
         # Should detect as large file timeout
-        if "40gb" in error_msg.lower() or "large" in error_msg.lower():
+        if "15gb" in error_msg.lower() or "large" in error_msg.lower():
             is_large_file_timeout = True
         else:
             is_large_file_timeout = False

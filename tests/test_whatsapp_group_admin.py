@@ -40,7 +40,7 @@ class TestWhatsAppGroupAdmin:
             "password_salt": "salt",
             "created_at": datetime.now(),
             "quota_used": 0,
-            "quota_limit": 42949672960,
+            "quota_limit": 16106127360,
             "contacts": ["507f1f77bcf86cd799439012", "507f1f77bcf86cd799439013", "507f1f77bcf86cd799439014"]
         }
     
@@ -56,7 +56,7 @@ class TestWhatsAppGroupAdmin:
             "password_salt": "salt",
             "created_at": datetime.now(),
             "quota_used": 0,
-            "quota_limit": 42949672960
+            "quota_limit": 16106127360
         }
     
     @pytest.fixture
@@ -72,7 +72,7 @@ class TestWhatsAppGroupAdmin:
                 "password_salt": "salt",
                 "created_at": datetime.now(),
                 "quota_used": 0,
-                "quota_limit": 42949672960
+                "quota_limit": 16106127360
             },
             "507f1f77bcf86cd799439014": {
                 "_id": "507f1f77bcf86cd799439014",
@@ -83,7 +83,7 @@ class TestWhatsAppGroupAdmin:
                 "password_salt": "salt",
                 "created_at": datetime.now(),
                 "quota_used": 0,
-                "quota_limit": 42949672960
+                "quota_limit": 16106127360
             }
         }
     

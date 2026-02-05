@@ -31,7 +31,7 @@ def test_mock_database_query():
         "password_salt": "abcdef1234567890abcdef1234567890",
         "created_at": datetime.now(),
         "quota_used": 0,
-        "quota_limit": 42949672960
+        "quota_limit": 16106127360
     }
     
     # Store user with different keys to test

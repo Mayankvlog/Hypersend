@@ -114,14 +114,14 @@ class Settings:
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./uploads")  # Upload directory for chunks
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB
     UPLOAD_CHUNK_SIZE: int = CHUNK_SIZE
-    MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", "42949672960"))  # 40 GiB
+    MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", "16106127360"))  # 15 GiB
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
     FILE_RETENTION_HOURS: int = int(os.getenv("FILE_RETENTION_HOURS", "0"))  # 0 = no server storage
     UPLOAD_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_EXPIRE_HOURS", "72"))  # Extended to 72 hours (3 days) for very large files
     
     # Enhanced timeout settings for large file transfers
-    CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(os.getenv("CHUNK_UPLOAD_TIMEOUT_SECONDS", "600"))  # 10 minutes per chunk (for 40GB files)
-    FILE_ASSEMBLY_TIMEOUT_MINUTES: int = int(os.getenv("FILE_ASSEMBLY_TIMEOUT_MINUTES", "30"))  # 30 minutes for assembly (40GB)
+    CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(os.getenv("CHUNK_UPLOAD_TIMEOUT_SECONDS", "600"))  # 10 minutes per chunk (for 15GB files)
+    FILE_ASSEMBLY_TIMEOUT_MINUTES: int = int(os.getenv("FILE_ASSEMBLY_TIMEOUT_MINUTES", "30"))  # 30 minutes for assembly (15GB)
     MAX_UPLOAD_RETRY_ATTEMPTS: int = int(os.getenv("MAX_UPLOAD_RETRY_ATTEMPTS", "5"))  # More retries for large files
     
     # Large file handling optimizations
@@ -232,23 +232,23 @@ class Settings:
     TEMP_PATH: str = os.getenv("TEMP_PATH", "/app/temp")
     THUMBNAILS_PATH: str = os.getenv("THUMBNAILS_PATH", "/app/thumbnails")
     
-    # WhatsApp-like File Management with 40GB Support
+    # WhatsApp-like File Management with 15GB Support
     FILE_RETENTION_HOURS: int = int(os.getenv("FILE_RETENTION_HOURS", "0"))  # 0 hours - immediate deletion
     TEMP_FILE_RETENTION_HOURS: int = int(os.getenv("TEMP_FILE_RETENTION_HOURS", "0"))  # 0 hours - immediate deletion
     AUTO_CLEANUP_ENABLED: bool = os.getenv("AUTO_CLEANUP_ENABLED", "True").lower() in ("true", "1", "yes")
     MAX_STORAGE_PER_USER_GB: int = int(os.getenv("MAX_STORAGE_PER_USER_GB", "0"))  # 0GB - no server storage
     
-    # 40GB Maximum File Size Support
-    MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "40960"))  # 40GB in MB
-    MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", str(40 * 1024 * 1024 * 1024)))  # 40GB in bytes
+    # 15GB Maximum File Size Support
+    MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "15360"))  # 15GB in MB
+    MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", str(15 * 1024 * 1024 * 1024)))  # 15GB in bytes
     LARGE_FILE_THRESHOLD_GB: int = int(os.getenv("LARGE_FILE_THRESHOLD_GB", "1"))  # 1GB threshold
     LARGE_FILE_THRESHOLD: int = LARGE_FILE_THRESHOLD_GB * 1024 * 1024 * 1024
     
-    # WhatsApp-like File Type Limits (Updated for 40GB support)
+    # WhatsApp-like File Type Limits (Updated for 15GB support)
     MAX_IMAGE_SIZE_MB: int = int(os.getenv("MAX_IMAGE_SIZE_MB", "4096"))  # 4GB for high-res images
-    MAX_VIDEO_SIZE_MB: int = int(os.getenv("MAX_VIDEO_SIZE_MB", "40960"))  # 40GB for videos
+    MAX_VIDEO_SIZE_MB: int = int(os.getenv("MAX_VIDEO_SIZE_MB", "15360"))  # 15GB for videos
     MAX_AUDIO_SIZE_MB: int = int(os.getenv("MAX_AUDIO_SIZE_MB", "2048"))  # 2GB for audio
-    MAX_DOCUMENT_SIZE_MB: int = int(os.getenv("MAX_DOCUMENT_SIZE_MB", "40960"))  # 40GB for documents
+    MAX_DOCUMENT_SIZE_MB: int = int(os.getenv("MAX_DOCUMENT_SIZE_MB", "15360"))  # 15GB for documents
     
     # Convert to bytes
     MAX_IMAGE_SIZE_BYTES: int = MAX_IMAGE_SIZE_MB * 1024 * 1024
@@ -297,7 +297,7 @@ class Settings:
     print(f"[CONFIG] Max Audio Size: {MAX_AUDIO_SIZE_MB}MB")
     print(f"[CONFIG] Max Document Size: {MAX_DOCUMENT_SIZE_MB}MB")
     
-    # File upload settings (40GB Support)
+    # File upload settings (15GB Support)
     # LARGE_FILE_THRESHOLD and MAX_FILE_SIZE already set above
     # Remove duplicate assignments to avoid conflicts
     

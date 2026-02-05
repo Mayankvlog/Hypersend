@@ -32,7 +32,7 @@ class FileTransferService {
   }
 
   /// Pick and upload a file using the backend's resumable chunk upload API.
-  /// This supports very large files (e.g. 40GB) on desktop/mobile where `dart:io` is available.
+  /// This supports very large files (e.g. 15GB) on desktop/mobile where `dart:io` is available.
   Future<void> pickAndUpload({
     required String chatId,
     required Function(double) onProgress,
@@ -49,10 +49,10 @@ class FileTransferService {
       throw Exception('Invalid file selection');
     }
 
-    // Check against 40GB limit
+    // Check against 15GB limit
     if (file.size > ApiConstants.maxFileSizeBytes) {
       final sizeGB = file.size / (1024 * 1024 * 1024);
-      throw Exception('File size (${sizeGB.toStringAsFixed(2)}GB) exceeds 40GB limit');
+      throw Exception('File size (${sizeGB.toStringAsFixed(2)}GB) exceeds 15GB limit');
     }
 
     final stream = file.readStream ?? (file.bytes != null ? Stream.value(file.bytes!) : null);

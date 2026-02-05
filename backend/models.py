@@ -167,7 +167,7 @@ class UserInDB(BaseModel):
     avatar: Optional[str] = None  # Avatar initials like 'JD'
     avatar_url: Optional[str] = None
     quota_used: int = 0
-    quota_limit: int = 42949672960  # 40 GiB default
+    quota_limit: int = 16106127360  # 15 GiB default
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = None
     last_seen: Optional[datetime] = None
