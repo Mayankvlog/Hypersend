@@ -16,7 +16,7 @@ metadata:
   namespace: hypersend
 data:
   # ===== API CONFIGURATION =====
-  SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
+  SECRET_KEY: "Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed"
   ALGORITHM: "HS256"
   ACCESS_TOKEN_EXPIRE_MINUTES: "28800"
   REFRESH_TOKEN_EXPIRE_DAYS: "20"
@@ -26,7 +26,7 @@ data:
   DEBUG: "False"
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
-  API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+  API_BASE_URL: "https://zaply.in.net/api/v1"
   
   # ===== CORS CONFIGURATION =====
   ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
@@ -53,9 +53,9 @@ data:
   # ===== WHATSAPP STORAGE MODEL (User Device + S3 TTL) =====
   STORAGE_MODE: "user_device_s3"
   S3_BUCKET: "hypersend-temp"
-  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-  AWS_REGION: ${AWS_REGION:-us-east-1}
+  AWS_ACCESS_KEY_ID: "AKIA2460123456xxxxxxxx"
+  AWS_SECRET_ACCESS_KEY: "wJalr9RiUMnits1234567stubxbdPcQxSx"
+  AWS_REGION: "us-east-1"
   FILE_TTL_HOURS: "24"
   SERVER_STORAGE_BYTES: "0"
   USER_DEVICE_STORAGE: "true"
@@ -116,8 +116,8 @@ data:
   # SMTP password (base64 encoded)
   SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=  # dummy_app_password_configure_in_env
   # AWS credentials (base64 encoded) - REPLACE WITH YOUR ACTUAL AWS KEYS
-  AWS_ACCESS_KEY_ID: "AKIA... base64 encoded"  # echo -n 'AKIA...' | base64
-  AWS_SECRET_ACCESS_KEY: "wJalr... base64 encoded"  # echo -n 'wJalr...' | base64
+  AWS_ACCESS_KEY_ID: "QUtJQTI0NjAxMjM0NTZ4eHh4eHh4eHg="  # echo -n 'AKIA2460123456xxxxxxxx' | base64
+  AWS_SECRET_ACCESS_KEY: "d0phbHI5UmlVTW5pdHMxMjM0NTY3c3R1YnhiZFBjUXhTeA=="  # echo -n 'wJalr9RiUMnits1234567stubxbdPcQxSx' | base64
 
 ---
 # Nginx Configuration ConfigMap
@@ -213,6 +213,15 @@ data:
         limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=6r/m;
 
         limit_req_status 429;
+
+        # Nginx Cache Configuration for static assets and large file downloads
+        proxy_cache_path /var/cache/nginx/client_temp levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m use_temp_path=off;
+        proxy_cache_key "$scheme$request_method$host$request_uri";
+        proxy_cache_valid 200 10m;
+        proxy_cache_valid 404 1m;
+        proxy_cache_use_stale error timeout invalid_header updating http_500 http_502 http_503 http_504;
+        proxy_cache_bypass $http_pragma $http_authorization;
+        add_header X-Cache-Status $upstream_cache_status;
 
         # SECURITY: CORS origin allowlist map to restrict to authorized origins
         # Production: zaply.in.net and www.zaply.in.net only
@@ -425,8 +434,11 @@ data:
                 proxy_buffering off;
                 proxy_read_timeout 300s;
                 proxy_intercept_errors off;
+                proxy_cache hypersend_cache;
+                proxy_cache_valid 200 24h;
                 add_header Cache-Control "public, max-age=31536000" always;
                 add_header X-Content-Type-Options "nosniff" always;
+                add_header X-Cache-Status $upstream_cache_status always;
             }
 
             location / {
@@ -588,7 +600,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: yourusername/hypersend-backend:latest
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
         ports:
         - containerPort: 8000
         envFrom:
@@ -740,7 +752,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: yourusername/hypersend-frontend:latest
+        image: ghcr.io/mayankvlog/hypersend-frontend:latest
         ports:
         - containerPort: 80
         env:
@@ -812,7 +824,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: yourusername/hypersend-nginx:latest
+        image: nginx:1.25-alpine
         ports:
         - containerPort: 80
         - containerPort: 443
@@ -839,7 +851,8 @@ spec:
           subPath: nginx.conf
           readOnly: true
         - name: nginx-cache
-          mountPath: /var/cache/nginx
+          mountPath: /var/cache/nginx/client_temp
+          readOnly: false
         resources:
           requests:
             memory: "128Mi"
