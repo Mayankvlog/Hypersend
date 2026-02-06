@@ -1146,3 +1146,241 @@ class DevicePublicKeyBundle(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     is_current: bool = True
 
+
+class DeviceSession(BaseModel):
+    """
+    Encryption session between two devices (per-device-pair).
+    
+    CRITICAL FOR WHATSAPP ARCHITECTURE:
+    - One session per (user_device, contact_device) pair
+    - Each message = chain ratchet advance
+    - DH ratchet on new ephemeral keys (optional)
+    - Forward secrecy: delete message keys after sending
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    session_id: str = Field(..., min_length=32)
+    
+    # Session participants
+    user_id: str
+    device_id: str
+    contact_user_id: str
+    contact_device_id: str
+    
+    # Encryption state
+    root_key_b64: str = Field(..., min_length=40)
+    chain_key_send_b64: Optional[str] = None
+    chain_key_recv_b64: Optional[str] = None
+    dh_send_public_b64: Optional[str] = None
+    dh_recv_public_b64: Optional[str] = None
+    
+    # Message counters
+    sending_counter: int = 0
+    receiving_counter: int = 0
+    prev_chain_counter: int = 0  # For skipped message keys
+    
+    # Session state
+    is_active: bool = True
+    is_initiator: bool = False
+    initialized_at: datetime = Field(default_factory=datetime.utcnow)
+    last_activity: datetime = Field(default_factory=datetime.utcnow)
+    dh_ratchet_count: int = 0
+    
+    # Lifecycle
+    expires_at: Optional[datetime] = None  # TTL for inactive sessions
+    deleted_at: Optional[datetime] = None  # Mark for deletion (eventual consistency)
+
+
+class EncryptedMessage(BaseModel):
+    """
+    Message in transit (encrypted, server-side, ephemeral).
+    
+    WHATSAPP ARCHITECTURE:
+    - Server stores only ciphertext (never plaintext)
+    - Only recipient devices can decrypt
+    - Auto-delete after TTL (default 1 hour)
+    - Separate ciphertext per recipient device
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    message_id: str = Field(..., min_length=32)
+    
+    # Message participants
+    sender_user_id: str
+    sender_device_id: str
+    recipient_user_id: str
+    recipient_device_id: str
+    
+    # Message encryption
+    ciphertext_b64: str = Field(..., min_length=100)  # Encrypted payload
+    iv_b64: str = Field(..., min_length=16)
+    tag_b64: str = Field(..., min_length=24)
+    message_counter: int  # For replay protection
+    ephemeral_key_b64: Optional[str] = None  # Sender's DH ephemeral key
+    
+    # Message metadata (minimal)
+    message_type: str = Field(default="text")  # "text", "image", "file", "group_update"
+    is_group: bool = False
+    
+    # Delivery tracking
+    sent_at: datetime = Field(default_factory=datetime.utcnow)
+    received_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    read_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None  # Deletion marker (message still stored until TTL)
+    
+    # TTL (ephemeral - critical for WhatsApp model)
+    ttl_seconds: int = 3600  # 1 hour default
+    expires_at: Optional[datetime] = None  # Auto-delete after this
+
+
+class MessageDeliveryReceipt(BaseModel):
+    """Per-device delivery receipt for message tracking."""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    message_id: str
+    device_id: str
+    receipt_type: str = Field(..., description="sent, delivered, read, failed")
+    receipt_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    error_reason: Optional[str] = None
+
+
+class E2EEBackup(BaseModel):
+    """
+    Encrypted backup (optional, user-initiated).
+    
+    WHATSAPP BACKUP MODEL:
+    - User generates backup key (not sent to server)
+    - Server stores encrypted backup blob (unintelligible)
+    - User keeps backup key in Keychain/Keystore
+    - Restore: user provides backup key → server returns encrypted blob
+    - Only user can decrypt (server has zero knowledge)
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    backup_id: str = Field(..., min_length=32)
+    user_id: str
+    
+    # Backup content (encrypted)
+    encrypted_backup_b64: str = Field(..., min_length=1000)
+    backup_iv_b64: str = Field(..., min_length=16)
+    backup_tag_b64: str = Field(..., min_length=24)
+    backup_key_salt_b64: str = Field(..., min_length=16)  # For backup key derivation
+    
+    # Backup metadata
+    content_hash_sha256: str = Field(..., min_length=64)  # For integrity verification
+    backup_size_bytes: int
+    device_id_backed_from: str  # Which device created this
+    
+    # Lifecycle
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_restored: Optional[datetime] = None
+    
+    # Retention
+    auto_delete_after_days: int = 30
+    is_active: bool = True
+
+
+class AbuseReport(BaseModel):
+    """Abuse report for moderation."""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    report_id: str = Field(..., min_length=32)
+    
+    # Report details
+    reporter_user_id: str
+    reported_user_id: str
+    report_type: str = Field(..., description="spam, harassment, hate, explicit, impersonation")
+    report_reason_text: Optional[str] = Field(None, max_length=1000)
+    
+    # Context
+    message_id: Optional[str] = None  # Specific message being reported
+    related_messages: List[str] = Field(default_factory=list)
+    
+    # Status
+    status: str = Field(default="pending")  # "pending", "reviewed", "actioned", "dismissed"
+    action_taken: Optional[str] = None  # "warning", "shadow_ban", "suspension", "removal"
+    moderator_notes: Optional[str] = None
+    
+    # Lifecycle
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    reviewed_at: Optional[datetime] = None
+    action_timestamp: Optional[datetime] = None
+
+
+class AbuseScoreCard(BaseModel):
+    """
+    Abuse scoring for user (anomaly detection).
+    
+    ATTACK PREVENTION:
+    - Track message velocity (messages/minute)
+    - Track unique recipient count
+    - Track content patterns (spam keywords)
+    - Score accumulates → triggers actions (shadow ban, suspension)
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str
+    
+    # Scoring metrics
+    total_abuse_score: float = 0.0  # 0-1.0 scale
+    spam_score: float = 0.0
+    harassment_score: float = 0.0
+    violation_score: float = 0.0
+    
+    # Velocity metrics
+    messages_last_hour: int = 0
+    messages_last_day: int = 0
+    unique_recipients_last_day: int = 0
+    
+    # Incident tracking
+    reports_received: int = 0
+    actions_taken: List[str] = Field(default_factory=list)
+    
+    # Thresholds
+    is_flagged: bool = False  # Needs review
+    is_shadow_banned: bool = False  # Messages not delivered
+    is_suspended: bool = False  # Account suspended
+    
+    # Lifecycle
+    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_incident: Optional[datetime] = None
+    last_action: Optional[datetime] = None
+
+
+class UserDeviceList(BaseModel):
+    """
+    Device list published by user (eventually consistent across devices).
+    
+    WHATSAPP ARCHITECTURE:
+    - Primary device is source of truth
+    - Creates signed device list
+    - Broadcasts to all linked devices
+    - Each device verifies signature
+    - Used for group encryption (which devices to target)
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str
+    
+    # Device list content
+    devices: List[Dict] = Field(...)  # [{device_id, identity_key_fingerprint, is_primary}, ...]
+    device_list_version: int  # Incremented on each update
+    
+    # Signature
+    signed_by_device: str  # Primary device ID
+    signature_b64: str = Field(..., min_length=80)
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    is_current: bool = True
+

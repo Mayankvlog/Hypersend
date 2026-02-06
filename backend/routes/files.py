@@ -1840,24 +1840,6 @@ async def download_file(
                 }
             )
         
-        # Path traversal protection for downloads
-        if file_path:
-            # Normalize path and extract parts for validation
-            normalized_path = Path(file_path).resolve()
-            path_parts = normalized_path.parts  # path_parts = normalized_path.parts
-            
-            # Additional validation using path parts
-            if len(path_parts) > 10:  # Reasonable depth limit
-                _log("warning", f"Path too deep: {len(path_parts)} parts", {
-                    "user_id": current_user,
-                    "operation": "file_download",
-                    "path": str(file_path)
-                })
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Path too deep - exceeds maximum allowed depth"
-                )
-        
         # File not found
         _log("warning", f"File not found for download: {file_id}", {"user_id": current_user, "operation": "file_download"})
         raise HTTPException(

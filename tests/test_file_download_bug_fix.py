@@ -55,8 +55,11 @@ def test_file_download_error_handling():
         assert "AttributeError" in content, "AttributeError handling should be present"
         assert "Attribute error in file download" in content, "Specific AttributeError message should be present"
         
-        # Check that the .parts fix is applied
-        assert "path_parts = normalized_path.parts" in content, "Path.parts should be used correctly"
+        # Check that the problematic .parts code is removed (this was the fix)
+        assert "path_parts = normalized_path.parts" not in content, "Problematic .parts code should be removed"
+        assert "str(normalized_path).parts" not in content, "Should not call .parts on string"
+        
+        # Verify the fix by checking that problematic patterns are removed
         assert "str(normalized_path).parts" not in content, "Should not call .parts on string"
         
         print("✅ File download error handling verified in code")

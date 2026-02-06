@@ -18,6 +18,7 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+from backend.config import settings
 from backend.main import app
 from backend.routes.auth import (
     decode_token, 
@@ -49,7 +50,8 @@ class TestTokenBasedPasswordReset:
             "quota_limit": 42949672960
         }
     
-    def setup_method(self):
+    @pytest.fixture
+    def setup_test_data(self, mock_user_data):
         """Setup test data"""
         users_collection().data.clear()
         reset_tokens_collection().data.clear()
@@ -59,10 +61,14 @@ class TestTokenBasedPasswordReset:
         """Test JWT reset token generation for password reset"""
         print("\n🧪 Test: Generate Password Reset Token")
         
-        # Mock the SECRET_KEY to match test expectations
-        from backend.routes import auth as auth_module
-        original_secret = auth_module.settings.SECRET_KEY
-        auth_module.settings.SECRET_KEY = "test-secret-key"
+        # Patch jwt.encode to use test key
+        original_encode = jwt.encode
+        def patched_encode(payload, key, algorithm="HS256", headers=None, json=None):
+            if key == settings.SECRET_KEY:
+                key = "test-secret-key"
+            return original_encode(payload, key, algorithm, headers, json)
+        
+        jwt.encode = patched_encode
         
         try:
             user_id = "testuser123"  # Use alphanumeric ID
@@ -87,17 +93,35 @@ class TestTokenBasedPasswordReset:
             
             print("✅ Password reset token generation successful")
         finally:
-            # Restore original secret
-            auth_module.settings.SECRET_KEY = original_secret
+            # Restore original jwt.encode
+            jwt.encode = original_encode
     
     def test_verify_password_reset_token_valid(self, mock_user_data):
         """Test valid password reset token verification"""
         print("\n🧪 Test: Verify Valid Reset Token")
         
-        # Mock the SECRET_KEY to match test expectations
-        from backend.routes import auth as auth_module
-        original_secret = auth_module.settings.SECRET_KEY
-        auth_module.settings.SECRET_KEY = "test-secret-key"
+        # Mock jwt.encode to use test secret key
+        original_encode = jwt.encode
+        def patched_encode(payload, key, algorithm="HS256", headers=None, json=None):
+            if key == settings.SECRET_KEY:
+                key = "test-secret-key"
+            return original_encode(payload, key, algorithm, headers, json)
+        
+        # Mock jwt.decode to use test secret key
+        original_decode = jwt.decode
+        def patched_decode(token, key, algorithms=["HS256"], options=None):
+            if key == settings.SECRET_KEY:
+                key = "test-secret-key"
+            return original_decode(token, key, algorithms, options)
+        
+        jwt.encode = patched_encode
+        jwt.decode = patched_decode
+        
+        # Mock SECRET_KEY to match test expectations
+        print(f"🔍 Original SECRET_KEY: {settings.SECRET_KEY}")
+        original_secret = settings.SECRET_KEY
+        settings.SECRET_KEY = "test-secret-key"
+        print(f"🔍 Set SECRET_KEY to: {settings.SECRET_KEY}")
         
         try:
             # Use a proper user identifier format (alphanumeric)
@@ -107,20 +131,21 @@ class TestTokenBasedPasswordReset:
                 expires_delta=timedelta(hours=1)
             )
             
-            # Verify token using decode_token
+            print(f"📥 Generated Token: {token[:50]}...")
+            
+            # Verify token using the verification function
             token_data = decode_token(token)
-            
-            print(f"📥 Original User ID: {user_id}")
-            print(f"📥 Verified User ID: {token_data.user_id}")
-            print(f"📥 Token Type: {token_data.token_type}")
-            
-            assert token_data.user_id == user_id, "Verified user ID should match original"
+            assert token_data.user_id == user_id, f"Token verification should succeed, got {token_data.user_id}"
             assert token_data.token_type == "password_reset", "Token type should be password_reset"
-            print("✅ Valid token verification successful")
+            
+            print("✅ Valid password reset token verification successful")
         finally:
-            auth_module.settings.SECRET_KEY = original_secret
+            # Restore original jwt functions and secret
+            jwt.encode = original_encode
+            jwt.decode = original_decode
+            settings.SECRET_KEY = original_secret
     
-    def test_verify_password_reset_token_invalid(self):
+    def test_verify_password_reset_token_invalid(self, mock_user_data):
         """Test invalid password reset token verification"""
         print("\n🧪 Test: Verify Invalid Reset Token")
         
@@ -148,10 +173,9 @@ class TestTokenBasedPasswordReset:
         import jwt
         from datetime import datetime, timedelta, timezone
         
-        # Mock the SECRET_KEY for consistent testing
-        import backend.routes.auth as auth_module
-        original_secret = auth_module.settings.SECRET_KEY
-        auth_module.settings.SECRET_KEY = "test-secret-key"
+        # Mock SECRET_KEY for consistent testing
+        original_secret = settings.SECRET_KEY
+        settings.SECRET_KEY = "test-secret-key"
         
         try:
             # Create expired token
@@ -174,7 +198,7 @@ class TestTokenBasedPasswordReset:
             print("✅ Expired token verification successful")
             
         finally:
-            auth_module.settings.SECRET_KEY = original_secret
+            settings.SECRET_KEY = original_secret
     
     def test_reset_password_endpoint(self, client, mock_user_data):
         """Test reset password endpoint with valid token"""
@@ -185,9 +209,8 @@ class TestTokenBasedPasswordReset:
         users_collection().data["test@example.com"] = mock_user_data
         
         # Generate a valid password reset token
-        import backend.routes.auth as auth_module
-        original_secret = auth_module.settings.SECRET_KEY
-        auth_module.settings.SECRET_KEY = "test-secret-key"
+        original_secret = settings.SECRET_KEY
+        settings.SECRET_KEY = "test-secret-key"
         
         try:
             token = create_access_token(
@@ -219,16 +242,15 @@ class TestTokenBasedPasswordReset:
                 # Don't fail test - might be validation issue
                 print("⚠️  Endpoint test skipped due to validation")
         finally:
-            auth_module.settings.SECRET_KEY = original_secret
+            settings.SECRET_KEY = original_secret
     
     def test_reset_password_user_not_found(self, client):
         """Test reset password with token for non-existent user"""
         print("\n🧪 Test: Reset Password - User Not Found")
         
         # Generate a token for non-existent user
-        import backend.routes.auth as auth_module
-        original_secret = auth_module.settings.SECRET_KEY
-        auth_module.settings.SECRET_KEY = "test-secret-key"
+        original_secret = settings.SECRET_KEY
+        settings.SECRET_KEY = "test-secret-key"
         
         try:
             token = create_access_token(
@@ -256,7 +278,7 @@ class TestTokenBasedPasswordReset:
                 print(f"❌ Unexpected response: {response.text}")
                 print("⚠️  User not found test skipped")
         finally:
-            auth_module.settings.SECRET_KEY = original_secret
+            settings.SECRET_KEY = original_secret
     
     def test_reset_password_invalid_token(self, client):
         """Test reset password with invalid token"""
@@ -291,9 +313,9 @@ class TestTokenBasedPasswordReset:
         users_collection().data["test@example.com"] = mock_user_data
         
         # Generate a valid token
-        import backend.routes.auth as auth_module
-        original_secret = auth_module.settings.SECRET_KEY
-        auth_module.settings.SECRET_KEY = "test-secret-key"
+        from backend import config
+        original_secret = config.settings.SECRET_KEY
+        config.settings.SECRET_KEY = "test-secret-key"
         
         try:
             token = create_access_token(
@@ -320,7 +342,7 @@ class TestTokenBasedPasswordReset:
                     print(f"⚠ Unexpected status for weak password: {response.status_code}")
         
         finally:
-            auth_module.settings.SECRET_KEY = original_secret
+            settings.SECRET_KEY = original_secret
     
     def test_complete_token_flow_simulation(self, mock_user_data):
         """Test complete token-based password reset flow simulation"""
@@ -331,10 +353,22 @@ class TestTokenBasedPasswordReset:
         users_collection().data["test@example.com"] = mock_user_data
         print(f"📥 Stored user data with key: test@example.com")
         
-        # Mock the SECRET_KEY
-        import backend.routes.auth as auth_module
-        original_secret = auth_module.settings.SECRET_KEY
-        auth_module.settings.SECRET_KEY = "test-secret-key"
+        # Patch jwt.encode to use test key
+        original_encode = jwt.encode
+        def patched_encode(payload, key, algorithm="HS256", headers=None, json=None):
+            if key == settings.SECRET_KEY:
+                key = "test-secret-key"
+            return original_encode(payload, key, algorithm, headers, json)
+        
+        # Patch jwt.decode to use test key
+        original_decode = jwt.decode
+        def patched_decode(token, key, algorithms=["HS256"], options=None):
+            if key == settings.SECRET_KEY:
+                key = "test-secret-key"
+            return original_decode(token, key, algorithms, options)
+        
+        jwt.encode = patched_encode
+        jwt.decode = patched_decode
         
         try:
             # Step 1: Generate reset token
@@ -360,7 +394,9 @@ class TestTokenBasedPasswordReset:
             print("✅ Complete token-based password reset flow simulation successful")
         
         finally:
-            auth_module.settings.SECRET_KEY = original_secret
+            # Restore original jwt functions
+            jwt.encode = original_encode
+            jwt.decode = original_decode
 
 
 if __name__ == "__main__":

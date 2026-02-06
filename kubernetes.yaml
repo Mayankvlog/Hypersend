@@ -98,6 +98,35 @@ data:
   # Redis Key Namespacing (for E2EE)
   # Format: key:{user_id}:{device_id}:{message_type}:{message_id}
   # Example: message:user123:device456:text:msg789
+  
+  # ===== ABUSE & ANTI-SPAM SYSTEM (WHATSAPP-GRADE) =====
+  # Score-based abuse detection with graduated enforcement
+  ABUSE_SCORING_ENABLED: "true"
+  ABUSE_SCORE_INITIAL: "0.0"  # Start at 0
+  
+  # Velocity limits (per sender)
+  MESSAGE_VELOCITY_LIMIT_PER_MINUTE: "100"  # Max 100 msg/minute
+  MESSAGE_VELOCITY_LIMIT_PER_HOUR: "1000"  # Max 1000 msg/hour
+  UNIQUE_RECIPIENTS_DAILY_LIMIT: "1000"  # Max 1000 unique recipients/day
+  UNIQUE_RECIPIENTS_HOURLY_LIMIT: "100"  # Max 100 unique recipients/hour
+  
+  # Scoring thresholds
+  SPAM_KEYWORD_SCORE_INCREMENT: "0.1"  # +0.1 per suspicious keyword
+  VELOCITY_VIOLATION_SCORE_INCREMENT: "0.15"  # +0.15 ratelimit violation
+  REPORT_SCORE_INCREMENT: "0.2"  # +0.2 per abuse report
+  SHADOW_BAN_THRESHOLD: "0.6"  # Shadow ban if score >= 0.6
+  SUSPENSION_THRESHOLD: "0.85"  # Suspend if score >= 0.85
+  
+  # Enforcement
+  SHADOW_BAN_DURATION_HOURS: "24"  # Shadow ban lasts 24h
+  SUSPENSION_DURATION_HOURS: "168"  # 1 week suspension  
+  SCORE_DECAY_PER_DAY: "0.1"  # Score decreases 0.1/day of good behavior
+  
+  # Moderation
+  MODERATION_ENABLED: "true"
+  AUTO_REPORT_THRESHOLD: "0.5"  # Auto-flag if score >= 0.5
+  EXPLICIT_CONTENT_DETECTION: "true"
+  PHISHING_DETECTION: "true"
   # ===== NGINX CONFIGURATION (15GB Support) =====
   NGINX_ALLOW_UNSAFE_SSL: "true"
   NGINX_API_BASE_URL: "http://localhost:8000/api/v1"

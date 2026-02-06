@@ -79,21 +79,60 @@ services:
     # - NO --save: Disable RDB snapshots
     # - --maxmemory 2gb: Limit memory to 2GB for ephemeral messages
     # - --maxmemory-policy allkeys-lru: Evict oldest messages when full
+    # - --requirepass: Authentication password
     # RESULT: Messages lost on restart (ACCEPTABLE - user device has backup)
-    command: redis-server --appendonly no --maxmemory 2gb --maxmemory-policy allkeys-lru
-    # WHATSAPP ARCHITECTURE: Redis is RAM-only, no persistence
-    # Messages disappear on restart - WhatsApp behavior
-    # Uncomment for debugging only:
-    # volumes:
-    #   - redis_data:/data
+    command: >
+      redis-server
+      --port 6379
+      --bind 0.0.0.0
+      --appendonly no
+      --save ""
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-change_this_password_in_prod}
+      --tcp-backlog 65535
+      --timeout 0
+      --tcp-keepalive 300
+      --loglevel notice
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-change_this_password_in_prod}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    sysctls:
+      - net.core.somaxconn=65535
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
+
+  minio:
+    image: minio/minio:latest
+    container_name: hypersend_minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"  # MinIO Admin Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change_this_password_in_prod}
+      MINIO_REGION: ${AWS_REGION:-us-east-1}
+    command: server /minio_data --console-address ":9001"
+    volumes:
+      - minio_data:/minio_data
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -185,6 +224,22 @@ services:
       RATE_LIMIT_WINDOW_SECONDS: 60
       USE_MOCK_DB: "False"  # MANDATORY: Use real MongoDB for metadata
       
+      # ===== REDIS CONFIGURATION (E2EE Key Namespacing) =====
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_this_password_in_prod}
+      REDIS_DB: 0
+      REDIS_MAX_CONNECTIONS: 100
+      REDIS_SOCKET_TIMEOUT: 5
+      REDIS_MAX_MEMORY: 2gb
+      
+      # ===== ABUSE & ANTI-SPAM SYSTEM =====
+      ABUSE_SCORING_ENABLED: "true"
+      MESSAGE_VELOCITY_LIMIT: 100  # messages per minute
+      UNIQUE_RECIPIENTS_DAILY_LIMIT: 1000  # new recipients per day
+      SHADOW_BAN_THRESHOLD: 0.7  # Score threshold for shadow ban (0-1.0)
+      SUSPENSION_THRESHOLD: 0.9  # Score threshold for suspension
+      
       # ===== EMAIL CONFIGURATION =====
       ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
@@ -255,4 +310,11 @@ volumes:
   # - Only for static frontend assets
   # - In Kubernetes, this maps to emptyDir with memory tmpfs
   nginx_cache:
+    driver: local
+  
+  # MinIO data storage (encrypted blobs only, client-side E2EE)
+  # - Server never sees plaintext
+  # - Each file encrypted by sender before upload
+  # - Auto-delete after 24h TTL (lifecycle policy)
+  minio_data:
     driver: local

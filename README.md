@@ -196,7 +196,662 @@ client_max_body_size 15g;
 
 ---
 
-## 🔒 Security Features
+## 🔒 Security Architecture (WhatsApp-Grade E2EE)
+
+### Critical Security Guarantee
+
+⚠️ **SERVER NEVER SEES PLAINTEXT MESSAGES** ⚠️
+
+All messages are encrypted end-to-end using the Signal Protocol (X3DH + Double Ratchet). The Hypersend server stores only ciphertexts, device identifiers, and metadata—never the ability to decrypt.
+
+---
+
+### Signal Protocol Implementation
+
+#### 🔐 X3DH (Extended Triple Diffie-Hellman) Protocol
+
+**Purpose:** Secure key establishment without pre-shared secrets
+
+**Key Exchange Process:**
+```
+Initiator Device                           Recipient Device
+│                                           │
+├─ Generate ephemeral key (EK)             │
+├─ Fetch recipient's:                      │
+│  • Identity Key (IK)                     │
+│  • Signed Pre-Key (SPK)  ←─────────────→ │
+│  • One-Time Pre-Key (OPK)                │
+│                                           │
+├─ Perform 4 Diffie-Hellman operations:    │
+│  1. DH1: EK initiator ←→ SPK recipient   │
+│  2. DH2: IK initiator ←→ EK recipient    │
+│  3. DH3: EK initiator ←→ SPK recipient   │
+│  4. DH4: EK initiator ←→ OPK recipient   │
+│                                           │
+├─ Derive shared secret using KDF          │
+├─ Verify SPK signature (prevents MITM)    │
+│                                           │
+└─→ Post message with DH1||DH2||DH3||DH4  │
+                                            │
+                     Recipient verifies DH values
+                     Derives identical shared secret
+                     Initiates Double Ratchet
+```
+
+**Security Properties:**
+- ✅ **Out-of-band Verification:** Fingerprints derived from IK for optional user verification
+- ✅ **Perfect Forward Secrecy:** Ephemeral keys ensure past messages are unrecoverable
+- ✅ **Impersonation Prevention:** SPK signature prevents MITM key substitution
+- ✅ **Deniability:** No cryptographic proof of sender identity (human verification required)
+
+#### 🔄 Double Ratchet Algorithm
+
+**Problem Solved:** X3DH establishes one shared key. We need per-message keys for forward secrecy.
+
+**Solution:** Two ratcheting mechanisms with each message:
+
+| Ratchet Type | Operation | Benefit |
+|---|---|---|
+| **Chain** | Recipient: `MK[i] = KDF(SK[i]); SK[i+1] = KDF(SK[i])` | Delete MK after use → past messages unrecoverable |
+| **DH** | On new ephemeral: `SK_new = KDF(DH(old_SK))` | Change session key → breaks correlation, survives compromise |
+
+**State Tracking:**
+```
+DeviceSessionState
+├─ root_key          → KDF seed (shared secret from X3DH)
+├─ chain_key_send    → Current send chain key (for chain ratchet)
+├─ chain_key_recv    → Current recv chain key (for chain ratchet)
+├─ dh_send_private   → Current DH private key (for DH ratchet)
+├─ dh_send_public    → Current DH public key (shared with recipient)
+├─ dh_recv_public    → Recipient's last DH public key
+├─ recv_chain        → Map of past (DH_public, chain_key) for out-of-order msgs
+└─ counters          → msg_counter, send_counter, recv_counter
+```
+
+**Skipped Message Keys (Out-of-Order Delivery):**
+```
+Problem:  Messages arrive out-of-order (network latency, device offline)
+          But we delete keys upon use → can't decrypt old messages
+
+Solution: Store skipped keys in encrypted map:
+          MAX_SKIPPED_KEYS = 2048            # Prevent memory DOS
+          SKIPPED_KEY_MAX_AGE_DAYS = 1       # Auto-cleanup old keys
+          
+Storage:  recv_chain = {
+            (dh_public_key, chain_position): message_key
+          }
+          
+Result:   Late arrivals within 2048-msg window can decrypt
+          Ancient messages (>1 day) are unrecoverable (strong forward secrecy)
+```
+
+**Replay Protection:**
+```
+Each message carries a monotonic counter:
+├─ Counter starts at 0 after X3DH
+├─ Increments with each message sent/received
+├─ Sliding window: Accept counter if in range [last_counter - WINDOW_SIZE, last_counter]
+├─ Reject if: counter < last_counter - 2048
+└─ Result: Replayed messages detected and rejected
+
+Exceptions:
+├─ Out-of-order msgs with counter > last_counter: OK (legitimate out-of-order)
+├─ Exact duplicate (same counter): REJECTED
+└─ Very old messages (counter << last_counter): REJECTED
+```
+
+---
+
+### Multi-Device Architecture
+
+**Key Insight:** Not one session per user-pair, but **one session per device-pair**
+
+```
+Alice (User)                              Bob (User)
+├─ iPhone [Primary]                       ├─ Android [Primary]
+│  ├─ Session→Bob's Android               │  ├─ Session→Alice's iPhone
+│  ├─ Session→Bob's Desktop               │  ├─ Session→Alice's Laptop
+│  └─ Session→Bob's Tablet                └─ Session→Alice's iPad
+├─ Laptop [Linked]
+│  ├─ Session→Bob's Android
+│  ├─ Session→Bob's Desktop
+│  └─ Session→Bob's Tablet
+└─ iPad [Linked]
+   ├─ Session→Bob's Android
+   ├─ Session→Bob's Desktop
+   └─ Session→Bob's Tablet
+```
+
+**Why This Design?**
+
+| Aspect | One-Session-Per-User | One-Session-Per-Device | Benefit |
+|---|---|---|---|
+| Compromise | All devices compromised if single key leaked | Only that device's sessions affected | Isolation |
+| Linking | New device retroactively decrypts old messages | New device doesn't decrypt old messages | Privacy |
+| Correlation | All recipient devices get same ciphertext | Each device gets unique ciphertext | Device privacy |
+| Revocation | Complex: invalidate user key globally | Simple: remove device session | Flexibility |
+| Scaling | O(1) sessions per conversation | O(D²) sessions (D=devices per user) | Acceptable overhead |
+
+**Device Linking Flow (QR Code):**
+```
+1. User on Device A generates device linking QR code
+   ├─ Temporary linking session key (5-min TTL)
+   ├─ Linking device ID (hex)
+   └─ Encoded in QR
+
+2. User on Device B (new) scans QR code
+   ├─ Extracts linking session key
+   ├─ Establishes X3DH session with Device A using shared QR key
+   └─ Proves identity (can decrypt Device A's test message)
+
+3. Device A sends linking signal
+   ├─ Signs: "Device B with key fingerprint XXX is linked"
+   ├─ Broadcasts to all other devices (A's iPhone, Laptop)
+   └─ Devices record: "B is in Alice's device list"
+
+4. New Device B can now:
+   ├─ Query all of Alice's other devices from Device A
+   ├─ Establish independent X3DH sessions with each
+   ├─ Start pulling messages encrypted for Device B
+   └─ Optionally restore from encrypted backup
+
+Result: Device B has its own unique sessions
+        Cannot see past messages (new DH keys)
+        But can see new messages (new sessions)
+```
+
+**Device Revocation (Eventual Consistency):**
+```
+1. User revokes Device C from settings
+   ├─ Local: Device A immediately deletes Device C's session
+   └─ TTL on revocation signal: 24 hours
+
+2. Device A broadcasts revocation signal
+   ├─ "Device C revoked: signature_proof"
+   ├─ Sent to all linked devices (A's Laptop, iPad)
+   └─ Sent to server for future new device setup
+
+3. Other devices receive revocation
+   ├─ Verify signature (from Device A)
+   ├─ Delete Device C's session if exists
+   └─ Cache revocation for future verifications
+
+4. Server upon seeing revocation
+   ├─ Stops routing messages to Device C
+   ├─ Expires Device C's message queue
+   └─ Notifies future devices: "Don't trust Device C old keys"
+
+5. Device C (revoked) still has keys locally
+   ├─ Can decrypt past messages (already downloaded)
+   ├─ Cannot decrypt new messages (not in message queue)
+   └─ Cannot establish new sessions (revocation broadcast prevents)
+
+Result: Revoked devices remain offline-readable but future-blocked
+        Distributed enforcement (no hard delete required)
+        Survives network partitions
+```
+
+---
+
+### Message Fan-Out (Server-Side)
+
+**Problem:** How does server deliver message to one user on multiple devices?
+
+**Solution:** Per-device message fan-out using separate sessions
+
+```
+Alice sends "Hello" to Bob
+
+Server receives:
+├─ Message encrypted using Alice's iPhone ↔ Bob's Android session
+├─ Contains: ciphertext | sender_device_id | recipient_user_id | audience: [Android, Desktop]
+
+Server execution:
+├─ FOR EACH device in audience:
+│  ├─ Load that device's session (e.g., Bob's Desktop session)
+│  ├─ Re-ratchet session to current state (chain ratchet)
+│  ├─ Encrypt message with that device's current message key
+│  ├─ Store separate ciphertext in Redis
+│  │  └─ Key: message_queue:bob_desktop:uuid
+│  │  └─ Data: ciphertext | counter | ephemeral_pub_key | timestamp
+│  └─ TTL: 24 hours (auto-delete if not retrieved)
+
+Result: Each device has unique ciphertext
+        Cannot derive one device's ciphertext from another
+        Device privacy = no correlation between recipient devices
+```
+
+**Important:** Original ciphertext from sender stays unchanged. Server creates NEW ciphertexts for each recipient device.
+
+---
+
+### Encryption Algorithm
+
+**AES-256-GCM with Additional Authenticated Data (AAD)**
+
+```python
+message_key = current_chain_key[32:]          # Last 32 bytes = AES key
+aad = f"{sender_id}:{timestamp}:{counter}"    # Prevent tampering with metadata
+ciphertext, tag = AES_256_GCM.encrypt(
+    key=message_key,
+    plaintext=message_content,
+    aad=aad,
+    nonce=generate_random(12)                 # 96-bit nonce
+)
+
+# On decrypt:
+plaintext = AES_256_GCM.decrypt(ciphertext, tag, aad, nonce)
+# If AAD or tag mismatch → REJECT (tampering detected)
+```
+
+**Properties:**
+- ✅ **Confidentiality:** AES-256 symmetric encryption
+- ✅ **Integrity:** GCM tag prevents tampering
+- ✅ **Authenticity:** AAD ties message to sender+time+counter
+- ✅ **Freshness:** Nonce prevents replay of ciphertext
+
+---
+
+### Threat Model
+
+#### ✅ PROTECTED Against:
+
+| Threat | Mechanism | Result |
+|---|---|---|
+| **Passive Network Eavesdropping** | All messages encrypted | Attacker cannot decrypt |
+| **Server Compromise** | Server has only ciphertexts | Attacker cannot decrypt |
+| **Single Device Compromise** | Per-device sessions | Only that device's messages affected |
+| **Message Replay** | Counter + sliding window | Duplicates detected |
+| **Man-in-the-Middle (Key Exchange)** | X3DH with signatures | Impersonation prevented |
+| **Future Compromise (PFS)** | DH ratchet on each message | Future messages remain safe |
+| **Out-of-Order Delivery** | Skipped message keys | Legitimate delays handled |
+| **Large-Scale Attacks** | Stateless backend + Redis | Scales horizontally |
+| **Device Compromise Recovery** | DH ratchet + new ephemeral keys | Session heals after 1-2 messages |
+
+#### ⚠️ NOT Protected Against:
+
+| Threat | Why | Mitigation |
+|---|---|---|
+| **Endpoint Malware** | Device malware can access plaintext in memory | Use device-level security (passcode, biometric) |
+| **Compromised Certificate Authority** | Fake SSL cert = MITM possible | Certificate pinning for mobile apps |
+| **Social Engineering** | User confirms wrong fingerprint | "Security Code Changed" notifications |
+| **Quantum Computing** | Future: Grover/Shor breaks ECDH | Post-quantum crypto migration planned |
+| **Metadata Leakage** | Server sees timestamps, file sizes | Metadata minimization in progress |
+| **Backup Server Compromise** | Encrypted backups = decryptable with backup key if compromised | Backup keys users-only (never sent to server) |
+
+---
+
+### Metadata Minimization
+
+**What Server Stores:**
+```
+✅ Encrypted Message
+   ├─ ciphertext (opaque blob)
+   ├─ iv (nonce)
+   ├─ gcm_tag (authentication tag)
+   └─ counter (prevents replay)
+
+✅ Session Metadata
+   ├─ session_id
+   ├─ user_id_pairs (Alice+Bob, not content)
+   ├─ device_id_pairs
+   ├─ created_at
+   └─ last_activity_at
+
+✅ Delivery Metadata
+   ├─ message_id
+   ├─ delivered_at (timestamp)
+   └─ read_at (timestamp)
+```
+
+**What Server Does NOT Store:**
+```
+❌ Message content (encrypted client-side before upload)
+❌ File names (metadata in encrypted envelope)
+❌ Participant list detail (no "this group contains A, B, C")
+❌ Message length patterns (metadata encryption)
+❌ User locations (no GPS in metadata)
+❌ Device hardware info (no device model in metadata)
+```
+
+**Eventual Metadata Leakage:**
+```
+⚠️ Visible to Network Observer:
+   ├─ Connection timing (when does Alice usually talk to Bob?)
+   ├─ Message frequency (how often do they message?)
+   ├─ Packet sizes (ciphertext length ≈ plaintext length)
+   └─ Device identifiers (TLS client cert if pinned)
+
+⚠️ Mitigation Techniques:
+   ├─ Constant-size padding (pad to 4096-byte boundaries)
+   ├─ Fake traffic (mimic real traffic pattern)
+   └─ VPN/Tor routing (hide IP addresses)
+```
+
+---
+
+### Abuse & Anti-Spam System
+
+**Score-Based Detection (0.0 - 1.0 scale):**
+
+| Violation | Score Impact | Example Scenario | Threshold Action |
+|---|---|---|---|
+| Message velocity violation | +0.15 | 200 msgs/min (limit: 100) | — |
+| Unique recipients exceeded | +0.15 | 50 diff recipients/hour | Shadow ban |
+| Abuse report filed | +0.2 | 1 report = +0.2 | 0.6+ = shadow ban |
+| Explicit content detected | +0.1 | AI flagged as CSAM | Accumulates |
+| Phishing link detected | +0.25 | Malicious URL detected | 0.7+  = throttle |
+
+**Enforcement Actions (Progressive):**
+
+```
+Score 0.0-0.5
+├─ Status: ✅ Normal (Learning)
+├─ Action: Monitor for patterns
+└─ User Experience: No restrictions
+
+Score 0.5-0.7
+├─ Status: 👁️ Shadow Banned (Quarantine)
+├─ Action: Messages queued, not delivered
+├─ User sees: "Message sent ✓"
+└─ Recipients see: Nothing (message dropped server-side)
+
+Score 0.7-0.9
+├─ Status: 🚫 Throttled (Rate Limited)
+├─ Action: 10 messages/minute max (vs. 100 normal)
+├─ Messages delivered but slow
+└─ User sees: "Message delivery slowed"
+
+Score 0.9-1.0
+├─ Status: 🔒 Suspended (Locked Out)
+├─ Action: Account locked, zero messaging
+├─ User sees: "Account suspended - contact support"
+└─ Duration: 7 days automatic, or manual appeal
+
+Score Decay: -0.1 per day of good behavior
+└─ Rehabilitation: 10 days of normal usage = back to 0.0
+```
+
+**Moderation Pipeline:**
+
+```
+1. Abuse Detection (Automatic)
+   ├─ Keyword detection
+   ├─ Velocity analysis
+   ├─ Report aggregation
+   └─ Score increment
+
+2. Escalation (Automatic)
+   ├─ Score 0.5: Shadow ban activates
+   ├─ Score 0.7: Throttle activates
+   ├─ Score 0.9: Suspension activates
+   └─ Auto-review enabled
+
+3. Manual Review (Human)
+   ├─ Moderator views report + evidence
+   ├─ Can appeal/verify suspension
+   ├─ Can whitelist (reset score)
+   └─ Can permanent ban if severe
+
+4. User Appeal
+   ├─ User submits appeal
+   ├─ Moderator reviews
+   └─ Manual reset possible
+```
+
+---
+
+### Backup System (End-to-End Encrypted)
+
+**User Backup Flow:**
+
+```
+User Action: "Backup to Cloud"
+    ↓
+1. Device generates backup_key (256-bit random, stored locally only)
+2. Device derives backup_encryption_key = HKDF(backup_key, "BACKUP_ENCRYPT")
+3. Device compresses & encrypts local message history
+   └─ plaintext_backup_tar = gzip(all_messages.json)
+   └─ encrypted_backup = AES_256_GCM(
+        plaintext=plaintext_backup_tar,
+        key=backup_encryption_key
+      )
+4. Device sends encrypted_backup blob to server
+5. Server stores blob (NO KEY, opaque to server)
+6. Server logs backup metadata:
+   └─ backup_id | user_id | timestamp | size | backup_key_salt
+7. Server never receives backup_key
+
+Later: User "Restore from Backup"
+    ↓
+1. User provides backup_key (manually entered or from recovery codes)
+2. Device derives backup_encryption_key = HKDF(backup_key, "BACKUP_ENCRYPT")
+3. Device requests encrypted_backup from server
+4. Server returns blob (never had key to decrypt—zero knowledge)
+5. Device decrypts with backup_encryption_key
+   └─ plaintext_backup_tar = AES_256_GCM.decrypt(...)
+6. Device extracts messages from tar archive
+7. Device imports into local database
+8. User has message history back
+
+Security Guarantee:
+├─ Server hacked? → Attacker has encrypted blobs (no keys)
+├─ Backup key compromised? → Attacker can decrypt but must also steal encrypted blob
+├─ Both compromised? → Attacker sees plaintext history (but not future messages)
+└─ Server NEVER has backup_key (zero-knowledge backup)
+```
+
+---
+
+### Offline Sync & Message Retry
+
+**Message Delivery State Machine:**
+
+```
+User sends "Hello"
+    ↓
+State 1: PENDING
+├─ Device: Message encrypted, stored locally
+├─ Server: Message queued in Redis
+└─ Status: Waiting for delivery
+
+    ↓ (Device comes online / network available)
+
+State 2: SENT
+├─ Device: Acknowledged by server
+├─ Server: Message in recipient's queue
+└─ Status: Waiting for recipient pull
+
+    ↓ (Recipient device queries message queue)
+
+State 3: DELIVERED
+├─ Device (Recipient): Message received & decrypted
+├─ Device (Sender): ACK signal received
+└─ Status: Waiting for read receipt
+
+    ↓ (Recipient user opens message, app sends read receipt)
+
+State 4: READ
+├─ Device (Sender): Read receipt received
+├─ UI (Sender): Shows checkmark ✓✓ (blue if read)
+└─ Status: Complete
+
+Offline Scenario:
+├─ Device A offline (no Internet)
+├─ User types "Hello" → State 1: PENDING (local only)
+├─ Device A: Stores in local retry queue
+├─ Later: Device A comes online
+├─ Device A: Sees PENDING messages, retries by posting
+└─ Message transitions to State 2: SENT
+```
+
+**Retry Logic:**
+
+```
+Exponential Backoff:
+├─ Attempt 1: Immediately
+├─ Attempt 2: 2s after failure
+├─ Attempt 3: 4s after failure
+├─ Attempt 4: 8s after failure
+├─ Attempt 5: 16s after failure
+├─ Attempt 6+: 32s backoff (max)
+└─ Max TTL: 24 hours (then drop message)
+
+Per-Device Retry Queue (Redis):
+├─ Key: message_retry:{user_id}:{device_id}
+├─ Value: [
+│    {msg_id: "xxx", content: "Hello", retry_count: 2, last_attempt: 1704067200},
+│    {msg_id: "yyy", content: "…", retry_count: 1, last_attempt: 1704067198}
+│  ]
+├─ TTL: 24 hours (auto-cleanup)
+└─ Each device pulls queue when coming online
+
+Result:
+├─ Offline users don't lose messages (stored locally)
+├─ When online: Retries with exponential backoff
+├─ Network hiccups: Automatic recovery
+└─ Server never receives duplicate (deduped via message_id)
+```
+
+---
+
+### Device Identity & Fingerprints
+
+**Fingerprint Generation:**
+
+```python
+fingerprint = SHA256(X25519_public_key).digest()[:32]  # 256 bits
+fingerprint_hex = fingerprint.hex()[:64]               # 64 hex chars
+
+# Human-readable (5 words from wordlist):
+words = [
+  fingerprint_int >> (i*20) & 0xFFFFF 
+  for i in range(5)
+]
+readable = ["APPLE", "BANANA", "CHERRY", "DRAGON", "EAGLE"]  # examples
+
+# User sees:
+"Device Identity: APPLE-BANANA-CHERRY-DRAGON-EAGLE"
+```
+
+**Out-of-Band Verification (Optional):**
+
+```
+Alice verifies Bob's Device (Bob's iPhone):
+
+1. Alice opens Bob's contact → "Device Fingerprints"
+2. Alice sees: "Bob's iPhone: APPLE-BANANA-CHERRY-DRAGON-EAGLE"
+3. Alice calls/meets Bob in person
+4. Bob shows device settings → "Share Identity"
+5. Bob's device shows: "APPLE-BANANA-CHERRY-DRAGON-EAGLE"
+6. Alice confirms verbally: "Yes, that matches!"
+7. Alice's device marks: "Bob's iPhone [VERIFIED]"
+8. Alice's device stores Bob's public key locally
+9. If server impersonates Bob later:
+   ├─ Server provides different fingerprint
+   ├─ Alice's device detects mismatch
+   └─ Alice is alerted: "Security Code Changed!"
+
+Result: Man-in-the-middle attack detected
+```
+
+---
+
+### Security Audit Checklist
+
+**Use this checklist to verify security posture:**
+
+#### Cryptography ✅
+- [ ] X3DH implementation verifies SPK signature
+- [ ] Double Ratchet performs chain ratchet on each message
+- [ ] Double Ratchet performs DH ratchet on new ephemeral keys
+- [ ] Skipped message keys stored with MAX=2048 limit
+- [ ] Message counters prevent replay within 2048-message window
+- [ ] AES-256-GCM used with nonce, not counter mode
+- [ ] AAD includes sender_id, timestamp, counter (prevents tampering)
+
+#### Multi-Device ✅
+- [ ] Each device pair has separate DeviceSessionState
+- [ ] Device linking requires QR code + signature verification
+- [ ] Device revocation broadcasts signal to other devices
+- [ ] New device cannot decrypt old messages (new DH keys)
+- [ ] Device list broadcast signed by primary device
+- [ ] Revocation signals have 24-hour TTL retry window
+
+#### Message Fan-Out ✅
+- [ ] Server generates unique ciphertext per recipient device
+- [ ] Each device's message queue separate (cannot cross-pollinate)
+- [ ] Message counter per session prevents correlation
+- [ ] Ephemeral key in ciphertext prevents server decryption
+
+#### Storage ✅
+- [ ] Redis stores only ciphertexts (not plaintext)
+- [ ] Redis message entries have 24-hour TTL (auto-delete)
+- [ ] Session keys stored in Redis, not on disk
+- [ ] No plaintext messages in logs
+- [ ] Encrypted backups use user-only backup key
+- [ ] Backup key never transmitted to server
+
+#### Abuse System ✅
+- [ ] Score increments recorded with timestamp
+- [ ] Score decay: -0.1 per day of good behavior
+- [ ] Shadow ban threshold at score 0.6 (configurable)
+- [ ] Suspension threshold at score 0.9 (configurable)
+- [ ] Message velocity tracked per-user per-hour
+- [ ] Unique recipients tracked per-user per-day
+
+#### Offline & Retry ✅
+- [ ] Message retry queue stored locally on device
+- [ ] Retry uses exponential backoff (2s, 4s, 8s, 16s, 32s)
+- [ ] Max retry TTL set to 24 hours
+- [ ] Duplicate messages deduplicated via message_id
+- [ ] Device online detection triggers retry flush
+
+#### API & Infrastructure ✅
+- [ ] TLS 1.2+ required for all HTTPS
+- [ ] HSTS header set (max-age ≥ 31536000)
+- [ ] CSRF tokens required for state-changing operations
+- [ ] Rate limiting: 100 req/min per IP (API), 20 req/s (upload)
+- [ ] JWT tokens: 8-hour access, 20-day refresh
+- [ ] Device fingerprinting in JWT payload
+- [ ] Token blacklisting via Redis on logout
+
+---
+
+### Known Limitations & Roadmap
+
+#### Current Limitations:
+
+1. **Metadata Leakage**
+   - Timestamp granularity: 1 second (can infer activity patterns)
+   - Ciphertext length ≈ plaintext length (can infer message type)
+   - *Mitigation:* Use padding, consider Tor for privacy users
+
+2. **Endpoint Security**
+   - Device malware can access plaintext in memory
+   - *Mitigation:* Recommend strong device passcodes, biometric lock
+
+3. **Backup Key Management**
+   - User responsible for backup key security
+   - Lost backup key = cannot recover encrypted backups
+   - *Mitigation:* Provide recovery codes, hardware security modules
+
+4. **Quantum Computing**
+   - X25519 vulnerable to quantum attacks (future threat)
+   - *Mitigation:* Post-quantum ECDH planned
+
+#### Planned Improvements:
+
+| Roadmap Item | Timeline | Impact |
+|---|---|---|
+| **Post-Quantum Cryptography** | Q3 2025 | Resistance to future quantum attacks |
+| **Metadata Encryption** | Q2 2025 | Hide timestamps, file sizes |
+| **Hardware Security Module (HSM) Support** | Q4 2025 | Military-grade key storage |
+| **Group Encryption (Group Ratchet)** | Q1 2025 | Multi-user encryption |
+| **Self-Destructing Messages** | Q2 2025 | Auto-delete after time window |
+| **Certificate Pinning** | Q1 2025 | Prevent CA compromise attacks |
+
+---
 
 ### 1. Authentication & Authorization
 
