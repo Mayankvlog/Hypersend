@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 from bson import ObjectId
@@ -1383,4 +1383,318 @@ class UserDeviceList(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     is_current: bool = True
+
+
+# ==================== GROUP ENCRYPTION (SIGNAL SENDER KEYS) ====================
+
+class SenderKey(BaseModel):
+    """
+    Sender Key for group chat encryption (Signal Protocol).
+    
+    WHATSAPP GROUP ENCRYPTION:
+    - Each group member has a sender key (not shared, only sender knows it)
+    - Sender derives per-device sub-keys for each group member device
+    - Reduces key material: O(1) per sender instead of O(recipients)
+    - Group message → encrypt once with sender key → per-device re-encryption
+    
+    STORAGE:
+    - Redis with TTL (ephemeral)
+    - Key: sender_key:{group_id}:{sender_device_id}
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    group_id: str = Field(..., description="Group chat ID")
+    sender_user_id: str = Field(..., description="Who creates messages")
+    sender_device_id: str = Field(..., description="Which device")
+    
+    # Sender Key Material
+    seed_b64: str = Field(..., description="Seed for deriving per-device keys")
+    sender_key_id: int = Field(..., ge=0, description="Sender key version counter")
+    sender_chain_key_b64: str = Field(..., description="Current chain key for re-encryption")
+    sender_signing_key_b64: str = Field(..., description="For signing messages in group")
+    
+    # Recipient Device Subkeys (derived from sender key)
+    recipient_keys: Dict[str, Dict] = Field(default_factory=dict)  # {recipient_device_id: {key_b64, counter}}
+    
+    # State
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_used_at: Optional[datetime] = None
+    
+    # TTL for Redis
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=30))
+
+
+class GroupMessageState(BaseModel):
+    """
+    Group chat encryption state (shared by all members).
+    
+    WHATSAPP GROUP ENCRYPTION:
+    - All group members have this group state
+    - Contains all current sender keys (one per group member)
+    - Version number prevents rollback attacks
+    - Signed by group admin
+    
+    STORAGE:
+    - Redis + MongoDB backup
+    - Key: group_state:{group_id}
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    group_id: str = Field(..., description="Group chat ID")
+    
+    # Group Sender Keys (one per group member)
+    sender_keys: Dict[str, Dict] = Field(
+        default_factory=dict,
+        description="{sender_user_id:{sender_device_id: sender_key_b64}}"
+    )
+    
+    # Version & Authorization
+    group_state_version: int = Field(default=1, description="Prevents rollback attacks")
+    signed_by_user: str = Field(..., description="Admin user ID who authorized this state")
+    signature_b64: str = Field(..., description="Admin signature over sender keys")
+    
+    # Group Metadata
+    group_members: List[str] = Field(default_factory=list, description="User IDs in group")
+    group_admins: List[str] = Field(default_factory=list, description="Admin user IDs")
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ChatSequenceState(BaseModel):
+    """
+    Per-chat message sequence number (strict ordering).
+    
+    WHATSAPP MESSAGE ORDERING:
+    - Each chat has monotonic sequence number
+    - Message counter: incremented for every message in that chat
+    - Prevents message reordering attacks
+    - Detects missing/duplicate messages
+    
+    STORAGE:
+    - MongoDB (persistent per chat)
+    - Updated atomically on each message
+    - Key: {chat_id}
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    chat_id: str = Field(..., description="Chat/conversation ID")
+    
+    # Sequence Tracking
+    next_sequence_number: int = Field(default=1, description="Next message sequence number")
+    last_message_timestamp: Optional[datetime] = None
+    last_message_id: Optional[str] = None
+    
+    # Gap Detection
+    highest_sequence_seen: int = Field(default=0, description="Highest sequence number seen")
+    missing_sequences: List[int] = Field(default_factory=list, description="Detected gaps")
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ==================== PRESENCE & TYPING ====================
+
+class UserPresence(BaseModel):
+    """
+    User online/offline presence state.
+    
+    WHATSAPP PRESENCE:
+    - Minimal metadata (just online/offline)
+    - Privacy controls: show last seen only to contacts
+    - Typing indicator is separate
+    - Ephemeral (Redis only)
+    
+    STORAGE:
+    - Redis only (ephemeral)
+    - TTL: 5 minutes (expires if no heartbeat)
+    - Key: presence:{user_id}:{device_id}
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str = Field(..., description="User ID")
+    device_id: str = Field(..., description="Device ID")
+    
+    # Presence State
+    status: str = Field(..., pattern="^(online|offline|away)$")
+    last_seen_at: datetime = Field(default_factory=datetime.utcnow, description="Last activity time")
+    
+    # Privacy Controls
+    show_last_seen: bool = Field(default=True, description="Allow showing last seen")
+    
+    # Metadata
+    app_version: Optional[str] = None
+    platform: Optional[str] = Field(None, pattern="^(ios|android|web|desktop)$")
+    
+    # TTL Tracking
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(minutes=5))
+
+
+class TypingIndicator(BaseModel):
+    """
+    Typing state for real-time indicator.
+    
+    WHATSAPP TYPING:
+    - User is typing in specific chat
+    - Ephemeral (disappears after 3 minutes)
+    - Sent via WebSocket + Redis pub/sub
+    - No server processing (only relay)
+    
+    STORAGE:
+    - Redis only (ephemeral)
+    - TTL: 3 minutes
+    - Key: typing:{chat_id}:{user_id}:{device_id}
+    - Pub/Sub: typing:{chat_id}
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    chat_id: str = Field(..., description="Chat where typing")
+    user_id: str = Field(..., description="User typing")
+    device_id: str = Field(..., description="Device typing")
+    
+    # Typing State
+    is_typing: bool = Field(default=True)
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(minutes=3))
+
+
+# ==================== PUSH NOTIFICATIONS ====================
+
+class PushNotification(BaseModel):
+    """
+    Offline push notification queue.
+    
+    WHATSAPP PUSH FLOW:
+    - Message arrives for offline device
+    - Server queues push notification
+    - Device comes online → receives notification
+    - Collapse key: only latest notification per chat
+    - TTL: expires after 30 days
+    
+    STORAGE:
+    - Redis queue + MongoDB for durable replay
+    - Key: push_queue:{user_id}:{device_id}
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str = Field(..., description="Target user")
+    device_id: str = Field(..., description="Target device")
+    
+    # Notification Content
+    chat_id: str = Field(..., description="Chat this notification is for")
+    message_id: str = Field(..., description="Message that triggered notification")
+    sender_user_id: str = Field(..., description="Who sent the message")
+    
+    # Payload (encrypted client-side key material only)
+    payload_b64: Optional[str] = Field(None, description="Encrypted payload (minimal metadata)")
+    collapse_key: str = Field(..., description="Notification collapse group")
+    
+    # State
+    delivered: bool = Field(default=False)
+    delivered_at: Optional[datetime] = None
+    
+    # TTL
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=30))
+
+
+# ==================== MESSAGE DELIVERY STATE MACHINE ====================
+
+class MessageDeliveryState(BaseModel):
+    """
+    Per-device message delivery state machine (WhatsApp ticks model).
+    
+    WHATSAPP DELIVERY STATES:
+    - ⏳ pending: Not yet sent to server
+    - ✓ sent: Server received
+    - ✓✓ delivered: Recipient device received
+    - ✓✓ read: Recipient opened chat
+    
+    STORAGE:
+    - Redis for real-time state
+    - MongoDB snapshot every 24h
+    - Key: delivery:{message_id}:{recipient_device_id}
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    message_id: str = Field(...)
+    sender_user_id: str = Field(...)
+    sender_device_id: str = Field(...)
+    recipient_user_id: str = Field(...)
+    recipient_device_id: str = Field(...)
+    
+    # State Machine
+    state: str = Field(..., pattern="^(pending|sent|delivered|read|failed)$", description="Current state")
+    
+    # Timestamps for Each State
+    pending_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    sent_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    read_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+    
+    # Retry Info (if failed)
+    retry_count: int = Field(default=0)
+    last_retry_at: Optional[datetime] = None
+    failure_reason: Optional[str] = None
+    
+    # TTL
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=7))
+
+
+# ==================== BACKGROUND WORKER STATE ====================
+
+class BackgroundWorkerState(BaseModel):
+    """
+    Track background job state for idempotency.
+    
+    WHATSAPP BACKEND:
+    - Message fanout workers
+    - Retry workers   - Typing indicator cleanup
+    - Group key distribution
+    
+    STORAGE:
+    - Redis for coordination
+    - MongoDB for audit trail
+    - Key: worker:{job_id}
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    job_id: str = Field(default_factory=lambda: str(ObjectId()), description="Unique job ID")
+    job_type: str = Field(..., pattern="^(fanout|retry|typing_cleanup|group_key_distribution)$")
+    
+    # Job Parameters
+    parameters: Dict = Field(default_factory=dict, description="Job-specific params")
+    
+    # State
+    status: str = Field(..., pattern="^(pending|running|completed|failed|cancelled)$")
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    
+    # Results
+    result: Optional[Dict] = None
+    error: Optional[str] = None
+    
+    # Retry
+    attempt_count: int = Field(default=0)
+    next_retry_at: Optional[datetime] = None
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 

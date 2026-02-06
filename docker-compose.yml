@@ -1,6 +1,6 @@
 services:
   nginx:
-    image: yourusername/hypersend-nginx:latest
+    image: nginx:alpine
     container_name: hypersend_nginx
     restart: unless-stopped
     ports:
@@ -8,32 +8,17 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/nginx/ssl:/etc/nginx/ssl
+      - /etc/letsencrypt:/etc/letsencrypt:ro
       - nginx_cache:/var/cache/nginx
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    entrypoint:
-      - sh
-      - -c
-      - |
-        # Install openssl for certificate generation
-        apk add --no-cache openssl;
-        
-        if [ ! -d '/etc/nginx/ssl/zaply.in.net' ]; then
-          echo '[NGINX] Creating self-signed certificate for initial deployment...';
-          mkdir -p /etc/nginx/ssl/zaply.in.net;
-          openssl req -x509 -newkey rsa:2048 -keyout /etc/nginx/ssl/zaply.in.net/privkey.pem -out /etc/nginx/ssl/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
-          echo '[NGINX] Self-signed certificate created';
-        fi;
-        nginx -g 'daemon off;'
     depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
+      - backend
+      - websocket
+      - worker
     networks:
       - hypersend_network
     healthcheck:
@@ -43,13 +28,12 @@ services:
       retries: 3
       start_period: 15s
     environment:
-      # Suppress SSL verification warnings for self-signed certs in dev
-      - NGINX_ALLOW_UNSAFE_SSL=true
+      - NGINX_ALLOW_UNSAFE=true
       - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
-      # CRITICAL FIX: Add nginx timeout configurations for 15GB files
+      # WhatsApp-grade timeouts
       - NGINX_PROXY_READ_TIMEOUT=7200  # 2 hours for large file downloads
       - NGINX_PROXY_SEND_TIMEOUT=7200  # 2 hours for large file uploads
       - NGINX_PROXY_CONNECT_TIMEOUT=600  # 10 minutes for backend connection
@@ -67,8 +51,152 @@ services:
       - SSL_CERT_PATH=/etc/nginx/ssl/zaply.in.net/fullchain.pem
       - SSL_KEY_PATH=/etc/nginx/ssl/zaply.in.net/privkey.pem
 
+  # WhatsApp-style Backend API (Stateless, Horizontal Scaling)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hypersend_backend
+    restart: unless-stopped
+    environment:
+      # WhatsApp-grade environment
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongodb:27017/hypersend}
+      - JWT_SECRET=${JWT_SECRET:-your_jwt_secret_here}
+      - ENVIRONMENT=production
+      # WhatsApp security settings
+      - ENABLE_E2EE=true
+      - MAX_FILE_SIZE=16106127360  # 15GB in bytes
+      - MEDIA_TTL=86400  # 24 hours
+      - MESSAGE_TTL=86400  # 24 hours
+      - DEVICE_SESSION_TIMEOUT=604800  # 7 days
+      # Rate limiting (WhatsApp-grade)
+      - RATE_LIMIT_REQUESTS=1000
+      - RATE_LIMIT_WINDOW=60
+      # Logging and monitoring
+      - LOG_LEVEL=INFO
+      - ENABLE_METRICS=true
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 3  # WhatsApp-style horizontal scaling
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    # CRITICAL: No volume mounts (stateless)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # WhatsApp-style WebSocket Service (High Concurrency)
+  websocket:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hypersend_websocket
+    restart: unless-stopped
+    command: ["python", "-m", "uvicorn", "backend.websocket:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
+      - ENVIRONMENT=production
+      # WebSocket-specific settings
+      - WEBSOCKET_HEARTBEAT_INTERVAL=30
+      - WEBSOCKET_MAX_CONNECTIONS=10000
+      - WEBSOCKET_PING_TIMEOUT=60
+      - WEBSOCKET_CLOSE_TIMEOUT=300
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 5  # More replicas for WebSocket scaling
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+    # CRITICAL: No volume mounts (stateless)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # WhatsApp-style Background Workers (Media Cleanup, ACK Reconciliation)
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hypersend_worker
+    restart: unless-stopped
+    command: ["python", "-m", "celery", "worker", "-A", "backend.celery_app", "--loglevel=info", "--concurrency=4"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongodb:27017/hypersend}
+      - ENVIRONMENT=production
+      # Worker-specific settings
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - WORKER_CONCURRENCY=4
+      - WORKER_PREFETCH_MULTIPLIER=1
+      - WORKER_MAX_TASKS_PER_CHILD=1000
+      # WhatsApp cleanup settings
+      - MEDIA_CLEANUP_INTERVAL=300  # 5 minutes
+      - MESSAGE_CLEANUP_INTERVAL=600  # 10 minutes
+      - ACK_RECONCILIATION_INTERVAL=180  # 3 minutes
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hypersend_network
+    deploy:
+      replicas: 2  # Background workers for high throughput
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+    # CRITICAL: No volume mounts (stateless)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   redis:
-    image: redis:7.2-alpine
+    image: redis:7-alpine
     container_name: hypersend_redis
     restart: unless-stopped
     ports:
@@ -141,138 +269,6 @@ services:
     sysctls:
       - net.core.somaxconn=65535
 
-  backend:
-    image: yourusername/hypersend-backend:latest
-    container_name: hypersend_backend
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    # ============================================================================
-    # WHATSAPP-STYLE STATELESS COURIER ARCHITECTURE
-    # ============================================================================
-    # ARCHITECTURAL MANDATE:
-    # 1. Server is a STATELESS COURIER (not storage provider)
-    # 2. NEVER stores messages permanently (Redis TTL only)
-    # 3. NEVER stores media files (S3 direct upload only)
-    # 4. NEVER stores user files (S3 presigned URLs only)
-    # 5. User device is ONLY source of truth for chats/history
-    # 6. Container restart must NOT recover old data (stateless)
-    # 
-    # VOLUMES POLICY: volumes: [] (ZERO volumes)
-    # - NO /uploads directory
-    # - NO /data directory
-    # - NO /var/www directory
-    # - Only /tmp allowed (auto-cleaned on restart)
-    # 
-    # ACCEPTED BEHAVIOR:
-    # - Restart → undelivered messages may be lost (user device has backup)
-    # - Scale to 100 replicas → no state conflicts
-    # - Disk full → upload queue works (no buffering)
-    # ============================================================================
-    environment:
-      # ===== MONGODB ATLAS CONFIGURATION (Cloud MongoDB - Metadata Only) =====
-      # CRITICAL: Atlas only for chat metadata, NOT messages
-      DATABASE_URL: ${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      
-      # ===== API CONFIGURATION =====
-      SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 28800
-      REFRESH_TOKEN_EXPIRE_DAYS: 20
-      UPLOAD_TOKEN_EXPIRE_HOURS: 480
-      
-      # ===== WHATSAPP STORAGE MODEL (STRICT EPHEMERAL) =====
-      # MANDATORY: Server is stateless courier only
-      STORAGE_MODE: ephemeral  # MANDATORY: No permanent server storage
-      MESSAGE_STORAGE: redis_only  # MANDATORY: Messages in Redis with TTL only
-      MESSAGE_TTL_MINUTES: 60  # MANDATORY: Messages disappear after 1 hour
-      SERVER_STORAGE_BYTES: "0"  # MANDATORY: ZERO permanent storage
-      SERVER_TEMP_BYTES: "100000000"  # 100MB max for temp processing
-      USER_DEVICE_PRIMARY: "true"  # MANDATORY: User device is source of truth
-      
-      # ===== S3 CONFIGURATION (Direct Upload Only) =====
-      S3_BUCKET: ${S3_BUCKET:-hypersend-temp}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-      AWS_REGION: ${AWS_REGION:-us-east-1}
-      FILE_TTL_HOURS: 24  # MANDATORY: 24h max, auto-delete by S3 lifecycle
-      FILE_TTL_SECONDS: "86400"  # 24 hours in seconds
-      DIRECT_S3_UPLOADS: "true"  # MANDATORY: Client uploads directly to S3
-      DELETE_ON_ACK: "true"  # MANDATORY: Delete from S3 immediately after receiver ACK
-      S3_LIFECYCLE_ENABLED: "true"  # MANDATORY: Enable S3 auto-delete after 24h
-      
-      # ===== 15GB FILE SIZE CONFIGURATION =====
-      MAX_FILE_SIZE_BYTES: 16106127360  # 15GB in bytes
-      MAX_FILE_SIZE_MB: 15360  # 15GB in MB
-      CHUNK_SIZE: 33554432  # 32MB chunks for large files
-      MAX_PARALLEL_CHUNKS: 4
-      LARGE_FILE_THRESHOLD_GB: 1
-      
-      # ===== STATELESS CONFIGURATION =====
-      DATA_ROOT: /tmp  # Ephemeral, auto-cleaned by OS
-      UPLOADS_PATH: /tmp/uploads  # Temporary, container restart deletes
-      DEBUG: "False"
-      API_HOST: 0.0.0.0
-      API_PORT: 8000
-      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
-      
-      # ===== CORS CONFIGURATION =====
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net}
-      
-      # ===== RATE LIMITING & SECURITY =====
-      RATE_LIMIT_PER_USER: 100
-      RATE_LIMIT_WINDOW_SECONDS: 60
-      USE_MOCK_DB: "False"  # MANDATORY: Use real MongoDB for metadata
-      
-      # ===== REDIS CONFIGURATION (E2EE Key Namespacing) =====
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_this_password_in_prod}
-      REDIS_DB: 0
-      REDIS_MAX_CONNECTIONS: 100
-      REDIS_SOCKET_TIMEOUT: 5
-      REDIS_MAX_MEMORY: 2gb
-      
-      # ===== ABUSE & ANTI-SPAM SYSTEM =====
-      ABUSE_SCORING_ENABLED: "true"
-      MESSAGE_VELOCITY_LIMIT: 100  # messages per minute
-      UNIQUE_RECIPIENTS_DAILY_LIMIT: 1000  # new recipients per day
-      SHADOW_BAN_THRESHOLD: 0.7  # Score threshold for shadow ban (0-1.0)
-      SUSPENSION_THRESHOLD: 0.9  # Score threshold for suspension
-      
-      # ===== EMAIL CONFIGURATION =====
-      ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
-      ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@zaply.in.net}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-dummy_app_password_configure_in_env}
-      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
-      SENDER_NAME: ${SENDER_NAME:-Zaply Support}
-    
-    # MANDATORY: NO VOLUMES - WhatsApp-style stateless architecture
-    # Files uploaded directly to S3, messages in Redis with TTL
-    # Container restart must NOT recover old data
-    volumes: []
-    
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 180s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   frontend:
     image: yourusername/hypersend-frontend:latest
     container_name: hypersend_frontend
@@ -280,7 +276,7 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      backend:
+      api:
         condition: service_healthy
     networks:
       - hypersend_network

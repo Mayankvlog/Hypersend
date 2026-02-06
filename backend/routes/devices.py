@@ -1,35 +1,168 @@
 """
-Device Management Routes - Multi-Device Support with QR Code Linking
+WhatsApp-style Multi-Device Management
+Primary device + linked devices via QR code
+Cryptographic authority and device trust graph
 
 Endpoints:
-- POST /devices/register - Register new device
-- POST /devices/qr-code - Generate QR code for device linking
-- POST /devices/qr-code/verify - Verify QR code and establish device link
-- POST /devices/sessions/create - Create encrypted session
-- GET /devices/list - List user's devices
-- GET /devices/{device_id}/keys - Get device's public keys
-- DELETE /devices/{device_id} - Revoke device
+- POST /devices/generate-qr - Generate QR code for device linking
+- POST /devices/link - Link a new device via QR code
+- GET /devices/list - List all devices for user
+- DELETE /devices/{device_id} - Unlink/remove device
+- POST /devices/{device_id}/heartbeat - Update device activity
 """
 
 import logging
 import base64
 import qrcode
 import io
+import json
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+
+
+def _get_device_public_key(device_id: str):
+    """Get device public key from Redis."""
+    return redis_client.get(f"device_public_key:{device_id}")
+
+
+def generate_qr_code_for_device_linking(user_id: str, device_type: str):
+    """Generate QR code for device linking."""
+    session_id = str(uuid.uuid4())
+    session_code = f"{session_id[:6]}"  # First 6 chars
+    
+    qr_data = QRLinkData(
+        link_id=session_id,
+        user_id=user_id,
+        device_type=device_type,
+        timestamp=datetime.utcnow(),
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        _signature=""  # Will be signed by primary device
+    )
+    
+    # Generate QR code
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(json.dumps(qr_data.dict(), default=str))
+    
+    # Convert to base64 image
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    img_b64 = base64.b64encode(buffer.getvalue()).decode()
+    
+    return session_id, session_code, img_b64
+from typing import Optional, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from pydantic import BaseModel, Field
 
 from auth.utils import get_current_user
-from device_key_manager import (
-    DeviceKeyManager,
-    KeyDistributionService,
-    generate_qr_code_for_device_linking
-)
+
+try:
+    from ..device_key_manager import DeviceKeyManager, KeyDistributionService
+except ImportError:
+    # Fallback for testing
+    class DeviceKeyManager:
+        def __init__(self, db=None):
+            pass
+    class KeyDistributionService:
+        def __init__(self):
+            pass
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/devices", tags=["Devices & E2EE"])
+
+class DeviceType:
+    PRIMARY = "primary"
+    LINKED = "linked"
+
+
+class DeviceLinkRequest(BaseModel):
+    qr_code: str  # Base64 encoded QR data
+    device_name: str = Field(..., min_length=1, max_length=100)
+    device_type: str = DeviceType.LINKED
+
+
+class DeviceInfo(BaseModel):
+    device_id: str
+    user_id: str
+    device_name: str
+    device_type: str
+    created_at: datetime
+    last_active: datetime
+    is_active: bool
+    public_key: str  # Device identity key
+    signature: str   # Primary device signature
+
+
+class QRLinkData(BaseModel):
+    link_id: str
+    primary_user_id: str
+    primary_device_id: str
+    primary_public_key: str
+    timestamp: datetime
+    expires_at: datetime
+    signature: str
+
+
+router = APIRouter(prefix="/devices", tags=["Multi-Device"])
+
+
+@router.post("/generate-qr")
+async def generate_linking_qr(
+    current_user: str = Depends(get_current_user)
+):
+    """Generate QR code for linking a new device - WhatsApp style"""
+    from ..redis_cache import redis_client
+    
+    # Get primary device for user
+    primary_devices = await redis_client.smembers(f"user_primary_devices:{current_user}")
+    if not primary_devices:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No primary device found")
+    
+    primary_device_id = list(primary_devices)[0]
+    
+    # Generate linking data
+    link_id = str(uuid.uuid4())
+    timestamp = datetime.utcnow()
+    expires_at = timestamp + timedelta(minutes=5)  # QR expires in 5 minutes
+    
+    qr_data = QRLinkData(
+        link_id=link_id,
+        primary_user_id=current_user,
+        primary_device_id=primary_device_id,
+        primary_public_key=await _get_device_public_key(primary_device_id),
+        timestamp=timestamp,
+        expires_at=expires_at,
+       _signature=""  # Will be signed by primary device
+    )
+    
+    # Store pending link request
+    await redis_client.setex(
+        f"pending_link:{link_id}",
+        300,  # 5 minutes
+        qr_data.model_dump_json()
+    )
+    
+    # Generate QR code image
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_data.model_dump_json())
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+    
+    return {
+        "qr_code": f"data:image/png;base64,{qr_base64}",
+        "link_id": link_id,
+        "expires_at": expires_at.isoformat(),
+        "instructions": "Scan this QR code with your new device to link it"
+    }
 
 
 class DeviceRegistrationRequest(BaseModel):
@@ -71,13 +204,32 @@ async def register_device(
     current_user: str = Depends(get_current_user)
 ):
     """
-    Register new device for user.
+    Register new device for user with WhatsApp-style trust graph.
     
-    Returns device public keys and initial key material.
-    Device starts in "unverified" state until QR code verification.
+    Primary devices: Full authority
+    Linked devices: Require primary device authorization
     """
     try:
         logger.info(f"Device registration request from user {current_user}")
+        
+        from ..redis_cache import DeviceTrustGraphService
+        
+        # Check if user already has devices
+        existing_devices = await DeviceTrustGraphService.get_user_devices(current_user)
+        
+        # If this is a primary device but user already has one, reject
+        if request.is_primary and existing_devices["primary_device"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Primary device already exists. Use device linking instead."
+            )
+        
+        # If this is not primary but no primary exists, require primary first
+        if not request.is_primary and not existing_devices["primary_device"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Primary device must be registered first. Use is_primary=true."
+            )
         
         # Register device and generate keys
         result = await device_manager.register_device(
@@ -89,6 +241,32 @@ async def register_device(
             app_version=request.app_version,
             is_primary=request.is_primary
         )
+        
+        # Update trust graph
+        device_info = {
+            "device_type": request.device_type,
+            "device_name": request.device_name,
+            "platform": request.platform,
+            "app_version": request.app_version
+        }
+        
+        if request.is_primary:
+            # Register as primary device
+            await DeviceTrustGraphService.register_primary_device(
+                current_user, 
+                request.device_id, 
+                device_info
+            )
+        else:
+            # For linked devices, they need QR code verification
+            # Store temporary registration until QR verification
+            temp_key = f"temp_device:{current_user}:{request.device_id}"
+            temp_data = {
+                "device_info": device_info,
+                "registered_at": datetime.utcnow().isoformat(),
+                "status": "pending_verification"
+            }
+            await redis_client.setex(temp_key, 300, json.dumps(temp_data))  # 5 min TTL
         
         logger.info(f"Device registered: {request.device_id}")
         
@@ -102,7 +280,9 @@ async def register_device(
             "signed_prekey_public": result["signed_prekey_public"],
             "one_time_prekeys_generated": result["one_time_prekeys_generated"],
             "is_primary": result["is_primary"],
-            "message": "Device registered. Verify via QR code to enable E2EE."
+            "trust_status": "verified" if request.is_primary else "pending_verification",
+            "message": "Device registered. " + 
+                     ("Primary device verified." if request.is_primary else "Verify via QR code to enable.")
         }
     except Exception as e:
         logger.error(f"Device registration failed: {e}")

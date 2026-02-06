@@ -6,6 +6,8 @@ import logging
 import asyncio
 import os
 import aiofiles
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 try:
     import boto3  # type: ignore[import-not-found]
     from botocore.exceptions import ClientError  # type: ignore[import-not-found]
@@ -18,7 +20,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, Body, Query, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse, RedirectResponse
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 try:
     from ..models import (
@@ -45,6 +47,177 @@ import sys
 
 sys.modules.setdefault("routes.files", sys.modules[__name__])
 sys.modules.setdefault("backend.routes.files", sys.modules[__name__])
+
+
+class WhatsAppMediaService:
+    """
+    WhatsApp-style media encryption and distribution service.
+    
+    WHATSAPP MEDIA SECURITY:
+    1. Client generates random media key per file
+    2. Media key encrypted per recipient device using Signal
+    3. Server stores ONLY encrypted media (never plaintext)
+    4. One-time presigned URLs (invalidated after use)
+    5. Media deleted only after ALL devices ACK
+    """
+    
+    @staticmethod
+    async def generate_media_key() -> bytes:
+        """Generate random 256-bit media key (WhatsApp standard)"""
+        return os.urandom(32)  # 256 bits
+    
+    @staticmethod
+    async def encrypt_media(data: bytes, media_key: bytes) -> bytes:
+        """Encrypt media using AES-256-GCM (WhatsApp standard)"""
+        iv = os.urandom(12)  # 96-bit IV for GCM
+        cipher = Cipher(
+            algorithms.AES(media_key),
+            modes.GCM(iv),
+            backend=default_backend()
+        )
+        encryptor = cipher.encryptor()
+        ciphertext = encryptor.update(data) + encryptor.finalize()
+        return iv + encryptor.tag + ciphertext  # IV + tag + ciphertext
+    
+    @staticmethod
+    async def decrypt_media(encrypted_data: bytes, media_key: bytes) -> bytes:
+        """Decrypt media using AES-256-GCM"""
+        iv = encrypted_data[:12]
+        tag = encrypted_data[12:28]
+        ciphertext = encrypted_data[28:]
+        
+        cipher = Cipher(
+            algorithms.AES(media_key),
+            modes.GCM(iv, tag),
+            backend=default_backend()
+        )
+        decryptor = cipher.decryptor()
+        return decryptor.update(ciphertext) + decryptor.finalize()
+    
+    @staticmethod
+    async def encrypt_media_key_for_device(media_key: bytes, device_id: str, signal_session: str) -> str:
+        """
+        Encrypt media key for specific device using Signal session.
+        In production, this would use actual Signal Protocol encryption.
+        """
+        # Simplified encryption - in production use real Signal Protocol
+        key_data = {
+            "media_key": media_key.hex(),
+            "device_id": device_id,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # Simulate Signal encryption (base64 encode for demo)
+        import base64
+        payload_json = json.dumps(key_data)
+        encrypted_key = base64.b64encode(payload_json.encode()).decode()
+        
+        return encrypted_key
+    
+    @staticmethod
+    async def create_per_device_presigned_url(
+        file_id: str, 
+        device_id: str, 
+        expires_in: int = 300  # 5 minutes max
+    ) -> str:
+        """Create one-time presigned URL for specific device"""
+        from ..redis_cache import cache
+        
+        # Generate device-specific token
+        token_data = {
+            "file_id": file_id,
+            "device_id": device_id,
+            "expires_at": datetime.utcnow() + timedelta(seconds=expires_in),
+            "used": False
+        }
+        
+        token = jwt.encode(token_data, settings.JWT_SECRET, algorithm="HS256")
+        
+        # Store token in Redis for validation
+        token_key = f"media_token:{token}"
+        await cache.set(token_key, token_data, expire_seconds=expires_in)
+        
+        return f"/api/v1/files/download/{token}"
+    
+    @staticmethod
+    async def validate_and_consume_token(token: str, device_id: str) -> Optional[Dict[str, Any]]:
+        """Validate and consume one-time download token"""
+        from ..redis_cache import cache
+        
+        try:
+            # Decode JWT
+            payload = jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
+            
+            # Check if token matches device
+            if payload.get("device_id") != device_id:
+                return None
+            
+            # Check if token is still valid in Redis
+            token_key = f"media_token:{token}"
+            token_data = await cache.get(token_key)
+            
+            if not token_data or token_data.get("used"):
+                return None
+            
+            # Mark token as used (one-time use)
+            token_data["used"] = True
+            await cache.set(token_key, token_data, expire_seconds=1)  # Expire quickly
+            
+            return token_data
+            
+        except jwt.InvalidTokenError:
+            return None
+    
+    @staticmethod
+    async def track_media_delivery(
+        file_id: str, 
+        device_id: str, 
+        status: str  # "delivered", "read", "failed"
+    ):
+        """Track per-device media delivery status"""
+        from ..redis_cache import cache
+        
+        delivery_key = f"media_delivery:{file_id}"
+        delivery_data = await cache.get(delivery_key) or {
+            "file_id": file_id,
+            "devices": {},
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        delivery_data["devices"][device_id] = {
+            "status": status,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # Set TTL for 24 hours
+        await cache.set(delivery_key, delivery_data, expire_seconds=24*60*60)
+        
+        # Check if all devices have ACKed for cleanup
+        await WhatsAppMediaService._check_media_cleanup(file_id, delivery_data)
+    
+    @staticmethod
+    async def _check_media_cleanup(file_id: str, delivery_data: Dict[str, Any]):
+        """Check if media should be cleaned up (all devices ACKed)"""
+        from ..redis_cache import cache
+        
+        devices = delivery_data.get("devices", {})
+        if not devices:
+            return
+        
+        # Check if all devices have "delivered" or "read" status
+        all_delivered = all(
+            device.get("status") in ["delivered", "read"] 
+            for device in devices.values()
+        )
+        
+        if all_delivered:
+            # Schedule immediate cleanup (WhatsApp behavior)
+            cleanup_key = f"media_cleanup:{file_id}"
+            await cache.set(cleanup_key, {
+                "file_id": file_id,
+                "cleanup_time": datetime.utcnow().isoformat(),
+                "reason": "all_devices_delivered"
+            }, expire_seconds=60)  # Cleanup in 1 minute
 
 
 def _get_s3_client():
@@ -2926,7 +3099,6 @@ async def relocate_file_permanently(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to relocate file"
         )
-
 @router.put("/uploads/{upload_id}/temporary-redirect")
 async def temporary_upload_redirect(
     upload_id: str,
@@ -2957,7 +3129,7 @@ async def temporary_upload_redirect(
             {"_id": upload_id},
             {"$set": {
                 "temp_location": temp_location,
-                "temp_redirect_at": datetime.now(timezone.utc),
+                "temp_redirect_at": datetime.now(timezone.utc).isoformat(),
                 "temp_redirect_expires": datetime.now(timezone.utc).timestamp() + 3600  # 1 hour
             }}
         )

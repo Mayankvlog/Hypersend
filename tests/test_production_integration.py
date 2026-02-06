@@ -79,8 +79,8 @@ class TestDockerEnvironment:
                     hardcoded_4mb_count += 1
         
         # Should have fixed the optimization function
-        assert 'configured_chunk_size_mb = settings.UPLOAD_CHUNK_SIZE' in content, \
-            "files.py should use settings.UPLOAD_CHUNK_SIZE for chunk optimization"
+        assert 'configured_chunk_size_mb = settings.CHUNK_SIZE' in content, \
+            "files.py should use settings.CHUNK_SIZE for chunk optimization"
 
 
 class TestConfigConsistency:

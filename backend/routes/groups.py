@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, UploadFile, File
 from typing import List, Optional, Any, Dict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 import asyncio
 import json
@@ -8,9 +8,11 @@ import logging
 import os
 import uuid
 import re
+import base64
 from pathlib import Path
 
 from auth.utils import get_current_user, get_current_user_optional
+from pydantic import BaseModel, Field
 
 try:
     from ..db_proxy import chats_collection, users_collection, messages_collection, get_db
@@ -23,9 +25,38 @@ except ImportError:
     from redis_cache import GroupCacheService, UserCacheService, SearchCacheService
     from config import settings
 
-from pydantic import BaseModel
-
 logger = logging.getLogger(__name__)
+
+
+# WhatsApp-style Group Management Models
+class GroupVisibility:
+    EVERYONE = "everyone"
+    PARTICIPANTS = "participants"
+    ADMINS = "admins"
+    CUSTOM = "custom"
+
+
+class SenderKeyDistribution(BaseModel):
+    group_id: str
+    sender_key_id: str
+    sender_key_b64: str  # Encrypted for each member
+    chain_key_b64: str
+    member_devices: List[str]
+    created_at: datetime
+    expires_at: datetime
+    signature: str
+
+
+class GroupStateChange(BaseModel):
+    group_id: str
+    change_type: str  # add_member, remove_member, promote_member, demote_member, change_visibility
+    initiator_id: str
+    target_user_id: Optional[str] = None
+    old_state: Optional[Dict] = None
+    new_state: Dict
+    timestamp: datetime
+    signature: str  # Signed by admin's device key
+    sequence_number: int
 
 
 def _log(level: str, message: str, meta: Optional[dict] = None) -> None:

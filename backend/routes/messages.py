@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import datetime, timedelta, timezone
 import uuid
 import logging
+import json
 from pydantic import BaseModel, Field
 
 from auth.utils import get_current_user
@@ -10,17 +11,198 @@ from auth.utils import get_current_user
 try:
     from ..db_proxy import chats_collection, messages_collection
     from ..models import MessageEditRequest, MessageReactionRequest
+    from ..redis_cache import cache
 except ImportError:
     from db_proxy import chats_collection, messages_collection
     from models import MessageEditRequest, MessageReactionRequest
+    from redis_cache import cache
 
 logger = logging.getLogger(__name__)
+
+
+# WhatsApp-style message state constants
+class MessageState:
+    PENDING = "pending"           # Message created, not yet sent
+    SENT = "sent"                # Message sent to server
+    SERVER_ACK = "server_ack"     # Server acknowledges receipt
+    DELIVERED = "delivered"       # Delivered to at least one device
+    READ = "read"                # Read by recipient
+    FAILED = "failed"            # Delivery failed
+
+
+class WhatsAppDeliveryService:
+    """
+    WhatsApp-style delivery receipts and message state tracking.
+    
+    WHATSAPP DELIVERY BEHAVIOR:
+    1. ✓ Single gray: Message sent to server
+    2. ✓✓ Double gray: Delivered to recipient's device
+    3. ✓✓✓ Blue: Read by recipient
+    4. Per-device tracking for multi-device
+    5. Strict sequence number ordering
+    """
+    
+    @staticmethod
+    async def get_next_sequence_number(chat_id: str) -> int:
+        """Get next sequence number for chat (WhatsApp ordering)"""
+        seq_key = f"chat_sequence:{chat_id}"
+        current_seq = await cache.get(seq_key) or 0
+        next_seq = int(current_seq) + 1
+        await cache.set(seq_key, next_seq, expire_seconds=7*24*60*60)  # 7 days TTL
+        return next_seq
+    
+    @staticmethod
+    async def create_message_with_sequence(
+        chat_id: str,
+        sender_id: str,
+        sender_device_id: str,
+        message_content: str,
+        message_type: str = "text"
+    ) -> Dict[str, Any]:
+        """Create message with sequence number and initial state"""
+        sequence_number = await WhatsAppDeliveryService.get_next_sequence_number(chat_id)
+        message_id = f"msg_{chat_id}_{sequence_number}_{uuid.uuid4().hex[:8]}"
+        
+        message_data = {
+            "message_id": message_id,
+            "chat_id": chat_id,
+            "sender_id": sender_id,
+            "sender_device_id": sender_device_id,
+            "content": message_content,
+            "message_type": message_type,
+            "sequence_number": sequence_number,
+            "state": MessageState.SENT,
+            "created_at": datetime.utcnow().isoformat(),
+            "delivery_receipts": {},  # Per-device tracking
+            "read_receipts": {}       # Per-device tracking
+        }
+        
+        # Store in Redis for real-time tracking
+        message_key = f"message:{message_id}"
+        await cache.set(message_key, message_data, expire_seconds=24*60*60)  # 24h TTL
+        
+        return message_data
+    
+    @staticmethod
+    async def track_delivery(
+        message_id: str,
+        recipient_device_id: str,
+        delivery_type: str,  # "delivered", "read"
+        timestamp: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Track per-device delivery/read receipt"""
+        if timestamp is None:
+            timestamp = datetime.utcnow()
+        
+        message_key = f"message:{message_id}"
+        message_data = await cache.get(message_key)
+        
+        if not message_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Message not found or expired"
+            )
+        
+        # Update delivery receipts
+        if delivery_type == "delivered":
+            message_data["delivery_receipts"][recipient_device_id] = timestamp.isoformat()
+            # Update state to delivered if at least one device received it
+            if message_data["state"] != MessageState.READ:
+                message_data["state"] = MessageState.DELIVERED
+                
+        elif delivery_type == "read":
+            message_data["read_receipts"][recipient_device_id] = timestamp.isoformat()
+            # Update state to read if any device read it
+            message_data["state"] = MessageState.READ
+        
+        # Save updated message data
+        await cache.set(message_key, message_data, expire_seconds=24*60*60)
+        
+        # Publish real-time update
+        await cache.publish(f"message_updates:{message_data['chat_id']}", {
+            "message_id": message_id,
+            "state": message_data["state"],
+            "delivery_type": delivery_type,
+            "device_id": recipient_device_id,
+            "timestamp": timestamp.isoformat()
+        })
+        
+        return {
+            "message_id": message_id,
+            "state": message_data["state"],
+            "delivery_type": delivery_type,
+            "timestamp": timestamp.isoformat()
+        }
+    
+    @staticmethod
+    async def get_message_state(message_id: str) -> Optional[Dict[str, Any]]:
+        """Get current message state and delivery info"""
+        message_key = f"message:{message_id}"
+        return await cache.get(message_key)
+    
+    @staticmethod
+    async def get_chat_delivery_status(chat_id: str, user_id: str) -> List[Dict[str, Any]]:
+        """Get delivery status for all messages in chat for user"""
+        # Get all message keys for this chat
+        pattern = f"message:*"
+        all_messages = []
+        
+        # In production, this would use Redis SCAN for efficiency
+        # For now, we'll simulate getting chat messages
+        chat_messages_key = f"chat_messages:{chat_id}"
+        message_ids = await cache.get(chat_messages_key) or []
+        
+        for message_id in message_ids:
+            message_data = await WhatsAppDeliveryService.get_message_state(message_id)
+            if message_data:
+                all_messages.append(message_data)
+        
+        # Sort by sequence number
+        all_messages.sort(key=lambda x: x.get("sequence_number", 0))
+        
+        return all_messages
+    
+    @staticmethod
+    async def deduplicate_message(message_id: str, sender_device_id: str) -> bool:
+        """
+        Check for duplicate messages (WhatsApp idempotency).
+        Returns True if message is duplicate, False if new.
+        """
+        dedup_key = f"dedup:{message_id}:{sender_device_id}"
+        exists = await cache.get(dedup_key)
+        
+        if exists:
+            return True  # Duplicate
+        
+        # Mark as seen for 24 hours
+        await cache.set(dedup_key, True, expire_seconds=24*60*60)
+        return False
 
 
 class MessageSendRequest(BaseModel):
     chat_id: str
     message: str = Field(..., min_length=1, max_length=10000)
     message_type: str = "text"
+    device_id: Optional[str] = None  # Sending device ID
+
+
+class DeliveryReceipt(BaseModel):
+    message_id: str
+    chat_id: str
+    recipient_id: str
+    device_id: str
+    status: str  # delivered, read
+    timestamp: datetime
+
+
+class MessageStateUpdate(BaseModel):
+    message_id: str
+    chat_id: str
+    sender_id: str
+    state: str
+    device_states: Dict[str, str]  # device_id -> state
+    sequence_number: int
+    created_at: datetime
 
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
@@ -57,7 +239,7 @@ async def send_message(
     request: MessageSendRequest,
     current_user: str = Depends(get_current_user)
 ):
-    """Send a message to a chat - WhatsApp-style ephemeral storage"""
+    """Send a message - WhatsApp-style state machine with device tracking"""
     # Verify chat exists and user has access
     chat = await chats_collection().find_one({"_id": request.chat_id})
     if not chat:
@@ -65,78 +247,231 @@ async def send_message(
     
     # Check if user is member of the chat
     participants = chat.get("participants", chat.get("members", chat.get("member_ids", [])))
-    logger.debug(f"Checking chat membership for user authorization")
-    
     if current_user not in participants and str(current_user) not in [str(p) for p in participants]:
-        logger.debug(f"User authorization check failed")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this chat")
     
-    logger.debug(f"User authorized to send message")
+    # Generate WhatsApp-style message ID (UUIDv7 + sender device id)
+    import uuid
+    message_id = str(uuid.uuid7())
+    sender_device_id = request.device_id or "primary"
     
-    # Generate message ID
-    message_id = str(uuid.uuid4())
+    # Get recipient devices for fanout
+    from ..redis_cache import redis_client, MessageQueueService
+    recipient_devices = []
+    for participant in participants:
+        if participant != current_user:
+            # Get all active devices for this participant
+            device_key = f"user_devices:{participant}"
+            devices = await redis_client.smembers(device_key)
+            recipient_devices.extend(devices or ["default"])
     
-    # WhatsApp-style: Store ONLY metadata in Redis with TTL
-    # Message content lives in RAM only, delivered immediately, then deleted
-    message_metadata = {
-        "message_id": message_id,
+    # Create message data for WhatsApp-style fanout
+    message_data = {
+        "id": message_id,
         "chat_id": request.chat_id,
         "sender_id": current_user,
+        "sender_device_id": sender_device_id,
+        "message": request.message,
         "message_type": request.message_type,
-        "created_at": _utcnow().isoformat(),
-        "delivery_status": "pending",  # pending -> delivered -> acknowledged -> deleted
-        "receiver_ids": [p for p in participants if p != current_user],
-        "ttl_seconds": 3600  # 1 hour TTL for message metadata
+        "created_at": datetime.utcnow().isoformat()
     }
     
-    # Store in Redis with TTL (NOT MongoDB)
-    try:
-        from ..redis_cache import redis_client
-        await redis_client.setex(
-            f"message:{message_id}",
-            message_metadata["ttl_seconds"],
-            json.dumps(message_metadata)
-        )
-        
-        # Add to chat's pending messages list
-        await redis_client.lpush(
-            f"chat_messages:{request.chat_id}",
-            message_id
-        )
-        await redis_client.expire(
-            f"chat_messages:{request.chat_id}",
-            message_metadata["ttl_seconds"]
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to store message in Redis: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Message storage temporarily unavailable"
-        )
-    
-    # Update chat's last message metadata only (NOT the message content)
-    await chats_collection().update_one(
-        {"_id": request.chat_id},
-        {"$set": {
-            "last_message_id": message_id,
-            "last_activity": _utcnow(),
-            "last_message_type": request.message_type
-        }}
+    # WhatsApp-style fanout to all recipient devices
+    await MessageQueueService.fanout_message_to_devices(
+        message_data, 
+        recipient_devices,
+        ttl_minutes=60  # 1 hour TTL
     )
     
-    return {
-        "status": "sent",
-        "message_id": message_id,
+    # Store minimal metadata in MongoDB (no message content)
+    message_metadata = {
+        "_id": message_id,
         "chat_id": request.chat_id,
+        "sender_id": current_user,
+        "sender_device_id": sender_device_id,
         "message_type": request.message_type,
-        "created_at": message_metadata["created_at"],
-        "delivery_status": message_metadata["delivery_status"],
-        "ttl_seconds": message_metadata["ttl_seconds"]
+        "delivery_state": "sent",
+        "sequence_number": await MessageQueueService.get_chat_sequence_number(request.chat_id),
+        "created_at": datetime.utcnow(),
+        "expires_at": datetime.utcnow() + timedelta(hours=24)  # 24h TTL
+    }
+    
+    await messages_collection().insert_one(message_metadata)
+    
+    return {
+        "message_id": message_id,
+        "state": "sent",
+        "sequence_number": message_metadata["sequence_number"],
+        "recipient_devices": len(recipient_devices),
+        "timestamp": message_metadata["created_at"].isoformat()
     }
 
 
-def _utcnow() -> datetime:
+@router.post("/{message_id}/delivery")
+async def update_delivery_status(
+    message_id: str,
+    receipt: DeliveryReceipt,
+    current_user: str = Depends(get_current_user)
+):
+    """Update message delivery status - WhatsApp-style per-device tracking"""
+    from ..redis_cache import MessageQueueService
+    
+    # Update message state for this device
+    success = await MessageQueueService.update_message_state(
+        message_id, 
+        receipt.device_id, 
+        receipt.status
+    )
+    
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid state transition")
+    
+    # Check if message is read by all devices (for blue tick)
+    # Get all recipient devices for this message
+    message_metadata = await messages_collection().find_one({"_id": message_id})
+    if message_metadata:
+        chat_id = message_metadata.get("chat_id")
+        if chat_id:
+            # Get all participants and their devices
+            chat = await chats_collection().find_one({"_id": chat_id})
+            participants = chat.get("participants", [])
+            recipient_devices = []
+            
+            for participant in participants:
+                if participant != message_metadata.get("sender_id"):
+                    device_key = f"user_devices:{participant}"
+                    devices = await redis_client.smembers(device_key)
+                    recipient_devices.extend(devices or ["default"])
+            
+            # Check if all devices have read the message
+            all_read = await MessageQueueService.is_message_read_by_all(
+                message_id, 
+                recipient_devices
+            )
+            
+            return {
+                "message_id": message_id,
+                "device_id": receipt.device_id,
+                "status": receipt.status,
+                "all_devices_read": all_read,
+                "timestamp": receipt.timestamp.isoformat()
+            }
+    
+    return {"message_id": message_id, "status": "updated"}
+
+
+@router.post("/delivery-receipt")
+async def delivery_receipt(
+    receipt: DeliveryReceipt,
+    current_user: str = Depends(get_current_user)
+):
+    """Process delivery receipts - WhatsApp-style per-device tracking"""
+    from ..redis_cache import redis_client
+    
+    # Verify recipient matches current user
+    if receipt.recipient_id != current_user:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized")
+    
+    # Get current message state
+    state_key = f"message_state:{receipt.message_id}"
+    state_data = await redis_client.get(state_key)
+    
+    if not state_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    
+    message_state = MessageStateUpdate(**json.loads(state_data))
+    
+    # Update device state
+    message_state.device_states[receipt.device_id] = receipt.status
+    
+    # Determine overall message state
+    if receipt.status == MessageState.READ:
+        message_state.state = MessageState.READ
+    elif receipt.status == MessageState.DELIVERED and message_state.state != MessageState.READ:
+        message_state.state = MessageState.DELIVERED
+    
+    # Save updated state
+    await redis_client.setex(state_key, 3600, message_state.model_dump_json())
+    
+    # Remove from device queue (ACK-based deletion)
+    queue_key = f"device_queue:{current_user}:{receipt.device_id}"
+    await redis_client.zrem(queue_key, receipt.message_id)
+    
+    # Notify sender about delivery status
+    sender_notification = {
+        "type": "delivery_receipt",
+        "message_id": receipt.message_id,
+        "chat_id": receipt.chat_id,
+        "recipient_id": current_user,
+        "device_id": receipt.device_id,
+        "status": receipt.status,
+        "timestamp": receipt.timestamp.isoformat()
+    }
+    
+    await redis_client.publish(f"user_channel:{message_state.sender_id}", json.dumps(sender_notification))
+    
+    return {"status": "acknowledged", "message_state": message_state.state}
+
+
+@router.get("/queue/{device_id}")
+async def get_device_messages(
+    device_id: str,
+    current_user: str = Depends(get_current_user),
+    limit: int = 50
+):
+    """Get pending messages for a device - WhatsApp-style queue processing"""
+    from ..redis_cache import redis_client
+    
+    queue_key = f"device_queue:{current_user}:{device_id}"
+    
+    # Get messages with lowest sequence numbers (ordered delivery)
+    messages = await redis_client.zrange(queue_key, 0, limit - 1, withscores=True)
+    
+    result = []
+    for message_json, sequence in messages:
+        message_data = json.loads(message_json)
+        result.append(message_data)
+    
+    return {
+        "messages": result,
+        "queue_size": await redis_client.zcard(queue_key),
+        "device_id": device_id
+    }
+
+
+@router.delete("/queue/{device_id}/{message_id}")
+async def acknowledge_message(
+    device_id: str,
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Acknowledge message delivery and remove from queue"""
+    from ..redis_cache import redis_client
+    
+    queue_key = f"device_queue:{current_user}:{device_id}"
+    removed = await redis_client.zrem(queue_key, message_id)
+    
+    if not removed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not in queue")
+    
+    # Update message state to delivered
+    await delivery_receipt(
+        DeliveryReceipt(
+            message_id=message_id,
+            chat_id="",  # Will be validated in the function
+            recipient_id=current_user,
+            device_id=device_id,
+            status=MessageState.DELIVERED,
+            timestamp=_utcnow()
+        ),
+        current_user
+    )
+    
+    return {"status": "acknowledged", "message_id": message_id}
+
+
+def _utcnow():
+    """Helper function to get current UTC time"""
     return datetime.now(timezone.utc)
 
 

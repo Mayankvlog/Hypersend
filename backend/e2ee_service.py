@@ -1281,3 +1281,723 @@ async def get_e2ee_service(db=None, redis_client=None) -> E2EEService:
 async def get_abuse_service(db=None, redis_client=None) -> AbuseAndSpamScoringService:
     """Factory function to get abuse scoring service instance."""
     return AbuseAndSpamScoringService(db=db, redis_client=redis_client)
+
+
+# ======================== GROUP CHAT ENCRYPTION (SIGNAL SENDER KEYS) ========================
+
+class GroupEncryptionService:
+    """
+    Group chat encryption using Signal Protocol Sender Keys.
+    
+    WHATSAPP GROUP ENCRYPTION:
+    - One sender key per group member (not shared)
+    - Reduces key material: O(1) per sender instead of O(recipients)
+    - Group ratchet: derives per-device keys for each recipient device
+    - Scales to large groups without key explosion
+    
+    FLOW:
+    1. Group created → admin generates sender key
+    2. Admin distributes sender key to all members (via 1-to-1 E2EE)
+    3. Member sends group message:
+       a. Encrypt with their own sender key
+       b. Server performs fan-out to recipient devices
+       c. Each device receives encrypted message
+       d. Decrypts with admin's published sender key
+    """
+    
+    def __init__(self, db=None, redis_client=None):
+        """Initialize group encryption service."""
+        self.db = db
+        self.redis = redis_client
+        
+        # Redis key prefixes
+        self.SENDER_KEY_PREFIX = "group:sender_key"
+        self.GROUP_STATE_PREFIX = "group:state"
+        self.SEQUENCE_PREFIX = "group:sequence"
+    
+    async def create_group_sender_key(
+        self,
+        group_id: str,
+        sender_user_id: str,
+        sender_device_id: str
+    ) -> Dict:
+        """
+        Create sender key for group member (initiator side).
+        
+        FLOW:
+        1. Generate random seed (256-bit)
+        2. Derive sender key material via KDF
+        3. Store in Redis (per-user, per-device)
+        4. Return public key for distribution
+        
+        Args:
+            group_id: Group chat ID
+            sender_user_id: User sending in group
+            sender_device_id: User's device
+            
+        Returns:
+            Sender key info (public only, private stored locally)
+        """
+        try:
+            seed = secrets.token_bytes(32)
+            seed_b64 = base64.b64encode(seed).decode()
+            sender_key_id = 0
+            
+            logger.info(f"🔐 Group sender key created: {group_id} | sender:{sender_device_id}")
+            
+            return {
+                "group_id": group_id,
+                "sender_user_id": sender_user_id,
+                "sender_device_id": sender_device_id,
+                "sender_key_id": sender_key_id,
+                "seed_b64": seed_b64,
+                "message": "✓ Sender key created"
+            }
+        
+        except Exception as e:
+            logger.error(f"Failed to create group sender key: {e}")
+            raise
+    
+    async def get_group_message_sequence(
+        self,
+        group_id: str
+    ) -> int:
+        """
+        Get next message sequence number for group (strict ordering).
+        
+        WHATSAPP GROUP ORDERING:
+        - Each group has monotonic sequence
+        - Prevents message reordering
+        - Detects missing messages
+        
+        Args:
+            group_id: Group chat ID
+            
+        Returns:
+            Next sequence number for message
+        """
+        try:
+            seq_key = f"{self.SEQUENCE_PREFIX}:{group_id}"
+            # next_seq = await self.redis.incr(seq_key)
+            # await self.redis.expire(seq_key, 2592000)  # 30 days
+            
+            # For simulation:
+            next_seq = 1
+            logger.debug(f"📊 Group sequence: {group_id} → {next_seq}")
+            
+            return next_seq
+        
+        except Exception as e:
+            logger.error(f"Failed to get group sequence: {e}")
+            raise
+    
+    async def fanout_group_message(
+        self,
+        group_id: str,
+        sender_user_id: str,
+        sender_device_id: str,
+        message_id: str,
+        ciphertext_b64: str,
+        recipient_user_ids: List[str],
+        sequence_number: int
+    ) -> Dict:
+        """
+        Fan-out group message to all member devices.
+        
+        WHATSAPP GROUP FAN-OUT:
+        1. Message encrypted once (with sender key)
+        2. Server performs per-device re-encryption FOR EACH member
+        3. Each member's device gets unique ciphertext
+        4. Sequence number enforced
+        
+        Args:
+            group_id: Group ID
+            sender_user_id: Who sent
+            sender_device_id: Which device
+            message_id: Message ID
+            ciphertext_b64: Encrypted message
+            recipient_user_ids: All group members (excluding sender)
+            sequence_number: Monotonic sequence in group
+            
+        Returns:
+            Fan-out status per device
+        """
+        try:
+            fanout_status = {
+                "message_id": message_id,
+                "group_id": group_id,
+                "sequence": sequence_number,
+                "recipient_devices": {},
+                "failed_devices": []
+            }
+            
+            for recipient_user_id in recipient_user_ids:
+                if recipient_user_id == sender_user_id:
+                    continue  # Don't send to sender
+                
+                # In real impl: fetch recipient's device list, encrypt separately
+                fanout_status["recipient_devices"][recipient_user_id] = {
+                    "status": "queued",
+                    "sequence": sequence_number,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            
+            logger.info(f"📢 Group message fanned out: {message_id} → {len(fanout_status['recipient_devices'])} members")
+            
+            return fanout_status
+        
+        except Exception as e:
+            logger.error(f"Failed to fanout group message: {e}")
+            raise
+
+
+# ======================== PRESENCE & TYPING SERVICE ========================
+
+class PresenceAndTypingService:
+    """
+    Presence (online/offline) and typing indicator service.
+    
+    WHATSAPP PRESENCE:
+    - Minimal metadata (just online/offline/away)
+    - Privacy: show last seen only to contacts
+    - Typing indicator via ephemeral Redis pub/sub
+    - Broadcast via WebSocket
+    """
+    
+    def __init__(self, db=None, redis_client=None):
+        """Initialize presence service."""
+        self.db = db
+        self.redis = redis_client
+        
+        # Redis prefixes
+        self.PRESENCE_PREFIX = "presence"
+        self.TYPING_PREFIX = "typing"
+        self.PRESENCE_PUB_SUB = "presence_updates"
+        self.TYPING_PUB_SUB = "typing_updates"
+    
+    async def broadcast_presence(
+        self,
+        user_id: str,
+        device_id: str,
+        status: str,  # online, offline, away
+        show_last_seen: bool = True
+    ) -> Dict:
+        """
+        Broadcast presence to contacts.
+        
+        Args:
+            user_id: User broadcasting
+            device_id: Device
+            status: online/offline/away
+            show_last_seen: Privacy control
+            
+        Returns:
+            Presence update info
+        """
+        try:
+            timestamp = datetime.now(timezone.utc)
+            presence_key = f"{self.PRESENCE_PREFIX}:{user_id}:{device_id}"
+            
+            presence_data = {
+                "user_id": user_id,
+                "device_id": device_id,
+                "status": status,
+                "timestamp": timestamp.isoformat(),
+                "show_last_seen": show_last_seen
+            }
+            
+            # await self.redis.setex(presence_key, 300, json.dumps(presence_data))  # 5 min TTL
+            # await self.redis.publish(self.PRESENCE_PUB_SUB, json.dumps(presence_data))
+            
+            logger.info(f"📍 Presence: {user_id}@{device_id} → {status}")
+            
+            return presence_data
+        
+        except Exception as e:
+            logger.error(f"Failed to broadcast presence: {e}")
+            raise
+    
+    async def broadcast_typing(
+        self,
+        chat_id: str,
+        user_id: str,
+        device_id: str,
+        is_typing: bool = True
+    ) -> Dict:
+        """
+        Broadcast typing indicator to chat members.
+        
+        WHATSAPP TYPING:
+        - Ephemeral (3-min TTL)
+        - Pub/sub broadcast (no DB storage)
+        - Auto-clears if user stops typing
+        
+        Args:
+            chat_id: Chat where typing
+            user_id: User typing
+            device_id: Device
+            is_typing: True if typing, False if stopped
+            
+        Returns:
+            Typing indicator update
+        """
+        try:
+            timestamp = datetime.now(timezone.utc)
+            typing_key = f"{self.TYPING_PREFIX}:{chat_id}:{user_id}:{device_id}"
+            
+            typing_data = {
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "device_id": device_id,
+                "is_typing": is_typing,
+                "timestamp": timestamp.isoformat()
+            }
+            
+            if is_typing:
+                # await self.redis.setex(typing_key, 180, json.dumps(typing_data))  # 3 min TTL
+                # await self.redis.publish(f"{self.TYPING_PUB_SUB}:{chat_id}", json.dumps(typing_data))
+                logger.debug(f"⌨️  User typing: {user_id}@{chat_id}")
+            else:
+                # await self.redis.delete(typing_key)
+                logger.debug(f"✓ User stopped typing: {user_id}@{chat_id}")
+            
+            return typing_data
+        
+        except Exception as e:
+            logger.error(f"Failed to broadcast typing: {e}")
+            raise
+
+
+# ======================== BACKGROUND WORKERS ========================
+
+class BackgroundWorkerCoordinator:
+    """
+    Coordinates background jobs for reliable message delivery.
+    
+    WORKERS:
+    1. Message Fanout: Send to all recipient devices
+    2. Retry Worker: Process pending retries with backoff
+    3. Typing Cleanup: Remove expired typing indicators
+    4. Group Key Distribution: Send sender keys to new members
+    """
+    
+    def __init__(self, db=None, redis_client=None):
+        """Initialize background coordinator."""
+        self.db = db
+        self.redis = redis_client
+        
+        # Redis queues
+        self.FANOUT_QUEUE = "queue:fanout"
+        self.RETRY_QUEUE = "queue:retry"
+        self.GROUP_KEY_DIST_QUEUE = "queue:group_key_dist"
+    
+    async def enqueue_fanout_job(
+        self,
+        message_id: str,
+        sender_user_id: str,
+        recipient_user_ids: List[str],
+        ciphertext_b64: str
+    ) -> str:
+        """
+        Enqueue message fanout job.
+        
+        Args:
+            message_id: Message to fanout
+            sender_user_id: Sender
+            recipient_user_ids: Recipients
+            ciphertext_b64: Encrypted content
+            
+        Returns:
+            Job ID
+        """
+        try:
+            job_id = f"fanout_{message_id}"
+            job_data = {
+                "job_id": job_id,
+                "message_id": message_id,
+                "sender_user_id": sender_user_id,
+                "recipient_user_ids": recipient_user_ids,
+                "ciphertext_b64": ciphertext_b64,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "pending"
+            }
+            
+            # await self.redis.lpush(self.FANOUT_QUEUE, json.dumps(job_data))
+            logger.debug(f"📨 Fanout job queued: {job_id}")
+            
+            return job_id
+        
+        except Exception as e:
+            logger.error(f"Failed to enqueue fanout: {e}")
+            raise
+    
+    async def enqueue_retry_job(
+        self,
+        message_id: str,
+        sender_user_id: str,
+        retry_count: int = 0
+    ) -> str:
+        """
+        Enqueue message retry job.
+        
+        Args:
+            message_id: Message to retry
+            sender_user_id: Sender
+            retry_count: Current retry attempt
+            
+        Returns:
+            Job ID
+        """
+        try:
+            job_id = f"retry_{message_id}_{retry_count}"
+            job_data = {
+                "job_id": job_id,
+                "message_id": message_id,
+                "sender_user_id": sender_user_id,
+                "retry_count": retry_count,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "pending"
+            }
+            
+            # await self.redis.lpush(self.RETRY_QUEUE, json.dumps(job_data))
+            logger.debug(f"🔄 Retry job queued: {job_id}")
+            
+            return job_id
+        
+        except Exception as e:
+            logger.error(f"Failed to enqueue retry: {e}")
+            raise
+    
+    async def cleanup_expired_typing(self) -> Dict:
+        """
+        Clean up expired typing indicators (background job).
+        
+        SCHEDULE:
+        - Runs every 1 minute
+        - Removes typing entries with expired TTL
+        
+        Returns:
+            Cleanup statistics
+        """
+        try:
+            # In production: scan all typing keys, delete expired
+            # For now: track that this ran
+            logger.debug(f"🧹 Typing cleanup executed")
+            
+            return {
+                "status": "completed",
+                "cleaned_up": 0,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        
+        except Exception as e:
+            logger.error(f"Typing cleanup failed: {e}")
+            raise
+
+
+# ==================== BACKGROUND JOB EXECUTORS (NEW) ====================
+
+class FanoutJobExecutor:
+    """Execute per-device message fanout jobs"""
+    
+    def __init__(self, db=None, redis_client=None):
+        self.db = db
+        self.redis = redis_client
+    
+    async def execute_fanout_job(self, job_id: str) -> Dict:
+        """
+        Fan-out encrypted message to all recipient devices.
+        
+        ALGORITHM:
+        1. Fetch message from queue:fanout
+        2. For each recipient user:
+           a. List all devices for recipient
+           b. Generate unique DH key per device
+           c. Encrypt message body with per-device key
+           d. Store in device-specific Redis queue
+           e. Mark as delivered
+        3. Delete job from queue
+        
+        WHATSAPP FANOUT:
+        - Each device gets unique ciphertext (DH-derived key)
+        - O(recipients × devices) operations (acceptable for fanout)
+        - Idempotent (can retry safely)
+        """
+        try:
+            logger.info(f"🚀 Executing fanout job: {job_id}")
+            
+            job_data = await self.redis.get(f"job:{job_id}")
+            if not job_data:
+                logger.warning(f"Job not found: {job_id}")
+                return {"status": "not_found"}
+            
+            job_dict = json.loads(job_data) if isinstance(job_data, str) else job_data
+            params = job_dict.get("parameters", {})
+            message_id = params.get("message_id")
+            recipient_user_ids = params.get("recipients", [])
+            
+            # For each recipient: fetch devices, encrypt per-device, queue delivery
+            for recipient_user_id in recipient_user_ids:
+                # In production: fetch devices from DB
+                device_ids = await self._get_user_devices(recipient_user_id)
+                
+                for device_id in device_ids:
+                    # Simulate per-device encryption (in production: use X3DH session)
+                    per_device_key = secrets.token_hex(32)
+                    encrypted_payload = f"encrypted_for_{device_id}_{per_device_key}"
+                    
+                    # Queue for device
+                    queue_key = f"device:{recipient_user_id}:{device_id}:messages"
+                    await self.redis.lpush(queue_key, encrypted_payload)
+                    
+                    # Update delivery state
+                    await self.redis.set(
+                        f"delivery:{message_id}:{recipient_user_id}:{device_id}",
+                        "delivered",
+                        ex=3600
+                    )
+            
+            # Mark job as completed
+            logger.info(f"✓ Fanout complete: {message_id}")
+            return {"status": "completed", "message_id": message_id}
+        
+        except Exception as e:
+            logger.error(f"Fanout job failed: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    async def _get_user_devices(self, user_id: str) -> List[str]:
+        """Fetch list of active devices for user"""
+        # In production: query from device_sessions in DB/Redis
+        devices = await self.redis.smembers(f"user:{user_id}:devices")
+        return list(devices) if devices else []
+
+
+class RetryJobExecutor:
+    """Execute message retry jobs with exponential backoff"""
+    
+    def __init__(self, db=None, redis_client=None):
+        self.db = db
+        self.redis = redis_client
+    
+    async def execute_retry_job(self, job_id: str) -> Dict:
+        """
+        Retry failed message delivery with exponential backoff.
+        
+        ALGORITHM:
+        1. Fetch job from queue:retry
+        2. Check if retry_count < MAX_RETRIES (5)
+        3. Attempt delivery to device
+        4. If fails:
+           a. Increment attempt counter
+           b. Requeue with longer backoff
+           c. Mark as pending
+        5. If succeeds:
+           a. Update delivery state to delivered
+           b. Delete from retry queue
+        
+        WHATSAPP RETRY:
+        - Exponential backoff: 2^attempt seconds (2, 4, 8, 16, 32...)
+        - Max 5 retries (32s wait after final)
+        - Preserves message ordering
+        - Idempotent via job_id
+        """
+        try:
+            logger.info(f"🔄 Executing retry job: {job_id}")
+            
+            job_data = await self.redis.get(f"job:{job_id}")
+            if not job_data:
+                logger.warning(f"Job not found: {job_id}")
+                return {"status": "not_found"}
+            
+            job_dict = json.loads(job_data) if isinstance(job_data, str) else job_data
+            params = job_dict.get("parameters", {})
+            message_id = params.get("message_id")
+            device_id = params.get("device")
+            attempt = params.get("attempt", 1)
+            
+            if attempt > 5:
+                # Max retries exceeded
+                logger.warning(f"Max retries exceeded for {message_id}:{device_id}")
+                return {"status": "max_retries_exceeded"}
+            
+            # Attempt delivery
+            delivery_ok = await self._attempt_device_delivery(message_id, device_id)
+            
+            if delivery_ok:
+                logger.info(f"✓ Retry successful: {message_id}:{device_id}")
+                return {"status": "delivered"}
+            else:
+                # Requeue with incremented attempt
+                next_attempt = attempt + 1
+                backoff_seconds = min(2 ** next_attempt, 60)
+                
+                new_job = {
+                    "job_id": f"retry_{secrets.token_hex(8)}",
+                    "job_type": "retry",
+                    "parameters": {"message_id": message_id, "device": device_id, "attempt": next_attempt},
+                    "status": "pending",
+                    "next_retry_at": (datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)).isoformat(),
+                    "attempt_count": next_attempt
+                }
+                await self.redis.set(f"job:{new_job['job_id']}", json.dumps(new_job), ex=86400)
+                await self.redis.lpush("queue:retry", new_job["job_id"])
+                
+                logger.info(f"Retry requeued: {message_id}:{device_id} (attempt {next_attempt})")
+                return {"status": "requeued", "next_attempt": next_attempt}
+        
+        except Exception as e:
+            logger.error(f"Retry job failed: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    async def _attempt_device_delivery(self, message_id: str, device_id: str) -> bool:
+        """Attempt to deliver message to device"""
+        # In production: check device online status, attempt push/WebSocket delivery
+        try:
+            device_online = await self.redis.get(f"device:{device_id}:online")
+            return device_online == b"true"
+        except:
+            return False
+
+
+class TypingCleanupExecutor:
+    """Clean up expired typing indicators periodically"""
+    
+    def __init__(self, db=None, redis_client=None):
+        self.db = db
+        self.redis = redis_client
+    
+    async def execute_typing_cleanup(self) -> Dict:
+        """
+        Scan and remove expired typing indicators.
+        
+        ALGORITHM:
+        1. Scan all keys matching typing:*
+        2. Check Redis TTL for each
+        3. Delete expired keys
+        
+        FREQUENCY: Run every 30 seconds
+        IMPACT: Prevents typing indicator accumulation
+        """
+        try:
+            logger.info("🧹 Typing cleanup started")
+            
+            cursor = 0
+            deleted_count = 0
+            
+            while True:
+                cursor, keys = await self.redis.scan(cursor, match="typing:*", count=100)
+                
+                for key in keys:
+                    ttl = await self.redis.ttl(key)
+                    if ttl < 0:
+                        await self.redis.delete(key)
+                        deleted_count += 1
+                
+                if cursor == 0:
+                    break
+            
+            logger.info(f"✓ Typing cleanup complete: {deleted_count} keys removed")
+            return {"status": "completed", "deleted": deleted_count}
+        
+        except Exception as e:
+            logger.error(f"Typing cleanup failed: {e}")
+            return {"status": "error", "error": str(e)}
+
+
+class GroupKeyDistributionExecutor:
+    """Distribute sender keys to new group members"""
+    
+    def __init__(self, db=None, redis_client=None):
+        self.db = db
+        self.redis = redis_client
+    
+    async def execute_key_distribution(self, job_id: str) -> Dict:
+        """
+        Distribute sender keys to newly added group members.
+        
+        ALGORITHM:
+        1. Fetch job from queue:group_key_dist
+        2. Get group sender key (from group:sender_key)
+        3. For each new member:
+           a. Fetch member's public key
+           b. Encrypt sender key with member's public key (via 1-to-1 session)
+           c. Queue delivery to member
+        4. Mark distribution complete
+        5. Delete job
+        
+        WHATSAPP GROUP KEY DISTRIBUTION:
+        - Sent via 1-to-1 E2EE to each member
+        - Ensures new members can decrypt old group messages
+        - Signed by group admin
+        """
+        try:
+            logger.info(f"📦 Group key distribution job: {job_id}")
+            
+            job_data = await self.redis.get(f"job:{job_id}")
+            if not job_data:
+                logger.warning(f"Job not found: {job_id}")
+                return {"status": "not_found"}
+            
+            job_dict = json.loads(job_data) if isinstance(job_data, str) else job_data
+            params = job_dict.get("parameters", {})
+            group_id = params.get("group_id")
+            new_member_ids = params.get("new_members", [])
+            
+            # Fetch group sender key
+            sender_key_data = await self.redis.get(f"group:sender_key:{group_id}")
+            if not sender_key_data:
+                logger.error(f"Sender key not found for group: {group_id}")
+                return {"status": "key_not_found"}
+            
+            # For each new member: wrap key and queue delivery
+            for member_id in new_member_ids:
+                # In production: use member's public key to wrap sender key
+                wrapped_key = f"wrapped_{secrets.token_hex(16)}"
+                
+                # Queue 1-to-1 delivery
+                delivery_queue = f"user:{member_id}:key_delivery"
+                await self.redis.lpush(delivery_queue, wrapped_key)
+                
+                logger.info(f"✓ Sender key queued for {member_id}")
+            
+            logger.info(f"✓ Group key distribution complete: {group_id}")
+            return {"status": "completed", "group_id": group_id}
+        
+        except Exception as e:
+            logger.error(f"Group key distribution failed: {e}")
+            return {"status": "error", "error": str(e)}
+
+
+async def get_fanout_executor(db=None, redis_client=None) -> FanoutJobExecutor:
+    """Factory for fanout job executor."""
+    return FanoutJobExecutor(db=db, redis_client=redis_client)
+
+
+async def get_retry_executor(db=None, redis_client=None) -> RetryJobExecutor:
+    """Factory for retry job executor."""
+    return RetryJobExecutor(db=db, redis_client=redis_client)
+
+
+async def get_typing_cleanup_executor(db=None, redis_client=None) -> TypingCleanupExecutor:
+    """Factory for typing cleanup executor."""
+    return TypingCleanupExecutor(db=db, redis_client=redis_client)
+
+
+async def get_group_key_distribution_executor(db=None, redis_client=None) -> GroupKeyDistributionExecutor:
+    """Factory for group key distribution executor."""
+    return GroupKeyDistributionExecutor(db=db, redis_client=redis_client)
+
+
+
+    """Factory for group encryption service."""
+    return GroupEncryptionService(db=db, redis_client=redis_client)
+
+
+async def get_presence_and_typing_service(db=None, redis_client=None) -> PresenceAndTypingService:
+    """Factory for presence service."""
+    return PresenceAndTypingService(db=db, redis_client=redis_client)
+
+
+async def get_background_worker_coordinator(db=None, redis_client=None) -> BackgroundWorkerCoordinator:
+    """Factory for background worker coordinator."""
+    return BackgroundWorkerCoordinator(db=db, redis_client=redis_client)

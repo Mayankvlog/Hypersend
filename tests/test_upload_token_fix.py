@@ -103,6 +103,8 @@ async def test_large_file_upload_token_extension():
         except Exception as e:
             # If extension fails, that's okay for this test
             print(f"⚠ Token extension test: {e}")
+            # Ensure the exception is handled properly
+            pass
 
 
 @pytest.mark.asyncio

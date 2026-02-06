@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Test MongoDB Atlas connection"""
 import asyncio
+import pytest
 from backend.config import settings
 from backend.database import connect_db, close_db
 
+@pytest.mark.asyncio
 async def test_connection():
     """Test MongoDB connection"""
     try:

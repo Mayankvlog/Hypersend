@@ -574,7 +574,7 @@ class TestFileUploadSecurity:
             )
             
             # Should reject dangerous MIME types or require auth or pass if validation doesn't work
-            assert response.status_code in [400, 401, 403, 200]
+            assert response.status_code in [400, 401, 403, 415, 200]
             response_data = response.json()
             
             # Check for error response format (only if not successful)

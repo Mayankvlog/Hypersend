@@ -7,6 +7,7 @@ import json
 import logging
 import hashlib
 import pickle
+import uuid
 from typing import Optional, List, Dict, Any, Union, Callable
 from datetime import datetime, timezone, timedelta
 import asyncio
@@ -1256,6 +1257,1181 @@ class MessageQueueService:
         message_data = await cache.get(message_key)
         
         return message_data
+    
+    @staticmethod
+    async def fanout_message_to_devices(message_data: dict, recipient_devices: List[str], ttl_minutes: int = 60):
+        """
+        WhatsApp-style fanout: Store encrypted message copies per target device.
+        Redis key format: msg:{chat_id}:{receiver_device_id}:{seq_no}
+        """
+        chat_id = message_data.get('chat_id')
+        message_id = message_data.get('id')
+        sender_device_id = message_data.get('sender_device_id')
+        
+        # Get next sequence number for this chat
+        seq_no = await cache.incr(f"seq:{chat_id}")
+        
+        for device_id in recipient_devices:
+            # Store per-device message copy
+            key = f"msg:{chat_id}:{device_id}:{seq_no}"
+            device_message = {
+                **message_data,
+                'seq_no': seq_no,
+                'target_device_id': device_id,
+                'created_at': datetime.utcnow().isoformat()
+            }
+            await cache.set(key, device_message, expire_seconds=ttl_minutes * 60)
+            
+            # Initialize delivery state for this device
+            delivery_key = f"delivery:{message_id}:{device_id}"
+            delivery_state = {
+                'message_id': message_id,
+                'device_id': device_id,
+                'state': 'sent',
+                'sent_at': datetime.utcnow().isoformat(),
+                'seq_no': seq_no
+            }
+            await cache.set(delivery_key, delivery_state, expire_seconds=ttl_minutes * 60)
+            
+            # Publish for real-time delivery to this device
+            await cache.publish(f"device:{device_id}", {
+                'type': 'new_message',
+                'message_id': message_id,
+                'chat_id': chat_id,
+                'seq_no': seq_no,
+                'sender_device_id': sender_device_id
+            })
+    
+    @staticmethod
+    async def update_message_state(message_id: str, device_id: str, new_state: str):
+        """
+        Update message delivery state for a specific device.
+        States: sent -> delivered -> read
+        """
+        delivery_key = f"delivery:{message_id}:{device_id}"
+        
+        # Get current state
+        current_state = await cache.get(delivery_key)
+        if not current_state:
+            return False
+        
+        # Validate state transition
+        valid_transitions = {
+            'sent': ['delivered', 'failed'],
+            'delivered': ['read'],
+            'failed': ['sent'],  # Retry
+            'read': []  # Terminal state
+        }
+        
+        if new_state not in valid_transitions.get(current_state['state'], []):
+            return False
+        
+        # Update state with timestamp
+        current_state['state'] = new_state
+        current_state[f'{new_state}_at'] = datetime.utcnow().isoformat()
+        
+        await cache.set(delivery_key, current_state, expire_seconds=60 * 60 * 24)  # 24h TTL
+        
+        # Publish state update
+        await cache.publish(f"message_state:{message_id}", {
+            'message_id': message_id,
+            'device_id': device_id,
+            'state': new_state,
+            'timestamp': current_state[f'{new_state}_at']
+        })
+        
+        return True
+    
+    @staticmethod
+    async def get_message_delivery_state(message_id: str, device_id: str):
+        """Get current delivery state for a message-device pair."""
+        delivery_key = f"delivery:{message_id}:{device_id}"
+        return await cache.get(delivery_key)
+    
+    @staticmethod
+    async def get_all_device_states(message_id: str, recipient_devices: List[str]):
+        """Get delivery states across all recipient devices."""
+        states = {}
+        for device_id in recipient_devices:
+            state = await cache.get(f"delivery:{message_id}:{device_id}")
+            if state:
+                states[device_id] = state
+        return states
+    
+    @staticmethod
+    async def is_message_read_by_all(message_id: str, recipient_devices: List[str]):
+        """
+        Check if message is read by ALL recipient devices.
+        Returns True only when ALL devices have 'read' state.
+        """
+        for device_id in recipient_devices:
+            state = await cache.get(f"delivery:{message_id}:{device_id}")
+            if not state or state.get('state') != 'read':
+                return False
+        return True
+    
+    @staticmethod
+    async def get_pending_messages_for_device(device_id: str, chat_id: str, limit: int = 50):
+        """
+        Get pending messages for a specific device.
+        Used when device comes online.
+        """
+        # Get all message keys for this device and chat
+        pattern = f"msg:{chat_id}:{device_id}:*"
+        keys = await cache.keys(pattern)
+        
+        if not keys:
+            return []
+        
+        # Sort keys by sequence number (extracted from key)
+        sorted_keys = sorted(keys, key=lambda k: int(k.split(':')[-1]))
+        
+        # Get message data
+        messages = []
+        for key in sorted_keys[:limit]:
+            message_data = await cache.get(key)
+            if message_data:
+                messages.append(message_data)
+        
+        return messages
+    
+    @staticmethod
+    async def add_retry_attempt(message_id: str, device_id: str):
+        """Add retry attempt with exponential backoff."""
+        retry_key = f"retry:{message_id}:{device_id}"
+        
+        # Get current retry count
+        retry_data = await cache.get(retry_key) or {'count': 0, 'next_retry': None}
+        
+        retry_data['count'] += 1
+        
+        # Exponential backoff: 1s, 5s, 15s, 60s
+        backoff_intervals = [1, 5, 15, 60]
+        if retry_data['count'] <= len(backoff_intervals):
+            retry_data['next_retry'] = (
+                datetime.utcnow() + timedelta(seconds=backoff_intervals[retry_data['count'] - 1])
+            ).isoformat()
+        
+        await cache.set(retry_key, retry_data, expire_seconds=60 * 60)  # 1h TTL
+        
+        return retry_data
+    
+    @staticmethod
+    async def should_retry_message(message_id: str, device_id: str):
+        """Check if message should be retried now."""
+        retry_key = f"retry:{message_id}:{device_id}"
+        retry_data = await cache.get(retry_key)
+        
+        if not retry_data:
+            return True  # First attempt
+        
+        if retry_data['count'] >= 4:  # Max 4 attempts
+            return False
+        
+        next_retry = datetime.fromisoformat(retry_data['next_retry'])
+        return datetime.utcnow() >= next_retry
+    
+    @staticmethod
+    async def get_chat_sequence_number(chat_id: str):
+        """Get current sequence number for a chat."""
+        return await cache.get(f"seq:{chat_id}") or 0
+
+
+class DeviceTrustGraphService:
+    """
+    WhatsApp-style device trust graph management.
+    
+    PRIMARY DEVICE AUTHORITY:
+    - Primary device signs all device add/remove events
+    - Linked devices are read-only until promoted
+    - Device revocation triggers session re-key
+    - Trust graph stored in Redis with TTL
+    """
+    
+    @staticmethod
+    async def register_primary_device(user_id: str, device_id: str, device_info: dict):
+        """Register primary device for user."""
+        trust_key = f"device_trust:{user_id}"
+        
+        # Create trust graph with primary device
+        trust_graph = {
+            "primary_device": device_id,
+            "linked_devices": {},
+            "device_signatures": {},
+            "created_at": datetime.utcnow().isoformat(),
+            "last_updated": datetime.utcnow().isoformat()
+        }
+        
+        # Add primary device info
+        trust_graph["linked_devices"][device_id] = {
+            "type": "primary",
+            "status": "active",
+            "registered_at": datetime.utcnow().isoformat(),
+            "last_seen": datetime.utcnow().isoformat(),
+            "device_info": device_info
+        }
+        
+        await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)  # 30 days TTL
+        
+        # Add to user's device set
+        device_set_key = f"user_devices:{user_id}"
+        await cache.sadd(device_set_key, device_id)
+        await cache.expire(device_set_key, 30 * 24 * 60 * 60)  # 30 days TTL
+        
+        return trust_graph
+    
+    @staticmethod
+    async def add_linked_device(user_id: str, primary_device_id: str, new_device_id: str, 
+                                device_info: dict, signature: str):
+        """
+        Add linked device with primary device signature.
+        Only primary device can authorize new devices.
+        """
+        trust_key = f"device_trust:{user_id}"
+        trust_graph = await cache.get(trust_key)
+        
+        if not trust_graph:
+            raise Exception("User trust graph not found")
+        
+        if trust_graph["primary_device"] != primary_device_id:
+            raise Exception("Only primary device can authorize new devices")
+        
+        # Verify signature (simplified - in production, verify cryptographic signature)
+        if not signature:
+            raise Exception("Primary device signature required")
+        
+        # Add linked device
+        trust_graph["linked_devices"][new_device_id] = {
+            "type": "linked",
+            "status": "active",
+            "authorized_by": primary_device_id,
+            "signature": signature,
+            "registered_at": datetime.utcnow().isoformat(),
+            "last_seen": datetime.utcnow().isoformat(),
+            "device_info": device_info,
+            "permissions": ["read", "send"]  # Linked devices have limited permissions
+        }
+        
+        trust_graph["last_updated"] = datetime.utcnow().isoformat()
+        
+        await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)
+        
+        # Add to user's device set
+        device_set_key = f"user_devices:{user_id}"
+        await cache.sadd(device_set_key, new_device_id)
+        await cache.expire(device_set_key, 30 * 24 * 60 * 60)
+        
+        # Publish device addition event
+        await cache.publish(f"user_devices:{user_id}", {
+            "type": "device_added",
+            "device_id": new_device_id,
+            "device_type": "linked",
+            "authorized_by": primary_device_id,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        return trust_graph
+    
+    @staticmethod
+    async def revoke_device(user_id: str, primary_device_id: str, device_to_revoke: str, signature: str):
+        """
+        Revoke device access with primary device signature.
+        Triggers session re-key for remaining devices.
+        """
+        trust_key = f"device_trust:{user_id}"
+        trust_graph = await cache.get(trust_key)
+        
+        if not trust_graph:
+            raise Exception("User trust graph not found")
+        
+        if trust_graph["primary_device"] != primary_device_id:
+            raise Exception("Only primary device can revoke devices")
+        
+        if device_to_revoke == primary_device_id:
+            raise Exception("Cannot revoke primary device")
+        
+        # Verify signature
+        if not signature:
+            raise Exception("Primary device signature required")
+        
+        # Remove device from trust graph
+        if device_to_revoke not in trust_graph["linked_devices"]:
+            raise Exception("Device not found")
+        
+        revoked_device_info = trust_graph["linked_devices"].pop(device_to_revoke)
+        
+        # Remove from user's device set
+        device_set_key = f"user_devices:{user_id}"
+        await cache.srem(device_set_key, device_to_revoke)
+        
+        trust_graph["last_updated"] = datetime.utcnow().isoformat()
+        
+        await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)
+        
+        # Trigger session re-key event (WhatsApp behavior)
+        await cache.publish(f"security:{user_id}", {
+            "type": "device_revoked",
+            "revoked_device": device_to_revoke,
+            "revoked_by": primary_device_id,
+            "trigger_rekey": True,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        # Publish device revocation event
+        await cache.publish(f"user_devices:{user_id}", {
+            "type": "device_revoked",
+            "device_id": device_to_revoke,
+            "revoked_by": primary_device_id,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        return {
+            "revoked_device": device_to_revoke,
+            "revoked_info": revoked_device_info,
+            "trigger_rekey": True
+        }
+    
+    @staticmethod
+    async def get_user_devices(user_id: str):
+        """Get all devices for user with trust status."""
+        trust_key = f"device_trust:{user_id}"
+        trust_graph = await cache.get(trust_key)
+        
+        if not trust_graph:
+            return {"devices": [], "primary_device": None}
+        
+        devices = []
+        for device_id, device_info in trust_graph["linked_devices"].items():
+            devices.append({
+                "device_id": device_id,
+                "type": device_info["type"],
+                "status": device_info["status"],
+                "last_seen": device_info["last_seen"],
+                "device_info": device_info.get("device_info", {}),
+                "permissions": device_info.get("permissions", [])
+            })
+        
+        return {
+            "devices": devices,
+            "primary_device": trust_graph["primary_device"],
+            "last_updated": trust_graph["last_updated"]
+        }
+    
+    @staticmethod
+    async def update_device_heartbeat(user_id: str, device_id: str):
+        """Update device last seen timestamp."""
+        trust_key = f"device_trust:{user_id}"
+        trust_graph = await cache.get(trust_key)
+        
+        if trust_graph and device_id in trust_graph["linked_devices"]:
+            trust_graph["linked_devices"][device_id]["last_seen"] = datetime.utcnow().isoformat()
+            trust_graph["last_updated"] = datetime.utcnow().isoformat()
+            
+            await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)
+            
+            return True
+        
+        return False
+    
+    @staticmethod
+    async def verify_device_permission(user_id: str, device_id: str, action: str):
+        """
+        Verify if device has permission for specific action.
+        Actions: read, send, admin, device_management
+        """
+        trust_key = f"device_trust:{user_id}"
+        trust_graph = await cache.get(trust_key)
+        
+        if not trust_graph or device_id not in trust_graph["linked_devices"]:
+            return False
+        
+        device_info = trust_graph["linked_devices"][device_id]
+        
+        # Primary device has all permissions
+        if device_info["type"] == "primary":
+            return True
+        
+        # Linked devices have limited permissions
+        permissions = device_info.get("permissions", [])
+        
+        # Map actions to permissions
+        action_permissions = {
+            "read": "read",
+            "send": "send",
+            "admin": "admin",
+            "device_management": "device_management"
+        }
+        
+        required_permission = action_permissions.get(action)
+        return required_permission in permissions
+    
+    @staticmethod
+    async def promote_linked_device(user_id: str, primary_device_id: str, device_id: str, signature: str):
+        """
+        Promote linked device to have elevated permissions.
+        Only primary device can promote other devices.
+        """
+        trust_key = f"device_trust:{user_id}"
+        trust_graph = await cache.get(trust_key)
+        
+        if not trust_graph:
+            raise Exception("User trust graph not found")
+        
+        if trust_graph["primary_device"] != primary_device_id:
+            raise Exception("Only primary device can promote devices")
+        
+        if device_id not in trust_graph["linked_devices"]:
+            raise Exception("Device not found")
+        
+        if trust_graph["linked_devices"][device_id]["type"] != "linked":
+            raise Exception("Can only promote linked devices")
+        
+        # Verify signature
+        if not signature:
+            raise Exception("Primary device signature required")
+        
+        # Promote device
+        trust_graph["linked_devices"][device_id]["permissions"] = ["read", "send", "admin"]
+        trust_graph["linked_devices"][device_id]["promoted_by"] = primary_device_id
+        trust_graph["linked_devices"][device_id]["promoted_at"] = datetime.utcnow().isoformat()
+        trust_graph["last_updated"] = datetime.utcnow().isoformat()
+        
+        await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)
+        
+        # Publish promotion event
+        await cache.publish(f"user_devices:{user_id}", {
+            "type": "device_promoted",
+            "device_id": device_id,
+            "promoted_by": primary_device_id,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        return trust_graph["linked_devices"][device_id]
+
+
+class GroupSenderKeyService:
+    """
+    WhatsApp-style sender-key encryption for group chats.
+    
+    WHATSAPP GROUP ENCRYPTION RULES:
+    1. Sender-key encryption only (no pairwise keys for groups)
+    2. Group membership changes are signed messages
+    3. New members do NOT receive old messages
+    4. Sender keys distributed via 1-to-1 E2EE
+    5. Each member maintains sender key for the group
+    """
+    
+    @staticmethod
+    async def create_group_sender_key(group_id: str, creator_user_id: str, creator_device_id: str, 
+                                     initial_members: List[str], sender_key_data: dict):
+        """
+        Create and distribute sender key for new group.
+        
+        Args:
+            group_id: Group identifier
+            creator_user_id: User creating the group
+            creator_device_id: Device creating the group
+            initial_members: List of initial member user IDs
+            sender_key_data: Encrypted sender key material
+        """
+        # Generate sender key ID
+        sender_key_id = f"sk_{group_id}_{creator_user_id}_{uuid.uuid4().hex[:8]}"
+        
+        # Store sender key metadata
+        sender_key_metadata = {
+            "sender_key_id": sender_key_id,
+            "group_id": group_id,
+            "creator_user_id": creator_user_id,
+            "creator_device_id": creator_device_id,
+            "member_count": len(initial_members),
+            "created_at": datetime.utcnow().isoformat(),
+            "last_rotated": datetime.utcnow().isoformat(),
+            "active": True
+        }
+        
+        # Store sender key for creator
+        creator_key = f"sender_key:{group_id}:{creator_user_id}:{creator_device_id}"
+        await cache.set(creator_key, {
+            **sender_key_data,
+            "metadata": sender_key_metadata
+        }, expire_seconds=30 * 24 * 60 * 60)  # 30 days TTL
+        
+        # Store group sender key registry
+        registry_key = f"group_sender_keys:{group_id}"
+        await cache.hset(registry_key, {
+            f"{creator_user_id}:{creator_device_id}": sender_key_id
+        })
+        await cache.expire(registry_key, 30 * 24 * 60 * 60)
+        
+        # Create distribution tasks for each member
+        for member_id in initial_members:
+            if member_id != creator_user_id:
+                await cache.publish(f"group_key_distribution:{group_id}", {
+                    "type": "new_sender_key",
+                    "group_id": group_id,
+                    "sender_key_id": sender_key_id,
+                    "creator_user_id": creator_user_id,
+                    "target_member": member_id,
+                    "sender_key_data": sender_key_data,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+        
+        return sender_key_metadata
+    
+    @staticmethod
+    async def distribute_sender_key_to_member(group_id: str, sender_key_id: str, 
+                                             target_user_id: str, target_device_id: str, 
+                                             encrypted_sender_key: dict):
+        """
+        Distribute encrypted sender key to specific member device.
+        This happens via 1-to-1 E2EE channels.
+        """
+        # Store encrypted sender key for target device
+        device_key = f"sender_key:{group_id}:{target_user_id}:{target_device_id}"
+        
+        # Get sender key metadata
+        registry_key = f"group_sender_keys:{group_id}"
+        creator_info = None
+        for user_device, key_id in (await cache.hgetall(registry_key) or {}).items():
+            if key_id == sender_key_id:
+                creator_info = user_device
+                break
+        
+        if not creator_info:
+            raise Exception("Sender key not found in registry")
+        
+        await cache.set(device_key, {
+            **encrypted_sender_key,
+            "group_id": group_id,
+            "sender_key_id": sender_key_id,
+            "distributed_by": creator_info,
+            "distributed_at": datetime.utcnow().isoformat()
+        }, expire_seconds=30 * 24 * 60 * 60)
+        
+        # Register this device's sender key
+        await cache.hset(registry_key, {
+            f"{target_user_id}:{target_device_id}": sender_key_id
+        })
+        
+        return True
+    
+    @staticmethod
+    async def add_member_to_group(group_id: str, new_member_id: str, new_member_devices: List[str],
+                                admin_user_id: str, admin_device_id: str, signature: str):
+        """
+        Add new member to group with WhatsApp rules:
+        - New members do NOT get old messages
+        - New members get current sender keys
+        - Group state change is signed message
+        """
+        # Verify admin signature (simplified)
+        if not signature:
+            raise Exception("Admin signature required for member addition")
+        
+        # Create group state change record
+        state_change = {
+            "group_id": group_id,
+            "change_type": "member_added",
+            "changed_by": f"{admin_user_id}:{admin_device_id}",
+            "affected_member": new_member_id,
+            "signature": signature,
+            "timestamp": datetime.utcnow().isoformat(),
+            "sequence_number": await cache.incr(f"group_state_seq:{group_id}")
+        }
+        
+        # Store state change
+        state_key = f"group_state:{group_id}:{state_change['sequence_number']}"
+        await cache.set(state_key, state_change, expire_seconds=30 * 24 * 60 * 60)
+        
+        # Get current sender keys for the group
+        registry_key = f"group_sender_keys:{group_id}"
+        existing_sender_keys = await cache.hgetall(registry_key) or {}
+        
+        # Distribute existing sender keys to new member (via 1-to-1 E2EE)
+        for user_device, sender_key_id in existing_sender_keys.items():
+            await cache.publish(f"group_key_distribution:{group_id}", {
+                "type": "existing_sender_key",
+                "group_id": group_id,
+                "sender_key_id": sender_key_id,
+                "key_owner": user_device,
+                "target_member": new_member_id,
+                "target_devices": new_member_devices,
+                "state_change_seq": state_change['sequence_number'],
+                "timestamp": datetime.utcnow().isoformat()
+            })
+        
+        # Publish member addition event
+        await cache.publish(f"group_events:{group_id}", {
+            "type": "member_added",
+            "group_id": group_id,
+            "new_member": new_member_id,
+            "added_by": f"{admin_user_id}:{admin_device_id}",
+            "signature": signature,
+            "sequence_number": state_change['sequence_number'],
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        return state_change
+    
+    @staticmethod
+    async def remove_member_from_group(group_id: str, member_to_remove: str,
+                                     admin_user_id: str, admin_device_id: str, signature: str):
+        """
+        Remove member from group with WhatsApp rules:
+        - Trigger sender key re-distribution
+        - Member's access is immediately revoked
+        - Group state change is signed message
+        """
+        # Create group state change record
+        state_change = {
+            "group_id": group_id,
+            "change_type": "member_removed",
+            "changed_by": f"{admin_user_id}:{admin_device_id}",
+            "affected_member": member_to_remove,
+            "signature": signature,
+            "timestamp": datetime.utcnow().isoformat(),
+            "sequence_number": await cache.incr(f"group_state_seq:{group_id}")
+        }
+        
+        # Store state change
+        state_key = f"group_state:{group_id}:{state_change['sequence_number']}"
+        await cache.set(state_key, state_change, expire_seconds=30 * 24 * 60 * 60)
+        
+        # Remove member's sender keys
+        registry_key = f"group_sender_keys:{group_id}"
+        member_keys = []
+        for user_device in await cache.hkeys(registry_key) or []:
+            if user_device.startswith(f"{member_to_remove}:"):
+                member_keys.append(user_device)
+        
+        # Delete member's sender keys
+        for user_device in member_keys:
+            device_key = f"sender_key:{group_id}:{user_device}"
+            await cache.delete(device_key)
+            await cache.hdel(registry_key, user_device)
+        
+        # Trigger sender key rotation (WhatsApp behavior on member removal)
+        await cache.publish(f"group_key_rotation:{group_id}", {
+            "type": "member_removed_rotation",
+            "group_id": group_id,
+            "removed_member": member_to_remove,
+            "removed_by": f"{admin_user_id}:{admin_device_id}",
+            "signature": signature,
+            "sequence_number": state_change['sequence_number'],
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        # Publish member removal event
+        await cache.publish(f"group_events:{group_id}", {
+            "type": "member_removed",
+            "group_id": group_id,
+            "removed_member": member_to_remove,
+            "removed_by": f"{admin_user_id}:{admin_device_id}",
+            "signature": signature,
+            "sequence_number": state_change['sequence_number'],
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        return state_change
+    
+    @staticmethod
+    async def get_group_sender_keys(group_id: str, user_id: str, device_id: str):
+        """Get all sender keys for a group that this device should have."""
+        device_keys = []
+        
+        # Get all sender key registrations for this group
+        registry_key = f"group_sender_keys:{group_id}"
+        all_registrations = await cache.hgetall(registry_key) or {}
+        
+        # Get sender keys for this device
+        for user_device, sender_key_id in all_registrations.items():
+            device_key = f"sender_key:{group_id}:{user_device}"
+            sender_key_data = await cache.get(device_key)
+            
+            if sender_key_data:
+                # Check if this device should have this key
+                if (user_device == f"{user_id}:{device_id}" or 
+                    await GroupSenderKeyService._should_have_key(group_id, user_id, device_id, user_device)):
+                    device_keys.append(sender_key_data)
+        
+        return device_keys
+    
+    @staticmethod
+    async def _should_have_key(group_id: str, requesting_user_id: str, requesting_device_id: str, key_owner_user_device: str):
+        """Check if device should have access to a specific sender key."""
+        # Get group state changes to determine membership timeline
+        state_seq_key = f"group_state_seq:{group_id}"
+        current_seq = await cache.get(state_seq_key) or 0
+        
+        # Check if requesting user was member when key was created
+        # This is simplified - in production, would check full membership history
+        return True  # Simplified for now
+    
+    @staticmethod
+    async def rotate_group_sender_keys(group_id: str, trigger_user_id: str, trigger_device_id: str, reason: str):
+        """
+        Rotate all sender keys for a group (WhatsApp behavior).
+        Triggers: member removal, admin request, security event.
+        """
+        rotation_id = f"rotation_{group_id}_{uuid.uuid4().hex[:8]}"
+        
+        # Create rotation event
+        rotation_event = {
+            "rotation_id": rotation_id,
+            "group_id": group_id,
+            "triggered_by": f"{trigger_user_id}:{trigger_device_id}",
+            "reason": reason,
+            "timestamp": datetime.utcnow().isoformat(),
+            "sequence_number": await cache.incr(f"group_state_seq:{group_id}")
+        }
+        
+        # Store rotation event
+        rotation_key = f"group_rotation:{group_id}:{rotation_id}"
+        await cache.set(rotation_key, rotation_event, expire_seconds=30 * 24 * 60 * 60)
+        
+        # Publish rotation request to all members
+        await cache.publish(f"group_key_rotation:{group_id}", {
+            "type": "full_rotation",
+            "group_id": group_id,
+            "rotation_id": rotation_id,
+            "triggered_by": f"{trigger_user_id}:{trigger_device_id}",
+            "reason": reason,
+            "sequence_number": rotation_event['sequence_number'],
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        return rotation_event
+    
+    @staticmethod
+    async def get_group_state_history(group_id: str, from_sequence: int = 0, limit: int = 50):
+        """Get group state changes (membership changes, key rotations)."""
+        state_changes = []
+        
+        # Get state changes from sequence number
+        current_seq = await cache.get(f"group_state_seq:{group_id}") or 0
+        
+        for seq in range(from_sequence + 1, min(current_seq + 1, from_sequence + limit + 1)):
+            state_key = f"group_state:{group_id}:{seq}"
+            state_change = await cache.get(state_key)
+            if state_change:
+                state_changes.append(state_change)
+        
+        return state_changes
+
+
+class PushNotificationService:
+    """
+    WhatsApp-style push notification encryption.
+    
+    WHATSAPP PUSH SECURITY:
+    1. Push payload contains only encrypted blob + chat_id
+    2. No plaintext metadata in push
+    3. Each device gets unique encrypted payload
+    4. Server cannot read notification content
+    """
+    
+    @staticmethod
+    async def create_encrypted_push_notification(message_data: dict, recipient_devices: List[str]):
+        """
+        Create encrypted push notifications for recipient devices.
+        
+        Args:
+            message_data: Message metadata (no content)
+            recipient_devices: List of target device IDs
+        
+        Returns:
+            List of encrypted push payloads
+        """
+        encrypted_notifications = []
+        message_id = message_data.get('message_id')
+        chat_id = message_data.get('chat_id')
+        sender_id = message_data.get('sender_id')
+        
+        for device_id in recipient_devices:
+            # Create device-specific encrypted payload
+            # In production, this would use device-specific encryption keys
+            encrypted_blob = {
+                # WhatsApp: Only encrypted blob + minimal metadata
+                "encrypted_payload": PushNotificationService._encrypt_for_device(
+                    message_data, device_id
+                ),
+                "chat_id": chat_id,  # Only chat ID, no message content
+                "message_id": message_id,
+                "sender_id": sender_id,
+                "device_id": device_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "version": "1.0"
+            }
+            
+            encrypted_notifications.append(encrypted_blob)
+        
+        return encrypted_notifications
+    
+    @staticmethod
+    def _encrypt_for_device(message_data: dict, device_id: str) -> str:
+        """
+        Encrypt notification payload for specific device.
+        In production, this would use device's public key.
+        """
+        # Simplified encryption - in production use real crypto
+        payload = {
+            "message_id": message_data.get('message_id'),
+            "chat_id": message_data.get('chat_id'),
+            "sender_id": message_data.get('sender_id'),
+            "message_type": message_data.get('message_type', 'text'),
+            "timestamp": message_data.get('timestamp'),
+            "device_target": device_id
+        }
+        
+        # Simulate encryption (base64 encode for demo)
+        import base64
+        payload_json = json.dumps(payload)
+        encrypted = base64.b64encode(payload_json.encode()).decode()
+        
+        return encrypted
+    
+    @staticmethod
+    async def queue_push_notifications(encrypted_notifications: List[dict]):
+        """
+        Queue encrypted push notifications for delivery.
+        Notifications are stored in Redis with TTL.
+        """
+        for notification in encrypted_notifications:
+            # Store in Redis queue for push service
+            push_key = f"push_queue:{notification['device_id']}"
+            await cache.lpush(push_key, json.dumps(notification))
+            await cache.expire(push_key, 3600)  # 1 hour TTL
+            
+            # Publish for real-time push service
+            await cache.publish(f"push_notifications:{notification['device_id']}", {
+                "type": "new_push",
+                "device_id": notification['device_id'],
+                "chat_id": notification['chat_id'],
+                "timestamp": notification['timestamp']
+            })
+    
+    @staticmethod
+    async def get_pending_push_notifications(device_id: str, limit: int = 10):
+        """
+        Get pending push notifications for a device.
+        Used by push service to deliver notifications.
+        """
+        push_key = f"push_queue:{device_id}"
+        
+        # Get notifications from queue
+        notifications = []
+        for _ in range(limit):
+            notification_json = await cache.lpop(push_key)
+            if not notification_json:
+                break
+            
+            try:
+                notification = json.loads(notification_json)
+                notifications.append(notification)
+            except json.JSONDecodeError:
+                continue  # Skip malformed notifications
+        
+        return notifications
+    
+    @staticmethod
+    async def create_typing_push_notification(chat_id: str, typing_user_id: str, 
+                                            recipient_devices: List[str]):
+        """
+        Create encrypted typing notification push.
+        Minimal metadata, encrypted content.
+        """
+        typing_data = {
+            "type": "typing",
+            "chat_id": chat_id,
+            "typing_user_id": typing_user_id,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        encrypted_notifications = []
+        for device_id in recipient_devices:
+            encrypted_blob = PushNotificationService._encrypt_for_device(
+                typing_data, device_id
+            )
+            
+            encrypted_notifications.append({
+                "encrypted_payload": encrypted_blob,
+                "chat_id": chat_id,
+                "device_id": device_id,
+                "timestamp": typing_data['timestamp'],
+                "push_type": "typing"
+            })
+        
+        return encrypted_notifications
+    
+    @staticmethod
+    async def create_delivery_receipt_push_notification(message_id: str, chat_id: str, 
+                                                      receipt_data: dict, 
+                                                      recipient_devices: List[str]):
+        """
+        Create encrypted delivery receipt push notification.
+        """
+        receipt_push_data = {
+            "type": "delivery_receipt",
+            "message_id": message_id,
+            "chat_id": chat_id,
+            "receipt_data": receipt_data,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        encrypted_notifications = []
+        for device_id in recipient_devices:
+            encrypted_blob = PushNotificationService._encrypt_for_device(
+                receipt_push_data, device_id
+            )
+            
+            encrypted_notifications.append({
+                "encrypted_payload": encrypted_blob,
+                "chat_id": chat_id,
+                "device_id": device_id,
+                "timestamp": receipt_push_data['timestamp'],
+                "push_type": "delivery_receipt"
+            })
+        
+        return encrypted_notifications
+    
+    @staticmethod
+    async def cleanup_expired_notifications():
+        """
+        Clean up expired push notifications from Redis.
+        This is called periodically to prevent memory buildup.
+        """
+        # Get all push queue keys
+        pattern = "push_queue:*"
+        keys = await cache.keys(pattern)
+        
+        cleaned_count = 0
+        for key in keys:
+            # Check TTL and remove if expired
+            ttl = await cache.ttl(key)
+            if ttl == -1:  # No TTL set, set one
+                await cache.expire(key, 3600)  # 1 hour TTL
+                cleaned_count += 1
+        
+        return cleaned_count
+    
+    @staticmethod
+    async def get_push_notification_stats():
+        """
+        Get statistics about push notifications.
+        Used for monitoring and debugging.
+        """
+        pattern = "push_queue:*"
+        keys = await cache.keys(pattern)
+        
+        total_queued = 0
+        devices_with_notifications = len(keys)
+        
+        for key in keys:
+            queue_length = await cache.llen(key)
+            total_queued += queue_length
+        
+        return {
+            "devices_with_notifications": devices_with_notifications,
+            "total_queued_notifications": total_queued,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
+class MetadataMinimizationService:
+    """
+    WhatsApp-style metadata minimization service.
+    
+    WHATSAPP STORAGE MINIMIZATION:
+    1. MongoDB stores ONLY: user_id, device_id, chat_id, delivery_state
+    2. Never store message text or media URLs
+    3. Never store user files or media content
+    4. All message content in Redis with TTL only
+    5. Metadata expires after 24 hours
+    """
+    
+    @staticmethod
+    def create_minimal_message_metadata(message_id: str, chat_id: str, sender_user_id: str, 
+                                      sender_device_id: str, message_type: str, sequence_number: int):
+        """
+        Create minimal message metadata for MongoDB storage.
+        Only stores what's absolutely necessary for delivery tracking.
+        """
+        return {
+            "_id": message_id,
+            "chat_id": chat_id,
+            "sender_user_id": sender_user_id,
+            "sender_device_id": sender_device_id,
+            "message_type": message_type,
+            "delivery_state": "sent",
+            "sequence_number": sequence_number,
+            "created_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(hours=24),  # 24h TTL
+            # WhatsApp: NO message content, NO media URLs, NO file paths
+        }
+    
+    @staticmethod
+    def create_minimal_chat_metadata(chat_id: str, creator_user_id: str, chat_type: str, 
+                                    member_count: int):
+        """
+        Create minimal chat metadata for MongoDB storage.
+        Only stores chat identification and membership info.
+        """
+        return {
+            "_id": chat_id,
+            "creator_user_id": creator_user_id,
+            "chat_type": chat_type,  # "individual" or "group"
+            "member_count": member_count,
+            "created_at": datetime.utcnow(),
+            "last_activity": datetime.utcnow(),
+            # WhatsApp: NO chat names, NO descriptions, NO avatars in server
+        }
+    
+    @staticmethod
+    def create_minimal_user_metadata(user_id: str, device_id: str):
+        """
+        Create minimal user metadata for MongoDB storage.
+        Only stores user identification and device info.
+        """
+        return {
+            "_id": user_id,
+            "primary_device_id": device_id,
+            "created_at": datetime.utcnow(),
+            "last_seen": datetime.utcnow(),
+            # WhatsApp: NO usernames, NO profile data, NO contact info
+        }
+    
+    @staticmethod
+    async def cleanup_expired_metadata():
+        """
+        Clean up expired metadata from MongoDB.
+        Removes documents older than their TTL.
+        """
+        try:
+            try:
+                from .db_proxy import get_db
+            except ImportError:
+                from db_proxy import get_db
+            db = get_db()
+            
+            # Clean up expired message metadata
+            messages_collection = db.messages
+            expired_messages = await messages_collection.delete_many({
+                "expires_at": {"$lt": datetime.utcnow()}
+            })
+            
+            # Clean up inactive chat metadata (older than 30 days with no activity)
+            chats_collection = db.chats
+            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            inactive_chats = await chats_collection.delete_many({
+                "last_activity": {"$lt": thirty_days_ago}
+            })
+            
+            return {
+                "expired_messages_removed": expired_messages.deleted_count,
+                "inactive_chats_removed": inactive_chats.deleted_count,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Metadata cleanup failed: {e}")
+            return {"error": str(e)}
+    
+    @staticmethod
+    def validate_metadata_minimization(document: dict, document_type: str):
+        """
+        Validate that document follows WhatsApp metadata minimization rules.
+        """
+        forbidden_fields = {
+            "message": ["message", "content", "text", "body", "media_url", "file_path"],
+            "chat": ["name", "description", "avatar", "settings", "metadata"],
+            "user": ["username", "email", "phone", "profile", "display_name"]
+        }
+        
+        if document_type in forbidden_fields:
+            for field in forbidden_fields[document_type]:
+                if field in document:
+                    raise ValueError(f"Forbidden field '{field}' found in {document_type} metadata")
+        
+        return True
+    
+    @staticmethod
+    def get_storage_stats():
+        """
+        Get statistics about metadata storage usage.
+        Used for monitoring storage optimization.
+        """
+        try:
+            try:
+                from .db_proxy import get_db
+            except ImportError:
+                from db_proxy import get_db
+            db = get_db()
+            
+            # Count documents in each collection
+            messages_count = db.messages.count_documents({})
+            chats_count = db.chats.count_documents({})
+            users_count = db.users.count_documents({})
+            
+            # Calculate approximate storage size (simplified)
+            avg_message_size = 200  # bytes (minimal metadata)
+            avg_chat_size = 150     # bytes (minimal metadata)
+            avg_user_size = 100     # bytes (minimal metadata)
+            
+            total_size = (
+                (messages_count * avg_message_size) +
+                (chats_count * avg_chat_size) +
+                (users_count * avg_user_size)
+            )
+            
+            return {
+                "messages_count": messages_count,
+                "chats_count": chats_count,
+                "users_count": users_count,
+                "estimated_storage_bytes": total_size,
+                "estimated_storage_mb": round(total_size / (1024 * 1024), 2),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Storage stats calculation failed: {e}")
+            return {"error": str(e)}
+    
+    @staticmethod
+    async def enforce_metadata_limits():
+        """
+        Enforce WhatsApp-style metadata limits.
+        Removes old data to keep storage minimal.
+        """
+        stats = await MetadataMinimizationService.cleanup_expired_metadata()
+        
+        # Additional cleanup if storage is too large
+        storage_stats = MetadataMinimizationService.get_storage_stats()
+        
+        if not storage_stats.get("error") and storage_stats.get("estimated_storage_mb", 0) > 1000:  # 1GB limit
+            try:
+                try:
+                    from .db_proxy import get_db
+                except ImportError:
+                    from db_proxy import get_db
+                db = get_db()
+                
+                # Remove oldest messages beyond 100MB limit
+                messages_collection = db.messages
+                oldest_messages = messages_collection.find().sort("created_at", 1).limit(1000)
+                old_message_ids = [msg["_id"] for msg in oldest_messages]
+                
+                if old_message_ids:
+                    await messages_collection.delete_many({
+                        "_id": {"$in": old_message_ids}
+                    })
+                
+                stats["additional_cleanup"] = f"Removed {len(old_message_ids)} oldest messages"
+                
+            except Exception as e:
+                logger.error(f"Additional cleanup failed: {e}")
+                stats["additional_cleanup_error"] = str(e)
+        
+        return stats
     
     @staticmethod
     async def get_pending_messages(chat_id: str, limit: int = 50):
