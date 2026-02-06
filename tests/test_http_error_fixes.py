@@ -332,6 +332,7 @@ class TestFileUploadFlow:
             "mime_type": "text/plain",
             "chat_id": None,
             "checksum": None,
+            "object_key": "temp/mock/test_file.txt",  # Required for ephemeral S3 storage
         }
 
         class _UploadsColl:
@@ -353,17 +354,19 @@ class TestFileUploadFlow:
              patch("routes.files.settings") as mock_settings, \
              patch("routes.files.uploads_collection", return_value=_UploadsColl()), \
              patch("routes.files.files_collection", return_value=_FilesColl()), \
-             patch("routes.files.get_db", return_value=MagicMock()):
+             patch("routes.files.get_db", return_value=MagicMock()), \
+             patch("routes.files._s3_object_exists", return_value=True):  # Mock S3 existence check
 
             mock_limiter.is_allowed.return_value = True
             mock_settings.DATA_ROOT = data_root
+            mock_settings.FILE_TTL_HOURS = 24  # Mock FILE_TTL_HOURS
 
             resp = await complete_upload(upload_id, request, current_user)
             assert resp.file_id
             assert resp.filename == "x.txt"
             assert resp.size == len(chunk_bytes)
             assert resp.checksum == ""
-            assert resp.storage_path
+            assert resp.storage_path is None
     
     @pytest.mark.asyncio
     async def test_chunk_upload_rate_limiting(self):

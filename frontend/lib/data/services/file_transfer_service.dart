@@ -31,15 +31,16 @@ class FileTransferService {
     _cleanupTimer?.cancel();
   }
 
-  /// Pick and upload a file using the backend's resumable chunk upload API.
-  /// This supports very large files (e.g. 15GB) on desktop/mobile where `dart:io` is available.
+  /// WhatsApp-style ephemeral file upload with direct S3 upload.
+  /// Server provides pre-signed URL, client uploads directly to S3.
+  /// Files are stored temporarily (24h TTL) then auto-deleted.
   Future<void> pickAndUpload({
     required String chatId,
     required Function(double) onProgress,
   }) async {
     final result = await FilePicker.platform.pickFiles(
       withReadStream: true,
-      type: FileType.any, // Allow all file types
+      type: FileType.any,
       allowMultiple: false,
     );
     if (result == null || result.files.isEmpty) return;
@@ -111,91 +112,52 @@ class FileTransferService {
     _transfers.add(transfer);
 
     try {
+      // WHATSAPP ARCHITECTURE: Get pre-signed S3 URL for direct upload
       final init = await _api.initUpload(
         filename: fileName,
         size: fileSize,
-        mime: mime,  // API service converts this to mime_type
+        mime: mime,
         chatId: chatId,
       );
 
-      final uploadId = (init['uploadId'] ?? init['upload_id']) as String;  // Support both camelCase and snake_case
-      final chunkSize = (init['chunk_size'] as num).toInt();
-      final totalChunks = (init['total_chunks'] as num?)?.toInt();  // Get total_chunks from backend for validation
-
-      int chunkIndex = 0;
-      int sentBytes = 0;
-      final buffer = BytesBuilder(copy: false);
-
-      await for (final part in stream) {
-        buffer.add(part);
-        while (buffer.length >= chunkSize) {
-          final bytes = buffer.takeBytes();
-          final chunk = bytes.sublist(0, chunkSize);
-          final remaining = bytes.sublist(chunkSize);
-          if (remaining.isNotEmpty) buffer.add(remaining);
-
-          final checksum = sha256.convert(chunk).toString();
-          try {
-            // CRITICAL FIX: Validate chunk index against backend total_chunks to prevent out-of-range errors
-            if (totalChunks != null && chunkIndex >= totalChunks) {
-              throw Exception(
-                'Chunk index $chunkIndex out of range. Expected: 0-${totalChunks - 1}. '
-                'This indicates a calculation mismatch between frontend and backend.'
-              );
-            }
-            
-            await _api.uploadChunk(
-              uploadId: uploadId,
-              chunkIndex: chunkIndex,
-              bytes: Uint8List.fromList(chunk),
-              chunkChecksum: checksum,
-            );
-            debugPrint('[TRANSFER] Chunk $chunkIndex uploaded successfully (${chunk.length} bytes)');
-            chunkIndex += 1;
-            sentBytes += chunk.length;
-          } catch (e) {
-            debugPrint('[TRANSFER] Failed to upload chunk $chunkIndex: $e');
-            // Check if it's a validation error (400)
-            if (e.toString().contains('400') || e.toString().contains('Bad Request')) {
-              debugPrint('[TRANSFER] This might be a server configuration issue. Check:');
-              debugPrint('[TRANSFER] 1. Upload ID is valid and not expired');
-              debugPrint('[TRANSFER] 2. Chunk index is within valid range');
-              debugPrint('[TRANSFER] 3. File size is within limits');
-              debugPrint('[TRANSFER] 4. Content type is application/octet-stream');
-            }
-            rethrow;
-          }
-// Prevent double callback invocation
-          final progress = sentBytes / fileSize;
-          _updateProgress(transfer.id, progress, (_) {}); // Internal update only
-        }
+      final uploadUrl = init['upload_url'] as String?;
+      if (uploadUrl == null) {
+        throw Exception('Failed to get upload URL from server');
       }
 
-      final tail = buffer.takeBytes();
-      if (tail.isNotEmpty) {
-        // CRITICAL FIX: Validate final chunk index against backend total_chunks
-        if (totalChunks != null && chunkIndex >= totalChunks) {
-          throw Exception(
-            'Final chunk index $chunkIndex out of range. Expected: 0-${totalChunks - 1}. '
-            'This indicates a calculation mismatch between frontend and backend.'
-          );
-        }
-        
-        final checksum = sha256.convert(tail).toString();
-        await _api.uploadChunk(
-          uploadId: uploadId,
-          chunkIndex: chunkIndex,
-          bytes: Uint8List.fromList(tail),
-          chunkChecksum: checksum,
-        );
-        sentBytes += tail.length;
-        _updateProgress(transfer.id, sentBytes / fileSize, onProgress);
+      // WHATSAPP ARCHITECTURE: Upload directly to S3 using pre-signed URL
+      debugPrint('[WHATSAPP_UPLOAD] Uploading directly to S3: $uploadUrl');
+      
+      // Convert stream to bytes for direct S3 upload
+      final bytesBuilder = BytesBuilder();
+      await for (final chunk in stream) {
+        bytesBuilder.add(chunk);
       }
-
-      await _api.completeUpload(uploadId: uploadId);
+      
+      final fileBytes = bytesBuilder.takeBytes();
+      
+      // Create HTTP request for S3 upload
+      final client = HttpClient();
+      final request = HttpRequest('PUT', Uri.parse(uploadUrl));
+      request.headers['Content-Type'] = mime;
+      request.body = fileBytes;
+      
+      // Upload to S3
+      final response = await client.send(request);
+      
+      if (response.statusCode != 200) {
+        throw Exception('S3 upload failed: ${response.statusCode}');
+      }
+      
+      // WHATSAPP ARCHITECTURE: Notify server of successful upload
+      await _api.completeUpload(uploadId: init['uploadId'] as String);
+      
       _markCompleted(transfer.id);
+      debugPrint('[WHATSAPP_UPLOAD] File uploaded successfully to S3');
+      
     } catch (e) {
       _markFailed(transfer.id);
+      debugPrint('[WHATSAPP_UPLOAD] Upload failed: $e');
       rethrow;
     }
   }

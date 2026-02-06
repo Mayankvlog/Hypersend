@@ -1,4 +1,4 @@
-# Hypersend - Enterprise Secure File Sharing & Communication Platform
+# zaply - Enterprise Secure File Sharing & Communication Platform
 
 ## 🚀 Project Overview
 
@@ -119,7 +119,15 @@
 
 ---
 
-## � File Transfer Capabilities (15GB Support)
+## WhatsApp-Style Ephemeral File Transfer (15GB Support)
+
+We use WhatsApp-style ephemeral storage: files are relayed via temporary cloud cache and deleted immediately after delivery or expiry.
+
+### Architecture Definition (One Line)
+We use WhatsApp-style ephemeral storage: files are relayed via temporary cloud cache and deleted immediately after delivery or expiry.
+
+### High-Level Flow
+Sender Device → Temporary Cloud Storage (S3 with TTL) → Receiver Device → DELETE from Cloud Storage
 
 ### Current File Size Limits
 
@@ -131,93 +139,64 @@
 | **Images** | **4GB** | `MAX_IMAGE_SIZE_MB = 4096` |
 | **Audio** | **2GB** | `MAX_AUDIO_SIZE_MB = 2048` |
 
-### File Transfer Architecture
+### Storage Design
+- **Object Storage Only**: S3 used as a temporary cache (24–48h TTL)
+- **No Server Persistence**: Backend never writes file data to disk
+- **Metadata Only**: Backend stores file_id, sender_id, receiver_id, expiry_time
+- **Lifecycle Rules**: Auto-delete objects after TTL expiry
 
-#### WhatsApp-Inspired Storage Model
-- **User Device Storage**: Files stored permanently on user devices
-- **Temporary Cloud Storage**: 24-hour TTL on S3 for transfer relay
-- **Zero Server Storage**: No permanent file storage on servers
-- **Cost Optimization**: 97% reduction in storage costs
+### Upload Flow (Mandatory)
+1. Client requests upload permission from backend.
+2. Backend generates a pre-signed upload URL (10–15 min).
+3. Client uploads file directly to S3.
+4. Backend stores only metadata (no file content).
+5. Backend never receives or saves file data.
 
-#### Upload Process
-1. **Initialization**: Client requests upload session
-2. **Chunked Upload**: Files split into 32MB chunks
-3. **Parallel Processing**: Up to 4 concurrent chunk uploads
-4. **Verification**: SHA-256 checksum validation for each chunk
-5. **Assembly**: Server reassembles chunks and stores temporarily
-6. **Distribution**: Files relayed to recipients via S3 presigned URLs
+### Download Flow
+1. Receiver requests download from backend.
+2. Backend verifies authorization.
+3. Backend generates a short-lived pre-signed download URL (5–10 min).
+4. Receiver downloads directly from S3.
+5. Receiver sends delivery ACK to backend.
+6. Backend immediately deletes file from S3.
+7. TTL lifecycle rule acts as fallback cleanup.
 
-#### Configuration Files
+### Deletion Logic (ACK + TTL)
+- **ACK Path**: Receiver ACK → immediate delete from S3.
+- **TTL Path**: If receiver is offline → auto-delete at TTL.
+- **No Retries Beyond TTL**: File expires permanently after TTL window.
+
+### Security Considerations
+- **Signed URLs only**: No raw public URLs, presigned access only.
+- **Server blind to content**: Optional client-side encryption; server sees encrypted blobs only.
+- **Zero disk usage**: Backend disk stays at 0 bytes for file data.
+- **Access Control**: Sender/receiver authorization for all downloads.
+
+### WhatsApp vs Telegram vs This System
+| System | Storage Model | Server Retention | Delivery Behavior |
+|--------|---------------|------------------|-------------------|
+| **WhatsApp** | Ephemeral relay | Temporary (TTL) | Delete after delivery/TTL |
+| **Telegram** | Cloud sync | Permanent | Stored indefinitely |
+| **This System** | Ephemeral relay (S3 TTL) | Temporary only | Delete after ACK/TTL |
+
+### Configuration Files (Ephemeral Mode)
 
 **Backend (`backend/config.py`)**
 ```python
-# 15GB File Transfer Configuration
 MAX_FILE_SIZE_BYTES = 16106127360  # 15GB in bytes
 MAX_FILE_SIZE_MB = 15360          # 15GB in MB
-MAX_VIDEO_SIZE_MB = 15360         # 15GB for videos
-MAX_DOCUMENT_SIZE_MB = 15360      # 15GB for documents
-CHUNK_SIZE = 33554432             # 32MB chunks
-MAX_PARALLEL_CHUNKS = 4           # Parallel uploads
-```
-
-**Frontend (`frontend/lib/core/constants/api_constants.dart`)**
-```dart
-// 15GB File Transfer Limits
-static const int maxFileSizeBytes = 15 * 1024 * 1024 * 1024; // 15GB
-static const int maxFileSizeMB = 15 * 1024;                   // 15GB
-static const int maxVideoSizeMB = 15360;     // 15GB for videos
-static const int maxDocumentSizeMB = 15360;  // 15GB for documents
-static const Duration uploadTimeout = Duration(hours: 2);   // 2 hours
+FILE_TTL_HOURS = 24               # 24h TTL
+SERVER_STORAGE_BYTES = 0          # Always 0 bytes
 ```
 
 **Nginx (`nginx.conf`)**
 ```nginx
-# 15GB Upload Limits
 client_max_body_size 15g;
-
-location /api/v1/files/upload {
-    client_max_body_size 15g;
-    limit_req zone=upload_limit burst=200 nodelay;
-    # 2-hour timeouts for large files
-    proxy_read_timeout 7200s;
-    proxy_send_timeout 7200s;
-}
 ```
-
-**Docker (`docker-compose.yml`)**
-```yaml
-environment:
-  MAX_FILE_SIZE_BYTES: 16106127360  # 15GB
-  MAX_FILE_SIZE_MB: 15360           # 15GB
-  MAX_VIDEO_SIZE_MB: 15360          # 15GB
-  MAX_DOCUMENT_SIZE_MB: 15360      # 15GB
-  CHUNK_SIZE: 33554432              # 32MB
-  MAX_PARALLEL_CHUNKS: 4
-```
-
-### Performance Optimizations
-
-#### Large File Handling
-- **Chunked Upload**: 32MB chunks for optimal throughput
-- **Parallel Processing**: 4 concurrent uploads
-- **Resumable Transfers**: Resume interrupted uploads
-- **Progress Tracking**: Real-time upload progress
-- **Error Recovery**: Automatic retry for failed chunks
-
-#### Timeout Configurations
-- **Chunk Upload**: 10 minutes per chunk
-- **File Assembly**: 30 minutes for large files
-- **Total Upload**: 2 hours for 15GB files
-- **Download**: Configurable timeouts
-
-#### Rate Limiting
-- **Upload Endpoint**: 20 requests/second burst
-- **General API**: 100 requests/minute
-- **Authentication**: 6 requests/minute
 
 ---
 
-## � Security Features
+## 🔒 Security Features
 
 ### 1. Authentication & Authorization
 

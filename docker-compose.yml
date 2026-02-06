@@ -73,9 +73,19 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
+    # WHATSAPP ARCHITECTURE: Messages stored in Redis with automatic TTL expiry
+    # MANDATORY SETTINGS:
+    # - --appendonly no: Disable .aof persistence file
+    # - NO --save: Disable RDB snapshots
+    # - --maxmemory 2gb: Limit memory to 2GB for ephemeral messages
+    # - --maxmemory-policy allkeys-lru: Evict oldest messages when full
+    # RESULT: Messages lost on restart (ACCEPTABLE - user device has backup)
+    command: redis-server --appendonly no --maxmemory 2gb --maxmemory-policy allkeys-lru
+    # WHATSAPP ARCHITECTURE: Redis is RAM-only, no persistence
+    # Messages disappear on restart - WhatsApp behavior
+    # Uncomment for debugging only:
+    # volumes:
+    #   - redis_data:/data
     networks:
       - hypersend_network
     healthcheck:
@@ -98,9 +108,31 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    # ============================================================================
+    # WHATSAPP-STYLE STATELESS COURIER ARCHITECTURE
+    # ============================================================================
+    # ARCHITECTURAL MANDATE:
+    # 1. Server is a STATELESS COURIER (not storage provider)
+    # 2. NEVER stores messages permanently (Redis TTL only)
+    # 3. NEVER stores media files (S3 direct upload only)
+    # 4. NEVER stores user files (S3 presigned URLs only)
+    # 5. User device is ONLY source of truth for chats/history
+    # 6. Container restart must NOT recover old data (stateless)
+    # 
+    # VOLUMES POLICY: volumes: [] (ZERO volumes)
+    # - NO /uploads directory
+    # - NO /data directory
+    # - NO /var/www directory
+    # - Only /tmp allowed (auto-cleaned on restart)
+    # 
+    # ACCEPTED BEHAVIOR:
+    # - Restart → undelivered messages may be lost (user device has backup)
+    # - Scale to 100 replicas → no state conflicts
+    # - Disk full → upload queue works (no buffering)
+    # ============================================================================
     environment:
-      # ===== MONGODB ATLAS CONFIGURATION (Cloud MongoDB - Production) =====
-      # CRITICAL: Atlas only - no local MongoDB
+      # ===== MONGODB ATLAS CONFIGURATION (Cloud MongoDB - Metadata Only) =====
+      # CRITICAL: Atlas only for chat metadata, NOT messages
       DATABASE_URL: ${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
       
       # ===== API CONFIGURATION =====
@@ -109,52 +141,49 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: 28800
       REFRESH_TOKEN_EXPIRE_DAYS: 20
       UPLOAD_TOKEN_EXPIRE_HOURS: 480
-      DATA_ROOT: /data
-      UPLOADS_PATH: /app/uploads
-      MAX_FILE_SIZE_BYTES: 16106127360
-      CHUNK_SIZE: 33554432
+      
+      # ===== WHATSAPP STORAGE MODEL (STRICT EPHEMERAL) =====
+      # MANDATORY: Server is stateless courier only
+      STORAGE_MODE: ephemeral  # MANDATORY: No permanent server storage
+      MESSAGE_STORAGE: redis_only  # MANDATORY: Messages in Redis with TTL only
+      MESSAGE_TTL_MINUTES: 60  # MANDATORY: Messages disappear after 1 hour
+      SERVER_STORAGE_BYTES: "0"  # MANDATORY: ZERO permanent storage
+      SERVER_TEMP_BYTES: "100000000"  # 100MB max for temp processing
+      USER_DEVICE_PRIMARY: "true"  # MANDATORY: User device is source of truth
+      
+      # ===== S3 CONFIGURATION (Direct Upload Only) =====
+      S3_BUCKET: ${S3_BUCKET:-hypersend-temp}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      FILE_TTL_HOURS: 24  # MANDATORY: 24h max, auto-delete by S3 lifecycle
+      FILE_TTL_SECONDS: "86400"  # 24 hours in seconds
+      DIRECT_S3_UPLOADS: "true"  # MANDATORY: Client uploads directly to S3
+      DELETE_ON_ACK: "true"  # MANDATORY: Delete from S3 immediately after receiver ACK
+      S3_LIFECYCLE_ENABLED: "true"  # MANDATORY: Enable S3 auto-delete after 24h
+      
+      # ===== 15GB FILE SIZE CONFIGURATION =====
+      MAX_FILE_SIZE_BYTES: 16106127360  # 15GB in bytes
+      MAX_FILE_SIZE_MB: 15360  # 15GB in MB
+      CHUNK_SIZE: 33554432  # 32MB chunks for large files
       MAX_PARALLEL_CHUNKS: 4
-      FILE_RETENTION_HOURS: 8760  # 1 year (WhatsApp-like)
+      LARGE_FILE_THRESHOLD_GB: 1
+      
+      # ===== STATELESS CONFIGURATION =====
+      DATA_ROOT: /tmp  # Ephemeral, auto-cleaned by OS
+      UPLOADS_PATH: /tmp/uploads  # Temporary, container restart deletes
       DEBUG: "False"
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
       
-      # ===== WHATSAPP STORAGE MODEL (User Device + 24h S3 TTL) =====
-      STORAGE_MODE: user_device_s3  # WhatsApp: User Device + 24h S3 TTL
-      S3_BUCKET: hypersend-temp
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-      AWS_REGION: ${AWS_REGION:-us-east-1}
-      FILE_TTL_HOURS: 24  # 24h temp only like WhatsApp
-      SERVER_STORAGE_BYTES: "0"  # ZERO bytes server pe
-      USER_DEVICE_STORAGE: "true"  # Files permanent on user device
-      COST_MODEL: "free"  # No server storage cost
-      
-      # ===== WHATSAPP STORAGE CONFIGURATION =====
-      WHATSAPP_STORAGE: "true"  # Enable WhatsApp storage model
-      FILE_TTL_SECONDS: "86400"  # 24 hours in seconds
-      USER_DEVICE_ONLY: "true"  # User device only storage
-      NO_SERVER_MEDIA: "true"  # No server media storage
-      
-      # ===== 15GB FILE SIZE CONFIGURATION =====
-      MAX_FILE_SIZE_MB: 15360  # 15GB in MB
-      LARGE_FILE_THRESHOLD_GB: 1  # 1GB threshold for large files
-      MAX_IMAGE_SIZE_MB: 4096  # 4GB for high-res images
-      MAX_VIDEO_SIZE_MB: 15360  # 15GB for videos
-      MAX_AUDIO_SIZE_MB: 2048  # 2GB for audio
-      MAX_DOCUMENT_SIZE_MB: 15360  # 15GB for documents
-      
       # ===== CORS CONFIGURATION =====
-      # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
-      # Structure: HTTPS production first, then Docker HTTP, then Dev HTTP
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net}
       
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
-      # CRITICAL: Always use real database in production
-      USE_MOCK_DB: "False"
+      USE_MOCK_DB: "False"  # MANDATORY: Use real MongoDB for metadata
       
       # ===== EMAIL CONFIGURATION =====
       ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
@@ -166,9 +195,12 @@ services:
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
       SENDER_NAME: ${SENDER_NAME:-Zaply Support}
-    volumes:
-      # WHATSAPP EXACT: ZERO storage volumes - only Redis for metadata
-      - redis_data:/redis  # sirf chat metadata
+    
+    # MANDATORY: NO VOLUMES - WhatsApp-style stateless architecture
+    # Files uploaded directly to S3, messages in Redis with TTL
+    # Container restart must NOT recover old data
+    volumes: []
+    
     depends_on:
       redis:
         condition: service_healthy
@@ -217,7 +249,10 @@ networks:
         - subnet: 172.20.0.0/16
 
 volumes:
-  redis_data:
-    driver: local
+  # WHATSAPP ARCHITECTURE: nginx_cache is ephemeral (not permanent data)
+  # - Cache cleared on container restart (acceptable)
+  # - NOT used for media or messages
+  # - Only for static frontend assets
+  # - In Kubernetes, this maps to emptyDir with memory tmpfs
   nginx_cache:
     driver: local

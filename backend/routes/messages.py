@@ -57,7 +57,7 @@ async def send_message(
     request: MessageSendRequest,
     current_user: str = Depends(get_current_user)
 ):
-    """Send a message to a chat"""
+    """Send a message to a chat - WhatsApp-style ephemeral storage"""
     # Verify chat exists and user has access
     chat = await chats_collection().find_one({"_id": request.chat_id})
     if not chat:
@@ -73,38 +73,66 @@ async def send_message(
     
     logger.debug(f"User authorized to send message")
     
-    # Create message
-    message = {
-        "_id": str(uuid.uuid4()),
+    # Generate message ID
+    message_id = str(uuid.uuid4())
+    
+    # WhatsApp-style: Store ONLY metadata in Redis with TTL
+    # Message content lives in RAM only, delivered immediately, then deleted
+    message_metadata = {
+        "message_id": message_id,
         "chat_id": request.chat_id,
         "sender_id": current_user,
-        "text": request.message,
         "message_type": request.message_type,
-        "created_at": _utcnow(),
-        "updated_at": _utcnow(),
-        "is_deleted": False,
-        "is_edited": False,
-        "read_by": [],
-        "reactions": {},
-        "is_pinned": False
+        "created_at": _utcnow().isoformat(),
+        "delivery_status": "pending",  # pending -> delivered -> acknowledged -> deleted
+        "receiver_ids": [p for p in participants if p != current_user],
+        "ttl_seconds": 3600  # 1 hour TTL for message metadata
     }
     
-    # Save message
-    await messages_collection().insert_one(message)
+    # Store in Redis with TTL (NOT MongoDB)
+    try:
+        from ..redis_cache import redis_client
+        await redis_client.setex(
+            f"message:{message_id}",
+            message_metadata["ttl_seconds"],
+            json.dumps(message_metadata)
+        )
+        
+        # Add to chat's pending messages list
+        await redis_client.lpush(
+            f"chat_messages:{request.chat_id}",
+            message_id
+        )
+        await redis_client.expire(
+            f"chat_messages:{request.chat_id}",
+            message_metadata["ttl_seconds"]
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to store message in Redis: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Message storage temporarily unavailable"
+        )
     
-    # Update chat's last message
+    # Update chat's last message metadata only (NOT the message content)
     await chats_collection().update_one(
         {"_id": request.chat_id},
-        {"$set": {"last_message": request.message, "last_activity": _utcnow()}}
+        {"$set": {
+            "last_message_id": message_id,
+            "last_activity": _utcnow(),
+            "last_message_type": request.message_type
+        }}
     )
     
     return {
-        "status": "success",
-        "message_id": message["_id"],
+        "status": "sent",
+        "message_id": message_id,
         "chat_id": request.chat_id,
-        "message": request.message,
         "message_type": request.message_type,
-        "created_at": message["created_at"].isoformat()
+        "created_at": message_metadata["created_at"],
+        "delivery_status": message_metadata["delivery_status"],
+        "ttl_seconds": message_metadata["ttl_seconds"]
     }
 
 
@@ -113,10 +141,16 @@ def _utcnow() -> datetime:
 
 
 async def _get_message_or_404(message_id: str) -> dict:
-    msg = await messages_collection().find_one({"_id": message_id})
-    if not msg:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
-    return msg
+    """Get message from Redis (WhatsApp-style ephemeral storage)"""
+    try:
+        from ..redis_cache import redis_client
+        message_data = await redis_client.get(f"message:{message_id}")
+        if not message_data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found or expired")
+        return json.loads(message_data)
+    except Exception as e:
+        logger.error(f"Failed to get message from Redis: {e}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found or expired")
 
 
 async def _get_chat_for_message_or_403(message: dict, current_user: str) -> dict:
@@ -137,40 +171,48 @@ async def edit_message(
     payload: MessageEditRequest,
     current_user: str = Depends(get_current_user),
 ):
-    """Edit a message (sender only, within 24 hours) + keep edit history."""
+    """Edit a message (sender only, within 15 minutes) - WhatsApp-style limited edit window."""
     msg = await _get_message_or_404(message_id)
     chat = await _get_chat_for_message_or_403(msg, current_user)
 
-    if msg.get("is_deleted"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot edit a deleted message")
+    delivery_status = msg.get("delivery_status", "pending")
+    if delivery_status in ["delivered", "acknowledged"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot edit message after delivery")
 
     if msg.get("sender_id") != current_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only edit your own messages")
 
-    created_at: datetime = msg.get("created_at") or _utcnow()
-    if _utcnow() - created_at > timedelta(hours=24):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot edit messages older than 24 hours")
+    created_at_str = msg.get("created_at")
+    if created_at_str:
+        created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+        if _utcnow() - created_at > timedelta(minutes=15):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot edit messages older than 15 minutes")
 
     new_text = (payload.text or "").strip()
     if not new_text:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message text cannot be empty")
 
-    history = msg.get("edit_history") or []
-    history.append({
-        "text": msg.get("text"),
-        "edited_at": _utcnow(),
-        "edited_by": current_user,
-    })
-
-    await messages_collection().update_one(
-        {"_id": message_id},
-        {"$set": {
-            "text": new_text,
-            "is_edited": True,
-            "edited_at": _utcnow(),
-            "edit_history": history,
-        }},
-    )
+    # Update message in Redis with edit flag
+    try:
+        from ..redis_cache import redis_client
+        msg["text"] = new_text
+        msg["is_edited"] = True
+        msg["edited_at"] = _utcnow().isoformat()
+        msg["edited_by"] = current_user
+        
+        # Update TTL to remaining time or minimum 5 minutes
+        ttl = int(msg.get("ttl_seconds", 3600))
+        elapsed = (_utcnow() - created_at).total_seconds() if created_at else 0
+        remaining_ttl = max(300, int(ttl - elapsed))  # Minimum 5 minutes
+        
+        await redis_client.setex(
+            f"message:{message_id}",
+            remaining_ttl,
+            json.dumps(msg)
+        )
+    except Exception as e:
+        logger.error(f"Failed to update message in Redis: {e}")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Message update failed")
 
     return {"status": "edited", "message_id": message_id}
 
@@ -181,31 +223,28 @@ async def delete_message(
     hard_delete: bool = False,
     current_user: str = Depends(get_current_user),
 ):
-    """Delete a message. Default is soft-delete; sender only."""
+    """Delete a message - WhatsApp-style immediate deletion from Redis."""
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
 
     if msg.get("sender_id") != current_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only delete your own messages")
 
-    if hard_delete:
-        await messages_collection().delete_one({"_id": message_id})
-        return {"status": "deleted", "hard_delete": True}
+    # WhatsApp-style: Delete immediately from Redis (no soft delete)
+    try:
+        from ..redis_cache import redis_client
+        
+        # Remove message from Redis
+        await redis_client.delete(f"message:{message_id}")
+        
+        # Remove from chat's message list
+        await redis_client.lrem(f"chat_messages:{msg['chat_id']}", 0, message_id)
+        
+    except Exception as e:
+        logger.error(f"Failed to delete message from Redis: {e}")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Message deletion failed")
 
-    if msg.get("is_deleted"):
-        return {"status": "deleted", "hard_delete": False}
-
-    await messages_collection().update_one(
-        {"_id": message_id},
-        {"$set": {
-            "is_deleted": True,
-            "deleted_at": _utcnow(),
-            "deleted_by": current_user,
-            "text": None,
-            "file_id": None,
-        }},
-    )
-    return {"status": "deleted", "hard_delete": False}
+    return {"status": "deleted", "hard_delete": True}
 
 
 @router.get("/{message_id}/versions")
@@ -305,26 +344,42 @@ async def unpin_message(message_id: str, current_user: str = Depends(get_current
 
 @router.post("/{message_id}/read")
 async def mark_read(message_id: str, current_user: str = Depends(get_current_user)):
-    """Mark message read for current user (read receipts)."""
+    """Mark message read for current user - WhatsApp-style delivery tracking."""
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
 
-    # Use atomic operation to prevent race condition with concurrent read receipts
-    # Only add read receipt if user hasn't already marked it as read
-    result = await messages_collection().update_one(
-        {
-            "_id": message_id,
-            "read_by": {"$not": {"$elemMatch": {"user_id": current_user}}}  # Only if not already there
-        },
-        {
-            "$push": {"read_by": {"user_id": current_user, "read_at": _utcnow()}},
-            "$set": {"updated_at": _utcnow()}
-        }
-    )
-    
-    # If user already marked as read, just return success
-    if result.matched_count == 0:
-        return {"status": "read", "message_id": message_id}
+    # Update delivery status in Redis
+    try:
+        from ..redis_cache import redis_client
+        
+        # Add read receipt to message
+        msg["read_by"] = msg.get("read_by", [])
+        
+        # Check if already read by this user
+        already_read = any(read.get("user_id") == current_user for read in msg["read_by"])
+        if not already_read:
+            msg["read_by"].append({
+                "user_id": current_user,
+                "read_at": _utcnow().isoformat()
+            })
+            
+            # Update delivery status based on receivers
+            receiver_ids = msg.get("receiver_ids", [])
+            if len(msg["read_by"]) >= len(receiver_ids):
+                msg["delivery_status"] = "acknowledged"
+            else:
+                msg["delivery_status"] = "delivered"
+            
+            # Update message in Redis with remaining TTL
+            ttl = int(msg.get("ttl_seconds", 3600))
+            await redis_client.setex(
+                f"message:{message_id}",
+                ttl,
+                json.dumps(msg)
+            )
+    except Exception as e:
+        logger.error(f"Failed to update message read status in Redis: {e}")
+        # Continue without failing - read receipt is non-critical
     
     return {"status": "read", "message_id": message_id}
 
@@ -340,8 +395,8 @@ async def search_messages(
     current_user: str = Depends(get_current_user)
 ):
     """
-    Search messages globally or within a chat.
-    Filters: text query (q), has_media, has_link.
+    Search messages in Redis - WhatsApp-style limited search.
+    Only searches recent messages due to ephemeral storage.
     """
     if not q and not has_media and not has_link:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Search query or filter required")
@@ -354,8 +409,8 @@ async def search_messages(
         
         # CRITICAL SECURITY: Remove dangerous characters that could cause injection
         import re
-        # Remove characters that could break MongoDB queries or cause injection
-        dangerous_chars = r'[$\\]'
+        # Remove characters that could break Redis queries or cause injection
+        dangerous_chars = r'[$\]'
         cleaned_query = re.sub(dangerous_chars, '', q)
         if cleaned_query != q:
             logger.warning(f"Potentially dangerous characters in search query", extra={
@@ -371,38 +426,45 @@ async def search_messages(
         # Prevent regex injection by escaping special characters
         q_escaped = re.escape(q)
     
-    # Base filter
-    filter_doc = {"is_deleted": {"$ne": True}}
-    
-    # Text search
-    if q:
-        filter_doc["text"] = {"$regex": q_escaped, "$options": "i"}
+    # WhatsApp-style: Search only in Redis (no MongoDB persistence)
+    try:
+        from ..redis_cache import redis_client
         
-    # Media/Link filters
-    if has_media:
-        filter_doc["file_id"] = {"$ne": None}
-    
-    # To filter by links we would need regex on text, but for now let's assume client handles or simple regex
-    if has_link:
-        # Simple regex for http/https
-        if "text" in filter_doc:
-             # Merge regex? simpler to just add another condition using $and if needed, but regex can be combined
-             pass 
-        else:
-             filter_doc["text"] = {"$regex": r"https?://", "$options": "i"}
-
-    # Scope
-    if chat_id:
-        # Verify access
-        chat = await chats_collection().find_one({"_id": chat_id, "members": current_user})
-        if not chat:
-            raise HTTPException(status_code=403, detail="Chat not found or access denied")
-        filter_doc["chat_id"] = chat_id
-    else:
-        # Global search: get all chat IDs user is member of
+        # Get user's accessible chats
         user_chats = await chats_collection().find({"members": current_user}, {"_id": 1}).to_list(1000)
         user_chat_ids = [c["_id"] for c in user_chats]
-        filter_doc["chat_id"] = {"$in": user_chat_ids}
         
-    messages = await messages_collection().find(filter_doc).sort("created_at", -1).limit(limit).to_list(limit)
-    return {"messages": messages, "count": len(messages)}
+        # Search in Redis for each chat
+        all_messages = []
+        search_chats = [chat_id] if chat_id else user_chat_ids
+        
+        for chat_id_to_search in search_chats:
+            # Get message IDs from chat's message list
+            message_ids = await redis_client.lrange(f"chat_messages:{chat_id_to_search}", 0, -1)
+            
+            for message_id in message_ids:
+                # Get message data from Redis
+                message_data = await redis_client.get(f"message:{message_id.decode('utf-8')}")
+                if message_data:
+                    msg = json.loads(message_data)
+                    
+                    # Apply filters
+                    if q and msg.get("text") and q_escaped.lower() in msg["text"].lower():
+                        all_messages.append(msg)
+                    elif has_media and msg.get("file_id"):
+                        all_messages.append(msg)
+                    elif has_link and msg.get("text") and "http" in msg["text"]:
+                        all_messages.append(msg)
+        
+        # Sort by created_at and limit
+        all_messages.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        all_messages = all_messages[:limit]
+        
+        return {"messages": all_messages, "count": len(all_messages)}
+        
+    except Exception as e:
+        logger.error(f"Failed to search messages in Redis: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Message search temporarily unavailable"
+        )

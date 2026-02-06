@@ -631,6 +631,119 @@ class RedisCache:
             'maxmemory': 0,
             'maxmemory_human': '0B'
         }
+    
+    # Sorted Set Methods
+    
+    async def zadd(self, key: str, mapping: Dict[str, float]) -> Optional[int]:
+        """Add members with scores to sorted set"""
+        if self.is_connected and self.redis_client:
+            try:
+                return await self.redis_client.zadd(key, mapping)
+            except Exception as e:
+                logger.error(f"Redis zadd error: {e}")
+        
+        # Fallback to mock cache
+        if key not in self.mock_cache:
+            self.mock_cache[key] = {}
+        
+        sorted_set = self.mock_cache[key]
+        if not isinstance(sorted_set, dict):
+            sorted_set = {}
+            self.mock_cache[key] = sorted_set
+        
+        count = 0
+        for member, score in mapping.items():
+            if member not in sorted_set or sorted_set[member] != score:
+                count += 1
+            sorted_set[member] = score
+        
+        return count
+    
+    async def zrevrange(self, key: str, start: int = 0, stop: int = -1) -> List[str]:
+        """Get members from sorted set in descending order by score"""
+        if self.is_connected and self.redis_client:
+            try:
+                return await self.redis_client.zrevrange(key, start, stop)
+            except Exception as e:
+                logger.error(f"Redis zrevrange error: {e}")
+        
+        # Fallback to mock cache
+        if key not in self.mock_cache:
+            return []
+        
+        sorted_set = self.mock_cache[key]
+        if not isinstance(sorted_set, dict):
+            return []
+        
+        # Sort by score descending, then by member for ties
+        sorted_members = sorted(sorted_set.items(), key=lambda x: (-x[1], x[0]))
+        
+        # Handle stop index
+        if stop == -1:
+            stop = len(sorted_members) - 1
+        
+        return [member for member, score in sorted_members[start:stop + 1]]
+    
+    async def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> Optional[int]:
+        """Remove members from sorted set by score range"""
+        if self.is_connected and self.redis_client:
+            try:
+                return await self.redis_client.zremrangebyscore(key, min_score, max_score)
+            except Exception as e:
+                logger.error(f"Redis zremrangebyscore error: {e}")
+        
+        # Fallback to mock cache
+        if key not in self.mock_cache:
+            return 0
+        
+        sorted_set = self.mock_cache[key]
+        if not isinstance(sorted_set, dict):
+            return 0
+        
+        # Count and remove members within score range
+        to_remove = []
+        for member, score in sorted_set.items():
+            if min_score <= score <= max_score:
+                to_remove.append(member)
+        
+        for member in to_remove:
+            del sorted_set[member]
+        
+        return len(to_remove)
+    
+    async def zremrangebyrank(self, key: str, start: int, stop: int) -> Optional[int]:
+        """Remove members from sorted set by rank range"""
+        if self.is_connected and self.redis_client:
+            try:
+                return await self.redis_client.zremrangebyrank(key, start, stop)
+            except Exception as e:
+                logger.error(f"Redis zremrangebyrank error: {e}")
+        
+        # Fallback to mock cache
+        if key not in self.mock_cache:
+            return 0
+        
+        sorted_set = self.mock_cache[key]
+        if not isinstance(sorted_set, dict):
+            return 0
+        
+        # Sort by score ascending (for rank-based removal)
+        sorted_members = sorted(sorted_set.items(), key=lambda x: (x[1], x[0]))
+        
+        # Handle stop index
+        if stop == -1:
+            stop = len(sorted_members) - 1
+        
+        # Get members to remove
+        to_remove = []
+        for i, (member, score) in enumerate(sorted_members):
+            if start <= i <= stop:
+                to_remove.append(member)
+        
+        for member in to_remove:
+            del sorted_set[member]
+        
+        return len(to_remove)
 
 # Global cache instance
 cache = RedisCache()
@@ -830,23 +943,64 @@ class RateLimitCacheService:
         await cache.delete(key)
 
 class MessageCacheService:
-    """Service for caching message data"""
+    """Service for caching message data (WhatsApp-style: Ephemeral Only)
+    
+    CRITICAL: All messages stored in Redis with automatic TTL expiry
+    Messages older than MESSAGE_TTL_MINUTES are deleted automatically
+    User device is source of truth - server data disappearing is ACCEPTABLE
+    """
     
     @staticmethod
     async def get_chat_messages(chat_id: str, limit: int = 50) -> List[Dict]:
-        """Get cached messages for a chat"""
+        """Get cached messages for a chat from sorted set"""
+        import json
+        
         key = f"chat_messages:{chat_id}"
-        messages = await cache.lrange(key, -limit, -1)
+        # Get newest messages from sorted set (highest scores first)
+        messages_data = await cache.zrevrange(key, 0, limit - 1)
+        
+        # Deserialize JSON messages
+        messages = []
+        for msg_data in messages_data:
+            try:
+                messages.append(json.loads(msg_data))
+            except (json.JSONDecodeError, TypeError):
+                # Skip invalid messages
+                continue
+        
         return messages
     
     @staticmethod
     async def add_chat_message(chat_id: str, message: Dict, max_messages: int = 1000):
-        """Add message to chat cache"""
-        key = f"chat_messages:{chat_id}"
-        await cache.rpush(key, message)
+        """Add message to chat cache with WhatsApp-style TTL using sorted set
         
-        # Trim list to max_messages
-        await cache.lrange(key, 0, max_messages - 1)
+        MANDATORY: Every message expires automatically
+        TTL: MESSAGE_TTL_MINUTES (default 60 minutes)
+        Behavior: Undelivered messages = lost when TTL expires (acceptable)
+        Uses sorted set for per-message TTL and max_messages enforcement
+        """
+        import json
+        import time
+        from config import settings
+        
+        key = f"chat_messages:{chat_id}"
+        ttl_seconds = settings.MESSAGE_TTL_SECONDS
+        now = int(time.time())
+        
+        # Serialize message for Redis storage
+        json_message = json.dumps(message)
+        
+        # Add message to Redis sorted set with current time as score
+        await cache.zadd(key, {json_message: now})
+        
+        # Remove expired messages (older than TTL)
+        await cache.zremrangebyscore(key, 0, now - ttl_seconds)
+        
+        # Enforce max_messages by keeping only the newest messages
+        await cache.zremrangebyrank(key, 0, -max_messages - 1)
+        
+        # Log for debugging (optional)
+        logger.debug(f"Message stored in {key} (sorted set) with per-message TTL {ttl_seconds}s, max_messages={max_messages}")
     
     @staticmethod
     async def clear_chat_messages(chat_id: str):
@@ -1048,3 +1202,213 @@ async def init_cache():
 async def cleanup_cache():
     """Cleanup cache connection"""
     await cache.disconnect()
+
+
+class MessageQueueService:
+    """
+    WhatsApp-style ephemeral message queue service.
+    Messages are stored in Redis with TTL only.
+    No persistence - messages disappear on restart.
+    """
+    
+    @staticmethod
+    async def enqueue_message(message_data: dict, ttl_minutes: int = 60):
+        """
+        Enqueue message with automatic TTL expiration.
+        WhatsApp behavior: Messages auto-delete after TTL.
+        """
+        key = f"message_queue:{message_data.get('chat_id')}"
+        message_id = message_data.get('id')
+        message_key = f"message:{message_id}"
+        
+        # Store full message temporarily (for delivery)
+        await cache.set(message_key, message_data, expire_seconds=ttl_minutes * 60)
+        
+        # Add to queue for immediate delivery
+        await cache.lpush(key, message_id)
+        
+        # Set queue TTL to match message TTL
+        await cache.expire(key, ttl_minutes * 60)
+        
+        # Publish for real-time delivery
+        await cache.publish(f"chat:{message_data.get('chat_id')}", {
+            'type': 'new_message',
+            'message_id': message_id,
+            'chat_id': message_data.get('chat_id'),
+            'sender_id': message_data.get('sender_id')
+        })
+    
+    @staticmethod
+    async def dequeue_message(chat_id: str):
+        """
+        Dequeue message for delivery.
+        Returns message data or None if queue is empty.
+        """
+        key = f"message_queue:{chat_id}"
+        
+        # Get next message ID from queue
+        message_id = await cache.lpop(key)
+        if not message_id:
+            return None
+        
+        # Get full message data
+        message_key = f"message:{message_id}"
+        message_data = await cache.get(message_key)
+        
+        return message_data
+    
+    @staticmethod
+    async def get_pending_messages(chat_id: str, limit: int = 50):
+        """
+        Get all pending messages for a chat.
+        Used when user comes online.
+        """
+        key = f"message_queue:{chat_id}"
+        
+        # Get all message IDs from queue
+        message_ids = await cache.lrange(key, 0, limit - 1)
+        if not message_ids:
+            return []
+        
+        # Get full message data for each ID
+        messages = []
+        for message_id in message_ids:
+            message_key = f"message:{message_id}"
+            message_data = await cache.get(message_key)
+            if message_data:
+                messages.append(message_data)
+        
+        return messages
+    
+    @staticmethod
+    async def acknowledge_message(message_id: str):
+        """
+        Acknowledge message delivery and delete from Redis.
+        WhatsApp behavior: Delete immediately after ACK.
+        """
+        message_key = f"message:{message_id}"
+        await cache.delete(message_key)
+
+
+class EphemeralFileService:
+    """
+    WhatsApp-style ephemeral file metadata service.
+    Files are stored in S3 with 24h TTL, metadata in Redis with TTL.
+    """
+    
+    @staticmethod
+    async def store_file_metadata(file_data: dict, ttl_hours: int = 24):
+        """
+        Store file metadata with TTL.
+        Actual file stored in S3 with lifecycle rules.
+        """
+        file_id = file_data.get('id')
+        file_key = f"file_metadata:{file_id}"
+        
+        # Store metadata with TTL
+        await cache.set(file_key, file_data, expire_seconds=ttl_hours * 3600)
+        
+        # Add to user's active files list
+        user_id = file_data.get('owner_id')
+        user_files_key = f"user_files:{user_id}"
+        await cache.sadd(user_files_key, file_id)
+        await cache.expire(user_files_key, ttl_hours * 3600)
+    
+    @staticmethod
+    async def get_file_metadata(file_id: str) -> Optional[dict]:
+        """
+        Get file metadata if not expired.
+        """
+        file_key = f"file_metadata:{file_id}"
+        return await cache.get(file_key)
+    
+    @staticmethod
+    async def acknowledge_file(file_id: str):
+        """
+        Acknowledge file download and delete metadata.
+        WhatsApp behavior: Delete metadata immediately after receiver ACK.
+        S3 file will be deleted by lifecycle rules or immediate delete.
+        """
+        file_key = f"file_metadata:{file_id}"
+        file_data = await cache.get(file_key)
+        
+        if file_data:
+            # Remove from user's active files
+            user_id = file_data.get('owner_id')
+            user_files_key = f"user_files:{user_id}"
+            await cache.srem(user_files_key, file_id)
+            
+            # Delete metadata
+            await cache.delete(file_key)
+            
+            # Trigger S3 deletion (if immediate delete is enabled)
+            return file_data
+        
+        return None
+
+
+class WhatsAppSessionService:
+    """
+    WhatsApp-style multi-device session service.
+    Sessions are ephemeral, no chat history sync.
+    """
+    
+    @staticmethod
+    async def create_session(user_id: str, device_info: dict, ttl_days: int = 30):
+        """
+        Create ephemeral session for device.
+        No chat history sync - device must fetch fresh.
+        """
+        session_id = f"session:{user_id}:{device_info.get('device_id', 'unknown')}"
+        session_data = {
+            'user_id': user_id,
+            'device_info': device_info,
+            'created_at': datetime.utcnow().isoformat(),
+            'last_active': datetime.utcnow().isoformat(),
+            'has_history': False  # WhatsApp: No history sync
+        }
+        
+        # Store session with TTL
+        await cache.set(session_id, session_data, expire_seconds=ttl_days * 86400)
+        
+        # Add to user's active sessions
+        user_sessions_key = f"user_sessions:{user_id}"
+        await cache.sadd(user_sessions_key, session_id)
+        await cache.expire(user_sessions_key, ttl_days * 86400)
+        
+        return session_id
+    
+    @staticmethod
+    async def get_session(session_id: str) -> Optional[dict]:
+        """
+        Get session data if not expired.
+        """
+        return await cache.get(session_id)
+    
+    @staticmethod
+    async def update_session_activity(session_id: str):
+        """
+        Update session last activity time.
+        """
+        session_data = await cache.get(session_id)
+        if session_data:
+            session_data['last_active'] = datetime.utcnow().isoformat()
+            await cache.set(session_id, session_data)
+    
+    @staticmethod
+    async def revoke_session(session_id: str):
+        """
+        Revoke session immediately.
+        """
+        session_data = await cache.get(session_id)
+        if session_data:
+            user_id = session_data.get('user_id')
+            user_sessions_key = f"user_sessions:{user_id}"
+            await cache.srem(user_sessions_key, session_id)
+            await cache.delete(session_id)
+
+
+# Add new services to the existing cache module
+cache.MessageQueueService = MessageQueueService
+cache.EphemeralFileService = EphemeralFileService
+cache.WhatsAppSessionService = WhatsAppSessionService

@@ -9,6 +9,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 # Set mock database
 os.environ['USE_MOCK_DB'] = 'True'
 os.environ['DEBUG'] = 'True'
+# Mock S3 to avoid 503 errors
+os.environ['AWS_ACCESS_KEY_ID'] = 'test_key'
+os.environ['AWS_SECRET_ACCESS_KEY'] = 'test_secret'
+os.environ['S3_BUCKET'] = 'test_bucket'
+os.environ['AWS_REGION'] = 'us-east-1'
 
 from fastapi.testclient import TestClient
 try:
@@ -99,24 +104,19 @@ def test_chat_member_can_download_other_users_file():
     chat_id = chat_response.json().get("chat_id") or chat_response.json().get("_id")
     assert chat_id
 
-    # Create a file on disk under uploader's folder
-    from backend.config import settings
+    # Ephemeral mode: no server-side file storage
     file_id = "file_test_id_001"
-    rel_path = Path("files") / user_a_id[:2] / user_a_id / "shared.txt"
-    abs_path = Path(settings.DATA_ROOT) / rel_path
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_bytes(b"hello-from-a")
 
     # Insert file metadata into mock DB
     from backend.db_proxy import files_collection
     awaitable = files_collection().insert_one({
         "_id": file_id,
-        "filename": "shared.txt",
-        "size": 12,
+        "filename": "hello.txt",
+        "size": len(b"hello-from-a"),
         "mime_type": "text/plain",
         "owner_id": user_a_id,
         "chat_id": chat_id,
-        "storage_path": str(abs_path),
+        "object_key": "temp/mock/hello.txt",
         "shared_with": [],
     })
     # Handle async mock insert
@@ -132,7 +132,9 @@ def test_chat_member_can_download_other_users_file():
     # Downloader B should be able to download (as chat member)
     r = client.get(f"/api/v1/files/{file_id}/download", headers=headers_b)
     assert r.status_code == 200
-    assert r.content == b"hello-from-a"
+    payload = r.json()
+    assert payload.get("file_id") == file_id
+    assert payload.get("download_url")
 
 def test_file_download_endpoint():
     """Test file download endpoint with proper authentication"""

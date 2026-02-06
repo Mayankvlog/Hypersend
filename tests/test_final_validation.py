@@ -64,10 +64,9 @@ class Test404ErrorFixes:
     def test_file_download_invalid_path_handling(self):
         """Test that invalid file paths return proper error codes"""
         
-        # Mock file exists but with invalid path
+        # Mock file exists but missing storage key (ephemeral mode)
         mock_file_doc = {
             "_id": "test_file_id",
-            "storage_path": "../../../etc/passwd",  # Malicious path
             "owner_id": self.test_user_id
         }
         
@@ -79,16 +78,10 @@ class Test404ErrorFixes:
                 headers={"Authorization": f"Bearer {self.test_token}"}
             )
             
-            # Should return 403 or 503 for path traversal attempts (comprehensive error handler may modify response)
-            assert response.status_code in [403, 503]
+            # Should return 404 for missing storage key in ephemeral mode
+            assert response.status_code == 404
             error_data = response.json()
-            # Check for either "Access denied" in detail or error field, or HTTPException from comprehensive handler
-            has_access_denied = (
-                "Access denied" in error_data.get("detail", "") or 
-                "Access denied" in error_data.get("error", "") or
-                "HTTPException" in error_data.get("error", "")
-            )
-            assert has_access_denied
+            assert "storage key" in error_data.get("detail", "")
             
     def test_file_download_permission_denied(self):
         """Test that permission denied scenarios return 403"""
@@ -96,8 +89,8 @@ class Test404ErrorFixes:
         # Mock file owned by different user
         mock_file_doc = {
             "_id": "test_file_id",
-            "storage_path": "files/te/test_user/test_file.txt",
-            "owner_id": "different_user_id"
+            "owner_id": "different_user_id",
+            "object_key": "temp/test_file_id/mock"
         }
         
         with patch('routes.files.files_collection') as mock_files:

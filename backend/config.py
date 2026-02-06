@@ -115,6 +115,7 @@ class Settings:
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB
     UPLOAD_CHUNK_SIZE: int = CHUNK_SIZE
     MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", "16106127360"))  # 15 GiB
+    USER_QUOTA_BYTES: int = int(os.getenv("USER_QUOTA_BYTES", str(10 * 1024 * 1024 * 1024)))  # 10 GB default
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
     FILE_RETENTION_HOURS: int = int(os.getenv("FILE_RETENTION_HOURS", "0"))  # 0 = no server storage
     UPLOAD_EXPIRE_HOURS: int = int(os.getenv("UPLOAD_EXPIRE_HOURS", "72"))  # Extended to 72 hours (3 days) for very large files
@@ -152,12 +153,22 @@ class Settings:
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() in ("true", "1", "yes")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
     
-    # Redis Configuration
+    # Redis Configuration (WhatsApp-style: Ephemeral Messages Only)
+    # MANDATORY: All settings enforce in-memory only, NO persistence
     REDIS_HOST: str = os.getenv("REDIS_HOST", "redis")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
     REDIS_URL: str = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+    # WHATSAPP MESSAGE STORAGE: Redis is ONLY temporary store
+    MESSAGE_STORAGE: str = os.getenv("MESSAGE_STORAGE", "redis_only")  # redis_only = WhatsApp style
+    MESSAGE_TTL_MINUTES: int = int(os.getenv("MESSAGE_TTL_MINUTES", "60"))  # Messages expire after 1 hour
+    MESSAGE_TTL_SECONDS: int = MESSAGE_TTL_MINUTES * 60  # Convert to seconds for Redis
+    # CRITICAL: Messages older than TTL are DELETED (acceptable, user device has backup)
+    REDIS_MAX_CONNECTIONS: int = int(os.getenv("REDIS_MAX_CONNECTIONS", "100"))
+    REDIS_SOCKET_TIMEOUT: int = int(os.getenv("REDIS_SOCKET_TIMEOUT", "5"))
+    REDIS_SOCKET_CONNECT_TIMEOUT: int = int(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "5"))
+    REDIS_MAX_MEMORY: str = os.getenv("REDIS_MAX_MEMORY", "2gb")  # 2GB for ephemeral messages
     
     # Email service validation with enhanced checking
     EMAIL_SERVICE_ENABLED: bool = bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and EMAIL_FROM)

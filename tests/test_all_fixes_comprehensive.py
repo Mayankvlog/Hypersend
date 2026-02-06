@@ -69,7 +69,7 @@ class TestAllFixes:
             "size": 1024,
             "owner_id": mock_current_user,
             "chat_id": "test_chat",
-            "storage_path": "/tmp/test.pdf",
+            "object_key": "temp/mock/test.pdf",
             "created_at": datetime.now()
         }
         

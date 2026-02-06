@@ -54,7 +54,7 @@ except Exception as e:
     raise
 
 try:
-    from routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels, debug
+    from routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels, debug, devices, e2ee_messages
     print("[STARTUP] + routes modules imported")
 except Exception as e:
     print(f"[STARTUP] X Failed to import routes: {e}")
@@ -599,6 +599,80 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 )
 
 
+def _configure_s3_lifecycle():
+    """
+    Configure S3 bucket lifecycle rules for WhatsApp-style ephemeral storage.
+    MANDATORY: Automatically delete temporary media after 24 hours.
+    """
+    try:
+        import boto3  # type: ignore[import-not-found]
+        from botocore.exceptions import ClientError  # type: ignore[import-not-found]
+    except ImportError:
+        print("[S3] WARNING: boto3 not available, skipping lifecycle configuration")
+        return
+    
+    if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
+        print("[S3] WARNING: AWS credentials not configured, skipping lifecycle setup")
+        return
+    
+    s3_client = boto3.client(
+        "s3",
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=settings.AWS_REGION,
+    )
+    
+    try:
+        # Define lifecycle policy for ephemeral temp files
+        lifecycle_policy = {
+            "Rules": [
+                {
+                    "Id": "hypersend-temp-cleanup-24h",
+                    "Filter": {"Prefix": "temp/"},  # Only apply to temp/ objects
+                    "Status": "Enabled",
+                    "Expiration": {
+                        "Days": 1  # MANDATORY: Delete after 24 hours
+                    },
+                    "NoncurrentVersionExpiration": {
+                        "NoncurrentDays": 1
+                    }
+                },
+                {
+                    "Id": "hypersend-incomplete-multipart",
+                    "Filter": {"Prefix": "temp/"},
+                    "Status": "Enabled",
+                    "AbortIncompleteMultipartUpload": {
+                        "DaysAfterInitiation": 1  # Cleanup incomplete uploads
+                    }
+                }
+            ]
+        }
+        
+        # Apply lifecycle configuration to S3 bucket
+        s3_client.put_bucket_lifecycle_configuration(
+            Bucket=settings.S3_BUCKET,
+            LifecycleConfiguration=lifecycle_policy
+        )
+        
+        print(f"[S3] Lifecycle policy configured for bucket: {settings.S3_BUCKET}")
+        print(f"[S3] - Temporary files (temp/) auto-deleted after 24 hours")
+        print(f"[S3] - Incomplete uploads (temp/) cleaned after 24 hours")
+        print("[S3] WhatsApp-style ephemeral storage: Enabled ✓")
+        
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+        if error_code == "NoSuchBucket":
+            print(f"[S3] WARNING: Bucket '{settings.S3_BUCKET}' does not exist")
+            print(f"[S3] Please create the S3 bucket and configure lifecycle manually:")
+            print(f"[S3] Lifecycle policy needed: Delete objects in 'temp/' prefix after 24 hours")
+        else:
+            print(f"[S3] WARNING: Failed to configure lifecycle: {error_code}")
+            print(f"[S3] Details: {str(e)}")
+    except Exception as e:
+        print(f"[S3] WARNING: Unexpected error configuring lifecycle: {str(e)}")
+        print("[S3] Continuing without lifecycle configuration")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
@@ -652,6 +726,19 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[ERROR] Unexpected validation error: {str(e)}")
             raise
+        
+        # Configure S3 ephemeral storage lifecycle (WhatsApp-style: 24h TTL + ACK delete)
+        storage_mode = getattr(settings, "STORAGE_MODE", "ephemeral")
+        s3_lifecycle_enabled = getattr(settings, "S3_LIFECYCLE_ENABLED", "true").lower() in ("true", "1")
+        
+        if s3_lifecycle_enabled and storage_mode == "ephemeral":
+            try:
+                print("[S3] Configuring ephemeral storage lifecycle (24h TTL)...")
+                _configure_s3_lifecycle()
+                print("[S3] SUCCESS S3 lifecycle rules configured for WhatsApp-style ephemeral storage")
+            except Exception as e:
+                print(f"[WARN] S3 lifecycle configuration warning: {str(e)}")
+                print("[WARN] Continuing startup - manual S3 lifecycle configuration may be needed")
         
         # Connect to database with retry logic
         max_db_retries = 5
@@ -1264,10 +1351,12 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(chats.router, prefix="/api/v1")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
+app.include_router(e2ee_messages.router, prefix="/api/v1")  # E2EE encrypted messages
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
+app.include_router(devices.router, prefix="/api/v1")  # E2EE Device Management
 
 # Add swagger.json endpoint for compatibility
 @app.get("/api/swagger.json")

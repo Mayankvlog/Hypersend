@@ -39,7 +39,7 @@ class TestAndroidDownloadFolder:
             "size": 1024,
             "owner_id": "507f1f77bcf86cd799439012",
             "chat_id": "test_chat",
-            "storage_path": "/tmp/test_file.pdf",
+            "object_key": "temp/mock/test_file.pdf",
             "created_at": datetime.now()
         }
     

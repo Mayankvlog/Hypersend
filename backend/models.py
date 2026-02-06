@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 from bson import ObjectId
 import re
@@ -467,50 +467,62 @@ class MessageCreate(BaseModel):
 
 
 class MessageInDB(BaseModel):
+    """
+    WhatsApp-style metadata-only message model.
+    Server stores ONLY metadata, never message content.
+    Message bodies and files are stored on user devices only.
+    """
     model_config = ConfigDict(populate_by_name=True)
     
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     chat_id: str
-    sender_id: str # In channels, this might be the admin
-    author_signature: Optional[str] = None # For channels
+    sender_id: str  # In channels, this might be the admin
+    author_signature: Optional[str] = None  # For channels
     
-    type: str = "text"  # text, file, service
-    text: Optional[str] = None
-    file_id: Optional[str] = None
-    # Persist language code with the message for UI display / filtering
-    language: Optional[str] = None
+    # WHATSAPP ARCHITECTURE: Type and size metadata ONLY
+    type: str = "text"  # text, file, service - metadata only
+    # NEVER store message body - user device stores actual content
+    text: Optional[str] = Field(None, max_length=100)  # Only first 100 chars for search, not full content
+    file_id: Optional[str] = None  # Reference to S3 metadata, not content
+    file_size: Optional[int] = None  # Size metadata only
+    file_type: Optional[str] = None  # MIME type metadata only
+    
+    # Metadata fields only
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    language: Optional[str] = None  # Language code metadata
     
-    # Channel specific
+    # Channel metadata
     views: int = 0
     
-    # Forwarding
+    # Forwarding metadata (no content)
     forward_from_chat_id: Optional[str] = None
     forward_from_message_id: Optional[str] = None
-    forward_sender_name: Optional[str] = None
+    forward_sender_name: Optional[str] = None  # Display name only
     forward_date: Optional[datetime] = None
 
-    # Reply / Threading
+    # Reply metadata (no content)
     reply_to_message_id: Optional[str] = None
-    # For future: thread_id if we want top-level threads
-
-    saved_by: List[str] = Field(default_factory=list)  # List of user IDs who saved this message
-    # Reactions: emoji -> [user_id]
-    reactions: dict = Field(default_factory=dict)
-    # Read receipts: list of {"user_id": str, "read_at": datetime}
-    read_by: List[dict] = Field(default_factory=list)
     
+    # Interaction metadata
+    saved_by: List[str] = Field(default_factory=list)  # User IDs only
+    reactions: dict = Field(default_factory=dict)  # Emoji -> user_id list
+    read_by: List[dict] = Field(default_factory=list)  # Receipt metadata only
+    
+    # Status metadata
     is_pinned: bool = False
     pinned_at: Optional[datetime] = None
     pinned_by: Optional[str] = None
     
     is_edited: bool = False
     edited_at: Optional[datetime] = None
-    edit_history: List[dict] = Field(default_factory=list)
+    edit_history: List[dict] = Field(default_factory=list)  # Edit metadata only
     
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
     deleted_by: Optional[str] = None
+    
+    # WhatsApp compliance: TTL for automatic cleanup
+    expires_at: Optional[datetime] = None  # Auto-expiration time
 
 
 
@@ -551,6 +563,7 @@ class FileInitRequest(BaseModel):
     size: int
     mime_type: str
     chat_id: str
+    receiver_id: Optional[str] = None
     checksum: Optional[str] = None
 
 
@@ -561,6 +574,7 @@ class FileInitResponse(BaseModel):
     expires_in: int  # Duration in seconds
     max_parallel: int = 4  # Default max parallel chunks
     upload_token: Optional[str] = None  # Long-lived token for large file uploads
+    upload_url: Optional[str] = None  # Ephemeral S3 presigned URL
 
 
 class ChunkUploadResponse(BaseModel):
@@ -574,10 +588,32 @@ class FileCompleteResponse(BaseModel):
     filename: str
     size: int
     checksum: str
-    storage_path: str
+    storage_path: Optional[str] = None
+
+
+class FileDownloadRequest(BaseModel):
+    file_id: str
+
+
+class FileDownloadResponse(BaseModel):
+    download_url: str
+    file_id: str
+    filename: str
+    size: int
+    mime_type: str
+    expires_in: int
+
+
+class FileDeliveryAckRequest(BaseModel):
+    file_id: str
 
 
 class FileInDB(BaseModel):
+    """
+    WhatsApp-style metadata-only file model.
+    Server stores ONLY file metadata, never file content.
+    Files are stored directly in S3 with 24h TTL auto-delete.
+    """
     model_config = ConfigDict(populate_by_name=True)
     
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
@@ -585,13 +621,24 @@ class FileInDB(BaseModel):
     file_uuid: str
     filename: str
     size: int
-    mime: str
+    mime: str  # MIME type metadata only
     owner_id: str
     chat_id: str
-    storage_path: str
-    checksum: Optional[str] = None
-    status: str = "pending"  # pending, completed, failed
+    
+    # WHATSAPP ARCHITECTURE: S3 metadata only, no local storage
+    s3_key: Optional[str] = None  # S3 object key (metadata only)
+    s3_bucket: Optional[str] = None  # S3 bucket name (metadata only)
+    s3_url: Optional[str] = None  # Temporary presigned URL (metadata only)
+    
+    # File metadata (never content)
+    checksum: Optional[str] = None  # Integrity check metadata
+    status: str = "pending"  # pending, completed, failed - processing status only
+    
+    # WhatsApp compliance: Auto-expiration
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: Optional[datetime] = None  # S3 TTL auto-delete time
+    downloaded_at: Optional[datetime] = None  # Download tracking
+    acknowledged_at: Optional[datetime] = None  # Receiver ACK time
 
 
 class UploadInDB(BaseModel):
@@ -819,3 +866,283 @@ class ContactResponse(BaseModel):
     contact_id: str
     contact_name: str
     display_name: Optional[str] = None
+
+
+# ============================================================================
+# E2EE (End-to-End Encryption) Models with Signal Protocol
+# ============================================================================
+
+class DeviceType:
+    """Device type constants"""
+    PHONE = "phone"
+    WEB = "web"
+    DESKTOP = "desktop"
+    TABLET = "tablet"
+
+
+class Device(BaseModel):
+    """User device registration for multi-device support"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str  # Owner of the device
+    device_id: str = Field(..., min_length=16, max_length=256)  # Unique device identifier
+    device_type: str = Field(..., max_length=20)  # phone, web, desktop, tablet
+    device_name: Optional[str] = Field(None, max_length=100)  # User-friendly device name
+    platform: Optional[str] = Field(None, max_length=50)  # iOS, Android, Web, Windows, macOS, Linux
+    app_version: Optional[str] = Field(None, max_length=20)  # App version
+    
+    # Device trust status
+    is_trusted: bool = False  # Must be verified via QR code or confirmation
+    is_primary: bool = False  # Primary device has special privileges
+    is_active: bool = True  # Device is active/inactive
+    
+    # E2EE: Device keys
+    identity_key_public: str = Field(..., min_length=80, max_length=10000)  # Base64 encoded DH public key
+    signed_prekey_id: int = Field(..., ge=0, le=2147483647)  # Prekey ID
+    signed_prekey_public: str = Field(..., min_length=80, max_length=10000)  # Base64 encoded DH public key
+    signed_prekey_signature: Optional[str] = Field(None, max_length=10000)  # Signature of prekey
+    
+    # Session management
+    last_activity: Optional[datetime] = None
+    last_ip: Optional[str] = None  # For security audits
+    session_count: int = 0  # Number of active sessions
+    
+    # Device lifecycle
+    registered_at: datetime = Field(default_factory=datetime.utcnow)
+    verified_at: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
+    expires_at: Optional[datetime] = None  # Session expiration
+
+
+class DeviceSession(BaseModel):
+    """Encrypted session for a device"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    device_id: str  # Associated device
+    user_id: str  # Session owner
+    session_id: str = Field(..., min_length=32, max_length=256)  # Unique session identifier
+    
+    # E2EE: Session keys
+    root_key: str = Field(..., min_length=32, max_length=10000)  # Base64 encoded root key (never sent over network)
+    chain_key_sending: str = Field(..., min_length=32, max_length=10000)  # For sending messages
+    chain_key_receiving: str = Field(..., min_length=32, max_length=10000)  # For receiving messages
+    message_keys_counter: int = 0  # Message counter for replay protection
+    
+    # Session state
+    is_active: bool = True
+    key_version: int = 1  # For key rotation
+    
+    # Session metadata
+    initiated_by: str  # user_id or device_id that initiated
+    peer_device_id: Optional[str] = None  # For 1-to-1 sessions with specific device
+    
+    # Session lifecycle
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_activity: Optional[datetime] = None
+    expires_at: Optional[datetime] = None  # Session expiration for inactive sessions
+
+
+class IdentityKey(BaseModel):
+    """User's identity key pair (stored encrypted on user device, only public key on server)"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str
+    device_id: str
+    
+    # Public key stored on server (encrypted)
+    identity_key_public: str = Field(..., min_length=80, max_length=10000)  # Base64 encoded
+    identity_key_fingerprint: str = Field(..., min_length=32, max_length=256)  # SHA256 fingerprint
+    
+    # Key lifecycle
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    key_version: int = 1  # For future key rotation
+    is_active: bool = True
+
+
+class PreKey(BaseModel):
+    """One-Time Pre Keys for Signal Protocol (generated per device)"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str
+    device_id: str
+    
+    prekey_id: int = Field(..., ge=0, le=2147483647)  # Max 2^31-1 unique prekeys per device
+    prekey_public: str = Field(..., min_length=80, max_length=10000)  # Base64 encoded DH public
+    
+    # One-time tracking
+    usage_count: int = 0  # How many times this prekey has been used
+    max_usage: int = 1  # Typically 1 for one-time keys
+    is_available: bool = True  # Available for new sessions
+    
+    # Key lifecycle
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    used_at: Optional[datetime] = None  # When this prekey was last used
+    expires_at: Optional[datetime] = None  # Prekeys expire after 30 days
+
+
+class SignedPreKey(BaseModel):
+    """Signed Pre Key (long-term, rotated weekly)"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str
+    device_id: str
+    
+    signed_prekey_id: int = Field(..., ge=0, le=2147483647)  # Unique signed prekey ID
+    signed_prekey_public: str = Field(..., min_length=80, max_length=10000)  # Base64 encoded DH public
+    signature: str = Field(..., min_length=80, max_length=10000)  # Signed with identity key
+    
+    # Signed prekey lifecycle (~7 day rotation)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    valid_until: datetime  # When to rotate (typically 7 days)
+    is_current: bool = True  # The current signed prekey in use
+    previous_version: Optional[int] = None  # Version of previously signed prekey
+
+
+class EncryptedMessage(BaseModel):
+    """Message encrypted with E2EE (Signal Protocol)"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    chat_id: str
+    sender_id: str
+    sender_device_id: str
+    
+    # E2EE: Encrypted payload (user device decrypts with session key)
+    ciphertext: str = Field(..., min_length=100, max_length=1000000)  # Base64 encoded encrypted message
+    
+    # Encryption metadata (server can read this)
+    message_key_counter: int  # For replay protection and ordering
+    session_id: str  # Reference to encryption session
+    key_version: int = 1  # For future encryption algorithm updates
+    
+    # Message type (not content)
+    message_type: str = "text"  # text, file, service, etc.
+    
+    # Delivery tracking (server-level metadata only)
+    delivery_status: str = "pending"  # pending, delivered, read, deleted
+    delivery_timestamp: Optional[datetime] = None
+    read_timestamp: Optional[datetime] = None
+    
+    # Message lifecycle (ephemeral storage)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: Optional[datetime] = None  # Auto-delete timestamp
+    ttl_seconds: int = 3600  # Default 1 hour TTL
+    
+    # Multi-device delivery tracking
+    recipient_devices: List[dict] = Field(default_factory=list)  # [{device_id, status, timestamp}, ...]
+    
+    # Forward secrecy: Session ratcheting
+    last_chain_key_index: int = 0  # For ratchet tracking
+
+
+class E2EEBundleKey(BaseModel):
+    """Bundle of public keys sent to new contacts (for session initiation)"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    user_id: str
+    device_id: str
+    
+    # Public keys for initial session setup (safe to send over network)
+    identity_key: str = Field(..., min_length=80, max_length=10000)  # Base64
+    signed_prekey_id: int = Field(..., ge=0)
+    signed_prekey: str = Field(..., min_length=80, max_length=10000)  # Base64
+    signed_prekey_signature: str = Field(..., min_length=80, max_length=10000)  # Base64
+    one_time_prekey_id: Optional[int] = Field(None, ge=0)
+    one_time_prekey: Optional[str] = Field(None, min_length=80, max_length=10000)  # Base64
+    
+    device_name: Optional[str] = None
+    device_platform: Optional[str] = None
+
+
+class KeyExchangeRequest(BaseModel):
+    """Request to exchange keys for establishing E2EE session with a contact"""
+    contact_id: str = Field(..., min_length=16, max_length=256)  # Target contact/user
+    contact_device_id: Optional[str] = None  # Target device (if multi-device)
+    
+    # Own public key bundle for the contact to use
+    local_identity_key: str = Field(..., min_length=80, max_length=10000)  # Base64
+    local_device_id: str = Field(..., max_length=256)
+
+
+class KeyExchangeResponse(BaseModel):
+    """Response with contact's public key bundle for session initiation"""
+    contact_id: str
+    contact_device_id: str
+    
+    # Contact's keys for establishing session
+    identity_key: str = Field(..., min_length=80, max_length=10000)  # Base64
+    signed_prekey_id: int = Field(..., ge=0)
+    signed_prekey: str = Field(..., min_length=80, max_length=10000)  # Base64
+    signed_prekey_signature: str = Field(..., min_length=80, max_length=10000)
+    one_time_prekey_id: Optional[int] = Field(None, ge=0)
+    one_time_prekey: Optional[str] = Field(None, min_length=80, max_length=10000)
+    
+    # Discovery info
+    devices: List[dict] = Field(default_factory=list)  # [{device_id, device_type, device_name}, ...]
+    device_count: int = 0
+
+
+class MessageDeliveryStatus(BaseModel):
+    """Delivery status update for encrypted messages"""
+    class Status(str):
+        PENDING = "pending"
+        SENT = "sent"
+        DELIVERED = "delivered"
+        READ = "read"
+        DELETED = "deleted"
+        FAILED = "failed"
+    
+    message_id: str
+    device_id: str  # Device that changed status
+    new_status: str = Field(..., description="One of: pending, sent, delivered, read, deleted, failed")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    error: Optional[str] = None  # Error message if status is failed
+
+
+class ReplayProtectionData(BaseModel):
+    """Data for protecting against replay attacks"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str
+    device_id: str
+    session_id: str
+    
+    # Replay protection tracking
+    highest_message_counter: int = 0  # Highest message counter seen
+    message_counter_history: Dict[str, int] = Field(default_factory=dict)  # Per-session counters
+    duplicate_detection_window: int = 1024  # Sliding window for duplicates
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DevicePublicKeyBundle(BaseModel):
+    """Public keys that a device publishes for others to download"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str
+    device_id: str
+    
+    # Public key bundle (safe to distribute)
+    identity_key: str = Field(..., min_length=80, max_length=10000)
+    identity_key_fingerprint: str = Field(..., min_length=32, max_length=256)
+    signed_prekey_id: int
+    signed_prekey: str = Field(..., min_length=80, max_length=10000)
+    signed_prekey_signature: str = Field(..., min_length=80, max_length=10000)
+    
+    # One-time prekeys available
+    available_one_time_prekeys: int = 0
+    one_time_prekeys: List[dict] = Field(default_factory=list)  # [{id, key}, ...] (limited)
+    
+    # Publishing metadata
+    published_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    is_current: bool = True
+
