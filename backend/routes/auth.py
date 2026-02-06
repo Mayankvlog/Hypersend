@@ -12,15 +12,19 @@ try:
     from ..db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
     from ..config import settings
 except ImportError:
-    from models import (
+    from ..models import (
         UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
         PasswordResetRequest, PasswordResetResponse,
         EmailChangeRequest, EmailVerificationRequest,
         QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
         QRCodeSession, TokenData, ChangePasswordRequest
     )
-    from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
-    from config import settings
+    from ..db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+    from ..config import settings
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from auth.utils import (
     hash_password, verify_password, create_access_token, 
@@ -32,9 +36,9 @@ try:
     from ..rate_limiter import password_reset_limiter
     from ..utils.email_service import email_service
 except ImportError:
-    from validators import validate_user_id
-    from rate_limiter import password_reset_limiter
-    from utils.email_service import email_service
+    from ..validators import validate_user_id
+    from ..rate_limiter import password_reset_limiter
+    from ..utils.email_service import email_service
 
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId

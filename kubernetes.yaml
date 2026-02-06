@@ -611,7 +611,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: hypersend/backend:latest
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
         ports:
         - containerPort: 8000
         resources:
@@ -722,15 +722,15 @@ spec:
   replicas: 5
   selector:
     matchLabels:
-      app: "nginx-lb"
+      app: nginx-lb
   template:
     metadata:
       labels:
-        app: "nginx-lb"
+        app: nginx-lb
     spec:
       containers:
       - name: nginx
-        image: nginx:alpine
+        image: nginx:1.25-alpine
         ports:
         - containerPort: 80
         - containerPort: 443
@@ -748,6 +748,9 @@ spec:
         - name: ssl-certs
           mountPath: /etc/ssl/certs
           readOnly: true
+        - name: nginx-cache
+          mountPath: /var/cache/nginx/client_temp
+          readOnly: false
         livenessProbe:
           httpGet:
             path: /health
@@ -767,6 +770,58 @@ spec:
       - name: ssl-certs
         secret:
           secretName: ssl-certs
+      - name: nginx-cache
+        persistentVolumeClaim:
+          claimName: nginx-cache
+
+---
+# Frontend Deployment (GHCR image)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: hypersend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: ghcr.io/mayankvlog/hypersend-frontend:latest
+        ports:
+        - containerPort: 80
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+---
+# PVC for nginx cache
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nginx-cache
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
 
 ---
 # WhatsApp-style Backend Service (Load Balancer)

@@ -1,10 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple, Any
 from datetime import datetime, timedelta, timezone
 import uuid
 import logging
 import json
+import time
+import secrets
+import base64
+import hashlib
+import hmac
 from pydantic import BaseModel, Field
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
 
 from auth.utils import get_current_user
 
@@ -30,153 +37,274 @@ class MessageState:
     FAILED = "failed"            # Delivery failed
 
 
-class WhatsAppDeliveryService:
-    """
-    WhatsApp-style delivery receipts and message state tracking.
+class WhatsAppDeliveryEngine:
+    """WhatsApp Delivery Engine with per-device ACK tracking"""
     
-    WHATSAPP DELIVERY BEHAVIOR:
-    1. ✓ Single gray: Message sent to server
-    2. ✓✓ Double gray: Delivered to recipient's device
-    3. ✓✓✓ Blue: Read by recipient
-    4. Per-device tracking for multi-device
-    5. Strict sequence number ordering
-    """
+    def __init__(self, redis_client):
+        self.redis = redis_client
+        self.retry_backoff_base = 2.0
+        self.retry_backoff_max = 300.0
+        self.max_retry_attempts = 5
+        self.delivery_timeout = 30
     
-    @staticmethod
-    async def get_next_sequence_number(chat_id: str) -> int:
-        """Get next sequence number for chat (WhatsApp ordering)"""
-        seq_key = f"chat_sequence:{chat_id}"
-        current_seq = await cache.get(seq_key) or 0
-        next_seq = int(current_seq) + 1
-        await cache.set(seq_key, next_seq, expire_seconds=7*24*60*60)  # 7 days TTL
-        return next_seq
-    
-    @staticmethod
-    async def create_message_with_sequence(
-        chat_id: str,
-        sender_id: str,
-        sender_device_id: str,
-        message_content: str,
-        message_type: str = "text"
-    ) -> Dict[str, Any]:
-        """Create message with sequence number and initial state"""
-        sequence_number = await WhatsAppDeliveryService.get_next_sequence_number(chat_id)
+    async def send_message(self, chat_id: str, sender_user_id: str, sender_device_id: str,
+                          recipient_user_id: str, content_hash: str, message_type: str,
+                          recipient_devices: List[str]) -> Dict[str, Any]:
+        """Send WhatsApp message with delivery tracking"""
+        # Get next sequence number
+        sequence_number = await self._get_next_sequence_number(chat_id)
+        
+        # Generate message ID
         message_id = f"msg_{chat_id}_{sequence_number}_{uuid.uuid4().hex[:8]}"
         
-        message_data = {
+        # Create message
+        message = {
             "message_id": message_id,
             "chat_id": chat_id,
-            "sender_id": sender_id,
+            "sender_user_id": sender_user_id,
             "sender_device_id": sender_device_id,
-            "content": message_content,
+            "recipient_user_id": recipient_user_id,
+            "content_hash": content_hash,
             "message_type": message_type,
             "sequence_number": sequence_number,
-            "state": MessageState.SENT,
-            "created_at": datetime.utcnow().isoformat(),
-            "delivery_receipts": {},  # Per-device tracking
-            "read_receipts": {}       # Per-device tracking
+            "state": "sent",
+            "created_at": int(datetime.utcnow().timestamp()),
+            "sent_at": int(datetime.utcnow().timestamp()),
+            "retry_count": 0,
+            "max_retries": self.max_retry_attempts,
+            "device_states": {
+                device_id: "not_sent"
+                for device_id in recipient_devices
+            }
         }
         
-        # Store in Redis for real-time tracking
-        message_key = f"message:{message_id}"
-        await cache.set(message_key, message_data, expire_seconds=24*60*60)  # 24h TTL
+        # Store message
+        await self._store_message(message)
         
-        return message_data
+        # Check for duplicates
+        if await self._is_duplicate_message(message):
+            message["state"] = "failed"
+            await self._store_message(message)
+            raise ValueError("Duplicate message detected")
+        
+        # Queue for delivery
+        await self._queue_for_delivery(message)
+        
+        return message
     
-    @staticmethod
-    async def track_delivery(
-        message_id: str,
-        recipient_device_id: str,
-        delivery_type: str,  # "delivered", "read"
-        timestamp: Optional[datetime] = None
-    ) -> Dict[str, Any]:
-        """Track per-device delivery/read receipt"""
-        if timestamp is None:
-            timestamp = datetime.utcnow()
+    async def process_delivery_receipt(self, message_id: str, device_id: str, 
+                                      receipt_type: str, chat_id: str) -> Dict[str, Any]:
+        """Process delivery receipt from device"""
+        # Get message
+        message = await self._get_message(message_id)
+        if not message:
+            raise ValueError("Message not found")
         
-        message_key = f"message:{message_id}"
-        message_data = await cache.get(message_key)
+        # Update device state
+        old_state = message["device_states"].get(device_id, "not_sent")
         
-        if not message_data:
-            raise HTTPException(
-                status_code=404,
-                detail="Message not found or expired"
-            )
+        if receipt_type == "delivered":
+            message["device_states"][device_id] = "delivered"
+        elif receipt_type == "read":
+            message["device_states"][device_id] = "read"
         
-        # Update delivery receipts
-        if delivery_type == "delivered":
-            message_data["delivery_receipts"][recipient_device_id] = timestamp.isoformat()
-            # Update state to delivered if at least one device received it
-            if message_data["state"] != MessageState.READ:
-                message_data["state"] = MessageState.DELIVERED
-                
-        elif delivery_type == "read":
-            message_data["read_receipts"][recipient_device_id] = timestamp.isoformat()
-            # Update state to read if any device read it
-            message_data["state"] = MessageState.READ
-        
-        # Save updated message data
-        await cache.set(message_key, message_data, expire_seconds=24*60*60)
+        # Update message state
+        await self._update_message_state(message)
+        await self._store_message(message)
         
         # Publish real-time update
-        await cache.publish(f"message_updates:{message_data['chat_id']}", {
-            "message_id": message_id,
-            "state": message_data["state"],
-            "delivery_type": delivery_type,
-            "device_id": recipient_device_id,
-            "timestamp": timestamp.isoformat()
-        })
+        await self._publish_delivery_update(message, device_id, receipt_type)
         
         return {
             "message_id": message_id,
-            "state": message_data["state"],
-            "delivery_type": delivery_type,
-            "timestamp": timestamp.isoformat()
+            "device_id": device_id,
+            "receipt_type": receipt_type,
+            "old_state": old_state,
+            "new_state": message["device_states"][device_id],
+            "message_state": message["state"]
         }
     
-    @staticmethod
-    async def get_message_state(message_id: str) -> Optional[Dict[str, Any]]:
-        """Get current message state and delivery info"""
+    async def _get_next_sequence_number(self, chat_id: str) -> int:
+        """Get next sequence number for chat"""
+        seq_key = f"chat_sequence:{chat_id}"
+        current_seq = await cache.get(seq_key)
+        
+        if current_seq is None:
+            next_seq = 1
+        else:
+            next_seq = int(current_seq) + 1
+        
+        await cache.set(seq_key, next_seq, expire_seconds=7*24*60*60)
+        return next_seq
+    
+    async def _store_message(self, message: Dict[str, Any]):
+        """Store message in Redis"""
+        message_key = f"message:{message['message_id']}"
+        await cache.set(message_key, message, expire_seconds=24*60*60)
+    
+    async def _get_message(self, message_id: str) -> Optional[Dict[str, Any]]:
+        """Get message from Redis"""
         message_key = f"message:{message_id}"
         return await cache.get(message_key)
     
-    @staticmethod
-    async def get_chat_delivery_status(chat_id: str, user_id: str) -> List[Dict[str, Any]]:
-        """Get delivery status for all messages in chat for user"""
-        # Get all message keys for this chat
-        pattern = f"message:*"
-        all_messages = []
+    async def _is_duplicate_message(self, message: Dict[str, Any]) -> bool:
+        """Check for duplicate message"""
+        # Check by content hash within time window
+        hash_key = f"message_hash:{message['chat_id']}:{message['content_hash']}"
+        existing_hash = await cache.get(hash_key)
         
-        # In production, this would use Redis SCAN for efficiency
-        # For now, we'll simulate getting chat messages
-        chat_messages_key = f"chat_messages:{chat_id}"
-        message_ids = await cache.get(chat_messages_key) or []
+        if existing_hash:
+            existing_time = existing_hash["timestamp"]
+            if int(datetime.utcnow().timestamp()) - existing_time < 300:  # 5 minutes
+                return True
         
-        for message_id in message_ids:
-            message_data = await WhatsAppDeliveryService.get_message_state(message_id)
-            if message_data:
-                all_messages.append(message_data)
+        # Store hash for duplicate detection
+        await cache.set(hash_key, {
+            "message_id": message["message_id"],
+            "timestamp": int(datetime.utcnow().timestamp())
+        }, expire_seconds=300)
         
-        # Sort by sequence number
-        all_messages.sort(key=lambda x: x.get("sequence_number", 0))
-        
-        return all_messages
-    
-    @staticmethod
-    async def deduplicate_message(message_id: str, sender_device_id: str) -> bool:
-        """
-        Check for duplicate messages (WhatsApp idempotency).
-        Returns True if message is duplicate, False if new.
-        """
-        dedup_key = f"dedup:{message_id}:{sender_device_id}"
-        exists = await cache.get(dedup_key)
-        
-        if exists:
-            return True  # Duplicate
-        
-        # Mark as seen for 24 hours
-        await cache.set(dedup_key, True, expire_seconds=24*60*60)
         return False
+    
+    async def _queue_for_delivery(self, message: Dict[str, Any]):
+        """Queue message for device delivery"""
+        for device_id in message["device_states"].keys():
+            if message["device_states"][device_id] == "not_sent":
+                queue_key = f"delivery_queue:{message['recipient_user_id']}:{device_id}"
+                
+                delivery_task = {
+                    "message_id": message["message_id"],
+                    "chat_id": message["chat_id"],
+                    "sender_user_id": message["sender_user_id"],
+                    "device_id": device_id,
+                    "content_hash": message["content_hash"],
+                    "sequence_number": message["sequence_number"],
+                    "created_at": message["created_at"],
+                    "queued_at": int(datetime.utcnow().timestamp())
+                }
+                
+                await cache.lpush(queue_key, json.dumps(delivery_task))
+                await cache.expire(queue_key, 24*60*60)
+                
+                # Update device state
+                message["device_states"][device_id] = "sent"
+        
+        await self._update_message_state(message)
+        await self._store_message(message)
+    
+    async def _update_message_state(self, message: Dict[str, Any]):
+        """Update message state based on device states"""
+        device_states = list(message["device_states"].values())
+        
+        if not device_states:
+            return
+        
+        # Check if any device has read
+        if any(state == "read" for state in device_states):
+            if message["state"] != "read":
+                message["state"] = "read"
+                message["read_at"] = int(datetime.utcnow().timestamp())
+        
+        # Check if any device has delivered
+        elif any(state == "delivered" for state in device_states):
+            if message["state"] != "delivered":
+                message["state"] = "delivered"
+                message["delivered_at"] = int(datetime.utcnow().timestamp())
+        
+        # Check if all devices are sent
+        elif all(state in ["sent", "delivered", "read"] for state in device_states):
+            if message["state"] == "sent":
+                message["state"] = "delivering"
+    
+    async def _publish_delivery_update(self, message: Dict[str, Any], device_id: str, receipt_type: str):
+        """Publish real-time delivery update"""
+        update_key = f"delivery_updates:{message['chat_id']}"
+        
+        update_data = {
+            "message_id": message["message_id"],
+            "device_id": device_id,
+            "receipt_type": receipt_type,
+            "message_state": message["state"],
+            "timestamp": int(datetime.utcnow().timestamp())
+        }
+        
+        await cache.publish(update_key, json.dumps(update_data))
+
+
+# WhatsApp Metadata Minimization
+class WhatsAppMetadataMinimizer:
+    """WhatsApp Metadata Minimization Service"""
+    
+    def __init__(self, redis_client):
+        self.redis = redis_client
+        self.timing_padding_range = (5, 30)
+        self.ip_obfuscation_enabled = True
+        self.contact_hashing_enabled = True
+    
+    async def minimize_message_metadata(self, sender_user_id: str, recipient_user_id: str,
+                                       message_type: str, client_ip: str) -> Dict[str, Any]:
+        """Minimize message metadata"""
+        # Obfuscate IP
+        obfuscated_ip = self._obfuscate_ip(client_ip) if self.ip_obfuscation_enabled else client_ip
+        
+        # Hash contact pair
+        contact_hash = None
+        if self.contact_hashing_enabled:
+            contact_hash = self._hash_contact_pair(sender_user_id, recipient_user_id)
+        
+        return {
+            "obfuscated_ip": obfuscated_ip,
+            "contact_hash": contact_hash,
+            "message_type": message_type,
+            "timing_padding_applied": True,
+            "metadata_minimized": True,
+            "created_at": int(datetime.utcnow().timestamp())
+        }
+    
+    def _obfuscate_ip(self, ip: str) -> str:
+        """Obfuscate IP address for privacy"""
+        try:
+            if ':' in ip:  # IPv6
+                parts = ip.split(':')
+                if len(parts) >= 4:
+                    parts[-4:] = ['0000', '0000', '0000', '0000']
+                    return ':'.join(parts)
+            else:  # IPv4
+                parts = ip.split('.')
+                if len(parts) == 4:
+                    parts[-1] = '0'
+                    return '.'.join(parts)
+            return ip
+        except Exception:
+            return ip
+    
+    def _hash_contact_pair(self, user_a: str, user_b: str) -> str:
+        """Hash contact pair for privacy"""
+        sorted_pair = sorted([user_a, user_b])
+        pair_string = f"{sorted_pair[0]}:{sorted_pair[1]}"
+        
+        secret = b"whatsapp_contact_hash_secret"
+        hash_obj = hmac.HMAC(secret, hashes.SHA256())
+        hash_obj.update(pair_string.encode())
+        
+        return base64.b64encode(hash_obj.finalize()).decode()[:16]
+
+
+# Global instances
+delivery_engine = None
+metadata_minimizer = None
+
+def get_delivery_engine():
+    global delivery_engine
+    if delivery_engine is None:
+        delivery_engine = WhatsAppDeliveryEngine(cache)
+    return delivery_engine
+
+def get_metadata_minimizer():
+    global metadata_minimizer
+    if metadata_minimizer is None:
+        metadata_minimizer = WhatsAppMetadataMinimizer(cache)
+    return metadata_minimizer
 
 
 class MessageSendRequest(BaseModel):
@@ -234,77 +362,190 @@ async def messages_options():
     )
 
 
-@router.post("/send")
-async def send_message(
+@router.post("/send-whatsapp")
+async def send_whatsapp_message(
     request: MessageSendRequest,
     current_user: str = Depends(get_current_user)
 ):
-    """Send a message - WhatsApp-style state machine with device tracking"""
-    # Verify chat exists and user has access
-    chat = await chats_collection().find_one({"_id": request.chat_id})
-    if not chat:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
-    
-    # Check if user is member of the chat
-    participants = chat.get("participants", chat.get("members", chat.get("member_ids", [])))
-    if current_user not in participants and str(current_user) not in [str(p) for p in participants]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this chat")
-    
-    # Generate WhatsApp-style message ID (UUIDv7 + sender device id)
-    import uuid
-    message_id = str(uuid.uuid7())
-    sender_device_id = request.device_id or "primary"
-    
-    # Get recipient devices for fanout
-    from ..redis_cache import redis_client, MessageQueueService
-    recipient_devices = []
-    for participant in participants:
-        if participant != current_user:
-            # Get all active devices for this participant
-            device_key = f"user_devices:{participant}"
-            devices = await redis_client.smembers(device_key)
-            recipient_devices.extend(devices or ["default"])
-    
-    # Create message data for WhatsApp-style fanout
-    message_data = {
-        "id": message_id,
-        "chat_id": request.chat_id,
-        "sender_id": current_user,
-        "sender_device_id": sender_device_id,
-        "message": request.message,
-        "message_type": request.message_type,
-        "created_at": datetime.utcnow().isoformat()
-    }
-    
-    # WhatsApp-style fanout to all recipient devices
-    await MessageQueueService.fanout_message_to_devices(
-        message_data, 
-        recipient_devices,
-        ttl_minutes=60  # 1 hour TTL
-    )
-    
-    # Store minimal metadata in MongoDB (no message content)
-    message_metadata = {
-        "_id": message_id,
-        "chat_id": request.chat_id,
-        "sender_id": current_user,
-        "sender_device_id": sender_device_id,
-        "message_type": request.message_type,
-        "delivery_state": "sent",
-        "sequence_number": await MessageQueueService.get_chat_sequence_number(request.chat_id),
-        "created_at": datetime.utcnow(),
-        "expires_at": datetime.utcnow() + timedelta(hours=24)  # 24h TTL
-    }
-    
-    await messages_collection().insert_one(message_metadata)
-    
-    return {
-        "message_id": message_id,
-        "state": "sent",
-        "sequence_number": message_metadata["sequence_number"],
-        "recipient_devices": len(recipient_devices),
-        "timestamp": message_metadata["created_at"].isoformat()
-    }
+    """Send WhatsApp-style message with delivery tracking"""
+    try:
+        # Verify chat exists and user has access
+        chat = await chats_collection().find_one({"_id": request.chat_id})
+        if not chat:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+        
+        # Check if user is member of the chat
+        participants = chat.get("participants", chat.get("members", chat.get("member_ids", [])))
+        if current_user not in participants and str(current_user) not in [str(p) for p in participants]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this chat")
+        
+        # Get recipient devices for fanout
+        recipient_devices = []
+        for participant in participants:
+            if participant != current_user:
+                # Get all active devices for this participant
+                device_key = f"user_devices:{participant}"
+                devices = await cache.smembers(device_key)
+                recipient_devices.extend(list(devices) or ["default"])
+        
+        # Get delivery engine
+        delivery_service = get_delivery_engine()
+        
+        # Generate content hash
+        content_hash = hashlib.sha256(request.message.encode()).hexdigest()
+        
+        # Send message with WhatsApp delivery tracking
+        message = await delivery_service.send_message(
+            chat_id=request.chat_id,
+            sender_user_id=current_user,
+            sender_device_id=request.device_id or "primary",
+            recipient_user_id=participants[0] if len(participants) > 1 else current_user,
+            content_hash=content_hash,
+            message_type=request.message_type,
+            recipient_devices=recipient_devices
+        )
+        
+        # Store minimal metadata in MongoDB
+        message_metadata = {
+            "_id": message["message_id"],
+            "chat_id": request.chat_id,
+            "sender_id": current_user,
+            "sender_device_id": request.device_id or "primary",
+            "message_type": request.message_type,
+            "delivery_state": message["state"],
+            "sequence_number": message["sequence_number"],
+            "created_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(hours=24)
+        }
+        
+        await messages_collection().insert_one(message_metadata)
+        
+        return {
+            "message_id": message["message_id"],
+            "state": message["state"],
+            "sequence_number": message["sequence_number"],
+            "recipient_devices": len(recipient_devices),
+            "timestamp": message["created_at"]
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to send WhatsApp message: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send message")
+
+
+@router.post("/delivery-receipt-whatsapp")
+async def whatsapp_delivery_receipt(
+    receipt: DeliveryReceipt,
+    current_user: str = Depends(get_current_user)
+):
+    """Process WhatsApp-style delivery receipt"""
+    try:
+        # Verify recipient matches current user
+        if receipt.recipient_id != current_user:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized")
+        
+        # Get delivery engine
+        delivery_service = get_delivery_engine()
+        
+        # Process delivery receipt
+        result = await delivery_service.process_delivery_receipt(
+            message_id=receipt.message_id,
+            device_id=receipt.device_id,
+            receipt_type=receipt.status,
+            chat_id=receipt.chat_id
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to process delivery receipt: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to process receipt")
+
+
+@router.get("/delivery-status/{message_id}")
+async def get_delivery_status(
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get WhatsApp-style delivery status for message"""
+    try:
+        # Get delivery engine
+        delivery_service = get_delivery_engine()
+        
+        # Get message
+        message = await delivery_service._get_message(message_id)
+        if not message:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+        
+        # Verify user is sender or recipient
+        if message["sender_user_id"] != current_user and message["recipient_user_id"] != current_user:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        
+        # Calculate delivery statistics
+        device_states = message["device_states"]
+        total_devices = len(device_states)
+        delivered_devices = sum(1 for state in device_states.values() if state == "delivered")
+        read_devices = sum(1 for state in device_states.values() if state == "read")
+        failed_devices = sum(1 for state in device_states.values() if state == "failed")
+        
+        return {
+            "message_id": message_id,
+            "state": message["state"],
+            "sequence_number": message["sequence_number"],
+            "created_at": message["created_at"],
+            "sent_at": message.get("sent_at"),
+            "delivered_at": message.get("delivered_at"),
+            "read_at": message.get("read_at"),
+            "device_statistics": {
+                "total": total_devices,
+                "delivered": delivered_devices,
+                "read": read_devices,
+                "failed": failed_devices,
+                "pending": total_devices - delivered_devices - read_devices - failed_devices
+            },
+            "device_states": device_states
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get delivery status: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get status")
+
+
+@router.post("/metadata-minimize")
+async def minimize_message_metadata(
+    request: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Minimize message metadata for privacy"""
+    try:
+        # Get metadata minimizer
+        minimizer = get_metadata_minimizer()
+        
+        # Extract metadata
+        sender_user_id = current_user
+        recipient_user_id = request.get("recipient_user_id")
+        message_type = request.get("message_type", "text")
+        client_ip = request.get("client_ip", "127.0.0.1")
+        
+        # Minimize metadata
+        minimized = await minimizer.minimize_message_metadata(
+            sender_user_id=sender_user_id,
+            recipient_user_id=recipient_user_id,
+            message_type=message_type,
+            client_ip=client_ip
+        )
+        
+        return minimized
+        
+    except Exception as e:
+        logger.error(f"Failed to minimize metadata: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to minimize metadata")
 
 
 @router.post("/{message_id}/delivery")

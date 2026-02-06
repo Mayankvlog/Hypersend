@@ -18,6 +18,21 @@ import io
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
+import sys
+import os
+import time
+import secrets
+import hashlib
+import hmac
+from typing import Dict, List, Optional, Any, Tuple
+from fastapi import APIRouter, Depends, Request, Header, Body, Query, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 
 
 def _get_device_public_key(device_id: str):
@@ -111,58 +126,190 @@ class QRLinkData(BaseModel):
 router = APIRouter(prefix="/devices", tags=["Multi-Device"])
 
 
-@router.post("/generate-qr")
-async def generate_linking_qr(
+@router.post("/register-primary")
+async def register_primary_device(
+    request: dict,
     current_user: str = Depends(get_current_user)
 ):
-    """Generate QR code for linking a new device - WhatsApp style"""
-    from ..redis_cache import redis_client
-    
-    # Get primary device for user
-    primary_devices = await redis_client.smembers(f"user_primary_devices:{current_user}")
-    if not primary_devices:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No primary device found")
-    
-    primary_device_id = list(primary_devices)[0]
-    
-    # Generate linking data
-    link_id = str(uuid.uuid4())
-    timestamp = datetime.utcnow()
-    expires_at = timestamp + timedelta(minutes=5)  # QR expires in 5 minutes
-    
-    qr_data = QRLinkData(
-        link_id=link_id,
-        primary_user_id=current_user,
-        primary_device_id=primary_device_id,
-        primary_public_key=await _get_device_public_key(primary_device_id),
-        timestamp=timestamp,
-        expires_at=expires_at,
-       _signature=""  # Will be signed by primary device
-    )
-    
-    # Store pending link request
-    await redis_client.setex(
-        f"pending_link:{link_id}",
-        300,  # 5 minutes
-        qr_data.model_dump_json()
-    )
-    
-    # Generate QR code image
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(qr_data.model_dump_json())
-    qr.make(fit=True)
-    
-    img = qr.make_image(fill_color="black", back_color="white")
-    buffer = io.BytesIO()
-    img.save(buffer, format='PNG')
-    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
-    
-    return {
-        "qr_code": f"data:image/png;base64,{qr_base64}",
-        "link_id": link_id,
-        "expires_at": expires_at.isoformat(),
-        "instructions": "Scan this QR code with your new device to link it"
-    }
+    """Register primary device with Signal Protocol"""
+    try:
+        device_name = request.get("device_name", "Primary Device")
+        
+        # Get multi-device manager
+        manager = get_multi_device_manager()
+        
+        # Register primary device
+        result = await manager.register_primary_device(
+            user_id=current_user,
+            device_name=device_name
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to register primary device: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to register device")
+
+
+@router.post("/initiate-linking")
+async def initiate_device_linking(
+    request: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Initiate QR-based device linking"""
+    try:
+        # Get multi-device manager
+        manager = get_multi_device_manager()
+        
+        # Initiate linking
+        result = await manager.initiate_device_linking(
+            primary_user_id=current_user
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to initiate device linking: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initiate linking")
+
+
+@router.post("/complete-linking")
+async def complete_device_linking(
+    request: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Complete device linking process"""
+    try:
+        linking_id = request.get("linking_id")
+        device_name = request.get("device_name", "Linked Device")
+        device_type = request.get("device_type", "linked")
+        device_public_key = request.get("public_key")
+        
+        if not all([linking_id, device_name, device_type, device_public_key]):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing required fields")
+        
+        # Get multi-device manager
+        manager = get_multi_device_manager()
+        
+        # Complete linking
+        result = await manager.complete_device_linking(
+            linking_id=linking_id,
+            device_name=device_name,
+            device_type=device_type,
+            new_device_public_key=device_public_key
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to complete device linking: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to complete linking")
+
+
+@router.post("/encrypt-message")
+async def encrypt_message_for_devices(
+    request: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Encrypt message for all user devices"""
+    try:
+        plaintext = request.get("message")
+        message_id = request.get("message_id")
+        
+        if not all([plaintext, message_id]):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing message or message_id")
+        
+        # Get multi-device manager
+        manager = get_multi_device_manager()
+        
+        # Encrypt for all devices
+        result = await manager.encrypt_message_for_all_devices(
+            user_id=current_user,
+            plaintext=plaintext,
+            message_id=message_id
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to encrypt message: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to encrypt message")
+
+
+@router.delete("/revoke/{device_id}")
+async def revoke_device(
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Revoke device and destroy all sessions"""
+    try:
+        # Get multi-device manager
+        manager = get_multi_device_manager()
+        
+        # Revoke device
+        success = await manager.revoke_device(
+            user_id=current_user,
+            device_id=device_id
+        )
+        
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+        
+        return {"message": f"Device {device_id} revoked successfully"}
+        
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to revoke device: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to revoke device")
+
+
+@router.get("/list")
+async def list_user_devices(
+    current_user: str = Depends(get_current_user)
+):
+    """List all devices for user"""
+    try:
+        # Get multi-device manager
+        manager = get_multi_device_manager()
+        
+        # Get user devices
+        devices = await manager.get_user_devices(current_user)
+        
+        return {"devices": devices, "count": len(devices)}
+        
+    except Exception as e:
+        logger.error(f"Failed to list devices: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list devices")
+
+
+@router.get("/signal-bundle/{user_id}")
+async def get_signal_bundle(
+    user_id: str,
+    device_id: Optional[str] = None,
+    current_user: str = Depends(get_current_user)
+):
+    """Get Signal Protocol key bundle for user"""
+    try:
+        # Only allow users to get their own bundles (or for testing)
+        if user_id != current_user:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        
+        # Get multi-device manager
+        manager = get_multi_device_manager()
+        
+        # Get Signal session
+        session = await manager.get_session(user_id, device_id or "primary")
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+        
+        return session.get_public_bundle()
+        
+    except Exception as e:
+        logger.error(f"Failed to get Signal bundle: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get bundle")
 
 
 class DeviceRegistrationRequest(BaseModel):

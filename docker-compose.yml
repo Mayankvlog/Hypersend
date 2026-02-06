@@ -63,7 +63,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - MONGODB_URI=${MONGODB_URI:-mongodb://mongodb:27017/hypersend}
+      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://cluster0.mongodb.net/hypersend}
       - JWT_SECRET=${JWT_SECRET:-your_jwt_secret_here}
       - ENVIRONMENT=production
       # WhatsApp security settings
@@ -162,7 +162,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - MONGODB_URI=${MONGODB_URI:-mongodb://mongodb:27017/hypersend}
+      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://cluster0.mongodb.net/hypersend}
       - ENVIRONMENT=production
       # Worker-specific settings
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -195,50 +195,41 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # WhatsApp-style Redis (Ephemeral Only, No Persistence)
   redis:
     image: redis:7-alpine
     container_name: hypersend_redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    # WHATSAPP ARCHITECTURE: Messages stored in Redis with automatic TTL expiry
-    # MANDATORY SETTINGS:
-    # - --appendonly no: Disable .aof persistence file
-    # - NO --save: Disable RDB snapshots
-    # - --maxmemory 2gb: Limit memory to 2GB for ephemeral messages
-    # - --maxmemory-policy allkeys-lru: Evict oldest messages when full
-    # - --requirepass: Authentication password
-    # RESULT: Messages lost on restart (ACCEPTABLE - user device has backup)
     command: >
       redis-server
-      --port 6379
-      --bind 0.0.0.0
-      --appendonly no
-      --save ""
+      --requirepass ${REDIS_PASSWORD:-change_this_password_in_prod}
       --maxmemory 2gb
       --maxmemory-policy allkeys-lru
-      --requirepass ${REDIS_PASSWORD:-change_this_password_in_prod}
-      --tcp-backlog 65535
-      --timeout 0
-      --tcp-keepalive 300
-      --loglevel notice
+      --save ""
+      --appendonly no
+      --stop-writes-on-bgsave-error no
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-change_this_password_in_prod}", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 30s
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    # CRITICAL: No volume mounts (ephemeral data only)
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    sysctls:
-      - net.core.somaxconn=65535
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
 
   minio:
     image: minio/minio:latest
@@ -270,7 +261,7 @@ services:
       - net.core.somaxconn=65535
 
   frontend:
-    image: yourusername/hypersend-frontend:latest
+    image: ghcr.io/mayankvlog/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:

@@ -196,7 +196,11 @@ class WhatsAppCryptoManager:
     async def rotate_signed_prekeys(self, user_id: str, identity_private_b64: str) -> List[Dict]:
         """Rotate signed prekeys (WhatsApp-style weekly rotation)"""
         try:
-            from ..redis_cache import redis_client
+            try:
+                from redis_cache import redis_client
+            except ImportError:
+                # Fallback for testing
+                redis_client = None
             
             # Generate new signed prekeys
             new_prekeys = []
@@ -244,7 +248,11 @@ class WhatsAppCryptoManager:
     async def enforce_session_reuse_protection(self, user_id: str, device_id: str, recipient_id: str) -> bool:
         """WhatsApp-style session reuse protection"""
         try:
-            from ..redis_cache import redis_client
+            try:
+                from redis_cache import redis_client
+            except ImportError:
+                # Fallback for testing
+                redis_client = None
             
             session_key = f"session:{user_id}:{device_id}:{recipient_id}"
             session_data = await redis_client.get(session_key)
@@ -286,7 +294,11 @@ class WhatsAppCryptoManager:
             chain_key = secrets.token_bytes(32)
             
             # Distribute encrypted sender key to all member devices
-            from ..redis_cache import redis_client
+            try:
+                from redis_cache import redis_client
+            except ImportError:
+                # Fallback for testing
+                redis_client = None
             
             sender_key_data = {
                 "group_id": group_id,
@@ -331,7 +343,11 @@ class WhatsAppCryptoManager:
             message_key = derived[32:]
             
             # Update chain key in storage
-            from ..redis_cache import redis_client
+            try:
+                from redis_cache import redis_client
+            except ImportError:
+                # Fallback for testing
+                redis_client = None
             chain_key_update = {
                 "next_chain_key_b64": base64.b64encode(next_chain_key).decode(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
