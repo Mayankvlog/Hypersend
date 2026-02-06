@@ -8,8 +8,10 @@ import os
 import aiofiles
 import time
 import secrets
+import base64
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 try:
     import boto3  # type: ignore[import-not-found]
@@ -452,7 +454,8 @@ def _check_and_enforce_file_ttl(upload_timestamp: datetime, file_id: str) -> boo
         return True  # If no timestamp, assume valid
     
     ttl_seconds = _get_file_ttl_seconds()
-    current_time = datetime.now(timezone.utc)
+    from datetime import datetime as dt, timezone as tz
+    current_time = dt.now(tz.utc)
     time_diff = (current_time - upload_timestamp).total_seconds()
     
     if time_diff > ttl_seconds:
@@ -659,12 +662,13 @@ async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: 
 
 def _log(level: str, message: str, user_data: dict = None):
     """Helper method for consistent logging with PII protection"""
+    from datetime import datetime as dt, timezone as tz
     if user_data:
         # Remove PII from logs in production
         safe_data = {
             "user_id": user_data.get("user_id", "unknown"),
             "operation": user_data.get("operation", "unknown"),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": dt.now(tz.utc).isoformat()
         }
         safe_message = f"{message} (user: {safe_data['user_id']})"
     else:
@@ -818,6 +822,7 @@ async def initialize_upload(
     
     # Ensure S3 is available for ephemeral storage (bypass for tests)
     if not _ensure_s3_available() and not _is_test_request(request):
+        from datetime import datetime as dt, timezone as tz
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -825,7 +830,7 @@ async def initialize_upload(
                 "status_code": 503,
                 "error": "HTTPException",
                 "detail": "Temporary storage service unavailable. Configure AWS credentials.",
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": dt.now(tz.utc).isoformat()
             }
         )
     
@@ -1041,7 +1046,8 @@ async def initialize_upload(
         upload_id = str(uuid.uuid4())
         
         # Create S3 object key with TTL-based structure
-        timestamp = datetime.utcnow().strftime("%Y%m%d")
+        from datetime import datetime as dt
+        timestamp = dt.utcnow().strftime("%Y%m%d")
         s3_key = f"ephemeral/{timestamp}/{file_uuid}/{filename}"
         
         # WHATSAPP ARCHITECTURE: Generate pre-signed upload URL
@@ -1082,8 +1088,8 @@ async def initialize_upload(
             "s3_bucket": settings.S3_BUCKET,
             "checksum": checksum,
             "status": "pending",
-            "created_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(hours=24)).isoformat(),  # 24h TTL
+            "created_at": dt.utcnow().isoformat(),
+            "expires_at": (dt.utcnow() + timedelta(hours=24)).isoformat(),  # 24h TTL
             "upload_url": upload_url  # Temporary pre-signed URL
         }
         
@@ -1105,8 +1111,8 @@ async def initialize_upload(
                 "s3_key": s3_key,
                 "s3_bucket": settings.S3_BUCKET,
                 "status": "pending",
-                "created_at": datetime.utcnow(),
-                "expires_at": datetime.utcnow() + timedelta(hours=24)
+                "created_at": dt.utcnow(),
+                "expires_at": dt.utcnow() + timedelta(hours=24)
             }
             await files_collection.insert_one(mongo_metadata)
         
@@ -1363,11 +1369,12 @@ async def upload_chunk(
         
         # Check if upload has expired
         if upload_doc.get("expires_at"):
+            from datetime import datetime as dt, timezone as tz
             expires_at = upload_doc["expires_at"]
             # Handle offset-naive datetimes from MongoDB
             if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) > expires_at:
+                expires_at = expires_at.replace(tzinfo=tz.utc)
+            if dt.now(tz.utc) > expires_at:
                 raise HTTPException(
                     status_code=status.HTTP_410_GONE,
                     detail="Upload session has expired"
@@ -1431,6 +1438,7 @@ async def upload_chunk(
         
         # PERFORMANCE FIX: Reduce database timeouts for faster upload completion
         try:
+            from datetime import datetime as dt, timezone as tz
             upload_doc = await _await_maybe(
                 uploads_collection().find_one_and_update(
                     {
@@ -1439,8 +1447,8 @@ async def upload_chunk(
                     },
                     {
                         "$set": {
-                            "last_chunk_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc)
+                            "last_chunk_at": dt.now(tz.utc),
+                            "updated_at": dt.now(tz.utc)
                         },
                         "$addToSet": {"uploaded_chunks": chunk_index}  # Only adds if not present
                     },
@@ -1532,6 +1540,7 @@ async def complete_upload(
     
     # Ensure S3 is available for ephemeral storage (bypass for tests)
     if not _ensure_s3_available() and not _is_test_request(request):
+        from datetime import datetime as dt, timezone as tz
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -1539,7 +1548,7 @@ async def complete_upload(
                 "status_code": 503,
                 "error": "HTTPException",
                 "detail": "Temporary storage service unavailable. Configure AWS credentials.",
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": dt.now(tz.utc).isoformat()
             }
         )
     
@@ -1716,6 +1725,7 @@ async def complete_upload(
 
         file_id = hashlib.sha256(f"{uuid.uuid4()}".encode()).hexdigest()[:16]
 
+        from datetime import datetime as dt, timezone as tz
         file_record = {
             "_id": file_id,
             "file_id": file_id,
@@ -1727,8 +1737,8 @@ async def complete_upload(
             "receiver_id": upload_doc.get("receiver_id"),
             "object_key": object_key,
             "checksum": checksum_value,
-            "created_at": datetime.now(timezone.utc),
-            "expiry_time": datetime.now(timezone.utc) + timedelta(hours=settings.FILE_TTL_HOURS),
+            "created_at": dt.now(tz.utc),
+            "expiry_time": dt.now(tz.utc) + timedelta(hours=settings.FILE_TTL_HOURS),
             "status": "uploaded",
             "delivery_status": "ready_for_download",
         }
@@ -1861,7 +1871,7 @@ async def get_file_info(
                 "filename": file_doc.get("filename"),
                 "size": file_doc.get("size"),
                 "uploaded_by": owner_id,
-                "created_at": file_doc.get("created_at", datetime.now(timezone.utc)),
+                "created_at": file_doc.get("created_at", (__import__('datetime').datetime.now(__import__('datetime').timezone.utc))),
                 "checksum": file_doc.get("checksum"),
                 "file_type": "file",
                 "mime_type": file_doc.get("mime_type"),
@@ -1923,7 +1933,7 @@ async def get_file_info(
                 "content_type": content_type,
                 "size": file_stat.st_size,
                 "uploaded_by": current_user,
-                "created_at": user_doc.get("created_at", datetime.now(timezone.utc)),
+                "created_at": user_doc.get("created_at", (__import__('datetime').datetime.now(__import__('datetime').timezone.utc))),
                 "checksum": None,  # Avatars don't have checksums
                 "file_type": "avatar",
                 "mime_type": content_type,
@@ -2014,6 +2024,7 @@ async def download_file(
     
     # Ensure S3 is available for ephemeral storage (bypass for tests)
     if not _ensure_s3_available() and not _is_test_request(request):
+        from datetime import datetime as dt, timezone as tz
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -2021,7 +2032,7 @@ async def download_file(
                 "status_code": 503,
                 "error": "HTTPException",
                 "detail": "Temporary storage service unavailable. Configure AWS credentials.",
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": dt.now(tz.utc).isoformat()
             }
         )
     
@@ -2079,9 +2090,10 @@ async def download_file(
             # Check expiry
             expiry_time = file_doc.get("expiry_time")
             if expiry_time:
+                from datetime import datetime as dt, timezone as tz
                 if expiry_time.tzinfo is None:
-                    expiry_time = expiry_time.replace(tzinfo=timezone.utc)
-                if datetime.now(timezone.utc) > expiry_time:
+                    expiry_time = expiry_time.replace(tzinfo=tz.utc)
+                if dt.now(tz.utc) > expiry_time:
                     _delete_s3_object(file_doc.get("object_key"))
                     await files_collection().update_one(
                         {"_id": file_id},
@@ -3931,7 +3943,6 @@ async def check_storage_permission(
 
 
 # WhatsApp Client-Side Security Hardening
-import datetime
 import time
 
 class WhatsAppClientSecurity:

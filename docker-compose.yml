@@ -9,7 +9,7 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - nginx_cache:/var/cache/nginx
+      # NO persistent cache - WhatsApp-grade stateless
     logging:
       driver: "json-file"
       options:
@@ -18,7 +18,7 @@ services:
     depends_on:
       - backend
       - websocket
-      - worker
+      - crypto_worker
     networks:
       - hypersend_network
     healthcheck:
@@ -29,25 +29,29 @@ services:
       start_period: 15s
     environment:
       - NGINX_ALLOW_UNSAFE=true
-      - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
+      - NGINX_API_BASE_URL=${API_BASE_URL:-http://localhost:8000/api/v1}
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
-      # WhatsApp-grade timeouts
-      - NGINX_PROXY_READ_TIMEOUT=7200  # 2 hours for large file downloads
-      - NGINX_PROXY_SEND_TIMEOUT=7200  # 2 hours for large file uploads
+      # WhatsApp-grade cryptographic timeouts
+      - NGINX_PROXY_READ_TIMEOUT=7200  # 2 hours for crypto operations
+      - NGINX_PROXY_SEND_TIMEOUT=7200  # 2 hours for crypto operations
       - NGINX_PROXY_CONNECT_TIMEOUT=600  # 10 minutes for backend connection
-      - NGINX_CLIENT_BODY_TIMEOUT=7200  # 2 hours for client body upload
+      - NGINX_CLIENT_BODY_TIMEOUT=7200  # 2 hours for crypto payloads
       - NGINX_CLIENT_MAX_BODY_SIZE=15G  # Allow 15GB files
       - NGINX_REQUEST_TIMEOUT=7200  # 2 hours request timeout
       - NGINX_SEND_TIMEOUT=7200  # 2 hours send timeout
       - NGINX_READ_TIMEOUT=7200  # 2 hours read timeout
-      # Enhanced error handling configuration
+      # WhatsApp-grade WebSocket configuration
+      - NGINX_WEBSOCKET_TIMEOUT=7200  # 2 hours WebSocket connections
+      - NGINX_WEBSOCKET_PING_INTERVAL=30  # 30 second ping interval
+      - NGINX_WEBSOCKET_MAX_CONNECTIONS=1000000  # 1M concurrent connections
+      # Enhanced cryptographic error handling
       - NGINX_ERROR_PAGE_TIMEOUT=30  # Error page timeout
       - NGINX_MAX_RETRIES=7  # Maximum retry attempts
       - NGINX_RETRY_DELAY=5  # Delay between retries
       # Production domain configuration
-      - DOMAIN_NAME=zaply.in.net
+      - DOMAIN_NAME=localhost
       - SSL_CERT_PATH=/etc/nginx/ssl/zaply.in.net/fullchain.pem
       - SSL_KEY_PATH=/etc/nginx/ssl/zaply.in.net/privkey.pem
 
@@ -63,7 +67,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://cluster0.mongodb.net/hypersend}
+      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
       - JWT_SECRET=${JWT_SECRET:-your_jwt_secret_here}
       - ENVIRONMENT=production
       # WhatsApp security settings
@@ -162,7 +166,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://cluster0.mongodb.net/hypersend}
+      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
       - ENVIRONMENT=production
       # Worker-specific settings
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -189,6 +193,59 @@ services:
           memory: 256M
           cpus: '0.1'
     # CRITICAL: No volume mounts (stateless)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # WhatsApp-grade Cryptographic Worker (Signal Protocol, Device Management)
+  crypto_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hypersend_crypto_worker
+    restart: unless-stopped
+    command: ["python", "-m", "celery", "worker", "-A", "backend.crypto_app", "--loglevel=info", "--concurrency=8"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
+      - ENVIRONMENT=production
+      # Cryptographic worker settings
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CRYPTO_WORKER_CONCURRENCY=8
+      - CRYPTO_WORKER_PREFETCH_MULTIPLIER=1
+      - CRYPTO_WORKER_MAX_TASKS_PER_CHILD=500
+      # WhatsApp cryptographic settings
+      - SIGNAL_PROTOCOL_VERSION=3
+      - X3DH_TIMEOUT=300  # 5 minutes
+      - DOUBLE_RATCHET_INTERVAL=60  # 1 minute
+      - DEVICE_SESSION_TIMEOUT=604800  # 7 days
+      - MEDIA_KEY_ROTATION_INTERVAL=86400  # 24 hours
+      - ONE_TIME_PREKEY_BATCH_SIZE=100
+      - SIGNED_PREKEY_ROTATION_INTERVAL=604800  # 7 days
+      # Security settings
+      - ENABLE_KEY_BACKUP=false
+      - ENABLE_SECURE_DELETE=true
+      - ANTI_REPLAY_PROTECTION=true
+      - POST_COMPROMISE_SECURITY=true
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hypersend_network
+    deploy:
+      replicas: 4  # More replicas for crypto operations
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    # CRITICAL: No volume mounts (stateless, crypto-blind)
     logging:
       driver: "json-file"
       options:

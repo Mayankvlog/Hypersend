@@ -15,6 +15,18 @@ from cryptography.hazmat.backends import default_backend
 
 from auth.utils import get_current_user
 
+# WhatsApp-Grade Cryptographic Imports
+try:
+    from ..crypto.signal_protocol import SignalProtocol, X3DHBundle
+    from ..crypto.multi_device import MultiDeviceManager, DeviceInfo
+    from ..crypto.delivery_semantics import DeliveryManager, MessageStatus
+    from ..crypto.media_encryption import MediaEncryptionService
+except ImportError:
+    from crypto.signal_protocol import SignalProtocol, X3DHBundle
+    from crypto.multi_device import MultiDeviceManager, DeviceInfo
+    from crypto.delivery_semantics import DeliveryManager, MessageStatus
+    from crypto.media_encryption import MediaEncryptionService
+
 try:
     from ..db_proxy import chats_collection, messages_collection
     from ..models import MessageEditRequest, MessageReactionRequest
@@ -1035,6 +1047,397 @@ async def search_messages(
         # Sort by created_at and limit
         all_messages.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         all_messages = all_messages[:limit]
+        
+        return {
+            "messages": all_messages,
+            "total": len(all_messages),
+            "query": q,
+            "filters": {
+                "has_media": has_media,
+                "has_link": has_link,
+                "chat_id": chat_id
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Message search failed: {e}", extra={
+            "user_id": current_user,
+            "operation": "message_search"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Search failed"
+        )
+
+
+# ============================================================================
+# WHATSAPP-GRADE CRYPTOGRAPHIC API ENDPOINTS
+# ============================================================================
+
+class DeviceLinkingRequest(BaseModel):
+    """Request for device linking QR code"""
+    device_name: str = Field(..., description="Device name")
+    device_type: str = Field(..., description="Device type: mobile, desktop, web")
+    platform: str = Field(..., description="Platform: android, ios, windows, macos, linux, web")
+    user_agent: str = Field(..., description="User agent string")
+
+class DeviceLinkingResponse(BaseModel):
+    """Response with QR code data"""
+    qr_data: str = Field(..., description="QR code data for scanning")
+    expires_at: float = Field(..., description="Expiration timestamp")
+    capabilities: List[str] = Field(..., description="Device capabilities")
+
+class DeviceLinkConfirmRequest(BaseModel):
+    """Confirm device linking"""
+    qr_data: str = Field(..., description="QR code data")
+    device_info: Dict[str, Any] = Field(..., description="Device information")
+    identity_key: str = Field(..., description="Device identity key (hex)")
+    signature_key: str = Field(..., description="Device signature key (hex)")
+    signed_pre_key: str = Field(..., description="Device signed pre-key (hex)")
+    one_time_pre_keys: List[str] = Field(..., description="Device one-time pre-keys (hex)")
+
+class EncryptedMessageRequest(BaseModel):
+    """Encrypted message request"""
+    chat_id: str = Field(..., description="Chat ID")
+    encrypted_content: str = Field(..., description="Encrypted message content (hex)")
+    iv: str = Field(..., description="Initialization vector (hex)")
+    auth_tag: str = Field(..., description="Authentication tag (hex)")
+    message_type: str = Field(..., description="Message type")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+class EncryptedMessageResponse(BaseModel):
+    """Response for encrypted message"""
+    message_id: str = Field(..., description="Message ID")
+    sequence_number: int = Field(..., description="Chat sequence number")
+    timestamp: float = Field(..., description="Message timestamp")
+    delivery_receipts: List[str] = Field(..., description="Device delivery receipts")
+
+class DeliveryReceiptRequest(BaseModel):
+    """Delivery receipt update"""
+    message_id: str = Field(..., description="Message ID")
+    device_id: str = Field(..., description="Device ID")
+    status: str = Field(..., description="Delivery status")
+    timestamp: float = Field(..., description="Receipt timestamp")
+
+@router.post("/crypto/link-device", response_model=DeviceLinkingResponse)
+async def generate_device_linking_qr(
+    request: DeviceLinkingRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Generate QR code for device linking"""
+    try:
+        from ..redis_cache import redis_client
+        
+        # Initialize multi-device manager
+        device_manager = MultiDeviceManager(redis_client)
+        
+        # Get user's primary device identity keys
+        primary_device = await device_manager.get_primary_device(current_user)
+        if not primary_device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No primary device found"
+            )
+        
+        # Get primary device session
+        device_session = await device_manager.get_device_session(current_user, primary_device.device_id)
+        if not device_session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Primary device session not found"
+            )
+        
+        # Generate linking token
+        linking_token = await device_manager.generate_linking_token(
+            user_id=current_user,
+            primary_identity_key=device_session.identity_key,
+            primary_signature_key=device_session.signature_key,
+            device_capabilities=["video_call", "voice_call", "groups", "status"],
+            ttl_minutes=5
+        )
+        
+        # Get linking data
+        linking_data = await device_manager.validate_linking_token(linking_token)
+        if not linking_data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate linking token"
+            )
+        
+        return DeviceLinkingResponse(
+            qr_data=linking_data.to_qr_data(),
+            expires_at=linking_data.expires_at,
+            capabilities=linking_data.device_capabilities
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Device linking QR generation failed: {e}", extra={
+            "user_id": current_user,
+            "operation": "device_linking_qr"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate QR code"
+        )
+
+@router.post("/crypto/confirm-link")
+async def confirm_device_linking(
+    request: DeviceLinkConfirmRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Confirm and complete device linking"""
+    try:
+        from ..redis_cache import redis_client
+        
+        # Initialize multi-device manager
+        device_manager = MultiDeviceManager(redis_client)
+        
+        # Parse QR data
+        linking_data = DeviceLinkingData.from_qr_data(request.qr_data)
+        
+        # Validate linking token
+        validated_linking_data = await device_manager.validate_linking_token(linking_data.linking_token)
+        if not validated_linking_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired QR code"
+            )
+        
+        # Create device info
+        device_info = DeviceInfo(
+            device_id=secrets.token_urlsafe(16),
+            device_name=request.device_info.get("name", "Unknown Device"),
+            device_type=request.device_info.get("type", "unknown"),
+            platform=request.platform,
+            user_agent=request.user_agent,
+            capabilities=request.device_info.get("capabilities", []),
+            created_at=time.time(),
+            last_active=time.time(),
+            is_active=True,
+            is_primary=False
+        )
+        
+        # Convert keys from hex
+        identity_key = bytes.fromhex(request.identity_key)
+        signature_key = bytes.fromhex(request.signature_key)
+        signed_pre_key = bytes.fromhex(request.signed_pre_key)
+        one_time_pre_keys = [bytes.fromhex(key) for key in request.one_time_pre_keys]
+        
+        # Link device
+        device_session = await device_manager.link_device(
+            user_id=current_user,
+            device_info=device_info,
+            device_identity_key=identity_key,
+            device_signature_key=signature_key,
+            device_signed_pre_key=signed_pre_key,
+            device_one_time_pre_keys=one_time_pre_keys,
+            linking_token=linking_data.linking_token
+        )
+        
+        return {
+            "device_id": device_info.device_id,
+            "linked_at": device_session.created_at,
+            "session_established": True
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Device linking confirmation failed: {e}", extra={
+            "user_id": current_user,
+            "operation": "device_linking_confirm"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to link device"
+        )
+
+@router.post("/crypto/send-encrypted", response_model=EncryptedMessageResponse)
+async def send_encrypted_message(
+    request: EncryptedMessageRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Send end-to-end encrypted message"""
+    try:
+        from ..redis_cache import redis_client
+        
+        # Initialize services
+        delivery_manager = DeliveryManager(redis_client)
+        device_manager = MultiDeviceManager(redis_client)
+        
+        # Get recipient devices
+        chat_data = await chats_collection().find_one({"_id": request.chat_id})
+        if not chat_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat not found"
+            )
+        
+        recipient_devices = []
+        for member in chat_data.get("members", []):
+            if member != current_user:  # Skip sender
+                devices = await device_manager.get_active_devices(member)
+                recipient_devices.extend([d.device_id for d in devices])
+        
+        if not recipient_devices:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No active recipient devices"
+            )
+        
+        # Get sequence number
+        sequence_number = await delivery_manager.get_chat_sequence_number(request.chat_id)
+        
+        # Generate message ID
+        message_id = secrets.token_urlsafe(32)
+        
+        # Initialize delivery
+        receipts = await delivery_manager.initialize_message_delivery(
+            message_id=message_id,
+            sender_id=current_user,
+            chat_id=request.chat_id,
+            recipient_devices=recipient_devices,
+            sequence_number=sequence_number
+        )
+        
+        # Store encrypted message
+        message_data = {
+            "message_id": message_id,
+            "chat_id": request.chat_id,
+            "sender_id": current_user,
+            "encrypted_content": request.encrypted_content,
+            "iv": request.iv,
+            "auth_tag": request.auth_tag,
+            "message_type": request.message_type,
+            "sequence_number": sequence_number,
+            "timestamp": time.time(),
+            "metadata": request.metadata or {}
+        }
+        
+        await redis_client.set(f"encrypted_message:{message_id}", json.dumps(message_data))
+        await redis_client.lpush(f"chat_encrypted:{request.chat_id}", message_id)
+        
+        return EncryptedMessageResponse(
+            message_id=message_id,
+            sequence_number=sequence_number,
+            timestamp=time.time(),
+            delivery_receipts=[device_id for device_id in receipts.keys()]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Encrypted message send failed: {e}", extra={
+            "user_id": current_user,
+            "operation": "send_encrypted_message"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send encrypted message"
+        )
+
+@router.post("/crypto/delivery-receipt")
+async def update_delivery_receipt(
+    request: DeliveryReceiptRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update delivery receipt for message"""
+    try:
+        from ..redis_cache import redis_client
+        
+        # Initialize delivery manager
+        delivery_manager = DeliveryManager(redis_client)
+        
+        # Update receipt based on status
+        if request.status == "delivered":
+            success = await delivery_manager.mark_message_delivered(request.message_id, request.device_id)
+        elif request.status == "read":
+            success = await delivery_manager.mark_message_read(request.message_id, request.device_id)
+        elif request.status == "sent":
+            success = await delivery_manager.mark_message_sent(request.message_id, request.device_id)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid delivery status"
+            )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message or device not found"
+            )
+        
+        return {
+            "message_id": request.message_id,
+            "device_id": request.device_id,
+            "status": request.status,
+            "timestamp": request.timestamp,
+            "updated": True
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delivery receipt update failed: {e}", extra={
+            "user_id": current_user,
+            "operation": "delivery_receipt"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update delivery receipt"
+        )
+
+@router.get("/crypto/pending-deliveries")
+async def get_pending_deliveries(
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get pending message deliveries for device"""
+    try:
+        from ..redis_cache import redis_client
+        
+        # Initialize delivery manager
+        delivery_manager = DeliveryManager(redis_client)
+        
+        # Verify device belongs to user
+        device_manager = MultiDeviceManager(redis_client)
+        user_devices = await device_manager.get_user_devices(current_user)
+        if not any(d.device_id == device_id for d in user_devices):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Device not authorized for user"
+            )
+        
+        # Get pending deliveries
+        pending_receipts = await delivery_manager.get_pending_deliveries(device_id)
+        
+        # Get encrypted messages
+        messages = []
+        for receipt in pending_receipts:
+            message_data = await redis_client.get(f"encrypted_message:{receipt.message_id}")
+            if message_data:
+                messages.append(json.loads(message_data))
+        
+        return {
+            "device_id": device_id,
+            "pending_messages": messages,
+            "pending_count": len(messages),
+            "timestamp": time.time()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Pending deliveries fetch failed: {e}", extra={
+            "user_id": current_user,
+            "operation": "pending_deliveries"
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch pending deliveries"
+        )
         
         return {"messages": all_messages, "count": len(all_messages)}
         
