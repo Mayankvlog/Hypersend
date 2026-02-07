@@ -375,3 +375,7 @@ async def close_db():
 def get_db():
     """Mock database getter"""
     return MockDatabase()
+
+def media_collection():
+    """Mock media collection getter"""
+    return get_db().media_collection

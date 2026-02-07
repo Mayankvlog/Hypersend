@@ -101,7 +101,10 @@ async def groups_options(request):
     """Handle CORS preflight for groups endpoints"""
     from fastapi.responses import Response
     # SECURITY: Restrict CORS origins in production for authenticated endpoints
-    from routes.auth import get_safe_cors_origin
+    try:
+        from .auth import get_safe_cors_origin
+    except Exception:
+        from routes.auth import get_safe_cors_origin
     
     cors_origin = get_safe_cors_origin(request.headers.get("origin", ""))
     

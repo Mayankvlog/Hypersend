@@ -36,19 +36,43 @@ from cryptography.hazmat.backends import default_backend
 
 # Import crypto components
 try:
-    from .signal_protocol import SignalProtocol, X3DHBundle, IdentityKeyPair, X3DHHandshake
-    from .multi_device import MultiDeviceManager, DeviceInfo, DeviceSession
-    from .media_encryption import MediaEncryptionService
-    from .encrypted_backup import EncryptedBackupService
-    from .client_security import ClientSecurityManager, SecurityConfig
-    from .abuse_detection import AbuseDetectionService
+    from backend.crypto.signal_protocol import SignalProtocol, X3DHBundle, IdentityKeyPair, X3DHHandshake
+    from backend.crypto.multi_device import MultiDeviceManager, DeviceInfo, DeviceSession
+    from backend.crypto.media_encryption import MediaEncryptionService
+    from backend.crypto.encrypted_backup import EncryptedBackupService
+    from backend.crypto.client_security import ClientSecurityManager, SecurityConfig
+    from backend.crypto.abuse_detection import AbuseDetectionService
 except ImportError:
-    from signal_protocol import SignalProtocol, X3DHBundle, IdentityKeyPair, X3DHHandshake
-    from multi_device import MultiDeviceManager, DeviceInfo, DeviceSession
-    from media_encryption import MediaEncryptionService
-    from encrypted_backup import EncryptedBackupService
-    from client_security import ClientSecurityManager, SecurityConfig
-    from abuse_detection import AbuseDetectionService
+    from crypto.signal_protocol import SignalProtocol, X3DHBundle, IdentityKeyPair, X3DHHandshake
+    from crypto.multi_device import MultiDeviceManager, DeviceInfo, DeviceSession
+    from crypto.media_encryption import MediaEncryptionService
+    from crypto.encrypted_backup import EncryptedBackupService
+    from crypto.client_security import ClientSecurityManager, SecurityConfig
+    from crypto.abuse_detection import AbuseDetectionService
+
+# Bring core E2EE helpers into this module namespace (used internally)
+try:
+    from backend.e2ee_crypto import (
+        X3DHKeyExchange,
+        DoubleRatchet,
+        DeviceSessionState,
+        MessageEncryption,
+        ReplayProtection,
+        SignalProtocolKeyManager,
+        SessionKeyDerivation,
+        generate_fingerprint
+    )
+except Exception:
+    from e2ee_crypto import (
+        X3DHKeyExchange,
+        DoubleRatchet,
+        DeviceSessionState,
+        MessageEncryption,
+        ReplayProtection,
+        SignalProtocolKeyManager,
+        SessionKeyDerivation,
+        generate_fingerprint
+    )
 
 # Custom Exceptions
 class E2EECryptoError(Exception):

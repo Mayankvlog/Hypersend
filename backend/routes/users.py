@@ -30,7 +30,10 @@ import logging
 from bson import ObjectId
 
 # Import create_group function from groups module
-from routes.groups import create_group
+try:
+    from .groups import create_group
+except Exception:
+    from routes.groups import create_group
 
 
 def get_secure_cors_origin(request_origin: Optional[str]) -> str:
@@ -917,7 +920,10 @@ async def create_group_endpoint(
                 detail="Group must have at least 2 members"
             )
         
-        from routes.groups import create_group as create_group_helper
+        try:
+            from .groups import create_group as create_group_helper
+        except Exception:
+            from routes.groups import create_group as create_group_helper
         group_result = await create_group_helper(payload, current_user)
         
         print(f"[USERS_GROUP_CREATE] Group created successfully: {group_result}")

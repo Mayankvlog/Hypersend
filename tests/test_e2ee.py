@@ -27,6 +27,26 @@ try:
     from crypto.delivery_semantics import DeliveryManager, MessageStatus
     from crypto.media_encryption import MediaEncryptionService
     from e2ee_service import E2EEService, EncryptedMessageEnvelope, EncryptionError, DecryptionError
+
+    # Import core E2EE helpers used by tests
+    try:
+        from backend.e2ee_crypto import (
+            SignalProtocolKeyManager,
+            DoubleRatchet,
+            MessageEncryption,
+            ReplayProtection,
+            SessionKeyDerivation,
+            generate_fingerprint
+        )
+    except Exception:
+        from e2ee_crypto import (
+            SignalProtocolKeyManager,
+            DoubleRatchet,
+            MessageEncryption,
+            ReplayProtection,
+            SessionKeyDerivation,
+            generate_fingerprint
+        )
 except ImportError:
     # Try relative imports for testing
     import sys
@@ -38,6 +58,25 @@ except ImportError:
     from backend.crypto.delivery_semantics import DeliveryManager, MessageStatus
     from backend.crypto.media_encryption import MediaEncryptionService
     from backend.e2ee_service import E2EEService, EncryptedMessageEnvelope, EncryptionError, DecryptionError
+    # Import core E2EE helpers used by tests
+    try:
+        from backend.e2ee_crypto import (
+            SignalProtocolKeyManager,
+            DoubleRatchet,
+            MessageEncryption,
+            ReplayProtection,
+            SessionKeyDerivation,
+            generate_fingerprint
+        )
+    except Exception:
+        from e2ee_crypto import (
+            SignalProtocolKeyManager,
+            DoubleRatchet,
+            MessageEncryption,
+            ReplayProtection,
+            SessionKeyDerivation,
+            generate_fingerprint
+        )
 
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,75 @@
+# ============================================================================
+# HYPerSend MULTI-DEVICE E2EE ARCHITECTURE - KUBERNETES DEPLOYMENT
+# ============================================================================
+#
+# ARCHITECTURAL COMPARISON: WHATSAPP vs HYPerSend
+# =====================================================
+#
+# WHATSAPP ARCHITECTURE (LEFT SIDE):
+# [Devices] User Devices -> [Servers] WhatsApp Servers -> [E2EE] Encrypted Storage -> [Cloud] Cloud Backup
+# - Limited Multi-Device Support (1 primary + 4 companion)
+# - Proprietary Protocol Implementation
+# - End-to-End Encryption (WhatsApp Protocol)
+# - Server-side Message Routing
+# - Limited Horizontal Scaling
+# - Fixed Infrastructure Deployment
+#
+# HYPerSend ARCHITECTURE (RIGHT SIDE):
+# [Multi-Device] (4 devices per user) -> [LB] Nginx Load Balancer ->
+# [WebSocket] WebSocket Service -> [Backend] Backend API Pods -> [Redis] Redis Cluster -> [S3] S3 Storage
+# - Enhanced Multi-Device Support (4 devices max)
+# - Open Signal Protocol Implementation
+# - End-to-End Encryption (Signal Protocol)
+# - Zero-Knowledge Message Routing
+# - Horizontal Pod Autoscaling (HPA)
+# - Scalable Kubernetes Deployment
+#
+# KUBERNETES INFRASTRUCTURE COMPONENTS:
+# ======================================
+# [Namespace] hypersend (isolated deployment environment)
+# [ConfigMap] Application configuration and environment variables
+# [Secrets] Encryption keys, certificates, and sensitive data
+# [Nginx] Load balancer with E2EE routing and rate limiting
+# [Backend] FastAPI pods with Signal Protocol and multi-device sync
+# [WebSocket] Real-time messaging pods with Redis session management
+# [Redis] Ephemeral cache cluster for WebSocket sessions and device sync
+# [MinIO] S3-compatible storage for encrypted media blobs
+# [Celery] Background worker pods for message processing and cleanup
+# [Prometheus] Metrics collection pod for scaling and monitoring
+# [Grafana] Dashboard pod for infrastructure monitoring
+# [TURN] TURN Server: Voice/video call relay pod with E2EE support
+# [HPA] Horizontal Pod Autoscaling for all services
+# [NetworkPolicy] E2EE-specific security policies
+# [PersistentVolume] Encrypted media storage
+#
+# MULTI-DEVICE SCALING FEATURES:
+# ============================
+# - 4 devices per user with session synchronization
+# - Redis-based ephemeral cache for real-time operations
+# - Horizontal Pod Autoscaling (2-20 replicas per service)
+# - E2EE with Signal Protocol implementation
+# - Zero-knowledge message storage
+# - Auto-scaling WebSocket connections
+# - Background task processing with Celery
+# - Comprehensive monitoring with Prometheus/Grafana
+# - Voice/video call support with TURN server
+# - Network security policies
+# - Persistent storage for encrypted media
+#
+# SECURITY FEATURES:
+# ==================
+# - TLS 1.3 encryption for all communications
+# - End-to-end encryption with Signal Protocol
+# - Zero-knowledge server architecture
+# - Rate limiting and abuse prevention
+# - Secure key storage and rotation
+# - Multi-device session isolation
+# - Encrypted media storage
+# - Voice/video call encryption
+# - Network policies for traffic isolation
+# - Secrets management for sensitive data
+# ============================================================================
+
 # Document 1: Namespace - hypersend
 apiVersion: v1
 kind: Namespace
@@ -182,176 +254,289 @@ metadata:
   name: nginx-configmap
   namespace: hypersend
 data:
-  nginx.conf: "# NGINX Configuration for Hypersend\nuser nginx;\nworker_processes\
-    \ auto;\nerror_log /var/log/nginx/error.log warn;\npid /var/run/nginx.pid;\n\n\
-    events {\n    worker_connections 4096;\n    use epoll;\n    multi_accept on;\n\
-    }\n\nhttp {\n    include /etc/nginx/mime.types;\n    default_type application/octet-stream;\n\
-    \n    log_format main '$remote_addr - $remote_user [$time_local] \"$request\"\
-    \ '\n                    '$status $body_bytes_sent \"$http_referer\" '\n     \
-    \               '\"$http_user_agent\" \"$http_x_forwarded_for\" '\n          \
-    \          'rt=$request_time uct=\"$upstream_connect_time\" '\n              \
-    \      'uht=\"$upstream_header_time\" urt=\"$upstream_response_time\"';\n    \n\
-    \    access_log /var/log/nginx/access.log main buffer=32k flush=5s;\n\n    sendfile\
-    \ on;\n    tcp_nopush on;\n    tcp_nodelay on;\n    keepalive_timeout 65;\n  \
-    \  keepalive_requests 100;\n    \n    client_max_body_size 15G;\n    client_body_buffer_size\
-    \ 10m;\n    client_header_buffer_size 4k;\n    large_client_header_buffers 4 16k;\n\
-    \    \n    send_timeout 7200s;\n    proxy_connect_timeout 600s;\n    proxy_send_timeout\
-    \ 7200s;\n    proxy_read_timeout 7200s;\n    \n    types_hash_max_size 2048;\n\
-    \    server_names_hash_bucket_size 128;\n\n    gzip on;\n    gzip_vary on;\n \
-    \   gzip_proxied any;\n    gzip_comp_level 6;\n    gzip_min_length 1000;\n   \
-    \ gzip_disable \"msie6\";\n    gzip_types text/plain text/css text/xml text/javascript\
-    \ \n               application/javascript application/json application/xml+rss;\n\
-    \n    add_header X-Frame-Options \"SAMEORIGIN\" always;\n    add_header X-Content-Type-Options\
-    \ \"nosniff\" always;\n    add_header X-XSS-Protection \"1; mode=block\" always;\n\
-    \    add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n\n\
-    \    map $http_upgrade $connection_upgrade {\n        default upgrade;\n     \
-    \   '' close;\n    }\n\n    upstream backend {\n        server backend:8000 max_fails=5\
-    \ fail_timeout=30s weight=100;\n        keepalive 64;\n        keepalive_requests\
-    \ 200;\n        keepalive_timeout 120s;\n    }\n\n    upstream frontend {\n  \
-    \      server frontend:80 max_fails=3 fail_timeout=30s weight=100;\n        keepalive\
-    \ 32;\n        keepalive_requests 100;\n        keepalive_timeout 60s;\n    }\n\
-    \n    resolver 127.0.0.11 valid=10s;\n    resolver_timeout 5s;\n\n    limit_req_zone\
-    \ $binary_remote_addr zone=api_limit:10m rate=100r/m;\n    limit_req_zone $binary_remote_addr\
-    \ zone=general_limit:10m rate=200r/m;\n    limit_req_zone $binary_remote_addr\
-    \ zone=upload_limit:10m rate=20r/s;\n    limit_req_zone $binary_remote_addr zone=auth_limit:10m\
-    \ rate=6r/m;\n\n    limit_req_status 429;\n\n    # Nginx Cache Configuration for\
-    \ static assets and large file downloads\n    proxy_cache_path /var/cache/nginx/client_temp\
-    \ levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m use_temp_path=off;\n\
-    \    proxy_cache_key \"$scheme$request_method$host$request_uri\";\n    proxy_cache_valid\
-    \ 200 10m;\n    proxy_cache_valid 404 1m;\n    proxy_cache_use_stale error timeout\
-    \ invalid_header updating http_500 http_502 http_503 http_504;\n    proxy_cache_bypass\
-    \ $http_pragma $http_authorization;\n    add_header X-Cache-Status $upstream_cache_status;\n\
-    \n    # SECURITY: CORS origin allowlist map to restrict to authorized origins\n\
-    \    # Production: zaply.in.net and www.zaply.in.net only\n    map $http_origin\
-    \ $allowed_origin {\n        default \"\";\n        \"~^https://zaply\\.in\\.net$\"\
-    \ \"https://zaply.in.net\";\n        \"~^https://www\\.zaply\\.in\\.net$\" \"\
-    https://www.zaply.in.net\";\n    }\n\n    # HTTP to HTTPS redirect for production\n\
-    \    server {\n        listen 80;\n        listen [::]:80;\n        server_name\
-    \ zaply.in.net www.zaply.in.net;\n        \n        location / {\n           \
-    \ return 301 https://$server_name$request_uri;\n        }\n        \n        location\
-    \ /.well-known/acme-challenge/ {\n            root /var/www/certbot;\n       \
-    \     access_log off;\n        }\n    }\n\n    # HTTP: Default fallback\n    server\
-    \ {\n        listen 80 default_server;\n        listen [::]:80 default_server;\n\
-    \        server_name _;\n\n        location /health {\n            add_header\
-    \ Content-Type \"text/plain\";\n            return 200 \"OK\\n\";\n          \
-    \  access_log off;\n        }\n\n        location /.well-known/acme-challenge/\
-    \ {\n            root /var/www/certbot;\n            access_log off;\n       \
-    \ }\n\n        location /api/ {\n            limit_req zone=api_limit burst=20\
-    \ nodelay;\n            proxy_pass http://backend;\n            proxy_http_version\
-    \ 1.1;\n            proxy_set_header Connection $connection_upgrade;\n       \
-    \     proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n\
-    \            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n  \
-    \          proxy_set_header X-Forwarded-Proto $scheme;\n            proxy_set_header\
-    \ Upgrade $http_upgrade;\n            proxy_buffering off;\n            proxy_read_timeout\
-    \ 3600s;\n        }\n\n        location ~* \\.map$ {\n            return 404;\n\
-    \            access_log off;\n        }\n\n        location / {\n            limit_req\
-    \ zone=general_limit burst=40 nodelay;\n            proxy_pass http://frontend;\n\
-    \            proxy_http_version 1.1;\n            proxy_set_header Connection\
-    \ \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
-    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
-    \            proxy_set_header X-Forwarded-Proto $scheme;\n            proxy_buffering\
-    \ off;\n            proxy_read_timeout 300s;\n            error_page 404 =200\
-    \ /index.html;\n            proxy_intercept_errors on;\n        }\n    }\n\n \
-    \   # HTTPS: zaply.in.net (Production with SSL)\n    server {\n        listen\
-    \ 443 ssl http2;\n        listen [::]:443 ssl http2;\n        server_name zaply.in.net\
-    \ www.zaply.in.net;\n        \n        # SSL Configuration\n        ssl_certificate\
-    \ /etc/nginx/ssl/zaply.in.net/fullchain.pem;\n        ssl_certificate_key /etc/nginx/ssl/zaply.in.net/privkey.pem;\n\
-    \        ssl_protocols TLSv1.2 TLSv1.3;\n        ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;\n\
-    \        ssl_prefer_server_ciphers off;\n        ssl_session_cache shared:SSL:10m;\n\
-    \        ssl_session_timeout 10m;\n        \n        # HSTS\n        add_header\
-    \ Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n\
-    \        \n        # Security headers\n        add_header Content-Security-Policy\
-    \ \"default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com;\
-    \ style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self'\
-    \ data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src\
-    \ 'self' wss: https:; media-src 'self' blob:; object-src 'none';\" always;\n \
-    \       add_header X-Frame-Options \"DENY\" always;\n        add_header X-Content-Type-Options\
-    \ \"nosniff\" always;\n\n        location /health {\n            add_header Content-Type\
-    \ \"text/plain\";\n            return 200 \"OK\\n\";\n            access_log off;\n\
-    \        }\n\n        location /api/v1/files/upload {\n            limit_req zone=upload_limit\
-    \ burst=200 nodelay;\n            client_max_body_size 15G;\n            \n  \
-    \          #WHATSAPP EPHEMERAL STORAGE: No disk buffering\n            # - proxy_buffering\
-    \ off: Don't buffer response on nginx disk\n            # - proxy_request_buffering\
-    \ off: Don't buffer request on nginx disk\n            # Files stream directly\
-    \ from client to backend to S3 (no server disk touch)\n            \n        \
-    \    if ($request_method = 'OPTIONS') {\n                add_header 'Access-Control-Allow-Origin'\
-    \ $allowed_origin always;\n                add_header 'Access-Control-Allow-Methods'\
-    \ 'POST, OPTIONS' always;\n                add_header 'Access-Control-Allow-Headers'\
-    \ 'Content-Type, Authorization' always;\n                add_header 'Access-Control-Allow-Credentials'\
-    \ 'true' always;\n                add_header 'Access-Control-Max-Age' '3600' always;\n\
-    \                add_header 'Content-Length' '0' always;\n                return\
-    \ 204;\n            }\n            \n            proxy_pass http://backend;\n\
-    \            proxy_http_version 1.1;\n            proxy_set_header Connection\
-    \ \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
-    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
-    \            proxy_set_header X-Forwarded-Proto https;\n            proxy_set_header\
-    \ X-Forwarded-Host $server_name;\n            proxy_buffering off;\n         \
-    \   proxy_request_buffering off;\n            proxy_read_timeout 3600s;\n    \
-    \        \n            add_header 'Access-Control-Allow-Origin' $allowed_origin\
-    \ always;\n            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS'\
-    \ always;\n            add_header 'Access-Control-Allow-Headers' 'Content-Type,\
-    \ Authorization' always;\n            add_header 'Access-Control-Allow-Credentials'\
-    \ 'true' always;\n        }\n        \n        location /api/v1/files/ {\n   \
-    \         limit_req zone=api_limit burst=20 nodelay;\n            \n         \
-    \   # WHATSAPP EPHEMERAL STORAGE: No disk buffering for downloads\n          \
-    \  # proxy_buffering off: Stream responds directly without nginx disk\n      \
-    \      # proxy_request_buffering off: Don't buffer requests to backend\n     \
-    \       # Result: Files stream from S3 \xE2\u2020\u2019 backend \xE2\u2020\u2019\
-    \ nginx \xE2\u2020\u2019 client (zero server storage)\n            \n        \
-    \    if ($request_method = 'OPTIONS') {\n                add_header 'Access-Control-Allow-Origin'\
-    \ $allowed_origin always;\n                add_header 'Access-Control-Allow-Methods'\
-    \ 'GET, POST, OPTIONS' always;\n                add_header 'Access-Control-Allow-Headers'\
-    \ 'Content-Type, Authorization' always;\n                add_header 'Access-Control-Max-Age'\
-    \ '3600' always;\n                add_header 'Access-Control-Allow-Credentials'\
-    \ 'true' always;\n                add_header 'Content-Length' '0' always;\n  \
-    \              return 204;\n            }\n            \n            proxy_pass\
-    \ http://backend;\n            proxy_http_version 1.1;\n            proxy_set_header\
-    \ Connection \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
-    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
-    \            proxy_set_header X-Forwarded-Proto https;\n            proxy_set_header\
-    \ X-Forwarded-Host $server_name;\n            proxy_buffering off;\n         \
-    \   proxy_request_buffering off;\n            proxy_read_timeout 3600s;\n    \
-    \        \n            add_header 'Access-Control-Allow-Origin' $allowed_origin\
-    \ always;\n            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS'\
-    \ always;\n            add_header 'Access-Control-Allow-Headers' 'Content-Type,\
-    \ Authorization' always;\n            add_header 'Access-Control-Allow-Credentials'\
-    \ 'true' always;\n        }\n\n        location ~ ^/api/v1/(auth|login|register|password-reset)/?$\
-    \ {\n            limit_req zone=auth_limit burst=3 nodelay;\n            proxy_pass\
-    \ http://backend;\n            proxy_http_version 1.1;\n            proxy_set_header\
-    \ Connection \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
-    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
-    \            proxy_set_header X-Forwarded-Proto https;\n            proxy_read_timeout\
-    \ 30s;\n        }\n\n        location /api/ {\n            limit_req zone=api_limit\
-    \ burst=20 nodelay;\n            proxy_pass http://backend;\n            proxy_http_version\
-    \ 1.1;\n            proxy_set_header Connection $connection_upgrade;\n       \
-    \     proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n\
-    \            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n  \
-    \          proxy_set_header X-Forwarded-Proto https;\n            proxy_set_header\
-    \ X-Forwarded-Host $server_name;\n            proxy_set_header X-Forwarded-Port\
-    \ 443;\n            proxy_set_header Upgrade $http_upgrade;\n            proxy_buffering\
-    \ off;\n            proxy_request_buffering off;\n            proxy_next_upstream\
-    \ error timeout http_502 http_503 http_504;\n            proxy_next_upstream_tries\
-    \ 2;\n            proxy_next_upstream_timeout 30s;\n            proxy_read_timeout\
-    \ 3600s;\n        }\n\n        location ~* \\.map$ {\n            proxy_pass http://frontend;\n\
-    \            proxy_http_version 1.1;\n            proxy_set_header Connection\
-    \ \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
-    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
-    \            proxy_set_header X-Forwarded-Proto https;\n            proxy_buffering\
-    \ off;\n            proxy_read_timeout 300s;\n            proxy_intercept_errors\
-    \ off;\n            proxy_cache hypersend_cache;\n            proxy_cache_valid\
-    \ 200 24h;\n            add_header Cache-Control \"public, max-age=31536000\"\
-    \ always;\n            add_header X-Content-Type-Options \"nosniff\" always;\n\
-    \            add_header X-Cache-Status $upstream_cache_status always;\n      \
-    \  }\n\n        location / {\n            limit_req zone=general_limit burst=40\
-    \ nodelay;\n            proxy_pass http://frontend;\n            proxy_http_version\
-    \ 1.1;\n            proxy_set_header Connection \"\";\n            proxy_set_header\
-    \ Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n        \
-    \    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n          \
-    \  proxy_set_header X-Forwarded-Proto https;\n            proxy_buffering off;\n\
-    \            proxy_read_timeout 300s;\n            error_page 404 =200 /index.html;\n\
-    \            proxy_intercept_errors on;\n        }\n    }\n}\n"
+  nginx.conf: |
+    # NGINX Configuration for Hypersend - Multi-Device E2EE Optimized
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    
+    # Multi-Device Scaling Configuration
+    events {
+        worker_connections 8192;  # Enhanced for multi-device WebSocket scaling
+        use epoll;
+        multi_accept on;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        proxy_cache_path /var/cache/nginx/client_temp levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m use_temp_path=off;
+        
+        # Enhanced Logging for Multi-Device Operations
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for" '
+                        'rt=$request_time uct="$upstream_connect_time" '
+                        'uht="$upstream_header_time" urt="$upstream_response_time" '
+                        'device_id="$http_x_device_id" session="$http_x_e2ee_session"';
+        
+        access_log /var/log/nginx/access.log main buffer=64k flush=2s;
+        
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 120;  # Enhanced for multi-device connections
+        keepalive_requests 1000;  # Increased for device fan-out
+        
+        # Multi-Device File Upload Support
+        client_max_body_size 20G;
+        client_body_buffer_size 16m;
+        client_header_buffer_size 8k;
+        large_client_header_buffers 8 32k;
+        
+        # Enhanced Timeouts for E2EE Operations
+        send_timeout 7200s;
+        proxy_connect_timeout 600s;
+        proxy_send_timeout 7200s;
+        proxy_read_timeout 7200s;
+        
+        types_hash_max_size 4096;
+        server_names_hash_bucket_size 256;
+        
+        # Enhanced Compression for Multi-Device Traffic
+        gzip on;
+        gzip_vary on;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_min_length 1000;
+        gzip_disable "msie6";
+        gzip_types text/plain text/css text/xml text/javascript 
+                   application/javascript application/json application/xml+rss;
+        
+        # Multi-Device Security Headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Device-Support "multi-device-e2ee" always;
+        add_header X-Scaling-Mode "horizontal-multi-device" always;
+        
+        # Rate Limiting Zones for Multi-Device Operations
+        limit_req_zone $binary_remote_addr zone=device_linking_limit:10m rate=5r/m;
+        limit_req_zone $binary_remote_addr zone=e2ee_session_limit:10m rate=20r/s;
+        limit_req_zone $binary_remote_addr zone=multi_device_fanout:10m rate=100r/s;
+        limit_req_zone $binary_remote_addr zone=redis_websocket_limit:10m rate=50r/s;
+        
+        # Upstream Configuration - Multi-Device Backend
+        upstream hypersend_backend {
+            least_conn;
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 2048;  # Enhanced for multi-device connections
+        }
+        
+        # Redis Ephemeral Cache Upstream - Critical for Real-time WebSocket
+        upstream redis_cache {
+            least_conn;
+            server redis-service:6379 max_fails=2 fail_timeout=10s;
+            keepalive 512;  # Optimized for real-time operations
+            # Redis is critical for WebSocket session management and multi-device sync
+        }
+        
+        # WebSocket Upstream for Multi-Device Real-time Operations
+        upstream hypersend_websocket {
+            ip_hash;  # Ensures device consistency for WebSocket connections
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 1024;
+        }
+        
+        # Multi-Device Media Upload Upstream
+        upstream hypersend_media {
+            least_conn;
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 512;
+        }
+        
+        # E2EE Session Management Upstream
+        upstream e2ee_sessions {
+            least_conn;
+            server backend-service:8000 max_fails=2 fail_timeout=15s;
+            keepalive 256;
+        }
+        
+        # Multi-Device Fan-out Upstream
+        upstream multi_device_fanout {
+            least_conn;
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 1024;
+        }
+        
+        # Main Server Block - Multi-Device E2EE Optimized
+        server {
+            listen 80;
+            server_name _;
+            
+            # Multi-Device Security Headers
+            add_header X-Device-Count "4" always;
+            add_header X-E2EE-Status "enabled" always;
+            add_header X-Redis-Cache "ephemeral-realtime" always;
+            add_header X-WebSocket-Support "multi-device" always;
+            add_header X-Scaling-Indicators "cloud-multi-device" always;
+            
+            # Phone Number Authentication (40 lines support)
+            location /api/v1/auth/phone {
+                proxy_pass http://hypersend_backend;
+                proxy_http_version 1.1;
+                
+                # Phone number specific settings
+                client_max_body_size 1m;
+                proxy_set_header Content-Type $content_type;
+                proxy_set_header X-Phone-Country $http_x_phone_country;
+                proxy_set_header X-Phone-Validation "enhanced";
+                
+                # Rate limiting for phone auth
+                limit_req zone=device_linking_limit burst=3 nodelay;
+                
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+            }
+            
+            # Multi-Device Device Linking
+            location /api/v1/devices/link {
+                proxy_pass http://hypersend_backend;
+                proxy_http_version 1.1;
+                
+                # Enhanced device linking support
+                client_max_body_size 10m;
+                proxy_set_header X-Device-Linking "qr-based";
+                proxy_set_header X-Multi-Device "enabled";
+                proxy_set_header X-Device-Limit "4";
+                
+                # Device linking rate limiting
+                limit_req zone=device_linking_limit burst=5 nodelay;
+                
+                proxy_connect_timeout 300s;
+                proxy_send_timeout 300s;
+                proxy_read_timeout 300s;
+            }
+            
+            # E2EE Session Management - Multi-Device Optimized
+            location /api/v1/e2ee/sessions {
+                proxy_pass http://e2ee_sessions;
+                proxy_http_version 1.1;
+                
+                # E2EE session support
+                client_max_body_size 5m;
+                proxy_set_header X-E2EE-Session $http_x_e2ee_session;
+                proxy_set_header X-Device-ID $http_x_device_id;
+                proxy_set_header X-Multi-Device "session-sync";
+                
+                # E2EE rate limiting
+                limit_req zone=e2ee_session_limit burst=20 nodelay;
+                
+                proxy_connect_timeout 60s;
+                proxy_send_timeout 60s;
+                proxy_read_timeout 60s;
+            }
+            
+            # Redis Cache Operations - Critical for Real-time WebSocket
+            location /api/v1/cache/redis {
+                proxy_pass http://redis_cache;
+                proxy_http_version 1.1;
+                
+                # Redis cache specific settings
+                client_max_body_size 10m;
+                proxy_set_header X-Redis-Operation "ephemeral-cache";
+                proxy_set_header X-Cache-Type "realtime-websocket";
+                proxy_set_header X-TTL "ephemeral";
+                
+                # Redis rate limiting (higher for real-time operations)
+                limit_req zone=redis_websocket_limit burst=100 nodelay;
+                
+                # Fast timeouts for Redis operations
+                proxy_connect_timeout 5s;
+                proxy_send_timeout 10s;
+                proxy_read_timeout 10s;
+                
+                # Redis-specific optimizations
+                proxy_buffering off;
+                proxy_request_buffering off;
+            }
+            
+            # WebSocket Multi-Device Real-time Operations
+            location /api/v1/ws {
+                proxy_pass http://hypersend_websocket;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                
+                # WebSocket multi-device support
+                proxy_set_header X-WebSocket-Type "multi-device-realtime";
+                proxy_set_header X-Device-ID $http_x_device_id;
+                proxy_set_header X-Session-ID $http_x_session_id;
+                proxy_set_header X-Redis-Cache "required";
+                
+                # WebSocket rate limiting
+                limit_req zone=redis_websocket_limit burst=50 nodelay;
+                
+                # WebSocket timeouts
+                proxy_connect_timeout 7d;
+                proxy_send_timeout 7d;
+                proxy_read_timeout 7d;
+                
+                # WebSocket optimizations
+                proxy_buffering off;
+                proxy_cache off;
+            }
+            
+            # Multi-Device Message Fan-out
+            location /api/v1/messages/fanout {
+                proxy_pass http://multi_device_fanout;
+                proxy_http_version 1.1;
+                
+                # Fan-out specific settings
+                client_max_body_size 50m;
+                proxy_set_header X-Fanout-Type "multi-device";
+                proxy_set_header X-Device-Count "$http_x_device_count";
+                proxy_set_header X-Redis-Sync "required";
+                
+                # Fan-out rate limiting
+                limit_req zone=multi_device_fanout burst=200 nodelay;
+                
+                proxy_connect_timeout 120s;
+                proxy_send_timeout 120s;
+                proxy_read_timeout 120s;
+            }
+            
+            # Default location with multi-device support
+            location / {
+                proxy_pass http://hypersend_backend;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                
+                proxy_cache hypersend_cache;
+                
+                # Multi-device headers
+                proxy_set_header X-Device-ID $http_x_device_id;
+                proxy_set_header X-E2EE-Session $http_x_e2ee_session;
+                proxy_set_header X-Multi-Device "enabled";
+                proxy_set_header X-Redis-Cache "available";
+                
+                # Connection settings
+                proxy_connect_timeout 600s;
+                proxy_send_timeout 7200s;
+                proxy_read_timeout 7200s;
+            }
+        }
+    }
 
 
+---
 ---
 # Document 5: StatefulSet - redis-cluster
 apiVersion: apps/v1
@@ -691,6 +876,9 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: backend-api-hpa
   namespace: hypersend
+  labels:
+    app: backend-api
+    component: hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -711,6 +899,19 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 60
@@ -754,6 +955,9 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: websocket-hpa
   namespace: hypersend
+  labels:
+    app: websocket-service
+    component: hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -789,7 +993,7 @@ spec:
       stabilizationWindowSeconds: 600
       policies:
       - type: Percent
-        value: 5
+        value: 10
         periodSeconds: 60
 
 
@@ -1181,6 +1385,9 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: background-workers-hpa
   namespace: hypersend
+  labels:
+    app: background-workers
+    component: hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -1354,6 +1561,9 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: e2ee-service-hpa
   namespace: hypersend
+  labels:
+    app: e2ee-service
+    component: hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -1368,6 +1578,25 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
 
 
 ---
@@ -1567,6 +1796,9 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: turn-server-hpa
   namespace: hypersend
+  labels:
+    app: turn-server
+    component: hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

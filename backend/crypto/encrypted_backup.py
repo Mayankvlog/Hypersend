@@ -378,14 +378,16 @@ class EncryptedBackupService:
     ) -> Dict[str, Any]:
         """Upload encrypted backup chunk"""
         try:
-            # This would upload to cloud storage (S3, GCS, etc.)
+            # This would upload to remote object storage
             # For now, simulate upload
             chunk_id = f"{backup_id}_{chunk_index}"
             
-            # Store chunk metadata in Redis
-            chunk_info = {
+            # Store in Redis for demo (in production would use S3/MinIO)
+            key = f"backup_chunk:{backup_id}:{chunk_index}"
+            await self.redis.set(key, base64.b64encode(chunk_data).decode(), ex=86400)
+            
+            return {
                 "chunk_id": chunk_id,
-                "backup_id": backup_id,
                 "chunk_index": chunk_index,
                 "size": len(chunk_data),
                 "checksum": hashlib.sha256(chunk_data).hexdigest(),

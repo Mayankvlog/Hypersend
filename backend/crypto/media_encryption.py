@@ -27,7 +27,7 @@ import uuid
 import base64
 import hashlib
 import secrets
-from typing import Optional, Dict, Any, Tuple, Union
+from typing import Optional, Dict, Any, Tuple, Union, List, AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -41,11 +41,22 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 try:
     from ..redis_cache import cache
     from ..db_proxy import media_collection
+    import logging
 except ImportError:
     from redis_cache import cache
     from db_proxy import media_collection
+    import logging
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class MediaDecryptionResult:
+    success: bool
+    media_data: Optional[bytes] = None
+    metadata: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    was_viewed: bool = False
+    is_expired: bool = False
 
 @dataclass
 class MediaMetadata:
@@ -130,6 +141,22 @@ class MediaKeyPackage:
             key_signature=bytes.fromhex(data["key_signature"]),
             created_at=data["created_at"]
         )
+
+
+@dataclass
+class MediaKeyInfo:
+    """Metadata and storage wrapper for a media encryption key."""
+
+    key_id: str
+    key_b64: str
+    algorithm: str
+    created_at: datetime
+    expires_at: Optional[datetime]
+    device_id: str
+    user_id: str
+    media_type: str
+    view_count: int = 0
+    max_views: int = 999
 
 @dataclass
 class MediaDownloadToken:

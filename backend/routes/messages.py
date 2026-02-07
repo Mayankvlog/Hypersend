@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 
 from auth.utils import get_current_user
+from fastapi import Query
 
 # WhatsApp-Grade Cryptographic Imports
 try:
@@ -750,7 +751,7 @@ async def get_e2ee_abuse_score(
 async def report_e2ee_abuse(
     reported_user_id: str,
     report_type: str,  # spam, harassment, csam, phishing
-    reason: str = Field(..., min_length=10, max_length=500),
+    reason: str = Query(..., min_length=10, max_length=500),
     current_user: str = Depends(get_current_user)
 ):
     """Report abuse for E2EE"""

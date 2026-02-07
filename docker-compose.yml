@@ -1,3 +1,65 @@
+# ============================================================================
+# HYPerSend MULTI-DEVICE E2EE ARCHITECTURE - DOCKER COMPOSE
+# ============================================================================
+#
+# ARCHITECTURAL COMPARISON: WHATSAPP vs HYPerSend
+# =====================================================
+#
+# WHATSAPP ARCHITECTURE (LEFT SIDE):
+# [Devices] User Devices -> [Servers] WhatsApp Servers -> [E2EE] Encrypted Storage -> [Cloud] Cloud Backup
+# - Limited Multi-Device Support (1 primary + 4 companion)
+# - Proprietary Protocol Implementation
+# - End-to-End Encryption (WhatsApp Protocol)
+# - Server-side Message Routing
+# - Limited Horizontal Scaling
+# - Fixed Infrastructure Deployment
+#
+# HYPerSend ARCHITECTURE (RIGHT SIDE):
+# [Multi-Device] (4 devices per user) -> [LB] Nginx Load Balancer ->
+# [WebSocket] WebSocket Service -> [Backend] Backend API Pods -> [Redis] Redis Cluster -> [S3] S3 Storage
+# - Enhanced Multi-Device Support (4 devices max)
+# - Open Signal Protocol Implementation
+# - End-to-End Encryption (Signal Protocol)
+# - Zero-Knowledge Message Routing
+# - Horizontal Pod Autoscaling (HPA)
+# - Scalable Kubernetes Deployment
+#
+# INFRASTRUCTURE COMPONENTS:
+# =========================
+# [Frontend] Flutter web application with multi-device support
+# [Nginx] Load balancer with E2EE routing and rate limiting
+# [Backend] FastAPI with Signal Protocol and multi-device sync
+# [WebSocket] Real-time messaging with Redis session management
+# [Redis] Ephemeral cache for WebSocket sessions and device sync
+# [MinIO] S3-compatible storage for encrypted media blobs
+# [Celery] Background workers for message processing and cleanup
+# [Prometheus] Metrics collection for scaling and monitoring
+# [Grafana] Dashboard for infrastructure monitoring
+# [TURN] TURN Server: Voice/video call relay with E2EE support
+#
+# MULTI-DEVICE SCALING FEATURES:
+# ============================
+# - 4 devices per user with session synchronization
+# - Redis-based ephemeral cache for real-time operations
+# - Horizontal scaling with replica configurations
+# - E2EE with Signal Protocol implementation
+# - Zero-knowledge message storage
+# - Auto-scaling WebSocket connections
+# - Background task processing
+# - Comprehensive monitoring and metrics
+#
+# SECURITY FEATURES:
+# ==================
+# - TLS 1.3 encryption for all communications
+# - End-to-end encryption with Signal Protocol
+# - Zero-knowledge server architecture
+# - Rate limiting and abuse prevention
+# - Secure key storage and rotation
+# - Multi-device session isolation
+# - Encrypted media storage
+# - Voice/video call encryption
+# ============================================================================
+
 services:
   nginx:
     image: nginx:alpine
@@ -20,6 +82,7 @@ services:
       - websocket
       - crypto_worker
       - e2ee_service
+      - redis_cluster
     networks:
       - hypersend_network
     healthcheck:
@@ -28,6 +91,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    labels:
+      - "hypersend.service=nginx"
+      - "hypersend.scaling=multi-device"
+      - "hypersend.e2ee=enabled"
+      - "hypersend.redis-cache=required"
     environment:
       - NGINX_ALLOW_UNSAFE=true
       - NGINX_API_BASE_URL=${API_BASE_URL:-http://localhost:8000/api/v1}
@@ -318,7 +386,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # WhatsApp-style Redis (Ephemeral Only, No Persistence)
   redis:
     image: redis:7-alpine
     container_name: hypersend_redis
@@ -326,11 +393,28 @@ services:
     command: >
       redis-server
       --requirepass ${REDIS_PASSWORD:-change_this_password_in_prod}
-      --maxmemory 2gb
+      --maxmemory 4gb
       --maxmemory-policy allkeys-lru
       --save ""
       --appendonly no
       --stop-writes-on-bgsave-error no
+      --tcp-keepalive 300
+      --timeout 0
+      --tcp-backlog 65535
+      --databases 16
+      --slowlog-log-slower-than 10000
+      --slowlog-max-len 128
+      --notify-keyspace-events Ex
+      --hash-max-ziplist-entries 512
+      --hash-max-ziplist-value 64
+      --list-max-ziplist-size -2
+      --list-compress-depth 0
+      --set-max-intset-entries 512
+      --zset-max-ziplist-entries 128
+      --zset-max-ziplist-value 64
+      --hll-sparse-max-bytes 3000
+      --stream-node-max-bytes 4096
+      --stream-node-max-entries 100
     networks:
       - hypersend_network
     healthcheck:
@@ -342,17 +426,33 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: '1.0'
+          memory: 4G
+          cpus: '2.0'
         reservations:
-          memory: 512M
-          cpus: '0.25'
+          memory: 1G
+          cpus: '0.5'
     # CRITICAL: No volume mounts (ephemeral data only)
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    labels:
+      - "hypersend.service=redis"
+      - "hypersend.cache-type=ephemeral-realtime"
+      - "hypersend.scaling=multi-device-websocket"
+      - "hypersend.e2ee=critical"
+      - "hypersend.websocket-session-store=true"
+      - "hypersend.device-sync-cache=true"
+      - "hypersend.message-fanout-cache=true"
+      - "hypersend.ttl-based=true"
+    environment:
+      - REDIS_REALTIME_WEBSOCKET=true
+      - REDIS_MULTI_DEVICE_SYNC=true
+      - REDIS_E2EE_SESSION_STORE=true
+      - REDIS_EPHEMERAL_TTL=86400
+      - REDIS_WEBSOCKET_CONNECTION_POOL=true
+      - REDIS_DEVICE_FANOUT_OPTIMIZED=true
 
   minio:
     image: minio/minio:latest
