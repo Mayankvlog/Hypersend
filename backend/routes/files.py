@@ -36,6 +36,7 @@ try:
     from ..config import settings
     from ..validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
     from ..rate_limiter import RateLimiter
+    from ..redis_cache import cache
 except ImportError:
     from models import (
         FileInitRequest, FileInitResponse, ChunkUploadResponse, FileCompleteResponse,
@@ -45,6 +46,7 @@ except ImportError:
     from config import settings
     from validators import validate_user_id, safe_object_id_conversion, validate_command_injection, validate_path_injection, sanitize_input
     from rate_limiter import RateLimiter
+    from redis_cache import cache
 
 from auth.utils import get_current_user, get_current_user_or_query, get_current_user_for_upload, get_current_user_optional, decode_token
 

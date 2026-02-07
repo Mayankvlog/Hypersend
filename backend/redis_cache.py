@@ -2588,3 +2588,78 @@ class WhatsAppSessionService:
 cache.MessageQueueService = MessageQueueService
 cache.EphemeralFileService = EphemeralFileService
 cache.WhatsAppSessionService = WhatsAppSessionService
+
+
+# ============================================================================
+# MODULE-LEVEL EXPORTS FOR BACKWARD COMPATIBILITY
+# ============================================================================
+# These exports allow other modules to import redis_client and cache services
+
+class RedisClientProxy:
+    """
+    Proxy to safely access the underlying Redis client from the global cache object.
+    Provides lazy access to cache.redis_client, handling both connected and fallback modes.
+    """
+    
+    def __getattr__(self, name):
+        """Dynamically proxy all attributes to cache.redis_client"""
+        if cache and cache.is_connected and cache.redis_client:
+            return getattr(cache.redis_client, name)
+        
+        # For mock cache fallback, create stub methods
+        raise AttributeError(
+            f"redis_client.{name} not available. "
+            f"Redis is not connected. Cache is in mock mode with limited functionality."
+        )
+
+
+# Create module-level redis client proxy for backward compatibility
+redis_client = RedisClientProxy()
+
+
+# Define explicit __all__ for cleaner imports
+__all__ = [
+    # Main cache object
+    'cache',
+    'redis_client',
+    
+    # Cache class
+    'RedisCache',
+    
+    # Cache utilities
+    'CacheKeys',
+    'CacheUtils',
+    
+    # User and group cache services
+    'UserCacheService',
+    'GroupCacheService',
+    
+    # Search and session services
+    'SearchCacheService',
+    'SessionCacheService',
+    
+    # Rate limiting and messages
+    'RateLimitCacheService',
+    'MessageCacheService',
+    
+    # File and analytics services
+    'FileCacheService',
+    'AnalyticsCacheService',
+    
+    # WhatsApp-style services
+    'MessageQueueService',
+    'DeviceTrustGraphService',
+    'GroupSenderKeyService',
+    'PushNotificationService',
+    'MetadataMinimizationService',
+    'EphemeralFileService',
+    'WhatsAppSessionService',
+    
+    # Initialization functions
+    'init_cache',
+    'cleanup_cache',
+    
+    # Constants
+    'REDIS_AVAILABLE',
+    'RedisClientProxy',
+]
