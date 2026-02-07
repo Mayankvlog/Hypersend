@@ -16,8 +16,138 @@ Security Properties:
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:math';
+import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:pointycastle/export.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+// Data classes for E2EE
+class DoubleRatchetSession {
+  final String sessionId;
+  final String recipientUserId;
+  final String recipientDeviceId;
+  final Uint8List sharedSecret;
+  final Uint8List rootKey;
+  final Uint8List chainKey;
+  int messageCounter;
+  int lastMessageCounter;
+  final DateTime createdAt;
+  
+  DoubleRatchetSession({
+    required this.sessionId,
+    required this.recipientUserId,
+    required this.recipientDeviceId,
+    required this.sharedSecret,
+    required this.rootKey,
+    required this.chainKey,
+    required this.messageCounter,
+    required this.lastMessageCounter,
+    required this.createdAt,
+  });
+}
+
+class GroupSenderKey {
+  final String groupId;
+  final Uint8List senderKey;
+  final String senderKeyId;
+  final Set<String> memberIds;
+  final DateTime createdAt;
+  final DateTime lastRotated;
+  
+  GroupSenderKey({
+    required this.groupId,
+    required this.senderKey,
+    required this.senderKeyId,
+    required this.memberIds,
+    required this.createdAt,
+    required this.lastRotated,
+  });
+}
+
+class E2EEMessage {
+  final String messageId;
+  final String sessionId;
+  final String ciphertext;
+  final String iv;
+  final String tag;
+  final int messageCounter;
+  final int timestamp;
+  final String? ttlSeconds;
+  final bool viewOnce;
+  
+  E2EEMessage({
+    required this.messageId,
+    required this.sessionId,
+    required this.ciphertext,
+    required this.iv,
+    required this.tag,
+    required this.messageCounter,
+    required this.timestamp,
+    this.ttlSeconds,
+    required this.viewOnce,
+  });
+}
+
+class GroupE2EEMessage {
+  final String groupId;
+  final String senderKeyId;
+  final String ciphertext;
+  final String iv;
+  final String tag;
+  final int timestamp;
+  
+  GroupE2EEMessage({
+    required this.groupId,
+    required this.senderKeyId,
+    required this.ciphertext,
+    required this.iv,
+    required this.tag,
+    required this.timestamp,
+  });
+}
+
+class DeviceLinkingData {
+  final String token;
+  final String identityKey;
+  final String signatureKey;
+  final int expiresAt;
+  final List<String> capabilities;
+  final String userId;
+  final String deviceId;
+  
+  DeviceLinkingData({
+    required this.token,
+    required this.identityKey,
+    required this.signatureKey,
+    required this.expiresAt,
+    required this.capabilities,
+    required this.userId,
+    required this.deviceId,
+  });
+}
+
+class E2EEBundle {
+  final String userId;
+  final String deviceId;
+  final String identityKey;
+  final String signedPreKey;
+  final int signedPreKeyId;
+  final String signedPreKeySignature;
+  final List<Map<String, dynamic>> oneTimePreKeys;
+  final int timestamp;
+  
+  E2EEBundle({
+    required this.userId,
+    required this.deviceId,
+    required this.identityKey,
+    required this.signedPreKey,
+    required this.signedPreKeyId,
+    required this.signedPreKeySignature,
+    required this.oneTimePreKeys,
+    required this.timestamp,
+  });
+}
 
 class SignalProtocolClient {
   // Core cryptographic components
@@ -25,43 +155,109 @@ class SignalProtocolClient {
   late AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> _signedPreKeyPair;
   List<AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey>> _oneTimePreKeys = [];
   Map<String, DoubleRatchetSession> _sessions = {};
+  Map<String, GroupSenderKey> _groupSenderKeys = {};
   String _userId;
   String _deviceId;
+  
+  // Secure storage
+  final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+  final SharedPreferences _prefs = SharedPreferences.getInstance();
+  
+  // E2EE Configuration
+  static const String _identityKeyPrefix = 'identity_key_';
+  static const String _sessionPrefix = 'session_';
+  static const String _groupKeyPrefix = 'group_key_';
+  static const String _messageCounterPrefix = 'msg_counter_';
   
   SignalProtocolClient(this._userId, this._deviceId);
 
   /// Initialize identity keys and prekeys
   Future<void> initialize() async {
-    // Generate identity key pair (long-term)
-    final secureRandom = SecureRandom();
-    _identityKeyPair = await _generateRSAKeyPair(2048);
-    
-    // Generate signed pre-key (rotated every 7 days)
-    _signedPreKeyPair = await _generateRSAKeyPair(2048);
-    
-    // Generate batch of one-time pre-keys
-    await _generateOneTimePreKeys(100);
+    try {
+      // Check if keys already exist
+      final existingKeys = await _loadIdentityKeys();
+      if (existingKeys != null) {
+        _identityKeyPair = existingKeys['identity'];
+        _signedPreKeyPair = existingKeys['signed_prekey'];
+        _oneTimePreKeys = existingKeys['one_time_prekeys'];
+        print('✓ Loaded existing identity keys from secure storage');
+        return;
+      }
+      
+      // Generate identity key pair (long-term)
+      final secureRandom = SecureRandom();
+      _identityKeyPair = await _generateRSAKeyPair(2048);
+      
+      // Generate signed pre-key (rotated every 7 days)
+      _signedPreKeyPair = await _generateRSAKeyPair(2048);
+      
+      // Generate batch of one-time pre-keys
+      await _generateOneTimePreKeys(100);
+      
+      // Save to secure storage
+      await _saveIdentityKeys();
+      
+      print('✓ Signal Protocol initialized with new keys');
+    } catch (e) {
+      print('❌ Failed to initialize Signal Protocol: $e');
+      rethrow;
+    }
   }
-
+  
+  /// Save identity keys to secure storage
+  Future<void> _saveIdentityKeys() async {
+    try {
+      final keys = {
+        'identity': _identityKeyPair,
+        'signed_prekey': _signedPreKeyPair,
+        'one_time_prekeys': _oneTimePreKeys.take(20).toList(),
+      };
+      
+      await _secureStorage.write(
+        key: '${_identityKeyPrefix}${_userId}',
+        value: jsonEncode(keys),
+      );
+      
+      print('✓ Identity keys saved to secure storage');
+    } catch (e) {
+      print('❌ Failed to save identity keys: $e');
+    }
+  }
+  
+  /// Load identity keys from secure storage
+  Future<Map<String, dynamic>?> _loadIdentityKeys() async {
+    try {
+      final keysJson = await _secureStorage.read(key: '${_identityKeyPrefix}${_userId}');
+      if (keysJson != null) {
+        return jsonDecode(keysJson);
+      }
+      return null;
+    } catch (e) {
+      print('❌ Failed to load identity keys: $e');
+      return null;
+    }
+  }
+  
   /// Generate QR code data for device linking
-  Map<String, dynamic> generateLinkingQR() {
-    final linkingToken = _generateSecureToken();
-    final expiresAt = DateTime.now().add(Duration(minutes: 5));
-    
-    return {
-      'token': linkingToken,
-      'identityKey': _encodePublicKey(_identityKeyPair.publicKey),
-      'signatureKey': _encodePublicKey(_signedPreKeyPair.publicKey),
-      'expiresAt': expiresAt.toIso8601String(),
-      'capabilities': ['video_call', 'voice_call', 'groups', 'status']
-    };
-  }
-
-  /// Complete device linking from QR scan
-  Future<DeviceSession> linkDevice(Map<String, dynamic> qrData) async {
-    // Validate QR data
-    if (!_validateLinkingQR(qrData)) {
-      throw SignalProtocolException('Invalid or expired QR code');
+  Future<Map<String, dynamic>> generateLinkingQR() async {
+    try {
+      final linkingToken = _generateSecureToken();
+      final expiresAt = DateTime.now().add(Duration(minutes: 5));
+      
+      final qrData = {
+        'token': linkingToken,
+        'identity_key': _encodePublicKey(_identityKeyPair.publicKey),
+        'signature_key': _encodePublicKey(_signedPreKeyPair.publicKey),
+        'expires_at': expiresAt.millisecondsSinceEpoch,
+        'capabilities': ['video_call', 'voice_call', 'groups', 'status'],
+        'user_id': _userId,
+        'device_id': _deviceId,
+      };
+      
+      return qrData;
+    } catch (e) {
+      print('❌ Failed to generate linking QR: $e');
+      rethrow;
     }
 
     // Perform X3DH handshake

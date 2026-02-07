@@ -19,6 +19,7 @@ services:
       - backend
       - websocket
       - crypto_worker
+      - e2ee_service
     networks:
       - hypersend_network
     healthcheck:
@@ -50,6 +51,11 @@ services:
       - NGINX_ERROR_PAGE_TIMEOUT=30  # Error page timeout
       - NGINX_MAX_RETRIES=7  # Maximum retry attempts
       - NGINX_RETRY_DELAY=5  # Delay between retries
+      # E2EE Configuration
+      - NGINX_E2EE_MAX_MESSAGE_SIZE=50M  # 50MB encrypted messages
+      - NGINX_E2EE_MAX_BLOB_SIZE=100M  # 100MB encrypted blobs
+      - NGINX_E2EE_RATE_LIMIT=100  # 100 E2EE requests/sec
+      - NGINX_E2EE_DEVICE_RATE_LIMIT=20  # 20 device requests/sec
       # Production domain configuration
       - DOMAIN_NAME=localhost
       - SSL_CERT_PATH=/etc/nginx/ssl/zaply.in.net/fullchain.pem
@@ -154,23 +160,81 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # WhatsApp-style Background Workers (Media Cleanup, ACK Reconciliation)
+  # WhatsApp-grade E2EE Service (Signal Protocol, Device Management)
+  e2ee_service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hypersend_e2ee_service
+    restart: unless-stopped
+    command: ["python", "-m", "uvicorn", "e2ee_service.app:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      # E2EE Configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
+      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
+      - ENVIRONMENT=production
+      # E2EE Settings
+      - ENABLE_E2EE=true
+      - MAX_E2EE_DEVICES=4  # Max 4 companion devices
+      - E2EE_SESSION_TIMEOUT=604800  # 7 days
+      - E2EE_MESSAGE_TIMEOUT=86400  # 24 hours
+      - E2EE_MAX_MESSAGE_SIZE=52428800  # 50MB
+      - E2EE_MAX_BLOB_SIZE=104857600  # 100MB
+      - E2EE_RATE_LIMIT=50  # 50 requests/sec
+      - E2EE_DEVICE_RATE_LIMIT=10  # 10 requests/sec per device
+      # Security Settings
+      - ENABLE_KEY_ROTATION=true
+      - KEY_ROTATION_INTERVAL=604800  # 7 days
+      - ENABLE_REPLAY_PROTECTION=true
+      - REPLAY_WINDOW=2048
+      - ENABLE_FORWARD_SECRECY=true
+      - DH_RATCHET_INTERVAL=100  # 100 messages
+      # Logging
+      - LOG_LEVEL=INFO
+      - ENABLE_E2EE_METRICS=true
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 2  # E2EE service scaling
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: hypersend_worker
     restart: unless-stopped
-    command: ["python", "-m", "celery", "worker", "-A", "backend.celery_app", "--loglevel=info", "--concurrency=4"]
+    command: ["python", "-m", "celery", "worker", "-A", "backend.workers.celery_app", "--loglevel=info", "--concurrency=4"]
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
+      - CELERY_BROKER_URL=redis://:${CELERY_BROKER_PASSWORD:-change_this_password_in_prod}@celery_broker:6380/0
+      - CELERY_RESULT_BACKEND=redis://:${CELERY_BROKER_PASSWORD:-change_this_password_in_prod}@celery_broker:6380/0
       - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
       - ENVIRONMENT=production
       # Worker-specific settings
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - WORKER_CONCURRENCY=4
       - WORKER_PREFETCH_MULTIPLIER=1
       - WORKER_MAX_TASKS_PER_CHILD=1000
@@ -180,6 +244,8 @@ services:
       - ACK_RECONCILIATION_INTERVAL=180  # 3 minutes
     depends_on:
       redis:
+        condition: service_healthy
+      celery_broker:
         condition: service_healthy
     networks:
       - hypersend_network
@@ -340,6 +406,143 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Voice & Video Call Relay (TURN/STUN, E2EE)
+  turn_server:
+    image: havfo/coturn:latest
+    container_name: hypersend_turn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "3479:3479/tcp"
+      - "3479:3479/udp"
+      - "5349:5349/tcp"
+      - "5349:5349/udp"
+      - "5350:5350/tcp"
+      - "5350:5350/udp"
+    environment:
+      - TURNSERVER_ENABLED=1
+      - TURNSERVER_REALM=hypersend.local
+      - TURNSERVER_USERNAME=${TURN_USERNAME:-turnuser}
+      - TURNSERVER_PASSWORD=${TURN_PASSWORD:-change_this_password_in_prod}
+      - TURNSERVER_EXTERNAL_IP=${TURNSERVER_EXTERNAL_IP:-127.0.0.1}
+      - TURNSERVER_LOG_LEVEL=warning
+      - TURNSERVER_VERBOSE=0
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo | nc -z localhost 3478 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+
+  # Message Queue for Offline Delivery & Async Tasks
+  celery_broker:
+    image: redis:7-alpine
+    container_name: hypersend_celery_broker
+    restart: unless-stopped
+    command: >
+      redis-server
+      --port 6380
+      --requirepass ${CELERY_BROKER_PASSWORD:-change_this_password_in_prod}
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --appendonly no
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.25'
+
+  # Prometheus Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hypersend_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+
+  # Grafana Dashboard for Monitoring
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hypersend_grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_SECURITY_COOKIE_SAMESITE=strict
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - hypersend_network
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+
 networks:
   hypersend_network:
     driver: bridge
@@ -361,4 +564,12 @@ volumes:
   # - Each file encrypted by sender before upload
   # - Auto-delete after 24h TTL (lifecycle policy)
   minio_data:
+    driver: local
+
+  # Prometheus metrics storage
+  prometheus_data:
+    driver: local
+
+  # Grafana dashboard data
+  grafana_data:
     driver: local

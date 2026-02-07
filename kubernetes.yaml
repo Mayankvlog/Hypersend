@@ -5,6 +5,7 @@ metadata:
   name: hypersend
   labels:
     name: hypersend
+    security: e2ee-enabled
 
 
 ---
@@ -20,20 +21,30 @@ data:
   ACCESS_TOKEN_EXPIRE_MINUTES: '28800'
   REFRESH_TOKEN_EXPIRE_DAYS: '20'
   UPLOAD_TOKEN_EXPIRE_HOURS: '480'
+  
+  # E2EE Configuration
   E2EE_ENABLED: 'true'
   E2EE_ALGORITHM: signal_protocol
   E2EE_KEY_ROTATION_DAYS: '7'
   E2EE_PREKEY_EXPIRATION_DAYS: '30'
   E2EE_MESSAGE_COUNTER_WINDOW: '1024'
+  E2EE_FORWARD_SECRECYCY_ENABLED: 'true'
+  E2EE_POST_COMPROMISE_SECURITY: 'true'
+  
+  # Device Management
   DEVICE_VERIFICATION_REQUIRED: 'true'
   DEVICE_LINKING_TIMEOUT_MINUTES: '5'
   DEVICE_SESSION_EXPIRATION_DAYS: '30'
-  MAX_DEVICES_PER_USER: '5'
+  MAX_DEVICES_PER_USER: '4'
+  
+  # Message Storage (Zero-Knowledge)
   MESSAGE_STORAGE: redis_only
   MESSAGE_TTL_MINUTES: '60'
   SERVER_STORAGE_BYTES: '0'
   SERVER_TEMP_BYTES: '100000000'
   USER_DEVICE_PRIMARY: 'true'
+  
+  # Media Configuration
   S3_BUCKET: hypersend-temp
   AWS_ACCESS_KEY_ID: AKIA2460123456xxxxxxxx
   AWS_SECRET_ACCESS_KEY: wJalr9RiUMnits1234567stubxbdPcQxSx
@@ -126,14 +137,41 @@ metadata:
   namespace: hypersend
 type: Opaque
 data:
+  # Database Secrets
   MONGO_USER: bWF5YW5sbHIwMzExX2RiX3VzZXI=
   MONGO_PASSWORD: PGRiX3Bhc3N3b3JkPg==
   MONGO_INITDB_DATABASE: aHlwZXJzZW5k
   MONGODB_ATLAS_ENABLED: dHJ1ZQ==
   MONGODB_URI: bW9uZ29kYitzcnY6Ly9tYXlhbmxscjAzMTFfZGJfdXNlcjpKQmtBWmluOGx5dFRLNnZnQGNsdXN0ZXIwLnJuajN2ZmQubW9uZ29kYi5uZXQvaHlwZXJzZW5kP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eQ==
+  
+  # Email Service
   SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=
+  
+  # AWS S3
   AWS_ACCESS_KEY_ID: QUtJQTI0NjAxMjM0NTZ4eHh4eHh4eHg=
   AWS_SECRET_ACCESS_KEY: d0phbHI5UmlVTW5pdHMxMjM0NTY3c3R1YnhiZFBjUXhTeA==
+  
+  # Redis
+  REDIS_PASSWORD: Y2hhbmdlX3RoaXNfcGFzc3dvcmRfaW5fcHJvZA==
+  
+  # E2EE Secrets
+  E2EE_MASTER_KEY: c2VjdXJlX2UyZWVfbWFzdGVyX2tleV8yMDI1X2ZpeGVk
+  E2EE_SIGNAL_IDENTITY_KEY: c2lnbmFsX2lkZW50aXR5X2tleV9iYXNlNjRfZW5jb2RlZA==
+  E2EE_SIGNAL_SIGNED_PREKEY: c2lnbmFsX3NpZ25lZF9wcmVrZXlfYmFzZTY0X2VuY29kZWQ=
+  E2EE_HMAC_SECRET: aG1hY19zZWNyZXRfZm9yX2UyZWVfc2lnbmF0dXJlcw==
+  E2EE_KDF_SALT: a2RmX3NhbHRfZm9yX2tleV9kZXJpdmF0aW9u
+  
+  # TURN Server for Voice/Video Calls
+  TURN_USERNAME: dHVybnVzZXI=
+  TURN_PASSWORD: Y2hhbmdlX3R1cm5fcGFzc3dvcmRfaW5fcHJvZA==
+  
+  # TLS Certificates (base64 encoded)
+  TLS_CERTIFICATE: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tXQ==
+  TLS_PRIVATE_KEY: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tXQ==
+  
+  # Monitoring
+  GRAFANA_PASSWORD: YWRtaW4=
+  PROMETHEUS_ADMIN_PASSWORD: cHJvbWV0aGV1c19hZG1pbl9wYXNzd29yZA==
 
 
 ---
@@ -1231,3 +1269,403 @@ spec:
       port: 9000
     - protocol: TCP
       port: 443
+
+
+---
+# Document 32: Deployment - e2ee-service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e2ee-service
+  namespace: hypersend
+  labels:
+    app: e2ee-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: e2ee-service
+  template:
+    metadata:
+      labels:
+        app: e2ee-service
+    spec:
+      containers:
+      - name: e2ee-service
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        command:
+        - python
+        - -m
+        - uvicorn
+        - backend.e2ee_service:app
+        - --host
+        - "0.0.0.0"
+        - --port
+        - "8002"
+        ports:
+        - containerPort: 8002
+          name: http
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 500m
+          limits:
+            memory: 1Gi
+            cpu: 1000m
+        env:
+        - name: REDIS_HOST
+          value: redis-cluster
+        - name: ENABLE_E2EE
+          value: "true"
+        - name: MAX_E2EE_DEVICES
+          value: "4"
+        - name: E2EE_SESSION_TIMEOUT
+          value: "604800"
+        - name: ENABLE_KEY_ROTATION
+          value: "true"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+
+---
+# Document 33: Service - e2ee-service
+apiVersion: v1
+kind: Service
+metadata:
+  name: e2ee-service
+  namespace: hypersend
+spec:
+  selector:
+    app: e2ee-service
+  ports:
+  - port: 8002
+    targetPort: 8002
+  type: ClusterIP
+
+
+---
+# Document 34: HorizontalPodAutoscaler - e2ee-service-hpa
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: e2ee-service-hpa
+  namespace: hypersend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: e2ee-service
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+
+---
+# Document 35: ServiceAccount - e2ee-service-account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2ee-service-account
+  namespace: hypersend
+
+
+---
+# Document 36: Secret - e2ee-encryption-keys
+apiVersion: v1
+kind: Secret
+metadata:
+  name: e2ee-encryption-keys
+  namespace: hypersend
+type: Opaque
+stringData:
+  MASTER_KEY: hypersend_master_key_change_this_in_prod
+  BACKUP_ENCRYPTION_KEY: hypersend_backup_encryption_key_change_this
+  DEVICE_LINKING_KEY: hypersend_device_linking_key_change_this
+
+
+---
+# Document 37: PodDisruptionBudget - e2ee-service-pdb
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: e2ee-service-pdb
+  namespace: hypersend
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: e2ee-service
+
+
+---
+# Document 38: HorizontalPodAutoscaler - e2ee-service-hpa
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: e2ee-service-hpa
+  namespace: hypersend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: e2ee-service
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+      - type: Percent
+        value: 200
+        periodSeconds: 15
+      - type: Pods
+        value: 10
+        periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+      selectPolicy: Min
+
+
+---
+# Document 39: Deployment - turn-server (for voice/video calls)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: turn-server
+  namespace: hypersend
+  labels:
+    app: turn-server
+    tier: infrastructure
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: turn-server
+  template:
+    metadata:
+      labels:
+        app: turn-server
+        tier: infrastructure
+    spec:
+      containers:
+      - name: coturn
+        image: coturn/coturn:latest
+        ports:
+        - containerPort: 3478
+          name: turn-udp
+          protocol: UDP
+        - containerPort: 3478
+          name: turn-tcp
+          protocol: TCP
+        - containerPort: 5349
+          name: turn-tls
+          protocol: TCP
+        env:
+        - name: TURNSERVER_ENABLED
+          value: "1"
+        - name: TURNSERVER_REALM
+          value: "hypersend.local"
+        - name: TURNSERVER_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: TURN_USERNAME
+        - name: TURNSERVER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: TURN_PASSWORD
+        - name: TURNSERVER_EXTERNAL_IP
+          value: "$(SERVICE_HOST)"
+        - name: TURNSERVER_LOG_LEVEL
+          value: "warning"
+        - name: TURNSERVER_VERBOSE
+          value: "0"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          udpSocket:
+            port: 3478
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          udpSocket:
+            port: 3478
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+
+---
+# Document 40: Service - turn-server
+apiVersion: v1
+kind: Service
+metadata:
+  name: turn-server
+  namespace: hypersend
+  labels:
+    app: turn-server
+spec:
+  selector:
+    app: turn-server
+  ports:
+  - name: turn-udp
+    port: 3478
+    targetPort: 3478
+    protocol: UDP
+  - name: turn-tcp
+    port: 3478
+    targetPort: 3478
+    protocol: TCP
+  - name: turn-tls
+    port: 5349
+    targetPort: 5349
+    protocol: TCP
+  type: LoadBalancer
+
+
+---
+# Document 41: HorizontalPodAutoscaler - turn-server-hpa
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: turn-server-hpa
+  namespace: hypersend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: turn-server
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 2
+        periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+      selectPolicy: Min
+
+
+---
+# Document 42: PersistentVolumeClaim - e2ee-storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: e2ee-storage-pvc
+  namespace: hypersend
+  labels:
+    app: e2ee-service
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+
+
+---
+# Document 43: NetworkPolicy - e2ee-security-policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: e2ee-security-policy
+  namespace: hypersend
+spec:
+  podSelector:
+    matchLabels:
+      app: e2ee-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+    - podSelector:
+        matchLabels:
+          app: backend
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+    - podSelector:
+        matchLabels:
+          app: redis
+    - podSelector:
+        matchLabels:
+          app: mongodb
+    ports:
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
+      port: 27017
