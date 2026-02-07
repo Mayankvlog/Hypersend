@@ -38,7 +38,7 @@ def hash_password(password: str):
         if not hash_hex or len(hash_hex) != 64:  # SHA256 produces 64 hex chars
             raise ValueError("Invalid hash generation")
         
-        # CRITICAL FIX: Return combined format for tests AND separate salt for database
+        # CRITICAL FIX: Return combined format for tests (salt$hash)
         combined = f"{salt}${hash_hex}"
         return combined  # Return just the combined string for tests
     except Exception as e:

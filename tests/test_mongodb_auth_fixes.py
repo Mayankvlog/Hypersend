@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from backend.config import settings
-from database import connect_db, get_db, users_collection, close_db
+from backend.database import connect_db, get_db, users_collection, close_db
 from backend.routes.auth import register, login
 from backend.models import UserCreate, UserLogin
 
@@ -27,7 +27,7 @@ class TestMongoDBConnection:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing"""
-        with patch('database.settings') as mock_settings:
+        with patch('backend.database.settings') as mock_settings:
             mock_settings.MONGODB_URI = "mongodb://test:test@localhost:27017/test?authSource=admin&tls=false"
             mock_settings._MONGO_DB = "test_db"
             mock_settings._MONGO_USER = "test"
@@ -41,7 +41,7 @@ class TestMongoDBConnection:
     @pytest.fixture
     def mock_motor_client(self):
         """Mock AsyncIOMotorClient"""
-        with patch('database.AsyncIOMotorClient') as mock_client_class:
+        with patch('backend.database.AsyncIOMotorClient') as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_client.admin.command.return_value = {"ok": 1}
@@ -52,7 +52,7 @@ class TestMongoDBConnection:
     async def test_connect_db_success(self, mock_settings, mock_motor_client):
         """Test successful MongoDB connection"""
         # Reset global variables
-        import database
+        from backend import database
         database.client = None
         database.db = None
         
@@ -70,12 +70,12 @@ class TestMongoDBConnection:
     @pytest.mark.asyncio
     async def test_connect_db_with_timeout(self, mock_settings):
         """Test MongoDB connection timeout handling"""
-        with patch('database.AsyncIOMotorClient') as mock_client_class:
+        with patch('backend.database.AsyncIOMotorClient') as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_client.admin.command.side_effect = asyncio.TimeoutError("Connection timeout")
             
-            import database
+            from backend import database
             database.client = None
             database.db = None
             
@@ -87,12 +87,12 @@ class TestMongoDBConnection:
     @pytest.mark.asyncio
     async def test_connect_db_with_invalid_uri(self):
         """Test MongoDB connection with invalid URI"""
-        with patch('database.settings') as mock_settings:
+        with patch('backend.database.settings') as mock_settings:
             mock_settings.MONGODB_URI = None
             mock_settings._MONGO_DB = "test_db"
             mock_settings.USE_MOCK_DB = False  # Ensure real database testing
             
-            import database
+            from backend import database
             database.client = None
             database.db = None
             
@@ -104,7 +104,7 @@ class TestMongoDBConnection:
     @pytest.mark.asyncio
     async def test_get_db_success(self, mock_settings, mock_motor_client):
         """Test get_db function returns database instance"""
-        import database
+        from backend import database
         database.client = None
         database.db = None
         database._global_db = None
@@ -113,7 +113,7 @@ class TestMongoDBConnection:
         mock_client_class, mock_client = mock_motor_client
         
         # Mock the settings to use mock database
-        with patch('database.settings') as settings_mock:
+        with patch('backend.database.settings') as settings_mock:
             settings_mock.USE_MOCK_DB = True
             settings_mock.DEBUG = True
             
@@ -127,12 +127,12 @@ class TestMongoDBConnection:
     @pytest.mark.asyncio
     async def test_users_collection_not_future(self, mock_settings, mock_motor_client):
         """Test users_collection does not return Future objects"""
-        import database
+        from backend import database
         database.client = None
         database.db = None
         
         # Mock settings to use mock database
-        with patch('database.settings') as settings_mock:
+        with patch('backend.database.settings') as settings_mock:
             settings_mock.USE_MOCK_DB = True
             settings_mock.DEBUG = True
             

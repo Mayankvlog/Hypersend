@@ -10,51 +10,48 @@ import asyncio
 import json
 from fastapi.testclient import TestClient
 
-# Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
-if backend_path not in sys.path:
-    sys.path.insert(0, backend_path)
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
 
-# Import required modules
-try:
-    from backend.main import app
-except ImportError:
-    print("❌ Could not import main.py. Trying alternative...")
-    sys.path.insert(0, os.path.dirname(__file__))
-    from backend.main import app
+# Import required modules using import helper
+from import_helper import get_test_app, get_auth_utils, get_mock_collections, get_models
 
-try:
-    from auth.utils import get_current_user
-except ImportError:
-    print("❌ Could not import auth.utils. Trying alternative...")
-    from backend.auth.utils import get_current_user
+# Get test app and utilities
+app = get_test_app()
+hash_password, verify_password, get_current_user = get_auth_utils()
+collections = get_mock_collections()
+GroupCreate, GroupMembersUpdate, GroupUpdate, UserCreate = get_models()
 
-try:
-    from backend.routes.groups import GroupMembersUpdate
-except ImportError:
-    print("❌ Could not import routes.groups. Trying alternative...")
-    from backend.routes.groups import GroupMembersUpdate
-
-try:
-    from mock_database import chats_collection, users_collection
-except ImportError:
-    print("❌ Could not import mock_database. Trying alternative...")
-    from backend.mock_database import chats_collection, users_collection
+# Extract specific collections
+chats_collection = collections.get('chats') if collections else None
+users_collection = collections.get('users') if collections else None
 from unittest.mock import patch, AsyncMock
 
 class AddMembersDebugger:
     def __init__(self):
+        # Validate collections are available
+        if not chats_collection or not users_collection:
+            error_msg = "Cannot create debugger - required collections not available"
+            print(f"❌ {error_msg}")
+            raise RuntimeError(error_msg)
+        
+        if not app:
+            error_msg = "Cannot create debugger - no app available"
+            print(f"❌ {error_msg}")
+            raise RuntimeError(error_msg)
+            
         self.client = TestClient(app)
         # Override dependency for testing
-        app.dependency_overrides[get_current_user] = lambda: "test_admin_user"
+        if get_current_user and hasattr(app, 'dependency_overrides'):
+            app.dependency_overrides[get_current_user] = lambda: "test_admin_user"
         
     async def setup_test_data(self):
         """Setup test group and users"""
         print("🔧 Setting up test data...")
         
         # Clear existing data
-        chats_collection().data.clear()
-        users_collection().data.clear()
+        clear_collection(chats_collection())
+        clear_collection(users_collection())
         
         # Create test group with admin user
         test_group = {

@@ -11,14 +11,22 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
-# Add backend to path
-backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
-if backend_path not in sys.path:
-    sys.path.insert(0, backend_path)
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
 
-from backend.main import app
-from backend.models import GroupCreate, GroupMembersUpdate
-from backend.mock_database import users_collection, chats_collection, messages_collection
+# Import required modules using import helper
+from import_helper import get_test_app, get_auth_utils, get_mock_collections, get_models
+
+# Get test app and utilities
+app = get_test_app()
+hash_password, verify_password, get_current_user = get_auth_utils()
+collections = get_mock_collections()
+GroupCreate, GroupMembersUpdate, GroupUpdate, UserCreate = get_models()
+
+# Extract specific collections
+users_collection = collections.get('users')
+chats_collection = collections.get('chats')
+messages_collection = collections.get('messages')
 
 class TestAllFixes:
     """Test all fixes applied to Hypersend"""
@@ -26,6 +34,11 @@ class TestAllFixes:
     @pytest.fixture
     def client(self):
         """Create test client"""
+        if app is None:
+            raise RuntimeError(
+                "Test app could not be initialized. "
+                "Ensure backend modules are properly installed and importable."
+            )
         return TestClient(app)
     
     @pytest.fixture
@@ -49,16 +62,24 @@ class TestAllFixes:
     
     def setup_method(self):
         """Setup test data"""
-        users_collection().data.clear()
-        chats_collection().data.clear()
-        messages_collection().data.clear()
+        # Validate collections are available
+        if not users_collection or not chats_collection or not messages_collection:
+            pytest.skip("Required collections not available")
+        
+        # Clear collections safely
+        if callable(users_collection):
+            clear_collection(users_collection)
+        if callable(chats_collection):
+            clear_collection(chats_collection)
+        if callable(messages_collection):
+            clear_collection(messages_collection)
     
     def test_file_download_mime_fix(self, client, mock_current_user, mock_user_data):
         """Test file download with mime_type field (not mime)"""
         print("\n🧪 Test: File Download MIME Fix")
         
         # Setup mock user
-        users_collection().data[mock_current_user] = mock_user_data
+        setup_test_document(users_collection(), mock_user_data)
         
         # Create mock file with mime_type field
         file_id = "507f1f77bcf86cd799439013"
@@ -75,7 +96,7 @@ class TestAllFixes:
         
         # Mock the file collection
         from backend.mock_database import files_collection
-        files_collection().data[file_id] = mock_file
+        setup_test_document(files_collection(), mock_file)
         
         # Mock file existence
         import os
@@ -126,7 +147,7 @@ class TestAllFixes:
         print("\n🧪 Test: Group Member Selection Fix")
         
         # Setup mock user
-        users_collection().data[mock_current_user] = mock_user_data
+        setup_test_document(users_collection(), mock_user_data)
         
         # Create mock group
         group_id = "507f1f77bcf86cd799439014"
@@ -141,7 +162,7 @@ class TestAllFixes:
             "created_at": datetime.now(),
             "muted_by": []
         }
-        chats_collection().data[group_id] = mock_group
+        setup_test_document(chats_collection(), mock_group)
         
         # Create mock member to add
         member_id = "507f1f77bcf86cd799439012"
@@ -155,7 +176,7 @@ class TestAllFixes:
             "quota_used": 0,
             "quota_limit": 42949672960
         }
-        users_collection().data[member_id] = mock_member
+        setup_test_document(users_collection(), mock_member)
         
         # Test add members with different field names
         add_data = {
@@ -197,7 +218,7 @@ class TestAllFixes:
         print("\n🧪 Test: Group Creation with Members")
         
         # Setup mock user
-        users_collection().data[mock_current_user] = mock_user_data
+        setup_test_document(users_collection(), mock_user_data)
         
         # Create mock member
         member_id = "507f1f77bcf86cd799439012"
@@ -211,7 +232,7 @@ class TestAllFixes:
             "quota_used": 0,
             "quota_limit": 42949672960
         }
-        users_collection().data[member_id] = mock_member
+        setup_test_document(users_collection(), mock_member)
         
         # Create group with members
         group_data = {

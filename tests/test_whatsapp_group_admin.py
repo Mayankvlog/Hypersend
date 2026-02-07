@@ -17,6 +17,9 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+
 from backend.main import app
 from backend.mock_database import users_collection, chats_collection, messages_collection
 
@@ -107,17 +110,17 @@ class TestWhatsAppGroupAdmin:
     
     def setup_method(self):
         """Setup test data"""
-        users_collection().data.clear()
-        chats_collection().data.clear()
-        messages_collection().data.clear()
+        clear_collection(users_collection())
+        clear_collection(chats_collection())
+        clear_collection(messages_collection())
     
     def test_toggle_member_add_permission_admin(self, client, mock_admin_user, mock_group):
         """Test admin can toggle member add permission"""
         print("\n🧪 Test: Toggle Member Add Permission (Admin)")
         
         # Setup admin user and group
-        users_collection().data["507f1f77bcf86cd799439011"] = mock_admin_user
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+        setup_test_document(users_collection(), mock_admin_user)
+        setup_test_document(chats_collection(), mock_group)
         
         # Enable member add permission
         response = client.put(
@@ -150,8 +153,8 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Toggle Member Add Permission (Non-Admin)")
         
         # Setup member user and group
-        users_collection().data["507f1f77bcf86cd799439012"] = mock_member_user
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+        setup_test_document(users_collection(), mock_member_user)
+        setup_test_document(chats_collection(), mock_group)
         
         # Try to enable member add permission as non-admin
         response = client.put(
@@ -177,9 +180,9 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Get Group Participants")
         
         # Setup users and group
-        users_collection().data["507f1f77bcf86cd799439011"] = mock_admin_user
-        users_collection().data["507f1f77bcf86cd799439012"] = mock_member_user
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+        setup_test_document(users_collection(), mock_admin_user)
+        setup_test_document(users_collection(), mock_member_user)
+        setup_test_document(chats_collection(), mock_group)
         
         response = client.get(
             "/api/v1/groups/507f1f77bcf86cd799439015/participants",
@@ -222,10 +225,10 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Search Contacts for Group")
         
         # Setup admin user, contacts, and group
-        users_collection().data["507f1f77bcf86cd799439011"] = mock_admin_user
+        setup_test_document(users_collection(), mock_admin_user)
         for uid, user_data in mock_contact_users.items():
-            users_collection().data[uid] = user_data
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+            setup_test_document(users_collection(), user_data)
+        setup_test_document(chats_collection(), mock_group)
         
         # Search contacts
         response = client.get(
@@ -261,10 +264,10 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Search Contacts with Query")
         
         # Setup admin user, contacts, and group
-        users_collection().data["507f1f77bcf86cd799439011"] = mock_admin_user
+        setup_test_document(users_collection(), mock_admin_user)
         for uid, user_data in mock_contact_users.items():
-            users_collection().data[uid] = user_data
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+            setup_test_document(users_collection(), user_data)
+        setup_test_document(chats_collection(), mock_group)
         
         # Search with query
         response = client.get(
@@ -297,10 +300,10 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Add Multiple Participants (Admin)")
         
         # Setup admin user, contacts, and group
-        users_collection().data["507f1f77bcf86cd799439011"] = mock_admin_user
+        setup_test_document(users_collection(), mock_admin_user)
         for uid, user_data in mock_contact_users.items():
-            users_collection().data[uid] = user_data
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+            setup_test_document(users_collection(), user_data)
+        setup_test_document(chats_collection(), mock_group)
         
         # Add multiple participants
         participant_ids = ["507f1f77bcf86cd799439013", "507f1f77bcf86cd799439014"]
@@ -340,13 +343,13 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Add Multiple Participants (With Permission)")
         
         # Setup member user, contacts, and group with permission enabled
-        users_collection().data["507f1f77bcf86cd799439012"] = mock_member_user
+        setup_test_document(users_collection(), mock_member_user)
         for uid, user_data in mock_contact_users.items():
-            users_collection().data[uid] = user_data
+            setup_test_document(users_collection(), user_data)
         
         # Enable member add permission
         mock_group["permissions"]["allow_member_add"] = True
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+        setup_test_document(chats_collection(), mock_group)
         
         # Add participants as non-admin
         participant_ids = ["507f1f77bcf86cd799439013"]
@@ -381,10 +384,10 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Add Multiple Participants (No Permission)")
         
         # Setup member user, contacts, and group without permission
-        users_collection().data["507f1f77bcf86cd799439012"] = mock_member_user
+        setup_test_document(users_collection(), mock_member_user)
         for uid, user_data in mock_contact_users.items():
-            users_collection().data[uid] = user_data
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+            setup_test_document(users_collection(), user_data)
+        setup_test_document(chats_collection(), mock_group)
         
         # Try to add participants as non-admin without permission
         participant_ids = ["507f1f77bcf86cd799439013"]
@@ -411,8 +414,8 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Get Add Participants Info")
         
         # Setup admin user and group
-        users_collection().data["507f1f77bcf86cd799439011"] = mock_admin_user
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+        setup_test_document(users_collection(), mock_admin_user)
+        setup_test_document(chats_collection(), mock_group)
         
         response = client.get(
             "/api/v1/groups/507f1f77bcf86cd799439015/info/add-participants",
@@ -452,10 +455,10 @@ class TestWhatsAppGroupAdmin:
         print("\n🧪 Test: Complete WhatsApp Flow Simulation")
         
         # Setup all users
-        users_collection().data["507f1f77bcf86cd799439011"] = mock_admin_user
-        users_collection().data["507f1f77bcf86cd799439012"] = mock_member_user
+        setup_test_document(users_collection(), mock_admin_user)
+        setup_test_document(users_collection(), mock_member_user)
         for uid, user_data in mock_contact_users.items():
-            users_collection().data[uid] = user_data
+            setup_test_document(users_collection(), user_data)
         
         # Create group
         mock_group = {
@@ -470,7 +473,7 @@ class TestWhatsAppGroupAdmin:
             "muted_by": [],
             "permissions": {"allow_member_add": False}
         }
-        chats_collection().data["507f1f77bcf86cd799439015"] = mock_group
+        setup_test_document(chats_collection(), mock_group)
         
         print("📥 Step 1: Group created")
         

@@ -46,35 +46,30 @@ class Settings:
     # Determine MongoDB connection method
     from urllib.parse import quote_plus
     
-    # First, check if MONGODB_URI environment variable is explicitly set
+    # CRITICAL: MONGODB_URI must be set - fail fast if missing
     env_mongodb_uri = os.getenv("MONGODB_URI")
     
-    if env_mongodb_uri and "mongodb+srv://" in env_mongodb_uri:
-        # MongoDB Atlas (Cloud) with SRV connection - use as-is
-        # Atlas URIs should have credentials already URL-encoded
-        MONGODB_URI: str = env_mongodb_uri
+    if not env_mongodb_uri:
+        raise RuntimeError(
+            "CRITICAL: MONGODB_URI environment variable is required. "
+            "No hardcoded fallback is permitted for security reasons. "
+            "Please set MONGODB_URI in your environment file (e.g., .env or .env.production)"
+        )
+    
+    # Validate MongoDB URI format
+    if not (env_mongodb_uri.startswith("mongodb://") or env_mongodb_uri.startswith("mongodb+srv://")):
+        raise ValueError(
+            f"MONGODB_URI must start with 'mongodb://' or 'mongodb+srv://'. "
+            f"Got: {env_mongodb_uri[:50]}..."
+        )
+    
+    MONGODB_URI: str = env_mongodb_uri
+    
+    # Log connection info without exposing credentials
+    if "mongodb+srv://" in env_mongodb_uri:
         print(f"[CONFIG] MongoDB connection: Atlas (Cloud) - from environment")
-    elif _IS_DOCKER:
-        # Docker environment - use internal MongoDB container
-        encoded_password = quote_plus(_MONGO_PASSWORD)
-        encoded_user = quote_plus(_MONGO_USER)
-        # For traditional MongoDB (non-Atlas), authSource=admin
-        MONGODB_URI: str = f"mongodb://{encoded_user}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false&serverSelectionTimeoutMS=5000"
-        print(f"[CONFIG] MongoDB connection: Docker internal (traditional)")
-    elif env_mongodb_uri:
-        # Use environment-provided MONGODB_URI as-is
-        # Validate it's properly formatted
-        if not (env_mongodb_uri.startswith("mongodb://") or env_mongodb_uri.startswith("mongodb+srv://")):
-            print("[CONFIG] WARNING: MONGODB_URI doesn't start with mongodb:// or mongodb+srv://")
-        MONGODB_URI: str = env_mongodb_uri
-        print(f"[CONFIG] MongoDB connection: from MONGODB_URI environment variable")
     else:
-        # Construct MONGODB_URI from individual components (traditional MongoDB)
-        encoded_password = quote_plus(_MONGO_PASSWORD)
-        encoded_user = quote_plus(_MONGO_USER)
-        # For traditional MongoDB (non-Atlas), authSource=admin is required for remote auth
-        MONGODB_URI: str = f"mongodb://{encoded_user}:{encoded_password}@{_MONGO_HOST}:{_MONGO_PORT}/{_MONGO_DB}?authSource=admin&tls=false&serverSelectionTimeoutMS=5000"
-        print(f"[CONFIG] MongoDB connection: constructed from individual components")
+        print(f"[CONFIG] MongoDB connection: Traditional MongoDB - from environment")
     
     # Log connection info without exposing credentials
     if '@' in MONGODB_URI:
@@ -192,6 +187,8 @@ class Settings:
     print(f"[CONFIG] USE_MOCK_DB: {USE_MOCK_DB}")
     if USE_MOCK_DB:
         print("[CONFIG] WARNING: USING MOCK DATABASE - FOR TESTING ONLY")
+    else:
+        print("[CONFIG] Using real MongoDB Atlas database - Production mode")
     
     # Email / SMTP (optional - used for password reset emails)
     ENABLE_PASSWORD_RESET: bool = os.getenv("ENABLE_PASSWORD_RESET", "True").lower() in ("true", "1", "yes")

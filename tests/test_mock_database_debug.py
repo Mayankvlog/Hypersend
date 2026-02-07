@@ -13,6 +13,9 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+
 from backend.mock_database import users_collection
 
 def test_mock_database_query():
@@ -20,7 +23,7 @@ def test_mock_database_query():
     print("🧪 Testing Mock Database Query Matching")
     
     # Clear database
-    users_collection().data.clear()
+    clear_collection(users_collection())
     
     # Create test user
     test_user = {
@@ -35,8 +38,14 @@ def test_mock_database_query():
     }
     
     # Store user with different keys to test
-    users_collection().data["test@example.com"] = test_user
-    users_collection().data["user123"] = test_user.copy()
+    setup_test_document(users_collection(), test_user)
+    
+    # Create a different user document for second insert
+    test_user_2 = test_user.copy()
+    test_user_2["_id"] = "507f1f77bcf86cd799439012"  # Different ID
+    test_user_2["email"] = "test2@example.com"  # Different email
+    test_user_2["name"] = "Test User 2"
+    setup_test_document(users_collection(), test_user_2)
     
     print(f"📥 Stored users: {list(users_collection().data.keys())}")
     

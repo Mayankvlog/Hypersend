@@ -17,6 +17,9 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+
 from backend.main import app
 from backend.models import GroupCreate, GroupMembersUpdate
 from backend.mock_database import users_collection, chats_collection, messages_collection
@@ -64,17 +67,17 @@ class TestGroupMemberFix:
     
     def setup_method(self):
         """Setup test data"""
-        users_collection().data.clear()
-        chats_collection().data.clear()
-        messages_collection().data.clear()
+        clear_collection(users_collection())
+        clear_collection(chats_collection())
+        clear_collection(messages_collection())
     
     def test_group_creation_with_members(self, client, mock_current_user, mock_user_data, mock_member_data):
         """Test group creation returns proper member count"""
         print("\n🧪 Test: Group Creation with Members")
         
         # Setup mock users
-        users_collection().data[mock_current_user] = mock_user_data
-        users_collection().data["507f1f77bcf86cd799439012"] = mock_member_data
+        setup_test_document(users_collection(), mock_user_data)
+        setup_test_document(users_collection(), mock_member_data)
         
         # Mock authentication
         app.dependency_overrides = {}
@@ -132,7 +135,7 @@ class TestGroupMemberFix:
         print("\n🧪 Test: Group Listings Show Member Count")
         
         # Setup mock user
-        users_collection().data[mock_current_user] = mock_user_data
+        setup_test_document(users_collection(), mock_user_data)
         
         # Create mock group
         group_id = "507f1f77bcf86cd799439013"
@@ -147,7 +150,7 @@ class TestGroupMemberFix:
             "created_at": datetime.now(),
             "muted_by": []
         }
-        chats_collection().data[group_id] = mock_group
+        setup_test_document(chats_collection(), mock_group)
         
         # Mock authentication
         app.dependency_overrides = {}
@@ -194,7 +197,7 @@ class TestGroupMemberFix:
         print("\n🧪 Test: Add Members Returns Updated Count")
         
         # Setup mock user
-        users_collection().data[mock_current_user] = mock_user_data
+        setup_test_document(users_collection(), mock_user_data)
         
         # Create mock group
         group_id = "507f1f77bcf86cd799439014"
@@ -209,7 +212,7 @@ class TestGroupMemberFix:
             "created_at": datetime.now(),
             "muted_by": []
         }
-        chats_collection().data[group_id] = mock_group
+        setup_test_document(chats_collection(), mock_group)
         
         # Mock authentication
         app.dependency_overrides = {}
@@ -258,7 +261,7 @@ class TestGroupMemberFix:
         print("\n🧪 Test: Single Group Details Show Member Count")
         
         # Setup mock user
-        users_collection().data[mock_current_user] = mock_user_data
+        setup_test_document(users_collection(), mock_user_data)
         
         # Create mock group
         group_id = "507f1f77bcf86cd799439015"
@@ -273,7 +276,7 @@ class TestGroupMemberFix:
             "created_at": datetime.now(),
             "muted_by": []
         }
-        chats_collection().data[group_id] = mock_group
+        setup_test_document(chats_collection(), mock_group)
         
         # Mock authentication
         app.dependency_overrides = {}

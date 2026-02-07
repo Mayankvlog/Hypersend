@@ -12,6 +12,9 @@ from fastapi.testclient import TestClient
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+
 class TestMemberSuggestionsFix:
     """Test member suggestions functionality with comprehensive deep code scan"""
     
@@ -36,8 +39,8 @@ class TestMemberSuggestionsFix:
             from mock_database import users_collection, chats_collection
             
             # Clear mock database data
-            users_collection().data.clear()
-            chats_collection().data.clear()
+            clear_collection(users_collection())
+            clear_collection(chats_collection())
         except ImportError:
             pass  # Mock database not available
     
@@ -56,8 +59,8 @@ class TestMemberSuggestionsFix:
             from mock_database import users_collection, chats_collection
             
             # Clear mock database data
-            users_collection().data.clear()
-            chats_collection().data.clear()
+            clear_collection(users_collection())
+            clear_collection(chats_collection())
         except ImportError:
             pass  # Mock database not available
     
@@ -102,7 +105,7 @@ class TestMemberSuggestionsFix:
                 await chats_collection().insert_one(mock_group)
                 
                 # Clear and add only the specific users we want for this test
-                users_collection().data.clear()
+                clear_collection(users_collection())
                 for contact in mock_contacts:
                     await users_collection().insert_one(contact)
                 
@@ -174,7 +177,7 @@ class TestMemberSuggestionsFix:
                 await chats_collection().insert_one(mock_group)
                 
                 # Clear and add only the specific user we want for this test
-                users_collection().data.clear()
+                clear_collection(users_collection())
                 await users_collection().insert_one(mock_contacts[0])
                 
                 # Mock cursor to return only our specific contact
@@ -518,11 +521,17 @@ class TestMemberSuggestionsFix:
                 await chats_collection().insert_one(mock_group)
                 
                 # Clear and add only the specific user we want for this test
-                users_collection().data.clear()
+                clear_collection(users_collection())
                 await users_collection().insert_one(mock_contacts[0])
                 
-                # Use the actual database find method instead of mocked cursor
-                mock_users_collection.return_value.find = users_collection().find
+                # Mock cursor to return only our specific contact
+                async def mock_async_iter():
+                    for contact in mock_contacts:
+                        yield contact
+                
+                mock_cursor = AsyncMock()
+                mock_cursor.__aiter__ = lambda: mock_async_iter()
+                mock_users_collection.return_value.find.return_value = mock_cursor
                 
                 with patch('backend.routes.groups.chats_collection') as mock_chats_collection:
                     # Mock group lookup

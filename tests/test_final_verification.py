@@ -17,7 +17,7 @@ class TestMongoDBConnectionFixes:
     """Test MongoDB connection fixes comprehensively"""
     
     def test_env_file_configuration(self):
-        """Test that .env file is correctly configured for local MongoDB"""
+        """Test that .env file is correctly configured for MongoDB"""
         print("Testing .env file configuration...")
         
         env_path = Path(__file__).parent.parent / 'backend' / '.env'
@@ -27,15 +27,17 @@ class TestMongoDBConnectionFixes:
         with open(env_path, 'r') as f:
             env_content = f.read()
         
-        # Check that MONGODB_URI IS in .env for zaply.in.net MongoDB
+        # Check that MONGODB_URI IS in .env for MongoDB
         assert "MONGODB_URI=" in env_content, "MONGODB_URI should be set in .env file"
-        assert "mongodb://" in env_content, "MONGODB_URI should use mongodb:// for MongoDB"
-        assert "zaply.in.net:27017" in env_content, "MONGODB_URI should point to zaply.in.net MongoDB"
+        assert "mongodb://" in env_content or "mongodb+srv://" in env_content, "MONGODB_URI should use mongodb:// or mongodb+srv:// for MongoDB"
         
-        # Check MongoDB Atlas is disabled for local development
-        assert "MONGODB_ATLAS_ENABLED=false" in env_content, "MONGODB_ATLAS_ENABLED should be false for local development"
+        # Check for Atlas hostname pattern (.mongodb.net) instead of specific cluster
+        assert ".mongodb.net" in env_content, "MONGODB_URI should point to MongoDB Atlas (*.mongodb.net)"
         
-        print("✅ .env file configuration is correct for local MongoDB")
+        # Check MongoDB Atlas is enabled for production
+        assert "MONGODB_ATLAS_ENABLED=true" in env_content, "MONGODB_ATLAS_ENABLED should be true for Atlas production"
+        
+        print("✅ .env file configuration is correct for MongoDB Atlas/production")
     
     def test_motor_client_configuration(self):
         """Test Motor client configuration fixes"""

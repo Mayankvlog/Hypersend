@@ -47,7 +47,7 @@ class TestProductionFixes:
     def test_async_database_operations(self):
         """Test that async database operations don't return Future objects"""
         from backend.database import get_db, users_collection
-        from backend.auth.utils import hash_password
+        from backend.auth.utils import hash_password, verify_password
         import asyncio
         import unittest.mock
         
@@ -55,6 +55,7 @@ class TestProductionFixes:
         with unittest.mock.patch('backend.database.settings') as mock_settings:
             mock_settings.USE_MOCK_DB = True
             mock_settings.DEBUG = True
+            mock_settings.MONGODB_URI = "mongodb://localhost:27017/test"  # Provide a valid URI
             
             # Test 1: Database connection returns proper database, not Future
             db = get_db()

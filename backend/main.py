@@ -13,7 +13,11 @@ import asyncio
 from dotenv import load_dotenv
 
 # WhatsApp-Grade Cryptographic Imports
-import redis.asyncio as redis
+try:
+    import redis.asyncio as redis
+except ImportError:
+    print("[WARNING] Redis not available - using fallback cache")
+    redis = None
 from crypto.signal_protocol import SignalProtocol
 from crypto.multi_device import MultiDeviceManager
 from crypto.delivery_semantics import DeliveryManager
@@ -778,64 +782,84 @@ async def lifespan(app: FastAPI):
         
         # Initialize WhatsApp-grade cryptographic services
         print("[CRYPTO] Initializing WhatsApp-grade cryptographic services...")
-        try:
-            # Initialize Redis client for crypto services
-            redis_client = redis.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                password=settings.REDIS_PASSWORD,
-                decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True,
-            )
+        
+        # Guard against missing Redis module
+        if redis is None:
+            print("[CRYPTO] WARNING: Redis not available - cryptographic services will be disabled")
+            print("[CRYPTO] Install redis package to enable crypto services: pip install redis")
+            signal_protocol = None
+            multi_device_manager = None
+            delivery_manager = None
+            media_service = None
+            fan_out_worker = None
+        else:
+            try:
+                # Initialize Redis client for crypto services
+                redis_client = redis.Redis(
+                    host=settings.REDIS_HOST,
+                    port=settings.REDIS_PORT,
+                    password=settings.REDIS_PASSWORD,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
+                    retry_on_timeout=True,
+                )
+                
+                # Test Redis connection
+                await redis_client.ping()
+                print("[CRYPTO] Redis connection established")
+                
+                # Initialize cryptographic services
+                signal_protocol = SignalProtocol(redis_client)
+                multi_device_manager = MultiDeviceManager(redis_client)
+                delivery_manager = DeliveryManager(redis_client)
+                media_service = MediaEncryptionService(redis_client)
+                fan_out_worker = MessageFanOutWorker(redis_client)
             
-            # Test Redis connection
-            await redis_client.ping()
-            print("[CRYPTO] Redis connection established")
+                # Start WebSocket server
+                print("[WS] Starting WhatsApp-grade WebSocket server...")
+                websocket_server = await create_websocket_server(
+                    redis_client,
+                    host="0.0.0.0",
+                    port=8001
+                )
+                print("[WS] WebSocket server started on port 8001")
+                
+                # Start background fan-out worker
+                print("[FANOUT] Starting background fan-out worker...")
+                fan_out_task = asyncio.create_task(fan_out_worker.start_worker())
+                print("[FANOUT] Background fan-out worker started")
+                
+                # Store services in app state for access by routes
+                app.state.redis_client = redis_client
+                app.state.signal_protocol = signal_protocol
+                app.state.multi_device_manager = multi_device_manager
+                app.state.delivery_manager = delivery_manager
+                app.state.media_service = media_service
+                app.state.fan_out_worker = fan_out_worker
+                app.state.websocket_server = websocket_server
+                app.state.fan_out_task = fan_out_task
+                
+                print("[CRYPTO] WhatsApp-grade cryptographic services initialized successfully")
+                print("[CRYPTO] Signal Protocol: ✓")
+                print("[CRYPTO] Multi-Device Management: ✓")
+                print("[CRYPTO] Delivery Semantics: ✓")
+                print("[CRYPTO] Media Encryption: ✓")
+                print("[CRYPTO] Fan-Out Worker: ✓")
+                print("[CRYPTO] WebSocket Delivery: ✓")
             
-            # Initialize cryptographic services
-            signal_protocol = SignalProtocol(redis_client)
-            multi_device_manager = MultiDeviceManager(redis_client)
-            delivery_manager = DeliveryManager(redis_client)
-            media_service = MediaEncryptionService(redis_client)
-            fan_out_worker = MessageFanOutWorker(redis_client)
-            
-            # Start WebSocket server
-            print("[WS] Starting WhatsApp-grade WebSocket server...")
-            websocket_server = await create_websocket_server(
-                redis_client,
-                host="0.0.0.0",
-                port=8001
-            )
-            print("[WS] WebSocket server started on port 8001")
-            
-            # Start background fan-out worker
-            print("[FANOUT] Starting background fan-out worker...")
-            fan_out_task = asyncio.create_task(fan_out_worker.start_worker())
-            print("[FANOUT] Background fan-out worker started")
-            
-            # Store services in app state for access by routes
-            app.state.redis_client = redis_client
-            app.state.signal_protocol = signal_protocol
-            app.state.multi_device_manager = multi_device_manager
-            app.state.delivery_manager = delivery_manager
-            app.state.media_service = media_service
-            app.state.fan_out_worker = fan_out_worker
-            app.state.websocket_server = websocket_server
-            app.state.fan_out_task = fan_out_task
-            
-            print("[CRYPTO] WhatsApp-grade cryptographic services initialized successfully")
-            print("[CRYPTO] Signal Protocol: ✓")
-            print("[CRYPTO] Multi-Device Management: ✓")
-            print("[CRYPTO] Delivery Semantics: ✓")
-            print("[CRYPTO] Media Encryption: ✓")
-            print("[CRYPTO] Fan-Out Worker: ✓")
-            print("[CRYPTO] WebSocket Delivery: ✓")
-            
-        except Exception as e:
-            print(f"[ERROR] Failed to initialize cryptographic services: {e}")
-            print("[ERROR] Continuing without cryptographic services (limited functionality)")
+            except Exception as e:
+                print(f"[CRYPTO] WARNING: Failed to initialize cryptographic services: {str(e)}")
+                print(f"[CRYPTO] Continuing without crypto services - application will work with reduced functionality")
+                # Set services to None so routes can check and skip crypto features
+                app.state.redis_client = None
+                app.state.signal_protocol = None
+                app.state.multi_device_manager = None
+                app.state.delivery_manager = None
+                app.state.media_service = None
+                app.state.fan_out_worker = None
+                app.state.websocket_server = None
+                app.state.fan_out_task = None
         
         if settings.DEBUG:
             print(f"[START] Hypersend API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
@@ -1548,9 +1572,9 @@ async def logout_alias(current_user: str = Depends(get_current_user)):
 
 @app.post("/api/v1/auth/change-password")
 async def change_password_alias(request: PasswordChangeRequest, current_user: str = Depends(get_current_user)):
-    """Alias for /api/v1/users/change-password - delegates to users router"""
-    from routes.users import change_password as users_change_password
-    return await users_change_password(request, current_user)
+    """Alias for /api/v1/auth/change-password - delegates to auth router"""
+    from routes.auth import change_password as auth_change_password
+    return await auth_change_password(request, current_user)
 
 @app.post("/api/v1/reset-password")
 async def reset_password_alias(request: PasswordResetRequest):

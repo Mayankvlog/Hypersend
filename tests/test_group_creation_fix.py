@@ -15,6 +15,9 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+
 from fastapi.testclient import TestClient
 try:
     from backend.main import app
@@ -55,7 +58,8 @@ class TestGroupCreationFix:
         print("\n[TEST] Search Users Empty Query")
         
         # Setup test user with contacts
-        users_collection().data.clear()
+        clear_collection(users_collection)
+        
         test_user_doc = {
             "_id": test_user_id,
             "name": "Test User",
@@ -63,7 +67,7 @@ class TestGroupCreationFix:
             "contacts": test_contact_ids,  # User has 2 contacts
             "created_at": datetime.now()
         }
-        users_collection().data[test_user_id] = test_user_doc
+        setup_test_document(users_collection, test_user_doc)
         
         # Setup contact users
         for i, contact_id in enumerate(test_contact_ids):
@@ -74,7 +78,7 @@ class TestGroupCreationFix:
                 "username": f"contact{i+1}",
                 "created_at": datetime.now()
             }
-            users_collection().data[contact_id] = contact_doc
+            setup_test_document(users_collection, contact_doc)
         
         # Setup some other users
         other_user_id = str(ObjectId())
@@ -106,7 +110,7 @@ class TestGroupCreationFix:
         print("\n[TEST] Contacts Endpoint")
         
         # Setup test user with contacts
-        users_collection().data.clear()
+        clear_collection(users_collection)
         test_user_doc = {
             "_id": test_user_id,
             "name": "Test User",
@@ -176,7 +180,7 @@ class TestGroupCreationFix:
         print("\n[TEST] Group Creation With Members")
         
         # Setup test user with contacts
-        users_collection().data.clear()
+        clear_collection(users_collection)
         test_user_doc = {
             "_id": test_user_id,
             "name": "Test User",
@@ -224,7 +228,7 @@ class TestGroupCreationFix:
         print("\n[TEST] Group Creation Validation - No Members")
         
         # Setup test user without contacts
-        users_collection().data.clear()
+        clear_collection(users_collection)
         test_user_doc = {
             "_id": test_user_id,
             "name": "Test User",
@@ -260,7 +264,7 @@ class TestGroupCreationFix:
         print("\n[TEST] Member Selection Flow")
         
         # Setup test user with 2 contacts (simulating user's issue)
-        users_collection().data.clear()
+        clear_collection(users_collection)
         test_user_doc = {
             "_id": test_user_id,
             "name": "Test User",
@@ -268,18 +272,19 @@ class TestGroupCreationFix:
             "contacts": test_contact_ids,  # User reports having 2 members
             "created_at": datetime.now()
         }
-        users_collection().data[test_user_id] = test_user_doc
         
-        # Setup the 2 contact users
+        # Setup contact users using proper insert
+        setup_test_document(users_collection(), test_user_doc)
+        
         for i, contact_id in enumerate(test_contact_ids):
             contact_doc = {
                 "_id": contact_id,
-                "name": f"Friend {i+1}",
-                "email": f"friend{i+1}@example.com",
-                "username": f"friend{i+1}",
+                "name": f"Contact {i+1}",
+                "email": f"contact{i+1}@example.com",
+                "username": f"contact{i+1}",
                 "created_at": datetime.now()
             }
-            users_collection().data[contact_id] = contact_doc
+            setup_test_document(users_collection(), contact_doc)
         
         # Simulate frontend _loadContacts() using search with empty query
         # This should now work with our fix

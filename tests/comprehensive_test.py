@@ -138,8 +138,28 @@ def test_database_connections():
         chats = chats_collection()
         files = files_collection()
         
-        print(f"✅ Mock database collections initialized: users={len(users.data)}, chats={len(chats.data)}, files={len(files.data)}")
-        assert True
+        # Check if collections have data attribute (mock) or not (real)
+        # Verify consistency: either all have .data or none have .data
+        has_data_users = hasattr(users, 'data')
+        has_data_chats = hasattr(chats, 'data')
+        has_data_files = hasattr(files, 'data')
+        
+        # All collections should be consistent
+        all_have_data = all([has_data_users, has_data_chats, has_data_files])
+        none_have_data = not any([has_data_users, has_data_chats, has_data_files])
+        
+        if all_have_data:
+            # Mock database - all have data attribute
+            assert len(users.data) >= 0  # Can be empty
+            assert len(chats.data) >= 0
+            assert len(files.data) >= 0
+            print(f"✅ Mock database collections initialized: users={len(users.data)}, chats={len(chats.data)}, files={len(files.data)}")
+        elif none_have_data:
+            # Real database - none have data attribute
+            print("✅ Real database collections initialized (no data attribute)")
+        else:
+            # Inconsistent - some have data, some don't
+            assert False, f"Inconsistent collection types: users={has_data_users}, chats={has_data_chats}, files={has_data_files}"
         
     except Exception as e:
         print(f"❌ Database test failed: {e}")

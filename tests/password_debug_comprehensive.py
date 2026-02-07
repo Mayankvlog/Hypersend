@@ -15,6 +15,9 @@ backend_path = os.path.join(os.path.dirname(__file__), 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document
+
 async def test_password_scenarios():
     """Test all password scenarios with detailed logging"""
     
@@ -84,8 +87,8 @@ async def test_password_scenarios():
         print("-" * 40)
         
         # Clear test data
-        users_collection().data.clear()
-        refresh_tokens_collection().data.clear()
+        clear_collection(users_collection())
+        clear_collection(refresh_tokens_collection())
         
         # Create test user
         test_user_id = str(ObjectId())
@@ -98,7 +101,7 @@ async def test_password_scenarios():
             "created_at": datetime.now(),
             "updated_at": datetime.now()
         }
-        users_collection().data[test_user_id] = test_user
+        setup_test_document(users_collection(), test_user)
         print(f"✅ Test user created: {test_user_id}")
         
         # Create refresh tokens

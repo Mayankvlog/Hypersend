@@ -18,6 +18,9 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+
 from backend.config import settings
 from backend.main import app
 from backend.routes.auth import (
@@ -50,12 +53,12 @@ class TestTokenBasedPasswordReset:
             "quota_limit": 42949672960
         }
     
-    @pytest.fixture
+    @pytest.fixture(autouse=True)
     def setup_test_data(self, mock_user_data):
-        """Setup test data"""
-        users_collection().data.clear()
-        reset_tokens_collection().data.clear()
-        refresh_tokens_collection().data.clear()
+        """Setup test data - runs automatically before each test"""
+        clear_collection(users_collection)
+        clear_collection(reset_tokens_collection)
+        clear_collection(refresh_tokens_collection)
     
     def test_generate_password_reset_token(self, mock_user_data):
         """Test JWT reset token generation for password reset"""

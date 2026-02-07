@@ -1,25 +1,3 @@
-"""
-WhatsApp-Grade Media Encryption Service
-====================================
-
-Comprehensive media file encryption supporting:
-- Images, videos, documents, audio files
-- View-once media with automatic deletion
-- Ephemeral media with TTL (Time To Live)
-- Client-side encryption before upload
-- Secure key derivation and storage
-- Multi-device key synchronization
-- Automatic cleanup of expired media
-
-Security Properties:
-- AES-256-GCM encryption with random IVs
-- Per-media unique keys with HKDF derivation
-- Secure key storage in device keychain/keystore
-- Automatic key rotation and secure deletion
-- Replay protection and integrity verification
-- Zero-knowledge server architecture
-"""
-
 import os
 import io
 import time
@@ -39,12 +17,12 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 try:
-    from ..redis_cache import cache
-    from ..db_proxy import media_collection
+    from backend.redis_cache import cache
+    from backend.db_proxy import files_collection
     import logging
 except ImportError:
     from redis_cache import cache
-    from db_proxy import media_collection
+    from db_proxy import files_collection
     import logging
 
 logger = logging.getLogger(__name__)
@@ -492,14 +470,14 @@ class MediaEncryptionService:
     async def _store_media_metadata(self, metadata: MediaMetadata):
         """Store media metadata in database"""
         try:
-            await media_collection().insert_one(metadata.to_dict())
+            await files_collection().insert_one(metadata.to_dict())
         except Exception as e:
             logger.error(f"Failed to store media metadata: {str(e)}")
     
     async def _get_media_metadata(self, media_id: str) -> Optional[MediaMetadata]:
         """Get media metadata from database"""
         try:
-            data = await media_collection().find_one({"file_id": media_id})
+            data = await files_collection().find_one({"file_id": media_id})
             if data:
                 return MediaMetadata.from_dict(data)
             return None
@@ -510,7 +488,7 @@ class MediaEncryptionService:
     async def _delete_media_metadata(self, media_id: str):
         """Delete media metadata from database"""
         try:
-            await media_collection().delete_one({"file_id": media_id})
+            await files_collection().delete_one({"file_id": media_id})
         except Exception as e:
             logger.error(f"Failed to delete media metadata: {str(e)}")
     
@@ -537,7 +515,7 @@ class MediaEncryptionService:
         """Get list of expired media files"""
         try:
             now = time.time()
-            cursor = media_collection().find({
+            cursor = files_collection().find({
                 "expires_at": {"$lt": now, "$gt": 0}
             })
             expired_media = []

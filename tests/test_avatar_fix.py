@@ -14,6 +14,9 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+
 @pytest.mark.asyncio
 async def test_avatar_fix():
     """Test that avatar initials are properly handled"""
@@ -58,7 +61,7 @@ async def test_avatar_fix():
         from backend.db_proxy import users_collection
         
         # Clear test data
-        users_collection().data.clear()
+        clear_collection(users_collection())
         
         # Create test user
         test_user = UserCreate(
@@ -108,7 +111,7 @@ async def test_avatar_fix():
             "avatar_url": None,
             "created_at": datetime.now()
         }
-        users_collection().data[test_user_id] = test_user_doc
+        setup_test_document(users_collection(), test_user_doc)
         
         # Update profile with avatar URL
         profile_update = ProfileUpdate(

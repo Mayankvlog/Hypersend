@@ -18,6 +18,9 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Import test utilities
+from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+
 from backend.main import app
 from backend.mock_database import users_collection, files_collection
 
@@ -45,8 +48,8 @@ class TestAndroidDownloadFolder:
     
     def setup_method(self):
         """Setup test data"""
-        users_collection().data.clear()
-        files_collection().data.clear()
+        clear_collection(users_collection())
+        clear_collection(files_collection())
     
     def test_get_public_downloads_path_android_13_plus(self, client):
         """Test getting downloads path for Android 13+"""
@@ -242,7 +245,7 @@ class TestAndroidDownloadFolder:
         mock_copy.return_value = None
         
         # Setup file in database
-        files_collection().data["507f1f77bcf86cd799439011"] = mock_file_data
+        setup_test_document(files_collection(), mock_file_data)
         
         response = client.post(
             "/api/v1/files/android/save-to-public-directory?file_id=507f1f77bcf86cd799439011&target_directory=Downloads&platform=android",
@@ -409,7 +412,7 @@ class TestAndroidDownloadFolder:
         print("\n🧪 Test: Complete Android Download Folder Flow")
         
         # Setup file in database
-        files_collection().data["507f1f77bcf86cd799439011"] = mock_file_data
+        setup_test_document(files_collection(), mock_file_data)
         
         # Step 1: Get downloads path
         response = client.get(

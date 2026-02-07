@@ -321,6 +321,8 @@ _files_collection = None
 _uploads_collection = None
 _refresh_tokens_collection = None
 _reset_tokens_collection = None
+_media_collection = None
+_group_activity_collection = None
 
 def users_collection():
     global _users_collection
@@ -377,5 +379,33 @@ def get_db():
     return MockDatabase()
 
 def media_collection():
-    """Mock media collection getter"""
-    return get_db().media_collection
+    """Get media collection following singleton pattern"""
+    global _media_collection
+    if _media_collection is None:
+        _media_collection = MockCollection("media")
+    return _media_collection
+
+def group_activity_collection():
+    """Get group activity collection following singleton pattern"""
+    global _group_activity_collection
+    if _group_activity_collection is None:
+        _group_activity_collection = MockCollection("group_activity")
+    return _group_activity_collection
+
+# Helper function for tests to clear collections
+def clear_test_collections():
+    """Clear all mock collections for test isolation"""
+    global _users_collection, _chats_collection, _messages_collection
+    global _files_collection, _uploads_collection, _refresh_tokens_collection, _reset_tokens_collection
+    global _media_collection, _group_activity_collection
+    
+    _users_collection = None
+    _chats_collection = None
+    _messages_collection = None
+    _files_collection = None
+    _uploads_collection = None
+    _refresh_tokens_collection = None
+    _reset_tokens_collection = None
+    _media_collection = None
+    _group_activity_collection = None
+    print("[MOCK_DB] Cleared all collection references for test isolation")
