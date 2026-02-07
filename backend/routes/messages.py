@@ -417,20 +417,21 @@ async def send_whatsapp_message(
             recipient_devices=recipient_devices
         )
         
-        # Store minimal metadata in MongoDB
-        message_metadata = {
-            "_id": message["message_id"],
-            "chat_id": request.chat_id,
-            "sender_id": current_user,
-            "sender_device_id": request.device_id or "primary",
-            "message_type": request.message_type,
-            "delivery_state": message["state"],
-            "sequence_number": message["sequence_number"],
-            "created_at": datetime.utcnow(),
-            "expires_at": datetime.utcnow() + timedelta(hours=24)
-        }
+        # WhatsApp-style: Store only in Redis (ephemeral, per-device)
+        message_key = f"message:{message['message_id']}"
+        await cache.set(message_key, message, expire_seconds=24*60*60)  # 24h TTL
         
-        await messages_collection().insert_one(message_metadata)
+        # Store in per-device queues for delivery
+        for device_id in recipient_devices:
+            queue_key = f"device_queue:{recipient_user_id}:{device_id}"
+            await cache.zadd(queue_key, {
+                message['message_id']: message['created_at']
+            })
+            await cache.expire(queue_key, 24*60*60)  # 24h TTL
+        
+        # Store chat sequence
+        seq_key = f"chat_sequence:{request.chat_id}"
+        await cache.set(seq_key, message['sequence_number'], expire_seconds=7*24*60*60)
         
         return {
             "message_id": message["message_id"],
@@ -580,10 +581,11 @@ async def update_delivery_status(
         raise HTTPException(status_code=400, detail="Invalid state transition")
     
     # Check if message is read by all devices (for blue tick)
-    # Get all recipient devices for this message
-    message_metadata = await messages_collection().find_one({"_id": message_id})
-    if message_metadata:
-        chat_id = message_metadata.get("chat_id")
+    # Get message from Redis
+    message_key = f"message:{message_id}"
+    message_data = await cache.get(message_key)
+    if message_data:
+        chat_id = message_data.get("chat_id")
         if chat_id:
             # Get all participants and their devices
             chat = await chats_collection().find_one({"_id": chat_id})
@@ -591,7 +593,7 @@ async def update_delivery_status(
             recipient_devices = []
             
             for participant in participants:
-                if participant != message_metadata.get("sender_id"):
+                if participant != message_data.get("sender_user_id"):
                     device_key = f"user_devices:{participant}"
                     devices = await redis_client.smembers(device_key)
                     recipient_devices.extend(devices or ["default"])
@@ -856,40 +858,31 @@ async def toggle_reaction(
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
 
-    # Use atomic operations to prevent race condition with concurrent reactions
-    # First, check if user already has this reaction
-    reactions: Dict[str, list] = msg.get("reactions") or {}
-    users = reactions.get(emoji) or []
+    # WhatsApp-style: Store reactions in Redis
+    message_key = f"message:{message_id}"
+    message_data = await redis_client.get(message_key)
+    if not message_data:
+        raise HTTPException(status_code=404, detail="Message not found")
     
-    if current_user in users:
-        # Remove the reaction atomically
-        await messages_collection().update_one(
-            {"_id": message_id},
-            {
-                "$pull": {f"reactions.{emoji}": current_user},
-                "$set": {"updated_at": _utcnow()}
-            }
-        )
-        # Clean up empty emoji entries
-        await messages_collection().update_one(
-            {"_id": message_id, f"reactions.{emoji}": {"$size": 0}},
-            {"$unset": {f"reactions.{emoji}": ""}}
-        )
+    reactions = message_data.get("reactions", {})
+    emoji_reactions = reactions.get(emoji, [])
+    
+    if current_user in emoji_reactions:
+        # Remove the reaction
+        emoji_reactions.remove(current_user)
         action = "removed"
     else:
-        # Add the reaction atomically
-        await messages_collection().update_one(
-            {"_id": message_id},
-            {
-                "$addToSet": {f"reactions.{emoji}": current_user},
-                "$set": {"updated_at": _utcnow()}
-            }
-        )
+        # Add the reaction
+        emoji_reactions.append(current_user)
         action = "added"
-
-    # Fetch updated message for response
-    updated_msg = await messages_collection().find_one({"_id": message_id})
-    return {"status": "success", "action": action, "message_id": message_id, "reactions": updated_msg.get("reactions") or {}}
+    
+    reactions[emoji] = emoji_reactions
+    message_data["reactions"] = reactions
+    
+    # Update message in Redis
+    await redis_client.set(message_key, json.dumps(message_data), expire_seconds=24*60*60)
+    
+    return {"status": "success", "action": action, "message_id": message_id, "reactions": reactions}
 
 
 @router.get("/{message_id}/reactions")
@@ -908,10 +901,19 @@ async def pin_message(message_id: str, current_user: str = Depends(get_current_u
     if chat.get("type") == "group" and not _is_group_admin(chat, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can pin messages")
 
-    await messages_collection().update_one(
-        {"_id": message_id},
-        {"$set": {"is_pinned": True, "pinned_at": _utcnow(), "pinned_by": current_user}},
-    )
+    # WhatsApp-style: Store pinned status in Redis
+    message_key = f"message:{message_id}"
+    message_data = await cache.get(message_key)
+    if not message_data:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    message_data["is_pinned"] = True
+    message_data["pinned_at"] = _utcnow().isoformat()
+    message_data["pinned_by"] = current_user
+    
+    # Update message in Redis
+    await cache.set(message_key, message_data, expire_seconds=24*60*60)
+    
     return {"status": "pinned", "message_id": message_id}
 
 
@@ -923,10 +925,20 @@ async def unpin_message(message_id: str, current_user: str = Depends(get_current
     if chat.get("type") == "group" and not _is_group_admin(chat, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can unpin messages")
 
-    await messages_collection().update_one(
-        {"_id": message_id},
-        {"$set": {"is_pinned": False}, "$unset": {"pinned_at": "", "pinned_by": ""}},
-    )
+    # WhatsApp-style: Store unpinned status in Redis
+    message_key = f"message:{message_id}"
+    message_data = await cache.get(message_key)
+    if not message_data:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    message_data["is_pinned"] = False
+    # Remove pin-related fields
+    message_data.pop("pinned_at", None)
+    message_data.pop("pinned_by", None)
+    
+    # Update message in Redis
+    await cache.set(message_key, message_data, expire_seconds=24*60*60)
+    
     return {"status": "unpinned", "message_id": message_id}
 
 

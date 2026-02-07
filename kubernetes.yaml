@@ -1,7 +1,4 @@
-# Kubernetes configuration for Hypersend application
-# All schema errors have been resolved - verified 2026-02-06
----
-# Namespace
+# Document 1: Namespace - hypersend
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -9,146 +6,119 @@ metadata:
   labels:
     name: hypersend
 
+
 ---
-# ConfigMap for application configuration
+# Document 2: ConfigMap - hypersend-config
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: hypersend-config
   namespace: hypersend
 data:
-  # ===== API CONFIGURATION =====
-  SECRET_KEY: "Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed"
-  ALGORITHM: "HS256"
-  ACCESS_TOKEN_EXPIRE_MINUTES: "28800"
-  REFRESH_TOKEN_EXPIRE_DAYS: "20"
-  UPLOAD_TOKEN_EXPIRE_HOURS: "480"
-  # ===== END-TO-END ENCRYPTION (E2EE) ===== 
-  E2EE_ENABLED: "true"  # Enable E2EE for all messages
-  E2EE_ALGORITHM: "signal_protocol"  # Signal Protocol with Double Ratchet
-  E2EE_KEY_ROTATION_DAYS: "7"  # Signed prekey rotation
-  E2EE_PREKEY_EXPIRATION_DAYS: "30"  # One-time prekey expiration
-  E2EE_MESSAGE_COUNTER_WINDOW: "1024"  # Replay protection window
-  # ===== DEVICE MANAGEMENT =====
-  DEVICE_VERIFICATION_REQUIRED: "true"  # Require QR code verification
-  DEVICE_LINKING_TIMEOUT_MINUTES: "5"  # QR code expires in 5 minutes
-  DEVICE_SESSION_EXPIRATION_DAYS: "30"  # Inactive device sessions expire
-  MAX_DEVICES_PER_USER: "5"  # Maximum linked devices
-  # ===== WHATSAPP STORAGE MODEL (STRICT EPHEMERAL) =====
-  # MANDATORY: Server is stateless courier only
-  MESSAGE_STORAGE: "redis_only"  # MANDATORY: Messages in Redis with TTL only
-  MESSAGE_TTL_MINUTES: "60"  # MANDATORY: Messages disappear after 1 hour
-  SERVER_STORAGE_BYTES: "0"  # MANDATORY: ZERO permanent storage
-  SERVER_TEMP_BYTES: "100000000"  # 100MB max for temp processing
-  USER_DEVICE_PRIMARY: "true"  # MANDATORY: User device is source of truth
-  # ===== S3 CONFIGURATION (Direct Upload Only, Client-Side E2EE) =====
-  S3_BUCKET: "hypersend-temp"
-  AWS_ACCESS_KEY_ID: "AKIA2460123456xxxxxxxx"
-  AWS_SECRET_ACCESS_KEY: "wJalr9RiUMnits1234567stubxbdPcQxSx"
-  AWS_REGION: "us-east-1"
-  FILE_TTL_HOURS: "24"  # MANDATORY: 24h max, auto-delete by S3 lifecycle
-  FILE_TTL_SECONDS: "86400"  # 24 hours in seconds
-  DIRECT_S3_UPLOADS: "true"  # MANDATORY: Client uploads directly to S3
-  DELETE_ON_ACK: "true"  # MANDATORY: Delete from S3 immediately after receiver ACK
-  S3_LIFECYCLE_ENABLED: "true"  # MANDATORY: Enable S3 auto-delete after 24h
-  S3_ENCRYPTION: "client"  # Client-side E2EE encryption before S3 upload
-  COST_MODEL: "free"  # No server storage cost, ephemeral only
-  # ===== 15GB FILE SIZE CONFIGURATION =====
-  MAX_FILE_SIZE_MB: "15360"  # 15GB in MB
-  LARGE_FILE_THRESHOLD_GB: "1"  # 1GB threshold for large files
-  MAX_IMAGE_SIZE_MB: "4096"  # 4GB for high-res images
-  MAX_VIDEO_SIZE_MB: "15360"  # 15GB for videos
-  MAX_AUDIO_SIZE_MB: "2048"  # 2GB for audio
-  MAX_DOCUMENT_SIZE_MB: "15360"  # 15GB for documents
-  # ===== STATELESS CONFIGURATION =====
-  DATA_ROOT: "/tmp"  # Ephemeral, auto-cleaned by OS
-  UPLOADS_PATH: "/tmp/uploads"  # Temporary, container restart deletes
-  DEBUG: "False"
-  API_HOST: "0.0.0.0"
-  API_PORT: "8000"
-  API_BASE_URL: "http://localhost:8000/api/v1"
-  # ===== CORS CONFIGURATION =====
-  ALLOWED_ORIGINS: "http://localhost:3000,https://localhost:3000"
-  # ===== RATE LIMITING & SECURITY =====
-  RATE_LIMIT_PER_USER: "100"
-  RATE_LIMIT_WINDOW_SECONDS: "60"
-  USE_MOCK_DB: "False"  # MANDATORY: Use real MongoDB for metadata
-  # ===== EMAIL CONFIGURATION =====
-  ENABLE_EMAIL: "true"
-  ENABLE_PASSWORD_RESET: "true"
-  SMTP_HOST: "smtp.gmail.com"
-  SMTP_PORT: "587"
-  SMTP_USERNAME: "noreply@localhost.com"
-  SMTP_USE_TLS: "true"
-  EMAIL_FROM: "noreply@localhost.com"
-  SENDER_NAME: "Hypersend Support"
-  # ===== MONGODB CONFIGURATION =====
-  MONGODB_ATLAS_ENABLED: "true"
-  MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority"
-  # ===== REDIS CONFIGURATION (E2EE KEY NAMESPACING) =====
-  # MANDATORY: Redis key namespace isolation per user/device for security
-  REDIS_HOST: "redis"
-  REDIS_PORT: "6379"
-  REDIS_DB: "0"
-  REDIS_PASSWORD: ""
-  REDIS_MAX_CONNECTIONS: "100"
-  REDIS_SOCKET_TIMEOUT: "5"
-  REDIS_SOCKET_CONNECT_TIMEOUT: "5"
-  REDIS_MAX_MEMORY: "2gb"  # 2GB for 10K chats ephemeral messages
-  REDIS_KEYSPACE_ISOLATION: "true"  # Separate namespaces for user/device keys
-  REDIS_ENCRYPTION_IN_TRANSIT: "true"  # TLS for Redis communication
-  # Redis Key Namespacing (for E2EE)
-  # Format: key:{user_id}:{device_id}:{message_type}:{message_id}
-  # Example: message:user123:device456:text:msg789
-  
-  # ===== ABUSE & ANTI-SPAM SYSTEM (WHATSAPP-GRADE) =====
-  # Score-based abuse detection with graduated enforcement
-  ABUSE_SCORING_ENABLED: "true"
-  ABUSE_SCORE_INITIAL: "0.0"  # Start at 0
-  
-  # Velocity limits (per sender)
-  MESSAGE_VELOCITY_LIMIT_PER_MINUTE: "100"  # Max 100 msg/minute
-  MESSAGE_VELOCITY_LIMIT_PER_HOUR: "1000"  # Max 1000 msg/hour
-  UNIQUE_RECIPIENTS_DAILY_LIMIT: "1000"  # Max 1000 unique recipients/day
-  UNIQUE_RECIPIENTS_HOURLY_LIMIT: "100"  # Max 100 unique recipients/hour
-  
-  # Scoring thresholds
-  SPAM_KEYWORD_SCORE_INCREMENT: "0.1"  # +0.1 per suspicious keyword
-  VELOCITY_VIOLATION_SCORE_INCREMENT: "0.15"  # +0.15 ratelimit violation
-  REPORT_SCORE_INCREMENT: "0.2"  # +0.2 per abuse report
-  SHADOW_BAN_THRESHOLD: "0.6"  # Shadow ban if score >= 0.6
-  SUSPENSION_THRESHOLD: "0.85"  # Suspend if score >= 0.85
-  
-  # Enforcement
-  SHADOW_BAN_DURATION_HOURS: "24"  # Shadow ban lasts 24h
-  SUSPENSION_DURATION_HOURS: "168"  # 1 week suspension  
-  SCORE_DECAY_PER_DAY: "0.1"  # Score decreases 0.1/day of good behavior
-  
-  # Moderation
-  MODERATION_ENABLED: "true"
-  AUTO_REPORT_THRESHOLD: "0.5"  # Auto-flag if score >= 0.5
-  EXPLICIT_CONTENT_DETECTION: "true"
-  PHISHING_DETECTION: "true"
-  # ===== NGINX CONFIGURATION (15GB Support) =====
-  NGINX_ALLOW_UNSAFE_SSL: "true"
-  NGINX_API_BASE_URL: "http://localhost:8000/api/v1"
-  NGINX_API_HOST: "backend-service"
-  NGINX_API_KEY: "hypersend_secure_api_key"
-  NGINX_API_SECRET: "hypersend_secure_api_secret"
-  NGINX_PROXY_READ_TIMEOUT: "7200"
-  NGINX_PROXY_SEND_TIMEOUT: "7200"
-  NGINX_PROXY_CONNECT_TIMEOUT: "600"
-  NGINX_CLIENT_BODY_TIMEOUT: "7200"
-  NGINX_CLIENT_MAX_BODY_SIZE: "15G"
-  NGINX_ERROR_PAGE_TIMEOUT: "30"
-  NGINX_MAX_RETRIES: "7"
-  NGINX_RETRY_DELAY: "5"
-  DOMAIN_NAME: "localhost"
-  SSL_CERT_PATH: "/etc/nginx/ssl/localhost/fullchain.pem"
-  SSL_KEY_PATH: "/etc/nginx/ssl/localhost/privkey.pem"
+  SECRET_KEY: Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed
+  ALGORITHM: HS256
+  ACCESS_TOKEN_EXPIRE_MINUTES: '28800'
+  REFRESH_TOKEN_EXPIRE_DAYS: '20'
+  UPLOAD_TOKEN_EXPIRE_HOURS: '480'
+  E2EE_ENABLED: 'true'
+  E2EE_ALGORITHM: signal_protocol
+  E2EE_KEY_ROTATION_DAYS: '7'
+  E2EE_PREKEY_EXPIRATION_DAYS: '30'
+  E2EE_MESSAGE_COUNTER_WINDOW: '1024'
+  DEVICE_VERIFICATION_REQUIRED: 'true'
+  DEVICE_LINKING_TIMEOUT_MINUTES: '5'
+  DEVICE_SESSION_EXPIRATION_DAYS: '30'
+  MAX_DEVICES_PER_USER: '5'
+  MESSAGE_STORAGE: redis_only
+  MESSAGE_TTL_MINUTES: '60'
+  SERVER_STORAGE_BYTES: '0'
+  SERVER_TEMP_BYTES: '100000000'
+  USER_DEVICE_PRIMARY: 'true'
+  S3_BUCKET: hypersend-temp
+  AWS_ACCESS_KEY_ID: AKIA2460123456xxxxxxxx
+  AWS_SECRET_ACCESS_KEY: wJalr9RiUMnits1234567stubxbdPcQxSx
+  AWS_REGION: us-east-1
+  FILE_TTL_HOURS: '24'
+  FILE_TTL_SECONDS: '86400'
+  DIRECT_S3_UPLOADS: 'true'
+  DELETE_ON_ACK: 'true'
+  S3_LIFECYCLE_ENABLED: 'true'
+  S3_ENCRYPTION: client
+  COST_MODEL: free
+  MAX_FILE_SIZE_MB: '15360'
+  LARGE_FILE_THRESHOLD_GB: '1'
+  MAX_IMAGE_SIZE_MB: '4096'
+  MAX_VIDEO_SIZE_MB: '15360'
+  MAX_AUDIO_SIZE_MB: '2048'
+  MAX_DOCUMENT_SIZE_MB: '15360'
+  DATA_ROOT: /tmp
+  UPLOADS_PATH: /tmp/uploads
+  DEBUG: 'False'
+  API_HOST: 0.0.0.0
+  API_PORT: '8000'
+  API_BASE_URL: http://localhost:8000/api/v1
+  ALLOWED_ORIGINS: http://localhost:3000,https://localhost:3000
+  RATE_LIMIT_PER_USER: '100'
+  RATE_LIMIT_WINDOW_SECONDS: '60'
+  USE_MOCK_DB: 'False'
+  ENABLE_EMAIL: 'true'
+  ENABLE_PASSWORD_RESET: 'true'
+  SMTP_HOST: smtp.gmail.com
+  SMTP_PORT: '587'
+  SMTP_USERNAME: noreply@localhost.com
+  SMTP_USE_TLS: 'true'
+  EMAIL_FROM: noreply@localhost.com
+  SENDER_NAME: Hypersend Support
+  MONGODB_ATLAS_ENABLED: 'true'
+  MONGODB_URI: mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority
+  REDIS_HOST: redis
+  REDIS_PORT: '6379'
+  REDIS_DB: '0'
+  REDIS_PASSWORD: ''
+  REDIS_MAX_CONNECTIONS: '100'
+  REDIS_SOCKET_TIMEOUT: '5'
+  REDIS_SOCKET_CONNECT_TIMEOUT: '5'
+  REDIS_MAX_MEMORY: 2gb
+  REDIS_KEYSPACE_ISOLATION: 'true'
+  REDIS_ENCRYPTION_IN_TRANSIT: 'true'
+  ABUSE_SCORING_ENABLED: 'true'
+  ABUSE_SCORE_INITIAL: '0.0'
+  MESSAGE_VELOCITY_LIMIT_PER_MINUTE: '100'
+  MESSAGE_VELOCITY_LIMIT_PER_HOUR: '1000'
+  UNIQUE_RECIPIENTS_DAILY_LIMIT: '1000'
+  UNIQUE_RECIPIENTS_HOURLY_LIMIT: '100'
+  SPAM_KEYWORD_SCORE_INCREMENT: '0.1'
+  VELOCITY_VIOLATION_SCORE_INCREMENT: '0.15'
+  REPORT_SCORE_INCREMENT: '0.2'
+  SHADOW_BAN_THRESHOLD: '0.6'
+  SUSPENSION_THRESHOLD: '0.85'
+  SHADOW_BAN_DURATION_HOURS: '24'
+  SUSPENSION_DURATION_HOURS: '168'
+  SCORE_DECAY_PER_DAY: '0.1'
+  MODERATION_ENABLED: 'true'
+  AUTO_REPORT_THRESHOLD: '0.5'
+  EXPLICIT_CONTENT_DETECTION: 'true'
+  PHISHING_DETECTION: 'true'
+  NGINX_ALLOW_UNSAFE_SSL: 'true'
+  NGINX_API_BASE_URL: http://localhost:8000/api/v1
+  NGINX_API_HOST: backend-service
+  NGINX_API_KEY: hypersend_secure_api_key
+  NGINX_API_SECRET: hypersend_secure_api_secret
+  NGINX_PROXY_READ_TIMEOUT: '7200'
+  NGINX_PROXY_SEND_TIMEOUT: '7200'
+  NGINX_PROXY_CONNECT_TIMEOUT: '600'
+  NGINX_CLIENT_BODY_TIMEOUT: '7200'
+  NGINX_CLIENT_MAX_BODY_SIZE: 15G
+  NGINX_ERROR_PAGE_TIMEOUT: '30'
+  NGINX_MAX_RETRIES: '7'
+  NGINX_RETRY_DELAY: '5'
+  DOMAIN_NAME: localhost
+  SSL_CERT_PATH: /etc/nginx/ssl/localhost/fullchain.pem
+  SSL_KEY_PATH: /etc/nginx/ssl/localhost/privkey.pem
+
 
 ---
-# Secrets for sensitive data
+# Document 3: Secret - hypersend-secrets
 apiVersion: v1
 kind: Secret
 metadata:
@@ -156,377 +126,196 @@ metadata:
   namespace: hypersend
 type: Opaque
 data:
-  # MongoDB credentials (base64 encoded)
-  MONGO_USER: bWF5YW5sbHIwMzExX2RiX3VzZXI=  # mayanllr0311_db_user
-  MONGO_PASSWORD: PGRiX3Bhc3N3b3JkPg==  # <db_password>
-  MONGO_INITDB_DATABASE: aHlwZXJzZW5k  # hypersend
-  # MongoDB Atlas credentials (base64 encoded)
-  MONGODB_ATLAS_ENABLED: "dHJ1ZQ=="  # true
-  MONGODB_URI: "bW9uZ29kYitzcnY6Ly9tYXlhbmxscjAzMTFfZGJfdXNlcjpKQmtBWmluOGx5dFRLNnZnQGNsdXN0ZXIwLnJuajN2ZmQubW9uZ29kYi5uZXQvaHlwZXJzZW5kP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eQ=="  # mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority
-  # SMTP password (base64 encoded)
-  SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=  # dummy_app_password_configure_in_env
-  # AWS credentials (base64 encoded) - REPLACE WITH YOUR ACTUAL AWS KEYS
-  AWS_ACCESS_KEY_ID: "QUtJQTI0NjAxMjM0NTZ4eHh4eHh4eHg="  # echo -n 'AKIA2460123456xxxxxxxx' | base64
-  AWS_SECRET_ACCESS_KEY: "d0phbHI5UmlVTW5pdHMxMjM0NTY3c3R1YnhiZFBjUXhTeA=="  # echo -n 'wJalr9RiUMnits1234567stubxbdPcQxSx' | base64
+  MONGO_USER: bWF5YW5sbHIwMzExX2RiX3VzZXI=
+  MONGO_PASSWORD: PGRiX3Bhc3N3b3JkPg==
+  MONGO_INITDB_DATABASE: aHlwZXJzZW5k
+  MONGODB_ATLAS_ENABLED: dHJ1ZQ==
+  MONGODB_URI: bW9uZ29kYitzcnY6Ly9tYXlhbmxscjAzMTFfZGJfdXNlcjpKQmtBWmluOGx5dFRLNnZnQGNsdXN0ZXIwLnJuajN2ZmQubW9uZ29kYi5uZXQvaHlwZXJzZW5kP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eQ==
+  SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=
+  AWS_ACCESS_KEY_ID: QUtJQTI0NjAxMjM0NTZ4eHh4eHh4eHg=
+  AWS_SECRET_ACCESS_KEY: d0phbHI5UmlVTW5pdHMxMjM0NTY3c3R1YnhiZFBjUXhTeA==
+
 
 ---
-# Nginx Configuration ConfigMap
+# Document 4: ConfigMap - nginx-configmap
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nginx-configmap
   namespace: hypersend
 data:
-  nginx.conf: |
-    # NGINX Configuration for Hypersend
-    user nginx;
-    worker_processes auto;
-    error_log /var/log/nginx/error.log warn;
-    pid /var/run/nginx.pid;
+  nginx.conf: "# NGINX Configuration for Hypersend\nuser nginx;\nworker_processes\
+    \ auto;\nerror_log /var/log/nginx/error.log warn;\npid /var/run/nginx.pid;\n\n\
+    events {\n    worker_connections 4096;\n    use epoll;\n    multi_accept on;\n\
+    }\n\nhttp {\n    include /etc/nginx/mime.types;\n    default_type application/octet-stream;\n\
+    \n    log_format main '$remote_addr - $remote_user [$time_local] \"$request\"\
+    \ '\n                    '$status $body_bytes_sent \"$http_referer\" '\n     \
+    \               '\"$http_user_agent\" \"$http_x_forwarded_for\" '\n          \
+    \          'rt=$request_time uct=\"$upstream_connect_time\" '\n              \
+    \      'uht=\"$upstream_header_time\" urt=\"$upstream_response_time\"';\n    \n\
+    \    access_log /var/log/nginx/access.log main buffer=32k flush=5s;\n\n    sendfile\
+    \ on;\n    tcp_nopush on;\n    tcp_nodelay on;\n    keepalive_timeout 65;\n  \
+    \  keepalive_requests 100;\n    \n    client_max_body_size 15G;\n    client_body_buffer_size\
+    \ 10m;\n    client_header_buffer_size 4k;\n    large_client_header_buffers 4 16k;\n\
+    \    \n    send_timeout 7200s;\n    proxy_connect_timeout 600s;\n    proxy_send_timeout\
+    \ 7200s;\n    proxy_read_timeout 7200s;\n    \n    types_hash_max_size 2048;\n\
+    \    server_names_hash_bucket_size 128;\n\n    gzip on;\n    gzip_vary on;\n \
+    \   gzip_proxied any;\n    gzip_comp_level 6;\n    gzip_min_length 1000;\n   \
+    \ gzip_disable \"msie6\";\n    gzip_types text/plain text/css text/xml text/javascript\
+    \ \n               application/javascript application/json application/xml+rss;\n\
+    \n    add_header X-Frame-Options \"SAMEORIGIN\" always;\n    add_header X-Content-Type-Options\
+    \ \"nosniff\" always;\n    add_header X-XSS-Protection \"1; mode=block\" always;\n\
+    \    add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n\n\
+    \    map $http_upgrade $connection_upgrade {\n        default upgrade;\n     \
+    \   '' close;\n    }\n\n    upstream backend {\n        server backend:8000 max_fails=5\
+    \ fail_timeout=30s weight=100;\n        keepalive 64;\n        keepalive_requests\
+    \ 200;\n        keepalive_timeout 120s;\n    }\n\n    upstream frontend {\n  \
+    \      server frontend:80 max_fails=3 fail_timeout=30s weight=100;\n        keepalive\
+    \ 32;\n        keepalive_requests 100;\n        keepalive_timeout 60s;\n    }\n\
+    \n    resolver 127.0.0.11 valid=10s;\n    resolver_timeout 5s;\n\n    limit_req_zone\
+    \ $binary_remote_addr zone=api_limit:10m rate=100r/m;\n    limit_req_zone $binary_remote_addr\
+    \ zone=general_limit:10m rate=200r/m;\n    limit_req_zone $binary_remote_addr\
+    \ zone=upload_limit:10m rate=20r/s;\n    limit_req_zone $binary_remote_addr zone=auth_limit:10m\
+    \ rate=6r/m;\n\n    limit_req_status 429;\n\n    # Nginx Cache Configuration for\
+    \ static assets and large file downloads\n    proxy_cache_path /var/cache/nginx/client_temp\
+    \ levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m use_temp_path=off;\n\
+    \    proxy_cache_key \"$scheme$request_method$host$request_uri\";\n    proxy_cache_valid\
+    \ 200 10m;\n    proxy_cache_valid 404 1m;\n    proxy_cache_use_stale error timeout\
+    \ invalid_header updating http_500 http_502 http_503 http_504;\n    proxy_cache_bypass\
+    \ $http_pragma $http_authorization;\n    add_header X-Cache-Status $upstream_cache_status;\n\
+    \n    # SECURITY: CORS origin allowlist map to restrict to authorized origins\n\
+    \    # Production: zaply.in.net and www.zaply.in.net only\n    map $http_origin\
+    \ $allowed_origin {\n        default \"\";\n        \"~^https://zaply\\.in\\.net$\"\
+    \ \"https://zaply.in.net\";\n        \"~^https://www\\.zaply\\.in\\.net$\" \"\
+    https://www.zaply.in.net\";\n    }\n\n    # HTTP to HTTPS redirect for production\n\
+    \    server {\n        listen 80;\n        listen [::]:80;\n        server_name\
+    \ zaply.in.net www.zaply.in.net;\n        \n        location / {\n           \
+    \ return 301 https://$server_name$request_uri;\n        }\n        \n        location\
+    \ /.well-known/acme-challenge/ {\n            root /var/www/certbot;\n       \
+    \     access_log off;\n        }\n    }\n\n    # HTTP: Default fallback\n    server\
+    \ {\n        listen 80 default_server;\n        listen [::]:80 default_server;\n\
+    \        server_name _;\n\n        location /health {\n            add_header\
+    \ Content-Type \"text/plain\";\n            return 200 \"OK\\n\";\n          \
+    \  access_log off;\n        }\n\n        location /.well-known/acme-challenge/\
+    \ {\n            root /var/www/certbot;\n            access_log off;\n       \
+    \ }\n\n        location /api/ {\n            limit_req zone=api_limit burst=20\
+    \ nodelay;\n            proxy_pass http://backend;\n            proxy_http_version\
+    \ 1.1;\n            proxy_set_header Connection $connection_upgrade;\n       \
+    \     proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n\
+    \            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n  \
+    \          proxy_set_header X-Forwarded-Proto $scheme;\n            proxy_set_header\
+    \ Upgrade $http_upgrade;\n            proxy_buffering off;\n            proxy_read_timeout\
+    \ 3600s;\n        }\n\n        location ~* \\.map$ {\n            return 404;\n\
+    \            access_log off;\n        }\n\n        location / {\n            limit_req\
+    \ zone=general_limit burst=40 nodelay;\n            proxy_pass http://frontend;\n\
+    \            proxy_http_version 1.1;\n            proxy_set_header Connection\
+    \ \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
+    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+    \            proxy_set_header X-Forwarded-Proto $scheme;\n            proxy_buffering\
+    \ off;\n            proxy_read_timeout 300s;\n            error_page 404 =200\
+    \ /index.html;\n            proxy_intercept_errors on;\n        }\n    }\n\n \
+    \   # HTTPS: zaply.in.net (Production with SSL)\n    server {\n        listen\
+    \ 443 ssl http2;\n        listen [::]:443 ssl http2;\n        server_name zaply.in.net\
+    \ www.zaply.in.net;\n        \n        # SSL Configuration\n        ssl_certificate\
+    \ /etc/nginx/ssl/zaply.in.net/fullchain.pem;\n        ssl_certificate_key /etc/nginx/ssl/zaply.in.net/privkey.pem;\n\
+    \        ssl_protocols TLSv1.2 TLSv1.3;\n        ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;\n\
+    \        ssl_prefer_server_ciphers off;\n        ssl_session_cache shared:SSL:10m;\n\
+    \        ssl_session_timeout 10m;\n        \n        # HSTS\n        add_header\
+    \ Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n\
+    \        \n        # Security headers\n        add_header Content-Security-Policy\
+    \ \"default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com;\
+    \ style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self'\
+    \ data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src\
+    \ 'self' wss: https:; media-src 'self' blob:; object-src 'none';\" always;\n \
+    \       add_header X-Frame-Options \"DENY\" always;\n        add_header X-Content-Type-Options\
+    \ \"nosniff\" always;\n\n        location /health {\n            add_header Content-Type\
+    \ \"text/plain\";\n            return 200 \"OK\\n\";\n            access_log off;\n\
+    \        }\n\n        location /api/v1/files/upload {\n            limit_req zone=upload_limit\
+    \ burst=200 nodelay;\n            client_max_body_size 15G;\n            \n  \
+    \          #WHATSAPP EPHEMERAL STORAGE: No disk buffering\n            # - proxy_buffering\
+    \ off: Don't buffer response on nginx disk\n            # - proxy_request_buffering\
+    \ off: Don't buffer request on nginx disk\n            # Files stream directly\
+    \ from client to backend to S3 (no server disk touch)\n            \n        \
+    \    if ($request_method = 'OPTIONS') {\n                add_header 'Access-Control-Allow-Origin'\
+    \ $allowed_origin always;\n                add_header 'Access-Control-Allow-Methods'\
+    \ 'POST, OPTIONS' always;\n                add_header 'Access-Control-Allow-Headers'\
+    \ 'Content-Type, Authorization' always;\n                add_header 'Access-Control-Allow-Credentials'\
+    \ 'true' always;\n                add_header 'Access-Control-Max-Age' '3600' always;\n\
+    \                add_header 'Content-Length' '0' always;\n                return\
+    \ 204;\n            }\n            \n            proxy_pass http://backend;\n\
+    \            proxy_http_version 1.1;\n            proxy_set_header Connection\
+    \ \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
+    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+    \            proxy_set_header X-Forwarded-Proto https;\n            proxy_set_header\
+    \ X-Forwarded-Host $server_name;\n            proxy_buffering off;\n         \
+    \   proxy_request_buffering off;\n            proxy_read_timeout 3600s;\n    \
+    \        \n            add_header 'Access-Control-Allow-Origin' $allowed_origin\
+    \ always;\n            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS'\
+    \ always;\n            add_header 'Access-Control-Allow-Headers' 'Content-Type,\
+    \ Authorization' always;\n            add_header 'Access-Control-Allow-Credentials'\
+    \ 'true' always;\n        }\n        \n        location /api/v1/files/ {\n   \
+    \         limit_req zone=api_limit burst=20 nodelay;\n            \n         \
+    \   # WHATSAPP EPHEMERAL STORAGE: No disk buffering for downloads\n          \
+    \  # proxy_buffering off: Stream responds directly without nginx disk\n      \
+    \      # proxy_request_buffering off: Don't buffer requests to backend\n     \
+    \       # Result: Files stream from S3 \xE2\u2020\u2019 backend \xE2\u2020\u2019\
+    \ nginx \xE2\u2020\u2019 client (zero server storage)\n            \n        \
+    \    if ($request_method = 'OPTIONS') {\n                add_header 'Access-Control-Allow-Origin'\
+    \ $allowed_origin always;\n                add_header 'Access-Control-Allow-Methods'\
+    \ 'GET, POST, OPTIONS' always;\n                add_header 'Access-Control-Allow-Headers'\
+    \ 'Content-Type, Authorization' always;\n                add_header 'Access-Control-Max-Age'\
+    \ '3600' always;\n                add_header 'Access-Control-Allow-Credentials'\
+    \ 'true' always;\n                add_header 'Content-Length' '0' always;\n  \
+    \              return 204;\n            }\n            \n            proxy_pass\
+    \ http://backend;\n            proxy_http_version 1.1;\n            proxy_set_header\
+    \ Connection \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
+    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+    \            proxy_set_header X-Forwarded-Proto https;\n            proxy_set_header\
+    \ X-Forwarded-Host $server_name;\n            proxy_buffering off;\n         \
+    \   proxy_request_buffering off;\n            proxy_read_timeout 3600s;\n    \
+    \        \n            add_header 'Access-Control-Allow-Origin' $allowed_origin\
+    \ always;\n            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS'\
+    \ always;\n            add_header 'Access-Control-Allow-Headers' 'Content-Type,\
+    \ Authorization' always;\n            add_header 'Access-Control-Allow-Credentials'\
+    \ 'true' always;\n        }\n\n        location ~ ^/api/v1/(auth|login|register|password-reset)/?$\
+    \ {\n            limit_req zone=auth_limit burst=3 nodelay;\n            proxy_pass\
+    \ http://backend;\n            proxy_http_version 1.1;\n            proxy_set_header\
+    \ Connection \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
+    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+    \            proxy_set_header X-Forwarded-Proto https;\n            proxy_read_timeout\
+    \ 30s;\n        }\n\n        location /api/ {\n            limit_req zone=api_limit\
+    \ burst=20 nodelay;\n            proxy_pass http://backend;\n            proxy_http_version\
+    \ 1.1;\n            proxy_set_header Connection $connection_upgrade;\n       \
+    \     proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n\
+    \            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n  \
+    \          proxy_set_header X-Forwarded-Proto https;\n            proxy_set_header\
+    \ X-Forwarded-Host $server_name;\n            proxy_set_header X-Forwarded-Port\
+    \ 443;\n            proxy_set_header Upgrade $http_upgrade;\n            proxy_buffering\
+    \ off;\n            proxy_request_buffering off;\n            proxy_next_upstream\
+    \ error timeout http_502 http_503 http_504;\n            proxy_next_upstream_tries\
+    \ 2;\n            proxy_next_upstream_timeout 30s;\n            proxy_read_timeout\
+    \ 3600s;\n        }\n\n        location ~* \\.map$ {\n            proxy_pass http://frontend;\n\
+    \            proxy_http_version 1.1;\n            proxy_set_header Connection\
+    \ \"\";\n            proxy_set_header Host $host;\n            proxy_set_header\
+    \ X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+    \            proxy_set_header X-Forwarded-Proto https;\n            proxy_buffering\
+    \ off;\n            proxy_read_timeout 300s;\n            proxy_intercept_errors\
+    \ off;\n            proxy_cache hypersend_cache;\n            proxy_cache_valid\
+    \ 200 24h;\n            add_header Cache-Control \"public, max-age=31536000\"\
+    \ always;\n            add_header X-Content-Type-Options \"nosniff\" always;\n\
+    \            add_header X-Cache-Status $upstream_cache_status always;\n      \
+    \  }\n\n        location / {\n            limit_req zone=general_limit burst=40\
+    \ nodelay;\n            proxy_pass http://frontend;\n            proxy_http_version\
+    \ 1.1;\n            proxy_set_header Connection \"\";\n            proxy_set_header\
+    \ Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n        \
+    \    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n          \
+    \  proxy_set_header X-Forwarded-Proto https;\n            proxy_buffering off;\n\
+    \            proxy_read_timeout 300s;\n            error_page 404 =200 /index.html;\n\
+    \            proxy_intercept_errors on;\n        }\n    }\n}\n"
 
-    events {
-        worker_connections 4096;
-        use epoll;
-        multi_accept on;
-    }
-
-    http {
-        include /etc/nginx/mime.types;
-        default_type application/octet-stream;
-
-        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                        '$status $body_bytes_sent "$http_referer" '
-                        '"$http_user_agent" "$http_x_forwarded_for" '
-                        'rt=$request_time uct="$upstream_connect_time" '
-                        'uht="$upstream_header_time" urt="$upstream_response_time"';
-        
-        access_log /var/log/nginx/access.log main buffer=32k flush=5s;
-
-        sendfile on;
-        tcp_nopush on;
-        tcp_nodelay on;
-        keepalive_timeout 65;
-        keepalive_requests 100;
-        
-        client_max_body_size 15G;
-        client_body_buffer_size 10m;
-        client_header_buffer_size 4k;
-        large_client_header_buffers 4 16k;
-        
-        send_timeout 7200s;
-        proxy_connect_timeout 600s;
-        proxy_send_timeout 7200s;
-        proxy_read_timeout 7200s;
-        
-        types_hash_max_size 2048;
-        server_names_hash_bucket_size 128;
-
-        gzip on;
-        gzip_vary on;
-        gzip_proxied any;
-        gzip_comp_level 6;
-        gzip_min_length 1000;
-        gzip_disable "msie6";
-        gzip_types text/plain text/css text/xml text/javascript 
-                   application/javascript application/json application/xml+rss;
-
-        add_header X-Frame-Options "SAMEORIGIN" always;
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header X-XSS-Protection "1; mode=block" always;
-        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-        map $http_upgrade $connection_upgrade {
-            default upgrade;
-            '' close;
-        }
-
-        upstream backend {
-            server backend:8000 max_fails=5 fail_timeout=30s weight=100;
-            keepalive 64;
-            keepalive_requests 200;
-            keepalive_timeout 120s;
-        }
-
-        upstream frontend {
-            server frontend:80 max_fails=3 fail_timeout=30s weight=100;
-            keepalive 32;
-            keepalive_requests 100;
-            keepalive_timeout 60s;
-        }
-
-        resolver 127.0.0.11 valid=10s;
-        resolver_timeout 5s;
-
-        limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/m;
-        limit_req_zone $binary_remote_addr zone=general_limit:10m rate=200r/m;
-        limit_req_zone $binary_remote_addr zone=upload_limit:10m rate=20r/s;
-        limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=6r/m;
-
-        limit_req_status 429;
-
-        # Nginx Cache Configuration for static assets and large file downloads
-        proxy_cache_path /var/cache/nginx/client_temp levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m use_temp_path=off;
-        proxy_cache_key "$scheme$request_method$host$request_uri";
-        proxy_cache_valid 200 10m;
-        proxy_cache_valid 404 1m;
-        proxy_cache_use_stale error timeout invalid_header updating http_500 http_502 http_503 http_504;
-        proxy_cache_bypass $http_pragma $http_authorization;
-        add_header X-Cache-Status $upstream_cache_status;
-
-        # SECURITY: CORS origin allowlist map to restrict to authorized origins
-        # Production: zaply.in.net and www.zaply.in.net only
-        map $http_origin $allowed_origin {
-            default "";
-            "~^https://zaply\.in\.net$" "https://zaply.in.net";
-            "~^https://www\.zaply\.in\.net$" "https://www.zaply.in.net";
-        }
-
-        # HTTP to HTTPS redirect for production
-        server {
-            listen 80;
-            listen [::]:80;
-            server_name zaply.in.net www.zaply.in.net;
-            
-            location / {
-                return 301 https://$server_name$request_uri;
-            }
-            
-            location /.well-known/acme-challenge/ {
-                root /var/www/certbot;
-                access_log off;
-            }
-        }
-
-        # HTTP: Default fallback
-        server {
-            listen 80 default_server;
-            listen [::]:80 default_server;
-            server_name _;
-
-            location /health {
-                add_header Content-Type "text/plain";
-                return 200 "OK\n";
-                access_log off;
-            }
-
-            location /.well-known/acme-challenge/ {
-                root /var/www/certbot;
-                access_log off;
-            }
-
-            location /api/ {
-                limit_req zone=api_limit burst=20 nodelay;
-                proxy_pass http://backend;
-                proxy_http_version 1.1;
-                proxy_set_header Connection $connection_upgrade;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-                proxy_set_header Upgrade $http_upgrade;
-                proxy_buffering off;
-                proxy_read_timeout 3600s;
-            }
-
-            location ~* \.map$ {
-                return 404;
-                access_log off;
-            }
-
-            location / {
-                limit_req zone=general_limit burst=40 nodelay;
-                proxy_pass http://frontend;
-                proxy_http_version 1.1;
-                proxy_set_header Connection "";
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-                proxy_buffering off;
-                proxy_read_timeout 300s;
-                error_page 404 =200 /index.html;
-                proxy_intercept_errors on;
-            }
-        }
-
-        # HTTPS: zaply.in.net (Production with SSL)
-        server {
-            listen 443 ssl http2;
-            listen [::]:443 ssl http2;
-            server_name zaply.in.net www.zaply.in.net;
-            
-            # SSL Configuration
-            ssl_certificate /etc/nginx/ssl/zaply.in.net/fullchain.pem;
-            ssl_certificate_key /etc/nginx/ssl/zaply.in.net/privkey.pem;
-            ssl_protocols TLSv1.2 TLSv1.3;
-            ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;
-            ssl_prefer_server_ciphers off;
-            ssl_session_cache shared:SSL:10m;
-            ssl_session_timeout 10m;
-            
-            # HSTS
-            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-            
-            # Security headers
-            add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' wss: https:; media-src 'self' blob:; object-src 'none';" always;
-            add_header X-Frame-Options "DENY" always;
-            add_header X-Content-Type-Options "nosniff" always;
-
-            location /health {
-                add_header Content-Type "text/plain";
-                return 200 "OK\n";
-                access_log off;
-            }
-
-            location /api/v1/files/upload {
-                limit_req zone=upload_limit burst=200 nodelay;
-                client_max_body_size 15G;
-                
-                #WHATSAPP EPHEMERAL STORAGE: No disk buffering
-                # - proxy_buffering off: Don't buffer response on nginx disk
-                # - proxy_request_buffering off: Don't buffer request on nginx disk
-                # Files stream directly from client to backend to S3 (no server disk touch)
-                
-                if ($request_method = 'OPTIONS') {
-                    add_header 'Access-Control-Allow-Origin' $allowed_origin always;
-                    add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-                    add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-                    add_header 'Access-Control-Allow-Credentials' 'true' always;
-                    add_header 'Access-Control-Max-Age' '3600' always;
-                    add_header 'Content-Length' '0' always;
-                    return 204;
-                }
-                
-                proxy_pass http://backend;
-                proxy_http_version 1.1;
-                proxy_set_header Connection "";
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto https;
-                proxy_set_header X-Forwarded-Host $server_name;
-                proxy_buffering off;
-                proxy_request_buffering off;
-                proxy_read_timeout 3600s;
-                
-                add_header 'Access-Control-Allow-Origin' $allowed_origin always;
-                add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-                add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-                add_header 'Access-Control-Allow-Credentials' 'true' always;
-            }
-            
-            location /api/v1/files/ {
-                limit_req zone=api_limit burst=20 nodelay;
-                
-                # WHATSAPP EPHEMERAL STORAGE: No disk buffering for downloads
-                # proxy_buffering off: Stream responds directly without nginx disk
-                # proxy_request_buffering off: Don't buffer requests to backend
-                # Result: Files stream from S3 → backend → nginx → client (zero server storage)
-                
-                if ($request_method = 'OPTIONS') {
-                    add_header 'Access-Control-Allow-Origin' $allowed_origin always;
-                    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-                    add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-                    add_header 'Access-Control-Max-Age' '3600' always;
-                    add_header 'Access-Control-Allow-Credentials' 'true' always;
-                    add_header 'Content-Length' '0' always;
-                    return 204;
-                }
-                
-                proxy_pass http://backend;
-                proxy_http_version 1.1;
-                proxy_set_header Connection "";
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto https;
-                proxy_set_header X-Forwarded-Host $server_name;
-                proxy_buffering off;
-                proxy_request_buffering off;
-                proxy_read_timeout 3600s;
-                
-                add_header 'Access-Control-Allow-Origin' $allowed_origin always;
-                add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-                add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-                add_header 'Access-Control-Allow-Credentials' 'true' always;
-            }
-
-            location ~ ^/api/v1/(auth|login|register|password-reset)/?$ {
-                limit_req zone=auth_limit burst=3 nodelay;
-                proxy_pass http://backend;
-                proxy_http_version 1.1;
-                proxy_set_header Connection "";
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto https;
-                proxy_read_timeout 30s;
-            }
-
-            location /api/ {
-                limit_req zone=api_limit burst=20 nodelay;
-                proxy_pass http://backend;
-                proxy_http_version 1.1;
-                proxy_set_header Connection $connection_upgrade;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto https;
-                proxy_set_header X-Forwarded-Host $server_name;
-                proxy_set_header X-Forwarded-Port 443;
-                proxy_set_header Upgrade $http_upgrade;
-                proxy_buffering off;
-                proxy_request_buffering off;
-                proxy_next_upstream error timeout http_502 http_503 http_504;
-                proxy_next_upstream_tries 2;
-                proxy_next_upstream_timeout 30s;
-                proxy_read_timeout 3600s;
-            }
-
-            location ~* \.map$ {
-                proxy_pass http://frontend;
-                proxy_http_version 1.1;
-                proxy_set_header Connection "";
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto https;
-                proxy_buffering off;
-                proxy_read_timeout 300s;
-                proxy_intercept_errors off;
-                proxy_cache hypersend_cache;
-                proxy_cache_valid 200 24h;
-                add_header Cache-Control "public, max-age=31536000" always;
-                add_header X-Content-Type-Options "nosniff" always;
-                add_header X-Cache-Status $upstream_cache_status always;
-            }
-
-            location / {
-                limit_req zone=general_limit burst=40 nodelay;
-                proxy_pass http://frontend;
-                proxy_http_version 1.1;
-                proxy_set_header Connection "";
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto https;
-                proxy_buffering off;
-                proxy_read_timeout 300s;
-                error_page 404 =200 /index.html;
-                proxy_intercept_errors on;
-            }
-        }
-    }
-
-# ============================================================================
-# WHATSAPP-GRADE KUBERNETES DEPLOYMENT - PRODUCTION READY
-# ============================================================================
-# ARCHITECTURE: Stateless courier with horizontal scaling
-# TARGET: 10M+ concurrent users, 100M+ messages/day
-# ============================================================================
 
 ---
-# WhatsApp-style Redis Cluster (Ephemeral Only)
+# Document 5: StatefulSet - redis-cluster
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -550,11 +339,11 @@ spec:
         - containerPort: 6379
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: 1Gi
+            cpu: 500m
           limits:
-            memory: "2Gi"
-            cpu: "1000m"
+            memory: 2Gi
+            cpu: 1000m
         command:
         - redis-server
         - --appendonly no
@@ -588,13 +377,15 @@ spec:
   - metadata:
       name: redis-data
     spec:
-      accessModes: ["ReadWriteOnce"]
+      accessModes:
+      - ReadWriteOnce
       resources:
         requests:
           storage: 1Gi
 
+
 ---
-# WhatsApp-style Backend API (Horizontal Scaling)
+# Document 6: Deployment - backend-api
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -617,16 +408,16 @@ spec:
         - containerPort: 8000
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: 512Mi
+            cpu: 250m
           limits:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: 1Gi
+            cpu: 500m
         env:
         - name: REDIS_HOST
-          value: "redis-cluster"
+          value: redis-cluster
         - name: REDIS_PORT
-          value: "6379"
+          value: '6379'
         - name: MONGODB_URI
           valueFrom:
             secretKeyRef:
@@ -643,9 +434,9 @@ spec:
               name: hypersend-secrets
               key: s3-endpoint
         - name: S3_BUCKET
-          value: "hypersend-media"
+          value: hypersend-media
         - name: MAX_FILE_SIZE_BYTES
-          value: "16106127360"  # 15GB
+          value: '16106127360'
         livenessProbe:
           httpGet:
             path: /health
@@ -661,10 +452,14 @@ spec:
         lifecycle:
           preStop:
             exec:
-              command: ["/bin/sh", "-c", "sleep 15"]
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+
 
 ---
-# WhatsApp-style WebSocket Service (High Concurrency)
+# Document 7: Deployment - websocket-service
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -687,18 +482,18 @@ spec:
         - containerPort: 8001
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
+            memory: 256Mi
+            cpu: 100m
           limits:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: 512Mi
+            cpu: 250m
         env:
         - name: REDIS_HOST
-          value: "redis-cluster"
+          value: redis-cluster
         - name: BACKEND_URL
-          value: "http://backend-api:8000"
+          value: http://backend-api:8000
         - name: MAX_CONNECTIONS
-          value: "10000"
+          value: '10000'
         livenessProbe:
           httpGet:
             path: /health
@@ -712,8 +507,9 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
 
+
 ---
-# WhatsApp-style Nginx (Load Balancer)
+# Document 8: Deployment - nginx-lb
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -737,11 +533,11 @@ spec:
         - containerPort: 443
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
+            memory: 256Mi
+            cpu: 100m
           limits:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: 512Mi
+            cpu: 250m
         volumeMounts:
         - name: nginx-config
           mountPath: /etc/nginx/nginx.conf
@@ -775,8 +571,9 @@ spec:
         persistentVolumeClaim:
           claimName: nginx-cache
 
+
 ---
-# Frontend Deployment (GHCR image)
+# Document 9: Deployment - frontend
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -799,11 +596,11 @@ spec:
         - containerPort: 80
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "50m"
+            memory: 128Mi
+            cpu: 50m
           limits:
-            memory: "512Mi"
-            cpu: "200m"
+            memory: 512Mi
+            cpu: 200m
         livenessProbe:
           httpGet:
             path: /health
@@ -817,8 +614,9 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 10
 
+
 ---
-# PVC for nginx cache
+# Document 10: PersistentVolumeClaim - nginx-cache
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -826,13 +624,14 @@ metadata:
   namespace: hypersend
 spec:
   accessModes:
-    - ReadWriteOnce
+  - ReadWriteOnce
   resources:
     requests:
       storage: 1Gi
 
+
 ---
-# WhatsApp-style Backend Service (Load Balancer)
+# Document 11: Service - backend-api
 apiVersion: v1
 kind: Service
 metadata:
@@ -840,12 +639,15 @@ metadata:
   namespace: hypersend
 spec:
   selector:
-    app: "backend-api"
+    app: backend-api
   ports:
   - port: 8000
     targetPort: 8000
-  type: "ClusterIP"
+  type: ClusterIP
+
+
 ---
+# Document 12: HorizontalPodAutoscaler - backend-api-hpa
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -856,42 +658,43 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: backend-api
-  minReplicas: 3  # WhatsApp: minimum 60% availability
-  maxReplicas: 100  # WhatsApp: aggressive scaling
+  minReplicas: 3
+  maxReplicas: 100
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 60  # WhatsApp: scale earlier
+        averageUtilization: 60
   - type: Resource
     resource:
       name: memory
       target:
         type: Utilization
-        averageUtilization: 70  # WhatsApp: scale earlier
+        averageUtilization: 70
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 60  # WhatsApp: fast scale-up
+      stabilizationWindowSeconds: 60
       policies:
       - type: Percent
-        value: 100  # WhatsApp: double quickly
+        value: 100
         periodSeconds: 15
       - type: Pods
-        value: 10  # WhatsApp: add 10 pods at once
+        value: 10
         periodSeconds: 15
       selectPolicy: Max
     scaleDown:
-      stabilizationWindowSeconds: 600  # WhatsApp: slow scale-down (10 min)
+      stabilizationWindowSeconds: 600
       policies:
       - type: Percent
-        value: 10  # WhatsApp: gradual scale-down
+        value: 10
         periodSeconds: 60
       selectPolicy: Min
 
+
 ---
-# WhatsApp-style WebSocket Service (Load Balancer)
+# Document 14: Service - websocket-service
 apiVersion: v1
 kind: Service
 metadata:
@@ -899,12 +702,15 @@ metadata:
   namespace: hypersend
 spec:
   selector:
-    app: "websocket-service"
+    app: websocket-service
   ports:
   - port: 8001
     targetPort: 8001
-  type: "ClusterIP"
+  type: ClusterIP
+
+
 ---
+# Document 15: HorizontalPodAutoscaler - websocket-hpa
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -915,39 +721,42 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: websocket-service
-  minReplicas: 7  # WhatsApp: minimum 70% availability for WebSocket
-  maxReplicas: 100  # WhatsApp: aggressive scaling
+  minReplicas: 7
+  maxReplicas: 100
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 60  # WhatsApp: scale earlier
+        averageUtilization: 60
   - type: Resource
     resource:
       name: memory
       target:
         type: Utilization
-        averageUtilization: 70  # WhatsApp: scale earlier
+        averageUtilization: 70
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 30  # WhatsApp: very fast WebSocket scale-up
+      stabilizationWindowSeconds: 30
       policies:
       - type: Percent
-        value: 200  # WhatsApp: triple quickly for WebSocket
+        value: 200
         periodSeconds: 10
       - type: Pods
-        value: 20  # WhatsApp: add 20 WebSocket pods at once
+        value: 20
         periodSeconds: 10
       selectPolicy: Max
     scaleDown:
-      stabilizationWindowSeconds: 600  # WhatsApp: slow scale-down (10 min)
+      stabilizationWindowSeconds: 600
       policies:
       - type: Percent
-        value: 5  # WhatsApp: very gradual WebSocket scale-down
+        value: 5
         periodSeconds: 60
+
+
 ---
+# Document 16: HorizontalPodAutoscaler - crypto-worker-hpa
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -958,42 +767,107 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: crypto-worker
-  minReplicas: 4  # WhatsApp: minimum crypto workers
-  maxReplicas: 50  # WhatsApp: aggressive crypto scaling
+  minReplicas: 4
+  maxReplicas: 50
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 70  # WhatsApp: crypto operations CPU intensive
+        averageUtilization: 70
   - type: Resource
     resource:
       name: memory
       target:
         type: Utilization
-        averageUtilization: 80  # WhatsApp: crypto operations memory intensive
+        averageUtilization: 80
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 60  # WhatsApp: fast crypto scale-up
+      stabilizationWindowSeconds: 60
       policies:
       - type: Percent
-        value: 100  # WhatsApp: double crypto workers quickly
+        value: 100
         periodSeconds: 15
       - type: Pods
-        value: 10  # WhatsApp: add 10 crypto workers at once
+        value: 10
         periodSeconds: 15
       selectPolicy: Max
     scaleDown:
-      stabilizationWindowSeconds: 300  # WhatsApp: moderate crypto scale-down
+      stabilizationWindowSeconds: 300
       policies:
       - type: Percent
-        value: 10  # WhatsApp: gradual crypto scale-down
+        value: 10
         periodSeconds: 30
       selectPolicy: Min
 
+
 ---
-# WhatsApp-style Nginx Service (Load Balancer)
+# Document 17: Deployment - crypto-worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-worker
+  namespace: hypersend
+  labels:
+    app: crypto-worker
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: crypto-worker
+  template:
+    metadata:
+      labels:
+        app: crypto-worker
+    spec:
+      containers:
+      - name: crypto-worker
+        image: hypersend/crypto-worker:latest
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 250m
+          limits:
+            memory: 2Gi
+            cpu: 1000m
+        env:
+        - name: REDIS_HOST
+          value: redis-cluster
+        - name: REDIS_PORT
+          value: '6379'
+        - name: WORKER_THREADS
+          value: '4'
+        - name: CRYPTO_ALGORITHM
+          value: Signal
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - import redis; r=redis.Redis(host='redis-cluster'); r.ping()
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - import redis; r=redis.Redis(host='redis-cluster'); r.ping()
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+
+
+---
+# Document 18: Service - nginx-lb
 apiVersion: v1
 kind: Service
 metadata:
@@ -1001,16 +875,17 @@ metadata:
   namespace: hypersend
 spec:
   selector:
-    app: "nginx-lb"
+    app: nginx-lb
   ports:
   - port: 80
     targetPort: 80
   - port: 443
     targetPort: 443
-  type: "LoadBalancer"
+  type: LoadBalancer
+
 
 ---
-# WhatsApp-style Redis Service
+# Document 19: Service - redis-cluster
 apiVersion: v1
 kind: Service
 metadata:
@@ -1018,59 +893,72 @@ metadata:
   namespace: hypersend
 spec:
   selector:
-    app: "redis-cluster"
+    app: redis-cluster
   ports:
   - port: 6379
     targetPort: 6379
-  type: "ClusterIP"
-  clusterIP: "None"
+  type: ClusterIP
+  clusterIP: None
+
 
 ---
-# WhatsApp-style Pod Disruption Budget (No Mass Disconnects)
+# Document 20: PodDisruptionBudget - backend-api-pdb
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: backend-api-pdb
   namespace: hypersend
 spec:
-  minAvailable: "60%"  # WhatsApp: minimum 60% backend availability
+  minAvailable: 60%
   selector:
     matchLabels:
       app: backend-api
+
+
 ---
+# Document 21: PodDisruptionBudget - websocket-pdb
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: websocket-pdb
   namespace: hypersend
 spec:
-  minAvailable: "70%"  # WhatsApp: minimum 70% websocket availability
+  minAvailable: 70%
   selector:
     matchLabels:
       app: websocket-service
+
+
 ---
+# Document 22: PodDisruptionBudget - crypto-worker-pdb
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: crypto-worker-pdb
   namespace: hypersend
 spec:
-  minAvailable: "50%"  # WhatsApp: minimum 50% crypto worker availability
+  minAvailable: 50%
   selector:
     matchLabels:
       app: crypto-worker
+
+
 ---
+# Document 23: PodDisruptionBudget - fan-out-worker-pdb
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: fan-out-worker-pdb
   namespace: hypersend
 spec:
-  minAvailable: "50%"  # WhatsApp: minimum 50% fan-out worker availability
+  minAvailable: 50%
   selector:
     matchLabels:
       app: fan-out-worker
+
+
 ---
+# Document 24: PodDisruptionBudget - nginx-pdb
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -1082,8 +970,9 @@ spec:
     matchLabels:
       app: nginx-lb
 
+
 ---
-# Document: NetworkPolicy
+# Document 25: NetworkPolicy - hypersend-network-policy
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -1106,8 +995,9 @@ spec:
         matchLabels:
           name: hypersend
 
+
 ---
-# WhatsApp-style Resource Quotas
+# Document 26: ResourceQuota - hypersend-quota
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -1115,18 +1005,19 @@ metadata:
   namespace: hypersend
 spec:
   hard:
-    requests.cpu: "20"
-    requests.memory: "20Gi"
-    limits.cpu: "40"
-    limits.memory: "40Gi"
-    persistentvolumeclaims: "0"
-    pods: "100"
-    services: "10"
-    secrets: "10"
-    configmaps: "10"
+    requests.cpu: '20'
+    requests.memory: 20Gi
+    limits.cpu: '40'
+    limits.memory: 40Gi
+    persistentvolumeclaims: '0'
+    pods: '100'
+    services: '10'
+    secrets: '10'
+    configmaps: '10'
+
 
 ---
-# Document: LimitRange
+# Document 27: LimitRange - hypersend-limits
 apiVersion: v1
 kind: LimitRange
 metadata:
@@ -1136,20 +1027,21 @@ spec:
   limits:
   - type: Container
     max:
-      cpu: "2"
-      memory: "2Gi"
+      cpu: '2'
+      memory: 2Gi
     min:
-      cpu: "100m"
-      memory: "128Mi"
+      cpu: 100m
+      memory: 128Mi
     default:
-      cpu: "500m"
-      memory: "1Gi"
+      cpu: 500m
+      memory: 1Gi
     defaultRequest:
-      cpu: "100m"
-      memory: "256Mi"
+      cpu: 100m
+      memory: 256Mi
+
 
 ---
-# WhatsApp-style Background Workers (Media Cleanup, ACK Reconciliation)
+# Document 28: Deployment - background-workers
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1158,7 +1050,7 @@ metadata:
   labels:
     app: background-workers
 spec:
-  replicas: 2  # WhatsApp: background workers for high throughput
+  replicas: 2
   selector:
     matchLabels:
       app: background-workers
@@ -1170,50 +1062,59 @@ spec:
       containers:
       - name: worker
         image: hypersend/backend:latest
-        command: ["python", "-m", "celery", "worker", "-A", "backend.celery_app", "--loglevel=info", "--concurrency=4"]
+        command:
+        - python
+        - -m
+        - celery
+        - worker
+        - -A
+        - backend.celery_app
+        - --loglevel=info
+        - --concurrency=4
         env:
         - name: REDIS_HOST
-          value: "redis-cluster"
+          value: redis-cluster
         - name: REDIS_PORT
-          value: "6379"
+          value: '6379'
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
               name: hypersend-secrets
               key: REDIS_PASSWORD
         - name: ENVIRONMENT
-          value: "production"
+          value: production
         - name: CELERY_BROKER_URL
-          value: "redis://redis-cluster:6379/0"
+          value: redis://redis-cluster:6379/0
         - name: CELERY_RESULT_BACKEND
-          value: "redis://redis-cluster:6379/0"
+          value: redis://redis-cluster:6379/0
         - name: WORKER_CONCURRENCY
-          value: "4"
+          value: '4'
         - name: WORKER_PREFETCH_MULTIPLIER
-          value: "1"
+          value: '1'
         - name: WORKER_MAX_TASKS_PER_CHILD
-          value: "1000"
+          value: '1000'
         - name: MEDIA_CLEANUP_INTERVAL
-          value: "300"  # 5 minutes
+          value: '300'
         - name: MESSAGE_CLEANUP_INTERVAL
-          value: "600"  # 10 minutes
+          value: '600'
         - name: ACK_RECONCILIATION_INTERVAL
-          value: "180"  # 3 minutes
+          value: '180'
         - name: CLEANUP_BATCH_SIZE
-          value: "100"
+          value: '100'
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
+            memory: 256Mi
+            cpu: 100m
           limits:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: 1Gi
+            cpu: 500m
         livenessProbe:
           exec:
             command:
             - python
             - -c
-            - "import redis; r=redis.Redis(host='redis-cluster', password='${REDIS_PASSWORD}'); r.ping()"
+            - import redis; r=redis.Redis(host='redis-cluster', password='${REDIS_PASSWORD}');
+              r.ping()
           initialDelaySeconds: 30
           periodSeconds: 30
         readinessProbe:
@@ -1221,7 +1122,8 @@ spec:
             command:
             - python
             - -c
-            - "import redis; r=redis.Redis(host='redis-cluster', password='${REDIS_PASSWORD}'); r.ping()"
+            - import redis; r=redis.Redis(host='redis-cluster', password='${REDIS_PASSWORD}');
+              r.ping()
           initialDelaySeconds: 10
           periodSeconds: 10
         securityContext:
@@ -1233,8 +1135,9 @@ spec:
             drop:
             - ALL
 
+
 ---
-# WhatsApp-style Worker HPA (Horizontal Scaling)
+# Document 29: HorizontalPodAutoscaler - background-workers-hpa
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -1245,55 +1148,57 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: background-workers
-  minReplicas: 2  # WhatsApp: minimum background workers
-  maxReplicas: 20  # WhatsApp: scale workers for cleanup
+  minReplicas: 2
+  maxReplicas: 20
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 70  # WhatsApp: scale workers at 70% CPU
+        averageUtilization: 70
   - type: Resource
     resource:
       name: memory
       target:
         type: Utilization
-        averageUtilization: 80  # WhatsApp: scale workers at 80% memory
+        averageUtilization: 80
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 60  # WhatsApp: fast worker scale-up
+      stabilizationWindowSeconds: 60
       policies:
       - type: Percent
-        value: 100  # WhatsApp: double workers quickly
+        value: 100
         periodSeconds: 15
       - type: Pods
-        value: 5  # WhatsApp: add 5 workers at once
+        value: 5
         periodSeconds: 15
       selectPolicy: Max
     scaleDown:
-      stabilizationWindowSeconds: 300  # WhatsApp: gradual worker scale-down
+      stabilizationWindowSeconds: 300
       policies:
       - type: Percent
-        value: 25  # WhatsApp: reduce workers gradually
+        value: 25
         periodSeconds: 60
       selectPolicy: Min
 
+
 ---
-# WhatsApp-style Worker PodDisruptionBudget
+# Document 30: PodDisruptionBudget - background-workers-pdb
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: background-workers-pdb
   namespace: hypersend
 spec:
-  minAvailable: 1  # WhatsApp: at least 1 worker always running
+  minAvailable: 1
   selector:
     matchLabels:
       app: background-workers
 
+
 ---
-# WhatsApp-style Network Policies (Media Endpoints Isolation)
+# Document 31: NetworkPolicy - hypersend-media-policy
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -1313,7 +1218,7 @@ spec:
           name: hypersend
     ports:
     - protocol: TCP
-      port: 6379  # Redis access
+      port: 6379
   egress:
   - to:
     - namespaceSelector:
@@ -1321,8 +1226,8 @@ spec:
           name: hypersend
     ports:
     - protocol: TCP
-      port: 6379  # Redis access
+      port: 6379
     - protocol: TCP
-      port: 9000  # MinIO access
+      port: 9000
     - protocol: TCP
-      port: 443   # External S3 access
+      port: 443
