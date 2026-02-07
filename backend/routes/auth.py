@@ -24,6 +24,7 @@ except ImportError:
 
 import sys
 import os
+import secrets
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from auth.utils import (
@@ -1811,6 +1812,490 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to change password"
+        )
+
+
+# ===== WHATSAPP-GRADE CRYPTOGRAPHIC ENDPOINTS =====
+
+@router.post("/qrcode/generate", response_model=QRCodeResponse)
+async def generate_qr_code(
+    request: QRCodeRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Generate QR code for device linking (WhatsApp-grade)"""
+    try:
+        auth_log(f"QR code generation request from user: {current_user}")
+        
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'multi_device_manager'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        multi_device_manager = app.state.multi_device_manager
+        
+        # Generate QR code session
+        session_data = await multi_device_manager.create_qr_session(
+            user_id=current_user,
+            device_name=request.device_name,
+            device_type=request.device_type,
+            platform=request.platform
+        )
+        
+        auth_log(f"QR code session created: {session_data['session_id']}")
+        
+        return QRCodeResponse(
+            session_id=session_data['session_id'],
+            qr_code_data=session_data['qr_code_data'],
+            expires_at=session_data['expires_at'],
+            status="pending"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"QR code generation error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate QR code"
+        )
+
+
+@router.post("/qrcode/verify", response_model=VerifyQRCodeResponse)
+async def verify_qr_code(
+    request: VerifyQRCodeRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Verify QR code and complete device linking"""
+    try:
+        auth_log(f"QR code verification request from user: {current_user}")
+        
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'multi_device_manager'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        multi_device_manager = app.state.multi_device_manager
+        
+        # Verify QR code and link device
+        result = await multi_device_manager.verify_qr_code(
+            session_id=request.session_id,
+            verification_code=request.verification_code,
+            linking_user_id=current_user
+        )
+        
+        if result['success']:
+            auth_log(f"Device linked successfully: {result['device_id']}")
+            return VerifyQRCodeResponse(
+                success=True,
+                device_id=result['device_id'],
+                device_name=result['device_name'],
+                message="Device linked successfully"
+            )
+        else:
+            auth_log(f"Device linking failed: {result['error']}")
+            return VerifyQRCodeResponse(
+                success=False,
+                message=result['error']
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"QR code verification error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify QR code"
+        )
+
+
+@router.get("/qrcode/status/{session_id}")
+async def get_qr_code_status(
+    session_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get QR code session status"""
+    try:
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'multi_device_manager'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        multi_device_manager = app.state.multi_device_manager
+        
+        # Get session status
+        status = await multi_device_manager.get_qr_session_status(session_id)
+        
+        if not status:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR code session not found"
+            )
+        
+        return {
+            "session_id": session_id,
+            "status": status['status'],
+            "expires_at": status['expires_at'],
+            "device_info": status.get('device_info'),
+            "created_at": status['created_at']
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"QR code status error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get QR code status"
+        )
+
+
+@router.delete("/qrcode/cancel/{session_id}")
+async def cancel_qr_code_session(
+    session_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Cancel QR code session"""
+    try:
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'multi_device_manager'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        multi_device_manager = app.state.multi_device_manager
+        
+        # Cancel session
+        success = await multi_device_manager.cancel_qr_session(session_id, current_user)
+        
+        if success:
+            return {"message": "QR code session cancelled successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR code session not found"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"QR code cancellation error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cancel QR code session"
+        )
+
+
+@router.get("/qrcode/sessions")
+async def list_qr_code_sessions(
+    current_user: str = Depends(get_current_user)
+):
+    """List active QR code sessions for user"""
+    try:
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'multi_device_manager'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        multi_device_manager = app.state.multi_device_manager
+        
+        # List sessions
+        sessions = await multi_device_manager.list_user_qr_sessions(current_user)
+        
+        return {
+            "sessions": sessions,
+            "total": len(sessions)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"QR code sessions list error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list QR code sessions"
+        )
+
+
+@router.get("/devices")
+async def get_linked_devices(
+    current_user: str = Depends(get_current_user)
+):
+    """Get all linked devices for user"""
+    try:
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'multi_device_manager'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        multi_device_manager = app.state.multi_device_manager
+        
+        # Get devices
+        devices = await multi_device_manager.get_user_devices(current_user)
+        
+        return {
+            "devices": devices,
+            "total": len(devices)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Get devices error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get linked devices"
+        )
+
+
+@router.delete("/devices/{device_id}")
+async def revoke_device(
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Revoke device access (immediate key destruction)"""
+    try:
+        auth_log(f"Device revocation request: {device_id} by user: {current_user}")
+        
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'multi_device_manager'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        multi_device_manager = app.state.multi_device_manager
+        
+        # Revoke device
+        success = await multi_device_manager.revoke_device(current_user, device_id)
+        
+        if success:
+            auth_log(f"Device revoked successfully: {device_id}")
+            return {"message": "Device revoked successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Device not found"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Device revocation error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to revoke device"
+        )
+
+
+@router.post("/crypto/register")
+async def register_device_crypto(
+    current_user: str = Depends(get_current_user)
+):
+    """Register device for cryptographic services"""
+    try:
+        auth_log(f"Device crypto registration request: {current_user}")
+        
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'signal_protocol'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        signal_protocol = app.state.signal_protocol
+        
+        # Generate device ID (in production, this would come from client)
+        device_id = f"device_{secrets.token_hex(8)}"
+        
+        # Register device with Signal Protocol
+        bundle = await signal_protocol.register_device(current_user, device_id)
+        
+        auth_log(f"Device crypto registered: {current_user}:{device_id}")
+        
+        return {
+            "device_id": device_id,
+            "identity_key": bundle.identity_key.hex(),
+            "signed_prekey": bundle.signed_prekey,
+            "one_time_prekeys": bundle.one_time_prekeys[:10],  # Return first 10
+            "registration_id": bundle.registration_id,
+            "timestamp": bundle.timestamp.isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Device crypto registration error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to register device for cryptographic services"
+        )
+
+
+@router.get("/crypto/bundle/{user_id}/{device_id}")
+async def get_device_bundle(
+    user_id: str,
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get device's X3DH bundle for session initiation"""
+    try:
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'signal_protocol'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        signal_protocol = app.state.signal_protocol
+        
+        # Get bundle
+        bundle = await signal_protocol.x3dh.get_bundle(user_id, device_id)
+        
+        if not bundle:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Device bundle not found"
+            )
+        
+        return {
+            "user_id": bundle.user_id,
+            "device_id": bundle.device_id,
+            "identity_key": bundle.identity_key.hex(),
+            "signed_prekey": bundle.signed_prekey,
+            "one_time_prekeys": bundle.one_time_prekeys,
+            "registration_id": bundle.registration_id,
+            "timestamp": bundle.timestamp.isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Get bundle error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get device bundle"
+        )
+
+
+@router.post("/crypto/session/initiate")
+async def initiate_crypto_session(
+    request: dict,
+    current_user: str = Depends(get_current_user)
+):
+    """Initiate Signal Protocol session with another device"""
+    try:
+        auth_log(f"Session initiation request from: {current_user}")
+        
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'signal_protocol'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        signal_protocol = app.state.signal_protocol
+        
+        # Extract request data
+        initiator_device_id = request.get('initiator_device_id')
+        responder_user_id = request.get('responder_user_id')
+        responder_device_id = request.get('responder_device_id')
+        one_time_prekey_id = request.get('one_time_prekey_id')
+        
+        if not all([initiator_device_id, responder_user_id, responder_device_id]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required fields"
+            )
+        
+        # Initiate session
+        session_id, session_info = await signal_protocol.initiate_session(
+            current_user, initiator_device_id,
+            responder_user_id, responder_device_id
+        )
+        
+        auth_log(f"Session initiated: {session_id}")
+        
+        return {
+            "session_id": session_id,
+            "session_info": session_info
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Session initiation error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to initiate cryptographic session"
+        )
+
+
+@router.post("/crypto/keys/rotate")
+async def rotate_crypto_keys(
+    current_user: str = Depends(get_current_user)
+):
+    """Rotate cryptographic keys (weekly maintenance)"""
+    try:
+        auth_log(f"Key rotation request from: {current_user}")
+        
+        # Get cryptographic services
+        from ..main import app
+        if not hasattr(app.state, 'signal_protocol'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cryptographic services not available"
+            )
+        
+        signal_protocol = app.state.signal_protocol
+        multi_device_manager = app.state.multi_device_manager
+        
+        # Get user devices
+        devices = await multi_device_manager.get_user_devices(current_user)
+        
+        rotated_devices = []
+        for device in devices:
+            try:
+                await signal_protocol.rotate_keys(current_user, device['device_id'])
+                rotated_devices.append(device['device_id'])
+            except Exception as e:
+                auth_log(f"Failed to rotate keys for device {device['device_id']}: {e}")
+        
+        auth_log(f"Keys rotated for {len(rotated_devices)} devices")
+        
+        return {
+            "message": "Key rotation completed",
+            "rotated_devices": rotated_devices,
+            "total_devices": len(devices)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        auth_log(f"Key rotation error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to rotate cryptographic keys"
         )
 
 

@@ -12,6 +12,15 @@ import sys
 import asyncio
 from dotenv import load_dotenv
 
+# WhatsApp-Grade Cryptographic Imports
+import redis.asyncio as redis
+from crypto.signal_protocol import SignalProtocol
+from crypto.multi_device import MultiDeviceManager
+from crypto.delivery_semantics import DeliveryManager
+from crypto.media_encryption import MediaEncryptionService
+from workers.fan_out_worker import MessageFanOutWorker
+from websocket.delivery_handler import create_websocket_server
+
 # Load environment variables FIRST before importing config
 print("[STARTUP] Loading environment variables...")
 env_paths = [
@@ -767,6 +776,67 @@ async def lifespan(app: FastAPI):
         if db_connected:
             print("[START] SUCCESS Server startup complete - Ready to accept requests")
         
+        # Initialize WhatsApp-grade cryptographic services
+        print("[CRYPTO] Initializing WhatsApp-grade cryptographic services...")
+        try:
+            # Initialize Redis client for crypto services
+            redis_client = redis.Redis(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                password=settings.REDIS_PASSWORD,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                retry_on_timeout=True,
+            )
+            
+            # Test Redis connection
+            await redis_client.ping()
+            print("[CRYPTO] Redis connection established")
+            
+            # Initialize cryptographic services
+            signal_protocol = SignalProtocol(redis_client)
+            multi_device_manager = MultiDeviceManager(redis_client)
+            delivery_manager = DeliveryManager(redis_client)
+            media_service = MediaEncryptionService(redis_client)
+            fan_out_worker = MessageFanOutWorker(redis_client)
+            
+            # Start WebSocket server
+            print("[WS] Starting WhatsApp-grade WebSocket server...")
+            websocket_server = await create_websocket_server(
+                redis_client,
+                host="0.0.0.0",
+                port=8001
+            )
+            print("[WS] WebSocket server started on port 8001")
+            
+            # Start background fan-out worker
+            print("[FANOUT] Starting background fan-out worker...")
+            fan_out_task = asyncio.create_task(fan_out_worker.start_worker())
+            print("[FANOUT] Background fan-out worker started")
+            
+            # Store services in app state for access by routes
+            app.state.redis_client = redis_client
+            app.state.signal_protocol = signal_protocol
+            app.state.multi_device_manager = multi_device_manager
+            app.state.delivery_manager = delivery_manager
+            app.state.media_service = media_service
+            app.state.fan_out_worker = fan_out_worker
+            app.state.websocket_server = websocket_server
+            app.state.fan_out_task = fan_out_task
+            
+            print("[CRYPTO] WhatsApp-grade cryptographic services initialized successfully")
+            print("[CRYPTO] Signal Protocol: ✓")
+            print("[CRYPTO] Multi-Device Management: ✓")
+            print("[CRYPTO] Delivery Semantics: ✓")
+            print("[CRYPTO] Media Encryption: ✓")
+            print("[CRYPTO] Fan-Out Worker: ✓")
+            print("[CRYPTO] WebSocket Delivery: ✓")
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize cryptographic services: {e}")
+            print("[ERROR] Continuing without cryptographic services (limited functionality)")
+        
         if settings.DEBUG:
             print(f"[START] Hypersend API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
             print("[CORS] Allowing all origins (DEBUG mode)")
@@ -780,6 +850,20 @@ async def lifespan(app: FastAPI):
         yield
         
         print("[SHUTDOWN] Lifespan shutdown starting")
+        
+        # Cleanup cryptographic services
+        if hasattr(app.state, 'fan_out_task'):
+            app.state.fan_out_task.cancel()
+            print("[CRYPTO] Fan-out worker stopped")
+        
+        if hasattr(app.state, 'websocket_server'):
+            app.state.websocket_server.close()
+            await app.state.websocket_server.wait_closed()
+            print("[WS] WebSocket server stopped")
+        
+        if hasattr(app.state, 'redis_client'):
+            await app.state.redis_client.close()
+            print("[CRYPTO] Redis connection closed")
     except Exception as e:
         print(f"[ERROR] CRITICAL: Failed to start backend - {str(e)}")
         # Sanitize MongoDB URI before logging

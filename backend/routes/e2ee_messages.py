@@ -1,19 +1,3 @@
-"""
-E2EE Messages Route - WhatsApp-Grade Encrypted Messaging (Signal Protocol)
-
-Endpoints:
-- POST /messages/e2ee/sessions/init - Initialize X3DH session
-- POST /messages/e2ee/send - Send encrypted message with fan-out
-- POST /messages/e2ee/receive - Pull and decrypt message
-- POST /messages/e2ee/device/online - Mark device online (triggers retry)
-- POST /messages/e2ee/device/offline - Mark device offline
-- POST /messages/e2ee/retry/pending - Get pending retries
-- POST /messages/e2ee/delivery/receipt - Send delivery/read receipt
-- GET /messages/e2ee/message/{message_id}/state - Get message state
-- POST /messages/e2ee/abuse/report - File abuse report
-- GET /messages/e2ee/abuse/score - Get user abuse score
-"""
-
 import logging
 import secrets
 from datetime import datetime, timezone

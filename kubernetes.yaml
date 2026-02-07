@@ -947,6 +947,49 @@ spec:
       - type: Percent
         value: 5  # WhatsApp: very gradual WebSocket scale-down
         periodSeconds: 60
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: crypto-worker-hpa
+  namespace: hypersend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: crypto-worker
+  minReplicas: 4  # WhatsApp: minimum crypto workers
+  maxReplicas: 50  # WhatsApp: aggressive crypto scaling
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70  # WhatsApp: crypto operations CPU intensive
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80  # WhatsApp: crypto operations memory intensive
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60  # WhatsApp: fast crypto scale-up
+      policies:
+      - type: Percent
+        value: 100  # WhatsApp: double crypto workers quickly
+        periodSeconds: 15
+      - type: Pods
+        value: 10  # WhatsApp: add 10 crypto workers at once
+        periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300  # WhatsApp: moderate crypto scale-down
+      policies:
+      - type: Percent
+        value: 10  # WhatsApp: gradual crypto scale-down
+        periodSeconds: 30
       selectPolicy: Min
 
 ---
@@ -1005,6 +1048,28 @@ spec:
   selector:
     matchLabels:
       app: websocket-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crypto-worker-pdb
+  namespace: hypersend
+spec:
+  minAvailable: "50%"  # WhatsApp: minimum 50% crypto worker availability
+  selector:
+    matchLabels:
+      app: crypto-worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fan-out-worker-pdb
+  namespace: hypersend
+spec:
+  minAvailable: "50%"  # WhatsApp: minimum 50% fan-out worker availability
+  selector:
+    matchLabels:
+      app: fan-out-worker
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
