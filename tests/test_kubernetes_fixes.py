@@ -209,8 +209,8 @@ class TestKubernetesFixes:
         
         api_base_url = data.get('API_BASE_URL', '')
         assert api_base_url, "API_BASE_URL must not be empty"
-        assert api_base_url.startswith('http://'), "API_BASE_URL must use HTTP"
-        assert 'localhost' in api_base_url, "API_BASE_URL should contain localhost domain"
+        assert api_base_url.startswith('https://'), "API_BASE_URL must use HTTPS"
+        assert 'zaply.in.net' in api_base_url, "API_BASE_URL should contain zaply.in.net domain"
         assert '/api/' in api_base_url, "API_BASE_URL should contain /api/ path"
         
         aws_access_key = data.get('AWS_ACCESS_KEY_ID', '')

@@ -1,35 +1,18 @@
-"""
-WhatsApp-Grade Frontend Client Security
-========================================
-
-Client-side security hardening for mobile/web platforms.
-Implements root detection, screenshot protection, secure storage.
-
-Security Properties:
-- Encrypted local message database
-- OS secure keystore usage
-- Screenshot & screen-record blocking
-- Secure clipboard handling
-- Root / jailbreak detection
-- Auto-wipe on auth failure
-- Background access restrictions
-"""
-
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:math';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:crypto/crypto.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as path;
 
 class ClientSecurityManager {
-  static const _secureStorage = FlutterSecureStorage();
+  static final _secureStorage = FlutterSecureStorage();
   static const _maxAuthFailures = 5;
-  static const _sessionTimeoutMinutes = 30;
   
   int _authFailureCount = 0;
   int? _lastAuthTime;
@@ -178,7 +161,16 @@ class ClientSecurityManager {
   Future<SecurityStatus> getSecurityStatus() async {
     final isCompromised = await isDeviceCompromised();
     final packageInfo = await PackageInfo.fromPlatform();
-    final deviceInfo = await DeviceInfoPlugin().deviceInfo;
+    final deviceInfoPlugin = DeviceInfoPlugin();
+    Map<String, dynamic> deviceInfo = {};
+    
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfoPlugin.androidInfo;
+      deviceInfo = androidInfo.data;
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfoPlugin.iosInfo;
+      deviceInfo = iosInfo.data;
+    }
     
     return SecurityStatus(
       isCompromised: isCompromised,
@@ -368,7 +360,6 @@ class ClientSecurityManager {
   /// Check app integrity
   Future<bool> _checkAppIntegrity() async {
     try {
-      final packageInfo = await PackageInfo.fromPlatform();
       final expectedSignature = _config.expectedAppSignature;
       
       if (expectedSignature != null) {
@@ -552,7 +543,7 @@ class ClientSecurityManager {
     
     // Log critical events
     if (severity == SecuritySeverity.critical) {
-      print('CRITICAL SECURITY EVENT: $message');
+      debugPrint('CRITICAL SECURITY EVENT: $message');
     }
   }
 }

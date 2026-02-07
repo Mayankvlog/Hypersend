@@ -98,7 +98,7 @@ services:
       - "hypersend.redis-cache=required"
     environment:
       - NGINX_ALLOW_UNSAFE=true
-      - NGINX_API_BASE_URL=${API_BASE_URL:-http://localhost:8000/api/v1}
+      - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
@@ -125,9 +125,9 @@ services:
       - NGINX_E2EE_RATE_LIMIT=100  # 100 E2EE requests/sec
       - NGINX_E2EE_DEVICE_RATE_LIMIT=20  # 20 device requests/sec
       # Production domain configuration
-      - DOMAIN_NAME=localhost
-      - SSL_CERT_PATH=/etc/nginx/ssl/zaply.in.net/fullchain.pem
-      - SSL_KEY_PATH=/etc/nginx/ssl/zaply.in.net/privkey.pem
+      - DOMAIN_NAME=zaply.in.net
+      - SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
+      - SSL_KEY_PATH=/etc/letsencrypt/live/zaply.in.net/privkey.pem
 
   # WhatsApp-style Backend API (Stateless, Horizontal Scaling)
   backend:

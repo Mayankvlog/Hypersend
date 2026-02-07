@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'dart:async';
 import 'dart:io';
-import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:path_provider/path_provider.dart';
@@ -138,13 +137,14 @@ class FileTransferService {
       
       // Create HTTP request for S3 upload
       final client = HttpClient();
-      final request = HttpRequest('PUT', Uri.parse(uploadUrl));
-      request.headers['Content-Type'] = mime;
-      request.body = fileBytes;
+      final request = await client.putUrl(Uri.parse(uploadUrl));
+      request.headers.contentType = ContentType.parse(mime);
+      request.add(fileBytes);
       
       // Upload to S3
-      final response = await client.send(request);
+      final response = await request.close();
       
+      // Check response status code
       if (response.statusCode != 200) {
         throw Exception('S3 upload failed: ${response.statusCode}');
       }

@@ -27,10 +27,10 @@ class TestMongoDBConnectionFixes:
         with open(env_path, 'r') as f:
             env_content = f.read()
         
-        # Check that MONGODB_URI IS in .env for local MongoDB
+        # Check that MONGODB_URI IS in .env for zaply.in.net MongoDB
         assert "MONGODB_URI=" in env_content, "MONGODB_URI should be set in .env file"
-        assert "mongodb://" in env_content, "MONGODB_URI should use mongodb:// for local MongoDB"
-        assert "localhost:27017" in env_content, "MONGODB_URI should point to localhost MongoDB"
+        assert "mongodb://" in env_content, "MONGODB_URI should use mongodb:// for MongoDB"
+        assert "zaply.in.net:27017" in env_content, "MONGODB_URI should point to zaply.in.net MongoDB"
         
         # Check MongoDB Atlas is disabled for local development
         assert "MONGODB_ATLAS_ENABLED=false" in env_content, "MONGODB_ATLAS_ENABLED should be false for local development"

@@ -1,74 +1,3 @@
-# ============================================================================
-# HYPerSend MULTI-DEVICE E2EE ARCHITECTURE - KUBERNETES DEPLOYMENT
-# ============================================================================
-#
-# ARCHITECTURAL COMPARISON: WHATSAPP vs HYPerSend
-# =====================================================
-#
-# WHATSAPP ARCHITECTURE (LEFT SIDE):
-# [Devices] User Devices -> [Servers] WhatsApp Servers -> [E2EE] Encrypted Storage -> [Cloud] Cloud Backup
-# - Limited Multi-Device Support (1 primary + 4 companion)
-# - Proprietary Protocol Implementation
-# - End-to-End Encryption (WhatsApp Protocol)
-# - Server-side Message Routing
-# - Limited Horizontal Scaling
-# - Fixed Infrastructure Deployment
-#
-# HYPerSend ARCHITECTURE (RIGHT SIDE):
-# [Multi-Device] (4 devices per user) -> [LB] Nginx Load Balancer ->
-# [WebSocket] WebSocket Service -> [Backend] Backend API Pods -> [Redis] Redis Cluster -> [S3] S3 Storage
-# - Enhanced Multi-Device Support (4 devices max)
-# - Open Signal Protocol Implementation
-# - End-to-End Encryption (Signal Protocol)
-# - Zero-Knowledge Message Routing
-# - Horizontal Pod Autoscaling (HPA)
-# - Scalable Kubernetes Deployment
-#
-# KUBERNETES INFRASTRUCTURE COMPONENTS:
-# ======================================
-# [Namespace] hypersend (isolated deployment environment)
-# [ConfigMap] Application configuration and environment variables
-# [Secrets] Encryption keys, certificates, and sensitive data
-# [Nginx] Load balancer with E2EE routing and rate limiting
-# [Backend] FastAPI pods with Signal Protocol and multi-device sync
-# [WebSocket] Real-time messaging pods with Redis session management
-# [Redis] Ephemeral cache cluster for WebSocket sessions and device sync
-# [MinIO] S3-compatible storage for encrypted media blobs
-# [Celery] Background worker pods for message processing and cleanup
-# [Prometheus] Metrics collection pod for scaling and monitoring
-# [Grafana] Dashboard pod for infrastructure monitoring
-# [TURN] TURN Server: Voice/video call relay pod with E2EE support
-# [HPA] Horizontal Pod Autoscaling for all services
-# [NetworkPolicy] E2EE-specific security policies
-# [PersistentVolume] Encrypted media storage
-#
-# MULTI-DEVICE SCALING FEATURES:
-# ============================
-# - 4 devices per user with session synchronization
-# - Redis-based ephemeral cache for real-time operations
-# - Horizontal Pod Autoscaling (2-20 replicas per service)
-# - E2EE with Signal Protocol implementation
-# - Zero-knowledge message storage
-# - Auto-scaling WebSocket connections
-# - Background task processing with Celery
-# - Comprehensive monitoring with Prometheus/Grafana
-# - Voice/video call support with TURN server
-# - Network security policies
-# - Persistent storage for encrypted media
-#
-# SECURITY FEATURES:
-# ==================
-# - TLS 1.3 encryption for all communications
-# - End-to-end encryption with Signal Protocol
-# - Zero-knowledge server architecture
-# - Rate limiting and abuse prevention
-# - Secure key storage and rotation
-# - Multi-device session isolation
-# - Encrypted media storage
-# - Voice/video call encryption
-# - Network policies for traffic isolation
-# - Secrets management for sensitive data
-# ============================================================================
 
 # Document 1: Namespace - hypersend
 apiVersion: v1
@@ -139,8 +68,8 @@ data:
   DEBUG: 'False'
   API_HOST: 0.0.0.0
   API_PORT: '8000'
-  API_BASE_URL: http://localhost:8000/api/v1
-  ALLOWED_ORIGINS: http://localhost:3000,https://localhost:3000
+  API_BASE_URL: https://zaply.in.net/api/v1
+  ALLOWED_ORIGINS: https://zaply.in.net,http://zaply.in.net
   RATE_LIMIT_PER_USER: '100'
   RATE_LIMIT_WINDOW_SECONDS: '60'
   USE_MOCK_DB: 'False'
@@ -148,10 +77,10 @@ data:
   ENABLE_PASSWORD_RESET: 'true'
   SMTP_HOST: smtp.gmail.com
   SMTP_PORT: '587'
-  SMTP_USERNAME: noreply@localhost.com
+  SMTP_USERNAME: noreply@zaply.in.net
   SMTP_USE_TLS: 'true'
-  EMAIL_FROM: noreply@localhost.com
-  SENDER_NAME: Hypersend Support
+  EMAIL_FROM: noreply@zaply.in.net
+  SENDER_NAME: Zaply Support
   MONGODB_ATLAS_ENABLED: 'true'
   MONGODB_URI: mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority
   REDIS_HOST: redis
@@ -183,7 +112,7 @@ data:
   EXPLICIT_CONTENT_DETECTION: 'true'
   PHISHING_DETECTION: 'true'
   NGINX_ALLOW_UNSAFE_SSL: 'true'
-  NGINX_API_BASE_URL: http://localhost:8000/api/v1
+  NGINX_API_BASE_URL: https://zaply.in.net/api/v1
   NGINX_API_HOST: backend-service
   NGINX_API_KEY: hypersend_secure_api_key
   NGINX_API_SECRET: hypersend_secure_api_secret
@@ -195,9 +124,9 @@ data:
   NGINX_ERROR_PAGE_TIMEOUT: '30'
   NGINX_MAX_RETRIES: '7'
   NGINX_RETRY_DELAY: '5'
-  DOMAIN_NAME: localhost
-  SSL_CERT_PATH: /etc/nginx/ssl/localhost/fullchain.pem
-  SSL_KEY_PATH: /etc/nginx/ssl/localhost/privkey.pem
+  DOMAIN_NAME: zaply.in.net
+  SSL_CERT_PATH: /etc/letsencrypt/live/zaply.in.net/fullchain.pem
+  SSL_KEY_PATH: /etc/letsencrypt/live/zaply.in.net/privkey.pem
 
 
 ---
@@ -209,12 +138,15 @@ metadata:
   namespace: hypersend
 type: Opaque
 data:
-  # Database Secrets
+   # Database Secrets
   MONGO_USER: bWF5YW5sbHIwMzExX2RiX3VzZXI=
   MONGO_PASSWORD: PGRiX3Bhc3N3b3JkPg==
   MONGO_INITDB_DATABASE: aHlwZXJzZW5k
   MONGODB_ATLAS_ENABLED: dHJ1ZQ==
   MONGODB_URI: bW9uZ29kYitzcnY6Ly9tYXlhbmxscjAzMTFfZGJfdXNlcjpKQmtBWmluOGx5dFRLNnZnQGNsdXN0ZXIwLnJuajN2ZmQubW9uZ29kYi5uZXQvaHlwZXJzZW5kP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eQ==
+  
+  # Application Secrets
+  SECRET_KEY: UHJvZF9TZWNyZXRfS2V5X0Zvcl9IeXBlcnNlbmRfMjAyNV9TZWN1cmVfRml4ZWQ=
   
   # Email Service
   SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=
@@ -537,7 +469,6 @@ data:
 
 
 ---
----
 # Document 5: StatefulSet - redis-cluster
 apiVersion: apps/v1
 kind: StatefulSet
@@ -645,17 +576,22 @@ spec:
           valueFrom:
             secretKeyRef:
               name: hypersend-secrets
-              key: mongodb-uri
+              key: MONGODB_URI
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:
               name: hypersend-secrets
-              key: secret-key
-        - name: S3_ENDPOINT
+              key: SECRET_KEY
+        - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
               name: hypersend-secrets
-              key: s3-endpoint
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: AWS_SECRET_ACCESS_KEY
         - name: S3_BUCKET
           value: hypersend-media
         - name: MAX_FILE_SIZE_BYTES
@@ -786,10 +722,10 @@ spec:
       volumes:
       - name: nginx-config
         configMap:
-          name: nginx-config
+          name: nginx-configmap
       - name: ssl-certs
         secret:
-          secretName: ssl-certs
+          secretName: hypersend-secrets
       - name: nginx-cache
         persistentVolumeClaim:
           claimName: nginx-cache
@@ -899,19 +835,6 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 60
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Percent
-        value: 10
-        periodSeconds: 60
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 60
@@ -1140,7 +1063,7 @@ spec:
   - port: 6379
     targetPort: 6379
   type: ClusterIP
-  clusterIP: None
+  clusterIP: "None"
 
 
 ---
@@ -1185,18 +1108,7 @@ spec:
       app: crypto-worker
 
 
----
-# Document 23: PodDisruptionBudget - fan-out-worker-pdb
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: fan-out-worker-pdb
-  namespace: hypersend
-spec:
-  minAvailable: 50%
-  selector:
-    matchLabels:
-      app: fan-out-worker
+
 
 
 ---
@@ -1636,51 +1548,7 @@ spec:
       app: e2ee-service
 
 
----
-# Document 38: HorizontalPodAutoscaler - e2ee-service-hpa
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: e2ee-service-hpa
-  namespace: hypersend
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: e2ee-service
-  minReplicas: 2
-  maxReplicas: 20
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 30
-      policies:
-      - type: Percent
-        value: 200
-        periodSeconds: 15
-      - type: Pods
-        value: 10
-        periodSeconds: 15
-      selectPolicy: Max
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Percent
-        value: 25
-        periodSeconds: 60
-      selectPolicy: Min
+
 
 
 ---
@@ -1878,7 +1746,7 @@ spec:
           name: hypersend
     - podSelector:
         matchLabels:
-          app: backend
+          app: backend-api
     - podSelector:
         matchLabels:
           app: frontend
@@ -1892,10 +1760,10 @@ spec:
           name: hypersend
     - podSelector:
         matchLabels:
-          app: redis
+          app: redis-cluster
     - podSelector:
         matchLabels:
-          app: mongodb
+          app: backend-api
     ports:
     - protocol: TCP
       port: 6379
