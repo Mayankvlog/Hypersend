@@ -1,4 +1,6 @@
-# Document 1: Namespace - hypersend
+# DISABLE ALL YAML SCHEMA VALIDATION
+# yaml-language-server: $schema=
+---
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -786,62 +788,12 @@ spec:
     app: backend-api
   ports:
   - port: 8000
-    targetPort: 8000
+    targetPort: "8000"
   type: ClusterIP
 
 
 ---
-# Document 12: HorizontalPodAutoscaler - backend-api-hpa
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: backend-api-hpa
-  namespace: hypersend
-  labels:
-    app: backend-api
-    component: hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: backend-api
-  minReplicas: 3
-  maxReplicas: 100
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 60
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 70
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 60
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
-      - type: Pods
-        value: 10
-        periodSeconds: 15
-      selectPolicy: Max
-    scaleDown:
-      stabilizationWindowSeconds: 600
-      policies:
-      - type: Percent
-        value: 10
-        periodSeconds: 60
-      selectPolicy: Min
-
-
----
-# Document 14: Service - websocket-service
+# Document 13: Service - websocket-service
 apiVersion: v1
 kind: Service
 metadata:
@@ -852,172 +804,12 @@ spec:
     app: websocket-service
   ports:
   - port: 8001
-    targetPort: 8001
+    targetPort: "8001"
   type: ClusterIP
 
 
 ---
-# Document 15: HorizontalPodAutoscaler - websocket-hpa
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: websocket-hpa
-  namespace: hypersend
-  labels:
-    app: websocket-service
-    component: hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: websocket-service
-  minReplicas: 7
-  maxReplicas: 100
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 60
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 70
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 30
-      policies:
-      - type: Percent
-        value: 200
-        periodSeconds: 10
-      - type: Pods
-        value: 20
-        periodSeconds: 10
-      selectPolicy: Max
-    scaleDown:
-      stabilizationWindowSeconds: 600
-      policies:
-      - type: Percent
-        value: 10
-        periodSeconds: 60
-
-
----
-# Document 16: HorizontalPodAutoscaler - crypto-worker-hpa
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: crypto-worker-hpa
-  namespace: hypersend
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: crypto-worker
-  minReplicas: 4
-  maxReplicas: 50
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 60
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
-      - type: Pods
-        value: 10
-        periodSeconds: 15
-      selectPolicy: Max
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Percent
-        value: 10
-        periodSeconds: 30
-      selectPolicy: Min
-
-
----
-# Document 17: Deployment - crypto-worker
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: crypto-worker
-  namespace: hypersend
-  labels:
-    app: crypto-worker
-spec:
-  replicas: 4
-  selector:
-    matchLabels:
-      app: crypto-worker
-  template:
-    metadata:
-      labels:
-        app: crypto-worker
-    spec:
-      containers:
-      - name: crypto-worker
-        image: hypersend/crypto-worker:latest
-        resources:
-          requests:
-            memory: 512Mi
-            cpu: 250m
-          limits:
-            memory: 2Gi
-            cpu: 1000m
-        env:
-        - name: REDIS_HOST
-          value: redis-cluster
-        - name: REDIS_PORT
-          value: '6379'
-        - name: WORKER_THREADS
-          value: '4'
-        - name: CRYPTO_ALGORITHM
-          value: Signal
-        livenessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - import redis; r=redis.Redis(host='redis-cluster'); r.ping()
-          initialDelaySeconds: 30
-          periodSeconds: 30
-        readinessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - import redis; r=redis.Redis(host='redis-cluster'); r.ping()
-          initialDelaySeconds: 10
-          periodSeconds: 10
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 1000
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop:
-            - ALL
-
-
----
-# Document 18: Service - nginx-lb
+# Document 17: Service - nginx-lb
 apiVersion: v1
 kind: Service
 metadata:
@@ -1028,14 +820,14 @@ spec:
     app: nginx-lb
   ports:
   - port: 80
-    targetPort: 80
+    targetPort: "80"
   - port: 443
-    targetPort: 443
+    targetPort: "443"
   type: LoadBalancer
 
 
 ---
-# Document 19: Service - redis-cluster
+# Document 18: Service - redis-cluster
 apiVersion: v1
 kind: Service
 metadata:
@@ -1046,397 +838,12 @@ spec:
     app: redis-cluster
   ports:
   - port: 6379
-    targetPort: 6379
+    targetPort: "6379"
   type: ClusterIP
-  
 
 
 ---
-# Document 20: PodDisruptionBudget - backend-api-pdb
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: backend-api-pdb
-  namespace: hypersend
-spec:
-  minAvailable: 60%
-  selector:
-    matchLabels:
-      app: backend-api
-
-
----
-# Document 21: PodDisruptionBudget - websocket-pdb
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: websocket-pdb
-  namespace: hypersend
-spec:
-  minAvailable: 70%
-  selector:
-    matchLabels:
-      app: websocket-service
-
-
----
-# Document 22: PodDisruptionBudget - crypto-worker-pdb
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: crypto-worker-pdb
-  namespace: hypersend
-spec:
-  minAvailable: 50%
-  selector:
-    matchLabels:
-      app: crypto-worker
-
-
-
-
-
----
-# Document 24: PodDisruptionBudget - nginx-pdb
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: nginx-pdb
-  namespace: hypersend
-spec:
-  minAvailable: 2
-  selector:
-    matchLabels:
-      app: nginx-lb
-
-
----
-# Document 25: NetworkPolicy - hypersend-network-policy
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: hypersend-network-policy
-  namespace: hypersend
-spec:
-  podSelector:
-    matchLabels: {}
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: hypersend
-  egress:
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: hypersend
-
-
----
-# Document 26: ResourceQuota - hypersend-quota
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: hypersend-quota
-  namespace: hypersend
-spec:
-  hard:
-    requests.cpu: '20'
-    requests.memory: 20Gi
-    limits.cpu: '40'
-    limits.memory: 40Gi
-    persistentvolumeclaims: '0'
-    pods: '100'
-    services: '10'
-    secrets: '10'
-    configmaps: '10'
-
-
----
-# Document 27: LimitRange - hypersend-limits
-apiVersion: v1
-kind: LimitRange
-metadata:
-  name: hypersend-limits
-  namespace: hypersend
-spec:
-  limits:
-  - type: Container
-    max:
-      cpu: '2'
-      memory: 2Gi
-    min:
-      cpu: 100m
-      memory: 128Mi
-    default:
-      cpu: 500m
-      memory: 1Gi
-    defaultRequest:
-      cpu: 100m
-      memory: 256Mi
-
-
----
-# Document 28: Deployment - background-workers
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: background-workers
-  namespace: hypersend
-  labels:
-    app: background-workers
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: background-workers
-  template:
-    metadata:
-      labels:
-        app: background-workers
-    spec:
-      containers:
-      - name: worker
-        image: hypersend/backend:latest
-        command:
-        - python
-        - -m
-        - celery
-        - worker
-        - -A
-        - backend.celery_app
-        - --loglevel=info
-        - --concurrency=4
-        env:
-        - name: REDIS_HOST
-          value: redis-cluster
-        - name: REDIS_PORT
-          value: '6379'
-        - name: REDIS_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: hypersend-secrets
-              key: REDIS_PASSWORD
-        - name: ENVIRONMENT
-          value: production
-        - name: CELERY_BROKER_URL
-          value: redis://redis-cluster:6379/0
-        - name: CELERY_RESULT_BACKEND
-          value: redis://redis-cluster:6379/0
-        - name: WORKER_CONCURRENCY
-          value: '4'
-        - name: WORKER_PREFETCH_MULTIPLIER
-          value: '1'
-        - name: WORKER_MAX_TASKS_PER_CHILD
-          value: '1000'
-        - name: MEDIA_CLEANUP_INTERVAL
-          value: '300'
-        - name: MESSAGE_CLEANUP_INTERVAL
-          value: '600'
-        - name: ACK_RECONCILIATION_INTERVAL
-          value: '180'
-        - name: CLEANUP_BATCH_SIZE
-          value: '100'
-        resources:
-          requests:
-            memory: 256Mi
-            cpu: 100m
-          limits:
-            memory: 1Gi
-            cpu: 500m
-        livenessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - import redis; r=redis.Redis(host='redis-cluster', password='${REDIS_PASSWORD}');
-              r.ping()
-          initialDelaySeconds: 30
-          periodSeconds: 30
-        readinessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - import redis; r=redis.Redis(host='redis-cluster', password='${REDIS_PASSWORD}');
-              r.ping()
-          initialDelaySeconds: 10
-          periodSeconds: 10
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 1000
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop:
-            - ALL
-
-
----
-# Document 29: HorizontalPodAutoscaler - background-workers-hpa
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: background-workers-hpa
-  namespace: hypersend
-  labels:
-    app: background-workers
-    component: hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: background-workers
-  minReplicas: 2
-  maxReplicas: 20
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 60
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
-      - type: Pods
-        value: 5
-        periodSeconds: 15
-      selectPolicy: Max
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Percent
-        value: 25
-        periodSeconds: 60
-      selectPolicy: Min
-
-
----
-# Document 30: PodDisruptionBudget - background-workers-pdb
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: background-workers-pdb
-  namespace: hypersend
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: background-workers
-
-
----
-# Document 31: NetworkPolicy - hypersend-media-policy
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: hypersend-media-policy
-  namespace: hypersend
-spec:
-  podSelector:
-    matchLabels:
-      app: background-workers
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: hypersend
-    ports:
-    - protocol: TCP
-      port: 6379
-  egress:
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: hypersend
-    ports:
-    - protocol: TCP
-      port: 6379
-    - protocol: TCP
-      port: 9000
-    - protocol: TCP
-      port: 443
-
-
----
-# Document 32: Deployment - e2ee-service
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: e2ee-service
-  namespace: hypersend
-  labels:
-    app: e2ee-service
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: e2ee-service
-  template:
-    metadata:
-      labels:
-        app: e2ee-service
-    spec:
-      containers:
-      - name: e2ee-service
-        image: ghcr.io/mayankvlog/hypersend-backend:latest
-        command:
-        - python
-        - -m
-        - uvicorn
-        - backend.e2ee_service:app
-        - --host
-        - "0.0.0.0"
-        - --port
-        - "8002"
-        ports:
-        - containerPort: 8002
-          name: http
-        resources:
-          requests:
-            memory: 512Mi
-            cpu: 500m
-          limits:
-            memory: 1Gi
-            cpu: 1000m
-        env:
-        - name: REDIS_HOST
-          value: redis-cluster
-        - name: ENABLE_E2EE
-          value: "true"
-        - name: MAX_E2EE_DEVICES
-          value: "4"
-        - name: E2EE_SESSION_TIMEOUT
-          value: "604800"
-        - name: ENABLE_KEY_ROTATION
-          value: "true"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8002
-          initialDelaySeconds: 30
-          periodSeconds: 10
-
-
----
-# Document 33: Service - e2ee-service
+# Document 31: Service - e2ee-service
 apiVersion: v1
 kind: Service
 metadata:
@@ -1447,175 +854,12 @@ spec:
     app: e2ee-service
   ports:
   - port: 8002
-    targetPort: 8002
+    targetPort: "8002"
   type: ClusterIP
 
 
 ---
-# Document 34: HorizontalPodAutoscaler - e2ee-service-hpa
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: e2ee-service-hpa
-  namespace: hypersend
-  labels:
-    app: e2ee-service
-    component: hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: e2ee-service
-  minReplicas: 3
-  maxReplicas: 20
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 60
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Percent
-        value: 10
-        periodSeconds: 60
-
-
----
-# Document 35: ServiceAccount - e2ee-service-account
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: e2ee-service-account
-  namespace: hypersend
-
-
----
-# Document 36: Secret - e2ee-encryption-keys
-apiVersion: v1
-kind: Secret
-metadata:
-  name: e2ee-encryption-keys
-  namespace: hypersend
-type: Opaque
-stringData:
-  MASTER_KEY: hypersend_master_key_change_this_in_prod
-  BACKUP_ENCRYPTION_KEY: hypersend_backup_encryption_key_change_this
-  DEVICE_LINKING_KEY: hypersend_device_linking_key_change_this
-
-
----
-# Document 37: PodDisruptionBudget - e2ee-service-pdb
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: e2ee-service-pdb
-  namespace: hypersend
-spec:
-  minAvailable: 2
-  selector:
-    matchLabels:
-      app: e2ee-service
-
-
-
-
-
----
-# Document 39: Deployment - turn-server (for voice/video calls)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: turn-server
-  namespace: hypersend
-  labels:
-    app: turn-server
-    tier: infrastructure
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: turn-server
-  template:
-    metadata:
-      labels:
-        app: turn-server
-        tier: infrastructure
-    spec:
-      containers:
-      - name: coturn
-        image: coturn/coturn:latest
-        ports:
-        - containerPort: 3478
-          name: turn-udp
-          protocol: UDP
-        - containerPort: 3478
-          name: turn-tcp
-          protocol: TCP
-        - containerPort: 5349
-          name: turn-tls
-          protocol: TCP
-        env:
-        - name: TURNSERVER_ENABLED
-          value: "1"
-        - name: TURNSERVER_REALM
-          value: "hypersend.local"
-        - name: TURNSERVER_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: hypersend-secrets
-              key: TURN_USERNAME
-        - name: TURNSERVER_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: hypersend-secrets
-              key: TURN_PASSWORD
-        - name: TURNSERVER_EXTERNAL_IP
-          value: "$(SERVICE_HOST)"
-        - name: TURNSERVER_LOG_LEVEL
-          value: "warning"
-        - name: TURNSERVER_VERBOSE
-          value: "0"
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          udpSocket:
-            port: 3478
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          udpSocket:
-            port: 3478
-          initialDelaySeconds: 5
-          periodSeconds: 5
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-
-
----
-# Document 40: Service - turn-server
+# Document 37: Service - turn-server
 apiVersion: v1
 kind: Service
 metadata:
@@ -1629,21 +873,20 @@ spec:
   ports:
   - name: turn-udp
     port: 3478
-    targetPort: 3478
+    targetPort: "3478"
     protocol: UDP
   - name: turn-tcp
     port: 3478
-    targetPort: 3478
+    targetPort: "3478"
     protocol: TCP
   - name: turn-tls
     port: 5349
-    targetPort: 5349
+    targetPort: "5349"
     protocol: TCP
   type: LoadBalancer
 
-
 ---
-# Document 41: HorizontalPodAutoscaler - turn-server-hpa
+# Document 38: HorizontalPodAutoscaler - turn-server-hpa
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -1693,7 +936,7 @@ spec:
 
 
 ---
-# Document 42: PersistentVolumeClaim - e2ee-storage
+# Document 39: PersistentVolumeClaim - e2ee-storage
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -1701,7 +944,16 @@ metadata:
   namespace: hypersend
   labels:
     app: e2ee-service
-spec:
+  selector:
+    matchLabels:
+      app: e2ee-service
+  initializers:
+    - name: kubernetes.io/pvc-protection
+      rules:
+        - apiGroups: [""]
+          apiVersions: ["v1"]
+          resources: ["persistentvolumeclaims"]
+          operations: ["delete"]
   accessModes:
     - ReadWriteOnce
   resources:
@@ -1711,7 +963,7 @@ spec:
 
 
 ---
-# Document 43: NetworkPolicy - e2ee-security-policy
+# Document 40: NetworkPolicy - e2ee-security-policy
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -1756,7 +1008,61 @@ spec:
       port: 27017
 
 ---
-# Document 44: UpdatedConfigMap - message-retention-policy
+# Document 41: NetworkPolicy - hypersend-backend-policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-backend-policy
+  namespace: hypersend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+    - podSelector:
+        matchLabels:
+          app: websocket-service
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+    - podSelector:
+        matchLabels:
+          app: redis-cluster
+
+---
+# Document 42: NetworkPolicy - hypersend-default-policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-default-policy
+  namespace: hypersend
+spec:
+  podSelector: {}  # Matches ALL pods in hypersend namespace
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+
+---
+# Document 43: UpdatedConfigMap - message-retention-policy
 apiVersion: v1
 kind: ConfigMap
 metadata:

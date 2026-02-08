@@ -57,15 +57,15 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.responses import JSONResponse
 
 try:
-    from models import (
+    from ..models import (
         UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
         PasswordResetRequest, PasswordResetResponse,
         EmailChangeRequest, EmailVerificationRequest,
         QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
         QRCodeSession, TokenData, ChangePasswordRequest
     )
-    from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
-    from config import settings
+    from ..db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+    from ..config import settings
 except ImportError:
     from models import (
         UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
@@ -91,9 +91,9 @@ from auth.utils import (
 )
 
 try:
-    from validators import validate_user_id
-    from rate_limiter import password_reset_limiter
-    from utils.email_service import email_service
+    from ..validators import validate_user_id
+    from ..rate_limiter import password_reset_limiter
+    from ..utils.email_service import email_service
 except ImportError:
     from validators import validate_user_id
     from rate_limiter import password_reset_limiter

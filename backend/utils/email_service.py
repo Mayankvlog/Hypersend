@@ -9,7 +9,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
-from config import settings
+
+try:
+    from ..config import settings
+except ImportError:
+    from config import settings
 
 class EmailService:
     """Service for sending emails"""
