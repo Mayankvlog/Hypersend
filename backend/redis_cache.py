@@ -71,7 +71,7 @@ class RedisCache:
         self.pubsub = None
         self.lock_timeout = 30  # Default lock timeout in seconds
         
-    async def connect(self, host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None):
+    async def connect(self, host: str = "zaply.in.net", port: int = 6379, db: int = 0, password: Optional[str] = None):
         """Connect to Redis server"""
         if not REDIS_AVAILABLE:
             # Only log if debug mode is enabled

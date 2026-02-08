@@ -8,6 +8,12 @@ from pydantic import BaseModel, Field
 from auth.utils import get_current_user
 from e2ee_service import E2EEService, AbuseAndSpamScoringService, EncryptionError, DecryptionError, E2EECryptoError
 
+# Import message history service
+try:
+    from ..services.message_history_service import message_history_service
+except ImportError:
+    from services.message_history_service import message_history_service
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/messages/e2ee", tags=["E2EE Messages"])
@@ -28,6 +34,9 @@ class EncryptAndSendRequest(BaseModel):
     session_id: str = Field(..., min_length=32, description="Session ID from X3DH")
     plaintext: str = Field(..., min_length=1, max_length=10000, description="Message content")
     recipient_devices: List[str] = Field(..., min_length=1, description="Target device IDs for fan-out")
+    chat_id: Optional[str] = Field(None, description="Chat ID for persistent storage")
+    recipient_user_id: Optional[str] = Field(None, description="Recipient user ID for persistent storage")
+    message_type: str = Field("text", description="Message type: text, image, video, voice, document")
 
 
 class ReceiveAndDecryptRequest(BaseModel):
@@ -144,6 +153,7 @@ async def encrypt_and_send_message(
     - Server receives only ciphertexts (never plaintext)
     - Multi-device fan-out happens server-side
     - Each device gets unique ciphertext
+    - Message stored persistently for history sync
     
     ABUSE CHECK:
     - Message velocity limits enforced
@@ -165,7 +175,8 @@ async def encrypt_and_send_message(
             )
         
         sender_device_id = "primary_device"  # From session context in production
-        recipient_user_id = "recipient_id"  # From session context in production
+        recipient_user_id = request.recipient_user_id or "recipient_id"  # From session context in production
+        chat_id = request.chat_id or f"chat_{current_user}_{recipient_user_id}"
         
         # Encrypt and send
         result = await e2ee_svc.encrypt_and_send_message(
@@ -177,10 +188,33 @@ async def encrypt_and_send_message(
             recipient_devices=request.recipient_devices
         )
         
+        # Store message persistently for WhatsApp-like history
+        try:
+            # Use the first encrypted payload as the stored version
+            # In a real implementation, all device-specific ciphertexts would be stored
+            encrypted_payload = result.get("encrypted_payloads", ["encrypted_placeholder"])[0]
+            
+            await message_history_service.store_message(
+                message_id=result["message_id"],
+                chat_id=chat_id,
+                sender_id=current_user,
+                receiver_id=recipient_user_id,
+                encrypted_payload=encrypted_payload,
+                message_type=request.message_type,
+                session_id=request.session_id
+            )
+            
+            logger.info(f"💾 Message {result['message_id']} stored persistently")
+            
+        except Exception as storage_error:
+            # Log storage error but don't fail the message send
+            logger.error(f"Failed to store message persistently: {storage_error}")
+        
         return {
             "status": "sent",
             "message_id": result["message_id"],
             "session_id": request.session_id,
+            "chat_id": chat_id,
             "counter": result["counter"],
             "devices_targeted": result["devices_targeted"],
             "timestamp": result["timestamp"],

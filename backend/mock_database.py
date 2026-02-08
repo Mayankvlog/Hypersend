@@ -183,8 +183,40 @@ class MockCollection:
                 # Apply update
                 if '$set' in update:
                     doc.update(update['$set'])
+                if '$inc' in update:
+                    for field, value in update['$inc'].items():
+                        doc[field] = doc.get(field, 0) + value
                 self.data[doc_id] = doc.copy()
+                
+                # Create result object
+                result = MagicMock()
+                result.matched_count = 1
+                result.modified_count = 1
+                result.upserted_id = None
                 return doc.copy()
+        
+        # If no document found and upsert=True, create new one
+        if kwargs.get('upsert', False):
+            # Generate new ID
+            new_id = str(len(self.data) + 1)
+            new_doc = query.copy()
+            
+            # Apply update to new document
+            if '$set' in update:
+                new_doc.update(update['$set'])
+            if '$inc' in update:
+                for field, value in update['$inc'].items():
+                    new_doc[field] = value
+            
+            self.data[new_id] = new_doc
+            
+            # Create result object
+            result = MagicMock()
+            result.matched_count = 0
+            result.modified_count = 0
+            result.upserted_id = new_id
+            return new_doc.copy()
+        
         return None
     
     async def delete_one(self, query: Dict) -> MagicMock:

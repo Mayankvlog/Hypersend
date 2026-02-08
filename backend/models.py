@@ -1414,6 +1414,242 @@ class MessageDeliveryReceipt(BaseModel):
     
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     message_id: str
+    chat_id: str
+    recipient_user_id: str
+    recipient_device_id: str
+    sender_user_id: str
+    
+    # Receipt type and timestamp
+    receipt_type: str  # delivered, read
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Device metadata
+    device_type: Optional[str] = None
+    app_version: Optional[str] = None
+
+
+# ============================================================================
+# WHATSAPP-LIKE MESSAGE HISTORY SYSTEM
+# ============================================================================
+
+class PersistentMessage(BaseModel):
+    """WhatsApp-style persistent encrypted message storage"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    message_id: str = Field(..., min_length=8)  # Reduced for testing
+    chat_id: str
+    
+    # Message participants
+    sender_id: str
+    receiver_id: str
+    
+    # Encrypted payload (NEVER store plaintext)
+    encrypted_payload: str = Field(..., min_length=20)  # Reduced for testing
+    encryption_version: int = 1
+    
+    # Message metadata (server-readable only)
+    message_type: str = "text"  # text, image, video, voice, document
+    content_hash: Optional[str] = None  # SHA-256 for integrity
+    file_size: Optional[int] = None
+    mime_type: Optional[str] = None
+    
+    # Timestamps (critical for sync)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    delivered_at: Optional[datetime] = None
+    read_at: Optional[datetime] = None
+    
+    # Message state
+    delivery_state: str = "pending"  # pending, sent, delivered, read
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
+    
+    # Multi-device tracking
+    device_deliveries: Dict[str, datetime] = Field(default_factory=dict)
+    device_reads: Dict[str, datetime] = Field(default_factory=dict)
+    
+    # Retention policy
+    expires_at: Optional[datetime] = None  # Auto-expiration
+    retention_days: int = 30
+    
+    # Reply threading (metadata only)
+    reply_to_message_id: Optional[str] = None
+    
+    # Forward tracking (metadata only)
+    forward_count: int = 0
+    forward_from_message_id: Optional[str] = None
+    
+    # Edit tracking
+    edit_count: int = 0
+    last_edit_at: Optional[datetime] = None
+    
+    # Reaction tracking (metadata only)
+    reactions: Dict[str, List[str]] = Field(default_factory=dict)
+    
+    # Message ordering
+    message_counter: int = 0  # Sequential per chat
+    
+    # Indexing fields
+    sender_receiver_pair: str = ""
+    chat_timestamp: float = 0.0
+    
+    @model_validator(mode='after')
+    def create_indexing_fields(self):
+        if self.sender_id and self.receiver_id:
+            self.sender_receiver_pair = f"{self.sender_id}:{self.receiver_id}"
+        self.chat_timestamp = self.created_at.timestamp()
+        return self
+
+
+class ConversationHistory(BaseModel):
+    """WhatsApp-style conversation summary for chat list"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str  # Owner of this summary
+    chat_id: str
+    
+    # Last message metadata (no content)
+    last_message_id: Optional[str] = None
+    last_message_timestamp: Optional[datetime] = None
+    last_message_type: Optional[str] = None
+    last_message_sender: Optional[str] = None
+    
+    # Unread counts
+    unread_count: int = 0
+    unread_mentions: int = 0
+    
+    # Message counts
+    total_messages: int = 0
+    sent_messages: int = 0
+    received_messages: int = 0
+    
+    # Media counts
+    text_messages: int = 0
+    image_messages: int = 0
+    video_messages: int = 0
+    voice_messages: int = 0
+    document_messages: int = 0
+    
+    # Conversation state
+    is_pinned: bool = False
+    is_muted: bool = False
+    is_archived: bool = False
+    
+    # Sync state
+    last_sync_timestamp: Optional[datetime] = None
+    sync_cursor: Optional[str] = None
+    needs_sync: bool = True
+    
+    # Relationship metrics
+    interaction_frequency: float = 0.0  # Messages per day
+    last_interaction: Optional[datetime] = None
+    relationship_strength: float = 0.0
+    
+    # Privacy settings
+    disappearing_messages: bool = False
+    disappearing_timer: int = 0
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DeviceSyncState(BaseModel):
+    """Multi-device message synchronization state"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str
+    device_id: str
+    
+    # Sync position
+    last_synced_message_id: Optional[str] = None
+    last_synced_timestamp: Optional[datetime] = None
+    sync_cursor: Optional[str] = None
+    
+    # Sync status
+    is_syncing: bool = False
+    sync_progress: float = 0.0
+    last_sync_duration: Optional[int] = None  # milliseconds
+    sync_error: Optional[str] = None
+    
+    # Device capabilities
+    max_history_days: int = 30
+    supports_media_sync: bool = True
+    
+    # Sync preferences
+    auto_sync_enabled: bool = True
+    sync_wifi_only: bool = False
+    
+    # Sync statistics
+    total_messages_synced: int = 0
+    last_sync_message_count: int = 0
+    
+    # Device metadata
+    device_name: Optional[str] = None
+    device_type: str = "unknown"
+    app_version: Optional[str] = None
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class UserRelationship(BaseModel):
+    """User-to-user relationship for graph analytics"""
+    model_config = ConfigDict(populate_by_name=True)
+    
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_a_id: str
+    user_b_id: str
+    
+    # Communication metrics
+    total_messages: int = 0
+    messages_last_7_days: int = 0
+    messages_last_30_days: int = 0
+    
+    # Response patterns
+    average_response_time: Optional[float] = None
+    response_rate: float = 0.0
+    
+    # Relationship classification
+    relationship_type: str = "contact"  # contact, frequent, close
+    relationship_strength: float = 0.0
+    trust_score: float = 0.0
+    
+    # Interaction metadata
+    first_interaction: Optional[datetime] = None
+    last_interaction: Optional[datetime] = None
+    
+    # Privacy settings
+    is_blocked: bool = False
+    is_muted: bool = False
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MessageHistoryRequest(BaseModel):
+    """Request for message history sync"""
+    chat_id: str = Field(..., description="Chat ID to sync")
+    device_id: str = Field(..., description="Device ID requesting sync")
+    limit: int = Field(default=50, ge=1, le=1000)
+    before_message_id: Optional[str] = None
+    after_message_id: Optional[str] = None
+    include_deleted: bool = Field(default=False)
+    sync_token: Optional[str] = None
+
+
+class MessageHistoryResponse(BaseModel):
+    """Response with message history"""
+    chat_id: str
+    messages: List[dict]  # Message metadata only
+    total_count: int
+    has_more: bool
+    next_before_id: Optional[str] = None
+    next_after_id: Optional[str] = None
+    sync_token: Optional[str] = None
+    device_id: str
+    synced_at: datetime = Field(default_factory=datetime.utcnow)
     device_id: str
     receipt_type: str = Field(..., description="sent, delivered, read, failed")
     receipt_timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -1848,7 +2084,7 @@ class BackgroundWorkerState(BaseModel):
     
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     job_id: str = Field(default_factory=lambda: str(ObjectId()), description="Unique job ID")
-    job_type: str = Field(..., pattern="^(fanout|retry|typing_cleanup|group_key_distribution)$")
+    job_type: str = Field(..., pattern="^(fanout|retry|typing_cleanup|group_key_distribution|message_history_sync|metadata_aggregation|relationship_graph_update)$")
     
     # Job Parameters
     parameters: Dict = Field(default_factory=dict, description="Job-specific params")
@@ -1869,4 +2105,338 @@ class BackgroundWorkerState(BaseModel):
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ==================== WHATSAPP-LIKE MESSAGE HISTORY & METADATA ====================
+
+class PersistentMessageHistory(BaseModel):
+    """
+    Persistent encrypted message database (WhatsApp-like).
+    
+    ARCHITECTURE:
+    - Stores encrypted message blobs (plaintext never decrypted at backend)
+    - Tracks delivery state: pending → sent → delivered → read
+    - Soft-delete semantics (deleted_at timestamp, not permanent removal)
+    - Configurable retention (30-90 days by default)
+    - Indexed by conversation_id, sender_id, receiver_id, created_at
+    - TTL index for automatic cleanup after retention_until
+    
+    IDENTITY MODEL (Phone-free):
+    - Uses UserID + JWT for authentication
+    - No phone numbers or contact syncing
+    - Device verification required for multi-device sync
+    
+    STORAGE:
+    - Primary: MongoDB (persistent encrypted history)
+    - Cache: Redis (real-time delivery coordination)
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    # Unique identifier
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    message_id: str = Field(default_factory=lambda: str(ObjectId()))
+    
+    # Conversation & Participants (no phone numbers, UserID only)
+    conversation_id: str = Field(..., description="Unique per participant pair/group")
+    sender_id: str = Field(..., description="Sender UserID (phone-free)")
+    receiver_id: str = Field(..., description="Receiver UserID (phone-free)")
+    
+    # Message Content (encrypted)
+    encrypted_blob: bytes = Field(..., description="Encrypted message content (backend never decrypts)")
+    blob_hash: str = Field(..., description="SHA256 hash of encrypted blob for integrity verification")
+    
+    # Device Information (multi-device support)
+    sender_device_id: str = Field(..., description="Device key ID of sender")
+    receiver_device_ids: List[str] = Field(default_factory=list, description="Target device IDs for receiver")
+    
+    # Message Metadata
+    message_type: str = Field(default="text", description="text, image, video, audio, file, contact")
+    file_size: Optional[int] = None
+    media_mime_type: Optional[str] = None
+    
+    # Delivery State (WhatsApp-style double/triple ticks)
+    delivery_state: str = Field(
+        default="pending",
+        description="pending → sent → delivered → read"
+    )
+    
+    # Timestamps for Each State
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Message creation time")
+    sent_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    read_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+    
+    # Soft-Delete (not permanent removal)
+    deleted_at: Optional[datetime] = None
+    is_deleted: bool = Field(default=False)
+    
+    # Retention Policy
+    retention_until: datetime = Field(
+        default_factory=lambda: datetime.utcnow() + timedelta(days=90),
+        description="Auto-delete after this timestamp"
+    )
+    
+    # Retry Information
+    retry_count: int = Field(default=0)
+    last_retry_at: Optional[datetime] = None
+    failure_reason: Optional[str] = None
+    
+    # Group Message Tracking
+    is_group_message: bool = Field(default=False)
+    group_id: Optional[str] = None
+    
+    # Edit & Forward History
+    is_edited: bool = Field(default=False)
+    edited_at: Optional[datetime] = None
+    reply_to_message_id: Optional[str] = None
+    
+    # TTL Index (MongoDB: automatic cleanup)
+    ttl_seconds: int = Field(default=7776000)
+
+
+class ConversationMetadataTracker(BaseModel):
+    """
+    Metadata about conversations (WhatsApp-like).
+    Only metadata is collected; message plaintext remains encrypted.
+    
+    METADATA COLLECTED:
+    - Who talked to whom (sender_id → receiver_id)
+    - Frequency of interaction (message count, last interaction)
+    - Timestamps of each interaction
+    - Delivery/read event counts
+    - Device participation
+    - Conversation status (active, archived, muted)
+    
+    PRIVACY:
+    - No access to message plaintext
+    - Only aggregated statistics
+    - Soft-delete for archived conversations
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    # Unique identifier
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    conversation_id: str = Field(unique=True)
+    
+    # Participants (phone-free, UserID only)
+    user1_id: str = Field(...)
+    user2_id: str = Field(...)
+    is_group: bool = Field(default=False)
+    group_id: Optional[str] = None
+    
+    # Interaction Statistics
+    message_count: int = Field(default=0)
+    unread_count: int = Field(default=0)
+    
+    # Frequency Metrics
+    messages_sent_by_user1: int = Field(default=0)
+    messages_sent_by_user2: int = Field(default=0)
+    last_interaction_at: datetime = Field(default_factory=datetime.utcnow)
+    last_message_sender: Optional[str] = None
+    last_message_preview: Optional[str] = Field(None, max_length=100)
+    
+    # Delivery & Read Events
+    delivered_count: int = Field(default=0)
+    read_count: int = Field(default=0)
+    undelivered_count: int = Field(default=0)
+    
+    # Device Participation (multi-device)
+    active_devices_user1: List[str] = Field(default_factory=list)
+    active_devices_user2: List[str] = Field(default_factory=list)
+    
+    # Conversation Status
+    is_pinned: bool = Field(default=False)
+    is_muted: bool = Field(default=False)
+    is_archived: bool = Field(default=False)
+    archived_at: Optional[datetime] = None
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = None
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_sync_at: Optional[datetime] = None
+
+
+class UserRelationshipGraph(BaseModel):
+    """
+    Relationship graph derived from metadata (WhatsApp-like).
+    Tracks user-to-user communication strength and patterns
+    purely at the metadata layer (no message content access).
+    
+    METRICS:
+    - Communication strength (frequency + recency weighted score)
+    - Last interaction time
+    - Active conversation count
+    - Total message exchange
+    - Interaction patterns (who initiates more)
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    # Unique identifier
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    user_id: str = Field(...)
+    contact_user_id: str = Field(...)
+    
+    # Communication Strength Score (0-100)
+    strength_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    
+    # Frequency Metrics
+    total_messages: int = Field(default=0)
+    messages_initiated_by_user: int = Field(default=0)
+    messages_received_by_user: int = Field(default=0)
+    
+    # Temporal Metrics
+    first_interaction_at: datetime = Field(default_factory=datetime.utcnow)
+    last_interaction_at: datetime = Field(default_factory=datetime.utcnow)
+    interaction_days: int = Field(default=0)
+    
+    # Activity Pattern
+    avg_response_time_minutes: float = Field(default=0.0)
+    interaction_frequency_per_day: float = Field(default=0.0)
+    
+    # Interaction Status
+    is_blocked: bool = Field(default=False)
+    is_pinned: bool = Field(default=False)
+    is_archived: bool = Field(default=False)
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = None
+    
+    # Update tracking
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_score_calculated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DeviceMessageSync(BaseModel):
+    """
+    Multi-device history synchronization (WhatsApp-like).
+    When a new device is added after verification, it receives full encrypted history.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    # Unique identifier
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    device_sync_id: str = Field(default_factory=lambda: str(ObjectId()))
+    
+    # Device Information
+    user_id: str = Field(...)
+    device_id: str = Field(...)
+    sender_device_id: str = Field(...)
+    
+    # Sync Progress
+    sync_state: str = Field(
+        default="pending",
+        description="pending → verifying → syncing → completed → failed"
+    )
+    
+    # Message Range
+    sync_from_timestamp: datetime = Field(
+        default_factory=lambda: datetime.utcnow() - timedelta(days=90)
+    )
+    sync_until_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Progress Tracking
+    total_messages_to_sync: int = Field(default=0)
+    messages_synced: int = Field(default=0)
+    sync_progress_percent: float = Field(default=0.0)
+    
+    # Batch Processing
+    batch_size: int = Field(default=100)
+    current_batch: int = Field(default=0)
+    batches_completed: int = Field(default=0)
+    
+    # Error Tracking
+    failed_batches: List[int] = Field(default_factory=list)
+    last_error: Optional[str] = None
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    last_sync_update_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Retry Information
+    retry_count: int = Field(default=0)
+    next_retry_at: Optional[datetime] = None
+
+
+class MessageRetentionPolicy(BaseModel):
+    """
+    Configurable message retention and metadata retention policies.
+    
+    RETENTION TIERS:
+    - Message blobs: Soft-delete after 90 days (configurable)
+    - Metadata: Keep indefinitely (conversation history)
+    - Delivery events: Keep for 30 days for analytics
+    - Soft-delete grace period: 7 days (hard-delete after grace period)
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    # Unique identifier
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    policy_name: str = Field(...)
+    
+    # Message Retention
+    message_retention_days: int = Field(default=90, ge=1, le=365)
+    
+    # Metadata Retention
+    metadata_retention_days: int = Field(default=365, ge=1, le=3650)
+    
+    # Delivery Event Retention
+    delivery_event_retention_days: int = Field(default=30, ge=1, le=90)
+    
+    # Soft-Delete Grace Period
+    soft_delete_grace_period_days: int = Field(default=7, ge=1, le=30)
+    
+    # Policy Flags
+    enable_message_history: bool = Field(default=True)
+    enable_metadata_collection: bool = Field(default=True)
+    enable_relationship_graph: bool = Field(default=True)
+    enable_multi_device_sync: bool = Field(default=True)
+    
+    # Metadata Collection
+    collect_delivery_events: bool = Field(default=True)
+    collect_read_events: bool = Field(default=True)
+    collect_typing_indicators: bool = Field(default=False)
+    
+    # Device Sync Settings
+    max_devices_per_user: int = Field(default=4, ge=1, le=10)
+    sync_full_history_on_new_device: bool = Field(default=True)
+    sync_messages_older_than_days: int = Field(default=90)
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    is_active: bool = Field(default=True)
+
+
+class MultiDeviceState(BaseModel):
+    """
+    Track active devices for each user (WhatsApp-like).
+    Supports up to 4 devices per user with session synchronization.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    
+    # Unique identifier
+    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    
+    # User and Devices
+    user_id: str = Field(...)
+    active_devices: Dict[str, Dict] = Field(default_factory=dict)
+    primary_device_id: Optional[str] = None
+    
+    # Device Count
+    device_count: int = Field(default=0)
+    max_devices_allowed: int = Field(default=4)
+    
+    # Sync State
+    last_multi_device_sync_at: datetime = Field(default_factory=datetime.utcnow)
+    requiring_sync_count: int = Field(default=0)
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
 

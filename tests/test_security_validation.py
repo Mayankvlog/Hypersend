@@ -46,7 +46,7 @@ else:
     if any(domain in BASE_URL for domain in production_domains):
         raise RuntimeError(
             f"SECURITY ERROR: Tests would run against production domain '{BASE_URL}'.\n"
-            f"Set TEST_BASE_URL environment variable to a safe testing URL (e.g., http://localhost:8000/api/v1)"
+            f"Set TEST_BASE_URL environment variable to a safe testing URL (e.g., https://zaply.in.net/api/v1)"
         )
 
 def _server_ready() -> bool:

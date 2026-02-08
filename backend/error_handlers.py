@@ -1262,7 +1262,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
                     # Permanent redirect to HTTPS for HTTP requests
                     request_headers = getattr(request, "headers", {}) or {}
                     if getattr(request, "scheme", "https") == "http":
-                        host = request_headers.get("host", "localhost")
+                        host = request_headers.get("host", "zaply.in.net")
                         headers["Location"] = f"https://{host}{original_path}"
     
     # Add Retry-After header for rate limit and timeout errors

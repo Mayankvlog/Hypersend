@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test VPS Connectivity and API Endpoint Configuration
-Diagnoses connection issues with localhost backend server
+Diagnoses connection issues with zaply.in.net backend server
 """
 
 import requests
@@ -255,18 +255,18 @@ def print_recommendations() -> None:
 
 1. {Colors.YELLOW}Frontend API URL Configuration:{Colors.RESET}
    • Check: frontend/lib/core/constants/api_constants.dart
-   • Default should be: http://localhost:8000/api/v1
-   • Build with: --dart-define=API_BASE_URL=http://localhost:8000/api/v1
+   • Default should be: https://zaply.in.net/api/v1
+   • Build with: --dart-define=API_BASE_URL=https://zaply.in.net/api/v1
 
 2. {Colors.YELLOW}Backend API Configuration:{Colors.RESET}
    • Check: backend/config.py
-   • API_BASE_URL must be: http://localhost:8000/api/v1
+   • API_BASE_URL must be: https://zaply.in.net/api/v1
    • API_PORT should be: 8000 (behind Nginx proxy)
 
 3. {Colors.YELLOW}Nginx Configuration:{Colors.RESET}
    • Nginx proxies /api/ to backend:8000
    • Ensure HTTPS certificates are valid
-   • Check: /etc/letsencrypt/live/localhost/
+   • Check: /etc/letsencrypt/live/zaply.in.net/
 
 4. {Colors.YELLOW}VPS Backend Service:{Colors.RESET}
    • Ensure FastAPI is running on port 8000
@@ -280,14 +280,14 @@ def print_recommendations() -> None:
 
 {Colors.BOLD}Next Steps:{Colors.RESET}
    1. Rebuild frontend with correct API_BASE_URL
-   2. Verify backend is running: curl http://localhost:8000/health
+   2. Verify backend is running: curl https://zaply.in.net/health
    3. Check Docker containers: docker-compose ps
    4. View backend logs: docker-compose logs -f backend
 """)
 
 def main():
     """Main test execution"""
-    print_header("HYPERSEND LOCALHOST CONNECTIVITY DIAGNOSTICS")
+    print_header("HYPERSEND ZAPLY.IN.NET CONNECTIVITY DIAGNOSTICS")
     
     print_info(f"Test Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print_info(f"Production Domain: {PROD_DOMAIN}")

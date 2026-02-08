@@ -1,4 +1,3 @@
-
 # Document 1: Namespace - hypersend
 apiVersion: v1
 kind: Namespace
@@ -7,6 +6,10 @@ metadata:
   labels:
     name: hypersend
     security: e2ee-enabled
+  annotations:
+    description: "E2EE Multi-Device Messaging Platform"
+    backend-version: "1.1.0"
+    fixes-applied: "Rate limiting optimization, middleware improvements, error handling enhancements"
 
 
 ---
@@ -70,8 +73,8 @@ data:
   API_PORT: '8000'
   API_BASE_URL: https://zaply.in.net/api/v1
   ALLOWED_ORIGINS: https://zaply.in.net,http://zaply.in.net
-  RATE_LIMIT_PER_USER: '100'
-  RATE_LIMIT_WINDOW_SECONDS: '60'
+  RATE_LIMIT_PER_USER: '1000'  # Updated: Increased from 100 to 1000 for production
+  RATE_LIMIT_WINDOW_SECONDS: '3600'  # Updated: 1 hour window matches backend LOGIN_ATTEMPT_WINDOW
   USE_MOCK_DB: 'False'
   ENABLE_EMAIL: 'true'
   ENABLE_PASSWORD_RESET: 'true'
@@ -1045,7 +1048,7 @@ spec:
   - port: 6379
     targetPort: 6379
   type: ClusterIP
-  clusterIP: "None"
+  
 
 
 ---
@@ -1751,3 +1754,389 @@ spec:
       port: 6379
     - protocol: TCP
       port: 27017
+
+---
+# Document 44: UpdatedConfigMap - message-retention-policy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: message-retention-policy
+  namespace: hypersend
+data:
+  MESSAGE_RETENTION_DAYS: "90"
+  METADATA_RETENTION_DAYS: "365"
+  DELIVERY_EVENT_RETENTION_DAYS: "30"
+  SOFT_DELETE_GRACE_PERIOD_DAYS: "7"
+  ENABLE_MESSAGE_HISTORY: "true"
+  ENABLE_METADATA_COLLECTION: "true"
+  ENABLE_RELATIONSHIP_GRAPH: "true"
+  ENABLE_MULTI_DEVICE_SYNC: "true"
+  MAX_DEVICES_PER_USER: "4"
+  SYNC_BATCH_SIZE: "100"
+  SYNC_MAX_WORKERS: "4"
+
+
+---
+# Document 45: Deployment - message-history-sync-worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: message-history-sync-worker
+  namespace: hypersend
+  labels:
+    app: message-history-sync-worker
+    component: background-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: message-history-sync-worker
+  template:
+    metadata:
+      labels:
+        app: message-history-sync-worker
+        component: background-worker
+    spec:
+      serviceAccountName: default
+      restartPolicy: Always
+      containers:
+      - name: sync-worker
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "workers.message_history_sync_worker"]
+        env:
+        - name: WORKER_TYPE
+          value: "message_history_sync"
+        - name: REDIS_HOST
+          value: redis-cluster-0.redis-cluster
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: MESSAGE_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: MESSAGE_RETENTION_DAYS
+        - name: MAX_DEVICES_PER_USER
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: MAX_DEVICES_PER_USER
+        - name: SYNC_BATCH_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: SYNC_BATCH_SIZE
+        - name: SYNC_MAX_WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: SYNC_MAX_WORKERS
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "import redis; redis.Redis(host='redis-cluster-0.redis-cluster', port=6379).ping()"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["python", "-c", "import redis; redis.Redis(host='redis-cluster-0.redis-cluster', port=6379).ping()"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+
+---
+# Document 46: Deployment - metadata-aggregation-worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metadata-aggregation-worker
+  namespace: hypersend
+  labels:
+    app: metadata-aggregation-worker
+    component: background-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metadata-aggregation-worker
+  template:
+    metadata:
+      labels:
+        app: metadata-aggregation-worker
+        component: background-worker
+    spec:
+      serviceAccountName: default
+      restartPolicy: Always
+      containers:
+      - name: metadata-worker
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "workers.metadata_aggregation_worker"]
+        env:
+        - name: WORKER_TYPE
+          value: "metadata_aggregation"
+        - name: REDIS_HOST
+          value: redis-cluster-0.redis-cluster
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: METADATA_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: METADATA_RETENTION_DAYS
+        - name: DELIVERY_EVENT_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: DELIVERY_EVENT_RETENTION_DAYS
+        - name: AGGREGATION_INTERVAL_SECONDS
+          value: "300"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "import redis; redis.Redis(host='redis-cluster-0.redis-cluster', port=6379).ping()"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["python", "-c", "import redis; redis.Redis(host='redis-cluster-0.redis-cluster', port=6379).ping()"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+
+---
+# Document 47: Deployment - relationship-graph-worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relationship-graph-worker
+  namespace: hypersend
+  labels:
+    app: relationship-graph-worker
+    component: background-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: relationship-graph-worker
+  template:
+    metadata:
+      labels:
+        app: relationship-graph-worker
+        component: background-worker
+    spec:
+      serviceAccountName: default
+      restartPolicy: Always
+      containers:
+      - name: relationship-worker
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "workers.relationship_graph_worker"]
+        env:
+        - name: WORKER_TYPE
+          value: "relationship_graph"
+        - name: REDIS_HOST
+          value: redis-cluster-0.redis-cluster
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: SCORE_CALCULATION_INTERVAL_SECONDS
+          value: "3600"
+        - name: RECENCY_WEIGHT
+          value: "0.6"
+        - name: FREQUENCY_WEIGHT
+          value: "0.4"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "import redis; redis.Redis(host='redis-cluster-0.redis-cluster', port=6379).ping()"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["python", "-c", "import redis; redis.Redis(host='redis-cluster-0.redis-cluster', port=6379).ping()"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+
+---
+# Document 48: Deployment - background-job-coordinator
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: background-job-coordinator
+  namespace: hypersend
+  labels:
+    app: background-job-coordinator
+    component: background-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: background-job-coordinator
+  template:
+    metadata:
+      labels:
+        app: background-job-coordinator
+        component: background-worker
+    spec:
+      serviceAccountName: default
+      restartPolicy: Always
+      containers:
+      - name: coordinator
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "workers.job_coordinator"]
+        env:
+        - name: WORKER_TYPE
+          value: "job_coordinator"
+        - name: REDIS_HOST
+          value: redis-cluster-0.redis-cluster
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: MESSAGE_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: MESSAGE_RETENTION_DAYS
+        - name: SOFT_DELETE_GRACE_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: SOFT_DELETE_GRACE_PERIOD_DAYS
+        - name: CLEANUP_INTERVAL_SECONDS
+          value: "86400"
+        - name: ENABLE_AUTO_CLEANUP
+          value: "true"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "import redis; redis.Redis(host='redis-cluster-0.redis-cluster', port=6379).ping()"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["python", "-c", "import redis; redis.Redis(host='redis-cluster-0.redis-cluster', port=6379).ping()"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+
+---
+# Document 49: HPA - message-history-sync-worker-hpa
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: message-history-sync-worker-hpa
+  namespace: hypersend
+  labels:
+    app: message-history-sync-worker
+    component: hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: message-history-sync-worker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      selectPolicy: Min

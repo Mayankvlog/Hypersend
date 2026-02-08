@@ -33,26 +33,31 @@ try:
     from ..models import (
         MessageEditRequest, MessageReactionRequest, MessageHistoryRequest, 
         MessageHistoryResponse, ConversationMetadata, RelationshipGraph, 
-        DeviceSyncState, MessageDeliveryReceipt, MessageStatusUpdate
+        DeviceSyncState, MessageDeliveryReceipt, MessageStatusUpdate,
+        PersistentMessage, ConversationHistory
     )
     from ..redis_cache import cache
     from ..services.relationship_graph_service import relationship_graph_service
+    from ..services.message_history_service import message_history_service
 except ImportError:
     from db_proxy import chats_collection, messages_collection
     from models import (
         MessageEditRequest, MessageReactionRequest, MessageHistoryRequest, 
         MessageHistoryResponse, ConversationMetadata, RelationshipGraph, 
-        DeviceSyncState, MessageDeliveryReceipt, MessageStatusUpdate
+        DeviceSyncState, MessageDeliveryReceipt, MessageStatusUpdate,
+        PersistentMessage, ConversationHistory
     )
     from redis_cache import cache
     try:
         from services.relationship_graph_service import relationship_graph_service
+        from services.message_history_service import message_history_service
     except ImportError:
         # Fallback for direct execution
         import sys
         import os
         sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'services'))
         from relationship_graph_service import relationship_graph_service
+        from message_history_service import message_history_service
 
 logger = logging.getLogger(__name__)
 
@@ -2391,3 +2396,210 @@ async def verify_encryption_status(
     except Exception as e:
         logger.error(f"Encryption verification failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to verify encryption status")
+
+
+# ============================================================================
+# WHATSAPP-LIKE MESSAGE HISTORY ENDPOINTS
+# ============================================================================
+
+@router.post("/history/sync", response_model=MessageHistoryResponse)
+async def sync_message_history(
+    request: MessageHistoryRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Sync message history for a device"""
+    try:
+        # Validate device belongs to user
+        device_key = f"device:{current_user}:{request.device_id}"
+        device_info = await cache.get(device_key)
+        if not device_info:
+            raise HTTPException(status_code=403, detail="Device not authorized")
+        
+        # Get message history
+        history_response = await message_history_service.get_message_history(
+            request, current_user
+        )
+        
+        return history_response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Message history sync failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to sync message history")
+
+
+@router.get("/history/conversations", response_model=List[dict])
+async def get_conversation_list(
+    limit: int = Query(default=50, ge=1, le=100),
+    archived_only: bool = Query(default=False),
+    current_user: str = Depends(get_current_user)
+):
+    """Get user's conversation list"""
+    try:
+        conversations = await message_history_service.get_conversation_list(
+            current_user, limit, archived_only
+        )
+        return conversations
+        
+    except Exception as e:
+        logger.error(f"Failed to get conversation list: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get conversation list")
+
+
+@router.get("/history/message/{message_id}", response_model=dict)
+async def get_encrypted_message(
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get full encrypted message for decryption"""
+    try:
+        message = await message_history_service.get_encrypted_message(
+            message_id, current_user
+        )
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        return message
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get encrypted message: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get message")
+
+
+@router.post("/history/device/{device_id}/sync", response_model=dict)
+async def sync_device_messages(
+    device_id: str,
+    sync_days: int = Query(default=30, ge=1, le=365),
+    current_user: str = Depends(get_current_user)
+):
+    """Sync all messages to a new device"""
+    try:
+        # Validate device belongs to user
+        device_key = f"device:{current_user}:{device_id}"
+        device_info = await cache.get(device_key)
+        if not device_info:
+            raise HTTPException(status_code=403, detail="Device not authorized")
+        
+        # Start device sync
+        sync_result = await message_history_service.sync_device_messages(
+            current_user, device_id, sync_days
+        )
+        
+        return sync_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Device message sync failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to sync device messages")
+
+
+@router.post("/delivery/{message_id}/{device_id}/receipt", response_model=dict)
+async def update_delivery_receipt(
+    message_id: str,
+    device_id: str,
+    receipt_type: str = Query(..., pattern="^(delivered|read)$"),
+    current_user: str = Depends(get_current_user)
+):
+    """Update delivery receipt for a message"""
+    try:
+        # Validate device belongs to user
+        device_key = f"device:{current_user}:{device_id}"
+        device_info = await cache.get(device_key)
+        if not device_info:
+            raise HTTPException(status_code=403, detail="Device not authorized")
+        
+        # Update delivery status
+        success = await message_history_service.update_delivery_status(
+            message_id, device_id, current_user, receipt_type
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Message not found or not authorized")
+        
+        return {
+            "message_id": message_id,
+            "device_id": device_id,
+            "receipt_type": receipt_type,
+            "updated": True
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update delivery receipt: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update delivery receipt")
+
+
+@router.delete("/history/message/{message_id}", response_model=dict)
+async def delete_message(
+    message_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Soft delete a message (WhatsApp-style)"""
+    try:
+        success = await message_history_service.soft_delete_message(
+            message_id, current_user
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Message not found or not authorized")
+        
+        return {
+            "message_id": message_id,
+            "deleted": True,
+            "deleted_at": datetime.utcnow().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete message: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete message")
+
+
+@router.get("/relationships", response_model=List[dict])
+async def get_user_relationships(
+    limit: int = Query(default=50, ge=1, le=100),
+    current_user: str = Depends(get_current_user)
+):
+    """Get user's relationships for analytics"""
+    try:
+        relationships = await message_history_service.get_user_relationships(
+            current_user, limit
+        )
+        return relationships
+        
+    except Exception as e:
+        logger.error(f"Failed to get user relationships: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user relationships")
+
+
+@router.post("/history/cleanup", response_model=dict)
+async def cleanup_expired_messages(
+    current_user: str = Depends(get_current_user)
+):
+    """Clean up expired messages (admin only)"""
+    try:
+        # Check if user is admin (simplified for demo)
+        is_admin = await cache.get(f"admin:{current_user}")
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Clean up expired messages
+        deleted_count = await message_history_service.cleanup_expired_messages()
+        
+        return {
+            "deleted_messages": deleted_count,
+            "cleanup_at": datetime.utcnow().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to cleanup expired messages: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cleanup expired messages")

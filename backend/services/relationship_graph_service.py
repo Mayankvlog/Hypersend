@@ -8,11 +8,13 @@ import asyncio
 try:
     from ..db_proxy import users_collection, chats_collection, messages_collection
     from ..redis_cache import cache
-    from ..models import RelationshipGraph
+    from ..models import RelationshipGraph, UserRelationship
+    from ..database import get_db
 except ImportError:
     from db_proxy import users_collection, chats_collection, messages_collection
     from redis_cache import cache
-    from models import RelationshipGraph
+    from models import RelationshipGraph, UserRelationship
+    from database import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -446,6 +448,136 @@ class RelationshipGraphService:
         except Exception as e:
             logger.error(f"Failed to get user interaction stats: {e}")
             return {}
+
+    # ==================== PERSISTENT STORAGE INTEGRATION ====================
+    
+    async def update_relationship_from_message(self, 
+                                             sender_id: str, 
+                                             receiver_id: str,
+                                             message_type: str = "text",
+                                             timestamp: Optional[datetime] = None) -> str:
+        """Update relationship metrics from a new message (persistent storage)"""
+        try:
+            if timestamp is None:
+                timestamp = datetime.utcnow()
+            
+            # Ensure consistent ordering (user_a_id < user_b_id)
+            user_a_id, user_b_id = sorted([sender_id, receiver_id])
+            
+            # Get database connection
+            db = get_db()
+            collection = db['user_relationships'] if db else None
+            
+            if collection:
+                # Update in persistent storage
+                relationship = await collection.find_one({
+                    "user_a_id": user_a_id,
+                    "user_b_id": user_b_id
+                })
+                
+                if not relationship:
+                    # Create new relationship
+                    relationship = UserRelationship(
+                        user_a_id=user_a_id,
+                        user_b_id=user_b_id,
+                        total_messages=1,
+                        messages_last_7_days=1,
+                        messages_last_30_days=1,
+                        first_interaction=timestamp,
+                        last_interaction=timestamp,
+                        relationship_strength=0.1
+                    )
+                    
+                    result = await collection.insert_one(relationship.model_dump(by_alias=True))
+                    relationship_id = str(result.inserted_id)
+                else:
+                    # Update existing relationship
+                    now = datetime.utcnow()
+                    updates = {
+                        "$inc": {
+                            "total_messages": 1
+                        },
+                        "$set": {
+                            "last_interaction": timestamp,
+                            "updated_at": now
+                        }
+                    }
+                    
+                    # Update time-based counts
+                    if timestamp >= now - timedelta(days=7):
+                        updates["$inc"]["messages_last_7_days"] = 1
+                    if timestamp >= now - timedelta(days=30):
+                        updates["$inc"]["messages_last_30_days"] = 1
+                    
+                    # Update relationship strength
+                    current_total = relationship.get("total_messages", 0) + 1
+                    strength = min(1.0, current_total / 100.0)
+                    updates["$set"]["relationship_strength"] = strength
+                    
+                    result = await collection.update_one(
+                        {"user_a_id": user_a_id, "user_b_id": user_b_id},
+                        updates
+                    )
+                    relationship_id = str(relationship.upserted_id) if result.upserted_id else str(relationship["_id"])
+            
+            # Also update in Redis cache for real-time access
+            await self.update_user_interaction(sender_id, receiver_id, "message", 1.0)
+            
+            return relationship_id or "cache_updated"
+            
+        except Exception as e:
+            logger.error(f"Failed to update relationship from message: {e}")
+            # Fallback to cache-only update
+            await self.update_user_interaction(sender_id, receiver_id, "message", 1.0)
+            return "cache_fallback"
+    
+    async def get_persistent_relationships(self, 
+                                          user_id: str, 
+                                          limit: int = 50) -> List[Dict[str, Any]]:
+        """Get user's relationships from persistent storage"""
+        try:
+            db = get_db()
+            if not db:
+                # Fallback to cache
+                return await self.get_user_relationships(user_id, limit)
+            
+            collection = db['user_relationships']
+            cursor = collection.find({
+                "$or": [
+                    {"user_a_id": user_id},
+                    {"user_b_id": user_id}
+                ],
+                "is_blocked": False
+            }).sort("relationship_strength", -1).limit(limit)
+            
+            relationships = await cursor.to_list(length=limit)
+            
+            # Transform to user-centric format
+            user_relationships = []
+            for rel in relationships:
+                # Determine the other user in the relationship
+                other_user_id = rel["user_b_id"] if rel["user_a_id"] == user_id else rel["user_a_id"]
+                
+                user_relationships.append({
+                    "user_id": other_user_id,
+                    "relationship_type": rel.get("relationship_type", "contact"),
+                    "relationship_strength": rel.get("relationship_strength", 0.0),
+                    "trust_score": rel.get("trust_score", 0.0),
+                    "total_messages": rel.get("total_messages", 0),
+                    "messages_last_7_days": rel.get("messages_last_7_days", 0),
+                    "messages_last_30_days": rel.get("messages_last_30_days", 0),
+                    "first_interaction": rel.get("first_interaction"),
+                    "last_interaction": rel.get("last_interaction"),
+                    "is_blocked": rel.get("is_blocked", False),
+                    "is_muted": rel.get("is_muted", False)
+                })
+            
+            return user_relationships
+            
+        except Exception as e:
+            logger.error(f"Failed to get persistent relationships: {e}")
+            # Fallback to cache
+            return await self.get_user_relationships(user_id, limit)
 
 
 # Global instance for easy access

@@ -32,7 +32,7 @@ class Settings:
     _IS_DOCKER: bool = os.path.exists("/.dockerenv")
     _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
     _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
-    _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "localhost")
+    _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "zaply.in.net")
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     _MONGODB_ATLAS_ENABLED: bool = os.getenv("MONGODB_ATLAS_ENABLED", "false").lower() in ("true", "1", "yes")
@@ -321,9 +321,9 @@ class Settings:
         "https://zaply.in.net",
         "https://www.zaply.in.net",
         # Development / local defaults (keep for development)
-        "http://localhost:3000",        # Frontend dev (React/Flutter web devserver)
-        "http://localhost:8000",        # Backend API
-        "http://localhost",             # Generic local host
+        "https://zaply.in.net:3000",        # Frontend dev (React/Flutter web devserver)
+        "https://zaply.in.net:8000",        # Backend API
+        "https://zaply.in.net",             # Generic local host
         # Docker internal names (keep for compose/k8s internal traffic)
         "http://hypersend_frontend:80",
         "http://hypersend_frontend",
