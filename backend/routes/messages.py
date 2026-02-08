@@ -1310,7 +1310,7 @@ async def get_reactions(message_id: str, current_user: str = Depends(get_current
     return {"message_id": message_id, "reactions": msg.get("reactions") or {}}
 
 
-# @router.post("/{message_id}/pin")
+@router.post("/{message_id}/pin")
 async def pin_message(message_id: str, current_user: str = Depends(get_current_user)):
     """Pin a message. For group chats, only admins can pin."""
     msg = await _get_message_or_404(message_id)
@@ -1335,7 +1335,7 @@ async def pin_message(message_id: str, current_user: str = Depends(get_current_u
     return {"status": "pinned", "message_id": message_id}
 
 
-# @router.post("/{message_id}/unpin")
+@router.post("/{message_id}/unpin")
 async def unpin_message(message_id: str, current_user: str = Depends(get_current_user)):
     msg = await _get_message_or_404(message_id)
     chat = await _get_chat_for_message_or_403(msg, current_user)

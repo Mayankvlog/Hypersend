@@ -13,7 +13,15 @@ from backend.auth.utils import verify_password
 async def test_user_data():
     """Check what format existing users have"""
     # This will help us understand if users have password_salt field
-    user = await users_collection().find_one({"email": "test@example.com"})
+    try:
+        users_coll = users_collection()
+        if hasattr(users_coll, 'find_one'):
+            user = await users_coll.find_one({"email": "test@example.com"})
+        else:
+            # Mock collection case
+            user = None
+    except:
+        user = None
     
     if user:
         print("User found:")

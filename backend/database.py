@@ -285,49 +285,14 @@ def get_db():
     """Get database connection with proper initialization"""
     global db, client, _global_db, _global_client
     
-    # If database is already initialized and connected, return it
-    if db is not None and client is not None:
-        return db
-    
-    # Check if we have global database from initialization
-    if _global_db is not None and _global_client is not None:
-        db = _global_db
-        client = _global_client
-        print(f"[DB] Using global database instance")
-        return db
-    
-    # CRITICAL FIX: Check if database was initialized at startup
-    # Try to get database from mongo_init module if it exists
-    try:
-        import sys
-        if 'mongo_init' in sys.modules:
-            mongo_init = sys.modules['mongo_init']
-            if hasattr(mongo_init, '_app_db') and mongo_init._app_db is not None:
-                app_db = mongo_init._app_db
-                app_client = getattr(mongo_init, '_app_client', None)
-                if app_db is not None:
-                    # Store globally for future calls
-                    _global_db = app_db
-                    _global_client = app_client
-                    print(f"[DB] Using initialized database from mongo_init")
-                    return app_db
-    except Exception as e:
-        print(f"[DB] Warning: Could not get initialized database: {e}")
-    
-    # Check if we should use mock database for testing
+    # For testing, always return a fresh mock database instance
     if settings.USE_MOCK_DB:
-        print("[DB] Using mock database for testing")
         try:
-            from .mock_database import MockDatabase
-            mock_db = MockDatabase()
-            db = mock_db
-            _global_db = db
-            return db
-        except ImportError as e:
-            # Create a basic mock database fallback to avoid crashes
-            print(f"[WARNING] Failed to import MockDatabase: {str(e)} - creating basic fallback")
-            import asyncio
-            from typing import Dict, List, Optional, Any
+            from mock_database import get_mock_db
+            mock_db = get_mock_db()
+            return mock_db
+        except ImportError:
+            # Create fresh BasicMockDatabase instance for test isolation
             from unittest.mock import AsyncMock, MagicMock
             from datetime import datetime, timezone
             import uuid
@@ -361,6 +326,196 @@ def get_db():
                     return result
                 
                 async def find_one(self, query):
+                    # Simple query matching for basic mock
+                    for doc_id, doc in self.data.items():
+                        match = True
+                        for key, value in query.items():
+                            if key == '$or':
+                                # Handle $or queries
+                                or_match = False
+                                for or_condition in value:
+                                    or_condition_match = True
+                                    for or_key, or_value in or_condition.items():
+                                        if or_key not in doc or doc[or_key] != or_value:
+                                            or_condition_match = False
+                                            break
+                                    if or_condition_match:
+                                        or_match = True
+                                        break
+                                if not or_match:
+                                    match = False
+                                    break
+                            elif key not in doc or doc[key] != value:
+                                match = False
+                                break
+                        if match:
+                            return doc.copy()
+                    return None
+                
+                async def find(self, query=None):
+                    return FallbackCursor([])
+                
+                async def update_one(self, query, update):
+                    result = MagicMock()
+                    result.matched_count = 0
+                    result.modified_count = 0
+                    return result
+                
+                async def delete_one(self, query):
+                    result = MagicMock()
+                    result.deleted_count = 0
+                    return result
+                
+                async def update_many(self, query, update):
+                    result = MagicMock()
+                    result.matched_count = 0
+                    result.modified_count = 0
+                    return result
+                
+                async def delete_many(self, query):
+                    result = MagicMock()
+                    result.deleted_count = 0
+                    return result
+                
+                async def find_one_and_update(self, query, update):
+                    return None
+            
+            class FallbackCursor:
+                def __init__(self, docs):
+                    self.docs = docs
+                
+                def sort(self, field, direction=1):
+                    return self
+                
+                def limit(self, count):
+                    self.docs = self.docs[:count]
+                    return self
+                
+                async def to_list(self, length=None):
+                    if length is not None:
+                        return self.docs[:length]
+                    return self.docs
+                
+                def __aiter__(self):
+                    async def async_iter():
+                        for doc in self.docs:
+                            yield doc
+                    return async_iter()
+                
+                def __iter__(self):
+                    return iter(self.docs)
+            
+            return BasicMockDatabase()
+    
+    # If database is already initialized and connected, return it
+    if db is not None and client is not None:
+        return db
+    
+    # Check if we have global database from initialization
+    if _global_db is not None and _global_client is not None:
+        db = _global_db
+        client = _global_client
+        print(f"[DB] Using global database instance")
+        return db
+    
+    # CRITICAL FIX: Check if database was initialized at startup
+    # Try to get database from mongo_init module if it exists
+    try:
+        import sys
+        if 'mongo_init' in sys.modules:
+            mongo_init = sys.modules['mongo_init']
+            if hasattr(mongo_init, '_app_db') and mongo_init._app_db is not None:
+                app_db = mongo_init._app_db
+                app_client = getattr(mongo_init, '_app_client', None)
+                if app_db is not None:
+                    # Store globally for future calls
+                    _global_db = app_db
+                    _global_client = app_client
+                    print(f"[DB] Using initialized database from mongo_init")
+                    return app_db
+    except Exception as e:
+        print(f"[DB] Warning: Could not get initialized database: {e}")
+    
+    # Check if we should use mock database for testing
+    if settings.USE_MOCK_DB:
+        print("[DB] Using mock database for testing")
+        try:
+            from mock_database import get_mock_db
+            mock_db = get_mock_db()
+            db = mock_db
+            _global_db = db
+            return db
+        except ImportError as e:
+            # Create a basic mock database fallback to avoid crashes
+            print(f"[WARNING] Failed to import MockDatabase: {str(e)} - creating basic fallback")
+            import asyncio
+            from typing import Dict, List, Optional, Any
+            from unittest.mock import AsyncMock, MagicMock
+            from datetime import datetime, timezone
+            import uuid
+            
+            class BasicMockDatabase:
+                def __init__(self):
+                    self.collections = {}
+                    # Clear any existing data to ensure test isolation
+                    self.clear_all()
+                
+                def clear_all(self):
+                    """Clear all collections to ensure test isolation"""
+                    for collection in self.collections.values():
+                        if hasattr(collection, 'clear'):
+                            collection.clear()
+                    self.collections.clear()
+                
+                def __getitem__(self, name):
+                    if name not in self.collections:
+                        self.collections[name] = BasicMockCollection()
+                    return self.collections[name]
+                
+                def __getattr__(self, name):
+                    if name not in self.collections:
+                        self.collections[name] = BasicMockCollection()
+                    return self.collections[name]
+            
+            class BasicMockCollection:
+                def __init__(self):
+                    self.data = {}
+                    self._id_counter = 1
+                
+                async def insert_one(self, document):
+                    doc_id = str(self._id_counter)
+                    document['_id'] = doc_id
+                    self.data[doc_id] = document.copy()
+                    self._id_counter += 1
+                    result = MagicMock()
+                    result.inserted_id = doc_id
+                    return result
+                
+                async def find_one(self, query):
+                    # Simple query matching for basic mock
+                    for doc_id, doc in self.data.items():
+                        match = True
+                        for key, value in query.items():
+                            if key == '$or':
+                                # Handle $or queries
+                                or_match = False
+                                for or_condition in value:
+                                    or_condition_match = True
+                                    for or_key, or_value in or_condition.items():
+                                        if or_key not in doc or doc[or_key] != or_value:
+                                            or_condition_match = False
+                                            break
+                                    if or_condition_match:
+                                        or_match = True
+                                        break
+                                if not or_match:
+                                    match = False
+                                    break
+                            elif key not in doc or doc[key] != value:
+                                match = False
+                                break
+                        if match:
+                            return doc.copy()
                     return None
                 
                 async def find(self, query=None):
@@ -437,6 +592,9 @@ def get_db():
             if name not in self.collections:
                 self.collections[name] = FallbackCollection()
             return self.collections[name]
+        
+        async def list_collection_names(self):
+            return list(self.collections.keys())
     
     class FallbackCollection:
         def __init__(self):
@@ -453,10 +611,38 @@ def get_db():
             return result
         
         async def find_one(self, query):
+            # Simple query matching for basic mock
+            for doc_id, doc in self.data.items():
+                match = True
+                for key, value in query.items():
+                    if key == '$or':
+                        # Handle $or queries
+                        or_match = False
+                        for or_condition in value:
+                            or_condition_match = True
+                            for or_key, or_value in or_condition.items():
+                                if or_key not in doc or doc[or_key] != or_value:
+                                    or_condition_match = False
+                                    break
+                            if or_condition_match:
+                                or_match = True
+                                break
+                        if not or_match:
+                            match = False
+                            break
+                    elif key not in doc or doc[key] != value:
+                        match = False
+                        break
+                if match:
+                    return doc.copy()
             return None
         
         async def find(self, query=None):
-            return MockCursor([])
+            if query is None:
+                # Return all documents if no query specified
+                return FallbackCursor(list(self.data.values()))
+            # For non-empty queries, return empty cursor (no matches)
+            return FallbackCursor([])
         
         async def update_one(self, query, update):
             result = MagicMock()

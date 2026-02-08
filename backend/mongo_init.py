@@ -117,7 +117,7 @@ async def init_mongodb():
             print("[MONGO_INIT] No client connection established")
             return
             
-        app_db = client.hypersend
+        app_db = client.Hypersend  # Use the existing database name
         
         # CRITICAL FIX: Store database and client globally for get_db()
         import mongo_init

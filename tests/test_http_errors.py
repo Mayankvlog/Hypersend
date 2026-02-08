@@ -73,7 +73,7 @@ class TestAuthenticationErrors:
         mock_refresh_collection.return_value.delete_many.return_value = None
         
         response = client.post("/api/v1/auth/login", json={
-            "username": "nonexistent@example.com",  # Use username field for frontend compatibility
+            "email": "nonexistent@example.com",
             "password": "password123"
         })
         # Accept both 401 (invalid credentials) and 429 (rate limiting) as valid outcomes

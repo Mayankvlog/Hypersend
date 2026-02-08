@@ -22,11 +22,11 @@ import pytest
 
 # Import crypto modules directly
 try:
-    from crypto.signal_protocol import SignalProtocol, X3DHBundle, IdentityKeyPair
-    from crypto.multi_device import MultiDeviceManager, DeviceInfo
-    from crypto.delivery_semantics import DeliveryManager, MessageStatus
-    from crypto.media_encryption import MediaEncryptionService
-    from e2ee_service import E2EEService, EncryptedMessageEnvelope, EncryptionError, DecryptionError
+    from backend.crypto.signal_protocol import SignalProtocol, X3DHBundle, IdentityKeyPair
+    from backend.crypto.multi_device import MultiDeviceManager, DeviceInfo
+    from backend.crypto.delivery_semantics import DeliveryManager, MessageStatus
+    from backend.crypto.media_encryption import MediaEncryptionService
+    from backend.e2ee_service import E2EEService, EncryptedMessageEnvelope, EncryptionError, DecryptionError
 
     # Import core E2EE helpers used by tests
     try:
@@ -39,7 +39,7 @@ try:
             generate_fingerprint
         )
     except Exception:
-        from e2ee_crypto import (
+        from backend.e2ee_crypto import (
             SignalProtocolKeyManager,
             DoubleRatchet,
             MessageEncryption,
@@ -69,7 +69,7 @@ except ImportError:
             generate_fingerprint
         )
     except Exception:
-        from e2ee_crypto import (
+        from backend.e2ee_crypto import (
             SignalProtocolKeyManager,
             DoubleRatchet,
             MessageEncryption,

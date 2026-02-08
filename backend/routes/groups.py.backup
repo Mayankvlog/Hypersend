@@ -219,19 +219,10 @@ async def _collect_cursor(cursor, limit: Optional[int] = None) -> List[dict]:
                 if limit is not None and len(items) >= limit:
                     break
         else:
-            # Handle case where it is still a coroutine
-            if hasattr(it, "__await__"):
-                result = await it
-                if hasattr(result, "__iter__") and not hasattr(result, "__anext__"):
-                    items.extend(result)
-                    if limit is not None:
-                        items = items[:limit]
-                    return items
-            else:
-                for item in it:
-                    items.append(item)
-                    if limit is not None and len(items) >= limit:
-                        break
+            for item in it:
+                items.append(item)
+                if limit is not None and len(items) >= limit:
+                    break
         return items
 
     if hasattr(cursor, "to_list"):

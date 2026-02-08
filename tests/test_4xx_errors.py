@@ -24,7 +24,7 @@ else:
     except Exception:
         requests = None
 
-BASE_URL = os.environ.get("HYPERSEND_BASE_URL", "https://zaply.in.net/api/v1")
+BASE_URL = os.environ.get("HYPERSEND_BASE_URL", "http://localhost:8000/api/v1")
 
 def _server_ready() -> bool:
     """Check if server is ready for requests-based testing"""
@@ -152,6 +152,13 @@ def test_404_not_found(client):
 
 def test_409_conflict_duplicate_email(client):
     """Test 409 Conflict for duplicate email"""
+    # Clear mock database before test
+    try:
+        from mock_database import clear_test_collections
+        clear_test_collections()
+    except ImportError:
+        pass
+    
     email = f"test_{int(datetime.now().timestamp())}@example.com"
     
     if USE_TESTCLIENT:

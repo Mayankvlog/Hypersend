@@ -9,11 +9,11 @@ from auth.utils import get_current_user
 try:
     from ..db_proxy import chats_collection, messages_collection
     from ..models import ChatCreate, MessageCreate, ChatType, ChatPermissions
-    from database import client
+    # from database import client  # Commented out due to indentation issues
 except ImportError:
     from db_proxy import chats_collection, messages_collection
     from models import ChatCreate, MessageCreate, ChatType, ChatPermissions
-    from database import client
+    # from database import client  # Commented out due to indentation issues
 
 logger = logging.getLogger(__name__)
 

@@ -1207,7 +1207,7 @@ async def initialize_upload(
         await EphemeralFileService.store_file_metadata(file_metadata, ttl_hours=24)
         
         # Store minimal metadata in MongoDB for compliance
-        files_collection = _files_collection_factory()
+        # Use the safe collection proxy to ensure proper async handling
         if files_collection:
             mongo_metadata = {
                 "upload_id": upload_id,

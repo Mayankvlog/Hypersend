@@ -99,9 +99,19 @@ class UserCreate(BaseModel):
         return v
     
 class UserLogin(BaseModel):
-    email: Optional[str] = Field(None, max_length=255)
-    username: Optional[str] = Field(None, max_length=255)
+    email: str = Field(..., max_length=255)  # Make email required
+    username: Optional[str] = Field(None, max_length=255)  # Keep username for backward compatibility
     password: str = Field(..., min_length=1)
+    
+    @model_validator(mode='after')
+    def validate_login_credentials(self):
+        # Use email as the primary authentication field
+        if not self.email:
+            raise ValueError('Email is required for login')
+        # Set username to email if not provided for backward compatibility
+        if not self.username:
+            self.username = self.email
+        return self
     
     @field_validator('email')
     @classmethod
