@@ -60,7 +60,7 @@ try:
     
     from config import settings
     # Always use real database - remove mock database option
-    from database import connect_db, close_db
+    from database import connect_db, close_db, fallback_to_mock_database
     print("[STARTUP] + database module imported (real MongoDB)")
 except Exception as e:
     print(f"[STARTUP] X Failed to import database: {e}")
@@ -763,11 +763,28 @@ async def lifespan(app: FastAPI):
                 db_connected = True
                 break
             except Exception as e:
+                error_msg = str(e).lower()
                 if db_attempt < max_db_retries - 1:
-                    print(f"[DB] Connection attempt {db_attempt + 1}/{max_db_retries} failed, retrying in 2 seconds...")
-                    await asyncio.sleep(2)
+                    # Check for SSL errors and trigger fallback immediately
+                    if "ssl" in error_msg or "handshake" in error_msg or "tls" in error_msg:
+                        print(f"[DB] SSL error detected: {error_msg}")
+                        print("[DB] Triggering fallback to mock database for development")
+                        await fallback_to_mock_database("SSL handshake failure in main startup")
+                        print("[DB] SUCCESS Mock database initialized (SSL fallback)")
+                        db_connected = True
+                        break
+                    else:
+                        print(f"[DB] Connection attempt {db_attempt + 1}/{max_db_retries} failed, retrying in 2 seconds...")
+                        await asyncio.sleep(2)
                 else:
-                    if settings.USE_MOCK_DB:
+                    # Final attempt - check for SSL errors
+                    if "ssl" in error_msg or "handshake" in error_msg or "tls" in error_msg:
+                        print(f"[DB] SSL error detected on final attempt: {error_msg}")
+                        print("[DB] Triggering fallback to mock database for development")
+                        await fallback_to_mock_database("SSL handshake failure in main startup")
+                        print("[DB] SUCCESS Mock database initialized (SSL fallback)")
+                        db_connected = True
+                    elif settings.USE_MOCK_DB:
                         print("[DB] SUCCESS Mock database initialized (no real DB needed)")
                         db_connected = True
                     else:

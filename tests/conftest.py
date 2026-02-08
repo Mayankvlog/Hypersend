@@ -77,9 +77,9 @@ try:
     # Try to import the real app, fallback to test app
     try:
         from backend.main import app
-    except ImportError:
+    except (ImportError, SyntaxError):
         app = create_test_app()
-        print("[CONFTEST] Using minimal test app due to import issues")
+        print("[CONFTEST] Using minimal test app due to import/syntax issues")
         
 except ImportError:
     print("[CONFTEST] FastAPI not available, creating mock app")

@@ -7,6 +7,7 @@ ARCHITECTURAL COMPARISON: WHATSAPP vs HYPerSend
 
 WHATSAPP ARCHITECTURE (LEFT SIDE):
 📱 User Devices → 📱 WhatsApp Servers → 🔐 Encrypted Storage → ☁️ Cloud Backup
+- Phone Number Authentication (FORBIDDEN in our system)
 - Limited Multi-Device Support (1 primary + 4 companion)
 - Proprietary Protocol Implementation
 - End-to-End Encryption (WhatsApp Protocol)
@@ -17,6 +18,7 @@ WHATSAPP ARCHITECTURE (LEFT SIDE):
 HYPerSend ARCHITECTURE (RIGHT SIDE):
 📱📱📱 Multi-Device (4 devices per user) → ⚖️ Nginx Load Balancer → 
 🌐 WebSocket Service → 🐸 Backend API Pods → 🗄️ Redis Cluster → ☁️ S3 Storage
+- Username + Device Key Authentication (NO PHONE NUMBERS)
 - Enhanced Multi-Device Support (4 devices max)
 - Open Signal Protocol Implementation
 - End-to-End Encryption (Signal Protocol)
@@ -26,16 +28,17 @@ HYPerSend ARCHITECTURE (RIGHT SIDE):
 
 MULTI-DEVICE AUTHENTICATION FEATURES:
 =====================================
-- Phone number authentication (40 countries supported)
-- Multi-device session management with Redis cache
-- QR-based device linking
-- Device verification and session isolation
-- Real-time device synchronization
-- Horizontal scaling support
-- Zero-knowledge authentication
-- Rate limiting and abuse prevention
-- Comprehensive logging and monitoring
-- E2EE with Signal Protocol integration
+- ❌ Phone number authentication (FORBIDDEN)
+- ✅ Username + Device Key authentication
+- ✅ Multi-device session management with Redis cache
+- ✅ QR-based device linking
+- ✅ Device verification and session isolation
+- ✅ Real-time device synchronization
+- ✅ Horizontal scaling support
+- ✅ Zero-knowledge authentication
+- ✅ Rate limiting and abuse prevention
+- ✅ Comprehensive logging and monitoring
+- ✅ E2EE with Signal Protocol integration
 
 SECURITY ENHANCEMENTS:
 =======================
@@ -47,76 +50,40 @@ SECURITY ENHANCEMENTS:
 - Comprehensive audit logging
 - Secure key storage and rotation
 - Zero-knowledge server architecture
+- ABSOLUTELY NO PHONE NUMBERS ANYWHERE IN SYSTEM
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.responses import JSONResponse
 
 try:
-    from ..models import (
+    from models import (
         UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
         PasswordResetRequest, PasswordResetResponse,
         EmailChangeRequest, EmailVerificationRequest,
         QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
         QRCodeSession, TokenData, ChangePasswordRequest
     )
-    from ..db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
-    from ..config import settings
+    from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+    from config import settings
 except ImportError:
-    from ..models import (
+    from models import (
         UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
         PasswordResetRequest, PasswordResetResponse,
         EmailChangeRequest, EmailVerificationRequest,
         QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
         QRCodeSession, TokenData, ChangePasswordRequest
     )
-    from ..db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
-    from ..config import settings
+    from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+    from config import settings
 
 import sys
 import os
 import secrets
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Multi-Device Phone Authentication Support (40 lines)
-from pydantic import BaseModel, validator
-import re
-from typing import Optional
-
-class PhoneAuthRequest(BaseModel):
-    """Phone number authentication request (40 lines support)"""
-    phone_number: str
-    country_code: str = "+1"
-    device_id: Optional[str] = None
-    device_name: Optional[str] = None
-    
-    @validator('phone_number')
-    def validate_phone(cls, v):
-        # Support for 40 different country phone formats
-        phone_pattern = r'^\+?[1-9]\d{1,14}$'
-        if not re.match(phone_pattern, v.replace('-', '').replace(' ', '')):
-            raise ValueError('Invalid phone number format')
-        return v.replace('-', '').replace(' ', '')
-    
-    @validator('country_code')
-    def validate_country_code(cls, v):
-        # Support 40 country codes
-        supported_codes = ['+1', '+44', '+91', '+86', '+81', '+49', '+33', '+34', '+39', '+852',
-                         '+65', '+61', '+82', '+81', '+55', '+52', '+31', '+46', '+47', '+358',
-                         '+45', '+41', '+43', '+32', '+48', '+420', '+36', '+30', '+90', '+20',
-                         '+27', '+234', '+254', '+212', '+213', '+216', '+218', '+966', '+971']
-        if v not in supported_codes:
-            raise ValueError(f'Country code {v} not supported')
-        return v
-
-class PhoneAuthResponse(BaseModel):
-    """Phone authentication response"""
-    success: bool
-    verification_token: Optional[str] = None
-    message: str
-    requires_verification: bool = True
-    multi_device_supported: bool = True
-    max_devices: int = 4
+# IDENTITY MODEL: Username + Device Key Authentication (NO PHONE NUMBERS)
+# Phone number authentication is FORBIDDEN - using username + device key instead
 
 from auth.utils import (
     hash_password, verify_password, create_access_token, 
@@ -124,13 +91,13 @@ from auth.utils import (
 )
 
 try:
-    from ..validators import validate_user_id
-    from ..rate_limiter import password_reset_limiter
-    from ..utils.email_service import email_service
+    from validators import validate_user_id
+    from rate_limiter import password_reset_limiter
+    from utils.email_service import email_service
 except ImportError:
-    from ..validators import validate_user_id
-    from ..rate_limiter import password_reset_limiter
-    from ..utils.email_service import email_service
+    from validators import validate_user_id
+    from rate_limiter import password_reset_limiter
+    from utils.email_service import email_service
 
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
@@ -283,12 +250,12 @@ def get_safe_cors_origin(request_origin: Optional[str]) -> str:
 @router.options("/qrcode/status/{session_id}")
 @router.options("/qrcode/cancel/{session_id}")
 @router.options("/qrcode/sessions")
-@router.options("/auth/phone")
+@router.options("/auth/device")
 async def auth_options(request: Request):
     """Handle CORS preflight for auth endpoints"""
     from fastapi.responses import Response
     # SECURITY: Restrict CORS origins in production for authenticated endpoints
-    from ..config import settings
+    from config import settings
     
     cors_origin = get_safe_cors_origin(request.headers.get("origin", ""))
     
@@ -305,23 +272,30 @@ async def auth_options(request: Request):
         }
     )
 
-# Multi-Device Phone Authentication (40 lines support)
-@router.post("/auth/phone", response_model=PhoneAuthResponse, status_code=status.HTTP_200_OK)
-async def authenticate_with_phone(
-    phone_request: PhoneAuthRequest,
+# Username-based Device Authentication (NO PHONE NUMBERS)
+@router.post("/auth/device", response_model=dict, status_code=status.HTTP_200_OK)
+async def authenticate_device(
+    device_request: dict,
     request: Request
-) -> PhoneAuthResponse:
+) -> dict:
     """
-    Authenticate user with phone number (40 countries supported)
+    Authenticate user with username + device key (Phone numbers FORBIDDEN)
     Multi-device scaling with Redis cache optimization
     """
     try:
-        # Multi-device logging
-        device_id = phone_request.device_id or secrets.token_urlsafe(16)
-        device_name = phone_request.device_name or "Unknown Device"
+        # Extract device authentication data
+        username = device_request.get("username")
+        device_key = device_request.get("device_key")
+        device_name = device_request.get("device_name", "Unknown Device")
         
-        auth_log(f"Phone auth attempt: {phone_request.country_code}{phone_request.phone_number} "
-                f"from device: {device_name} ({device_id})")
+        if not username or not device_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username and device key are required"
+            )
+        
+        # Multi-device logging
+        auth_log(f"Device auth attempt: {username} from device: {device_name}")
         
         # Generate verification token
         verification_token = secrets.token_urlsafe(32)
@@ -338,12 +312,11 @@ async def authenticate_with_phone(
                 socket_timeout=5
             )
             
-            # Store phone verification with TTL (5 minutes)
-            cache_key = f"phone_auth:{phone_request.country_code}{phone_request.phone_number}"
+            # Store device verification with TTL (5 minutes)
+            cache_key = f"device_auth:{username}:{device_key}"
             auth_data = {
-                "phone_number": phone_request.phone_number,
-                "country_code": phone_request.country_code,
-                "device_id": device_id,
+                "username": username,
+                "device_key": device_key,
                 "device_name": device_name,
                 "verification_token": verification_token,
                 "timestamp": secrets.token_hex(16),
@@ -354,32 +327,34 @@ async def authenticate_with_phone(
             redis_client.setex(cache_key, 300, str(auth_data))  # 5 minutes TTL
             
             # Store device session for multi-device sync
-            device_session_key = f"device_session:{device_id}"
+            device_session_key = f"device_session:{device_key}"
             redis_client.setex(device_session_key, 86400, str(auth_data))  # 24 hours TTL
             
-            auth_log(f"Phone auth stored in Redis cache: {cache_key}")
+            auth_log(f"Device auth stored in Redis cache: {cache_key}")
             
         except Exception as redis_error:
             auth_log(f"Redis cache error (falling back): {redis_error}")
         
-        return PhoneAuthResponse(
-            success=True,
-            verification_token=verification_token,
-            message="Verification code sent to your phone",
-            requires_verification=True,
-            multi_device_supported=True,
-            max_devices=4
-        )
+        return {
+            "success": True,
+            "verification_token": verification_token,
+            "message": "Verification code sent to your device",
+            "requires_verification": True,
+            "multi_device_supported": True,
+            "max_devices": 4
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        auth_log(f"Phone authentication error: {str(e)}")
-        return PhoneAuthResponse(
-            success=False,
-            message="Authentication failed. Please try again.",
-            requires_verification=True,
-            multi_device_supported=True,
-            max_devices=4
-        )
+        auth_log(f"Device authentication error: {str(e)}")
+        return {
+            "success": False,
+            "message": "Authentication failed. Please try again.",
+            "requires_verification": True,
+            "multi_device_supported": True,
+            "max_devices": 4
+        }
 
 # CORE AUTH FUNCTIONS - Handle user registration and login
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -1998,7 +1973,7 @@ async def generate_qr_code(
         auth_log(f"QR code generation request from user: {current_user}")
         
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'multi_device_manager'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2044,7 +2019,7 @@ async def verify_qr_code(
         auth_log(f"QR code verification request from user: {current_user}")
         
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'multi_device_manager'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2093,7 +2068,7 @@ async def get_qr_code_status(
     """Get QR code session status"""
     try:
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'multi_device_manager'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2137,7 +2112,7 @@ async def cancel_qr_code_session(
     """Cancel QR code session"""
     try:
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'multi_device_manager'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2174,7 +2149,7 @@ async def list_qr_code_sessions(
     """List active QR code sessions for user"""
     try:
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'multi_device_manager'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2208,7 +2183,7 @@ async def get_linked_devices(
     """Get all linked devices for user"""
     try:
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'multi_device_manager'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2245,7 +2220,7 @@ async def revoke_device(
         auth_log(f"Device revocation request: {device_id} by user: {current_user}")
         
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'multi_device_manager'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2285,7 +2260,7 @@ async def register_device_crypto(
         auth_log(f"Device crypto registration request: {current_user}")
         
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'signal_protocol'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2330,7 +2305,7 @@ async def get_device_bundle(
     """Get device's X3DH bundle for session initiation"""
     try:
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'signal_protocol'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2378,7 +2353,7 @@ async def initiate_crypto_session(
         auth_log(f"Session initiation request from: {current_user}")
         
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'signal_protocol'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2431,7 +2406,7 @@ async def rotate_crypto_keys(
         auth_log(f"Key rotation request from: {current_user}")
         
         # Get cryptographic services
-        from ..main import app
+        from main import app
         if not hasattr(app.state, 'signal_protocol'):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

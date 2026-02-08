@@ -42,7 +42,6 @@ import 'package:flutter/foundation.dart' hide Key;
 // - Signal Protocol implementation for E2EE
 // - Redis-based session management
 // - Real-time WebSocket connections
-// - Phone number authentication (40 countries)
 // - QR-based device linking
 // - Device verification and management
 // - Horizontal scaling support

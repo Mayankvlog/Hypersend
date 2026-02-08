@@ -17,8 +17,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 try:
-    from backend.redis_cache import cache
-    from backend.db_proxy import files_collection
+    from redis_cache import cache
+    from db_proxy import files_collection
     import logging
 except ImportError:
     from redis_cache import cache

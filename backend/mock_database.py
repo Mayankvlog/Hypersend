@@ -9,9 +9,30 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
 import uuid
 
+class MockMongoClient:
+    """Mock MongoDB client for testing"""
+    def __init__(self):
+        self.databases = {}
+    
+    def __getitem__(self, name):
+        """Get database by name"""
+        if name not in self.databases:
+            self.databases[name] = MockDatabase()
+        return self.databases[name]
+    
+    def close(self):
+        """Mock close method"""
+        pass
+    
+    async def admin_command(self, command):
+        """Mock admin command"""
+        return {"ok": 1}
+
 class MockDatabase:
     """Mock database for testing"""
-    def __init__(self):
+    def __init__(self, client=None, name="test"):
+        self.client = client
+        self.name = name
         self.collections = {}
     
     def clear_all(self):
@@ -20,8 +41,16 @@ class MockDatabase:
             collection.clear()
         print(f"[MOCK_DB] Cleared all collections")
     
+    def __getitem__(self, name):
+        """Support subscriptable access for collections"""
+        if name == '__await__':
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '__await__'")
+        if name not in self.collections:
+            self.collections[name] = MockCollection(name)
+        return self.collections[name]
+    
     def __getattr__(self, name):
-        """Create collections on demand"""
+        """Create collections on demand (fallback)"""
         if name == '__await__':
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '__await__'")
         if name not in self.collections:
@@ -147,6 +176,30 @@ class MockCollection:
                 self.data[doc_id] = doc.copy()
                 return doc.copy()
         return None
+    
+    async def delete_one(self, query: Dict) -> MagicMock:
+        """Delete one document matching the query"""
+        print(f"[MOCK_DB] delete_one called with query: {query}")
+        
+        doc_id_to_delete = None
+        for doc_id, doc in self.data.items():
+            if self._match_query(doc, query):
+                doc_id_to_delete = doc_id
+                break
+        
+        if doc_id_to_delete:
+            del self.data[doc_id_to_delete]
+            print(f"[MOCK_DB] Deleted document with ID: {doc_id_to_delete}")
+            
+            result = MagicMock()
+            result.deleted_count = 1
+            return result
+        else:
+            print(f"[MOCK_DB] No document found to delete")
+            
+            result = MagicMock()
+            result.deleted_count = 0
+            return result
     
     async def find(self, query: Dict = None, sort: List = None) -> MockCursor:
         """Mock find that returns a cursor-like object"""

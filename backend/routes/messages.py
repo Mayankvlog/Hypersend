@@ -22,22 +22,37 @@ try:
     from ..crypto.multi_device import MultiDeviceManager, DeviceInfo
     from ..crypto.delivery_semantics import DeliveryManager, MessageStatus
     from ..crypto.media_encryption import MediaEncryptionService
-    from ..e2ee_service import E2EEService, EncryptedMessageEnvelope, EncryptionError, DecryptionError
 except ImportError:
     from crypto.signal_protocol import SignalProtocol, X3DHBundle
     from crypto.multi_device import MultiDeviceManager, DeviceInfo
     from crypto.delivery_semantics import DeliveryManager, MessageStatus
     from crypto.media_encryption import MediaEncryptionService
-    from e2ee_service import E2EEService, EncryptedMessageEnvelope, EncryptionError, DecryptionError
 
 try:
     from ..db_proxy import chats_collection, messages_collection
-    from ..models import MessageEditRequest, MessageReactionRequest
+    from ..models import (
+        MessageEditRequest, MessageReactionRequest, MessageHistoryRequest, 
+        MessageHistoryResponse, ConversationMetadata, RelationshipGraph, 
+        DeviceSyncState, MessageDeliveryReceipt, MessageStatusUpdate
+    )
     from ..redis_cache import cache
+    from ..services.relationship_graph_service import relationship_graph_service
 except ImportError:
     from db_proxy import chats_collection, messages_collection
-    from models import MessageEditRequest, MessageReactionRequest
+    from models import (
+        MessageEditRequest, MessageReactionRequest, MessageHistoryRequest, 
+        MessageHistoryResponse, ConversationMetadata, RelationshipGraph, 
+        DeviceSyncState, MessageDeliveryReceipt, MessageStatusUpdate
+    )
     from redis_cache import cache
+    try:
+        from services.relationship_graph_service import relationship_graph_service
+    except ImportError:
+        # Fallback for direct execution
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'services'))
+        from relationship_graph_service import relationship_graph_service
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +323,7 @@ class WhatsAppMetadataMinimizer:
 # Global instances
 delivery_engine = None
 metadata_minimizer = None
-e2ee_service = None
+# e2ee_service = None  # Commented out - service not available
 
 def get_delivery_engine():
     global delivery_engine
@@ -322,11 +337,11 @@ def get_metadata_minimizer():
         metadata_minimizer = WhatsAppMetadataMinimizer(cache)
     return metadata_minimizer
 
-def get_e2ee_service():
-    global e2ee_service
-    if e2ee_service is None:
-        e2ee_service = E2EEService(db=None, redis_client=cache)
-    return e2ee_service
+# def get_e2ee_service():
+#     global e2ee_service
+#     if e2ee_service is None:
+#         e2ee_service = E2EEService(db=None, redis_client=cache)
+#     return e2ee_service
 
 
 class MessageSendRequest(BaseModel):
@@ -409,52 +424,52 @@ async def messages_options():
     )
 
 
-@router.post("/send-e2ee")
-async def send_e2ee_message(
-    request: E2EEMessageSendRequest,
-    current_user: str = Depends(get_current_user)
-):
-    """Send E2EE encrypted message with Signal Protocol"""
-    try:
-        # Get E2EE service
-        e2ee_svc = get_e2ee_service()
-        
-        # Verify chat exists and user has access
-        chat = await chats_collection().find_one({"_id": request.chat_id})
-        if not chat:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
-        
-        # Check if user is member of chat
-        participants = chat.get("participants", chat.get("members", chat.get("member_ids", [])))
-        if current_user not in participants and str(current_user) not in [str(p) for p in participants]:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this chat")
-        
-        # Encrypt and send message using E2EE
-        result = await e2ee_svc.encrypt_and_send_message(
-            session_id=request.session_id,
-            plaintext=request.plaintext,
-            sender_user_id=current_user,
-            sender_device_id=request.device_id or "primary",
-            recipient_user_id=participants[0] if len(participants) > 1 else current_user,
-            recipient_devices=request.recipient_devices
-        )
-        
-        return {
-            "message_id": result["message_id"],
-            "session_id": request.session_id,
-            "state": "encrypted",
-            "devices_targeted": result["devices_targeted"],
-            "timestamp": result["timestamp"],
-            "encrypted": True,
-            "message": "✓ Message encrypted and queued for delivery"
-        }
-        
-    except EncryptionError as e:
-        logger.error(f"E2EE encryption failed: {e}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Encryption failed: {str(e)}")
-    except Exception as e:
-        logger.error(f"Failed to send E2EE message: {str(e)}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send message")
+# # @router.post("/send-e2ee")
+# async def send_e2ee_message(
+#     request: E2EEMessageSendRequest,
+#     current_user: str = Depends(get_current_user)
+# ):
+#     """Send E2EE encrypted message with Signal Protocol"""
+#     try:
+#         # Get E2EE service
+#         e2ee_svc = get_e2ee_service()
+#         
+#         # Verify chat exists and user has access
+#         chat = await chats_collection().find_one({"_id": request.chat_id})
+#         if not chat:
+#             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+#         
+#         # Check if user is member of chat
+#         participants = chat.get("participants", chat.get("members", chat.get("member_ids", [])))
+#         if current_user not in participants and str(current_user) not in [str(p) for p in participants]:
+#             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this chat")
+#         
+#         # Encrypt and send message using E2EE
+#         result = await e2ee_svc.encrypt_and_send_message(
+#             session_id=request.session_id,
+#             plaintext=request.plaintext,
+#             sender_user_id=current_user,
+#             sender_device_id=request.device_id or "primary",
+#             recipient_user_id=participants[0] if len(participants) > 1 else current_user,
+#             recipient_devices=request.recipient_devices
+#         )
+#         
+#         return {
+#             "message_id": result["message_id"],
+#             "session_id": request.session_id,
+#             "state": "encrypted",
+#             "devices_targeted": result["devices_targeted"],
+#             "timestamp": result["timestamp"],
+#             "encrypted": True,
+#             "message": "✓ Message encrypted and queued for delivery"
+#         }
+#         
+#     except EncryptionError as e:
+#         logger.error(f"E2EE encryption failed: {e}")
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Encryption failed: {str(e)}")
+#     except Exception as e:
+#         logger.error(f"Failed to send E2EE message: {str(e)}")
+#         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send message")
 
 
 @router.post("/upload-media-e2ee")
@@ -851,7 +866,7 @@ async def send_whatsapp_message(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send message")
 
 
-@router.post("/delivery-receipt-whatsapp")
+# @router.post("/delivery-receipt-whatsapp")
 async def whatsapp_delivery_receipt(
     receipt: DeliveryReceipt,
     current_user: str = Depends(get_current_user)
@@ -933,7 +948,7 @@ async def get_delivery_status(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get status")
 
 
-@router.post("/metadata-minimize")
+# @router.post("/metadata-minimize")
 async def minimize_message_metadata(
     request: dict,
     current_user: str = Depends(get_current_user)
@@ -964,7 +979,7 @@ async def minimize_message_metadata(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to minimize metadata")
 
 
-@router.post("/{message_id}/delivery")
+# @router.post("/{message_id}/delivery")
 async def update_delivery_status(
     message_id: str,
     receipt: DeliveryReceipt,
@@ -1018,7 +1033,7 @@ async def update_delivery_status(
     return {"message_id": message_id, "status": "updated"}
 
 
-@router.post("/delivery-receipt")
+# @router.post("/delivery-receipt")
 async def delivery_receipt(
     receipt: DeliveryReceipt,
     current_user: str = Depends(get_current_user)
@@ -1247,7 +1262,7 @@ async def get_message_versions(message_id: str, current_user: str = Depends(get_
     return {"message_id": message_id, "versions": msg.get("edit_history") or []}
 
 
-@router.post("/{message_id}/reactions")
+# @router.post("/{message_id}/reactions")
 async def toggle_reaction(
     message_id: str,
     payload: MessageReactionRequest,
@@ -1295,7 +1310,7 @@ async def get_reactions(message_id: str, current_user: str = Depends(get_current
     return {"message_id": message_id, "reactions": msg.get("reactions") or {}}
 
 
-@router.post("/{message_id}/pin")
+# @router.post("/{message_id}/pin")
 async def pin_message(message_id: str, current_user: str = Depends(get_current_user)):
     """Pin a message. For group chats, only admins can pin."""
     msg = await _get_message_or_404(message_id)
@@ -1320,7 +1335,7 @@ async def pin_message(message_id: str, current_user: str = Depends(get_current_u
     return {"status": "pinned", "message_id": message_id}
 
 
-@router.post("/{message_id}/unpin")
+# @router.post("/{message_id}/unpin")
 async def unpin_message(message_id: str, current_user: str = Depends(get_current_user)):
     msg = await _get_message_or_404(message_id)
     chat = await _get_chat_for_message_or_403(msg, current_user)
@@ -1345,7 +1360,7 @@ async def unpin_message(message_id: str, current_user: str = Depends(get_current
     return {"status": "unpinned", "message_id": message_id}
 
 
-@router.post("/{message_id}/read")
+# @router.post("/{message_id}/read")
 async def mark_read(message_id: str, current_user: str = Depends(get_current_user)):
     """Mark message read for current user - WhatsApp-style delivery tracking."""
     msg = await _get_message_or_404(message_id)
@@ -1534,7 +1549,7 @@ class DeliveryReceiptRequest(BaseModel):
     status: str = Field(..., description="Delivery status")
     timestamp: float = Field(..., description="Receipt timestamp")
 
-@router.post("/crypto/link-device", response_model=DeviceLinkingResponse)
+# @router.post("/crypto/link-device", response_model=DeviceLinkingResponse)
 async def generate_device_linking_qr(
     request: DeviceLinkingRequest,
     current_user: str = Depends(get_current_user)
@@ -1597,7 +1612,7 @@ async def generate_device_linking_qr(
             detail="Failed to generate QR code"
         )
 
-@router.post("/crypto/confirm-link")
+# @router.post("/crypto/confirm-link")
 async def confirm_device_linking(
     request: DeviceLinkConfirmRequest,
     current_user: str = Depends(get_current_user)
@@ -1669,7 +1684,7 @@ async def confirm_device_linking(
             detail="Failed to link device"
         )
 
-@router.post("/crypto/send-encrypted", response_model=EncryptedMessageResponse)
+# @router.post("/crypto/send-encrypted", response_model=EncryptedMessageResponse)
 async def send_encrypted_message(
     request: EncryptedMessageRequest,
     current_user: str = Depends(get_current_user)
@@ -1789,7 +1804,7 @@ async def send_encrypted_message(
             detail="Failed to send encrypted message"
         )
 
-@router.post("/crypto/delivery-receipt")
+# @router.post("/crypto/delivery-receipt")
 async def update_delivery_receipt(
     request: DeliveryReceiptRequest,
     current_user: str = Depends(get_current_user)
@@ -1918,7 +1933,7 @@ class BackupChunkRequest(BaseModel):
     nonce: str = Field(..., description="Base64 nonce")
     auth_tag: str = Field(..., description="Base64 auth tag")
 
-@router.post("/backup/create", response_model=dict)
+# @router.post("/backup/create", response_model=dict)
 async def create_encrypted_backup(
     request: BackupCreateRequest,
     current_user: str = Depends(get_current_user)
@@ -1959,7 +1974,7 @@ class CallInitiateRequest(BaseModel):
     recipient_user_id: str = Field(..., description="Recipient user ID")
     call_type: str = Field("voice", description="Call type: voice, video")
 
-@router.post("/calls/initiate", response_model=dict)
+# @router.post("/calls/initiate", response_model=dict)
 async def initiate_encrypted_call(
     request: CallInitiateRequest,
     current_user: str = Depends(get_current_user)
@@ -1996,6 +2011,321 @@ async def initiate_encrypted_call(
 
 
 # ============================================================================
+# WHATSAPP-LIKE MESSAGE HISTORY SYSTEM
+# ============================================================================
+
+# @router.post("/history/sync", response_model=MessageHistoryResponse)
+async def sync_message_history(
+    request: MessageHistoryRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Sync message history for device (WhatsApp-style)"""
+    try:
+        # Verify chat access
+        chat = await chats_collection().find_one({"_id": request.chat_id})
+        if not chat:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        
+        participants = chat.get("participants", chat.get("members", chat.get("member_ids", [])))
+        if current_user not in participants and str(current_user) not in [str(p) for p in participants]:
+            raise HTTPException(status_code=403, detail="Not a member of this chat")
+        
+        # Build query for message history
+        query = {"chat_id": request.chat_id}
+        
+        # Add message ID filters for pagination
+        if request.before_message_id:
+            query["_id"] = {"$lt": request.before_message_id}
+        elif request.after_message_id:
+            query["_id"] = {"$gt": request.after_message_id}
+        
+        # Exclude deleted messages unless requested
+        if not request.include_deleted:
+            query["is_deleted"] = {"$ne": True}
+        
+        # Fetch messages with pagination
+        messages = await messages_collection().find(query).sort(
+            "_id", -1 if request.before_message_id else 1
+        ).limit(request.limit).to_list(length=request.limit)
+        
+        # Convert to metadata-only format (WhatsApp style)
+        message_metadata = []
+        for msg in messages:
+            metadata = {
+                "id": str(msg["_id"]),
+                "chat_id": msg["chat_id"],
+                "sender_id": msg["sender_id"],
+                "type": msg.get("type", "text"),
+                "text": msg.get("text", "")[:100] if msg.get("text") else None,  # Only first 100 chars
+                "file_id": msg.get("file_id"),
+                "file_size": msg.get("file_size"),
+                "file_type": msg.get("file_type"),
+                "created_at": msg["created_at"],
+                "sequence_number": msg.get("sequence_number"),
+                "reply_to_message_id": msg.get("reply_to_message_id"),
+                "forward_from_chat_id": msg.get("forward_from_chat_id"),
+                "forward_sender_name": msg.get("forward_sender_name"),
+                "is_edited": msg.get("is_edited", False),
+                "is_pinned": msg.get("is_pinned", False),
+                "views": msg.get("views", 0),
+                "reactions": msg.get("reactions", {}),
+                "read_by": msg.get("read_by", [])
+            }
+            message_metadata.append(metadata)
+        
+        # Update device sync state
+        await _update_device_sync_state(
+            user_id=current_user,
+            device_id=request.device_id,
+            chat_id=request.chat_id,
+            last_message_id=message_metadata[-1]["id"] if message_metadata else None,
+            messages_count=len(message_metadata)
+        )
+        
+        # Update relationship graph for message interactions
+        if message_metadata:
+            for msg in message_metadata:
+                if msg["sender_id"] != current_user:
+                    # Update interaction between current user and message sender
+                    await relationship_graph_service.update_user_interaction(
+                        user_a_id=current_user,
+                        user_b_id=msg["sender_id"],
+                        interaction_type="message_received",
+                        weight=1.0
+                    )
+                else:
+                    # Update interaction for sent messages (with other participants)
+                    chat = await chats_collection().find_one({"_id": request.chat_id})
+                    if chat:
+                        participants = chat.get("participants", chat.get("members", chat.get("member_ids", [])))
+                        for participant in participants:
+                            if participant != current_user:
+                                await relationship_graph_service.update_user_interaction(
+                                    user_a_id=current_user,
+                                    user_b_id=participant,
+                                    interaction_type="message_sent",
+                                    weight=1.0
+                                )
+        
+        # Generate sync token for incremental sync
+        sync_token = await _generate_sync_token(
+            user_id=current_user,
+            device_id=request.device_id,
+            chat_id=request.chat_id
+        )
+        
+        return MessageHistoryResponse(
+            chat_id=request.chat_id,
+            messages=message_metadata,
+            total_count=len(message_metadata),
+            has_more=len(message_metadata) == request.limit,
+            next_before_id=message_metadata[-1]["id"] if message_metadata else None,
+            next_after_id=message_metadata[0]["id"] if message_metadata else None,
+            sync_token=sync_token,
+            device_id=request.device_id
+        )
+        
+    except Exception as e:
+        logger.error(f"Message history sync failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to sync message history")
+
+
+@router.get("/conversations/metadata")
+async def get_conversations_metadata(
+    device_id: str = Query(..., description="Device ID"),
+    limit: int = Query(default=50, ge=1, le=100),
+    current_user: str = Depends(get_current_user)
+):
+    """Get conversation list with metadata (WhatsApp-style)"""
+    try:
+        # Get all chats for user
+        chats = await chats_collection().find({
+            "$or": [
+                {"participants": current_user},
+                {"members": current_user},
+                {"member_ids": current_user}
+            ]
+        }).sort("updated_at", -1).limit(limit).to_list(length=limit)
+        
+        # Build conversation metadata
+        conversations = []
+        for chat in chats:
+            # Get last message for this chat
+            last_message = await messages_collection().find_one(
+                {"chat_id": str(chat["_id"]), "is_deleted": {"$ne": True}},
+                sort=[("_id", -1)]
+            )
+            
+            # Get or create conversation metadata
+            conv_metadata = await _get_or_create_conversation_metadata(
+                user_id=current_user,
+                chat_id=str(chat["_id"]),
+                device_id=device_id
+            )
+            
+            # Update with last message info
+            if last_message:
+                conv_metadata.last_message_id = str(last_message["_id"])
+                conv_metadata.last_message_timestamp = last_message.get("created_at")
+                conv_metadata.last_message_type = last_message.get("type", "text")
+                conv_metadata.last_message_sender = last_message.get("sender_id")
+            
+            conversations.append(conv_metadata.dict())
+        
+        return {
+            "conversations": conversations,
+            "total_count": len(conversations),
+            "device_id": device_id,
+            "synced_at": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get conversations metadata: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get conversations")
+
+
+# @router.post("/delivery/receipt")
+async def track_delivery_receipt(
+    receipt: MessageDeliveryReceipt,
+    current_user: str = Depends(get_current_user)
+):
+    """Track WhatsApp-style delivery receipt"""
+    try:
+        # Verify recipient matches current user
+        if receipt.recipient_user_id != current_user:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Get message
+        message = await messages_collection().find_one({"_id": receipt.message_id})
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        # Update read_by list
+        if receipt.receipt_type == "read":
+            await messages_collection().update_one(
+                {"_id": receipt.message_id},
+                {
+                    "$addToSet": {
+                        "read_by": {
+                            "user_id": receipt.recipient_user_id,
+                            "device_id": receipt.recipient_device_id,
+                            "timestamp": receipt.timestamp
+                        }
+                    }
+                }
+            )
+        
+        # Store receipt in Redis for real-time sync
+        receipt_key = f"receipt:{receipt.message_id}:{receipt.recipient_device_id}"
+        await cache.set(receipt_key, receipt.dict(), expire_seconds=24*60*60)
+        
+        # Publish real-time update
+        update_key = f"delivery_updates:{receipt.chat_id}"
+        update_data = {
+            "message_id": receipt.message_id,
+            "device_id": receipt.recipient_device_id,
+            "receipt_type": receipt.receipt_type,
+            "timestamp": receipt.timestamp.isoformat()
+        }
+        await cache.publish(update_key, json.dumps(update_data))
+        
+        return {
+            "status": "tracked",
+            "message_id": receipt.message_id,
+            "receipt_type": receipt.receipt_type,
+            "timestamp": receipt.timestamp.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Delivery receipt tracking failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to track delivery receipt")
+
+
+@router.get("/relationship-graph/{user_id}")
+async def get_relationship_graph(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get user relationship graph data"""
+    try:
+        # Users can only get their own relationship graph
+        if current_user != user_id:
+            raise HTTPException(status_code=403, detail="Can only get own relationship graph")
+        
+        # Get comprehensive relationship data using the service
+        graph_summary = await relationship_graph_service.get_user_graph_summary(user_id)
+        user_relationships = await relationship_graph_service.get_user_relationships(user_id, limit=50)
+        contact_suggestions = await relationship_graph_service.get_contact_suggestions(user_id, limit=10)
+        
+        return {
+            "user_id": user_id,
+            "graph_summary": graph_summary,
+            "relationships": user_relationships,
+            "contact_suggestions": contact_suggestions,
+            "total_contacts": len(user_relationships),
+            "generated_at": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get relationship graph: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get relationship graph")
+
+
+# Helper functions for message history system
+async def _update_device_sync_state(user_id: str, device_id: str, chat_id: str, 
+                                  last_message_id: Optional[str], messages_count: int):
+    """Update device sync state"""
+    sync_state_key = f"device_sync:{user_id}:{device_id}"
+    
+    sync_data = {
+        "user_id": user_id,
+        "device_id": device_id,
+        "chat_id": chat_id,
+        "last_message_id": last_message_id,
+        "messages_count": messages_count,
+        "last_sync_timestamp": datetime.utcnow().isoformat(),
+        "sync_progress": 1.0
+    }
+    
+    await cache.set(sync_state_key, sync_data, expire_seconds=7*24*60*60)
+
+
+async def _generate_sync_token(user_id: str, device_id: str, chat_id: str) -> str:
+    """Generate sync token for incremental sync"""
+    token_data = f"{user_id}:{device_id}:{chat_id}:{datetime.utcnow().timestamp()}"
+    return base64.b64encode(token_data.encode()).decode()
+
+
+async def _get_or_create_conversation_metadata(user_id: str, chat_id: str, device_id: str) -> ConversationMetadata:
+    """Get or create conversation metadata"""
+    metadata_key = f"conv_meta:{user_id}:{device_id}:{chat_id}"
+    
+    # Try to get from cache first
+    cached_data = await cache.get(metadata_key)
+    if cached_data:
+        return ConversationMetadata(**cached_data)
+    
+    # Create new metadata
+    metadata = ConversationMetadata(
+        user_id=user_id,
+        chat_id=chat_id,
+        device_id=device_id
+    )
+    
+    # Cache for 1 hour
+    await cache.set(metadata_key, metadata.dict(), expire_seconds=60*60)
+    
+    return metadata
+
+
+async def _get_user_relationships(user_id: str) -> List[dict]:
+    """Get user relationships for graph"""
+    # This would query the relationship graph collection
+    # For now, return empty list as placeholder
+    return []
+
+
+# ============================================================================
 # WHATSAPP-GRADE PRIVACY CONTROLS ENDPOINTS
 # ============================================================================
 
@@ -2004,7 +2334,7 @@ class PrivacySettingsRequest(BaseModel):
     disappearing_timer: Optional[int] = Field(None, description="Disappearing messages timer (seconds)")
     read_receipts_enabled: Optional[bool] = Field(None, description="Read receipts enabled")
 
-@router.post("/privacy/settings", response_model=dict)
+# @router.post("/privacy/settings", response_model=dict)
 async def update_privacy_settings(
     request: PrivacySettingsRequest,
     current_user: str = Depends(get_current_user)

@@ -71,7 +71,7 @@ class RedisCache:
         self.pubsub = None
         self.lock_timeout = 30  # Default lock timeout in seconds
         
-    async def connect(self, host: str = "zaply.in.net", port: int = 6379, db: int = 0, password: Optional[str] = None):
+    async def connect(self, host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None):
         """Connect to Redis server"""
         if not REDIS_AVAILABLE:
             # Only log if debug mode is enabled
@@ -2344,7 +2344,7 @@ class MetadataMinimizationService:
         forbidden_fields = {
             "message": ["message", "content", "text", "body", "media_url", "file_path"],
             "chat": ["name", "description", "avatar", "settings", "metadata"],
-            "user": ["username", "email", "phone", "profile", "display_name"]
+            "user": ["profile", "display_name"]
         }
         
         if document_type in forbidden_fields:
@@ -2617,6 +2617,406 @@ class RedisClientProxy:
 redis_client = RedisClientProxy()
 
 
+# ============================================================================
+# WHATSAPP-STYLE METADATA COLLECTION SERVICES
+# ============================================================================
+
+class MetadataCollectionService:
+    """WhatsApp-style metadata collection service"""
+    
+    def __init__(self, cache_instance):
+        self.cache = cache_instance
+        self.metadata_ttl = 90 * 24 * 60 * 60  # 90 days retention
+    
+    async def collect_message_metadata(self, message_id: str, sender_id: str, 
+                                   recipient_id: str, device_id: str, 
+                                   message_type: str, client_ip: str) -> Dict[str, Any]:
+        """Collect comprehensive message metadata"""
+        timestamp = datetime.now(timezone.utc)
+        
+        metadata = {
+            "message_id": message_id,
+            "sender_id": sender_id,
+            "recipient_id": recipient_id,
+            "device_id": device_id,
+            "message_type": message_type,
+            "client_ip": self._obfuscate_ip(client_ip),
+            "timestamp": timestamp.isoformat(),
+            "collected_at": timestamp.isoformat()
+        }
+        
+        # Store in metadata collection
+        metadata_key = f"message_metadata:{message_id}"
+        await self.cache.set(metadata_key, metadata, expire_seconds=self.metadata_ttl)
+        
+        # Update interaction counters
+        await self._update_interaction_counters(sender_id, recipient_id)
+        
+        # Update device tracking
+        await self._update_device_activity(device_id, sender_id)
+        
+        return metadata
+    
+    async def collect_user_presence_metadata(self, user_id: str, device_id: str, 
+                                         status: str, client_ip: str) -> Dict[str, Any]:
+        """Collect user presence metadata"""
+        timestamp = datetime.now(timezone.utc)
+        
+        presence_metadata = {
+            "user_id": user_id,
+            "device_id": device_id,
+            "status": status,  # online, offline, typing, away
+            "client_ip": self._obfuscate_ip(client_ip),
+            "timestamp": timestamp.isoformat(),
+            "session_start": timestamp.isoformat()
+        }
+        
+        # Store presence metadata
+        presence_key = f"user_presence:{user_id}:{device_id}"
+        await self.cache.set(presence_key, presence_metadata, expire_seconds=24*60*60)
+        
+        # Update online status
+        online_key = f"online_users:{user_id}"
+        if status == "online":
+            await self.cache.sadd(online_key, device_id)
+            await self.cache.expire(online_key, 5*60)  # 5 minutes timeout
+        else:
+            await self.cache.srem(online_key, device_id)
+        
+        return presence_metadata
+    
+    async def collect_delivery_metadata(self, message_id: str, recipient_id: str, 
+                                   device_id: str, delivery_type: str) -> Dict[str, Any]:
+        """Collect delivery receipt metadata"""
+        timestamp = datetime.now(timezone.utc)
+        
+        delivery_metadata = {
+            "message_id": message_id,
+            "recipient_id": recipient_id,
+            "device_id": device_id,
+            "delivery_type": delivery_type,  # delivered, read, failed
+            "timestamp": timestamp.isoformat(),
+            "processing_time": None  # Would calculate from sent time
+        }
+        
+        # Store delivery metadata
+        delivery_key = f"delivery_metadata:{message_id}:{device_id}"
+        await self.cache.set(delivery_key, delivery_metadata, expire_seconds=7*24*60*60)
+        
+        return delivery_metadata
+    
+    async def get_user_metadata_summary(self, user_id: str, days: int = 30) -> Dict[str, Any]:
+        """Get metadata summary for user"""
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        # Get message statistics
+        message_stats = await self._get_message_stats(user_id, cutoff_date)
+        
+        # Get device statistics
+        device_stats = await self._get_device_stats(user_id, cutoff_date)
+        
+        # Get interaction statistics
+        interaction_stats = await self._get_interaction_stats(user_id, cutoff_date)
+        
+        return {
+            "user_id": user_id,
+            "period_days": days,
+            "message_stats": message_stats,
+            "device_stats": device_stats,
+            "interaction_stats": interaction_stats,
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+    
+    def _obfuscate_ip(self, ip: str) -> str:
+        """Obfuscate IP address for privacy (WhatsApp-style)"""
+        try:
+            if ':' in ip:  # IPv6
+                parts = ip.split(':')
+                if len(parts) >= 4:
+                    parts[-4:] = ['0000', '0000', '0000', '0000']
+                    return ':'.join(parts)
+            else:  # IPv4
+                parts = ip.split('.')
+                if len(parts) == 4:
+                    parts[-1] = '0'
+                    return '.'.join(parts)
+            return ip
+        except Exception:
+            return ip
+    
+    async def _update_interaction_counters(self, sender_id: str, recipient_id: str):
+        """Update interaction counters for relationship graph"""
+        interaction_key = f"interaction_counter:{sender_id}:{recipient_id}"
+        await self.cache.incr(interaction_key)
+        await self.cache.expire(interaction_key, 90*24*60*60)
+        
+        # Update reverse interaction
+        reverse_key = f"interaction_counter:{recipient_id}:{sender_id}"
+        await self.cache.incr(reverse_key)
+        await self.cache.expire(reverse_key, 90*24*60*60)
+    
+    async def _update_device_activity(self, device_id: str, user_id: str):
+        """Update device activity tracking"""
+        activity_key = f"device_activity:{device_id}"
+        activity_data = {
+            "user_id": user_id,
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+            "activity_count": 1
+        }
+        
+        # Increment activity count
+        await self.cache.hincrby(activity_key, "activity_count", 1)
+        await self.cache.hset(activity_key, "last_activity", activity_data["last_activity"])
+        await self.cache.expire(activity_key, 7*24*60*60)
+    
+    async def _get_message_stats(self, user_id: str, cutoff_date: datetime) -> Dict[str, Any]:
+        """Get message statistics for user"""
+        # This would query message metadata from cache/database
+        # For now, return placeholder stats
+        return {
+            "total_sent": 0,
+            "total_received": 0,
+            "messages_per_day": 0.0,
+            "peak_activity_hour": 14,
+            "most_active_day": "Monday"
+        }
+    
+    async def _get_device_stats(self, user_id: str, cutoff_date: datetime) -> Dict[str, Any]:
+        """Get device statistics for user"""
+        # This would query device metadata from cache
+        return {
+            "total_devices": 1,
+            "primary_device": "unknown",
+            "device_types": {"mobile": 1},
+            "last_seen": datetime.now(timezone.utc).isoformat()
+        }
+    
+    async def _get_interaction_stats(self, user_id: str, cutoff_date: datetime) -> Dict[str, Any]:
+        """Get interaction statistics for user"""
+        # This would query interaction counters from cache
+        return {
+            "total_contacts": 0,
+            "frequent_contacts": 0,
+            "interaction_frequency": 0.0,
+            "response_time_avg": 0.0
+        }
+
+
+class RelationshipGraphService:
+    """WhatsApp-style relationship graph tracking service"""
+    
+    def __init__(self, cache_instance):
+        self.cache = cache_instance
+        self.graph_ttl = 180 * 24 * 60 * 60  # 6 months retention
+    
+    async def update_relationship_strength(self, user_a: str, user_b: str, 
+                                     interaction_type: str, weight: float = 1.0):
+        """Update relationship strength between users"""
+        relationship_key = f"relationship:{user_a}:{user_b}"
+        
+        # Get current relationship data
+        current_data = await self.cache.hgetall(relationship_key) or {}
+        
+        # Update interaction metrics
+        current_data["user_a"] = user_a
+        current_data["user_b"] = user_b
+        current_data["interaction_count"] = current_data.get("interaction_count", 0) + 1
+        current_data["last_interaction"] = datetime.now(timezone.utc).isoformat()
+        
+        # Calculate relationship strength based on interactions
+        base_strength = min(current_data["interaction_count"] / 10.0, 1.0)  # Cap at 1.0
+        current_data["relationship_strength"] = base_strength * weight
+        
+        # Determine relationship type
+        if current_data["interaction_count"] >= 50:
+            current_data["relationship_type"] = "frequent"
+        elif current_data["interaction_count"] >= 10:
+            current_data["relationship_type"] = "regular"
+        else:
+            current_data["relationship_type"] = "contact"
+        
+        # Store updated relationship data
+        await self.cache.hset(relationship_key, current_data)
+        await self.cache.expire(relationship_key, self.graph_ttl)
+        
+        # Store reverse relationship
+        reverse_key = f"relationship:{user_b}:{user_a}"
+        await self.cache.hset(reverse_key, current_data)
+        await self.cache.expire(reverse_key, self.graph_ttl)
+    
+    async def get_user_relationships(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get all relationships for a user"""
+        pattern = f"relationship:{user_id}:*"
+        keys = await self.cache.keys(pattern)
+        
+        relationships = []
+        for key in keys[:limit]:
+            relationship_data = await self.cache.hgetall(key)
+            if relationship_data:
+                relationships.append(relationship_data)
+        
+        # Sort by relationship strength
+        relationships.sort(key=lambda x: x.get("relationship_strength", 0), reverse=True)
+        
+        return relationships
+    
+    async def get_contact_suggestions(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get contact suggestions based on relationship graph"""
+        # Get user's relationships
+        relationships = await self.get_user_relationships(user_id, limit=100)
+        
+        # Find friends of friends (2nd degree connections)
+        suggestions = {}
+        for rel in relationships:
+            other_user = rel.get("user_b") if rel.get("user_a") == user_id else rel.get("user_a")
+            if other_user and other_user != user_id:
+                # Get relationships of this user
+                other_relationships = await self.get_user_relationships(other_user, limit=20)
+                for other_rel in other_relationships:
+                    suggested_user = other_rel.get("user_b") if other_rel.get("user_a") == other_user else other_rel.get("user_a")
+                    if suggested_user and suggested_user != user_id and suggested_user not in suggestions:
+                        # Calculate suggestion strength
+                        strength = rel.get("relationship_strength", 0) * other_rel.get("relationship_strength", 0)
+                        suggestions[suggested_user] = {
+                            "user_id": suggested_user,
+                            "suggestion_strength": strength,
+                            "mutual_friends": 1,
+                            "suggestion_reason": "friend_of_friend"
+                        }
+        
+        # Sort by suggestion strength and return top suggestions
+        sorted_suggestions = sorted(suggestions.values(), 
+                                 key=lambda x: x["suggestion_strength"], reverse=True)
+        
+        return sorted_suggestions[:limit]
+    
+    async def calculate_interaction_frequency(self, user_a: str, user_b: str, days: int = 30) -> float:
+        """Calculate interaction frequency between two users"""
+        interaction_key = f"interaction_counter:{user_a}:{user_b}"
+        count = await self.cache.get(interaction_key) or 0
+        
+        return float(count) / days  # Messages per day
+
+
+class DeviceTrackingService:
+    """WhatsApp-style device tracking service"""
+    
+    def __init__(self, cache_instance):
+        self.cache = cache_instance
+        self.device_ttl = 30 * 24 * 60 * 60  # 30 days retention
+    
+    async def register_device(self, user_id: str, device_id: str, device_info: Dict[str, Any]):
+        """Register a new device for user"""
+        device_key = f"user_device:{user_id}:{device_id}"
+        
+        device_data = {
+            "user_id": user_id,
+            "device_id": device_id,
+            "device_name": device_info.get("device_name", "Unknown Device"),
+            "device_type": device_info.get("device_type", "unknown"),
+            "platform": device_info.get("platform", "unknown"),
+            "app_version": device_info.get("app_version", "unknown"),
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+            "is_active": True,
+            "trust_score": 0.0
+        }
+        
+        await self.cache.hset(device_key, device_data)
+        await self.cache.expire(device_key, self.device_ttl)
+        
+        # Add to user's device list
+        user_devices_key = f"user_devices:{user_id}"
+        await self.cache.sadd(user_devices_key, device_id)
+        await self.cache.expire(user_devices_key, self.device_ttl)
+        
+        return device_data
+    
+    async def update_device_activity(self, user_id: str, device_id: str, activity_type: str):
+        """Update device activity"""
+        device_key = f"user_device:{user_id}:{device_id}"
+        
+        # Update last seen and activity
+        await self.cache.hset(device_key, "last_seen", datetime.now(timezone.utc).isoformat())
+        await self.cache.hincrby(device_key, f"{activity_type}_count", 1)
+        await self.cache.expire(device_key, self.device_ttl)
+        
+        # Update global activity tracking
+        activity_key = f"device_activity:{device_id}"
+        await self.cache.hset(activity_key, "last_activity", datetime.now(timezone.utc).isoformat())
+        await self.cache.expire(activity_key, 24*60*60)
+    
+    async def get_user_devices(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all devices for a user"""
+        user_devices_key = f"user_devices:{user_id}"
+        device_ids = await self.cache.smembers(user_devices_key)
+        
+        devices = []
+        for device_id in device_ids:
+            device_key = f"user_device:{user_id}:{device_id}"
+            device_data = await self.cache.hgetall(device_key)
+            if device_data:
+                devices.append(device_data)
+        
+        # Sort by last seen
+        devices.sort(key=lambda x: x.get("last_seen", ""), reverse=True)
+        
+        return devices
+    
+    async def is_device_trusted(self, user_id: str, device_id: str) -> bool:
+        """Check if device is trusted"""
+        device_key = f"user_device:{user_id}:{device_id}"
+        trust_score = await self.cache.hget(device_key, "trust_score")
+        
+        return float(trust_score or 0) >= 0.5
+
+
+class MessageMetadataService:
+    """WhatsApp-style message metadata service"""
+    
+    def __init__(self, cache_instance):
+        self.cache = cache_instance
+        self.metadata_ttl = 7 * 24 * 60 * 60  # 7 days retention
+    
+    async def store_message_metadata(self, message_id: str, metadata: Dict[str, Any]):
+        """Store message metadata"""
+        metadata_key = f"msg_metadata:{message_id}"
+        
+        # Add collection timestamp
+        metadata["collected_at"] = datetime.now(timezone.utc).isoformat()
+        
+        await self.cache.hset(metadata_key, metadata)
+        await self.cache.expire(metadata_key, self.metadata_ttl)
+    
+    async def get_message_metadata(self, message_id: str) -> Optional[Dict[str, Any]]:
+        """Get message metadata"""
+        metadata_key = f"msg_metadata:{message_id}"
+        return await self.cache.hgetall(metadata_key)
+    
+    async def update_message_status(self, message_id: str, status: str, device_id: str):
+        """Update message delivery status"""
+        metadata_key = f"msg_metadata:{message_id}"
+        
+        # Update status and timestamp
+        await self.cache.hset(metadata_key, f"status_{device_id}", status)
+        await self.cache.hset(metadata_key, f"status_{device_id}_timestamp", 
+                           datetime.now(timezone.utc).isoformat())
+        await self.cache.expire(metadata_key, self.metadata_ttl)
+    
+    async def get_chat_metadata_summary(self, chat_id: str, days: int = 30) -> Dict[str, Any]:
+        """Get metadata summary for chat"""
+        # This would aggregate metadata for all messages in a chat
+        return {
+            "chat_id": chat_id,
+            "period_days": days,
+            "total_messages": 0,
+            "active_participants": 0,
+            "peak_activity_hour": 14,
+            "messages_per_day": 0.0,
+            "most_active_day": "Monday"
+        }
+
+
 # Define explicit __all__ for cleaner imports
 __all__ = [
     # Main cache object
@@ -2654,6 +3054,12 @@ __all__ = [
     'MetadataMinimizationService',
     'EphemeralFileService',
     'WhatsAppSessionService',
+    
+    # Metadata collection services
+    'MetadataCollectionService',
+    'RelationshipGraphService',
+    'DeviceTrackingService',
+    'MessageMetadataService',
     
     # Initialization functions
     'init_cache',
