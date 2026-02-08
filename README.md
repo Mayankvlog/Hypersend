@@ -1,13 +1,8 @@
-# zaply - Enterprise Secure File Sharing & Communication Platform
+# 🚀 Hypersend - Secure File Sharing & Communication Platform
 
-## 🚀 Project Overview
+## � Project Overview
 
-**Hypersend** is an enterprise-grade file sharing and real-time communication platform built with **Flutter** frontend and **Python FastAPI** backend. Inspired by WhatsApp's revolutionary architecture, it enables users to securely share files up to 15GB, create groups, send messages, and manage digital communications with military-grade security and 97% cost optimization.
-
-### ✨ Core Features
-
-- **📁 WhatsApp-Like File Sharing** - Direct S3 uploads with zero server storage overhead
-- **💬 Real-time Messaging** - End-to-end encrypted instant messaging with file attachments
+Hypersend is a modern, secure file sharing and communication platform built with Python FastAPI backend and Flutter frontend. It provides end-to-end encrypted messaging, file transfers, group chats, and real-time communication capabilities.
 - **👥 Group Management** - Secure group creation, member management, and admin controls
 - **👤 Profile Management** - Enhanced profiles with avatar support and user verification
 - **📱 Cross-Platform Support** - Web, Mobile (iOS/Android), and Desktop applications
