@@ -155,45 +155,50 @@ def test_mock_database_import():
         print(f"ERROR: Mock database import test failed: {e}")
         return False
 
-async def test_async_mock_operations():
+def test_async_mock_operations():
     """Test async mock database operations"""
     print("\n" + "=" * 60)
     print("Testing Async Mock Operations")
     print("=" * 60)
     
     try:
+        import asyncio
         from mock_database import get_mock_db
         
-        mock_db = get_mock_db()
-        
-        # Test collection operations
-        users_collection = mock_db.users
-        chats_collection = mock_db.chats
-        messages_collection = mock_db.messages
-        
-        print("SUCCESS: Mock collections accessible")
-        
-        # Test basic operations
-        test_user = {"username": "testuser", "email": "test@example.com"}
-        result = await users_collection.insert_one(test_user)
-        print("SUCCESS: Mock insert_one operation successful")
-        
-        # Test find operation
-        found_user = await users_collection.find_one({"username": "testuser"})
-        if found_user and found_user.get("username") == "testuser":
-            print("SUCCESS: Mock find_one operation successful")
-        else:
-            print("ERROR: Mock find_one operation failed")
-            return False
+        async def run_async_tests():
+            mock_db = get_mock_db()
             
-        print("SUCCESS: Async mock operations test passed")
-        return True
+            # Test collection operations
+            users_collection = mock_db.users
+            chats_collection = mock_db.chats
+            messages_collection = mock_db.messages
+            
+            print("SUCCESS: Mock collections accessible")
+            
+            # Test basic operations
+            test_user = {"username": "testuser", "email": "test@example.com"}
+            result = await users_collection.insert_one(test_user)
+            print("SUCCESS: Mock insert_one operation successful")
+            
+            # Test find operation
+            found_user = await users_collection.find_one({"username": "testuser"})
+            if found_user and found_user.get("username") == "testuser":
+                print("SUCCESS: Mock find_one operation successful")
+            else:
+                print("ERROR: Mock find_one operation failed")
+                return False
+                
+            print("SUCCESS: Async mock operations test passed")
+            return True
+        
+        # Run the async tests
+        return asyncio.run(run_async_tests())
         
     except Exception as e:
         print(f"ERROR: Async mock operations test failed: {e}")
         return False
 
-async def main():
+def main():
     """Main test function"""
     print("Starting Comprehensive Kubernetes and Mock Database Tests")
     
@@ -206,7 +211,7 @@ async def main():
     results.append(test_mock_database_import())
     
     # Test 3: Async mock operations
-    results.append(await test_async_mock_operations())
+    results.append(test_async_mock_operations())
     
     # Summary
     print("\n" + "=" * 60)
@@ -236,5 +241,5 @@ async def main():
         return 1
 
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
+    exit_code = main()
     sys.exit(exit_code)
