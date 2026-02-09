@@ -1,26 +1,4 @@
 # =============================================================================
-# VS CODE YAML SCHEMA VALIDATION DISABLED
-# =============================================================================
-# 
-# This file contains valid Kubernetes manifests but VS Code's YAML language 
-# server has a known bug with multi-document parsing that causes false-positive
-# schema errors (missing podSelector, selector, template, etc.).
-#
-# WORKAROUND: Disable schema validation at file level to prevent:
-# - False schema errors on valid Kubernetes resources
-# - Shifting line numbers and corrupted error reporting  
-# - Broken multi-document boundary detection
-#
-# THIS IS AN EDITOR-LEVEL WORKAROUND - NOT A KUBERNETES REQUIREMENT
-# All manifests remain valid for kubectl, k3s, CI/CD, and production deployment.
-#
-# MULTIPLE VALIDATION DISABLING DIRECTIVES:
-# yaml-language-server: $schema=
-# yaml.validate: false
-# @vscode-yaml-disable-validation
-# @yaml-language-server: disable
-# REDWOOD_EDITOR_SCHEMA_VALIDATION: disabled
-# =============================================================================
 ---
 apiVersion: v1
 kind: Namespace
@@ -1488,8 +1466,3 @@ spec:
       - type: Percent
         value: 50
 
-# END OF MULTI-DOCUMENT KUBERNETES FILE
-# VS CODE YAML SCHEMA: COMPLETELY DISABLED
-# yaml-language-server: $schema=
-# yaml.validate: false
-# NO MORE SCHEMA ERRORS - MULTI-DOC FILE
