@@ -33,6 +33,9 @@ ENV PYTHONUNBUFFERED=1 \
     DATA_ROOT=/data \
     PYTHONMALLOC=malloc
 
+ARG DOCKERHUB_USERNAME
+ARG DOCKERHUB_TOKEN
+
 # Create data directory
 RUN mkdir -p /data/tmp /data/files
 

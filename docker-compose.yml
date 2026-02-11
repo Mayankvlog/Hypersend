@@ -93,6 +93,12 @@ services:
       - net.core.somaxconn=65535
 
   backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        DOCKERHUB_USERNAME: ${DOCKERHUB_USERNAME}
+        DOCKERHUB_TOKEN: ${DOCKERHUB_TOKEN}
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
@@ -167,6 +173,12 @@ services:
         max-file: "3"
 
   frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        DOCKERHUB_USERNAME: ${DOCKERHUB_USERNAME}
+        DOCKERHUB_TOKEN: ${DOCKERHUB_TOKEN}
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped

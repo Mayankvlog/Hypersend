@@ -57,6 +57,8 @@ jobs:
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+            DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+            DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         timeout-minutes: 30
 
       - name: Deploy to VPS (Docker Compose, password SSH)
@@ -84,6 +86,8 @@ jobs:
             export SENDER_NAME=Hypersend Support
             export RATE_LIMIT_ENABLED=true
             export USE_MOCK_DB=false
+            export DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+            export DOCKERHUB_TOKEN=${{ secrets.DOCKERHUB_TOKEN }}
             
             if [ -f "/hypersend/Hypersend/deploy-all.sh" ]; then
               echo "🔄 Using full deployment script..."
