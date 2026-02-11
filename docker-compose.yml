@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   nginx:
     image: nginx:alpine
@@ -10,24 +8,35 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      # NO persistent cache - WhatsApp-grade stateless
+      - /etc/letsencrypt:/etc/letsencrypt
+      - /var/lib/letsencrypt:/var/lib/letsencrypt
+      - nginx_cache:/var/cache/nginx
+      - ./data/files:/data/files:ro
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    entrypoint:
+      - sh
+      - -c
+      - |
+        # Install openssl for certificate generation
+        apk add --no-cache openssl;
+        
+        if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
+          echo '[NGINX] Creating self-signed certificate for initial deployment...';
+          mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
+          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
+          cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
+          echo '[NGINX] Self-signed certificate created';
+        fi;
+        nginx -g 'daemon off;'
     depends_on:
-      redis:
-        condition: service_healthy
       backend:
-        condition: service_started
-      websocket:
-        condition: service_started
-      crypto_worker:
-        condition: service_started
-      e2ee_service:
-        condition: service_started
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:
@@ -36,385 +45,45 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-    labels:
-      - "hypersend.service=nginx"
-      - "hypersend.scaling=multi-device"
-      - "hypersend.e2ee=enabled"
-      - "hypersend.redis-cache=required"
     environment:
-      - NGINX_ALLOW_UNSAFE=true
-      - NGINX_API_BASE_URL=${API_BASE_URL:-http://localhost:8000/api/v1}
+      # Suppress SSL verification warnings for self-signed certs in dev
+      - NGINX_ALLOW_UNSAFE_SSL=true
+      - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
-      # WhatsApp-grade cryptographic timeouts
-      - NGINX_PROXY_READ_TIMEOUT=7200  # 2 hours for crypto operations
-      - NGINX_PROXY_SEND_TIMEOUT=7200  # 2 hours for crypto operations
-      - NGINX_PROXY_CONNECT_TIMEOUT=600  # 10 minutes for backend connection
-      - NGINX_CLIENT_BODY_TIMEOUT=7200  # 2 hours for crypto payloads
-      - NGINX_CLIENT_MAX_BODY_SIZE=15G  # Allow 15GB files
-      - NGINX_REQUEST_TIMEOUT=7200  # 2 hours request timeout
-      - NGINX_SEND_TIMEOUT=7200  # 2 hours send timeout
-      - NGINX_READ_TIMEOUT=7200  # 2 hours read timeout
-      # WhatsApp-grade WebSocket configuration
-      - NGINX_WEBSOCKET_TIMEOUT=7200  # 2 hours WebSocket connections
-      - NGINX_WEBSOCKET_PING_INTERVAL=30  # 30 second ping interval
-      - NGINX_WEBSOCKET_MAX_CONNECTIONS=1000000  # 1M concurrent connections
-      # Enhanced cryptographic error handling
+      # CRITICAL FIX: Add nginx timeout configurations for 40GB files
+      - NGINX_PROXY_READ_TIMEOUT=3600  # 1 hour for large file downloads
+      - NGINX_PROXY_SEND_TIMEOUT=3600  # 1 hour for large file uploads
+      - NGINX_PROXY_CONNECT_TIMEOUT=300  # 5 minutes for backend connection
+      - NGINX_CLIENT_BODY_TIMEOUT=3600  # 1 hour for client body upload
+      - NGINX_CLIENT_MAX_BODY_SIZE=45G  # Allow 40GB files + overhead
+      # Enhanced error handling configuration
       - NGINX_ERROR_PAGE_TIMEOUT=30  # Error page timeout
       - NGINX_MAX_RETRIES=7  # Maximum retry attempts
       - NGINX_RETRY_DELAY=5  # Delay between retries
-      # E2EE Configuration
-      - NGINX_E2EE_MAX_MESSAGE_SIZE=50M  # 50MB encrypted messages
-      - NGINX_E2EE_MAX_BLOB_SIZE=100M  # 100MB encrypted blobs
-      - NGINX_E2EE_RATE_LIMIT=100  # 100 E2EE requests/sec
-      - NGINX_E2EE_DEVICE_RATE_LIMIT=20  # 20 device requests/sec
-      # Development domain configuration
-      - DOMAIN_NAME=localhost
-      - SSL_CERT_PATH=/etc/letsencrypt/live/localhost/fullchain.pem
-      - SSL_KEY_PATH=/etc/letsencrypt/live/localhost/privkey.pem
-
-  # WhatsApp-style Backend API (Stateless, Horizontal Scaling)
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      # WhatsApp-grade environment
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      - JWT_SECRET=${JWT_SECRET:-your_jwt_secret_here}
-      - ENVIRONMENT=production
-      # WhatsApp security settings
-      - ENABLE_E2EE=true
-      - MAX_FILE_SIZE=16106127360  # 15GB in bytes
-      - MEDIA_TTL=86400  # 24 hours
-      - MESSAGE_TTL=86400  # 24 hours
-      - DEVICE_SESSION_TIMEOUT=604800  # 7 days
-      # Rate limiting (WhatsApp-grade) - Updated for production
-      - RATE_LIMIT_REQUESTS=1000  # Max requests per IP per window
-      - RATE_LIMIT_WINDOW=3600  # 1 hour window (matches backend LOGIN_ATTEMPT_WINDOW)
-      # Logging and monitoring
-      - LOG_LEVEL=INFO
-      - ENABLE_METRICS=true
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    deploy:
-      replicas: 3  # WhatsApp-style horizontal scaling
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1.0'
-        reservations:
-          memory: 512M
-          cpus: '0.25'
-    # CRITICAL: No volume mounts (stateless)
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # WhatsApp-style WebSocket Service (High Concurrency)
-  websocket:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "uvicorn", "backend.websocket:app", "--host", "0.0.0.0", "--port", "8001"]
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - ENVIRONMENT=production
-      # WebSocket-specific settings
-      - WEBSOCKET_HEARTBEAT_INTERVAL=30
-      - WEBSOCKET_MAX_CONNECTIONS=10000
-      - WEBSOCKET_PING_TIMEOUT=60
-      - WEBSOCKET_CLOSE_TIMEOUT=300
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    deploy:
-      replicas: 5  # More replicas for WebSocket scaling
-      resources:
-        limits:
-          memory: 1G
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.1'
-    # CRITICAL: No volume mounts (stateless)
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # WhatsApp-grade E2EE Service (Signal Protocol, Device Management)
-  e2ee_service:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "uvicorn", "backend.e2ee_service:app", "--host", "0.0.0.0", "--port", "8002"]
-    environment:
-      # E2EE Configuration
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      - ENVIRONMENT=production
-      # E2EE Settings
-      - ENABLE_E2EE=true
-      - MAX_E2EE_DEVICES=4  # Max 4 companion devices
-      - E2EE_SESSION_TIMEOUT=604800  # 7 days
-      - E2EE_MESSAGE_TIMEOUT=86400  # 24 hours
-      - E2EE_MAX_MESSAGE_SIZE=52428800  # 50MB
-      - E2EE_MAX_BLOB_SIZE=104857600  # 100MB
-      - E2EE_RATE_LIMIT=50  # 50 requests/sec
-      - E2EE_DEVICE_RATE_LIMIT=10  # 10 requests/sec per device
-      # Security Settings
-      - ENABLE_KEY_ROTATION=true
-      - KEY_ROTATION_INTERVAL=604800  # 7 days
-      - ENABLE_REPLAY_PROTECTION=true
-      - REPLAY_WINDOW=2048
-      - ENABLE_FORWARD_SECRECY=true
-      - DH_RATCHET_INTERVAL=100  # 100 messages
-      # Logging
-      - LOG_LEVEL=INFO
-      - ENABLE_E2EE_METRICS=true
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    deploy:
-      replicas: 2  # E2EE service scaling
-      resources:
-        limits:
-          memory: 1G
-          cpus: '0.5'
-        reservations:
-          memory: 512M
-          cpus: '0.25'
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "celery", "worker", "-A", "backend.workers.celery_app", "--loglevel=info", "--concurrency=4"]
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - CELERY_BROKER_URL=redis://:${CELERY_BROKER_PASSWORD:-change_this_password_in_prod}@celery_broker:6380/0
-      - CELERY_RESULT_BACKEND=redis://:${CELERY_BROKER_PASSWORD:-change_this_password_in_prod}@celery_broker:6380/0
-      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      - ENVIRONMENT=production
-      # Worker-specific settings
-      - WORKER_CONCURRENCY=4
-      - WORKER_PREFETCH_MULTIPLIER=1
-      - WORKER_MAX_TASKS_PER_CHILD=1000
-      # WhatsApp cleanup settings
-      - MEDIA_CLEANUP_INTERVAL=300  # 5 minutes
-      - MESSAGE_CLEANUP_INTERVAL=600  # 10 minutes
-      - ACK_RECONCILIATION_INTERVAL=180  # 3 minutes
-    depends_on:
-      redis:
-        condition: service_healthy
-      celery_broker:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    deploy:
-      replicas: 2  # Background workers for high throughput
-      resources:
-        limits:
-          memory: 1G
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.1'
-    # CRITICAL: No volume mounts (stateless)
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # WhatsApp-grade Cryptographic Worker (Signal Protocol, Device Management)
-  crypto_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "celery", "worker", "-A", "backend.crypto_app", "--loglevel=info", "--concurrency=8"]
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - ENVIRONMENT=production
-      # Cryptographic worker settings
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - CRYPTO_WORKER_CONCURRENCY=8
-      - CRYPTO_WORKER_PREFETCH_MULTIPLIER=1
-      - CRYPTO_WORKER_MAX_TASKS_PER_CHILD=500
-      # WhatsApp cryptographic settings
-      - SIGNAL_PROTOCOL_VERSION=3
-      - X3DH_TIMEOUT=300  # 5 minutes
-      - DOUBLE_RATCHET_INTERVAL=60  # 1 minute
-      - DEVICE_SESSION_TIMEOUT=604800  # 7 days
-      - MEDIA_KEY_ROTATION_INTERVAL=86400  # 24 hours
-      - ONE_TIME_PREKEY_BATCH_SIZE=100
-      - SIGNED_PREKEY_ROTATION_INTERVAL=604800  # 7 days
-      # Security settings
-      - ENABLE_KEY_BACKUP=false
-      - ENABLE_SECURE_DELETE=true
-      - ANTI_REPLAY_PROTECTION=true
-      - POST_COMPROMISE_SECURITY=true
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    deploy:
-      replicas: 4  # More replicas for crypto operations
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1.0'
-        reservations:
-          memory: 512M
-          cpus: '0.5'
-    # CRITICAL: No volume mounts (stateless, crypto-blind)
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      # Production domain configuration
+      - DOMAIN_NAME=zaply.in.net
+      - SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
+      - SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     container_name: hypersend_redis
     restart: unless-stopped
-    command: >
-      redis-server
-      --requirepass ${REDIS_PASSWORD:-change_this_password_in_prod}
-      --maxmemory 4gb
-      --maxmemory-policy allkeys-lru
-      --save ""
-      --appendonly no
-      --stop-writes-on-bgsave-error no
-      --tcp-keepalive 300
-      --timeout 0
-      --tcp-backlog 65535
-      --databases 16
-      --slowlog-log-slower-than 10000
-      --slowlog-max-len 128
-      --notify-keyspace-events Ex
-      --hash-max-ziplist-entries 512
-      --hash-max-ziplist-value 64
-      --list-max-ziplist-size -2
-      --list-compress-depth 0
-      --set-max-intset-entries 512
-      --zset-max-ziplist-entries 128
-      --zset-max-ziplist-value 64
-      --hll-sparse-max-bytes 3000
-      --stream-node-max-bytes 4096
-      --stream-node-max-entries 100
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-          cpus: '2.0'
-        reservations:
-          memory: 1G
-          cpus: '0.5'
-    # CRITICAL: No volume mounts (ephemeral data only)
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    labels:
-      - "hypersend.service=redis"
-      - "hypersend.cache-type=ephemeral-realtime"
-      - "hypersend.scaling=multi-device-websocket"
-      - "hypersend.e2ee=critical"
-      - "hypersend.websocket-session-store=true"
-      - "hypersend.device-sync-cache=true"
-      - "hypersend.message-fanout-cache=true"
-      - "hypersend.ttl-based=true"
-    environment:
-      - REDIS_REALTIME_WEBSOCKET=true
-      - REDIS_MULTI_DEVICE_SYNC=true
-      - REDIS_E2EE_SESSION_STORE=true
-      - REDIS_EPHEMERAL_TTL=86400
-      - REDIS_WEBSOCKET_CONNECTION_POOL=true
-      - REDIS_DEVICE_FANOUT_OPTIMIZED=true
-
-  minio:
-    image: minio/minio:latest
-    container_name: hypersend_minio
-    restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-change_this_password_in_prod}
-      - MINIO_REGION=${AWS_REGION:-us-east-1}
-    command: server /minio_data --console-address ":9001"
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
-      - minio_data:/minio_data
+      - redis_data:/data
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -423,8 +92,91 @@ services:
     sysctls:
       - net.core.somaxconn=65535
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hypersend_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # ===== MONGODB ATLAS CONFIGURATION =====
+      # CRITICAL: Use MongoDB Atlas connection string for production
+      MONGODB_ATLAS_ENABLED: ${MONGODB_ATLAS_ENABLED:-true}
+      MONGODB_URI: ${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend}
+      
+      # ===== DATABASE CONFIGURATION =====
+      MONGO_USER: ${MONGO_USER:-mayanllr0311_db_user}
+      MONGO_PASSWORD: ${MONGO_PASSWORD:-JBkAZin8lytTK6vg}
+      MONGO_HOST: ${MONGO_HOST:-cluster0.rnj3vfd.mongodb.net}
+      MONGO_PORT: 27017
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
+      
+      # ===== API CONFIGURATION =====
+      SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 28800
+      REFRESH_TOKEN_EXPIRE_DAYS: 20
+      UPLOAD_TOKEN_EXPIRE_HOURS: 480
+      DATA_ROOT: /data
+      UPLOADS_PATH: /app/uploads
+      MAX_FILE_SIZE_BYTES: 42949672960
+      CHUNK_SIZE: 33554432
+      MAX_PARALLEL_CHUNKS: 4
+      FILE_RETENTION_HOURS: 0
+      DEBUG: "False"
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+      
+      # ===== CORS CONFIGURATION =====
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net}
+      
+      # ===== RATE LIMITING & SECURITY =====
+      RATE_LIMIT_PER_USER: 100
+      RATE_LIMIT_WINDOW_SECONDS: 60
+      USE_MOCK_DB: "False"
+      
+      # ===== EMAIL CONFIGURATION =====
+      ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
+      ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@zaply.in.net}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-dummy_app_password_configure_in_env}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
+      SENDER_NAME: ${SENDER_NAME:-Zaply Support}
+    volumes:
+      - ./data:/data
+      - ./backend/uploads:/app/uploads
+      - redis_data:/redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   frontend:
-    image: ghcr.io/mayankvlog/hypersend-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # SECURITY: Use production URL for nginx proxy routing
+        API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}     
+        VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
@@ -446,297 +198,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Voice & Video Call Relay (TURN/STUN, E2EE)
-  turn_server:
-    image: coturn/coturn:latest
-    container_name: hypersend_turn
-    restart: unless-stopped
-    ports:
-      - "3478:3478/tcp"
-      - "3478:3478/udp"
-      - "3479:3479/tcp"
-      - "3479:3479/udp"
-      - "5349:5349/tcp"
-      - "5349:5349/udp"
-      - "5350:5350/tcp"
-      - "5350:5350/udp"
-    environment:
-      - TURNSERVER_ENABLED=1
-      - TURNSERVER_REALM=hypersend.local
-      - TURNSERVER_USERNAME=${TURN_USERNAME:-turnuser}
-      - TURNSERVER_PASSWORD=${TURN_PASSWORD:-change_this_password_in_prod}
-      - TURNSERVER_EXTERNAL_IP=${TURNSERVER_EXTERNAL_IP:-127.0.0.1}
-      - TURNSERVER_LOG_LEVEL=warning
-      - TURNSERVER_VERBOSE=0
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "sh", "-c", "echo | nc -z localhost 3478 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.25'
-
-  # Message Queue for Offline Delivery & Async Tasks
-  celery_broker:
-    image: redis:7-alpine
-    container_name: hypersend_celery_broker
-    restart: unless-stopped
-    command: >
-      redis-server
-      --port 6380
-      --requirepass ${CELERY_BROKER_PASSWORD:-change_this_password_in_prod}
-      --maxmemory 1gb
-      --maxmemory-policy allkeys-lru
-      --appendonly no
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '0.25'
-
-  # Prometheus Metrics Collection
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: hypersend_prometheus
-    restart: unless-stopped
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=30d'
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.25'
-
-  # Grafana Dashboard for Monitoring
-  grafana:
-    image: grafana/grafana:latest
-    container_name: hypersend_grafana
-    restart: unless-stopped
-    ports:
-      - "3001:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel
-      - GF_SECURITY_COOKIE_SECURE=true
-      - GF_SECURITY_COOKIE_SAMESITE=strict
-    volumes:
-      - grafana_data:/var/lib/grafana
-    networks:
-      - hypersend_network
-    depends_on:
-      - prometheus
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.25'
-
-  # ==================== WHATSAPP-LIKE MESSAGE HISTORY & SYNC ====================
-  
-  # Message History Sync Worker (Background Service)
-  # Handles multi-device message history synchronization
-  message_history_sync_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "backend.workers.fan_out_worker"]
-    environment:
-      - WORKER_TYPE=message_history_sync
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      - MESSAGE_RETENTION_DAYS=90
-      - MAX_DEVICES_PER_USER=4
-      - SYNC_BATCH_SIZE=100
-      - SYNC_MAX_WORKERS=4
-      - LOG_LEVEL=INFO
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-
-  # Metadata Aggregation Worker
-  # Collects conversation metadata and delivery/read events
-  metadata_aggregation_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "backend.workers.fan_out_worker"]
-    environment:
-      - WORKER_TYPE=metadata_aggregation
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      - METADATA_RETENTION_DAYS=365
-      - DELIVERY_EVENT_RETENTION_DAYS=30
-      - AGGREGATION_BATCH_SIZE=1000
-      - AGGREGATION_INTERVAL_SECONDS=300
-      - LOG_LEVEL=INFO
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      replicas: 1
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-
-  # Relationship Graph Worker
-  # Updates user-to-user relationship strength scores based on interaction patterns
-  relationship_graph_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "backend.workers.fan_out_worker"]
-    environment:
-      - WORKER_TYPE=relationship_graph
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      - SCORE_CALCULATION_INTERVAL_SECONDS=3600
-      - RECENCY_WEIGHT=0.6
-      - FREQUENCY_WEIGHT=0.4
-      - MIN_INTERACTION_THRESHOLD=1
-      - LOG_LEVEL=INFO
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      replicas: 1
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-
-  # Background Job Coordinator
-  # Orchestrates message cleanup, retention policies, and background tasks
-  background_job_coordinator:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "backend.workers.fan_out_worker"]
-    environment:
-      - WORKER_TYPE=job_coordinator
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_password_in_prod}
-      - DATABASE_URL=${DATABASE_URL:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      - CLEANUP_INTERVAL_SECONDS=86400
-      - MESSAGE_RETENTION_DAYS=90
-      - SOFT_DELETE_GRACE_DAYS=7
-      - ENABLE_AUTO_CLEANUP=true
-      - LOG_LEVEL=INFO
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      replicas: 1
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.25'
-
 networks:
   hypersend_network:
     driver: bridge
@@ -745,26 +206,7 @@ networks:
         - subnet: 172.20.0.0/16
 
 volumes:
+  redis_data:
+    driver: local
   nginx_cache:
     driver: local
-    # WHATSAPP ARCHITECTURE: nginx_cache is ephemeral (not permanent data)
-    # - Cache cleared on container restart (acceptable)
-    # - NOT used for media or messages
-    # - Only for static frontend assets
-    # - In Kubernetes, this maps to emptyDir with memory tmpfs
-  
-  # MinIO data storage (encrypted blobs only, client-side E2EE)
-  # - Server never sees plaintext
-  # - Each file encrypted by sender before upload
-  # - Auto-delete after 24h TTL (lifecycle policy)
-  minio_data:
-    driver: local
-
-  # Prometheus metrics storage
-  prometheus_data:
-    driver: local
-
-  # Grafana dashboard data
-  grafana_data:
-    driver: local
-
