@@ -9,9 +9,9 @@ import 'core/constants/app_strings.dart';
 import 'data/services/service_provider.dart';
 import 'l10n/app_localizations.dart';
 
-// Firebase Analytics instance - initialized after Firebase.initializeApp()
-late FirebaseAnalytics analytics;
-// Flag to track if Firebase/Analytics is available
+// Firebase Analytics instance - nullable to safely handle initialization failures
+FirebaseAnalytics? analytics;
+// Flag to track if Firebase/Analytics is available and collection enabled
 bool analyticsEnabled = false;
 
 Future<void> main() async {
@@ -24,13 +24,37 @@ Future<void> main() async {
     await Firebase.initializeApp();
     // Initialize analytics after Firebase is ready
     analytics = FirebaseAnalytics.instance;
-    analyticsEnabled = true;
-    debugPrint('[MAIN] Firebase initialized successfully');
+    
+    // PRIVACY: Disable analytics collection by default
+    // Users must explicitly opt-in via consent UI before collection is enabled
+    var collectionDisabled = false;
+    try {
+      await analytics!.setAnalyticsCollectionEnabled(false);
+      collectionDisabled = true;
+      debugPrint('[MAIN] Analytics collection disabled by default (requires user consent)');
+    } catch (e) {
+      debugPrint('[MAIN] WARNING: Could not disable analytics collection: $e');
+      // Continue anyway, but mark analytics as enabled only if disabling succeeded
+    }
+    
+    // Only enable analytics if we successfully disabled collection
+    if (collectionDisabled) {
+      analyticsEnabled = true;
+      // Inform service provider that analytics is available
+      serviceProvider.setAnalyticsEnabled(true);
+      debugPrint('[MAIN] Firebase initialized successfully');
+    } else {
+      analyticsEnabled = false;
+      serviceProvider.setAnalyticsEnabled(false);
+      debugPrint('[MAIN] Firebase initialized but analytics disabled (collection control failed)');
+    }
   } catch (e, stackTrace) {
     debugPrint('[MAIN] ERROR during Firebase init: $e');
     debugPrint('[MAIN] Stack trace: $stackTrace');
     // Disable analytics if Firebase fails to initialize
+    analytics = null;
     analyticsEnabled = false;
+    serviceProvider.setAnalyticsEnabled(false);
   }
   
   try {
