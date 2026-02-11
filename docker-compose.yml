@@ -860,3 +860,4 @@ volumes:
   # Grafana dashboard data
   grafana_data:
     driver: local
+
