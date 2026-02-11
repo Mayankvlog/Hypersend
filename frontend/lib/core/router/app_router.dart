@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../../presentation/screens/splash_screen.dart';
 import '../../presentation/screens/auth_screen.dart';
 import '../../presentation/screens/chat_list_screen.dart';
@@ -20,8 +21,13 @@ import '../../presentation/screens/group_detail_screen.dart';
 import '../../data/mock/mock_data.dart';
 import '../../data/services/service_provider.dart';
 
+final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
+
 final appRouter = GoRouter(
   initialLocation: '/',
+  observers: [
+    FirebaseAnalyticsObserver(analytics: _analytics),
+  ],
   errorBuilder: (context, state) {
     return Scaffold(
       body: Center(

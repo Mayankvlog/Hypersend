@@ -1,15 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'dart:async';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_strings.dart';
 import 'data/services/service_provider.dart';
 import 'l10n/app_localizations.dart';
 
+// Firebase Analytics instance - initialized after Firebase.initializeApp()
+late FirebaseAnalytics analytics;
+// Flag to track if Firebase/Analytics is available
+bool analyticsEnabled = false;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   debugPrint('[MAIN] Starting app initialization...');
+  
+  try {
+    debugPrint('[MAIN] Initializing Firebase...');
+    await Firebase.initializeApp();
+    // Initialize analytics after Firebase is ready
+    analytics = FirebaseAnalytics.instance;
+    analyticsEnabled = true;
+    debugPrint('[MAIN] Firebase initialized successfully');
+  } catch (e, stackTrace) {
+    debugPrint('[MAIN] ERROR during Firebase init: $e');
+    debugPrint('[MAIN] Stack trace: $stackTrace');
+    // Disable analytics if Firebase fails to initialize
+    analyticsEnabled = false;
+  }
   
   try {
     debugPrint('[MAIN] Initializing service provider...');
@@ -37,6 +59,7 @@ class _ZaplyAppState extends State<ZaplyApp> {
   late bool _darkMode;
   String? _initError;
   bool _disposed = false;
+  Timer? _themeListenerTimer;
 
   @override
   void initState() {
@@ -54,30 +77,32 @@ class _ZaplyAppState extends State<ZaplyApp> {
   void _setupThemeListener() {
     debugPrint('[ZaplyApp] Setting up theme listener...');
     
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted && !_disposed) {
-        try {
-          final newDarkMode = serviceProvider.settingsService.darkMode;
-          if (_darkMode != newDarkMode) {
-            debugPrint('[ZaplyApp] Theme changed: $_darkMode -> $newDarkMode');
-            setState(() {
-              _darkMode = newDarkMode;
-            });
-          }
-        } catch (e) {
-          debugPrint('[ZaplyApp] Theme listener error: $e');
-        }
-        return true; // Continue the loop
+    // Use a periodic timer instead of Future.doWhile to prevent memory leaks
+    _themeListenerTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted || _disposed) {
+        debugPrint('[ZaplyApp] Theme listener stopped');
+        _themeListenerTimer?.cancel();
+        return;
       }
-      debugPrint('[ZaplyApp] Theme listener stopped');
-      return false; // Stop the loop
+      
+      try {
+        final newDarkMode = serviceProvider.settingsService.darkMode;
+        if (_darkMode != newDarkMode && mounted && !_disposed) {
+          debugPrint('[ZaplyApp] Theme changed: $_darkMode -> $newDarkMode');
+          setState(() {
+            _darkMode = newDarkMode;
+          });
+        }
+      } catch (e) {
+        debugPrint('[ZaplyApp] Theme listener error: $e');
+      }
     });
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _themeListenerTimer?.cancel();
     super.dispose();
   }
 
