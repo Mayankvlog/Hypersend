@@ -170,7 +170,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["python", "-m", "uvicorn", "e2ee_service.app:app", "--host", "0.0.0.0", "--port", "8002"]
+    command: ["python", "-m", "uvicorn", "backend.e2ee_service:app", "--host", "0.0.0.0", "--port", "8002"]
     environment:
       # E2EE Configuration
       - REDIS_HOST=redis
@@ -585,7 +585,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["python", "-m", "workers.message_history_sync_worker"]
+    command: ["python", "-m", "backend.workers.fan_out_worker"]
     environment:
       - WORKER_TYPE=message_history_sync
       - REDIS_HOST=redis
@@ -623,7 +623,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["python", "-m", "workers.metadata_aggregation_worker"]
+    command: ["python", "-m", "backend.workers.fan_out_worker"]
     environment:
       - WORKER_TYPE=metadata_aggregation
       - REDIS_HOST=redis
@@ -661,7 +661,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["python", "-m", "workers.relationship_graph_worker"]
+    command: ["python", "-m", "backend.workers.fan_out_worker"]
     environment:
       - WORKER_TYPE=relationship_graph
       - REDIS_HOST=redis
@@ -699,7 +699,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["python", "-m", "workers.job_coordinator"]
+    command: ["python", "-m", "backend.workers.fan_out_worker"]
     environment:
       - WORKER_TYPE=job_coordinator
       - REDIS_HOST=redis
