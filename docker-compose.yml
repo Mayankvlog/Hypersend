@@ -441,7 +441,7 @@ services:
 
   # Voice & Video Call Relay (TURN/STUN, E2EE)
   turn_server:
-    image: havfo/coturn:latest
+    image: coturn/coturn:latest
     container_name: hypersend_turn
     restart: unless-stopped
     ports:
