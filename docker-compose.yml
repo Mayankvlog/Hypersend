@@ -93,9 +93,7 @@ services:
       - net.core.somaxconn=65535
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/mayankvlog/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
     ports:
@@ -150,7 +148,6 @@ services:
       SENDER_NAME: ${SENDER_NAME:-Zaply Support}
     volumes:
       - ./data:/data
-      - ./backend/uploads:/app/uploads
       - redis_data:/redis
     depends_on:
       redis:
@@ -170,13 +167,7 @@ services:
         max-file: "3"
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        # SECURITY: Use production URL for nginx proxy routing
-        API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}     
-        VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
+    image: ghcr.io/mayankvlog/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
