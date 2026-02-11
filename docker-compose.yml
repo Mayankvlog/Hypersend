@@ -20,7 +20,7 @@ services:
       - websocket
       - crypto_worker
       - e2ee_service
-      - redis_cluster
+      - redis
     networks:
       - hypersend_network
     healthcheck:
@@ -36,7 +36,7 @@ services:
       - "hypersend.redis-cache=required"
     environment:
       - NGINX_ALLOW_UNSAFE=true
-      - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
+      - NGINX_API_BASE_URL=${API_BASE_URL:-http://localhost:8000/api/v1}
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
@@ -62,17 +62,16 @@ services:
       - NGINX_E2EE_MAX_BLOB_SIZE=100M  # 100MB encrypted blobs
       - NGINX_E2EE_RATE_LIMIT=100  # 100 E2EE requests/sec
       - NGINX_E2EE_DEVICE_RATE_LIMIT=20  # 20 device requests/sec
-      # Production domain configuration
-      - DOMAIN_NAME=zaply.in.net
-      - SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
-      - SSL_KEY_PATH=/etc/letsencrypt/live/zaply.in.net/privkey.pem
+      # Development domain configuration
+      - DOMAIN_NAME=localhost
+      - SSL_CERT_PATH=/etc/letsencrypt/live/localhost/fullchain.pem
+      - SSL_KEY_PATH=/etc/letsencrypt/live/localhost/privkey.pem
 
   # WhatsApp-style Backend API (Stateless, Horizontal Scaling)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_backend
     restart: unless-stopped
     environment:
       # WhatsApp-grade environment
@@ -126,7 +125,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_websocket
     restart: unless-stopped
     command: ["python", "-m", "uvicorn", "backend.websocket:app", "--host", "0.0.0.0", "--port", "8001"]
     environment:
@@ -171,7 +169,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_e2ee_service
     restart: unless-stopped
     command: ["python", "-m", "uvicorn", "e2ee_service.app:app", "--host", "0.0.0.0", "--port", "8002"]
     environment:
@@ -229,7 +226,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_worker
     restart: unless-stopped
     command: ["python", "-m", "celery", "worker", "-A", "backend.workers.celery_app", "--loglevel=info", "--concurrency=4"]
     environment:
@@ -276,7 +272,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_crypto_worker
     restart: unless-stopped
     command: ["python", "-m", "celery", "worker", "-A", "backend.crypto_app", "--loglevel=info", "--concurrency=8"]
     environment:
@@ -428,7 +423,7 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      api:
+      backend:
         condition: service_healthy
     networks:
       - hypersend_network
@@ -589,7 +584,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_message_sync_worker
     restart: unless-stopped
     command: ["python", "-m", "workers.message_history_sync_worker"]
     environment:
@@ -628,7 +622,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_metadata_worker
     restart: unless-stopped
     command: ["python", "-m", "workers.metadata_aggregation_worker"]
     environment:
@@ -667,7 +660,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_relationship_worker
     restart: unless-stopped
     command: ["python", "-m", "workers.relationship_graph_worker"]
     environment:
@@ -706,7 +698,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hypersend_job_coordinator
     restart: unless-stopped
     command: ["python", "-m", "workers.job_coordinator"]
     environment:
