@@ -22,7 +22,7 @@ pycryptodome==3.20.0
 
 # End-to-End Encryption (E2EE)
 # signal-protocol==0.2.2  # Requires Rust compiler - commented out for basic deployment
-protobuf==5.28.3
+protobuf==5.29.6
 
 # File Handling
 python-multipart==0.0.20
