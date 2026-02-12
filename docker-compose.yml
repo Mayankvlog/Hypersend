@@ -1,3 +1,4 @@
+version: '3.8'
 
 services:
   nginx:
@@ -10,11 +11,11 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /home/ubuntu/hypersend/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/lib/letsencrypt:/var/lib/letsencrypt
       - nginx_cache:/var/cache/nginx
-      - /home/ubuntu/hypersend/data/files:/data/files:ro
+      - ./data/files:/data/files:ro
     logging:
       driver: "json-file"
       options:
@@ -88,7 +89,7 @@ services:
 
   backend:
     build:
-      context: /home/ubuntu/hypersend/backend
+      context: ./backend
       dockerfile: Dockerfile
     container_name: hypersend_backend
     restart: unless-stopped
@@ -134,7 +135,7 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
       SENDER_NAME: ${SENDER_NAME:-Hypersend Support}
     volumes:
-      - /home/ubuntu/hypersend/data:/data
+      - ./data:/data
       - redis_data:/redis
     depends_on:
       redis:
@@ -155,7 +156,7 @@ services:
 
   frontend:
     build:
-      context: /home/ubuntu/hypersend/frontend
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: hypersend_frontend
     restart: unless-stopped
