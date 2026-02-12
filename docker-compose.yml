@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   nginx:
     image: nginx:alpine
@@ -21,11 +23,9 @@ services:
       - sh
       - -c
       - |
-        # Install openssl for certificate generation
         apk add --no-cache openssl;
-        
         if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
-          echo '[NGINX] Creating self-signed certificate for initial deployment...';
+          echo '[NGINX] Creating self-signed certificate...';
           mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
           openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
           cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
@@ -46,26 +46,19 @@ services:
       retries: 3
       start_period: 15s
     environment:
-      # Suppress SSL verification warnings for self-signed certs in dev
-      - NGINX_ALLOW_UNSAFE_SSL=true
-      - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
-      - NGINX_API_HOST=${API_HOST:-0.0.0.0}
-      - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
-      - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
-      # CRITICAL FIX: Add nginx timeout configurations for 40GB files
-      - NGINX_PROXY_READ_TIMEOUT=3600  # 1 hour for large file downloads
-      - NGINX_PROXY_SEND_TIMEOUT=3600  # 1 hour for large file uploads
-      - NGINX_PROXY_CONNECT_TIMEOUT=300  # 5 minutes for backend connection
-      - NGINX_CLIENT_BODY_TIMEOUT=3600  # 1 hour for client body upload
-      - NGINX_CLIENT_MAX_BODY_SIZE=45G  # Allow 40GB files + overhead
-      # Enhanced error handling configuration
-      - NGINX_ERROR_PAGE_TIMEOUT=30  # Error page timeout
-      - NGINX_MAX_RETRIES=7  # Maximum retry attempts
-      - NGINX_RETRY_DELAY=5  # Delay between retries
-      # Production domain configuration
-      - DOMAIN_NAME=zaply.in.net
-      - SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
-      - SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
+      NGINX_ALLOW_UNSAFE_SSL: true
+      NGINX_API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+      NGINX_API_HOST: ${API_HOST:-0.0.0.0}
+      NGINX_API_KEY: ${API_KEY:-hypersend_secure_api_key}
+      NGINX_API_SECRET: ${API_SECRET:-hypersend_secure_api_secret}
+      NGINX_PROXY_READ_TIMEOUT: 3600
+      NGINX_PROXY_SEND_TIMEOUT: 3600
+      NGINX_PROXY_CONNECT_TIMEOUT: 300
+      NGINX_CLIENT_BODY_TIMEOUT: 3600
+      NGINX_CLIENT_MAX_BODY_SIZE: 45G
+      DOMAIN_NAME: zaply.in.net
+      SSL_CERT_PATH: /etc/letsencrypt/live/zaply.in.net/fullchain.pem
+      SSL_KEY_PATH: /etc/letsencrypt/private/privkey.pem
 
   redis:
     image: redis:7.2-alpine
@@ -93,31 +86,20 @@ services:
       - net.core.somaxconn=65535
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      args:
-        DOCKERHUB_USERNAME: ${DOCKERHUB_USERNAME}
-        DOCKERHUB_TOKEN: ${DOCKERHUB_TOKEN}
+    image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
     ports:
       - "8000:8000"
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --loop uvloop --http httptools
     environment:
-      # ===== MONGODB ATLAS CONFIGURATION =====
-      # CRITICAL: Use MongoDB Atlas connection string for production
       MONGODB_ATLAS_ENABLED: ${MONGODB_ATLAS_ENABLED:-true}
       MONGODB_URI: ${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend}
-      
-      # ===== DATABASE CONFIGURATION =====
       MONGO_USER: ${MONGO_USER:-mayanllr0311_db_user}
       MONGO_PASSWORD: ${MONGO_PASSWORD:-JBkAZin8lytTK6vg}
       MONGO_HOST: ${MONGO_HOST:-cluster0.rnj3vfd.mongodb.net}
       MONGO_PORT: 27017
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
-      
-      # ===== API CONFIGURATION =====
       SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 28800
@@ -133,16 +115,10 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
-      
-      # ===== CORS CONFIGURATION =====
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net}
-      
-      # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       USE_MOCK_DB: "False"
-      
-      # ===== EMAIL CONFIGURATION =====
       ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
@@ -173,12 +149,7 @@ services:
         max-file: "3"
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        DOCKERHUB_USERNAME: ${DOCKERHUB_USERNAME}
-        DOCKERHUB_TOKEN: ${DOCKERHUB_TOKEN}
+    image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
