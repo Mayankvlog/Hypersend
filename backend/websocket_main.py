@@ -18,6 +18,10 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+import threading
+import time
+import http.server
+import socketserver
 
 # Add current directory to Python path for Docker
 sys.path.insert(0, str(Path(__file__).parent))
@@ -44,10 +48,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+class SimpleHealthHandler(http.server.BaseHTTPRequestHandler):
+    """Simple HTTP health check handler"""
+    
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status": "healthy", "service": "websocket"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Suppress health check logs
+        pass
+
+def start_health_server():
+    """Start simple HTTP server for health checks"""
+    port = int(os.getenv("WS_HEALTH_PORT", "8002"))
+    with socketserver.TCPServer(("", port), SimpleHealthHandler) as httpd:
+        print(f"[WS_HEALTH] Health check server started on port {port}")
+        httpd.serve_forever()
+
 async def main():
     """Main WebSocket service entry point"""
     try:
         print("[WS_STARTUP] Starting WebSocket service...")
+        
+        # Start health check server in background thread
+        health_thread = threading.Thread(target=start_health_server, daemon=True)
+        health_thread.start()
         
         # Import Redis
         try:
