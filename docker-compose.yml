@@ -111,6 +111,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
     ports:
@@ -274,6 +275,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
@@ -313,6 +315,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: mayank035/hypersend-websocket:latest
     container_name: hypersend_websocket
     restart: unless-stopped
     ports:
