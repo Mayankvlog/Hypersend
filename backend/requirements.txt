@@ -21,7 +21,7 @@ cryptography==43.0.0
 pycryptodome==3.20.0
 
 # End-to-End Encryption (E2EE)
-signal-protocol==0.2.2
+# signal-protocol==0.2.2  # Requires Rust compiler - commented out for basic deployment
 protobuf==5.28.3
 
 # File Handling
@@ -45,12 +45,12 @@ python-dateutil>=2.8.0
 
 # E2EE Advanced Features
 libnacl>=1.8.1  # libsodium bindings for additional crypto
-nacl>=1.5.0  # PyNaCl for X25519 operations
+PyNaCl>=1.5.0  # PyNaCl for X25519 operations
 hkdf>=0.0.3  # HKDF key derivation
 
 # Voice & Video Call Encryption
-aiortc>=1.8.0  # WebRTC implementation
-av>=12.3.0  # Audio/Video frame handling
+# aiortc>=1.8.0  # WebRTC implementation - Requires complex dependencies
+# av>=12.3.0  # Audio/Video frame handling - Requires ffmpeg
 
 # Message Queue for offline delivery
 celery>=5.4.0  # Async task queue
@@ -72,7 +72,7 @@ limits>=3.10.0  # Rate limiting library
 websockets>=14.1  # WebSocket server
 
 # Security & Intrusion Detection
-defender>=20.0.0  # Security analysis (if available)
+# defender>=20.0.0  # Security analysis (if available) - Package not found
 
 # Testing
 pytest>=8.0.0

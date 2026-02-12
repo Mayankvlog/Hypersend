@@ -23,11 +23,11 @@ services:
       - -c
       - |
         apk add --no-cache openssl;
-        if [ ! -d '/etc/letsencrypt/live/YOUR_VPS_DOMAIN' ]; then
+        if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
           echo '[NGINX] Creating self-signed certificate...';
-          mkdir -p /etc/letsencrypt/live/YOUR_VPS_DOMAIN /etc/letsencrypt/private;
-          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/YOUR_VPS_DOMAIN/fullchain.pem -days 365 -nodes -subj '/CN=YOUR_VPS_DOMAIN';
-          cp /etc/letsencrypt/live/YOUR_VPS_DOMAIN/fullchain.pem /etc/letsencrypt/live/YOUR_VPS_DOMAIN/chain.pem;
+          mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
+          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
+          cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
           echo '[NGINX] Self-signed certificate created';
         fi;
         nginx -g 'daemon off;'
@@ -46,7 +46,7 @@ services:
       start_period: 15s
     environment:
       NGINX_ALLOW_UNSAFE_SSL: true
-      NGINX_API_BASE_URL: ${API_BASE_URL:-https://YOUR_VPS_DOMAIN/api/v1}
+      NGINX_API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
       NGINX_API_HOST: ${API_HOST:-0.0.0.0}
       NGINX_API_KEY: ${API_KEY:-hypersend_secure_api_key}
       NGINX_API_SECRET: ${API_SECRET:-hypersend_secure_api_secret}
@@ -55,8 +55,8 @@ services:
       NGINX_PROXY_CONNECT_TIMEOUT: 300
       NGINX_CLIENT_BODY_TIMEOUT: 3600
       NGINX_CLIENT_MAX_BODY_SIZE: 45G
-      DOMAIN_NAME: YOUR_VPS_DOMAIN
-      SSL_CERT_PATH: /etc/letsencrypt/live/YOUR_VPS_DOMAIN/fullchain.pem
+      DOMAIN_NAME: zaply.in.net
+      SSL_CERT_PATH: /etc/letsencrypt/live/zaply.in.net/fullchain.pem
       SSL_KEY_PATH: /etc/letsencrypt/private/privkey.pem
 
   redis:
@@ -115,8 +115,8 @@ services:
       DEBUG: "False"
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: ${API_BASE_URL:-https://YOUR_VPS_DOMAIN/api/v1}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://YOUR_VPS_DOMAIN}
+      API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://zaply.in.net}
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW_SECONDS: 60
       USE_MOCK_DB: "False"
@@ -124,10 +124,10 @@ services:
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@YOUR_VPS_DOMAIN}
+      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@zaply.in.net}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-dummy_app_password_configure_in_env}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@YOUR_VPS_DOMAIN}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
       SENDER_NAME: ${SENDER_NAME:-Hypersend Support}
     volumes:
       - ./data:/data

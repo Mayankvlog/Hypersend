@@ -31,7 +31,7 @@ class Settings:
     # Read MongoDB credentials from environment
     _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
     _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
-    _MONGO_HOST: str = os.getenv("MONGO_HOST", "localhost")
+    _MONGO_HOST: str = os.getenv("MONGO_HOST", "zaply.in.net")
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     
@@ -94,9 +94,9 @@ class Settings:
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment
-    # PROD: http://localhost:8000/api/v1 (requires DNS + SSL setup + certbot)
-    # DEV: Set API_BASE_URL=http://localhost:8080/api/v1 when port 80 unavailable
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+    # PROD: https://zaply.in.net/api/v1 (requires DNS + SSL setup + certbot)
+    # DEV: Set API_BASE_URL=https://zaply.in.net/api/v1 when port 80 unavailable
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -143,19 +143,20 @@ class Settings:
     # ENHANCED: Load from environment with secure defaults
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
+        # Production zaply.in.net origins
+        "https://zaply.in.net",
+        "https://www.zaply.in.net",
+        # Development / local defaults
         "http://localhost:3000",         # Local development
         "http://127.0.0.1:3000",       # Local development alternative
         "http://localhost:8000",       # Backend API
         "http://127.0.0.1:8000",      # Backend API alternative
+        # Docker internal names
         "http://hypersend_frontend:80",  # Docker internal: frontend container
         "http://hypersend_frontend",     # Docker internal: frontend (port 80 default)
         "http://frontend:80",            # Docker internal: frontend service
         "http://frontend",               # Docker internal: frontend (port 80 default)
         "http://hypersend_backend:8000", # Docker internal: backend for testing
-        "http://localhost:3000",         # Frontend development
-        "http://localhost:8000",         # Backend direct access
-        "http://127.0.0.1:3000",        # Alternative localhost
-        "http://127.0.0.1:8000",        # Alternative localhost
     ]
     
     # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production
@@ -181,7 +182,7 @@ class Settings:
                     docker_http_origins = []
                     
                     for origin in http_origins:
-                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'localhost:3000', '127.0.0.1:']):
+                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'zaply.in.net:3000', 'www.zaply.in.net:']):
                             docker_http_origins.append(origin)
                         else:
                             external_http_origins.append(origin)
