@@ -89,7 +89,7 @@ services:
 
   backend:
     build:
-      context: ${BACKEND_CONTEXT:-./backend}
+      context: ./backend
       dockerfile: Dockerfile
     container_name: hypersend_backend
     restart: unless-stopped
@@ -156,7 +156,7 @@ services:
 
   frontend:
     build:
-      context: ${FRONTEND_CONTEXT:-./frontend}
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: hypersend_frontend
     restart: unless-stopped
