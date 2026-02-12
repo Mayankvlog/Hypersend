@@ -840,7 +840,7 @@ async def lifespan(app: FastAPI):
                 print("[CRYPTO] Redis connection established")
                 
                 # Initialize cryptographic services
-                signal_protocol = SignalProtocol(redis_client)
+                signal_protocol = SignalProtocol()
                 multi_device_manager = MultiDeviceManager(redis_client)
                 delivery_manager = DeliveryManager(redis_client)
                 media_service = MediaEncryptionService(redis_client)

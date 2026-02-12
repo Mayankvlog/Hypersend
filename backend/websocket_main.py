@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""
+WebSocket Service Entry Point
+============================
+
+Dedicated WebSocket service for real-time message delivery.
+This service only handles WebSocket connections and does not
+run the full FastAPI application.
+
+Usage:
+    python websocket_main.py
+    uvicorn websocket_main:app --host 0.0.0.0 --port 8001
+"""
+
+import asyncio
+import logging
+import os
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Add current directory to Python path for Docker
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Load environment variables
+print("[WS_STARTUP] Loading environment variables...")
+env_paths = [
+    Path(__file__).parent / ".env",
+    Path(__file__).parent.parent / ".env"
+]
+
+for env_path in env_paths:
+    if env_path.exists():
+        print(f"[WS_STARTUP] Loading .env from: {env_path}")
+        load_dotenv(dotenv_path=env_path)
+        break
+else:
+    print("[WS_STARTUP] No .env file found, using environment variables")
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+async def main():
+    """Main WebSocket service entry point"""
+    try:
+        print("[WS_STARTUP] Starting WebSocket service...")
+        
+        # Import Redis
+        try:
+            import redis.asyncio as redis
+        except ImportError:
+            print("[WS_STARTUP] ERROR: Redis not available - websocket service requires Redis")
+            sys.exit(1)
+        
+        # Connect to Redis
+        redis_host = os.getenv("REDIS_HOST", "redis")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_password = os.getenv("REDIS_PASSWORD", "")
+        
+        print(f"[WS_STARTUP] Connecting to Redis at {redis_host}:{redis_port}")
+        
+        try:
+            if redis_password:
+                redis_client = redis.Redis(
+                    host=redis_host,
+                    port=redis_port,
+                    password=redis_password,
+                    decode_responses=True
+                )
+            else:
+                redis_client = redis.Redis(
+                    host=redis_host,
+                    port=redis_port,
+                    decode_responses=True
+                )
+            
+            # Test Redis connection
+            await redis_client.ping()
+            print("[WS_STARTUP] ✓ Redis connection successful")
+            
+        except Exception as e:
+            print(f"[WS_STARTUP] ✗ Redis connection failed: {e}")
+            sys.exit(1)
+        
+        # Import and create WebSocket server
+        try:
+            from websocket.delivery_handler import create_websocket_server
+            
+            ws_host = os.getenv("WS_HOST", "0.0.0.0")
+            ws_port = int(os.getenv("WS_PORT", "8001"))
+            
+            print(f"[WS_STARTUP] Starting WebSocket server on {ws_host}:{ws_port}")
+            
+            websocket_server = await create_websocket_server(
+                redis_client,
+                host=ws_host,
+                port=ws_port
+            )
+            
+            print(f"[WS_STARTUP] ✓ WebSocket server started successfully on port {ws_port}")
+            
+            # Keep the server running
+            print("[WS_STARTUP] WebSocket service is running... Press Ctrl+C to stop")
+            await websocket_server.wait_closed()
+            
+        except Exception as e:
+            print(f"[WS_STARTUP] ✗ Failed to start WebSocket server: {e}")
+            sys.exit(1)
+            
+    except KeyboardInterrupt:
+        print("\n[WS_STARTUP] WebSocket service stopped by user")
+    except Exception as e:
+        print(f"[WS_STARTUP] ✗ Unexpected error: {e}")
+        sys.exit(1)
+    finally:
+        # Cleanup Redis connection
+        if 'redis_client' in locals():
+            await redis_client.close()
+            print("[WS_STARTUP] Redis connection closed")
+
+if __name__ == "__main__":
+    asyncio.run(main())

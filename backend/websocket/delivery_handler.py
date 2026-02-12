@@ -66,7 +66,7 @@ class WebSocketDeliveryHandler:
         self.redis = redis_client
         self.delivery_manager = DeliveryManager(redis_client)
         self.device_manager = MultiDeviceManager(redis_client)
-        self.signal_protocol = SignalProtocol(redis_client)
+        self.signal_protocol = SignalProtocol()
         self.media_service = MediaEncryptionService(redis_client)
         
         # Active connections by device_id
