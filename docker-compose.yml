@@ -342,6 +342,16 @@ services:
       - E2EE_ENABLED=true
       - E2EE_MASTER_KEY=${E2EE_MASTER_KEY:-secure_e2ee_master_key_2025_fixed}
       
+      # AWS S3 Configuration
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-AKIAIOSFODNN7EXAMPLE}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - S3_BUCKET=${S3_BUCKET:-hypersend-temp}
+      
+      # TURN Server Configuration
+      - TURN_USERNAME=${TURN_USERNAME:-turnuser}
+      - TURN_PASSWORD=${TURN_PASSWORD:-turnpassword123}
+      
     depends_on:
       redis:
         condition: service_healthy
