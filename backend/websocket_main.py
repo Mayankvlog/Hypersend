@@ -113,7 +113,7 @@ async def main():
         print(f"[WS_STARTUP] Connecting to Redis at {redis_host}:{redis_port}")
         
         try:
-            if redis_password:
+            if redis_password and redis_password.strip():
                 redis_client = redis.Redis(
                     host=redis_host,
                     port=redis_port,

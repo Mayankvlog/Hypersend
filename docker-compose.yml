@@ -84,6 +84,7 @@ services:
       --cluster-enabled yes
       --cluster-config-file nodes.conf
       --cluster-node-timeout 5000
+      --requirepass ${REDIS_PASSWORD:-}
     volumes:
       - redis_data:/data
     environment:
@@ -91,7 +92,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "sh", "-c", "if [ -n \"${REDIS_PASSWORD}\" ]; then redis-cli -a ${REDIS_PASSWORD} ping; else redis-cli ping; fi"]
       interval: 10s
       timeout: 3s
       retries: 5
