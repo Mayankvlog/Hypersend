@@ -68,9 +68,21 @@ class SimpleHealthHandler(http.server.BaseHTTPRequestHandler):
 def start_health_server():
     """Start simple HTTP server for health checks"""
     port = int(os.getenv("WS_HEALTH_PORT", "8002"))
-    with socketserver.TCPServer(("", port), SimpleHealthHandler) as httpd:
+    try:
+        # Create socket server with reuse address
+        httpd = socketserver.TCPServer(("", port), SimpleHealthHandler)
+        httpd.allow_reuse_address = True
         print(f"[WS_HEALTH] Health check server started on port {port}")
         httpd.serve_forever()
+    except OSError as e:
+        if e.errno == 48:  # Address already in use
+            print(f"[WS_HEALTH] Port {port} already in use, skipping health server")
+        else:
+            print(f"[WS_HEALTH] Health server OS error: {e}")
+            sys.exit(1)
+    except Exception as e:
+        print(f"[WS_HEALTH] Health server error: {e}")
+        sys.exit(1)
 
 async def main():
     """Main WebSocket service entry point"""
@@ -78,8 +90,13 @@ async def main():
         print("[WS_STARTUP] Starting WebSocket service...")
         
         # Start health check server in background thread
-        health_thread = threading.Thread(target=start_health_server, daemon=True)
-        health_thread.start()
+        try:
+            health_thread = threading.Thread(target=start_health_server, daemon=True)
+            health_thread.start()
+            print("[WS_STARTUP] Health check server thread started")
+        except Exception as e:
+            print(f"[WS_STARTUP] Warning: Failed to start health server: {e}")
+            print("[WS_STARTUP] Continuing without health check server...")
         
         # Import Redis
         try:
@@ -135,9 +152,17 @@ async def main():
             
             print(f"[WS_STARTUP] ✓ WebSocket server started successfully on port {ws_port}")
             
-            # Keep the server running
+            # Keep the server running indefinitely
             print("[WS_STARTUP] WebSocket service is running... Press Ctrl+C to stop")
-            await websocket_server.wait_closed()
+            try:
+                # Keep the event loop alive
+                while True:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                print("[WS_STARTUP] WebSocket service cancelled")
+            finally:
+                websocket_server.close()
+                await websocket_server.wait_closed()
             
         except Exception as e:
             print(f"[WS_STARTUP] ✗ Failed to start WebSocket server: {e}")
