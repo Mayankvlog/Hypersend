@@ -311,59 +311,58 @@ services:
   # =============================================================================
   # WebSocket Service - Real-time Multi-device Support
   # =============================================================================
-  websocket:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    image: mayank035/hypersend-websocket:latest
-    container_name: hypersend_websocket
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8001 --workers 20 --loop uvloop --http httptools
-    environment:
-      # Core WebSocket Configuration
-      - SECRET_KEY=${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - BACKEND_URL=http://backend:8000
-      - MAX_CONNECTIONS=10000
-      - WEBSOCKET_SERVICE=true
+  # websocket:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   image: mayank035/hypersend-websocket:latest
+  #   container_name: hypersend_websocket
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8001:8001"
+  #   command: uvicorn backend.main:app --host 0.0.0.0 --port 8001 --workers 1
+  #   environment:
+  #     # Core WebSocket Configuration
+  #     - SECRET_KEY=${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
+  #     - REDIS_HOST=redis
+  #     - REDIS_PORT=6379
+  #     - BACKEND_URL=http://backend:8000
+  #     - MAX_CONNECTIONS=10000
+  #     - WEBSOCKET_SERVICE=true
       
-      # Database Configuration (same as backend)
-      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
-      - MONGODB_ATLAS_ENABLED=true
+  #     # Database Configuration (same as backend)
+  #     - MONGODB_URI=${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
+  #     - MONGODB_ATLAS_ENABLED=true
       
-      # E2EE Configuration
-      - E2EE_ENABLED=true
-      - E2EE_MASTER_KEY=${E2EE_MASTER_KEY:-secure_e2ee_master_key_2025_fixed}
+  #     # E2EE Configuration
+  #     - E2EE_ENABLED=true
+  #     - E2EE_MASTER_KEY=${E2EE_MASTER_KEY:-secure_e2ee_master_key_2025_fixed}
       
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8001/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.25'
-        reservations:
-          memory: 256M
-          cpus: '0.1'
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #     backend:
+  #       condition: service_healthy
+  #   networks:
+  #     - hypersend_network
+  #   healthcheck:
+  #     test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8001/health || exit 1"]
+  #     interval: 60s
+  #     timeout: 30s
+  #     retries: 5
+  #     start_period: 60s
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M
+  #         cpus: '0.25'
+        #         memory: 256M
+  #         cpus: '0.1'
 
   # =============================================================================
   # TURN Server for Voice/Video Calls (coturn)
