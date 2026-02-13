@@ -757,18 +757,12 @@ async def lifespan(app: FastAPI):
         print("[VALIDATION] Checking required security environment variables...")
         required_env_vars = {
             'SECRET_KEY': 'Secret key for JWT token signing',
-            'E2EE_ENABLED': 'End-to-end encryption enabled flag',
-            'E2EE_ALGORITHM': 'E2EE algorithm (e.g., signal_protocol)',
-            'E2EE_KEY_ROTATION_DAYS': 'E2EE key rotation period in days',
-            'E2EE_PREKEY_EXPIRATION_DAYS': 'E2EE prekey expiration period in days',
-            'E2EE_MESSAGE_COUNTER_WINDOW': 'E2EE message counter window size',
-            'E2EE_FORWARD_SECRECYCY_ENABLED': 'Forward secrecy enabled flag',
-            'E2EE_POST_COMPROMISE_SECURITY': 'Post-compromise security enabled flag'
         }
         
         missing_vars = []
         for var_name, description in required_env_vars.items():
             value = os.getenv(var_name)
+            print(f"[DEBUG] Environment var {var_name} = '{value}' (type: {type(value)})")
             if not value or (isinstance(value, str) and not value.strip()):
                 missing_vars.append(f"{var_name} ({description})")
         

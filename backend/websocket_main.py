@@ -124,6 +124,7 @@ async def main():
                 redis_client = redis.Redis(
                     host=redis_host,
                     port=redis_port,
+                    password=None,  # Explicitly pass None instead of empty string
                     decode_responses=True
                 )
             

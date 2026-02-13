@@ -76,12 +76,7 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: >
-      redis-server 
-      --appendonly no 
-      --save "" 
-      --maxmemory 2gb 
-      --maxmemory-policy allkeys-lru
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "2gb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data:/data
     environment:
@@ -124,13 +119,13 @@ services:
       - UPLOAD_TOKEN_EXPIRE_HOURS=480
       
       # E2EE Configuration
-      - E2EE_ENABLED=${E2EE_ENABLED}
-      - E2EE_ALGORITHM=${E2EE_ALGORITHM}
-      - E2EE_KEY_ROTATION_DAYS=${E2EE_KEY_ROTATION_DAYS}
-      - E2EE_PREKEY_EXPIRATION_DAYS=${E2EE_PREKEY_EXPIRATION_DAYS}
-      - E2EE_MESSAGE_COUNTER_WINDOW=${E2EE_MESSAGE_COUNTER_WINDOW}
-      - E2EE_FORWARD_SECRECYCY_ENABLED=${E2EE_FORWARD_SECRECYCY_ENABLED}
-      - E2EE_POST_COMPROMISE_SECURITY=${E2EE_POST_COMPROMISE_SECURITY}
+      - E2EE_ENABLED=true
+      - E2EE_ALGORITHM=signal_protocol
+      - E2EE_KEY_ROTATION_DAYS=7
+      - E2EE_PREKEY_EXPIRATION_DAYS=30
+      - E2EE_MESSAGE_COUNTER_WINDOW=1024
+      - E2EE_FORWARD_SECRECYCY_ENABLED=true
+      - E2EE_POST_COMPROMISE_SECURITY=true
       
       # Device Management
       - DEVICE_VERIFICATION_REQUIRED=true
@@ -324,7 +319,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_PASSWORD=
       - WS_HOST=0.0.0.0
       - WS_PORT=8001
       - WS_HEALTH_PORT=8002
@@ -338,7 +333,13 @@ services:
       
       # E2EE Configuration
       - E2EE_ENABLED=true
-      - E2EE_MASTER_KEY=${E2EE_MASTER_KEY:-secure_e2ee_master_key_2025_fixed}
+      - E2EE_ALGORITHM=signal_protocol
+      - E2EE_KEY_ROTATION_DAYS=7
+      - E2EE_PREKEY_EXPIRATION_DAYS=30
+      - E2EE_MESSAGE_COUNTER_WINDOW=1024
+      - E2EE_FORWARD_SECRECYCY_ENABLED=true
+      - E2EE_POST_COMPROMISE_SECURITY=true
+      - E2EE_MASTER_KEY=secure_e2ee_master_key_2025_fixed
       
       # AWS S3 Configuration
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-AKIAIOSFODNN7EXAMPLE}
