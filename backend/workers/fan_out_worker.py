@@ -46,6 +46,21 @@ celery_app.config_from_object({
     'task_soft_time_limit': 240,  # 4 minutes soft limit
     'worker_prefetch_multiplier': 1,
     'worker_max_tasks_per_child': 1000,
+    'broker_transport_options': {
+        'master_name': 'mymaster',
+        'visibility_timeout': 3600,
+        'retry_policy': {
+            'timeout': 5.0
+        },
+        'socket_keepalive': True,
+        'socket_keepalive_options': {},
+    },
+    'result_backend_transport_options': {
+        'master_name': 'mymaster',
+        'retry_policy': {
+            'timeout': 5.0
+        }
+    }
 })
 
 @dataclass
@@ -75,6 +90,18 @@ class MessageFanOutWorker:
     
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
+        # Ensure we're not using cluster mode
+        if hasattr(redis_client, 'cluster'):
+            logger.warning("Detected Redis cluster client, switching to standalone mode")
+            self.redis = redis.Redis(
+                host='redis',
+                port=6379,
+                db=0,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                retry_on_timeout=True
+            )
         self.delivery_manager = DeliveryManager(redis_client)
         self.device_manager = MultiDeviceManager(redis_client)
         self.media_service = MediaEncryptionService(redis_client)
@@ -390,8 +417,17 @@ def fan_out_message_task(self, task_data: Dict[str, any]):
     try:
         task = FanOutTask.from_dict(task_data)
         
-        # Process the task
-        worker = MessageFanOutWorker(redis.Redis())
+        # Process the task with standalone Redis connection
+        redis_client = redis.Redis(
+            host='redis',
+            port=6379,
+            db=0,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True
+        )
+        worker = MessageFanOutWorker(redis_client)
         asyncio.run(worker._process_single_task(task))
         
         return {'status': 'completed', 'task_id': task.task_id}
@@ -407,7 +443,15 @@ def fan_out_message_task(self, task_data: Dict[str, any]):
 def cleanup_expired_tasks():
     """Clean up expired fan-out tasks"""
     try:
-        redis_client = redis.Redis()
+        redis_client = redis.Redis(
+            host='redis',
+            port=6379,
+            db=0,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True
+        )
         
         # Get all fan-out tasks
         task_keys = redis_client.keys("fanout_task:*")
@@ -445,7 +489,15 @@ def setup_periodic_tasks(sender, **kwargs):
 # Worker entry point
 async def main():
     """Main entry point for fan-out worker"""
-    redis_client = redis.Redis()
+    redis_client = redis.Redis(
+        host='redis',
+        port=6379,
+        db=0,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+        retry_on_timeout=True
+    )
     worker = MessageFanOutWorker(redis_client)
     
     logger.info("Starting WhatsApp-grade message fan-out worker")

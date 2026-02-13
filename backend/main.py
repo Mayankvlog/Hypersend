@@ -824,7 +824,7 @@ async def lifespan(app: FastAPI):
             fan_out_worker = None
         else:
             try:
-                # Initialize Redis client for crypto services
+                # Initialize Redis client for crypto services (disable cluster mode)
                 redis_client = redis.Redis(
                     host=settings.REDIS_HOST,
                     port=settings.REDIS_PORT,
@@ -833,6 +833,8 @@ async def lifespan(app: FastAPI):
                     socket_connect_timeout=5,
                     socket_timeout=5,
                     retry_on_timeout=True,
+                    # Disable cluster mode explicitly
+                    connection_pool_kwargs={'max_connections': 10}
                 )
                 
                 # Test Redis connection

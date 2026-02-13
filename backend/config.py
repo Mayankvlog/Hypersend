@@ -150,7 +150,7 @@ class Settings:
     
     # Redis Configuration (WhatsApp-style: Ephemeral Messages Only)
     # MANDATORY: All settings enforce in-memory only, NO persistence
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "redis")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))

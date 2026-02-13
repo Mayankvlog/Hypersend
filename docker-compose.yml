@@ -68,7 +68,7 @@ services:
         max-file: "3"
 
   # =============================================================================
-  # Redis Cluster - Ephemeral Cache for Real-time Operations
+  # Redis Standalone - Ephemeral Cache for Real-time Operations
   # =============================================================================
   redis:
     image: redis:7.2-alpine
@@ -82,9 +82,6 @@ services:
       --save "" 
       --maxmemory 2gb 
       --maxmemory-policy allkeys-lru
-      --cluster-enabled yes
-      --cluster-config-file nodes.conf
-      --cluster-node-timeout 5000
       --requirepass ${REDIS_PASSWORD:-}
     volumes:
       - redis_data:/data
