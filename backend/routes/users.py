@@ -49,8 +49,7 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
     
     # In debug mode, allow zaply.in.net with validation
     if request_origin:
-        if (request_origin.startswith("http://zaply.in.net") or
-            request_origin.startswith("https://zaply.in.net")):
+        if request_origin.startswith("https://zaply.in.net"):
             return request_origin
         elif request_origin in settings.CORS_ORIGINS:
             return request_origin

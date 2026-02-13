@@ -1291,8 +1291,6 @@ if settings.DEBUG:
     cors_origins.extend([
         "https://zaply.in.net",
         "https://www.zaply.in.net",
-        "http://zaply.in.net:3000",
-        "http://zaply.in.net:8000",
         "https://zaply.in.net:3000",
         "https://zaply.in.net:8000",
     ])
@@ -1338,8 +1336,6 @@ async def handle_options_request(full_path: str, request: Request):
         # Development environments - more permissive for testing
         if settings.DEBUG:
             allowed_origins.extend([
-                "http://zaply.in.net:8000",
-                "http://zaply.in.net:3000",
                 "https://zaply.in.net:8000",
                 "https://zaply.in.net:3000",
                 # Docker environments

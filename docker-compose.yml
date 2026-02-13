@@ -196,7 +196,7 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://zaply.in.net,http://zaply.in.net}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net}
       - RATE_LIMIT_PER_USER=1000
       - RATE_LIMIT_WINDOW_SECONDS=3600
       
