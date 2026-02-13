@@ -753,6 +753,35 @@ async def lifespan(app: FastAPI):
             print(f"[ERROR] Unexpected validation error: {str(e)}")
             raise
         
+        # Validate required environment variables for security and E2EE
+        print("[VALIDATION] Checking required security environment variables...")
+        required_env_vars = {
+            'SECRET_KEY': 'Secret key for JWT token signing',
+            'E2EE_ENABLED': 'End-to-end encryption enabled flag',
+            'E2EE_ALGORITHM': 'E2EE algorithm (e.g., signal_protocol)',
+            'E2EE_KEY_ROTATION_DAYS': 'E2EE key rotation period in days',
+            'E2EE_PREKEY_EXPIRATION_DAYS': 'E2EE prekey expiration period in days',
+            'E2EE_MESSAGE_COUNTER_WINDOW': 'E2EE message counter window size',
+            'E2EE_FORWARD_SECRECYCY_ENABLED': 'Forward secrecy enabled flag',
+            'E2EE_POST_COMPROMISE_SECURITY': 'Post-compromise security enabled flag'
+        }
+        
+        missing_vars = []
+        for var_name, description in required_env_vars.items():
+            value = os.getenv(var_name)
+            if not value or (isinstance(value, str) and not value.strip()):
+                missing_vars.append(f"{var_name} ({description})")
+        
+        if missing_vars:
+            error_msg = f"[ERROR] CRITICAL: Missing required environment variables:\n"
+            for var in missing_vars:
+                error_msg += f"  - {var}\n"
+            error_msg += "Deployment failed: Required security variables must be provided at deploy time."
+            print(error_msg)
+            raise RuntimeError(error_msg)
+        
+        print("[VALIDATION] ✓ All required security environment variables are configured")
+        
         # Configure S3 ephemeral storage lifecycle (WhatsApp-style: 24h TTL + ACK delete)
         storage_mode = getattr(settings, "STORAGE_MODE", "ephemeral")
         s3_lifecycle_enabled = getattr(settings, "S3_LIFECYCLE_ENABLED", "true").lower() in ("true", "1")
@@ -851,14 +880,33 @@ async def lifespan(app: FastAPI):
                 media_service = MediaEncryptionService(redis_client)
                 fan_out_worker = MessageFanOutWorker(redis_client)
             
-                # Start WebSocket server
-                print("[WS] Starting WhatsApp-grade WebSocket server...")
-                websocket_server = await create_websocket_server(
-                    redis_client,
-                    host="0.0.0.0",
-                    port=8001
-                )
-                print("[WS] WebSocket server started on port 8001")
+                # Start WebSocket server with configurable port
+                # Safely parse WS_PORT environment variable with validation
+                ws_port = 8001  # default port
+                ws_port_str = os.getenv('WS_PORT', '8001')
+                try:
+                    if ws_port_str and str(ws_port_str).strip().isdigit():
+                        ws_port = int(ws_port_str)
+                    else:
+                        raise ValueError(f"Invalid WS_PORT value: {ws_port_str}")
+                except (ValueError, TypeError) as e:
+                    logger_obj = logging.getLogger(__name__)
+                    logger_obj.warning(f"[WS] Failed to parse WS_PORT environment variable: {e}. Using default port {ws_port}")
+                    ws_port = 8001
+                print(f"[WS] Starting WhatsApp-grade WebSocket server on port {ws_port}...")
+                try:
+                    websocket_server = await create_websocket_server(
+                        redis_client,
+                        host="0.0.0.0",
+                        port=ws_port
+                    )
+                    print(f"[WS] WebSocket server started on port {ws_port}")
+                except OSError as e:
+                    if "address already in use" in str(e).lower():
+                        print(f"[WS] WARNING: Port {ws_port} already in use, continuing without WebSocket server")
+                        websocket_server = None
+                    else:
+                        raise
                 
                 # Start background fan-out worker
                 print("[FANOUT] Starting background fan-out worker...")
@@ -915,7 +963,7 @@ async def lifespan(app: FastAPI):
             app.state.fan_out_task.cancel()
             print("[CRYPTO] Fan-out worker stopped")
         
-        if hasattr(app.state, 'websocket_server'):
+        if hasattr(app.state, 'websocket_server') and app.state.websocket_server:
             app.state.websocket_server.close()
             await app.state.websocket_server.wait_closed()
             print("[WS] WebSocket server stopped")

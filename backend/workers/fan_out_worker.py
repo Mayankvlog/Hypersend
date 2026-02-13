@@ -17,6 +17,7 @@ import asyncio
 import json
 import time
 import logging
+import os
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -89,19 +90,46 @@ class MessageFanOutWorker:
     """WhatsApp-grade message fan-out worker"""
     
     def __init__(self, redis_client: redis.Redis):
-        self.redis = redis_client
-        # Ensure we're not using cluster mode
+        # Get Redis configuration from environment
+        redis_host = os.getenv('REDIS_HOST', 'redis')
+        redis_port = int(os.getenv('REDIS_PORT', 6379))
+        redis_password = os.getenv('REDIS_PASSWORD', '')
+        redis_db = int(os.getenv('REDIS_DB', 0))
+        
+        # Ensure we're not using cluster mode and use proper authentication
         if hasattr(redis_client, 'cluster'):
             logger.warning("Detected Redis cluster client, switching to standalone mode")
             self.redis = redis.Redis(
-                host='redis',
-                port=6379,
-                db=0,
+                host=redis_host,
+                port=redis_port,
+                password=redis_password if redis_password else None,
+                db=redis_db,
                 decode_responses=True,
                 socket_connect_timeout=5,
                 socket_timeout=5,
                 retry_on_timeout=True
             )
+        else:
+            # Use the provided client but ensure it has proper authentication
+            self.redis = redis_client
+            # Check if the connection pool has a password set
+            connection_pool = getattr(self.redis, "connection_pool", None)
+            has_password = False
+            if connection_pool and hasattr(connection_pool, "connection_kwargs"):
+                has_password = connection_pool.connection_kwargs.get("password") is not None
+            
+            if redis_password and not has_password:
+                # Reconnect with password if not already authenticated
+                self.redis = redis.Redis(
+                    host=redis_host,
+                    port=redis_port,
+                    password=redis_password,
+                    db=redis_db,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
+                    retry_on_timeout=True
+                )
         self.delivery_manager = DeliveryManager(redis_client)
         self.device_manager = MultiDeviceManager(redis_client)
         self.media_service = MediaEncryptionService(redis_client)
@@ -134,43 +162,86 @@ class MessageFanOutWorker:
                 await asyncio.sleep(self.poll_interval)
                 
             except Exception as e:
-                logger.error(f"Error in fan-out worker: {e}")
-                await asyncio.sleep(5)  # Wait before retrying
+                error_msg = str(e).lower()
+                if "authentication required" in error_msg or "noauth" in error_msg:
+                    logger.error(f"Redis authentication failed in fan-out worker main loop: {e}")
+                    # Wait much longer for authentication issues
+                    await asyncio.sleep(60)
+                elif "connection" in error_msg or "redis" in error_msg:
+                    logger.error(f"Redis connection error in fan-out worker main loop: {e}")
+                    # Wait longer for connection issues
+                    await asyncio.sleep(15)
+                else:
+                    logger.error(f"Unexpected error in fan-out worker main loop: {e}")
+                    await asyncio.sleep(5)
     
     async def _process_priority_queue(self, priority: str):
         """Process tasks from a specific priority queue"""
-        queue_key = self.queues[priority]
-        
-        # Get batch of tasks
-        tasks = await self.redis.lrange(queue_key, 0, self.batch_size - 1)
-        
-        if not tasks:
-            return
-        
-        # Remove processed tasks from queue
-        await self.redis.ltrim(queue_key, len(tasks), -1)
-        
-        # Process tasks concurrently
-        semaphore = asyncio.Semaphore(self.max_concurrent_tasks)
-        processing_tasks = []
-        
-        for task_data in tasks:
-            task = FanOutTask.from_dict(json.loads(task_data))
+        try:
+            queue_key = self.queues[priority]
             
-            # Check if task is ready for processing
-            if task.next_retry_at and task.next_retry_at > time.time():
-                # Re-queue task for later
-                await self._requeue_task(task, priority)
-                continue
+            # Atomically dequeue batch of tasks
+            # Try LMPOP first (Redis 7+), fall back to LPOP loop for earlier versions
+            tasks = []
+            try:
+                # LMPOP is atomic and pops up to batch_size items from the left
+                result = await self.redis.lmpop(self.batch_size, queue_key)
+                if result:
+                    # result is (key, list_of_items)
+                    tasks = result[1] if len(result) > 1 else []
+            except Exception as lmpop_error:
+                # Fallback to LPOP loop for Redis < 7.0
+                logger.debug(f"LMPOP not available or failed: {lmpop_error}, using LPOP loop")
+                tasks = []
+                for _ in range(self.batch_size):
+                    try:
+                        task_data = await self.redis.lpop(queue_key)
+                        if task_data:
+                            tasks.append(task_data)
+                        else:
+                            break
+                    except Exception as lpop_error:
+                        logger.error(f"LPOP failed: {lpop_error}")
+                        break
             
-            # Process task
-            processing_tasks.append(
-                self._process_task_with_semaphore(semaphore, task)
-            )
-        
-        # Wait for all tasks to complete
-        if processing_tasks:
-            await asyncio.gather(*processing_tasks, return_exceptions=True)
+            if not tasks:
+                return
+            
+            # Process tasks concurrently
+            semaphore = asyncio.Semaphore(self.max_concurrent_tasks)
+            processing_tasks = []
+            
+            for task_data in tasks:
+                task = FanOutTask.from_dict(json.loads(task_data))
+                
+                # Check if task is ready for processing
+                if task.next_retry_at and task.next_retry_at > time.time():
+                    # Re-queue task for later
+                    await self._requeue_task(task, priority)
+                    continue
+                
+                # Process task
+                processing_tasks.append(
+                    self._process_task_with_semaphore(semaphore, task)
+                )
+            
+            # Wait for all tasks to complete
+            if processing_tasks:
+                await asyncio.gather(*processing_tasks, return_exceptions=True)
+                
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "authentication required" in error_msg or "noauth" in error_msg:
+                logger.error(f"Redis authentication failed in fan-out worker: {e}")
+                # Don't retry authentication errors immediately - wait longer
+                await asyncio.sleep(30)
+            elif "connection" in error_msg or "redis" in error_msg:
+                logger.error(f"Redis connection error in fan-out worker: {e}")
+                # Wait longer for connection issues
+                await asyncio.sleep(10)
+            else:
+                logger.error(f"Error processing priority queue {priority}: {e}")
+                await asyncio.sleep(1)
     
     async def _process_task_with_semaphore(self, semaphore: asyncio.Semaphore, task: FanOutTask):
         """Process task with semaphore to limit concurrency"""
@@ -418,10 +489,16 @@ def fan_out_message_task(self, task_data: Dict[str, any]):
         task = FanOutTask.from_dict(task_data)
         
         # Process the task with standalone Redis connection
+        redis_host = os.getenv('REDIS_HOST', 'redis')
+        redis_port = int(os.getenv('REDIS_PORT', 6379))
+        redis_password = os.getenv('REDIS_PASSWORD', '')
+        redis_db = int(os.getenv('REDIS_DB', 0))
+        
         redis_client = redis.Redis(
-            host='redis',
-            port=6379,
-            db=0,
+            host=redis_host,
+            port=redis_port,
+            password=redis_password if redis_password else None,
+            db=redis_db,
             decode_responses=True,
             socket_connect_timeout=5,
             socket_timeout=5,
@@ -443,10 +520,17 @@ def fan_out_message_task(self, task_data: Dict[str, any]):
 def cleanup_expired_tasks():
     """Clean up expired fan-out tasks"""
     try:
+        # Get Redis configuration from environment
+        redis_host = os.getenv('REDIS_HOST', 'redis')
+        redis_port = int(os.getenv('REDIS_PORT', 6379))
+        redis_password = os.getenv('REDIS_PASSWORD', '')
+        redis_db = int(os.getenv('REDIS_DB', 0))
+        
         redis_client = redis.Redis(
-            host='redis',
-            port=6379,
-            db=0,
+            host=redis_host,
+            port=redis_port,
+            password=redis_password if redis_password else None,
+            db=redis_db,
             decode_responses=True,
             socket_connect_timeout=5,
             socket_timeout=5,
@@ -489,10 +573,17 @@ def setup_periodic_tasks(sender, **kwargs):
 # Worker entry point
 async def main():
     """Main entry point for fan-out worker"""
+    # Get Redis configuration from environment
+    redis_host = os.getenv('REDIS_HOST', 'redis')
+    redis_port = int(os.getenv('REDIS_PORT', 6379))
+    redis_password = os.getenv('REDIS_PASSWORD', '')
+    redis_db = int(os.getenv('REDIS_DB', 0))
+    
     redis_client = redis.Redis(
-        host='redis',
-        port=6379,
-        db=0,
+        host=redis_host,
+        port=redis_port,
+        password=redis_password if redis_password else None,
+        db=redis_db,
         decode_responses=True,
         socket_connect_timeout=5,
         socket_timeout=5,
