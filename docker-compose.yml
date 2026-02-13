@@ -78,14 +78,14 @@ services:
       - "127.0.0.1:6379:6379"  # Bind to localhost only for security
     command: >
       sh -c "
-      redis-server \
-        --appendonly no \
-        --save '' \
-        --maxmemory 2gb \
-        --maxmemory-policy allkeys-lru \
-        --requirepass $$REDIS_PASSWORD \
-        --tcp-keepalive 300 \
-        --timeout 0
+      echo 'requirepass ${REDIS_PASSWORD}' > /tmp/redis.conf &&
+      echo 'appendonly no' >> /tmp/redis.conf &&
+      echo 'save \"\"' >> /tmp/redis.conf &&
+      echo 'maxmemory 2gb' >> /tmp/redis.conf &&
+      echo 'maxmemory-policy allkeys-lru' >> /tmp/redis.conf &&
+      echo 'tcp-keepalive 300' >> /tmp/redis.conf &&
+      echo 'timeout 0' >> /tmp/redis.conf &&
+      redis-server /tmp/redis.conf
       "
     volumes:
       - redis_data:/data
@@ -94,7 +94,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "sh", "-c", "redis-cli -a $$REDIS_PASSWORD ping"]
+      test: ["CMD", "sh", "-c", "redis-cli -a ${REDIS_PASSWORD} ping"]
       interval: 10s
       timeout: 3s
       retries: 5
