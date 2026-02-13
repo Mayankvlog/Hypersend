@@ -91,8 +91,7 @@ class RedisCache:
                 socket_connect_timeout=5,
                 socket_timeout=5,
                 retry_on_timeout=True,
-                # Disable cluster mode
-                connection_pool_kwargs={'max_connections': 10}
+                max_connections=10
             )
             
             # Test connection
