@@ -401,7 +401,20 @@ class DoubleRatchet:
 class SignalProtocol:
     """Complete Signal Protocol implementation with WhatsApp-grade security"""
     
-    def __init__(self):
+    def __init__(self, redis_client=None):
+        """
+        Initialize Signal Protocol
+        
+        Args:
+            redis_client: Optional Redis client for distributed operations
+        """
+        self.redis_client = redis_client
+        
+        # Multi-worker safe initialization
+        self._worker_id = f"worker_{os.getpid()}_{int(time.time())}"
+        self._initialized = False
+        
+        # Protocol state
         self.identity_key: Optional[IdentityKeyPair] = None
         self.signed_pre_key: Optional[SignedPreKey] = None
         self.one_time_pre_keys: List[OneTimePreKey] = []
@@ -410,21 +423,42 @@ class SignalProtocol:
         self.group_sender_keys: Dict[str, bytes] = {}  # group_id -> sender_key
         self.message_counters: Dict[str, int] = {}  # device_id -> counter
         self.last_seen_keys: Dict[str, bytes] = {}  # device_id -> last_dh_public
+        
+        logger.info(f"[CRYPTO] SignalProtocol initialized for worker {self._worker_id}")
+        if self.redis_client:
+            logger.info("[CRYPTO] Redis client available for distributed crypto operations")
+        else:
+            logger.info("[CRYPTO] Running in standalone mode (no Redis)")
     
     def initialize(self) -> None:
         """Initialize protocol with new identity"""
-        self.identity_key = IdentityKeyPair.generate()
-        self.signed_pre_key = SignedPreKey.create(1, self.identity_key)
+        if self._initialized:
+            logger.warning(f"[CRYPTO] Protocol already initialized for worker {self._worker_id}")
+            return
         
-        # Generate one-time pre-keys
-        self.one_time_pre_keys = [
-            OneTimePreKey.generate(i) for i in range(100)
-        ]
-        
-        # Initialize counters
-        self.message_counters = {}
-        self.last_seen_keys = {}
-        self.session_states = {}
+        try:
+            logger.info(f"[CRYPTO] Initializing WhatsApp-grade cryptographic services for worker {self._worker_id}")
+            
+            self.identity_key = IdentityKeyPair.generate()
+            self.signed_pre_key = SignedPreKey.create(1, self.identity_key)
+            
+            # Generate one-time pre-keys
+            self.one_time_pre_keys = [
+                OneTimePreKey.generate(i) for i in range(100)
+            ]
+            
+            # Initialize counters
+            self.message_counters = {}
+            self.last_seen_keys = {}
+            self.session_states = {}
+            
+            self._initialized = True
+            logger.info(f"[CRYPTO] ✅ WhatsApp-grade cryptographic services initialized successfully")
+            logger.info(f"[CRYPTO] Generated identity key, signed pre-key, and {len(self.one_time_pre_keys)} one-time pre-keys")
+            
+        except Exception as e:
+            logger.error(f"[CRYPTO] ❌ Failed to initialize cryptographic services: {e}")
+            raise
     
     def get_bundle(self) -> X3DHBundle:
         """Get X3DH bundle for sharing"""
