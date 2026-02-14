@@ -6,6 +6,13 @@ class ApiConstants {
     defaultValue: 'https://zaply.in.net/api/v1',
   );
   
+  // Dynamic base URL with fallback logic for connectivity issues
+  static String get dynamicBaseUrl {
+    // Try primary URL first, then fallback alternatives if connection fails
+    // This will be overridden by connectivity check in ApiService
+    return baseUrl;
+  }
+  
   // Server base URL (without /api/v1) - for avatar images and static files
   static String get serverBaseUrl {
     final uri = Uri.tryParse(baseUrl);

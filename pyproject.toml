@@ -151,7 +151,7 @@ markers = [
 
 [tool.pytest-asyncio]
 mode = "auto"
-asyncio_default_fixture_scope = "function"
+# Note: asyncio_default_fixture_scope removed to avoid duplicate config warning
 
 # ========== DEEP CODE SCAN CONFIGURATION ==========
 [tool.code_scanner]

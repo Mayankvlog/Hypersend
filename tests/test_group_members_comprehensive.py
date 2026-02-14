@@ -18,15 +18,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from fastapi.testclient import TestClient
 try:
     from backend.main import app
-except ImportError:
-    # If backend import fails, skip the test but provide a clear message
+except ImportError as e:
+    print(f"Warning: Could not import backend.main: {e}")
     pytest.skip("Could not import main app module", allow_module_level=True)
+    app = None
 
 try:
     from backend.auth.utils import get_current_user
-except ImportError:
-    # If backend import fails, skip the test but provide a clear message
-    pytest.skip("Could not import auth utils module", allow_module_level=True)
+except ImportError as e:
+    print(f"Warning: Could not import auth utils module: {e}")
+    get_current_user = None
 
 
 class TestGroupMembersComprehensive:

@@ -37,9 +37,55 @@ class ApiService {
 
   // Token refresh will be handled by error interceptor
 
+  // Intelligent base URL selection with fallback logic
+  String _getOptimalBaseUrl() {
+    final urls = [
+      'https://zaply.in.net/api/v1',
+      'http://zaply.in.net/api/v1', 
+      'https://www.zaply.in.net/api/v1',
+    ];
+    
+    // For now, return the primary URL
+    // In a real implementation, you could test connectivity first
+    return urls.first;
+  }
+
+  // Check server connectivity before making requests
+  Future<bool> checkServerConnectivity() async {
+    final urls = [
+      'https://zaply.in.net/health',
+      'http://zaply.in.net/health', 
+      'https://www.zaply.in.net/health',
+    ];
+    
+    for (String url in urls) {
+      try {
+        _log('[CONNECTIVITY_CHECK] Testing: $url');
+        final response = await Dio().get(
+          url,
+          options: Options(
+            sendTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 10),
+            validateStatus: (status) => status == 200,
+          ),
+        );
+        if (response.statusCode == 200) {
+          _log('[CONNECTIVITY_CHECK] ✅ Server reachable at: $url');
+          return true;
+        }
+      } catch (e) {
+        _log('[CONNECTIVITY_CHECK] ❌ Failed: $url - $e');
+        continue;
+      }
+    }
+    
+    _log('[CONNECTIVITY_CHECK] ❌ All server endpoints unreachable');
+    return false;
+  }
+
   ApiService() {
     try {
-      String url = ApiConstants.baseUrl;
+      String url = _getOptimalBaseUrl();
       if (!url.endsWith('/')) {
         url += '/';
       }
@@ -439,62 +485,62 @@ class ApiService {
     return 'HTTP error';
   }
 
-  // Handle connection errors
+  // Handle connection errors with enhanced debugging
   static String _handleConnectionErrors(DioException error) {
     final message = error.message ?? '';
 
     if (message.contains('SocketException')) {
-      return 'Network error. Please check internet connection and ensure ${ApiConstants.serverBaseUrl} is accessible.';
+      return '🌐 Network error. Please check internet connection and server accessibility.';
     } else if (message.contains('Connection refused')) {
-      return 'Server at ${ApiConstants.serverBaseUrl} refused connection. Backend may be down.';
+      return '🚫 Server connection refused. The backend may be down or restarting.';
     } else if (message.contains('Connection timeout')) {
-      return 'Connection timeout. Server at ${ApiConstants.serverBaseUrl} is not responding.';
+      return '⏰ Connection timeout. Server is not responding. Please try again.';
     } else if (message.contains('HandshakeException')) {
-      return 'SSL/TLS certificate error. The server\'s security certificate may be invalid.';
+      return '🔒 SSL/TLS certificate error. Server security certificate may be invalid.';
     } else if (message.contains('No Internet connection')) {
-      return 'No internet connection. Please check your network settings.';
+      return '📶 No internet connection. Please check your network settings.';
     } else if (message.contains('Host is down')) {
-      return 'Server at ${ApiConstants.serverBaseUrl} is down. Please try again later.';
+      return '💥 Server is down. Please try again later.';
     } else if (message.contains('Network is unreachable')) {
-      return 'Network unreachable. Please check your internet connection.';
+      return '📡 Network unreachable. Please check your internet connection.';
     } else if (message.contains('DNS resolution failed')) {
-      return 'DNS resolution failed. Please check the server URL: ${ApiConstants.serverBaseUrl}';
+      return '🔍 DNS resolution failed. Server domain may be incorrect.';
     }
 
-    return 'Cannot connect to server. Please check:\n'
-        '1. ✓ Internet connection is active\n'
-        '2. Server is running: ${ApiConstants.serverBaseUrl}\n'
-        '3. API endpoint (${ApiConstants.baseUrl}) is reachable\n'
-        '4. SSL certificates are valid (${ApiConstants.validateCertificates ? "enabled" : "disabled"})\n'
-        '5. Security mode: ${ApiConstants.validateCertificates ? "SECURE 🔒" : "DEBUG MODE ⚠️"}\n\n'
+    return '❌ Cannot connect to server. Please check:\n'
+        '1. 📶 Internet connection is active\n'
+        '2. 🖥️  Server is running and accessible\n'
+        '3. 🔗 API endpoint is reachable\n'
+        '4. 🔒 SSL certificates are valid\n'
+        '5. 🛡️  Firewall is not blocking connections\n\n'
         'Debug info: $message\n\n'
-        'If you continue seeing this error:\n'
-        '• Verify: ${ApiConstants.serverBaseUrl}/health\n'
-        '• Check backend container logs: docker compose logs backend\n'
-        '• Ensure nginx is proxying requests correctly';
+        'If the problem persists:\n'
+        '• Contact support if this is a production environment\n'
+        '• Check server status and logs\n'
+        '• Verify domain configuration';
   }
 
-  // Handle unknown errors
+  // Handle unknown errors with enhanced debugging
   static String _handleUnknownErrors(DioException error) {
     final message = error.message ?? '';
     
     if (message.contains('SocketException')) {
-      return 'Network error. Please check internet connection and ensure ${ApiConstants.serverBaseUrl} is accessible.';
+      return '🌐 Network error. Please check internet connection and server accessibility.';
     } else if (message.contains('Connection refused')) {
-      return 'Server at ${ApiConstants.serverBaseUrl} refused connection. Backend may be down.';
+      return '🚫 Server connection refused. The backend may be down or restarting.';
     } else if (message.contains('Connection timeout')) {
-      return 'Connection timeout. Server at ${ApiConstants.serverBaseUrl} is not responding.';
+      return '⏰ Connection timeout. Server is not responding. Please try again.';
     } else if (message.contains('HandshakeException')) {
-      return 'SSL/TLS certificate error. The server\'s security certificate may be invalid.';
+      return '🔒 SSL/TLS certificate error. Server security certificate may be invalid.';
     } else if (message.contains('FormatException')) {
-      return 'Invalid data format. Please check your input and try again.';
+      return '📝 Invalid data format. Please check your input and try again.';
     } else if (message.contains('JsonException')) {
-      return 'Invalid JSON response from server. Please try again.';
+      return '📄 Invalid JSON response from server. Please try again.';
     } else if (message.contains('TimeoutException')) {
-      return 'Request timed out. Please try again with better connection.';
+      return '⏱️ Request timed out. Please try again with better connection.';
     }
     
-    return 'Connection error. Please check if ${ApiConstants.serverBaseUrl} is accessible.';
+    return '🔗 Connection error. Please check if server is accessible and try again.';
   }
 
 // Auth endpoints

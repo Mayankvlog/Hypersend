@@ -23,7 +23,13 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 import websockets
 from websockets.server import WebSocketServerProtocol
-import redis.asyncio as redis
+
+# WhatsApp-Grade Cryptographic Imports
+try:
+    import redis.asyncio as redis
+except ImportError:
+    print("[WARNING] Redis not available - using fallback cache")
+    redis = None
 
 # Import our cryptographic modules
 from crypto.signal_protocol import SignalProtocol

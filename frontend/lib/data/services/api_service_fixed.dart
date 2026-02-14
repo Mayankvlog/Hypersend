@@ -42,21 +42,15 @@ class ApiService {
   }
 
   String _getBaseUrl() {
-    if (kIsWeb) {
-      return 'https://zaply.in.net/api/v1';
-    } else if (!kIsWeb && io.Platform.isAndroid) {
-      return 'https://zaply.in.net/api/v1';
-    } else if (!kIsWeb && io.Platform.isIOS) {
-      return 'https://zaply.in.net/api/v1';
-    } else if (!kIsWeb && io.Platform.isWindows) {
-      return 'https://zaply.in.net/api/v1';
-    } else if (!kIsWeb && io.Platform.isMacOS) {
-      return 'https://zaply.in.net/api/v1';
-    } else if (!kIsWeb && io.Platform.isLinux) {
-      return 'https://zaply.in.net/api/v1';
-    } else {
-      return 'https://zaply.in.net/api/v1';
-    }
+    // Enhanced URL selection with fallback logic
+    final urls = [
+      'https://zaply.in.net/api/v1',
+      'http://zaply.in.net/api/v1',
+      'https://www.zaply.in.net/api/v1',
+    ];
+    
+    // Return primary URL for now
+    return urls.first;
   }
 
 

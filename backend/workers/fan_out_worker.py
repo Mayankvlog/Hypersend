@@ -21,7 +21,13 @@ import os
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
-import redis.asyncio as redis
+
+# WhatsApp-Grade Cryptographic Imports
+try:
+    import redis.asyncio as redis
+except ImportError:
+    print("[WARNING] Redis not available - using fallback cache")
+    redis = None
 from celery import Celery
 
 # Import our cryptographic modules

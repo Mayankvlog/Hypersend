@@ -49,7 +49,33 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     setState(() => _loading = true);
+    
     try {
+      // Check server connectivity first
+      final isServerConnected = await serviceProvider.apiService.checkServerConnectivity();
+      if (!isServerConnected) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '🚫 Server is not accessible. This could be due to:\n'
+              '• Server is down for maintenance\n'
+              '• Network connectivity issues\n'
+              '• DNS resolution problems\n\n'
+              'Please try again in a few minutes.',
+            ),
+            backgroundColor: AppTheme.errorRed,
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _submit(),
+            ),
+          ),
+        );
+        return;
+      }
+      
       if (_isLogin) {
         await serviceProvider.authService.login(email: email, password: password);
       } else {
@@ -76,9 +102,13 @@ class _AuthScreenState extends State<AuthScreen> {
       } else {
         final errorStr = e.toString().toLowerCase();
         if (errorStr.contains('connection') || errorStr.contains('network')) {
-          errorMessage = '🌐 Cannot connect to server. Please check your internet.';
+          errorMessage = '🌐 Cannot connect to server. Please check your internet connection and try again.';
         } else if (errorStr.contains('invalid') || errorStr.contains('unauthorized')) {
-          errorMessage = 'Invalid email or password';
+          errorMessage = '🔐 Invalid email or password. Please check your credentials.';
+        } else if (errorStr.contains('timeout')) {
+          errorMessage = '⏰ Request timed out. Please try again.';
+        } else if (errorStr.contains('server')) {
+          errorMessage = '🖥️ Server error. Please try again later.';
         }
       }
       
