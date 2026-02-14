@@ -61,7 +61,7 @@ def require_server():
 def client():
     """Provide TestClient for local testing"""
     if USE_TESTCLIENT and app is not None:
-        # Create TestClient with timeout to prevent hanging
+        # Create TestClient to prevent hanging
         test_client = TestClient(app, raise_server_exceptions=False)
         return test_client
     else:
@@ -75,6 +75,7 @@ def test_400_bad_request(client):
             r = client.post(
                 "/api/v1/auth/register",
                 json={"name": "User", "email": "invalid-email", "password": "Pass123!"},
+                timeout=10.0
             )
             # TestClient may return 422 for validation errors instead of 400
             assert r.status_code in [400, 422]
@@ -102,7 +103,7 @@ def test_401_unauthorized_missing_token(client):
     """Test 401 Unauthorized for missing token"""
     if USE_TESTCLIENT:
         try:
-            r = client.get("/api/v1/users/me", headers={})
+            r = client.get("/api/v1/users/me", headers={}, timeout=10.0)
             assert r.status_code == 401
         except Exception as e:
             print(f"TestClient error: {e}")
@@ -124,6 +125,7 @@ def test_401_unauthorized_invalid_token(client):
             r = client.get(
                 "/api/v1/users/me",
                 headers={"Authorization": "Bearer invalid_token"},
+                timeout=10.0
             )
             assert r.status_code == 401
         except Exception as e:
@@ -148,7 +150,7 @@ def test_404_not_found(client):
     if USE_TESTCLIENT:
         try:
             # Test with TestClient - no auth needed for 404 test
-            r = client.get("/api/v1/chats/nonexistent_id")
+            r = client.get("/api/v1/chats/nonexistent_id", timeout=10.0)
             # Should return 401 (auth required) or 404 (not found)
             assert r.status_code in [401, 404]
         except Exception as e:
@@ -210,6 +212,7 @@ def test_409_conflict_duplicate_email(client):
             r1 = client.post(
                 "/api/v1/auth/register",
                 json={"name": "User1", "email": email, "password": "Pass123!"},
+                timeout=10.0
             )
             
             if r1.status_code not in [201, 200]:
@@ -218,6 +221,7 @@ def test_409_conflict_duplicate_email(client):
             r2 = client.post(
                 "/api/v1/auth/register",
                 json={"name": "User2", "email": email, "password": "Different123!"},
+                timeout=10.0
             )
             assert r2.status_code == 409
         except Exception as e:
@@ -252,7 +256,7 @@ def test_413_payload_too_large(client):
     """Test 413 Payload Too Large"""
     if USE_TESTCLIENT:
         # Test with TestClient - empty body should return 422
-        r = client.post("/api/v1/files/init", json={})
+        r = client.post("/api/v1/files/init", json={}, timeout=10.0)
         # Empty body should return 422, not 413
         assert r.status_code in [400, 422]
     else:
@@ -316,6 +320,7 @@ def test_414_uri_too_long(client):
             f"/api/v1/files/{long_upload_id}/chunk?chunk_index=0",
             headers={"Content-Length": "10"},
             data=b"x" * 10,
+            timeout=10.0
         )
         # Should handle long URIs gracefully with 4xx or 5xx
         assert r.status_code in [401, 414, 400, 500, 404, 405]
@@ -341,6 +346,7 @@ def test_422_unprocessable_entity(client):
         r = client.post(
             "/api/v1/auth/register",
             json={"name": "User", "email": "user@example.com"},
+            timeout=10.0
         )
     else:
         if requests is None:
