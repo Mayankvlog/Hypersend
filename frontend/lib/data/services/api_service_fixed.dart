@@ -45,7 +45,6 @@ class ApiService {
     // Enhanced URL selection with fallback logic
     final urls = [
       'https://zaply.in.net/api/v1',
-      'http://zaply.in.net/api/v1',
       'https://www.zaply.in.net/api/v1',
     ];
     

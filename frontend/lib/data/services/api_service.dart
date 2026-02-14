@@ -41,7 +41,6 @@ class ApiService {
   String _getOptimalBaseUrl() {
     final urls = [
       'https://zaply.in.net/api/v1',
-      'http://zaply.in.net/api/v1', 
       'https://www.zaply.in.net/api/v1',
     ];
     
@@ -54,7 +53,6 @@ class ApiService {
   Future<bool> checkServerConnectivity() async {
     final urls = [
       'https://zaply.in.net/health',
-      'http://zaply.in.net/health', 
       'https://www.zaply.in.net/health',
     ];
     
@@ -105,8 +103,7 @@ class ApiService {
         receiveTimeout: const Duration(hours: 2),    // Decreased for faster networks
         sendTimeout: const Duration(minutes: 5),     // Decreased for smaller uploads
           contentType: 'application/json',
-          // Allow only 2xx and 3xx status codes - treat 4xx as errors
-          validateStatus: (status) => status != null && (status >= 200 && status < 400),
+          validateStatus: (status) => status != null && (status >= 200 && status < 300),
         headers: {
           'User-Agent': 'hypersend-Flutter-Web/1.0',
           'Accept': 'application/json',
