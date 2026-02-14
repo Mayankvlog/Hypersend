@@ -27,9 +27,6 @@ ENV FLUTTER_SUPPRESS_ANALYTICS=true
 
 RUN flutter precache --web && flutter config --enable-web
 
-ARG DOCKERHUB_USERNAME
-ARG DOCKERHUB_TOKEN
-
 WORKDIR /app
 COPY pubspec.yaml pubspec.lock ./
 RUN rm -rf .pub-cache && flutter pub get
