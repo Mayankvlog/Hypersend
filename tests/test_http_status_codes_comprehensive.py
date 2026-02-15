@@ -494,8 +494,8 @@ class TestErrorHandlingComprehensive:
         """Test that all status codes have helpful hints"""
         from backend.error_handlers import get_error_hints
         
-        # Test a sample of important status codes
-        important_codes = [300, 301, 302, 400, 401, 402, 403, 404, 405, 408, 409, 410, 413, 415, 422, 429, 500, 503, 504]
+        # Test a sample of important status codes including 599
+        important_codes = [300, 301, 302, 400, 401, 402, 403, 404, 405, 408, 409, 410, 413, 415, 422, 429, 500, 503, 504, 599]
         
         for code in important_codes:
             hints = get_error_hints(code)
@@ -508,8 +508,8 @@ class TestErrorHandlingComprehensive:
         from unittest.mock import MagicMock
         import asyncio
         
-        # Test various status codes
-        test_codes = [300, 301, 400, 401, 402, 403, 404, 405, 408, 409, 410, 413, 415, 422, 429, 500, 503, 504]
+        # Test various status codes including 599
+        test_codes = [300, 301, 400, 401, 402, 403, 404, 405, 408, 409, 410, 413, 415, 422, 429, 500, 503, 504, 599]
         
         for code in test_codes:
             exc = HTTPException(status_code=code, detail="Test error")

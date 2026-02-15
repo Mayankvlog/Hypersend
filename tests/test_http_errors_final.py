@@ -130,7 +130,7 @@ def test_http_errors():
     print("✅ Rate Limiting: Request throttling active")
     print("\n🔗 ALL HTTP ERROR SCENARIOS VERIFIED")
     print("🌐 SYSTEM READY FOR PRODUCTION TESTING")
-    print("🌐 Test at: http://localhost:8000/")
+    print("🌐 Test at: https://zaply.in.net/")
 
 if __name__ == "__main__":
     test_http_errors()

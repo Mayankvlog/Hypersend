@@ -21,7 +21,7 @@ def test_password_endpoints():
     print("🔧 PASSWORD MANAGEMENT - REAL ENDPOINT TESTS")
     print("=" * 60)
     
-    base_url = "http://localhost:8000"
+    base_url = "https://zaply.in.net"
     
     # Test 1: Forgot Password
     print("\n📝 Test 1: Forgot Password")
@@ -147,7 +147,7 @@ def test_password_validation():
         {"old": "WrongPassword", "new": "NewPassword@123", "expected": "fail", "reason": "Wrong old password"},
     ]
     
-    base_url = "http://localhost:8000"
+    base_url = "https://zaply.in.net"
     
     for i, test_case in enumerate(test_cases, 1):
         print(f"\n📝 Test Case {i}: {test_case['reason']}")
@@ -234,7 +234,7 @@ def main():
     
     # Check if server is running
     try:
-        response = requests.get("http://localhost:8000/health", timeout=5)
+        response = requests.get("https://zaply.in.net/health", timeout=5)
         if response.status_code == 200:
             print("✅ Server is running")
             
@@ -247,7 +247,7 @@ def main():
             
     except Exception as e:
         print(f"❌ Cannot connect to server: {e}")
-        print("💡 Make sure the backend server is running on localhost:8000")
+        print("💡 Make sure the backend server is running on https://zaply.in.net")
     
     # Show fix summary
     show_password_fix_summary()

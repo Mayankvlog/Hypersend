@@ -105,7 +105,7 @@ class TestRealErrorHandling:
         try:
             # Send invalid request to trigger 400
             response = requests.post(
-                "http://localhost:8000/auth/register",
+                "https://zaply.in.net/auth/register",
                 json={"invalid_field": "value"},
                 timeout=5
             )
@@ -131,7 +131,7 @@ class TestRealErrorHandling:
         try:
             # Send request without auth to trigger 401
             response = requests.get(
-                "http://localhost:8000/users/profile",
+                "https://zaply.in.net/users/profile",
                 timeout=5
             )
             
@@ -197,7 +197,7 @@ class TestRealBackendLogic:
             }
             
             response = requests.post(
-                "http://localhost:8000/auth/register",
+                "https://zaply.in.net/auth/register",
                 json=register_data,
                 timeout=5
             )

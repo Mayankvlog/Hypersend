@@ -234,7 +234,7 @@ FILE_TTL_SECONDS=86400           # 24 hours
 ALLOWED_ORIGINS=https://zaply.in.net,https://www.zaply.in.net
 
 # Development Origins (optional)
-# http://localhost:3000,http://127.0.0.1:3000
+# https://zaply.in.net/
 ```
 
 ## 🐳 Docker Deployment

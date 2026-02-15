@@ -134,7 +134,7 @@ class Settings:
     # Default public API base URL for this deployment
     # PROD: https://your-production-domain/api/v1 (requires DNS + SSL)
     # DEV: Use local backend API endpoint
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -317,14 +317,14 @@ class Settings:
     # ENHANCED: Load from environment with secure defaults
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
-        # Production localhost origins
-        "http://localhost:3000",
-        "http://localhost:8000",
+        # Production origins
+        "https://zaply.in.net/",
+        "https://zaply.in.net/",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8000",
         # Development / local defaults (keep for development)
-        "http://localhost:3000",        # Frontend dev (React/Flutter web devserver)
-        "http://localhost:8000",        # Backend API
+        "https://zaply.in.net/",        # Frontend dev (React/Flutter web devserver)
+        "https://zaply.in.net/",        # Backend API
         "http://localhost",             # Generic local host
         # Docker internal names (keep for compose/k8s internal traffic)
         "http://hypersend_frontend:80",
@@ -364,7 +364,7 @@ class Settings:
                     docker_http_origins = []
                     
                     for origin in http_origins:
-                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'localhost:3000', '127.0.0.1:3000']):
+                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'zaply.in.net', '127.0.0.1:3000']):
                             docker_http_origins.append(origin)
                         else:
                             external_http_origins.append(origin)

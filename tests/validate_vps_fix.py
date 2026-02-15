@@ -65,8 +65,8 @@ def validate_fixes():
     checks_1 = check_file_content(
         'frontend/lib/core/constants/api_constants.dart',
         [
-            "defaultValue: 'http://localhost:8000/api/v1'",
-            "if (uri == null) return 'http://localhost:8000';"
+            "defaultValue: 'https://zaply.in.net/api/v1'",
+            "if (uri == null) return 'https://zaply.in.net';"
         ],
         "Frontend API URL corrected"
     )
@@ -81,7 +81,7 @@ def validate_fixes():
         'backend/config.py',
         [
             'API_PORT: int = int(os.getenv("API_PORT", "8000"))',
-            'API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")'
+            'API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")'
         ],
         "Backend API port and URL"
     )
@@ -150,7 +150,7 @@ def validate_fixes():
         print()
         print("Next Steps:")
         print("  1. Rebuild frontend with:")
-        print("     flutter build web --release --dart-define=API_BASE_URL=http://localhost:8000/api/v1")
+        print("     flutter build web --release --dart-define=API_BASE_URL=https://zaply.in.net/api/v1")
         print()
         print("  2. Deploy to VPS:")
         print("     chmod +x deploy_vps_fix.sh")

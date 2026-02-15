@@ -877,17 +877,17 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
         elif settings.CORS_ORIGINS:
             return settings.CORS_ORIGINS[0]  # Return first allowed origin
         else:
-            return "http://localhost:8000"  # Secure default
+            return "https://zaply.in.net/"  # Secure default
     
     # In debug mode, allow localhost with validation
     if request_origin:
-        if (request_origin.startswith("http://localhost:") or 
+        if (request_origin.startswith("https://zaply.in.net") or 
             request_origin.startswith("http://127.0.0.1:")):
             return request_origin
         elif request_origin in settings.CORS_ORIGINS:
             return request_origin
     
-    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
+    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net/"
 
 # OPTIONS handlers for CORS preflight requests
 @router.options("/init")

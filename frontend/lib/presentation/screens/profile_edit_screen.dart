@@ -97,7 +97,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (newEmail.isNotEmpty && newEmail != currentEmail) {
 // More lenient email validation: basic format check
         if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(newEmail)) {
-          throw Exception('Invalid email format. Example: user@localhost.com');
+          throw Exception('Invalid email format. Example: user@zaply.in.net');
         }
         emailToSend = newEmail;
       }
@@ -251,7 +251,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       } else if (errorString.contains('email already')) {
         errorMessage = 'Email already in use. Please try another email.';
       } else if (errorString.contains('invalid email')) {
-        errorMessage = 'Invalid email format. Use: user@localhost.com';
+        errorMessage = 'Invalid email format. Use: user@zaply.in.net';
       } else if (errorString.contains('at least')) {
         errorMessage = e.toString();
       } else if (errorString.contains('avatar') && 

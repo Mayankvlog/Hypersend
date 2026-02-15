@@ -38,7 +38,7 @@ else:
     except Exception:
         requests = None
 
-BASE_URL = os.environ.get("HYPERSEND_BASE_URL", "http://localhost:8000/api/v1")
+BASE_URL = os.environ.get("HYPERSEND_BASE_URL", "https://zaply.in.net/api/v1")
 
 def _server_ready() -> bool:
     """Check if server is ready for requests-based testing"""
