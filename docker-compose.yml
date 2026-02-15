@@ -16,8 +16,32 @@ volumes:
     driver: local
   grafana_data:
     driver: local
+  certbot_certs:
+    driver: local
+  certbot_www:
+    driver: local
 
 services:
+  # =============================================================================
+  # CERTBOT - SSL Certificate Management
+  # =============================================================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: hypersend_certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    command: >
+      sh -c "
+      while :; do
+        certbot renew --webroot --webroot-path=/var/www/certbot --quiet
+        sleep 12h
+      done
+      "
+    restart: unless-stopped
+    networks:
+      - hypersend_network
+
   # =============================================================================
   # NGINX Load Balancer with SSL Termination
   # =============================================================================
@@ -33,6 +57,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /etc/letsencrypt/live:/etc/letsencrypt/live:ro
       - /etc/letsencrypt/archive:/etc/letsencrypt/archive:ro
+      - certbot_www:/var/www/certbot:ro
       - nginx_cache:/var/cache/nginx
       - uploads_data:/data/uploads:ro
     environment:
