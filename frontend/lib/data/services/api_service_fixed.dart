@@ -44,8 +44,8 @@ class ApiService {
   String _getBaseUrl() {
     // Enhanced URL selection with fallback logic
     final urls = [
-      'https://zaply.in.net/api/v1',
-      'https://www.zaply.in.net/api/v1',
+      'http://localhost:8000/api/v1',
+      'http://127.0.0.1:8000/api/v1',
     ];
     
     // Return primary URL for now

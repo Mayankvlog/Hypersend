@@ -39,9 +39,9 @@ class ApiService {
 
   // Intelligent base URL selection with fallback logic
   String _getOptimalBaseUrl() {
-    final urls = [
-      'https://zaply.in.net/api/v1',
-      'https://www.zaply.in.net/api/v1',
+        final urls = [
+      'http://localhost:8000/api/v1',
+      'http://127.0.0.1:8000/api/v1',
     ];
     
     // For now, return the primary URL
@@ -52,8 +52,8 @@ class ApiService {
   // Check server connectivity before making requests
   Future<bool> checkServerConnectivity() async {
     final urls = [
-      'https://zaply.in.net/health',
-      'https://www.zaply.in.net/health',
+      'http://localhost:8000/health',
+      'http://127.0.0.1:8000/health',
     ];
     
     for (String url in urls) {
@@ -133,7 +133,7 @@ class ApiService {
         // This is intentional security boundary - Flutter Web always validates SSL
         _log('[API_SECURITY] 🔒 SSL validation ENFORCED (Flutter Web - browser controls)');
         _log('[API_SECURITY] 🔒 Browsers enforce certificate validation - cannot be disabled');
-        _log('[API_SECURITY] 💡 Use valid SSL certificates for zaply.in.net development');
+        _log('[API_SECURITY] 💡 Use valid SSL certificates for localhost development');
       }
     } else {
       // Production or release mode: SSL validation ALWAYS enabled

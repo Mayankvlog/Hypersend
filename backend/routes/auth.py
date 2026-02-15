@@ -198,10 +198,10 @@ def _is_valid_origin_format(origin: str) -> bool:
         port = parsed.group(3) if len(parsed.groups()) >= 3 and parsed.group(3) else None
         
         # SECURITY: ALWAYS require HTTPS, even in debug mode  
-        # Allow HTTP only for exact zaply.in.net in development
+        # Allow HTTP only for exact localhost in development
         if scheme != 'https':
-            if settings.DEBUG and domain == 'zaply.in.net':
-                return True  # Allow HTTP for zaply.in.net in debug
+            if settings.DEBUG and domain == 'localhost':
+                return True  # Allow HTTP for localhost in debug
             else:
                 return False
         
@@ -226,18 +226,18 @@ def _is_valid_origin_format(origin: str) -> bool:
 def get_safe_cors_origin(request_origin: Optional[str]) -> str:
     """Get safe CORS origin with validation - NO code duplication"""
     if not request_origin:
-        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net"
+        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
     
     # Validate origin format strictly
     if not _is_valid_origin_format(request_origin):
-        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net"
+        return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
     
     # Check if origin is explicitly in allowed list
     if request_origin in settings.CORS_ORIGINS:
         return request_origin
     
     # Return first allowed origin as safe fallback
-    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net"
+    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000"
 
 # OPTIONS handlers for CORS preflight requests
 @router.options("/register")

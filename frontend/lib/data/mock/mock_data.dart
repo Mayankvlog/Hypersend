@@ -141,7 +141,7 @@ class MockData {
     id: 'jessica',
     name: 'Jessica Davis',
     username: '@jess_davis',
-    email: 'jessica.davis@zaply.in.net',
+    email: 'jessica.davis@localhost.com',
     avatar: 'https://i.pravatar.cc/150?u=jessica',
     isOnline: true,
   );

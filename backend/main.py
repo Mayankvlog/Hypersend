@@ -146,14 +146,14 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             url_path = str(request.url.path)
             
             # Enhanced suspicious pattern detection with more comprehensive coverage
-            # CRITICAL FIX: Allow zaply.in.net and production domain requests without blocking
-            def is_zaply_or_production(request):
-              """Check if request is from zaply.in.net, Docker internal, or production domain"""
+            # CRITICAL FIX: Allow localhost and production domain requests without blocking
+            def is_localhost_or_production(request):
+              """Check if request is from localhost, Docker internal, or production domain"""
               client_host = request.client.host if request.client else ''
               host_header = request.headers.get('host', '').lower()
-              zaply_patterns = ['zaply.in.net', 'www.zaply.in.net', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
-              production_patterns = ['zaply.in.net:8000', 'zaply.in.net:3000', 'zaply.in.net', 'www.zaply.in.net']
-              return (any(pattern in client_host for pattern in zaply_patterns) or any(pattern in host_header for pattern in production_patterns))
+              localhost_patterns = ['localhost', '127.0.0.1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
+              production_patterns = ['localhost:8000', 'localhost:3000', 'localhost', '127.0.0.1']
+              return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
 
             # CRITICAL FIX: Less aggressive security patterns to avoid false positives
             # Focus on actual attacks, not normal text containing keywords
@@ -211,7 +211,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 'eval(base64', 'system($_POST', 'passthru($_',
                 'shell_exec($_', 'exec($_POST', 'preg_replace eval',
                  
-                # SSRF patterns (only clear SSRF, allow zaply.in.net)
+                # SSRF patterns (only clear SSRF, allow localhost)
                 '169.254.169.254', 'metadata.google.internal',
                 'file:///', 'gopher://', 'dict://',
                  
@@ -226,37 +226,37 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             url_lower = url_path.lower()
             headers_lower = {k.lower(): v.lower() if v else '' for k, v in dict(request.headers).items()}
             
-            # Enhanced security check with zaply.in.net/loopback exception for legitimate requests
-            def is_zaply_or_internal():
-                """Check if request is from zaply.in.net or internal Docker network"""
+            # Enhanced security check with localhost/loopback exception for legitimate requests
+            def is_localhost_or_internal():
+                """Check if request is from localhost or internal Docker network"""
                 client_host = request.client.host if request.client else ''
-                # Allow common zaply.in.net patterns for legitimate health checks and development
-                zaply_patterns = [
-                    'zaply.in.net', 'www.zaply.in.net',
+                # Allow common localhost patterns for legitimate health checks and development
+                localhost_patterns = [
+                    'localhost', '127.0.0.1',
                     'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend'
                 ]
                 
                 # Also check for production domain in host header
                 host_header = request.headers.get('host', '').lower()
-                production_patterns = ['zaply.in.net:8000', 'zaply.in.net:3000', 'zaply.in.net', 'www.zaply.in.net']
+                production_patterns = ['localhost:8000', 'localhost:3000', 'localhost', '127.0.0.1']
                 
-                return (any(pattern in client_host for pattern in zaply_patterns) or
+                return (any(pattern in client_host for pattern in localhost_patterns) or
                         any(pattern in host_header for pattern in production_patterns))
             
-            is_internal = is_zaply_or_internal()
+            is_internal = is_localhost_or_internal()
             
-            # Check URL path for suspicious patterns (but allow legitimate zaply.in.net and production requests)
+            # Check URL path for suspicious patterns (but allow legitimate localhost and production requests)
             # Always allow health check endpoint
             if url_path in ['/health', '/api/v1/health']:
                 is_internal = True  # Force internal for health checks
                 
             for pattern in suspicious_patterns:
-                # Skip zaply.in.net-related patterns for internal requests
-                if pattern in ['zaply.in.net', 'www.zaply.in.net'] and is_internal:
+                # Skip localhost-related patterns for internal requests
+                if pattern in ['localhost', '127.0.0.1'] and is_internal:
                     continue
                     
                 # Skip production domain patterns  
-                if pattern in ['zaply.in.net:8000'] and ('zaply.in.net:8000' in url_lower or 'zaply.in.net:8000' in url_lower):
+                if pattern in ['localhost:8000'] and ('localhost:8000' in url_lower or 'localhost:8000' in url_lower):
                     continue
                     
                 if pattern in url_lower and not is_internal:
@@ -274,7 +274,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         }
                     )
             
-            # Check headers for suspicious patterns (but allow common legitimate headers and zaply.in.net)
+            # Check headers for suspicious patterns (but allow common legitimate headers and localhost)
             for header_name, header_value in headers_lower.items():
                 # Skip checking certain safe headers
                 safe_headers = ['user-agent', 'accept', 'content-type', 'authorization', 'host', 'x-forwarded-for', 'x-real-ip']
@@ -300,11 +300,11 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         # Use rpartition to split on last ':' to handle edge cases
                         hostname = hostname.rpartition(':')[0] if ':' in hostname else hostname
                     
-                    # CRITICAL FIX: Allow test client and zaply.in.net hosts for testing
+                    # CRITICAL FIX: Allow test client and localhost hosts for testing
                     # Allow production and testing hosts
                     allowed_hostnames = {
                         'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend',
-                        'zaply.in.net:8000', 'zaply.in.net:3000', 'zaply.in.net', 'www.zaply.in.net',
+                        'localhost:8000', 'localhost:3000', 'localhost', '127.0.0.1',
                         '0.0.0.0',  # Docker
                     }
                     
@@ -336,12 +336,12 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     continue
                     
                 for pattern in suspicious_patterns:
-                    # Skip zaply.in.net-related patterns for internal requests
-                    if pattern in ['zaply.in.net', 'www.zaply.in.net'] and is_internal:
+                    # Skip localhost-related patterns for internal requests
+                    if pattern in ['localhost', '127.0.0.1'] and is_internal:
                         continue
                         
                     # Skip production domain patterns  
-                    if pattern in ['zaply.in.net:8000'] and ('zaply.in.net:8000' in header_value or 'zaply.in.net:8000' in header_value):
+                    if pattern in ['localhost:8000'] and ('localhost:8000' in header_value or 'localhost:8000' in header_value):
                         continue
                         
                     if pattern in header_value:
@@ -1315,7 +1315,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
 # TrustedHost middleware for additional security
 # Only enable in production with proper domain
 if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "true":
-    allowed_hosts = os.getenv("ALLOWED_HOSTS", "zaply.in.net,www.zaply.in.net").split(",")
+    allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=allowed_hosts
@@ -1336,10 +1336,10 @@ if isinstance(cors_origins, list) and len(cors_origins) > 0:
 # SECURITY: Only add local development origins in debug mode
 if settings.DEBUG:
     cors_origins.extend([
-        "https://zaply.in.net",
-        "https://www.zaply.in.net",
-        "https://zaply.in.net:3000",
-        "https://zaply.in.net:8000",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
     ])
 
 app.add_middleware(
@@ -1376,27 +1376,27 @@ async def handle_options_request(full_path: str, request: Request):
         # Production domains - exact matches only
         if not settings.DEBUG:
             allowed_origins.extend([
-                "https://zaply.in.net",
-                "https://www.zaply.in.net",
+                "http://localhost:8000",
+                "http://localhost:3000",
             ])
         
         # Development environments - more permissive for testing
         if settings.DEBUG:
             allowed_origins.extend([
-                "https://zaply.in.net:8000",
-                "https://zaply.in.net:3000",
+                "http://localhost:8000",
+                "http://localhost:3000",
                 # Docker environments
                 "http://hypersend_frontend:3000",
                 "http://hypersend_backend:8000",
                 "http://frontend:3000",
                 "http://backend:8000",
-                # Production and testing hosts
-                "https://zaply.in.net",
-                "https://zaply.in.net:3000",
-                "https://zaply.in.net:8000",
-                "https://www.zaply.in.net",
-                "https://www.zaply.in.net:3000",
-                "https://www.zaply.in.net:8000",
+                # Local development
+                "http://localhost",
+                "http://127.0.0.1",
+                "http://localhost:8000",
+                "http://localhost:3000",
+                "http://127.0.0.1:8000",
+                "http://127.0.0.1:3000",
             ])
         
         # SECURITY: Exact match only - no pattern matching to prevent bypass
@@ -1549,6 +1549,16 @@ app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")  # E2EE Device Management
 
+
+@app.get("/api/v1")
+@app.get("/api/v1/")
+async def api_v1_root():
+    return {
+        "name": app.title,
+        "version": app.version,
+        "status": "ok",
+    }
+
 # Add swagger.json endpoint for compatibility
 @app.get("/api/swagger.json")
 async def swagger_json():
@@ -1597,9 +1607,9 @@ async def preflight_alias_endpoints(request: Request):
     if origin and origin != "null":
         # LOGIC: Consistent with handle_options_request patterns
         allowed_patterns = [
-            # Development zaply.in.net (all ports and protocols)
-            r'^https?://zaply\.in\.net(:[0-9]+)?$',
-            r'^https?://www\.zaply\.in\.net(:[0-9]+)?$',
+            # Local development
+            r'^https?://localhost(:[0-9]+)?$',
+            r'^https?://127\.0\.0\.1(:[0-9]+)?$',
             # Docker container names (HTTP only)
             r'^http://hypersend_frontend(:[0-9]+)?$',
             r'^http://hypersend_backend(:[0-9]+)?$',

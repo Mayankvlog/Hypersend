@@ -32,7 +32,7 @@ class Settings:
     _IS_DOCKER: bool = os.path.exists("/.dockerenv")
     _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
     _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
-    _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "zaply.in.net")
+    _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "localhost")
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
     _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     _MONGODB_ATLAS_ENABLED: bool = os.getenv("MONGODB_ATLAS_ENABLED", "false").lower() in ("true", "1", "yes")
@@ -134,7 +134,7 @@ class Settings:
     # Default public API base URL for this deployment
     # PROD: https://your-production-domain/api/v1 (requires DNS + SSL)
     # DEV: Use local backend API endpoint
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -317,13 +317,15 @@ class Settings:
     # ENHANCED: Load from environment with secure defaults
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
-        # Production zaply.in.net origins
-        "https://zaply.in.net",
-        "https://www.zaply.in.net",
+        # Production localhost origins
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
         # Development / local defaults (keep for development)
-        "https://zaply.in.net:3000",        # Frontend dev (React/Flutter web devserver)
-        "https://zaply.in.net:8000",        # Backend API
-        "https://zaply.in.net",             # Generic local host
+        "http://localhost:3000",        # Frontend dev (React/Flutter web devserver)
+        "http://localhost:8000",        # Backend API
+        "http://localhost",             # Generic local host
         # Docker internal names (keep for compose/k8s internal traffic)
         "http://hypersend_frontend:80",
         "http://hypersend_frontend",
@@ -362,7 +364,7 @@ class Settings:
                     docker_http_origins = []
                     
                     for origin in http_origins:
-                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'zaply.in.net:3000', 'www.zaply.in.net:']):
+                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'localhost:3000', '127.0.0.1:3000']):
                             docker_http_origins.append(origin)
                         else:
                             external_http_origins.append(origin)
