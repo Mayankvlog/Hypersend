@@ -246,9 +246,9 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             is_internal = is_localhost_or_internal()
             
             # Check URL path for suspicious patterns (but allow legitimate localhost and production requests)
-            # Always allow health check endpoint
-            if url_path in ['/health', '/api/v1/health']:
-                is_internal = True  # Force internal for health checks
+            # Always allow health check and API root endpoints
+            if url_path in ['/health', '/api/v1/health', '/api/v1/', '/api/v1/test']:
+                is_internal = True  # Force internal for health checks and API root
                 
             for pattern in suspicious_patterns:
                 # Skip localhost-related patterns for internal requests
@@ -997,7 +997,8 @@ app = FastAPI(
 register_exception_handlers(app)
 
 # Add validation middleware for 4xx error handling (411, 413, 414, 415)
-app.add_middleware(RequestValidationMiddleware)
+# ===== VALIDATION MIDDLEWARE FOR 4XX ERROR HANDLING (DISABLED FOR DEBUGGING) =====
+# app.add_middleware(RequestValidationMiddleware)
 
 # Add a comprehensive catch-all exception handler for any unhandled exceptions
 @app.exception_handler(Exception)
@@ -1313,13 +1314,13 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
     )
 
 # TrustedHost middleware for additional security
-# Only enable in production with proper domain
-if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "true":
-    allowed_hosts = os.getenv("ALLOWED_HOSTS", "zaply.in.net,127.0.0.1").split(",")
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=allowed_hosts
-    )
+# TrustedHost middleware disabled for debugging
+# if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "true":
+#     allowed_hosts = os.getenv("ALLOWED_HOSTS", "zaply.in.net,127.0.0.1").split(",")
+#     app.add_middleware(
+#         TrustedHostMiddleware,
+#         allowed_hosts=allowed_hosts
+#     )
 
 # CORS middleware - configured from settings to respect DEBUG/PRODUCTION modes
 # ENHANCED: Multiple origin support with exact pattern matching
@@ -1337,20 +1338,17 @@ if isinstance(cors_origins, list) and len(cors_origins) > 0:
 if settings.DEBUG:
     cors_origins.extend([
         "https://zaply.in.net/",
-        "https://zaply.in.net/",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000",
     ])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
-    allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Total-Count", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers", "Content-Length"],
-    max_age=3600,  # Cache preflight requests for 1 hour
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=cors_origins,
+#     allow_credentials=True,
+#     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
+#     allow_headers=["*"],
+#     expose_headers=["Content-Disposition", "X-Total-Count", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers", "Content-Length"],
+#     max_age=3600,  # Cache preflight requests for 1 hour
+# )
 
 # CRITICAL FIX: Handle CORS preflight requests (OPTIONS) without requiring authentication
 # Browser CORS preflight requests don't have auth headers, so they would fail 401 without this
@@ -1377,25 +1375,6 @@ async def handle_options_request(full_path: str, request: Request):
         if not settings.DEBUG:
             allowed_origins.extend([
                 "https://zaply.in.net/",
-                "https://zaply.in.net/",
-            ])
-        
-        # Development environments - more permissive for testing
-        if settings.DEBUG:
-            allowed_origins.extend([
-                "https://zaply.in.net/",
-                "https://zaply.in.net/",
-                # Docker environments
-                "http://hypersend_frontend:3000",
-                "http://hypersend_backend:8000",
-                "http://frontend:3000",
-                "http://backend:8000",
-                # Local development
-                "http://localhost",
-                "http://127.0.0.1",
-                "https://zaply.in.net/",
-                "https://zaply.in.net/",
-                "http://127.0.0.1:8000",
                 "http://127.0.0.1:3000",
             ])
         
@@ -1431,9 +1410,13 @@ async def api_status(request: Request):
     client_host = request.client.host if request.client else "unknown"
     
     if not settings.DEBUG and client_host not in ["zaply.in.net", "www.zaply.in.net"]:
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This endpoint is only accessible in debug mode or from zaply.in.net"
+            content={
+                "status_code": 403,
+                "error": "Not Found",
+                "detail": "This endpoint is only accessible in debug mode or from zaply.in.net"
+            }
         )
     
     # In production, return minimal information
@@ -1537,17 +1520,29 @@ async def health_check():
         )
 
 
-@app.get("/api/v1/", tags=["System"])
+
+# ====================
+# DIRECT APP ROUTES (must be before router includes)
+# ====================
+
+@app.get("/api/v1/")
 async def api_root():
-    """API root endpoint - verify API v1 is responding"""
+    return {"message": "API root working"}
+
+@app.get("/api/v1/debug", tags=["System"])
+async def debug_route(request: Request):
+    """Debug route to see what path FastAPI receives"""
     return {
-        "api": "Hypersend API",
-        "version": "v1",
-        "status": "running",
-        "docs": "/docs",
-        "health": "/api/v1/health"
+        "received_url": str(request.url),
+        "received_path": str(request.url.path),
+        "received_query_params": dict(request.query_params),
+        "client_host": request.client.host if request.client else "none",
+        "headers": dict(request.headers)
     }
 
+# ====================
+# ROUTER REGISTRATION
+# ====================
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
@@ -1562,14 +1557,6 @@ app.include_router(channels.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")  # E2EE Device Management
 
 
-@app.get("/api/v1")
-@app.get("/api/v1/")
-async def api_v1_root():
-    return {
-        "name": app.title,
-        "version": app.version,
-        "status": "ok",
-    }
 
 # Add swagger.json endpoint for compatibility
 @app.get("/api/swagger.json")
@@ -1955,3 +1942,4 @@ if __name__ == "__main__":
         port=settings.API_PORT,
         reload=settings.DEBUG
     )
+
