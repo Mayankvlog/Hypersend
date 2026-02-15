@@ -203,7 +203,12 @@ def test_404_not_found(client):
 
 def test_409_conflict_duplicate_email(client):
     """Test 409 Conflict for duplicate email"""
-    # Clear mock database before test (mock_database module not available)
+    # Clear mock database before test
+    try:
+        from backend.mock_database import clear_test_collections
+        clear_test_collections()
+    except ImportError:
+        print("Mock database clearing not available, test may fail due to existing data")
     
     email = f"test_{int(datetime.now().timestamp())}@example.com"
     

@@ -1537,6 +1537,18 @@ async def health_check():
         )
 
 
+@app.get("/api/v1/", tags=["System"])
+async def api_root():
+    """API root endpoint - verify API v1 is responding"""
+    return {
+        "api": "Hypersend API",
+        "version": "v1",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/api/v1/health"
+    }
+
+
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(chats.router, prefix="/api/v1")
