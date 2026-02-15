@@ -18,7 +18,7 @@ import json
 import time
 import logging
 import os
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Any
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 
@@ -95,7 +95,7 @@ class FanOutTask:
 class MessageFanOutWorker:
     """WhatsApp-grade message fan-out worker"""
     
-    def __init__(self, redis_client: redis.Redis):
+    def __init__(self, redis_client: Optional['redis.Redis'] = None):
         # Get Redis configuration from environment
         redis_host = os.getenv('REDIS_HOST', 'redis')
         redis_port = int(os.getenv('REDIS_PORT', 6379))
