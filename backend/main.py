@@ -1459,6 +1459,30 @@ async def root():
         "api_endpoint": settings.API_BASE_URL,
     }
 
+@app.get("/api/v1/")
+async def api_v1_root():
+    """API v1 root endpoint - list available endpoints"""
+    return {
+        "api": "Hypersend API",
+        "version": "v1.0.0",
+        "status": "running",
+        "environment": "debug" if settings.DEBUG else "production",
+        "endpoints": {
+            "auth": "/api/v1/auth/",
+            "users": "/api/v1/users/",
+            "chats": "/api/v1/chats/",
+            "messages": "/api/v1/messages/",
+            "files": "/api/v1/files/",
+            "groups": "/api/v1/groups/",
+            "updates": "/api/v1/updates/",
+            "health": "/api/v1/health"
+        },
+        "docs": {
+            "openapi": "/api/v1/docs",
+            "redoc": "/api/v1/redoc"
+        }
+    }
+
 # Security headers middleware
 @app.middleware("http")
 async def add_security_headers(request, call_next):
