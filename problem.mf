@@ -1,0 +1,164 @@
+# HTTPS Port 443 Connection Failure Analysis
+## Domain: zaply.in.net
+## Status: CRITICAL - HTTPS NOT WORKING
+
+### Problem Summary
+- ✅ HTTP (Port 80): WORKING - Returns API response successfully
+- ❌ HTTPS (Port 443): FAILED - Connection timeout after 3582ms
+- 📍 Root Cause: Port 443 not accessible from external connections
+
+### Immediate Diagnostic Commands Required
+
+#### 1. Port 443 Listening Status
+```bash
+# Check if nginx is listening on port 443
+sudo ss -tlnp | grep :443
+# Expected: LISTEN 0 511 0.0.0.0:443 users:(("nginx",pid=...,fd=...))
+```
+
+#### 2. Docker Port Mapping Verification
+```bash
+# Verify Docker container port binding
+docker port hypersend_nginx
+# Expected: 443/tcp -> 0.0.0.0:443
+```
+
+#### 3. SSL Certificate Existence Check
+```bash
+# Check if SSL certificates exist in container
+docker exec hypersend_nginx ls -la /etc/letsencrypt/live/zaply.in.net/
+# Expected: fullchain.pem and privkey.pem files present
+```
+
+#### 4. Certificate Validity Check
+```bash
+# Check certificate expiration
+docker exec hypersend_certbot certbot certificates
+# Expected: VALID certificate for zaply.in.net
+```
+
+#### 5. AWS Security Group Verification
+```bash
+# Check if port 443 is open in AWS Security Group
+aws ec2 describe-security-groups --group-names hypersend-sg --query 'SecurityGroups[0].IpPermissions[?FromPort==`443`]'
+# Expected: Inbound rule allowing 0.0.0.0/0 on port 443
+```
+
+#### 6. UFW Firewall Status
+```bash
+# Check UFW firewall rules
+sudo ufw status verbose
+# Expected: 443/tcp ALLOW IN anywhere
+```
+
+#### 7. External Port Test from VPS
+```bash
+# Test port 443 connectivity from VPS itself
+telnet zaply.in.net 443
+# Expected: Connected to zaply.in.net
+```
+
+### Most Likely Root Causes (Priority Order)
+
+#### 1. SSL Certificates Not Generated (70% probability)
+- Certbot container running but certificates never created
+- Need to run initial certificate generation manually
+- Certbot only handles renewals, not initial issuance
+
+#### 2. AWS Security Group Missing Port 443 (20% probability)
+- Port 80 open but 443 forgotten in security group
+- Common AWS configuration oversight
+
+#### 3. Nginx Configuration Issue (10% probability)
+- SSL certificate paths incorrect
+- Nginx not actually listening on 443 despite configuration
+
+### Immediate Fix Actions
+
+#### Action 1: Generate SSL Certificate (If Missing)
+```bash
+# Stop nginx temporarily
+docker stop hypersend_nginx
+
+# Generate initial certificate
+docker run --rm -it \
+  -v certbot_certs:/etc/letsencrypt \
+  -v certbot_www:/var/www/certbot \
+  -p 80:80 \
+  certbot/certbot:latest \
+  certonly --standalone -d zaply.in.net --email noreply@zaply.in.net --agree-tos --no-eff-email
+
+# Restart nginx
+docker start hypersend_nginx
+```
+
+#### Action 2: Add AWS Security Group Rule (If Missing)
+```bash
+# Using AWS CLI
+aws ec2 authorize-security-group-ingress \
+  --group-name hypersend-sg \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+```
+
+#### Action 3: Check Nginx Configuration
+```bash
+# Test nginx configuration
+docker exec hypersend_nginx nginx -t
+
+# Check nginx error logs
+docker logs hypersend_nginx --tail 50
+```
+
+### Verification Commands After Fix
+
+#### Test HTTPS Locally from VPS
+```bash
+curl -v https://localhost:443/api/v1/
+# Expected: Successful TLS handshake + API response
+```
+
+#### Test HTTPS Externally
+```bash
+curl -v https://zaply.in.net/api/v1/
+# Expected: Successful TLS handshake + API response
+```
+
+### Critical Files to Check
+- `/etc/letsencrypt/live/zaply.in.net/fullchain.pem` - SSL certificate
+- `/etc/letsencrypt/live/zaply.in.net/privkey.pem` - Private key
+- `docker-compose.yml` - Port mapping configuration
+- `nginx.conf` - SSL configuration
+
+### Emergency Workaround (If SSL Cannot Be Fixed)
+Temporarily disable HTTPS redirect in nginx.conf:
+```nginx
+# Comment out this line in server block listening on port 80
+# return 301 https://$host$request_uri;
+```
+
+### Monitoring Commands
+```bash
+# Monitor nginx logs in real-time
+docker logs -f hypersend_nginx
+
+# Monitor certbot logs
+docker logs -f hypersend_certbot
+
+# Check system port usage
+sudo watch -n 1 'ss -tlnp | grep -E ":(80|443)"'
+```
+
+### Next Steps
+1. Run diagnostic commands above
+2. Identify specific failure point
+3. Apply appropriate fix
+4. Verify HTTPS functionality
+5. Monitor for stability
+
+### Contact Information
+- Domain: zaply.in.net
+- Expected SSL: Let's Encrypt
+- Web Server: Nginx (Docker)
+- Platform: AWS EC2 Ubuntu
