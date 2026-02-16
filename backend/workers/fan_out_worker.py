@@ -95,7 +95,7 @@ class FanOutTask:
 class MessageFanOutWorker:
     """WhatsApp-grade message fan-out worker"""
     
-    def __init__(self, redis_client: Optional['redis.Redis'] = None):
+    def __init__(self, redis_client: Optional[Any] = None):
         # Get Redis configuration from environment
         redis_host = os.getenv('REDIS_HOST', 'redis')
         redis_port = int(os.getenv('REDIS_PORT', 6379))
