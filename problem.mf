@@ -135,7 +135,16 @@ curl -v https://zaply.in.net/api/v1/
 Temporarily disable HTTPS redirect in nginx.conf:
 ```nginx
 # Comment out this line in server block listening on port 80
-# return 301 https://$host$request_uri;
+# return 301 https://host$request_uri;
+```
+
+### Localhost Testing Setup
+For local development, update environment variables:
+```bash
+# Set localhost configuration
+export API_BASE_URL=http://localhost:8000/api/v1
+export DOMAIN_NAME=localhost
+export ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
 ```
 
 ### Monitoring Commands
