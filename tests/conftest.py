@@ -45,6 +45,11 @@ if backend_path not in sys.path:
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+# Set USE_MOCK_DB for all tests to avoid database connection issues
+# IMPORTANT: This must be set BEFORE importing backend modules
+os.environ['USE_MOCK_DB'] = 'True'
+os.environ['DEBUG'] = 'True'  # Enable debug mode for tests
+
 # Add backend to sys.modules to fix relative imports
 import importlib.util
 import sys
@@ -53,9 +58,6 @@ if backend_spec and backend_spec.loader:
     backend_module = importlib.util.module_from_spec(backend_spec)
     sys.modules['backend'] = backend_module
     backend_spec.loader.exec_module(backend_module)
-
-# Set USE_MOCK_DB for all tests to avoid database connection issues
-os.environ['USE_MOCK_DB'] = 'True'
 
 # Mock the app import to avoid dependency issues
 try:

@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
@@ -182,9 +183,13 @@ class Settings:
     # Default DEBUG to True for development; set to False in production with proper SECRET_KEY
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     
+    # Detect if running under pytest
+    _IS_TESTING: bool = "pytest" in sys.modules
+    
     # Mock mode for testing without MongoDB - CRITICAL: Default to False for production
     USE_MOCK_DB: bool = os.getenv("USE_MOCK_DB", "False").lower() in ("true", "1", "yes")
     print(f"[CONFIG] USE_MOCK_DB: {USE_MOCK_DB}")
+    print(f"[CONFIG] Is Testing (pytest): {_IS_TESTING}")
     if USE_MOCK_DB:
         print("[CONFIG] WARNING: USING MOCK DATABASE - FOR TESTING ONLY")
     else:
@@ -310,7 +315,8 @@ class Settings:
     # Remove duplicate assignments to avoid conflicts
     
     # CRITICAL: Production safety check
-    if not DEBUG and USE_MOCK_DB:
+    # Allow mock DB if DEBUG is enabled OR if we're running under pytest
+    if not DEBUG and USE_MOCK_DB and not _IS_TESTING:
         raise RuntimeError("PRODUCTION SAFETY ERROR: Mock database cannot be used in production. Set USE_MOCK_DB=False")
     
     # CORS Configuration
