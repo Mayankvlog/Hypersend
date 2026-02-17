@@ -39,14 +39,20 @@
     // Suppress Firebase SDK errors if it fails to load
     window.addEventListener('error', function(e) {
       if (e.filename && e.filename.includes('firebase')) {
-        console.warn('Firebase SDK error (non-critical):', e.message);
+        console.debug('Firebase SDK error (non-critical):', e.message);
         // Don't propagate Firebase errors
         return true;
       }
     });
+    // Initialize Firebase state before loading SDKs
+    window.firebaseInitialized = false;
+    window.firebaseReady = false;
+    window.firebasePromise = new Promise((resolve) => {
+      window.firebaseResolve = resolve;
+    });
   </script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js" onerror="console.warn('Firebase app SDK failed to load')"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js" onerror="console.warn('Firebase analytics SDK failed to load')"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js" onerror="console.warn('Firebase app SDK failed to load'); window.firebaseResolve(false);"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js" onerror="console.warn('Firebase analytics SDK failed to load');"></script>
   
   <!-- Firebase Configuration -->
   <script src="firebase-config.js"></script>
@@ -60,95 +66,83 @@
 </head>
 <body>
   <script>
-// Configure Flutter for proper CanvasKit loading with CSP compliance
-     // Check if we've already set a fallback to HTML renderer
-     const htmlRendererFallback = localStorage.getItem('flutter_html_fallback');
-     const initialRenderer = htmlRendererFallback === 'true' ? "html" : "canvaskit";
-     const initialCanvasKitUrl = htmlRendererFallback === 'true' ? "" : "https://www.gstatic.com/flutter-canvaskit/";
-     
-     window.flutterConfiguration = {
-       // Use persisted fallback choice if available, otherwise default to CanvasKit
-       canvasKitBaseUrl: initialCanvasKitUrl,
-       renderer: initialRenderer
-     };
-     
-     // Clear the fallback flag if it's already set (to prevent infinite reloads)
-     if (htmlRendererFallback === 'true') {
-       localStorage.removeItem('flutter_html_fallback');
-     }
-     
-    // Enhanced CSP error handling
-     window.addEventListener('error', function(e) {
-       if (e.message.includes('Content-Security-Policy') || e.message.includes('canvaskit')) {
-         console.warn('CSP blocked CanvasKit, falling back to HTML renderer');
-         // Persist the fallback choice before reloading
-         localStorage.setItem('flutter_html_fallback', 'true');
-         // Fallback to HTML renderer if CSP blocks CanvasKit
-         window.flutterConfiguration.renderer = "html";
-         window.flutterConfiguration.canvasKitBaseUrl = "";
-         // Reload the page with new configuration
-         location.reload();
-       }
-     });
-     
-    // Handle unhandled promise rejections from CanvasKit loading
-     window.addEventListener('unhandledrejection', function(e) {
-       if (e.reason && e.reason.message && e.reason.message.includes('canvaskit')) {
-         console.warn('CanvasKit loading failed, falling back to HTML renderer');
-         // Persist the fallback choice before reloading
-         localStorage.setItem('flutter_html_fallback', 'true');
-         // Fallback to HTML renderer
-         window.flutterConfiguration.renderer = "html";
-         window.flutterConfiguration.canvasKitBaseUrl = "";
-         // Trigger reload to use the new configuration
-         e.preventDefault();
-         location.reload();
-       }
-     });
+    // Configure Flutter for proper CanvasKit loading with CSP compliance
+    const htmlRendererFallback = localStorage.getItem('flutter_html_fallback');
+    const initialRenderer = htmlRendererFallback === 'true' ? 'html' : 'canvaskit';
+    const initialCanvasKitUrl = htmlRendererFallback === 'true' ? '' : 'https://www.gstatic.com/flutter-canvaskit/';
     
-    // Ensure proper loading of external Flutter resources
-    window.addEventListener('load', function() {
-      console.log('Flutter configuration:', window.flutterConfiguration);
-      // Test if CanvasKit can be loaded
-      if (window.flutterConfiguration.renderer === "canvaskit") {
-        fetch("https://www.gstatic.com/flutter-canvaskit/d2913632a4578ee4d0b8b1c4a69888c8a0672c4b/canvaskit.js", { 
+    window.flutterConfiguration = {
+      canvasKitBaseUrl: initialCanvasKitUrl,
+      renderer: initialRenderer
+    };
+    
+    if (htmlRendererFallback === 'true') {
+      localStorage.removeItem('flutter_html_fallback');
+    }
+    
+    // Wait for Firebase to initialize before loading Flutter
+    if (window.firebasePromise) {
+      window.firebasePromise.then(function() {
+        console.log('Firebase initialization completed (or skipped)');
+      }).catch(function(e) {
+        console.debug('Firebase initialization error (non-critical):', e);
+      });
+    }
+    
+    // Enhanced CSP error handling
+    window.addEventListener('error', function(e) {
+      if (e.message && (e.message.includes('Content-Security-Policy') || e.message.includes('canvaskit'))) {
+        console.warn('CSP blocked CanvasKit, falling back to HTML renderer');
+        localStorage.setItem('flutter_html_fallback', 'true');
+        window.flutterConfiguration.renderer = 'html';
+        window.flutterConfiguration.canvasKitBaseUrl = '';
+        location.reload();
+      }
+    });
+    
+    // Handle unhandled promise rejections from CanvasKit loading
+    window.addEventListener('unhandledrejection', function(e) {
+      if (e.reason && e.reason.message && e.reason.message.includes('canvaskit')) {
+        console.warn('CanvasKit loading failed, falling back to HTML renderer');
+        localStorage.setItem('flutter_html_fallback', 'true');
+        window.flutterConfiguration.renderer = 'html';
+        window.flutterConfiguration.canvasKitBaseUrl = '';
+        e.preventDefault();
+        location.reload();
+      }
+    });
+    
+    // Suppress non-critical source map and Firebase errors
+    window.addEventListener('error', function(event) {
+      if (event.filename && event.filename.includes('.map')) {
+        console.debug('Source map not found (non-critical):', event.filename);
+        return true;
+      }
+      if (event.message && event.message.includes('Firebase')) {
+        console.debug('Firebase warning (non-critical):', event.message);
+        return true;
+      }
+    }, true);
+    
+    // Test if CanvasKit can be loaded
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', testCanvasKit);
+    } else {
+      testCanvasKit();
+    }
+    
+    function testCanvasKit() {
+      if (window.flutterConfiguration.renderer === 'canvaskit') {
+        fetch('https://www.gstatic.com/flutter-canvaskit/d2913632a4578ee4d0b8b1c4a69888c8a0672c4b/canvaskit.js', {
           method: 'HEAD',
           mode: 'no-cors'
         }).catch(function() {
           console.warn('Cannot reach CanvasKit CDN, falling back to HTML renderer');
-          window.flutterConfiguration.renderer = "html";
-          window.flutterConfiguration.canvasKitBaseUrl = "";
+          window.flutterConfiguration.renderer = 'html';
+          window.flutterConfiguration.canvasKitBaseUrl = '';
         });
       }
-    });
-    
-    // Suppress source map errors (404s for .map files are non-critical)
-    window.addEventListener('error', function(event) {
-      if (event instanceof ErrorEvent) {
-        // Handle script/resource loading errors with filename
-        if (event.filename && event.filename.includes('.map')) {
-          console.debug('Source map not found (non-critical):', event.filename);
-          event.preventDefault();
-        }
-      } else {
-        // Handle resource load errors (images, links, etc.)
-        const target = event.target;
-        let resourceUrl = null;
-        
-        if (target.src) {
-          resourceUrl = target.src;
-        } else if (target.href) {
-          resourceUrl = target.href;
-        } else if (target.currentSrc) {
-          resourceUrl = target.currentSrc;
-        }
-        
-        if (resourceUrl && resourceUrl.includes('.map')) {
-          console.debug('Source map not found (non-critical):', resourceUrl);
-          event.preventDefault();
-        }
-      }
-    }, true);
+    }
   </script>
   <script src="flutter_bootstrap.js" async defer></script>
 </body>
