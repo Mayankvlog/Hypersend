@@ -14,6 +14,10 @@ volumes:
     driver: local
   uploads_data:
     driver: local
+  letsencrypt_certs:
+    driver: local
+  certbot_www:
+    driver: local
 
 services:
   # =============================================================================
@@ -31,6 +35,28 @@ services:
   # 4. No self-signed certificate fallback complexity
 
   # =============================================================================
+  # Certificate Initialization - Generates self-signed certs for development
+  # =============================================================================
+  cert-init:
+    image: alpine:latest
+    container_name: zaply_cert_init
+    volumes:
+      - letsencrypt_certs:/etc/letsencrypt
+    command: >
+      sh -c "apk add --no-cache openssl && 
+      mkdir -p /etc/letsencrypt/live/zaply.in.net && 
+      if [ ! -f /etc/letsencrypt/live/zaply.in.net/fullchain.pem ]; then 
+        openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/live/zaply.in.net/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/C=US/ST=State/L=City/O=Organization/CN=zaply.in.net' && 
+        chmod 644 /etc/letsencrypt/live/zaply.in.net/fullchain.pem && 
+        chmod 600 /etc/letsencrypt/live/zaply.in.net/privkey.pem && 
+        echo 'Certificates generated successfully'; 
+      else 
+        echo 'Certificates already exist'; 
+      fi"
+    networks:
+      - zaply_network
+
+  # =============================================================================
   # NGINX Load Balancer with SSL Termination
   # =============================================================================
   nginx:
@@ -41,16 +67,17 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
+      cert-init:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       frontend:
         condition: service_healthy
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      # CRITICAL: Use bind mounts to host Let's Encrypt certificates
-      # This allows Docker container to access certificates managed on the host
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/www/certbot:/var/www/certbot:ro
+      # Use Docker volumes for certificates (works on Windows, Mac, Linux)
+      - letsencrypt_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
       - nginx_cache:/var/cache/nginx
       - uploads_data:/data/uploads:ro
     environment:
