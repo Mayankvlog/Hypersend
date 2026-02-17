@@ -183,6 +183,20 @@ class Settings:
     # Default DEBUG to True for development; set to False in production with proper SECRET_KEY
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
     
+    # SSL Certificate Validation (defined after DEBUG)
+    # CRITICAL: Controls whether to verify SSL certificates for external API calls
+    # Development: Can be disabled for self-signed certificates
+    # Production: MUST be True for security
+    VERIFY_SSL_CERTIFICATES: bool = os.getenv("VERIFY_SSL_CERTIFICATES", "False").lower() in ("true", "1", "yes")
+    
+    # SSL Certificate Bundle Path (for custom CA certificates)
+    # Leave empty to use system default certificates
+    SSL_CERT_BUNDLE: str = os.getenv("SSL_CERT_BUNDLE", "")
+    
+    # SSL Certificate Verification Mode
+    # Options: "strict" (verify all), "relaxed" (allow self-signed in dev), "disabled" (no verification)
+    SSL_VERIFY_MODE: str = os.getenv("SSL_VERIFY_MODE", "relaxed" if DEBUG else "strict")
+    
     # Detect if running under pytest
     _IS_TESTING: bool = "pytest" in sys.modules
     
