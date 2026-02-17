@@ -52,7 +52,7 @@ async def get_profile_update_schema(
             "email": "john@localhost.com",
             "bio": "Software developer",
             "avatar": "JD",
-            "avatar_url": "http://localhost:8000/api/v1/files/avatar.jpg"
+            "avatar_url": "https://zaply.in.net/api/v1/files/avatar.jpg"
         },
         "notes": [
             "All fields are optional - at least one must be provided",

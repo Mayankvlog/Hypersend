@@ -92,7 +92,7 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
 
         else:
 
-            return "http://localhost:8000/"  # Secure default
+            return "https://zaply.in.net/"  # Secure default
 
     
 
@@ -100,7 +100,8 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
 
     if request_origin:
 
-        if (request_origin.startswith("http://localhost:8000") or 
+        if (request_origin.startswith("https://zaply.in.net") or 
+            request_origin.startswith("http://localhost:8000") or 
             request_origin.startswith("http://127.0.0.1")):
             return request_origin
 
@@ -110,7 +111,7 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
 
     
 
-    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "http://localhost:8000/"
+    return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net/"
 
 
 

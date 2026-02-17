@@ -135,7 +135,7 @@ class Settings:
     # Default public API base URL for this deployment
     # PROD: https://your-production-domain/api/v1 (requires DNS + SSL)
     # DEV: Use local backend API endpoint
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
     
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
@@ -324,11 +324,10 @@ class Settings:
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
         # Production origins
-        "http://localhost:8000",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000",
+        "https://zaply.in.net",
+        "https://www.zaply.in.net",
         # Development / local defaults (keep for development)
-        "http://localhost:8000",        # Frontend dev (React/Flutter web devserver)
+        "http://localhost:3000",        # Frontend dev (React/Flutter web devserver)
         "http://localhost:8000",        # Backend API
         "http://localhost",             # Generic local host
         # Docker internal names (keep for compose/k8s internal traffic)
