@@ -3,6 +3,9 @@
 networks:
   zaply_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 10.200.0.0/16
 
 volumes:
   redis_data:
@@ -17,20 +20,6 @@ volumes:
     driver: local
 
 services:
-  # =============================================================================
-  # NO CERTBOT CONTAINER - Use Host-Level Let's Encrypt Management
-  # =============================================================================
-  # Certificates are managed via host cron job:
-  # sudo certbot renew --quiet
-  # Schedule via: sudo crontab -e
-  # Example: 0 3 * * * /usr/bin/certbot renew --quiet && systemctl reload nginx
-  #
-  # This approach is superior because:
-  # 1. Avoids Docker volume complexity
-  # 2. Certificates are immediately available to host nginx
-  # 3. Simpler debugging and monitoring
-  # 4. No self-signed certificate fallback complexity
-
   # =============================================================================
   # Certificate Initialization - Generates self-signed certs for development
   # =============================================================================
