@@ -54,7 +54,7 @@ services:
       - nginx_cache:/var/cache/nginx
       - uploads_data:/data/uploads:ro
     environment:
-      - NGINX_ALLOW_UNSAFE_SSL=true
+      - NGINX_ALLOW_UNSAFE_SSL=false
       - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
       - NGINX_API_HOST=backend
       - NGINX_API_KEY=${NGINX_API_KEY:-hypersend_secure_api_key}
