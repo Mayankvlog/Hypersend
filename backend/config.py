@@ -340,10 +340,6 @@ class Settings:
         # Production origins
         "https://zaply.in.net",
         "https://www.zaply.in.net",
-        # Development / local defaults (keep for development)
-        "http://localhost:3000",        # Frontend dev (React/Flutter web devserver)
-        "http://localhost:8000",        # Backend API
-        "http://localhost",             # Generic local host
         # Docker internal names (keep for compose/k8s internal traffic)
         "http://hypersend_frontend:80",
         "http://hypersend_frontend",

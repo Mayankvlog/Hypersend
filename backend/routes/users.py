@@ -96,13 +96,11 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
 
     
 
-    # In debug mode, allow localhost with validation
+    # Only allow zaply.in.net in production
 
     if request_origin:
 
-        if (request_origin.startswith("https://zaply.in.net") or 
-            request_origin.startswith("http://localhost:8000") or 
-            request_origin.startswith("http://127.0.0.1")):
+        if request_origin.startswith("https://zaply.in.net"):
             return request_origin
 
         elif request_origin in settings.CORS_ORIGINS:

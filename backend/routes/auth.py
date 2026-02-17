@@ -198,10 +198,10 @@ def _is_valid_origin_format(origin: str) -> bool:
         port = parsed.group(3) if len(parsed.groups()) >= 3 and parsed.group(3) else None
         
         # SECURITY: ALWAYS require HTTPS, even in debug mode  
-        # Allow HTTP only for exact localhost in development
+        # Only allow HTTPS in production
         if scheme != 'https':
-            if settings.DEBUG and domain in ['localhost', '127.0.0.1']:
-                return True  # Allow HTTP for localhost in debug
+            if settings.DEBUG and domain == 'zaply.in.net':
+                return True  # Allow HTTPS only for zaply.in.net
             else:
                 return False
         
