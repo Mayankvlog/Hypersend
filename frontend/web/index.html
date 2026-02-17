@@ -111,6 +111,34 @@
         });
       }
     });
+    
+    // Suppress source map errors (404s for .map files are non-critical)
+    window.addEventListener('error', function(event) {
+      if (event instanceof ErrorEvent) {
+        // Handle script/resource loading errors with filename
+        if (event.filename && event.filename.includes('.map')) {
+          console.debug('Source map not found (non-critical):', event.filename);
+          event.preventDefault();
+        }
+      } else {
+        // Handle resource load errors (images, links, etc.)
+        const target = event.target;
+        let resourceUrl = null;
+        
+        if (target.src) {
+          resourceUrl = target.src;
+        } else if (target.href) {
+          resourceUrl = target.href;
+        } else if (target.currentSrc) {
+          resourceUrl = target.currentSrc;
+        }
+        
+        if (resourceUrl && resourceUrl.includes('.map')) {
+          console.debug('Source map not found (non-critical):', resourceUrl);
+          event.preventDefault();
+        }
+      }
+    }, true);
   </script>
   <script src="flutter_bootstrap.js" async defer></script>
 </body>
