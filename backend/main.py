@@ -151,8 +151,8 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
               """Check if request is from localhost, Docker internal, or production domain"""
               client_host = request.client.host if request.client else ''
               host_header = request.headers.get('host', '').lower()
-              localhost_patterns = ['zaply.in.net', '127.0.0.1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
-              production_patterns = ['zaply.in.net', 'zaply.in.net', 'zaply.in.net', '127.0.0.1']
+              localhost_patterns = ['localhost', '127.0.0.1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
+              production_patterns = ['localhost', '127.0.0.1']
               return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
 
             # CRITICAL FIX: Less aggressive security patterns to avoid false positives
@@ -232,13 +232,12 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 client_host = request.client.host if request.client else ''
                 # Allow common localhost patterns for legitimate health checks and development
                 localhost_patterns = [
-                    'zaply.in.net', '127.0.0.1',
-                    'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend'
+                    'localhost', '127.0.0.1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend'
                 ]
                 
                 # Also check for production domain in host header
                 host_header = request.headers.get('host', '').lower()
-                production_patterns = ['zaply.in.net', 'zaply.in.net', 'zaply.in.net', '127.0.0.1']
+                production_patterns = ['localhost', '127.0.0.1']
                 
                 return (any(pattern in client_host for pattern in localhost_patterns) or
                         any(pattern in host_header for pattern in production_patterns))
@@ -252,11 +251,11 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 
             for pattern in suspicious_patterns:
                 # Skip localhost-related patterns for internal requests
-                if pattern in ['zaply.in.net', '127.0.0.1'] and is_internal:
+                if pattern in ['localhost', '127.0.0.1'] and is_internal:
                     continue
                     
                 # Skip production domain patterns  
-                if pattern in ['zaply.in.net'] and ('zaply.in.net' in url_lower or 'zaply.in.net' in url_lower):
+                if pattern in ['localhost'] and ('localhost' in url_lower or 'localhost' in url_lower):
                     continue
                     
                 if pattern in url_lower and not is_internal:
@@ -304,7 +303,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     # Allow production and testing hosts
                     allowed_hostnames = {
                         'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend',
-                        'zaply.in.net', 'zaply.in.net', 'zaply.in.net', '127.0.0.1',
+                        'localhost', '127.0.0.1',
                         '0.0.0.0',  # Docker
                     }
                     
@@ -337,7 +336,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     
                 for pattern in suspicious_patterns:
                     # Skip localhost-related patterns for internal requests
-                    if pattern in ['zaply.in.net', '127.0.0.1'] and is_internal:
+                    if pattern in ['localhost', '127.0.0.1'] and is_internal:
                         continue
                         
                     # Skip production domain patterns  
@@ -1409,13 +1408,13 @@ async def api_status(request: Request):
     # Only allow access in debug mode or from zaply.in.net
     client_host = request.client.host if request.client else "unknown"
     
-    if not settings.DEBUG and client_host not in ["zaply.in.net", "www.zaply.in.net"]:
+    if not settings.DEBUG and client_host not in ["localhost", "127.0.0.1"]:
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
             content={
                 "status_code": 403,
                 "error": "Not Found",
-                "detail": "This endpoint is only accessible in debug mode or from zaply.in.net"
+                "detail": "This endpoint is only accessible in debug mode or from localhost"
             }
         )
     

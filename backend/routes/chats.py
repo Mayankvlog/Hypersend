@@ -54,7 +54,27 @@ async def chats_options():
 async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)):
     """Get or create personal Saved Messages chat for current user"""
     logger.info(f"Looking for saved chat for user: {current_user}")
-    existing = await chats_collection().find_one({"type": "saved", "members": current_user})
+    # CRITICAL FIX: Use case-insensitive search for database name compatibility
+    existing = await chats_collection().find_one({
+        "type": "saved", 
+        "members": current_user
+    })
+    # Fallback: Try case-insensitive search if exact match fails
+    if not existing:
+        logger.info(f"Exact match failed, trying case-insensitive search for user: {current_user}")
+        # Get all saved chats and filter by members case-insensitively
+        all_saved = await chats_collection().find({"type": "saved"})
+        if hasattr(all_saved, '__await__'):
+            cursor = await all_saved
+        else:
+            cursor = all_saved
+        
+        async for chat in cursor:
+            members = chat.get("members", [])
+            if any(str(member).lower() == str(current_user).lower() for member in members):
+                existing = chat
+                logger.info(f"Found saved chat with case-insensitive match: {existing['_id']}")
+                break
     if existing:
         logger.info(f"Found existing saved chat: {existing['_id']}")
         return {

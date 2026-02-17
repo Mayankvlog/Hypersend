@@ -41,7 +41,7 @@ class EmailService:
         )
         
         self.sender_name = os.getenv("SENDER_NAME", "Hypersend")
-        self.app_url = os.getenv("APP_URL", "https://zaply.in.net")
+        self.app_url = os.getenv("APP_URL", "http://localhost:8000")
         enable_email_env = os.getenv("ENABLE_EMAIL")
         if enable_email_env is None:
             self.enable_email = settings.ENABLE_EMAIL  # Use config setting instead of env directly
