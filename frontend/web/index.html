@@ -34,9 +34,19 @@
   <title>frontend</title>
   <link rel="manifest" href="manifest.json">
   
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js"></script>
+  <!-- Firebase SDK with error handling -->
+  <script>
+    // Suppress Firebase SDK errors if it fails to load
+    window.addEventListener('error', function(e) {
+      if (e.filename && e.filename.includes('firebase')) {
+        console.warn('Firebase SDK error (non-critical):', e.message);
+        // Don't propagate Firebase errors
+        return true;
+      }
+    });
+  </script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js" onerror="console.warn('Firebase app SDK failed to load')"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js" onerror="console.warn('Firebase analytics SDK failed to load')"></script>
   
   <!-- Firebase Configuration -->
   <script src="firebase-config.js"></script>
