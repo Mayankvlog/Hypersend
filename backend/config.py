@@ -31,11 +31,11 @@ class Settings:
     # For development, use MongoDB Atlas or local MongoDB
     # Read MongoDB credentials from environment
     _IS_DOCKER: bool = os.path.exists("/.dockerenv")
-    _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
-    _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
+    _MONGO_USER: str = os.getenv("MONGO_USER", "zaply")
+    _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "zaply_secure_password")
     _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "localhost")
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
-    _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
+    _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "zaply")
     _MONGODB_ATLAS_ENABLED: bool = os.getenv("MONGODB_ATLAS_ENABLED", "false").lower() in ("true", "1", "yes")
     
     # Priority order for MongoDB URI:
@@ -220,7 +220,7 @@ class Settings:
     
     # WhatsApp Storage Model (User Device + 24h S3 TTL)
     STORAGE_MODE: str = os.getenv("STORAGE_MODE", "user_device_s3")  # WhatsApp: User Device + 24h S3 TTL
-    S3_BUCKET: str = os.getenv("S3_BUCKET", "hypersend-temp")
+    S3_BUCKET: str = os.getenv("S3_BUCKET", "zaply-temp")
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
@@ -341,11 +341,11 @@ class Settings:
         "https://zaply.in.net",
         "https://www.zaply.in.net",
         # Docker internal names (keep for compose/k8s internal traffic)
-        "http://hypersend_frontend:80",
-        "http://hypersend_frontend",
+        "http://zaply_frontend:80",
+        "http://zaply_frontend",
         "http://frontend:80",
         "http://frontend",
-        "http://hypersend_backend:8000",
+        "http://zaply_backend:8000",
     ]
 
     CORS_ORIGINS = cors_origins_default
@@ -378,7 +378,7 @@ class Settings:
                     docker_http_origins = []
                     
                     for origin in http_origins:
-                        if any(docker_host in origin for docker_host in ['hypersend_frontend:', 'frontend:', 'localhost:8000', '127.0.0.1:3000']):
+                        if any(docker_host in origin for docker_host in ['zaply_frontend:', 'frontend:', 'localhost:8000', '127.0.0.1:3000']):
                             docker_http_origins.append(origin)
                         else:
                             external_http_origins.append(origin)

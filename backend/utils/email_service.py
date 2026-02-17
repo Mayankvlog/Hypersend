@@ -1,5 +1,5 @@
 """
-Email Service for Hypersend
+Email Service for Zaply
 Handles password reset emails and other notifications
 """
 
@@ -30,7 +30,7 @@ class EmailService:
             os.getenv("SENDER_EMAIL") or 
             os.getenv("EMAIL_FROM") or 
             os.getenv("SMTP_USERNAME") or 
-            "noreply@hypersend.io"
+            "noreply@zaply.io"
         )
         
         # CRITICAL FIX: Try SENDER_PASSWORD first, then SMTP_PASSWORD
@@ -40,7 +40,7 @@ class EmailService:
             ""
         )
         
-        self.sender_name = os.getenv("SENDER_NAME", "Hypersend")
+        self.sender_name = os.getenv("SENDER_NAME", "Zaply")
         self.app_url = os.getenv("APP_URL", "https://zaply.in.net")
         enable_email_env = os.getenv("ENABLE_EMAIL")
         if enable_email_env is None:

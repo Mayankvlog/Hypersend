@@ -151,7 +151,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
               """Check if request is from localhost, Docker internal, or production domain"""
               client_host = request.client.host if request.client else ''
               host_header = request.headers.get('host', '').lower()
-              localhost_patterns = ['localhost', '127.0.0.1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
+              localhost_patterns = ['localhost', '127.0.0.1', 'zaply_frontend', 'zaply_backend', 'frontend', 'backend']
               production_patterns = ['localhost', '127.0.0.1']
               return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
 
@@ -232,7 +232,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 client_host = request.client.host if request.client else ''
                 # Allow common localhost patterns for legitimate health checks and development
                 localhost_patterns = [
-                    'localhost', '127.0.0.1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend'
+                    'localhost', '127.0.0.1', 'zaply_frontend', 'zaply_backend', 'frontend', 'backend'
                 ]
                 
                 # Also check for production domain in host header
@@ -302,7 +302,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     # CRITICAL FIX: Allow test client and localhost hosts for testing
                     # Allow production and testing hosts
                     allowed_hostnames = {
-                        'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend',
+                        'zaply_frontend', 'zaply_backend', 'frontend', 'backend',
                         'localhost', '127.0.0.1',
                         '0.0.0.0',  # Docker
                     }
@@ -652,7 +652,7 @@ def _configure_s3_lifecycle():
         lifecycle_policy = {
             "Rules": [
                 {
-                    "Id": "hypersend-temp-cleanup-24h",
+                    "Id": "zaply-temp-cleanup-24h",
                     "Filter": {"Prefix": "temp/"},  # Only apply to temp/ objects
                     "Status": "Enabled",
                     "Expiration": {
@@ -663,7 +663,7 @@ def _configure_s3_lifecycle():
                     }
                 },
                 {
-                    "Id": "hypersend-incomplete-multipart",
+                    "Id": "zaply-incomplete-multipart",
                     "Filter": {"Prefix": "temp/"},
                     "Status": "Enabled",
                     "AbortIncompleteMultipartUpload": {
@@ -703,7 +703,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     try:
-        print(f"[START] Hypersend API starting on {settings.API_HOST}:{settings.API_PORT}")
+        print(f"[START] Zaply API starting on {settings.API_HOST}:{settings.API_PORT}")
         print(f"[START] Environment: {'DEBUG' if settings.DEBUG else 'PRODUCTION'}")
         
         # Initialize directories first
@@ -938,10 +938,10 @@ async def lifespan(app: FastAPI):
                 app.state.fan_out_task = None
         
         if settings.DEBUG:
-            print(f"[START] Hypersend API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
+            print(f"[START] Zaply API running in DEBUG mode on {settings.API_HOST}:{settings.API_PORT}")
             print("[CORS] Allowing all origins (DEBUG mode)")
         else:
-            print("[START] Hypersend API running in PRODUCTION mode")
+            print("[START] Zaply API running in PRODUCTION mode")
             print("[CORS] Restricted to configured origins")
         
         print("[START] Lifespan startup complete, all services ready")
@@ -981,11 +981,11 @@ async def lifespan(app: FastAPI):
 
 
 # Setup logger
-logger = logging.getLogger("hypersend")
+logger = logging.getLogger("zaply")
 logger.setLevel(logging.INFO)
 
 app = FastAPI(
-    title="Hypersend API",
+    title="Zaply API",
     description="Secure peer-to-peer file transfer and messaging application",
     version="1.0.0",
     lifespan=lifespan,
@@ -1422,7 +1422,7 @@ async def api_status(request: Request):
     if not settings.DEBUG:
         return {
             "status": "operational",
-            "service": "hypersend-api",
+            "service": "zaply-api",
             "version": "1.0.0",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
@@ -1430,7 +1430,7 @@ async def api_status(request: Request):
 # In debug mode, return detailed information
     return {
         "status": "operational",
-        "service": "hypersend-api",
+        "service": "zaply-api",
         "version": "1.0.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "api": {
@@ -1451,7 +1451,7 @@ async def api_status(request: Request):
 async def root():
     """Root endpoint - verify API is responding"""
     return {
-        "app": "Hypersend",
+        "app": "Zaply",
         "version": "1.0.0",
         "status": "running",
         "environment": "debug" if settings.DEBUG else "production",
@@ -1462,7 +1462,7 @@ async def root():
 async def api_v1_root():
     """API v1 root endpoint - list available endpoints"""
     return {
-        "api": "Hypersend API",
+        "api": "Zaply API",
         "version": "v1.0.0",
         "status": "running",
         "environment": "debug" if settings.DEBUG else "production",
@@ -1633,8 +1633,8 @@ async def preflight_alias_endpoints(request: Request):
             r'^https?://zaply\.in\.net(:[0-9]+)?$',
             r'^https?://127\.0\.0\.1(:[0-9]+)?$',
             # Docker container names (HTTP only)
-            r'^http://hypersend_frontend(:[0-9]+)?$',
-            r'^http://hypersend_backend(:[0-9]+)?$',
+            r'^http://zaply_frontend(:[0-9]+)?$',
+            r'^http://zaply_backend(:[0-9]+)?$',
             # Docker service names (HTTP only)
             r'^http://frontend(:[0-9]+)?$',
             r'^http://backend(:[0-9]+)?$',
