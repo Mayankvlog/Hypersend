@@ -320,8 +320,8 @@ services:
     ports:
       - "3000:80"
     environment:
-      - API_BASE_URL=${API_BASE_URL:-http://localhost:8000/api/v1}
-      - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+      - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
+      - DOMAIN_NAME=${DOMAIN_NAME:-zaply.in.net}
     depends_on:
       backend:
         condition: service_healthy

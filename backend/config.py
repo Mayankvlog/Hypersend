@@ -324,13 +324,13 @@ class Settings:
     # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
         # Production origins
-        "https://zaply.in.net/",
-        "https://zaply.in.net/",
+        "https://zaply.in.net",
+        "https://www.zaply.in.net",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8000",
         # Development / local defaults (keep for development)
-        "https://zaply.in.net/",        # Frontend dev (React/Flutter web devserver)
-        "https://zaply.in.net/",        # Backend API
+        "https://zaply.in.net",        # Frontend dev (React/Flutter web devserver)
+        "https://www.zaply.in.net",        # Backend API
         "http://localhost",             # Generic local host
         # Docker internal names (keep for compose/k8s internal traffic)
         "http://hypersend_frontend:80",
