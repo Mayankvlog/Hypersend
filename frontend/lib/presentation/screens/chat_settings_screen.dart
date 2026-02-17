@@ -204,7 +204,7 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
             _SettingsTile(
               icon: Icons.music_note_outlined,
               title: AppStrings.customSound,
-              subtitle: AppStrings.zaplyNote,
+              subtitle: AppStrings.hypersendNote,
               trailing: const Icon(
                 Icons.chevron_right,
                 color: AppTheme.textSecondary,

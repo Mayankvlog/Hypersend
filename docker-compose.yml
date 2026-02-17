@@ -1,7 +1,7 @@
 #version: '3.8'
 
 networks:
-  zaply_network:
+  hypersend_network:
     driver: bridge
     ipam:
       config:
@@ -40,14 +40,14 @@ services:
         echo 'Certificates already exist'; 
       fi"
     networks:
-      - zaply_network
+      - hypersend_network
 
   # =============================================================================
   # NGINX Load Balancer with SSL Termination
   # =============================================================================
   nginx:
     image: nginx:1.25-alpine
-    container_name: zaply_nginx
+    container_name: hypersend_nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -70,8 +70,8 @@ services:
       - NGINX_ALLOW_UNSAFE_SSL=false
       - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
       - NGINX_API_HOST=backend
-      - NGINX_API_KEY=${NGINX_API_KEY:-zaply_secure_api_key}
-      - NGINX_API_SECRET=${NGINX_API_SECRET:-zaply_secure_api_secret}
+      - NGINX_API_KEY=${NGINX_API_KEY:-hypersend_secure_api_key}
+      - NGINX_API_SECRET=${NGINX_API_SECRET:-hypersend_secure_api_secret}
       - NGINX_PROXY_READ_TIMEOUT=7200
       - NGINX_PROXY_SEND_TIMEOUT=7200
       - NGINX_PROXY_CONNECT_TIMEOUT=600
@@ -79,7 +79,7 @@ services:
       - NGINX_CLIENT_MAX_BODY_SIZE=15G
       - DOMAIN_NAME=${DOMAIN_NAME:-zaply.in.net}
     networks:
-      - zaply_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1/health || exit 1"]
       interval: 30s
@@ -97,7 +97,7 @@ services:
   # =============================================================================
   redis:
     image: redis:7.2-alpine
-    container_name: zaply_redis
+    container_name: hypersend_redis
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"  # Bind to localhost only for security
@@ -117,7 +117,7 @@ services:
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-change_this_in_production}
     networks:
-      - zaply_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "sh", "-c", "redis-cli -a ${REDIS_PASSWORD} ping"]
       interval: 10s
@@ -139,8 +139,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: mayank035/zaply-backend:latest
-    container_name: zaply_backend
+    image: mayank035/hypersend-backend:latest
+    container_name: hypersend_backend
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -176,7 +176,7 @@ services:
       - USER_DEVICE_PRIMARY=true
       
       # Media Configuration
-      - S3_BUCKET=${S3_BUCKET:-zaply-temp}
+      - S3_BUCKET=${S3_BUCKET:-hypersend-temp}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
@@ -198,12 +198,12 @@ services:
       - DATA_ROOT=/data
       - UPLOADS_PATH=/app/uploads
       - MONGODB_ATLAS_ENABLED=true
-      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/zaply?retryWrites=true&w=majority}
-      - MONGO_USER=${MONGO_USER:-mayanllr0311_db_user}
-      - MONGO_PASSWORD=${MONGO_PASSWORD:-JBkAZin8lytTK6vg}
+      - MONGODB_URI=${MONGODB_URI}
+      - MONGO_USER=${MONGO_USER}
+      - MONGO_PASSWORD=${MONGO_PASSWORD}
       - MONGO_HOST=${MONGO_HOST:-cluster0.rnj3vfd.mongodb.net}
       - MONGO_PORT=27017
-      - MONGO_INITDB_DATABASE=zaply
+      - MONGO_INITDB_DATABASE=hypersend
       
       # Redis Configuration
       - REDIS_HOST=redis
@@ -236,7 +236,7 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_USE_TLS=true
       - EMAIL_FROM=${EMAIL_FROM:-noreply@zaply.in.net}
-      - SENDER_NAME=${SENDER_NAME:-Zaply Support}
+      - SENDER_NAME=${SENDER_NAME:-Hypersend Support}
       
       # Abuse Detection
       - ABUSE_SCORING_ENABLED=true
@@ -276,7 +276,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - zaply_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/health || exit 1"]
       interval: 30s
@@ -304,8 +304,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: mayank035/zaply-frontend:latest
-    container_name: zaply_frontend
+    image: mayank035/hypersend-frontend:latest
+    container_name: hypersend_frontend
     restart: unless-stopped
     ports:
       - "3000:80"
@@ -316,7 +316,7 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - zaply_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1/health || exit 1"]
       interval: 30s
@@ -344,15 +344,15 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: mayank035/zaply-websocket:latest
-    container_name: zaply_websocket
+    image: mayank035/hypersend-websocket:latest
+    container_name: hypersend_websocket
     restart: unless-stopped
     ports:
       - "8001:8001"
     command: python backend/websocket_main.py
     environment:
       # Core WebSocket Configuration
-      - SECRET_KEY=${SECRET_KEY:-Prod_Secret_Key_For_Zaply_2025_Secure_Fixed}
+      - SECRET_KEY=${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -365,7 +365,7 @@ services:
       - WEBSOCKET_SERVICE=true
       
       # Database Configuration (same as backend)
-      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/zaply?retryWrites=true&w=majority}
+      - MONGODB_URI=${MONGODB_URI}
       - MONGODB_ATLAS_ENABLED=true
       
       # E2EE Configuration
@@ -379,10 +379,10 @@ services:
       - E2EE_MASTER_KEY=secure_e2ee_master_key_2025_fixed
       
       # AWS S3 Configuration
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-AKIAIOSFODNN7EXAMPLE}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
-      - S3_BUCKET=${S3_BUCKET:-zaply-temp}
+      - S3_BUCKET=${S3_BUCKET:-hypersend-temp}
       
       # TURN Server Configuration
       - TURN_USERNAME=${TURN_USERNAME:-turnuser}
@@ -394,7 +394,7 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - zaply_network
+      - hypersend_network
     healthcheck:
       test: ["CMD", "sh", "-c", "exit 0"]
       interval: 30s
@@ -420,7 +420,7 @@ services:
   # =============================================================================
   turn-server:
     image: coturn/coturn:latest
-    container_name: zaply_turn_server
+    container_name: hypersend_turn_server
     restart: unless-stopped
     ports:
       - "3478:3478/udp"
@@ -433,7 +433,7 @@ services:
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
     networks:
-      - zaply_network
+      - hypersend_network
     logging:
       driver: "json-file"
       options:
