@@ -14,42 +14,21 @@ volumes:
     driver: local
   uploads_data:
     driver: local
-  certbot_certs:
-    driver: local
-  certbot_www:
-    driver: local
 
 services:
   # =============================================================================
-  # CERTBOT INIT - Bootstrap Certificate Generation
+  # NO CERTBOT CONTAINER - Use Host-Level Let's Encrypt Management
   # =============================================================================
-  certbot-init:
-    image: alpine:latest
-    container_name: hypersend_certbot_init
-    entrypoint: sh
-    command: -c 'mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/archive/zaply.in.net && if [ ! -f /etc/letsencrypt/live/zaply.in.net/fullchain.pem ]; then apk add --no-cache openssl && openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/letsencrypt/live/zaply.in.net/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -subj "/CN=zaply.in.net"; fi'
-    volumes:
-      - certbot_certs:/etc/letsencrypt
-    networks:
-      - hypersend_network
-
-  # =============================================================================
-  # CERTBOT - SSL Certificate Management
-  # =============================================================================
-  certbot:
-    image: certbot/certbot:latest
-    container_name: hypersend_certbot
-    depends_on:
-      certbot-init:
-        condition: service_completed_successfully
-    volumes:
-      - certbot_certs:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-    entrypoint: sh
-    command: -c 'while true; do certbot certonly --webroot --webroot-path=/var/www/certbot -d zaply.in.net --email admin@zaply.in.net --agree-tos --non-interactive || true; sleep 12h; done'
-    restart: unless-stopped
-    networks:
-      - hypersend_network
+  # Certificates are managed via host cron job:
+  # sudo certbot renew --quiet
+  # Schedule via: sudo crontab -e
+  # Example: 0 3 * * * /usr/bin/certbot renew --quiet && systemctl reload nginx
+  #
+  # This approach is superior because:
+  # 1. Avoids Docker volume complexity
+  # 2. Certificates are immediately available to host nginx
+  # 3. Simpler debugging and monitoring
+  # 4. No self-signed certificate fallback complexity
 
   # =============================================================================
   # NGINX Load Balancer with SSL Termination
@@ -62,18 +41,16 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      certbot-init:
-        condition: service_completed_successfully
       backend:
         condition: service_healthy
       frontend:
         condition: service_healthy
-      certbot:
-        condition: service_started
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - certbot_certs:/etc/letsencrypt
-      - certbot_www:/var/www/certbot:ro
+      # CRITICAL: Use bind mounts to host Let's Encrypt certificates
+      # This allows Docker container to access certificates managed on the host
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
       - nginx_cache:/var/cache/nginx
       - uploads_data:/data/uploads:ro
     environment:
