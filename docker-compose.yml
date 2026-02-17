@@ -232,8 +232,8 @@ services:
       - DEBUG=false
       - API_HOST=0.0.0.0
       - API_PORT=8000
-      - API_BASE_URL=${API_BASE_URL:-http://localhost:8000/api/v1}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8000}
+      - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://zaply.in.net,https://www.zaply.in.net}
       - RATE_LIMIT_PER_USER=1000
       - RATE_LIMIT_WINDOW_SECONDS=3600
       
@@ -245,7 +245,7 @@ services:
       - SMTP_USERNAME=${SMTP_USERNAME:-noreply@localhost.com}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_USE_TLS=true
-      - EMAIL_FROM=${EMAIL_FROM:-noreply@localhost.com}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@zaply.in.net}
       - SENDER_NAME=${SENDER_NAME:-Hypersend Support}
       
       # Abuse Detection
