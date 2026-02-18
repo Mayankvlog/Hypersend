@@ -52,12 +52,12 @@ services:
       - NGINX_API_HOST=${API_HOST:-0.0.0.0}
       - NGINX_API_KEY=${API_KEY:-hypersend_secure_api_key}
       - NGINX_API_SECRET=${API_SECRET:-hypersend_secure_api_secret}
-      # CRITICAL FIX: Add nginx timeout configurations for 40GB files
+      # CRITICAL FIX: Add nginx timeout configurations for 15GB files
       - NGINX_PROXY_READ_TIMEOUT=3600  # 1 hour for large file downloads
       - NGINX_PROXY_SEND_TIMEOUT=3600  # 1 hour for large file uploads
       - NGINX_PROXY_CONNECT_TIMEOUT=300  # 5 minutes for backend connection
       - NGINX_CLIENT_BODY_TIMEOUT=3600  # 1 hour for client body upload
-      - NGINX_CLIENT_MAX_BODY_SIZE=45G  # Allow 40GB files + overhead
+      - NGINX_CLIENT_MAX_BODY_SIZE=18G  # Allow 15GB files + overhead
       # Enhanced error handling configuration
       - NGINX_ERROR_PAGE_TIMEOUT=30  # Error page timeout
       - NGINX_MAX_RETRIES=7  # Maximum retry attempts
@@ -142,6 +142,11 @@ services:
       MONGO_PORT: 27017
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
       
+      # ===== MONGODB ATLAS CONFIGURATION (Cloud MongoDB - Production) =====
+      # Set MONGODB_ATLAS_ENABLED=true and MONGODB_URI to use MongoDB Atlas instead of local
+      MONGODB_ATLAS_ENABLED: ${MONGODB_ATLAS_ENABLED:-true}
+      MONGODB_URI: ${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
+      
       # ===== API CONFIGURATION =====
       SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
       ALGORITHM: HS256
@@ -150,7 +155,10 @@ services:
       UPLOAD_TOKEN_EXPIRE_HOURS: 480
       DATA_ROOT: /data
       UPLOADS_PATH: /app/uploads
-      MAX_FILE_SIZE_BYTES: 42949672960
+      # ===== 15GB MAXIMUM FILE SIZE CONFIGURATION =====
+      MAX_FILE_SIZE_BYTES: 16106127360  # 15GB in bytes
+      MAX_FILE_SIZE_MB: 15360  # 15GB in MB
+      MAX_FILE_SIZE_GB: 15  # 15GB
       CHUNK_SIZE: 33554432
       MAX_PARALLEL_CHUNKS: 4
       FILE_RETENTION_HOURS: 0
