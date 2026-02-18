@@ -51,9 +51,9 @@ class TestGroupCreationFix:
         with patch('backend.routes.groups.get_current_user', return_value="current_user"):
             with patch('backend.routes.groups.chats_collection') as mock_chats:
                 with patch('backend.routes.groups.users_collection') as mock_users:
-                    # Mock database operations
-                    mock_chats.return_value.insert_one.return_value = MagicMock()
-                    mock_users.return_value.find_one.return_value = {"_id": "user1", "name": "User 1"}
+                    # Mock database operations - use AsyncMock for async operations
+                    mock_chats.return_value.insert_one = AsyncMock(return_value=MagicMock(inserted_id="test_chat_id"))
+                    mock_users.return_value.find_one = AsyncMock(return_value={"_id": "user1", "name": "User 1"})
                     
                     # Test group creation via groups endpoint
                     response = client.post(
@@ -195,7 +195,7 @@ class TestGroupCreationFix:
             
             with patch('routes.groups.get_current_user', return_value="current_user"):
                 with patch('routes.groups.chats_collection') as mock_chats:
-                    mock_chats.return_value.insert_one.return_value = MagicMock()
+                    mock_chats.return_value.insert_one = AsyncMock(return_value=MagicMock())
                     
                     response = client.post(
                         "/api/v1/groups",
@@ -260,7 +260,7 @@ class TestGroupCreationFix:
             
             with patch('routes.groups.get_current_user', return_value="current_user"):
                 with patch('routes.groups.chats_collection') as mock_chats:
-                    mock_chats.return_value.insert_one.return_value = MagicMock()
+                    mock_chats.return_value.insert_one = AsyncMock(return_value=MagicMock())
                     
                     response = client.post(
                         "/api/v1/groups",
@@ -312,7 +312,7 @@ class TestGroupCreationFix:
         
         with patch('routes.groups.get_current_user', return_value="current_user"):
             with patch('routes.groups.chats_collection') as mock_chats:
-                mock_chats.return_value.insert_one.return_value = MagicMock()
+                mock_chats.return_value.insert_one = AsyncMock(return_value=MagicMock(inserted_id="test_chat_id"))
                 
                 response = client.post(
                     "/api/v1/groups",

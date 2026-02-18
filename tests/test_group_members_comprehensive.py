@@ -114,6 +114,10 @@ class TestGroupMembersComprehensive:
             
             print(f"✅ Groups retrieved: {len(groups)} groups")
             
+            # Convert to list if it's not already
+            if not isinstance(groups, list):
+                groups = list(groups) if hasattr(groups, '__iter__') else [groups]
+            
             for group in groups:
                 member_count = group.get("member_count", 0)
                 members = group.get("members", [])

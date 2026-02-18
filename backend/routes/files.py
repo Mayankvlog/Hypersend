@@ -1958,6 +1958,14 @@ async def get_file_info(
     ):
     """Get file metadata information (ephemeral storage only)"""
     
+    # SECURITY: Validate file_id to prevent path injection attacks
+    if not validate_path_injection(file_id):
+        _log("warning", f"Path injection attempt blocked: file_id={file_id}", {"user_id": current_user, "operation": "file_info"})
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file identifier format"
+        )
+    
     try:
         _log("info", f"Getting file info", {"user_id": current_user, "operation": "file_info"})
         
@@ -2131,6 +2139,11 @@ async def download_file(
     current_user: str = Depends(get_current_user_for_download)
     ):
     """Generate presigned download URL for ephemeral storage"""
+    
+    # SECURITY: Validate file_id to prevent path injection attacks
+    if not validate_path_injection(file_id):
+        _log("warning", f"Path injection attempt blocked: file_id={file_id}", {"user_id": current_user, "operation": "file_download"})
+        raise PathInjectionException("Invalid file identifier format")
     
     # Ensure S3 is available for ephemeral storage (bypass for tests)
     if not _ensure_s3_available() and not _is_test_request(request):
@@ -2938,6 +2951,14 @@ async def get_bug_bounty_info(
 @router.get("/{file_id}/shared-users")
 async def get_shared_users(file_id: str, current_user: str = Depends(get_current_user)):
     """Get list of users file is shared with"""
+    
+    # SECURITY: Validate file_id to prevent path injection attacks
+    if not validate_path_injection(file_id):
+        _log("warning", f"Path injection attempt blocked: file_id={file_id}", {"user_id": current_user, "operation": "shared_users"})
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file identifier format"
+        )
     
     # Find file
     try:

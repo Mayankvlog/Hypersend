@@ -1152,12 +1152,50 @@ async def general_exception_handler(request: Request, exc: Exception):
         hints = ["Check DNS settings", "Try using IP address directly", "Contact DNS administrator"]
     
     # Prepare response data
+    # SECURITY: Sanitize path to prevent information disclosure in error responses
+    import re
+    
+    # Check for dangerous patterns in the normalized path
+    dangerous_patterns = [
+        r'etc/passwd',        # Unix system files
+        r'etc/shadow',        # Unix password file
+        r'etc/hosts',        # Unix hosts file
+        r'windows/system32', # Windows system directory
+        r'system32/config',  # Windows registry files
+        r'boot\.ini',        # Windows boot file
+        r'win\.ini',         # Windows configuration
+        r'\.ssh/',           # SSH directory
+        r'\.bash_history',   # Bash history
+        r'\.mysql_history',  # MySQL history
+        r'proc/',            # Linux proc filesystem
+        r'sys/',             # Linux sys filesystem
+        r'dev/',             # Linux dev filesystem
+    ]
+    
+    # Check for dangerous patterns in the original path
+    original_path = str(request.url.path)
+    traversal_patterns = [
+        r'\.\.[\\/]',   # ../ or ..\
+        r'%2e%2e',     # URL encoded ..
+        r'\\\\',       # UNC paths
+        r'^[a-zA-Z]:', # Drive letters
+    ]
+    
+    # Determine if this is a dangerous path request
+    dangerous_in_path = any(re.search(pattern, str(request.url.path), re.IGNORECASE) for pattern in dangerous_patterns)
+    dangerous_in_original = any(re.search(pattern, original_path, re.IGNORECASE) for pattern in traversal_patterns)
+    
+    is_dangerous_path = dangerous_in_path or dangerous_in_original
+    
+    # Use generic path for dangerous requests to prevent information disclosure
+    safe_path = "/api/v1/files/invalid_path" if is_dangerous_path else str(request.url.path)
+    
     response_data = {
         "status_code": status_code,
         "error": type(exc).__name__ if settings.DEBUG else error_msg.title(),
         "detail": error_msg if not settings.DEBUG else str(exc),
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "path": str(request.url.path),
+        "path": safe_path,
         "method": request.method,
         "hints": hints,
     }
@@ -1189,6 +1227,55 @@ async def not_found_handler(request: Request, exc: HTTPException):
     """Handle 404 Not Found errors - resource or endpoint doesn't exist"""
     path = str(request.url.path)
     method = request.method
+    
+    # SECURITY: Sanitize path to prevent information disclosure in error responses
+    # Check for path traversal patterns and system file references in the requested path
+    import re
+    
+    # DEBUG: Add logging to understand the issue
+    print(f"[DEBUG 404] Raw path: {str(request.url.path)}")
+    print(f"[DEBUG 404] Path type: {type(str(request.url.path))}")
+    
+    # Check for dangerous patterns in the normalized path
+    dangerous_patterns = [
+        r'etc/passwd',        # Unix system files
+        r'etc/shadow',        # Unix password file
+        r'etc/hosts',        # Unix hosts file
+        r'windows/system32', # Windows system directory
+        r'system32/config',  # Windows registry files
+        r'boot\.ini',        # Windows boot file
+        r'win\.ini',         # Windows configuration
+        r'\.ssh/',           # SSH directory
+        r'\.bash_history',   # Bash history
+        r'\.mysql_history',  # MySQL history
+        r'proc/',            # Linux proc filesystem
+        r'sys/',             # Linux sys filesystem
+        r'dev/',             # Linux dev filesystem
+    ]
+    
+    # Check for dangerous patterns in the original path
+    original_path = str(request.url.path)
+    traversal_patterns = [
+        r'\.\.[\\/]',   # ../ or ..\
+        r'%2e%2e',     # URL encoded ..
+        r'\\\\',       # UNC paths
+        r'^[a-zA-Z]:', # Drive letters
+    ]
+    
+    # Determine if this is a dangerous path request
+    dangerous_in_path = any(re.search(pattern, str(request.url.path), re.IGNORECASE) for pattern in dangerous_patterns)
+    dangerous_in_original = any(re.search(pattern, original_path, re.IGNORECASE) for pattern in traversal_patterns)
+    
+    is_dangerous_path = dangerous_in_path or dangerous_in_original
+    
+    print(f"[DEBUG 404] Dangerous in path: {dangerous_in_path}")
+    print(f"[DEBUG 404] Dangerous in original: {dangerous_in_original}")
+    print(f"[DEBUG 404] Is dangerous path: {is_dangerous_path}")
+    
+    # Use generic path for dangerous requests to prevent information disclosure
+    safe_path = "/api/v1/files/invalid_path" if is_dangerous_path else str(request.url.path)
+    
+    print(f"[DEBUG 404] Safe path: {safe_path}")
  
     # Distinguish between:
     # - true route-miss 404s (wrong URL) vs
@@ -1220,7 +1307,7 @@ async def not_found_handler(request: Request, exc: HTTPException):
                 "error": "Not Found",
                 "detail": detail_msg,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "path": path,
+                "path": safe_path,
                 "method": method,
                 "hints": ["Verify the resource identifier", "Check permissions", "Review API documentation"]
             }
@@ -1233,7 +1320,7 @@ async def not_found_handler(request: Request, exc: HTTPException):
             "error": "Not Found",
             "detail": "The requested resource doesn't exist. Check the URL path.",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "path": path,
+            "path": safe_path,
             "method": method,
             "hints": ["Check the URL spelling", "Verify the endpoint exists", "Review API documentation"]
         }

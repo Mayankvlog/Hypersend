@@ -292,16 +292,12 @@ class TestDockerIntegration:
         with open(docker_compose_path, 'r') as f:
             compose_content = f.read()
         
-        # Verify MongoDB is REMOVED (Atlas only)
-        assert "mongodb:" not in compose_content, "MongoDB service should NOT be defined (Atlas only)"
-        assert "MONGO_HOST" not in compose_content, "Backend should NOT reference local MongoDB"
-        assert "MONGO_PORT" not in compose_content, "Backend should NOT reference local MongoDB port"
-        
-        # Verify backend uses DATABASE_URL (Atlas)
+        # Verify backend uses MONGODB_URI (Atlas)
         assert "backend:" in compose_content, "Backend service should be defined"
         assert "container_name: hypersend_backend" in compose_content
-        assert "DATABASE_URL" in compose_content, "Backend should use DATABASE_URL for MongoDB Atlas"
-        assert "mongodb+srv" in compose_content, "DATABASE_URL should use MongoDB Atlas connection string"
+        assert "MONGODB_URI" in compose_content, "Backend should use MONGODB_URI for MongoDB Atlas"
+        assert "MONGODB_ATLAS_ENABLED=true" in compose_content, "MongoDB Atlas should be enabled"
+        assert "MONGO_HOST" in compose_content, "MongoDB host should be configured"
         
         # Verify network configuration
         assert "hypersend_network:" in compose_content, "Docker network should be defined"

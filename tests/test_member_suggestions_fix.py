@@ -304,7 +304,7 @@ class TestMemberSuggestionsFix:
             {
                 "group_id": "cached_group",
                 "cache_hit": True,
-                "cached_suggestions": [{"id": "cached_user", "name": "Cached User"}],
+                "cached_suggestions": [{"id": "cached_user", "name": "Cached User", "username": "cached_user"}],
                 "expected_status": 200,
                 "expected_suggestions": 1,
                 "description": "Cache hit should return cached suggestions"
@@ -329,6 +329,8 @@ class TestMemberSuggestionsFix:
             if not test_case.get("user_is_member", True):
                 mock_group["members"] = ["other_user"]
             
+            current_user = "test_user_123"  # Define current_user for the test
+            
             contacts = test_case.get("contacts", ["user1", "user2"])
             
             with patch('backend.routes.groups.UserCacheService.get_user_contacts', return_value=contacts):
@@ -351,10 +353,17 @@ class TestMemberSuggestionsFix:
                     
                     mock_cursor = AsyncMock()
                     mock_cursor.__aiter__ = AsyncMock(return_value=iter(mock_contacts_data))
-                    mock_users_collection.return_value.find.return_value = mock_cursor
+                    
+                    # Mock users_collection to return proper mock with find_one method
+                    mock_users_collection_instance = AsyncMock()
+                    mock_users_collection_instance.find = AsyncMock(return_value=mock_cursor)
+                    mock_users_collection_instance.find_one = AsyncMock(return_value={"_id": current_user, "contacts": contacts})
+                    mock_users_collection.return_value = mock_users_collection_instance
                     
                     with patch('backend.routes.groups.chats_collection') as mock_chats_collection:
-                        mock_chats_collection.return_value.find_one.return_value = mock_group
+                        mock_chats_collection_instance = AsyncMock()
+                        mock_chats_collection_instance.find_one = AsyncMock(return_value=mock_group)
+                        mock_chats_collection.return_value = mock_chats_collection_instance
                         
                         with patch('backend.routes.groups.SearchCacheService') as mock_search_cache:
                             # Setup cache behavior
@@ -457,7 +466,9 @@ class TestMemberSuggestionsFix:
                     mock_users_collection.return_value.find.return_value = mock_cursor
                     
                     with patch('backend.routes.groups.chats_collection') as mock_chats_collection:
-                        mock_chats_collection.return_value.find_one.return_value = mock_group
+                        mock_chats_collection_instance = AsyncMock()
+                        mock_chats_collection_instance.find_one = AsyncMock(return_value=mock_group)
+                        mock_chats_collection.return_value = mock_chats_collection_instance
                         
                         with patch('backend.routes.groups.SearchCacheService') as mock_search_cache:
                             mock_search_cache.get_user_search.return_value = None
@@ -521,29 +532,14 @@ class TestMemberSuggestionsFix:
         
         with patch('backend.routes.groups.UserCacheService.get_user_contacts', return_value=["user1"]):
             with patch('backend.routes.groups.users_collection') as mock_users_collection:
-                # Pre-populate mock database with test group and users
-                from backend.db_proxy import chats_collection, users_collection
-                await chats_collection().insert_one(mock_group)
-                
-                # Clear and add only specific user we want for this test
-                try:
-                    from mock_database import clear_test_collections
-                    clear_test_collections()
-                except ImportError:
-                    # Fallback - clear collection directly
-                    users_collection().clear()
-                await users_collection().insert_one(mock_contacts[0])
-                
-                # Mock cursor to return only our specific contact
-                async def mock_async_iter():
-                    for contact in mock_contacts:
-                        yield contact
-                
-                mock_cursor = AsyncMock()
-                mock_cursor.__aiter__ = AsyncMock(return_value=iter(mock_contacts))
-                mock_users_collection.return_value.find.return_value = mock_cursor
-                
                 with patch('backend.routes.groups.chats_collection') as mock_chats_collection:
+                    # Mock database operations
+                    mock_users_collection.return_value.insert_one = AsyncMock(return_value=MagicMock(inserted_id="test_user_id"))
+                    mock_users_collection.return_value.clear = MagicMock()
+                    mock_cursor = AsyncMock()
+                    mock_cursor.__aiter__ = AsyncMock(return_value=iter(mock_contacts))
+                    mock_users_collection.return_value.find = AsyncMock(return_value=mock_cursor)
+                    
                     # Mock group lookup
                     mock_chats_collection_instance = AsyncMock()
                     mock_chats_collection_instance.find_one = AsyncMock(return_value=mock_group)

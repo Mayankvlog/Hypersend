@@ -465,7 +465,8 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
 async def list_groups(current_user: str = Depends(get_current_user)):
     """List groups for current user."""
     groups = []
-    cursor = chats_collection().find({"type": "group", "members": {"$in": [current_user]}}).sort("created_at", -1)
+    cursor = await chats_collection().find({"type": "group", "members": {"$in": [current_user]}})
+    cursor = cursor.sort("created_at", -1)
     
     # Handle both coroutine (mock DB) and cursor (real MongoDB)
     if hasattr(cursor, '__await__'):
@@ -568,7 +569,7 @@ async def get_member_suggestions(
                     q_lower = q.lower()
                     if (q_lower in contact_data["name"].lower() or 
                         q_lower in (contact_data["username"] or "").lower() or
-                        q_lower in contact_data["email"].lower()):
+                        q_lower in contact_data.get("email", "").lower()):
                         suggestions.append(contact_data)
                 else:
                     suggestions.append(contact_data)
@@ -583,7 +584,7 @@ async def get_member_suggestions(
             exclude_ids = set(current_members)
             exclude_ids.add(current_user)  # Exclude current user
             
-            cursor = users_collection().find(
+            cursor = await users_collection().find(
                 {"_id": {"$nin": list(exclude_ids)}},
                 {
                     "_id": 1,
@@ -595,7 +596,8 @@ async def get_member_suggestions(
                     "last_seen": 1,
                     "status": 1
                 }
-            ).limit(limit * 2)  # Get more to account for filtering
+            )
+            cursor = cursor.limit(limit * 2)  # Get more to account for filtering
             
             # Check if cursor is a coroutine (mock DB) or cursor (real MongoDB)
             if hasattr(cursor, '__await__') and not hasattr(cursor, '__aiter__'):
