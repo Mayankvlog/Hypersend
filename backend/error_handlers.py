@@ -357,8 +357,8 @@ def create_client_error_response(
         response_data["error_count"] = len(field_errors)
 
     # Add hints
-    combined_hints = hints or default_hints.get(
-        status_code, ["Check request and try again"]
+    response_data["hints"] = default_hints.get(
+        status_code, ["Try again later", "Contact support if persistent"]
     )
     response_data["hints"] = combined_hints
 
@@ -1329,17 +1329,14 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         response_data["request_id"] = request_id
 
     # Get specific hints based on error code first, ensure hints always set
-    specific_hints = get_error_hints(status_code) or []
-    combined_hints = (specific_hints or []) + (hints or [])
-    if (
-        500 <= status_code < 600
-        and "server error" not in " ".join(combined_hints).lower()
-    ):
+    specific_hints = get_error_hints(status_code)
+    combined_hints = list(
+        dict.fromkeys(specific_hints + hints)
+    )  # Remove duplicates while preserving order
+    combined_hints_text = " ".join(combined_hints).lower()
+    if 500 <= status_code < 600 and "server error" not in combined_hints_text:
         combined_hints.append("server error")
-    if (
-        400 <= status_code < 500
-        and "client error" not in " ".join(combined_hints).lower()
-    ):
+    if 400 <= status_code < 500 and "client error" not in combined_hints_text:
         combined_hints.append("client error")
     response_data["hints"] = combined_hints
 

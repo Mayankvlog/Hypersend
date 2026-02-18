@@ -22,22 +22,59 @@ volumes:
 services:
   # =============================================================================
   # Certificate Initialization - Generates self-signed certs for development
+  # For production, use certbot service below
   # =============================================================================
   cert-init:
     image: alpine:latest
     container_name: zaply_cert_init
     volumes:
       - letsencrypt_certs:/etc/letsencrypt
+    environment:
+      - CERT_MODE=${CERT_MODE:-selfsigned}  # Set CERT_MODE=letsencrypt for production
     command: >
-      sh -c "apk add --no-cache openssl && 
-      mkdir -p /etc/letsencrypt/live/zaply.in.net && 
-      if [ ! -f /etc/letsencrypt/live/zaply.in.net/fullchain.pem ]; then 
-        openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/live/zaply.in.net/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/C=US/ST=State/L=City/O=Organization/CN=zaply.in.net' && 
-        chmod 644 /etc/letsencrypt/live/zaply.in.net/fullchain.pem && 
-        chmod 600 /etc/letsencrypt/live/zaply.in.net/privkey.pem && 
-        echo 'Certificates generated successfully'; 
+      sh -c "apk add --no-cache openssl certbot && 
+      mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/archive/zaply.in.net && 
+      if [ \"$CERT_MODE\" = \"letsencrypt\" ]; then 
+        echo '=== Let's Encrypt Mode ===' &&
+        if [ ! -f /etc/letsencrypt/live/zaply.in.net/fullchain.pem ]; then 
+          certbot certonly --webroot --webroot-path=/var/www/certbot -d zaply.in.net --email admin@zaply.in.net --agree-tos --non-interactive --force-renewal || 
+          echo 'Failed to get LetsEncrypt cert, falling back to self-signed';
+          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/live/zaply.in.net/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/C=US/ST=State/L=City/O=Organization/CN=zaply.in.net';
+        fi &&
+        echo 'LetsEncrypt certificate ready';
       else 
-        echo 'Certificates already exist'; 
+        echo '=== Self-Signed Certificate Mode (Development) ===' &&
+        if [ ! -f /etc/letsencrypt/live/zaply.in.net/fullchain.pem ]; then 
+          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/live/zaply.in.net/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/C=US/ST=State/L=City/O=Organization/CN=zaply.in.net' && 
+          chmod 644 /etc/letsencrypt/live/zaply.in.net/fullchain.pem && 
+          chmod 600 /etc/letsencrypt/live/zaply.in.net/privkey.pem && 
+          echo 'Self-signed certificates generated successfully'; 
+        else 
+          echo 'Certificates already exist'; 
+        fi;
+      fi"
+    networks:
+      - hypersend_network
+
+  # =============================================================================
+  # Let's Encrypt Certificate Renewal (Production)
+  # =============================================================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: zaply_certbot
+    volumes:
+      - letsencrypt_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    environment:
+      - CERT_MODE=${CERT_MODE:-selfsigned}
+    command: >
+      sh -c "if [ \"$CERT_MODE\" = \"letsencrypt\" ]; then 
+        while true; do 
+          certbot renew --webroot --webroot-path=/var/www/certbot --quiet || true; 
+          sleep 12h; 
+        done; 
+      else 
+        echo 'LetsEncrypt disabled (CERT_MODE=$CERT_MODE)' && sleep infinity; 
       fi"
     networks:
       - hypersend_network
@@ -55,6 +92,8 @@ services:
     depends_on:
       cert-init:
         condition: service_completed_successfully
+      certbot:
+        condition: service_started
       backend:
         condition: service_healthy
       frontend:
@@ -67,6 +106,7 @@ services:
       - nginx_cache:/var/cache/nginx
       - uploads_data:/data/uploads:ro
     environment:
+      - CERT_MODE=${CERT_MODE:-selfsigned}
       - NGINX_ALLOW_UNSAFE_SSL=false
       - NGINX_API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
       - NGINX_API_HOST=backend
