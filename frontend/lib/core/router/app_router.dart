@@ -1,6 +1,5 @@
 import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import '../../presentation/screens/splash_screen.dart';
 import '../../presentation/screens/auth_screen.dart';
 import '../../presentation/screens/chat_list_screen.dart';
@@ -21,51 +20,11 @@ import '../../presentation/screens/group_detail_screen.dart';
 import '../../data/mock/mock_data.dart';
 import '../../data/services/service_provider.dart';
 
-final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
 
-/// Sanitize route names to remove PII (user IDs, query strings, etc.)
-String? _sanitizeRouteName(RouteSettings settings) {
-  if (settings.name == null) return null;
-  
-  String routeName = settings.name!;
-  
-  // Remove or replace dynamic segments that contain PII
-  // Examples: /chat/:id -> /chat, /user/:query -> /user, /group/:id -> /group
-  routeName = routeName.replaceAll(RegExp(r'/:.*'), '');
-  
-  // Map to generic screen names - keys MUST match actual route paths (after PII sanitization)
-  const routeNameMap = {
-    '/': 'home',
-    '/auth': 'auth',
-    '/chats': 'chat_list',
-    '/chat': 'chat_detail',      // /chat/:id becomes /chat after sanitization
-    '/chat-settings': 'chat_settings',
-    '/profile-edit': 'profile_edit',
-    '/profile-photo': 'profile_photo',
-    '/settings': 'settings',
-    '/file-transfer': 'file_transfer',
-    '/notification-sound': 'notification_settings',
-    '/privacy-settings': 'privacy_settings',
-    '/blocked-users': 'blocked_users',
-    '/storage-manager': 'storage_manager',
-    '/help-support': 'help_support',
-    '/group-create': 'group_creation',
-    '/group': 'group_detail',    // /group/:id becomes /group after sanitization
-    '/user': 'user_profile',     // /user/:query becomes /user after sanitization
-  };
-  
-  // Return mapped name or original (with PII removed) as fallback
-  return routeNameMap[routeName] ?? routeName;
-}
 
 final appRouter = GoRouter(
   initialLocation: '/',
-  observers: [
-    FirebaseAnalyticsObserver(
-      analytics: _analytics,
-      nameExtractor: _sanitizeRouteName,
-    ),
-  ],
+  observers: [],
   errorBuilder: (context, state) {
     return Scaffold(
       body: Center(

@@ -1259,11 +1259,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               icon: const Icon(Icons.info_outline),
               onPressed: () => context.push('/group/${widget.chatId}'),
             ),
-          if (_chat?.type == ChatType.channel)
-            IconButton(
-              icon: const Icon(Icons.analytics_outlined),
-              onPressed: () {}, // Channel Info/Stats
-            ),
           if (_chat != null && _chat?.type != ChatType.saved)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
@@ -1314,7 +1309,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       value: 'channel_options',
                       child: Row(
                         children: [
-                          Icon(Icons.analytics_outlined),
+                          Icon(Icons.settings_outlined),
                           SizedBox(width: 8),
                           Text('Channel Options'),
                         ],

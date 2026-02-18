@@ -34,31 +34,9 @@
   <title>frontend</title>
   <link rel="manifest" href="manifest.json">
   
-  <!-- Firebase SDK with error handling -->
-  <script>
-    // Suppress Firebase SDK errors if it fails to load
-    window.addEventListener('error', function(e) {
-      if (e.filename && e.filename.includes('firebase')) {
-        console.debug('Firebase SDK error (non-critical):', e.message);
-        // Don't propagate Firebase errors
-        return true;
-      }
-    });
-    // Initialize Firebase state before loading SDKs
-    window.firebaseInitialized = false;
-    window.firebaseReady = false;
-    window.firebasePromise = new Promise((resolve) => {
-      window.firebaseResolve = resolve;
-    });
-  </script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js" onerror="console.warn('Firebase app SDK failed to load'); window.firebaseResolve(false);"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js" onerror="console.warn('Firebase analytics SDK failed to load');"></script>
-  
-  <!-- Firebase Configuration -->
-  <script src="firebase-config.js"></script>
   
   <!-- Content Security Policy to allow Flutter CanvasKit -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ws: wss: https: zaply.in.net https://zaply.in.net https://firebaseio.com https://firebaselogging-pa.googleapis.com; media-src 'self' blob:; object-src 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ws: wss: https:; media-src 'self' blob:; object-src 'none';">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -80,14 +58,6 @@
       localStorage.removeItem('flutter_html_fallback');
     }
     
-    // Wait for Firebase to initialize before loading Flutter
-    if (window.firebasePromise) {
-      window.firebasePromise.then(function() {
-        console.log('Firebase initialization completed (or skipped)');
-      }).catch(function(e) {
-        console.debug('Firebase initialization error (non-critical):', e);
-      });
-    }
     
     // Enhanced CSP error handling
     window.addEventListener('error', function(e) {
@@ -112,17 +82,6 @@
       }
     });
     
-    // Suppress non-critical source map and Firebase errors
-    window.addEventListener('error', function(event) {
-      if (event.filename && event.filename.includes('.map')) {
-        console.debug('Source map not found (non-critical):', event.filename);
-        return true;
-      }
-      if (event.message && event.message.includes('Firebase')) {
-        console.debug('Firebase warning (non-critical):', event.message);
-        return true;
-      }
-    }, true);
     
     // Test if CanvasKit can be loaded
     if (document.readyState === 'loading') {

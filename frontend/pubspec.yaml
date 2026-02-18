@@ -45,20 +45,7 @@ dependencies:
   sqflite: ^2.4.1
   path: ^1.9.0
   
-  # Analytics
-  # PRIVACY NOTE: Analytics collection is disabled by default to respect user privacy.
-  # Users must explicitly opt-in via consent UI before collection is enabled.
-  # See main.dart for setAnalyticsCollectionEnabled() and service_provider.dart for consent flow.
-  # Events collected:
-  #   - login (with login_method parameter)
-  #   - sign_up
-  #   - screen_view (sanitized, without user identifiers)
-  # User properties (collected only after explicit consent):
-  #   - user_id (anonymized)
-  # Supports GDPR/CCPA compliance: users can opt-out via settings or privacy controls.
-  firebase_analytics: ^11.2.0
-  firebase_core: ^3.3.0
-  
+    
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -86,7 +86,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
               },
             ),
             _buildToggleTile(
-              icon: Icons.analytics_outlined,
+              icon: Icons.visibility_outlined,
               title: 'Share Activity Status',
               subtitle: 'Share what you\'re doing on hypersend',
               value: _shareActivity,
