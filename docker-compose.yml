@@ -129,6 +129,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
     ports:
@@ -145,7 +146,7 @@ services:
       # ===== MONGODB ATLAS CONFIGURATION (Cloud MongoDB - Production) =====
       # Set MONGODB_ATLAS_ENABLED=true and MONGODB_URI to use MongoDB Atlas instead of local
       MONGODB_ATLAS_ENABLED: ${MONGODB_ATLAS_ENABLED:-true}
-      MONGODB_URI: ${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority}
+      MONGODB_URI: mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend
       
       # ===== API CONFIGURATION =====
       SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
@@ -219,6 +220,7 @@ services:
         # SECURITY: Use production URL for nginx proxy routing
         API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}     
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
+    image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
     ports:
