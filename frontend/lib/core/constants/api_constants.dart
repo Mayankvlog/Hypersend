@@ -85,7 +85,7 @@ class ApiConstants {
   static const int fileTtlHours = 24;  // 24h temp only like WhatsApp
   static const int serverStorageBytes = 0;  // 0 bytes stored on server
   static const String costModel = "free";  // No server storage cost
-  static const String s3Bucket = "hypersend-temp";  // S3 bucket name
+  static const String s3Bucket = "zaply-temp";  // S3 bucket name
   
   // API Endpoints
   static const String authEndpoint = 'auth';

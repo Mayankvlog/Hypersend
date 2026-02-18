@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.hypersend.app"
+    namespace = "com.zaply.app"
     compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.hypersend.app"
+        applicationId = "com.zaply.app"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

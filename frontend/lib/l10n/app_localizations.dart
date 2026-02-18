@@ -35,7 +35,7 @@ class AppLocalizations {
   }
 
   // Basic strings - can be expanded
-  static String get appName => 'hypersend';
+  static String get appName => 'zaply';
   static String get chats => 'Chats';
   static String get settings => 'Settings';
   static String get messages => 'Messages';

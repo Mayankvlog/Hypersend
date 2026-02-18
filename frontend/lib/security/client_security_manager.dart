@@ -104,7 +104,7 @@ class ClientSecurityManager {
     
     try {
       // Use platform channels to prevent screenshots
-      const platform = MethodChannel('hypersend/security');
+      const platform = MethodChannel('zaply/security');
       
       await platform.invokeMethod('enableScreenshotProtection');
       
@@ -248,7 +248,7 @@ class ClientSecurityManager {
   /// AES-256-GCM encryption
   Future<AESEncryptedData> _aesGcmEncrypt(String plaintext, Uint8List key, Uint8List iv) async {
     // Use platform-specific encryption
-    const platform = MethodChannel('hypersend/crypto');
+    const platform = MethodChannel('zaply/crypto');
     
     final result = await platform.invokeMethod('aesGcmEncrypt', {
       'plaintext': plaintext,
@@ -270,7 +270,7 @@ class ClientSecurityManager {
     Uint8List authTag,
   ) async {
     // Use platform-specific decryption
-    const platform = MethodChannel('hypersend/crypto');
+    const platform = MethodChannel('zaply/crypto');
     
     final result = await platform.invokeMethod('aesGcmDecrypt', {
       'ciphertext': base64.encode(ciphertext),
@@ -289,7 +289,7 @@ class ClientSecurityManager {
     }
     
     try {
-      const platform = MethodChannel('hypersend/security');
+      const platform = MethodChannel('zaply/security');
       
       final isRooted = await platform.invokeMethod('checkRootJailbreak');
       
@@ -316,7 +316,7 @@ class ClientSecurityManager {
   /// Check developer mode
   Future<bool> _checkDeveloperMode() async {
     try {
-      const platform = MethodChannel('hypersend/security');
+      const platform = MethodChannel('zaply/security');
       
       final devModeEnabled = await platform.invokeMethod('checkDeveloperMode');
       
@@ -338,7 +338,7 @@ class ClientSecurityManager {
   /// Check ADB debugging
   Future<bool> _checkAdbDebugging() async {
     try {
-      const platform = MethodChannel('hypersend/security');
+      const platform = MethodChannel('zaply/security');
       
       final adbEnabled = await platform.invokeMethod('checkAdbDebugging');
       
@@ -363,7 +363,7 @@ class ClientSecurityManager {
       final expectedSignature = _config.expectedAppSignature;
       
       if (expectedSignature != null) {
-        const platform = MethodChannel('hypersend/security');
+        const platform = MethodChannel('zaply/security');
         
         final appSignature = await platform.invokeMethod('getAppSignature');
         
@@ -391,7 +391,7 @@ class ClientSecurityManager {
   /// Check system integrity
   Future<bool> _checkSystemIntegrity() async {
     try {
-      const platform = MethodChannel('hypersend/security');
+      const platform = MethodChannel('zaply/security');
       
       final systemIntegrity = await platform.invokeMethod('checkSystemIntegrity');
       
@@ -488,11 +488,11 @@ class ClientSecurityManager {
       
       // Delete database
       final database = await openDatabase(
-        path.join(dbPath, 'hypersend.db'),
+        path.join(dbPath, 'zaply.db'),
       );
       await database.close();
       
-      await deleteDatabase(path.join(dbPath, 'hypersend.db'));
+      await deleteDatabase(path.join(dbPath, 'zaply.db'));
       
       // Delete local files
       if (await appDir.exists()) {

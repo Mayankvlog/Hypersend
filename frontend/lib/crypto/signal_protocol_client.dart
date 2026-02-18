@@ -1,7 +1,7 @@
-// HYPerSend WhatsApp-Grade Frontend Signal Protocol Implementation - Multi-Device Enhanced
+// ZAply WhatsApp-Grade Frontend Signal Protocol Implementation - Multi-Device Enhanced
 // ===============================================================================
 //
-// ARCHITECTURAL COMPARISON: WHATSAPP vs HYPerSend
+// ARCHITECTURAL COMPARISON: WHATSAPP vs ZAply
 // ====================================================
 //
 // WHATSAPP ARCHITECTURE (LEFT SIDE):
@@ -13,7 +13,7 @@
 // - Limited Horizontal Scaling
 // - Fixed Infrastructure Deployment
 //
-// HYPerSend ARCHITECTURE (RIGHT SIDE):
+// ZAply ARCHITECTURE (RIGHT SIDE):
 // 📱📱📱 Multi-Device (4 devices per user) → ⚖️ Nginx Load Balancer → 
 // 🌐 WebSocket Service → 🐸 Backend API Pods → 🗄️ Redis Cluster → ☁️ S3 Storage
 // - Enhanced Multi-Device Support (4 devices max)

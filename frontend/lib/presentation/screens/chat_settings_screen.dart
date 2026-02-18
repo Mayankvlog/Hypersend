@@ -204,7 +204,7 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
             _SettingsTile(
               icon: Icons.music_note_outlined,
               title: AppStrings.customSound,
-              subtitle: AppStrings.hypersendNote,
+              subtitle: AppStrings.zaplyNote,
               trailing: const Icon(
                 Icons.chevron_right,
                 color: AppTheme.textSecondary,
@@ -353,7 +353,7 @@ class _ChatSettingsScreenState extends State<ChatSettingsScreen> {
             const SizedBox(height: 32),
             // Footer
             Text(
-              'hypersend v1.0.0 • Chat ID: 893420',
+              'zaply v1.0.0 • Chat ID: 893420',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 32),

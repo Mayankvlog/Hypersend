@@ -81,7 +81,7 @@ class MockData {
       id: '1',
       chatId: '1',
       senderId: '1',
-      content: 'Hey! Did you check out the new hypersend update?',
+      content: 'Hey! Did you check out the new zaply update?',
       timestamp: DateTime.now().subtract(const Duration(minutes: 35)),
       status: MessageStatus.read,
       isOwn: false,

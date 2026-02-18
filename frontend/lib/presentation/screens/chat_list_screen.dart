@@ -396,16 +396,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   /// Get app logo letter based on app state
-  /// Logic: Show 'H' by default (hypersend)
+  /// Logic: Show 'Z' by default (zaply)
   /// Could be extended to show different letters based on app state/features
   String _getAppLogo() {
-    // Default: Show 'H' for hypersend
+    // Default: Show 'Z' for zaply
     // You can extend this logic to show different letters based on:
     // - Current tab/page
     // - User status
     // - Unread messages count
     // - Other app states
-    return 'H'; // H for hypersend
+    return 'Z'; // Z for zaply
   }
 
   void _onBottomNavTap(int index) {

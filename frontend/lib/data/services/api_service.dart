@@ -105,7 +105,7 @@ class ApiService {
           contentType: 'application/json',
           validateStatus: (status) => status != null && (status >= 200 && status < 300),
         headers: {
-          'User-Agent': 'hypersend-Flutter-Web/1.0',
+          'User-Agent': 'zaply-Flutter-Web/1.0',
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
