@@ -94,10 +94,15 @@ def test_frontend_files():
     """Test that frontend files exist and are correct"""
     print("Testing frontend files...")
     
+    # Get the project root directory
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+    
     frontend_files = [
-        "frontend/lib/data/services/api_service.dart",
-        "frontend/lib/presentation/screens/group_creation_screen.dart",
-        "frontend/lib/presentation/screens/group_detail_screen.dart"
+        os.path.join(project_root, "frontend/lib/data/services/api_service.dart"),
+        os.path.join(project_root, "frontend/lib/presentation/screens/group_creation_screen.dart"),
+        os.path.join(project_root, "frontend/lib/presentation/screens/group_detail_screen.dart")
     ]
     
     all_good = True
@@ -108,16 +113,14 @@ def test_frontend_files():
             print(f"❌ {file_path} missing")
             all_good = False
     
-    # If files exist but test fails, it might be a path resolution issue
     if not all_good:
         print("⚠️ Some frontend files not found - checking from different path...")
-        # Try alternative paths
+        # Try alternative paths (relative to project root)
         alt_files = [
-            "lib/data/services/api_service.dart",
-            "lib/presentation/screens/group_creation_screen.dart", 
-            "lib/presentation/screens/group_detail_screen.dart"
-        ]
-        
+            os.path.join(project_root, "lib/data/services/api_service.dart"),
+            os.path.join(project_root, "lib/presentation/screens/group_creation_screen.dart"), 
+            os.path.join(project_root, "lib/presentation/screens/group_detail_screen.dart")
+        ]      
         for file_path in alt_files:
             if os.path.exists(file_path):
                 print(f"✅ {file_path} exists (alternative path)")

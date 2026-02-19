@@ -8,7 +8,10 @@ import pytest
 
 def test_kubernetes_yaml_syntax():
     """Test that Kubernetes YAML has valid syntax"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         try:
             documents = list(yaml.safe_load_all(f))
             assert len(documents) > 0, "YAML should contain at least one document"
@@ -17,13 +20,19 @@ def test_kubernetes_yaml_syntax():
 
 def test_no_duplicate_separators():
     """Test that there are no duplicate document separators"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         content = f.read()
         assert '---\n---' not in content, "Found duplicate document separators"
 
 def test_configmap_references():
     """Test that ConfigMap references are correct"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         content = f.read()
         # Check that nginx-configmap is referenced correctly
         assert 'name: nginx-configmap' in content, "nginx-configmap should be referenced"
@@ -36,7 +45,10 @@ def test_configmap_references():
 
 def test_secret_key_references():
     """Test that secret key references match actual keys"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
         
     # Find the hypersend-secrets secret
@@ -56,13 +68,19 @@ def test_secret_key_references():
 
 def test_no_fan_out_worker_pdb():
     """Test that fan-out-worker-pdb has been removed"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         content = f.read()
         assert 'fan-out-worker-pdb' not in content, "fan-out-worker-pdb should be removed"
 
 def test_no_duplicate_hpa():
     """Test that duplicate e2ee-service HPA has been removed"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         content = f.read()
         # Should have only one e2ee-service HPA
         hpa_count = content.count('name: e2ee-service-hpa')
@@ -71,7 +89,10 @@ def test_no_duplicate_hpa():
 
 def test_deployments_have_required_fields():
     """Test that all Deployments have selector and template"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
     
     for doc in documents:
@@ -82,7 +103,10 @@ def test_deployments_have_required_fields():
 
 def test_networkpolicies_have_podselector():
     """Test that all NetworkPolicies have podSelector"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
     
     for doc in documents:
@@ -92,7 +116,10 @@ def test_networkpolicies_have_podselector():
 
 def test_limitranges_have_limits():
     """Test that all LimitRanges have limits"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
     
     for doc in documents:
@@ -103,7 +130,10 @@ def test_limitranges_have_limits():
 
 def test_all_deployments_complete():
     """Test that all Deployments found are actually complete"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
     
     deployments = [doc for doc in documents if doc and doc.get('kind') == 'Deployment']
@@ -122,7 +152,10 @@ def test_all_deployments_complete():
 
 def test_all_networkpolicies_complete():
     """Test that all NetworkPolicies found are actually complete"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
     
     networkpolicies = [doc for doc in documents if doc and doc.get('kind') == 'NetworkPolicy']
@@ -138,7 +171,10 @@ def test_all_networkpolicies_complete():
 
 def test_all_limitranges_complete():
     """Test that all LimitRanges found are actually complete"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
     
     limitranges = [doc for doc in documents if doc and doc.get('kind') == 'LimitRange']
@@ -157,7 +193,10 @@ def test_all_limitranges_complete():
 
 def test_no_invalid_service_types():
     """Test that all Service type fields are strings"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
     
     services = [doc for doc in documents if doc and doc.get('kind') == 'Service']
@@ -171,7 +210,10 @@ def test_no_invalid_service_types():
 
 def test_document_structure():
     """Test that all Kubernetes resources are properly structured"""
-    with open('kubernetes.yaml', 'r') as f:
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
+    with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
     
     for i, doc in enumerate(documents):

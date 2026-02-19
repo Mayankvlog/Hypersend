@@ -11,19 +11,21 @@ import yaml
 from pathlib import Path
 
 # Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 class TestKubernetesValidation:
     """Test Kubernetes YAML validation"""
     
     def test_kubernetes_yaml_exists(self):
         """Test that kubernetes.yaml file exists"""
-        k8s_file = Path("kubernetes.yaml")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        k8s_file = Path(os.path.join(current_dir, '..', 'kubernetes.yaml'))
         assert k8s_file.exists(), "kubernetes.yaml file not found"
     
     def test_kubernetes_yaml_syntax(self):
         """Test that kubernetes.yaml has valid YAML syntax"""
-        k8s_file = Path("kubernetes.yaml")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        k8s_file = Path(os.path.join(current_dir, '..', 'kubernetes.yaml'))
         with open(k8s_file, 'r') as f:
             content = f.read()
         
@@ -38,7 +40,8 @@ class TestKubernetesValidation:
     
     def test_kubernetes_deployments_have_required_fields(self):
         """Test that all Deployments have required selector and template fields"""
-        k8s_file = Path("kubernetes.yaml")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        k8s_file = Path(os.path.join(current_dir, '..', 'kubernetes.yaml'))
         with open(k8s_file, 'r') as f:
             content = f.read()
         
@@ -62,7 +65,8 @@ class TestKubernetesValidation:
     
     def test_kubernetes_statefulsets_have_required_fields(self):
         """Test that all StatefulSets have required selector and template fields"""
-        k8s_file = Path("kubernetes.yaml")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        k8s_file = Path(os.path.join(current_dir, '..', 'kubernetes.yaml'))
         with open(k8s_file, 'r') as f:
             content = f.read()
         
@@ -86,7 +90,8 @@ class TestKubernetesValidation:
     
     def test_kubernetes_pod_disruption_budgets_have_correct_types(self):
         """Test that PodDisruptionBudgets have correct field types"""
-        k8s_file = Path("kubernetes.yaml")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        k8s_file = Path(os.path.join(current_dir, '..', 'kubernetes.yaml'))
         with open(k8s_file, 'r') as f:
             content = f.read()
         
@@ -116,7 +121,8 @@ class TestKubernetesValidation:
     
     def test_kubernetes_network_policies_have_pod_selector(self):
         """Test that NetworkPolicies have podSelector field"""
-        k8s_file = Path("kubernetes.yaml")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        k8s_file = Path(os.path.join(current_dir, '..', 'kubernetes.yaml'))
         with open(k8s_file, 'r') as f:
             content = f.read()
         
@@ -247,7 +253,8 @@ class TestIntegration:
         assert db is not None
         
         # Verify kubernetes.yaml exists and is parseable
-        k8s_file = Path("kubernetes.yaml")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        k8s_file = Path(os.path.join(current_dir, '..', 'kubernetes.yaml'))
         assert k8s_file.exists()
         
         with open(k8s_file, 'r') as f:
