@@ -46,12 +46,12 @@ services:
         
         # Wait for backend service to be resolvable
         echo '[NGINX] Waiting for backend service...';
-        for i in 1 2 3 4 5 6 7 8 9 10; do
+        for i in 1 2 3 4 5 6 7 8 9 20; do
           if nslookup backend >/dev/null 2>&1; then
             echo '[NGINX] Backend service resolved successfully';
             break;
           fi;
-          echo '[NGINX] Backend not resolved, waiting 10s... (attempt $i/10)';
+          echo "[NGINX] Backend not resolved, waiting 10s... (attempt $$i/20)";
           sleep 10;
         done;
         
