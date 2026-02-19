@@ -21,16 +21,50 @@ services:
       - sh
       - -c
       - |
-        # Install openssl for certificate generation
-        apk add --no-cache openssl;
+        # Wait for network to be ready and retry package installation
+        echo '[NGINX] Waiting for network connectivity...';
+        for i in 1 2 3 4 5; do
+          if ping -c 1 google.com >/dev/null 2>&1; then
+            echo '[NGINX] Network is ready';
+            break;
+          fi;
+          echo '[NGINX] Network not ready, retrying in 10s...';
+          sleep 10;
+        done;
         
+        # Install openssl with retry logic
+        echo '[NGINX] Installing openssl...';
+        for i in 1 2 3; do
+          if apk add --no-cache openssl; then
+            echo '[NGINX] openssl installed successfully';
+            break;
+          else
+            echo '[NGINX] Package install failed, retrying in 10s...';
+            sleep 10;
+          fi;
+        done;
+        
+        # Wait for backend service to be resolvable
+        echo '[NGINX] Waiting for backend service...';
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+          if nslookup backend >/dev/null 2>&1; then
+            echo '[NGINX] Backend service resolved successfully';
+            break;
+          fi;
+          echo '[NGINX] Backend not resolved, waiting 10s... (attempt $i/10)';
+          sleep 10;
+        done;
+        
+        # Use zaply.in.net certificates to match backend configuration
         if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
-          echo '[NGINX] Creating self-signed certificate for initial deployment...';
+          echo '[NGINX] Creating self-signed certificate for zaply.in.net...';
           mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
           openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
           cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
-          echo '[NGINX] Self-signed certificate created';
+          echo '[NGINX] Self-signed certificate created for zaply.in.net';
         fi;
+        
+        echo '[NGINX] Starting nginx...';
         nginx -g 'daemon off;'
     depends_on:
       backend:
