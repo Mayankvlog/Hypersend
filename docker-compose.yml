@@ -58,8 +58,8 @@ services:
         # Use zaply.in.net certificates to match backend configuration
         if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
           echo '[NGINX] Creating self-signed certificate for zaply.in.net...';
-          mkdir -p /etc/letsencrypt/live/zaply.in.net /etc/letsencrypt/private;
-          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/private/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
+          mkdir -p /etc/letsencrypt/live/zaply.in.net;
+          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/live/zaply.in.net/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
           cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
           echo '[NGINX] Self-signed certificate created for zaply.in.net';
         fi;
@@ -74,7 +74,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s -k -H 'Host: zaply.in.net' https://127.0.0.1/health || exit 1"]
+      test: ["CMD", "sh", "-c", "curl -f -s -H 'Host: zaply.in.net' http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -99,7 +99,7 @@ services:
       # Production domain configuration
       - DOMAIN_NAME=zaply.in.net
       - SSL_CERT_PATH=/etc/letsencrypt/live/zaply.in.net/fullchain.pem
-      - SSL_KEY_PATH=/etc/letsencrypt/private/privkey.pem
+      - SSL_KEY_PATH=/etc/letsencrypt/live/zaply.in.net/privkey.pem
 
   redis:
     image: redis:7.2-alpine
