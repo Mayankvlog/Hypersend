@@ -994,8 +994,8 @@ app = FastAPI(
 # Register custom exception handlers
 register_exception_handlers(app)
 
-# Add validation middleware for 4xx error handling (411, 413, 414, 415)
-# ===== VALIDATION MIDDLEWARE FOR 4XX ERROR HANDLING (DISABLED FOR DEBUGGING) =====
+# Add validation middleware for 4xx error handling (DISABLED FOR PRODUCTION)
+# ===== VALIDATION MIDDLEWARE FOR 4XX ERROR HANDLING (DISABLED) =====
 # app.add_middleware(RequestValidationMiddleware)
 
 # Add a comprehensive catch-all exception handler for any unhandled exceptions
@@ -1568,23 +1568,24 @@ async def api_v1_root():
         }
     }
 
-# Security headers middleware
-@app.middleware("http")
-async def add_security_headers(request, call_next):
-    response = await call_next(request)
-    
-    # Add security headers
-    security_headers = SecurityConfig.get_security_headers()
-    
-    # Add HSTS only for HTTPS connections
-    if request.url.scheme == "https":
-        hsts_header = SecurityConfig.get_hsts_header()
-        security_headers["Strict-Transport-Security"] = hsts_header
-    
-    for header, value in security_headers.items():
-        response.headers[header] = value
-    
-    return response
+# Security headers middleware - REMOVED to prevent duplicates with nginx
+# Nginx now handles all security headers consistently
+# @app.middleware("http")
+# async def add_security_headers(request, call_next):
+#     response = await call_next(request)
+#     
+#     # Add security headers
+#     security_headers = SecurityConfig.get_security_headers()
+#     
+#     # Add HSTS only for HTTPS connections
+#     if request.url.scheme == "https":
+#         hsts_header = SecurityConfig.get_hsts_header()
+#         security_headers["Strict-Transport-Security"] = hsts_header
+#     
+#     for header, value in security_headers.items():
+#         response.headers[header] = value
+#     
+#     return response
 
 
 # Serve favicon (avoid 404 in logs)
