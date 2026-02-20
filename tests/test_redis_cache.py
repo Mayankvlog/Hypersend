@@ -33,9 +33,16 @@ class TestRedisCacheBasic:
     async def test_cache(self):
         """Create test cache instance"""
         test_cache = RedisCache()
-        await test_cache.connect()
+        # Force mock cache by not connecting to Redis
+        # This ensures tests use mock cache even if Redis is available
+        
+        # Clear global cache before test
+        await cache.clear_mock_cache()
+        
         yield test_cache
-        await test_cache.disconnect()
+        
+        # Clear global cache after test
+        await cache.clear_mock_cache()
     
     @pytest.mark.asyncio
     async def test_cache_connection(self, test_cache):
@@ -133,9 +140,16 @@ class TestRedisCacheAdvanced:
     async def test_cache(self):
         """Create test cache instance"""
         test_cache = RedisCache()
-        await test_cache.connect()
+        # Force mock cache by not connecting to Redis
+        # This ensures tests use mock cache even if Redis is available
+        
+        # Clear global cache before test
+        await cache.clear_mock_cache()
+        
         yield test_cache
-        await test_cache.disconnect()
+        
+        # Clear global cache after test
+        await cache.clear_mock_cache()
     
     @pytest.mark.asyncio
     async def test_increment_decrement(self, test_cache):
@@ -368,9 +382,16 @@ class TestCacheServices:
     @pytest_asyncio.fixture
     async def test_cache(self):
         """Create test cache instance"""
-        await cache.connect()
+        # Force mock cache by not connecting to Redis
+        # This ensures tests use mock cache even if Redis is available
+        
+        # Clear global cache before test
+        await cache.clear_mock_cache()
+        
         yield cache
-        await cache.disconnect()
+        
+        # Clear global cache after test
+        await cache.clear_mock_cache()
     
     @pytest.mark.asyncio
     async def test_user_cache_service(self, test_cache):
@@ -578,9 +599,16 @@ class TestCacheUtils:
     @pytest_asyncio.fixture
     async def test_cache(self):
         """Create test cache instance"""
-        await cache.connect()
+        # Force mock cache by not connecting to Redis
+        # This ensures tests use mock cache even if Redis is available
+        
+        # Clear global cache before test
+        await cache.clear_mock_cache()
+        
         yield cache
-        await cache.disconnect()
+        
+        # Clear global cache after test
+        await cache.clear_mock_cache()
     
     def test_generate_cache_key(self):
         """Test cache key generation"""

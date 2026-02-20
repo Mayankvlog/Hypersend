@@ -120,6 +120,11 @@ class RedisCache:
             await self.connection_pool.disconnect()
             self.connection_pool = None
     
+    async def clear_mock_cache(self):
+        """Clear the mock cache for testing"""
+        self.mock_cache.clear()
+        self.mock_expirations.clear()
+    
     async def get(self, key: str) -> Optional[Any]:
         """Get value from cache"""
         if self.is_connected and self.redis_client:
