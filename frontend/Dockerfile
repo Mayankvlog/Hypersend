@@ -2,8 +2,8 @@ FROM debian:bookworm AS build
 
 # ✅ SECURITY: Use build args for flexibility and security updates
 
-# Development: override with API_BASE_URL=https://zaply.in.net/api/v1 in docker-compose build args
-ARG API_BASE_URL=https://zaply.in.net/api/v1
+# Development: override with API_BASE_URL=http://localhost:8000/api/v1 in docker-compose build args
+ARG API_BASE_URL=http://localhost:8000/api/v1
 
 # LOGIC FIX: Add VALIDATE_CERTIFICATES build arg for flexible SSL configuration
 # Production default: true (enforce valid SSL certificates)
@@ -41,7 +41,6 @@ RUN rm -rf build/ && flutter clean
 RUN flutter build web --release \
     --no-source-maps \
     --no-tree-shake-icons \
-    --web-renderer canvaskit \
     --dart-define=API_BASE_URL=${API_BASE_URL} \
     --dart-define=VALIDATE_CERTIFICATES=${VALIDATE_CERTIFICATES} \
     --dart-define=ENVIRONMENT=production \
