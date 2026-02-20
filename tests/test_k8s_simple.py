@@ -21,7 +21,7 @@ def test_kubernetes_yaml_validation():
     k8s_file = Path("kubernetes.yaml")
     if not k8s_file.exists():
         print("ERROR: kubernetes.yaml not found")
-        return False
+        assert False, "kubernetes.yaml not found"
     
     try:
         with open(k8s_file, 'r') as f:
@@ -99,14 +99,14 @@ def test_kubernetes_yaml_validation():
             print(f"\nSuggested fixes:")
             for fix in fixes:
                 print(f"  - {fix}")
-            return False
+            assert False, f"Found {len(errors)} Kubernetes YAML errors"
         else:
             print("SUCCESS: Kubernetes YAML validation passed")
-            return True
+            assert True
             
     except Exception as e:
         print(f"ERROR: Error validating Kubernetes YAML: {e}")
-        return False
+        assert False, f"Error validating Kubernetes YAML: {e}"
 
 def test_mock_database_import():
     """Test mock_database import functionality"""
@@ -127,7 +127,7 @@ def test_mock_database_import():
                 print("SUCCESS: Backend mock_database import successful")
             except ImportError as e2:
                 print(f"ERROR: Backend import also failed: {e2}")
-                return False
+                assert False, "Mock database import failed"
         
         # Test functionality
         try:
@@ -142,18 +142,18 @@ def test_mock_database_import():
                 print("SUCCESS: Mock database singleton pattern working")
             else:
                 print("ERROR: Mock database singleton pattern failed")
-                return False
+                assert False, "Mock database singleton pattern failed"
                 
         except Exception as e:
             print(f"ERROR: Mock database functionality test failed: {e}")
-            return False
+            assert False, f"Mock database functionality test failed: {e}"
             
         print("SUCCESS: Mock database import test passed")
-        return True
+        assert True
         
     except Exception as e:
         print(f"ERROR: Mock database import test failed: {e}")
-        return False
+        assert False, f"Mock database import test failed: {e}"
 
 def test_async_mock_operations():
     """Test async mock database operations"""
@@ -186,17 +186,18 @@ def test_async_mock_operations():
                 print("SUCCESS: Mock find_one operation successful")
             else:
                 print("ERROR: Mock find_one operation failed")
-                return False
+                assert False, "Mock find_one operation failed"
                 
             print("SUCCESS: Async mock operations test passed")
             return True
         
         # Run the async tests
-        return asyncio.run(run_async_tests())
+        result = asyncio.run(run_async_tests())
+        return result
         
     except Exception as e:
         print(f"ERROR: Async mock operations test failed: {e}")
-        return False
+        assert False, f"Async mock operations test failed: {e}"
 
 def main():
     """Main test function"""

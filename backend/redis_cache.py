@@ -111,7 +111,7 @@ class RedisCache:
     async def disconnect(self):
         """Disconnect from Redis"""
         if self.redis_client:
-            await self.redis_client.close()
+            await self.redis_client.aclose()
             self.is_connected = False
         if self.pubsub:
             await self.pubsub.close()

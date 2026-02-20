@@ -44,7 +44,7 @@ def test_email_service_configuration():
         # Check SMTP configuration
         if all([settings.SMTP_HOST, settings.SMTP_USERNAME, settings.SMTP_PASSWORD, settings.EMAIL_FROM]):
             print("✅ SMTP configuration is COMPLETE")
-            return True
+            assert True
         else:
             print("❌ SMTP configuration is INCOMPLETE")
             print("Missing settings:")
@@ -56,10 +56,10 @@ def test_email_service_configuration():
                 print("  - SMTP_PASSWORD")
             if not settings.EMAIL_FROM:
                 print("  - EMAIL_FROM")
-            return False
+            assert False, "SMTP configuration is incomplete"
     else:
         print("❌ Email service is DISABLED")
-        return False
+        assert False, "Email service is disabled"
 
 def test_forgot_password_endpoint():
     """Test forgot password endpoint functionality"""
@@ -67,7 +67,7 @@ def test_forgot_password_endpoint():
     
     if not app:
         print("❌ App not available - skipping test")
-        return False
+        pytest.skip("App not available")
     
     client = TestClient(app)
     
@@ -88,18 +88,18 @@ def test_forgot_password_endpoint():
             if data.get("success") and data.get("token"):
                 print("✅ Token generated successfully")
                 print(f"Token: {data.get('token')}")
-                return True
+                assert True
             else:
                 print("❌ Token not generated or missing in response")
-                return False
+                assert False, "Token not generated or missing in response"
         else:
             print(f"❌ Forgot password failed: {response.status_code}")
             print(f"Response: {response.text}")
-            return False
+            assert False, f"Forgot password failed: {response.status_code}"
             
     except Exception as e:
         print(f"❌ Exception during forgot password test: {e}")
-        return False
+        assert False, f"Exception during forgot password test: {e}"
 
 def test_email_sending_directly():
     """Test email sending function directly"""
@@ -107,14 +107,14 @@ def test_email_sending_directly():
     
     if not settings:
         print("❌ Settings not available - skipping email test")
-        return False
+        pytest.skip("Settings not available")
     
     # Import the email sending function
     try:
         from backend.routes.auth import send_password_reset_email
     except ImportError:
         print("❌ Could not import email sending function")
-        return False
+        assert False, "Could not import email sending function"
     
     try:
         # Test email sending with test data
@@ -129,14 +129,14 @@ def test_email_sending_directly():
         
         if result:
             print("✅ Email sending function returned True")
-            return True
+            assert True
         else:
             print("❌ Email sending function returned False")
-            return False
+            assert False, "Email sending function returned False"
             
     except Exception as e:
         print(f"❌ Exception during direct email test: {e}")
-        return False
+        assert False, f"Exception during direct email test: {e}"
 
 def check_smtp_connection():
     """Test SMTP connection if possible"""
@@ -144,7 +144,7 @@ def check_smtp_connection():
     
     if not settings or not settings.EMAIL_SERVICE_ENABLED:
         print("❌ Email service disabled - skipping SMTP test")
-        return False
+        pytest.skip("Email service disabled")
     
     try:
         import smtplib
@@ -160,15 +160,15 @@ def check_smtp_connection():
             server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             print("✅ SMTP login successful")
             server.quit()
-            return True
+            assert True
         else:
             print("❌ SMTP credentials not configured")
             server.quit()
-            return False
+            assert False, "SMTP credentials not configured"
             
     except Exception as e:
         print(f"❌ SMTP connection failed: {e}")
-        return False
+        assert False, f"SMTP connection failed: {e}"
 
 if __name__ == "__main__":
     print("🔧 Testing Forgot Password Email Functionality")
