@@ -2273,7 +2273,6 @@ async def download_file(
                     "Content-Length": str(avatar_size),
                     "Content-Disposition": f'inline; filename="avatar_{current_user}"',
                     "Cache-Control": "public, max-age=3600",  # Cache avatars for 1 hour
-                    "Content-Security-Policy": "default-src 'self'",
                     "Accept-Ranges": "bytes"
                 }
             )
