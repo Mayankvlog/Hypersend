@@ -41,22 +41,15 @@
 </head>
 <body>
   <script>
-    // Configure Flutter for proper CanvasKit loading with CSP compliance
-    const htmlRendererFallback = localStorage.getItem('flutter_html_fallback');
-    const initialRenderer = htmlRendererFallback === 'true' ? 'html' : 'canvaskit';
-    const initialCanvasKitUrl = htmlRendererFallback === 'true' ? '' : 'https://www.gstatic.com/flutter-canvaskit/';
-    
+    // Production Flutter Configuration with CanvasKit optimization
     window.flutterConfiguration = {
-      canvasKitBaseUrl: initialCanvasKitUrl,
-      renderer: initialRenderer
+      // Explicitly set CanvasKit CDN URL for production
+      canvasKitBaseUrl: 'https://www.gstatic.com/flutter-canvaskit/',
+      // Force CanvasKit renderer for best performance
+      renderer: 'canvaskit'
     };
     
-    if (htmlRendererFallback === 'true') {
-      localStorage.removeItem('flutter_html_fallback');
-    }
-    
-    
-    // Enhanced CSP error handling
+    // Enhanced error handling for CanvasKit loading
     window.addEventListener('error', function(e) {
       if (e.message && (e.message.includes('Content-Security-Policy') || e.message.includes('canvaskit'))) {
         console.warn('CSP blocked CanvasKit, falling back to HTML renderer');
@@ -67,7 +60,7 @@
       }
     });
     
-    // Handle unhandled promise rejections from CanvasKit loading
+    // Handle CanvasKit loading failures
     window.addEventListener('unhandledrejection', function(e) {
       if (e.reason && e.reason.message && e.reason.message.includes('canvaskit')) {
         console.warn('CanvasKit loading failed, falling back to HTML renderer');
@@ -78,27 +71,6 @@
         location.reload();
       }
     });
-    
-    
-    // Test if CanvasKit can be loaded
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', testCanvasKit);
-    } else {
-      testCanvasKit();
-    }
-    
-    function testCanvasKit() {
-      if (window.flutterConfiguration.renderer === 'canvaskit') {
-        fetch('https://www.gstatic.com/flutter-canvaskit/d2913632a4578ee4d0b8b1c4a69888c8a0672c4b/canvaskit.js', {
-          method: 'HEAD',
-          mode: 'no-cors'
-        }).catch(function() {
-          console.warn('Cannot reach CanvasKit CDN, falling back to HTML renderer');
-          window.flutterConfiguration.renderer = 'html';
-          window.flutterConfiguration.canvasKitBaseUrl = '';
-        });
-      }
-    }
   </script>
   <script src="flutter_bootstrap.js" async defer></script>
 </body>

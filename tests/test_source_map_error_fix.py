@@ -48,8 +48,8 @@ class TestSourceMapErrorFix:
         # Should have .map location block
         assert "\.map$" in content, "nginx.conf should have .map location block"
         
-        # Should return 404 for .map files
-        assert "return 404" in content, "nginx.conf should return 404 for .map files"
+        # Should return 204 (No Content) for .map files to prevent console errors
+        assert "return 204" in content, "nginx.conf should return 204 for .map files"
         
         print("✅ Nginx.conf properly handles .map file requests")
     

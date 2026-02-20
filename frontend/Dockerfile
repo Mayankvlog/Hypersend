@@ -41,9 +41,11 @@ RUN rm -rf build/ && flutter clean
 RUN flutter build web --release \
     --no-source-maps \
     --no-tree-shake-icons \
+    --web-renderer canvaskit \
     --dart-define=API_BASE_URL=${API_BASE_URL} \
     --dart-define=VALIDATE_CERTIFICATES=${VALIDATE_CERTIFICATES} \
-    --dart-define=ENVIRONMENT=production
+    --dart-define=ENVIRONMENT=production \
+    --dart-define=FLUTTER_WEB_CANVASKIT_URL=https://www.gstatic.com/flutter-canvaskit/
 
 # ==============================
 # NGINX Production Server
