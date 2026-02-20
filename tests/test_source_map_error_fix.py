@@ -104,6 +104,19 @@ class TestSourceMapErrorFix:
         else:
             print("✅ Frontend service not found or no build args (secure)")
     
+    def test_dockerfile_removes_source_map_references(self):
+        """Test that Dockerfile removes source map references from built files"""
+        dockerfile_path = Path(__file__).parent.parent / "frontend" / "Dockerfile"
+
+        content = _read_text_file(dockerfile_path)
+        
+        # Should have sed commands to remove source map references
+        assert "sed -i" in content, "Dockerfile should have sed commands to remove source map references"
+        assert "sourceMappingURL" in content, "Dockerfile should remove sourceMappingURL references"
+        assert "flutter.js.map" in content, "Dockerfile should remove flutter.js.map references"
+        
+        print("✅ Dockerfile removes source map references from built files")
+    
     def test_web_index_html_csp_headers(self):
         """Test that web/index.html has proper CSP headers"""
         index_path = Path(__file__).parent.parent / "frontend" / "web" / "index.html"

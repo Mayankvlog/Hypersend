@@ -47,6 +47,10 @@ RUN flutter build web --release \
     --dart-define=ENVIRONMENT=production \
     --dart-define=FLUTTER_WEB_CANVASKIT_URL=https://www.gstatic.com/flutter-canvaskit/
 
+# Remove source map references from built files to prevent 404 errors
+RUN sed -i 's|////# sourceMappingURL=flutter.js.map||g' build/web/flutter.js && \
+    sed -i 's|////# sourceMappingURL=flutter.js.map||g' build/web/flutter_bootstrap.js
+
 # ==============================
 # NGINX Production Server
 # ==============================
@@ -122,7 +126,8 @@ RUN printf '%s\n' \
     '    }' \
     '    location ~* \.map$ {' \
     '        add_header Cache-Control "no-cache, no-store, must-revalidate";' \
-    '        try_files $uri =404;' \
+    '        add_header Content-Type "application/json";' \
+    '        return 204;' \
     '        access_log off;' \
     '    }' \
     '    location / {' \

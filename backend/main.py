@@ -1635,10 +1635,6 @@ async def health_check():
 # DIRECT APP ROUTES (must be before router includes)
 # ====================
 
-@app.get("/api/v1/")
-async def api_root():
-    return {"message": "API root working"}
-
 @app.get("/api/v1/debug", tags=["System"])
 async def debug_route(request: Request):
     """Debug route to see what path FastAPI receives"""
