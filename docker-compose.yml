@@ -57,7 +57,7 @@ services:
   redis:
     image: redis:7.2-alpine
     container_name: hypersend_redis
-    restart: always
+    restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -80,7 +80,7 @@ services:
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
-    restart: always
+    restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
@@ -114,7 +114,7 @@ services:
       dockerfile: Dockerfile
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
-    restart: always
+    restart: unless-stopped
     environment:
       # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
       # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
@@ -202,7 +202,7 @@ services:
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
-    restart: always
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
