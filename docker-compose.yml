@@ -2,14 +2,14 @@ services:
   nginx:
     image: nginx:alpine
     container_name: hypersend_nginx
-    restart: unless-stopped
+    restart: always
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt
-      - /var/lib/letsencrypt:/var/lib/letsencrypt
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/lib/letsencrypt:/var/lib/letsencrypt:ro
       - nginx_cache:/var/cache/nginx
       - ./data/files:/data/files:ro
     logging:
@@ -17,55 +17,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    entrypoint:
-      - sh
-      - -c
-      - |
-        # Wait for network to be ready and retry package installation
-        echo '[NGINX] Waiting for network connectivity...';
-        for i in 1 2 3 4 5; do
-          if ping -c 1 google.com >/dev/null 2>&1; then
-            echo '[NGINX] Network is ready';
-            break;
-          fi;
-          echo '[NGINX] Network not ready, retrying in 10s...';
-          sleep 10;
-        done;
-        
-        # Install openssl with retry logic
-        echo '[NGINX] Installing openssl...';
-        for i in 1 2 3; do
-          if apk add --no-cache openssl; then
-            echo '[NGINX] openssl installed successfully';
-            break;
-          else
-            echo '[NGINX] Package install failed, retrying in 10s...';
-            sleep 10;
-          fi;
-        done;
-        
-        # Wait for backend service to be resolvable
-        echo '[NGINX] Waiting for backend service...';
-        for i in 1 2 3 4 5 6 7 8 9 20; do
-          if nslookup backend >/dev/null 2>&1; then
-            echo '[NGINX] Backend service resolved successfully';
-            break;
-          fi;
-          echo "[NGINX] Backend not resolved, waiting 10s... (attempt $$i/20)";
-          sleep 10;
-        done;
-        
-        # Use zaply.in.net certificates to match backend configuration
-        if [ ! -d '/etc/letsencrypt/live/zaply.in.net' ]; then
-          echo '[NGINX] Creating self-signed certificate for zaply.in.net...';
-          mkdir -p /etc/letsencrypt/live/zaply.in.net;
-          openssl req -x509 -newkey rsa:2048 -keyout /etc/letsencrypt/live/zaply.in.net/privkey.pem -out /etc/letsencrypt/live/zaply.in.net/fullchain.pem -days 365 -nodes -subj '/CN=zaply.in.net';
-          cp /etc/letsencrypt/live/zaply.in.net/fullchain.pem /etc/letsencrypt/live/zaply.in.net/chain.pem;
-          echo '[NGINX] Self-signed certificate created for zaply.in.net';
-        fi;
-        
-        echo '[NGINX] Starting nginx...';
-        nginx -g 'daemon off;'
+    entrypoint: []
+    command: ['nginx', '-g', 'daemon off;']
     depends_on:
       backend:
         condition: service_healthy
@@ -74,11 +27,11 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s -H 'Host: zaply.in.net' http://127.0.0.1/health || exit 1"]
+      test: ["CMD", "sh", "-c", "curl -f -s -k -H 'Host: zaply.in.net' https://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 60s
     environment:
       # Suppress SSL verification warnings for self-signed certs in dev
       - NGINX_ALLOW_UNSAFE_SSL=true
@@ -166,8 +119,8 @@ services:
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    # Internal port only - not exposed publicly
+    # Access only through nginx proxy on HTTPS port 443
     environment:
       # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
       # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
