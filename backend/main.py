@@ -1445,28 +1445,39 @@ async def handle_options_request(full_path: str, request: Request):
     These must succeed without authentication for CORS to work in browsers.
     SECURITY: Use exact regex matching to prevent origin bypass attacks
     (e.g., https://evildomain.zaply.in.net would bypass substring matching)
+    PRODUCTION: Only allow HTTPS production domains
     """
     import re
     origin = request.headers.get("Origin", "")
     
-    # SECURITY LOGIC FIX: More permissive during testing, strict in production
+    # SECURITY LOGIC: Strict production CORS validation
     allowed_origin = "null"  # Default: deny untrusted origins
     
     if origin:
         # SECURITY: Use exact whitelist matching to prevent subdomain bypass attacks
         allowed_origins = []
         
-        # Production domains - exact matches only
+        # Production domains - exact matches only, HTTPS only
         if not settings.DEBUG:
             allowed_origins.extend([
-                "https://zaply.in.net/",
+                "https://zaply.in.net",
+                "https://www.zaply.in.net",
+            ])
+        else:
+            # Development: Allow more origins for testing
+            allowed_origins.extend([
+                "https://zaply.in.net",
+                "https://www.zaply.in.net",
                 "http://127.0.0.1:3000",
+                "http://localhost:3000",
+                "http://zaply_frontend:80",
+                "http://frontend:80",
             ])
         
         # SECURITY: Exact match only - no pattern matching to prevent bypass
         allowed_origin = origin if origin in allowed_origins else "null"
     
-    # If no origin header, allow the request (common in test clients and some curl requests)
+    # If no origin header, allow request (common in test clients and some curl requests)
     # This is important for TestClient compatibility
     if not origin:
         allowed_origin = "*"
@@ -1477,12 +1488,10 @@ async def handle_options_request(full_path: str, request: Request):
             "Access-Control-Allow-Origin": allowed_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
             "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With",
-            "Access-Control-Allow-Credentials": "true" if allowed_origin != "null" else "false",
+            "Access-Control-Allow-Credentials": "true" if allowed_origin != "null" and allowed_origin != "*" else "false",
             "Access-Control-Max-Age": "86400",
         }
     )
-
-# Removed - consolidated into single health endpoint below
 
 # Detailed status endpoint for debugging
 @app.get("/api/v1/status")
@@ -1546,26 +1555,10 @@ async def root():
 
 @app.get("/api/v1/")
 async def api_v1_root():
-    """API v1 root endpoint - list available endpoints"""
+    """API v1 root endpoint - prevent 405 errors"""
     return {
-        "api": "Zaply API",
-        "version": "v1.0.0",
-        "status": "running",
-        "environment": "debug" if settings.DEBUG else "production",
-        "endpoints": {
-            "auth": "/api/v1/auth/",
-            "users": "/api/v1/users/",
-            "chats": "/api/v1/chats/",
-            "messages": "/api/v1/messages/",
-            "files": "/api/v1/files/",
-            "groups": "/api/v1/groups/",
-            "updates": "/api/v1/updates/",
-            "health": "/api/v1/health"
-        },
-        "docs": {
-            "openapi": "/api/v1/docs",
-            "redoc": "/api/v1/redoc"
-        }
+        "status": "ok",
+        "service": "zaply"
     }
 
 # Security headers middleware - REMOVED to prevent duplicates with nginx
@@ -1703,34 +1696,38 @@ from auth.utils import get_current_user
 @app.options("/api/v1/reset-password")
 async def preflight_alias_endpoints(request: Request):
     """Handle CORS preflight for alias endpoints"""
-    import re
-    origin = request.headers.get("Origin", "null")
+    origin = request.headers.get("Origin", "")
     
-    # SECURITY LOGIC FIX: Same comprehensive validation as main OPTIONS handler
-    allowed_origin = "null"
+    # SECURITY LOGIC: Same strict production validation as main OPTIONS handler
+    allowed_origin = "null"  # Default: deny untrusted origins
     
-    if origin and origin != "null":
-        # LOGIC: Consistent with handle_options_request patterns
-        allowed_patterns = [
-            # Local development
-            r'^https?://zaply\.in\.net(:[0-9]+)?$',
-            r'^https?://127\.0\.0\.1(:[0-9]+)?$',
-            # Docker container names (HTTP only)
-            r'^http://zaply_frontend(:[0-9]+)?$',
-            r'^http://zaply_backend(:[0-9]+)?$',
-            # Docker service names (HTTP only)
-            r'^http://frontend(:[0-9]+)?$',
-            r'^http://backend(:[0-9]+)?$',
-        ]
+    if origin:
+        # SECURITY: Use exact whitelist matching to prevent subdomain bypass attacks
+        allowed_origins = []
         
-        # Filter out None patterns (production mode removes HTTP for main domain)
-        allowed_patterns = [p for p in allowed_patterns if p]
+        # Production domains - exact matches only, HTTPS only
+        if not settings.DEBUG:
+            allowed_origins.extend([
+                "https://zaply.in.net",
+                "https://www.zaply.in.net",
+            ])
+        else:
+            # Development: Allow more origins for testing
+            allowed_origins.extend([
+                "https://zaply.in.net",
+                "https://www.zaply.in.net",
+                "http://127.0.0.1:3000",
+                "http://localhost:3000",
+                "http://zaply_frontend:80",
+                "http://frontend:80",
+            ])
         
-        # LOGIC: Check if origin matches any allowed pattern
-        for pattern in allowed_patterns:
-            if re.match(pattern, origin):
-                allowed_origin = origin
-                break
+        # SECURITY: Exact match only - no pattern matching to prevent bypass
+        allowed_origin = origin if origin in allowed_origins else "null"
+    
+    # If no origin header, allow request (common in test clients and some curl requests)
+    if not origin:
+        allowed_origin = "*"
     
     return Response(
         status_code=200,
@@ -1738,7 +1735,7 @@ async def preflight_alias_endpoints(request: Request):
             "Access-Control-Allow-Origin": allowed_origin,
             "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With",
-            "Access-Control-Allow-Credentials": "true" if allowed_origin != "null" else "false",
+            "Access-Control-Allow-Credentials": "true" if allowed_origin != "null" and allowed_origin != "*" else "false",
             "Access-Control-Max-Age": "86400",
         }
     )

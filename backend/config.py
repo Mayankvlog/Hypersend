@@ -334,10 +334,10 @@ class Settings:
         raise RuntimeError("PRODUCTION SAFETY ERROR: Mock database cannot be used in production. Set USE_MOCK_DB=False")
     
     # CORS Configuration
+    # PRODUCTION: Only allow specific production domains
     # ENHANCED: Load from environment with secure defaults
-    # PRODUCTION: Use specific allowed origins only
     cors_origins_default = [
-        # Production origins
+        # Production origins - HTTPS only for security
         "https://zaply.in.net",
         "https://www.zaply.in.net",
         # Docker internal names (keep for compose/k8s internal traffic)
@@ -384,11 +384,12 @@ class Settings:
                             external_http_origins.append(origin)
                     
                     if external_http_origins:
-                        # Only warn about external HTTP origins (security risk)
-                        print(f"[CORS_SECURITY] ⚠️  WARNING: Production mode with EXTERNAL HTTP origins detected!")
-                        print(f"[CORS_SECURITY] ⚠️  External HTTP origins allow unencrypted traffic - SECURITY RISK!")
-                        print(f"[CORS_SECURITY] ⚠️  External HTTP origins found: {external_http_origins}")
-                        print(f"[CORS_SECURITY] ⚠️  Use HTTPS only in production deployment")
+                        # PRODUCTION SECURITY: BLOCK external HTTP origins completely
+                        print(f"[CORS_SECURITY] ❌ SECURITY ERROR: External HTTP origins in PRODUCTION!")
+                        print(f"[CORS_SECURITY] ❌ External HTTP origins: {external_http_origins}")
+                        print(f"[CORS_SECURITY] ❌ These are BLOCKED for security - use HTTPS only!")
+                        # Remove external HTTP origins - DO NOT allow them
+                        origins = https_origins + docker_http_origins
                     
                     if docker_http_origins:
                         print(f"[CORS_SECURITY] Docker internal HTTP origins (safe): {docker_http_origins}")
@@ -410,8 +411,19 @@ class Settings:
         if env_api_base_url:
             derived = env_api_base_url.replace("/api/v1", "").strip()
             if derived:
+                # PRODUCTION: Ensure derived origin is HTTPS in production
+                if not self.DEBUG and not derived.startswith("https://"):
+                    print(f"[CORS_SECURITY] ❌ Derived API_BASE_URL is not HTTPS in production: {derived}")
+                    return []  # Reject non-HTTPS in production
                 return [derived]
 
+        # PRODUCTION: Return only HTTPS production domains
+        if not self.DEBUG:
+            production_origins = [origin for origin in self.cors_origins_default if origin.startswith("https://")]
+            print(f"[CORS_SECURITY] ✅ Production CORS origins (HTTPS only): {production_origins}")
+            return production_origins
+        
+        # DEBUG: Return all origins for development
         return self.cors_origins_default
     
     def validate_email_config(self):
