@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import Optional
-from fastapi import FastAPI, Request, status, HTTPException, Depends
+from fastapi import FastAPI, Request, status, HTTPException, Depends, Head
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, JSONResponse
@@ -1561,6 +1561,11 @@ async def api_v1_root():
         "service": "zaply"
     }
 
+@app.head("/api/v1/")
+async def api_v1_root_head():
+    """HEAD method for API v1 root endpoint"""
+    return Response(status_code=200)
+
 # Security headers middleware - REMOVED to prevent duplicates with nginx
 # Nginx now handles all security headers consistently
 # @app.middleware("http")
@@ -1613,14 +1618,13 @@ async def health_check():
         return {"status": "healthy"}
         
     except Exception as e:
-        logger.error(f"[HEALTH_CHECK] Error: {str(e)}")
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "degraded",
-                "error": str(e)
-            }
-        )
+        return {"status": "unhealthy", "error": str(e)[:100]}
+
+@app.head("/health", tags=["System"])
+@app.head("/api/v1/health", tags=["System"])
+async def health_check_head():
+    """HEAD method for health check endpoint"""
+    return Response(status_code=200)
 
 
 
