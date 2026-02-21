@@ -1452,12 +1452,18 @@ async def health_check():
     try:
         # Minimal health check - always return healthy if server is running
         # Database checks are handled by detailed health endpoint
-        return {"status": "healthy"}
+        return JSONResponse(
+            status_code=200,
+            content={"status": "healthy"}
+        )
         
     except Exception as e:
         # Even in error, return 200 with status for load balancer compatibility
         # Load balancers should continue routing even if some services are degraded
-        return {"status": "degraded", "error": str(e)[:50]}
+        return JSONResponse(
+            status_code=200,
+            content={"status": "degraded", "error": str(e)[:50]}
+        )
 
 @app.head("/health", tags=["System"])
 @app.head("/api/v1/health", tags=["System"])
@@ -1884,8 +1890,8 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",
-        host=settings.API_HOST,
-        port=settings.API_PORT,
+        host="0.0.0.0",
+        port=8000,
         reload=settings.DEBUG
     )
 
