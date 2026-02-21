@@ -57,9 +57,7 @@ services:
   redis:
     image: redis:7.2-alpine
     container_name: hypersend_redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
+    restart: always
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -82,9 +80,7 @@ services:
   mongodb:
     image: mongo:7.0
     container_name: hypersend_mongodb
-    restart: unless-stopped
-    ports:
-      - "27018:27017"
+    restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
@@ -99,7 +95,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 40s
+      start_period: 30s
     command:
       - mongod
       - --auth
@@ -118,9 +114,7 @@ services:
       dockerfile: Dockerfile
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
-    restart: unless-stopped
-    # Internal port only - not exposed publicly
-    # Access only through nginx proxy on HTTPS port 443
+    restart: always
     environment:
       # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
       # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
@@ -179,7 +173,6 @@ services:
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
-      - redis_data:/redis
     depends_on:
       mongodb:
         condition: service_healthy
@@ -188,11 +181,11 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/health || exit 1"]
+      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/api/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 180s
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -203,15 +196,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
+    args:
         # SECURITY: Use production URL for nginx proxy routing
         API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}     
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
-    restart: unless-stopped
-    ports:
-      - "3000:80"
+    restart: always
     depends_on:
       backend:
         condition: service_healthy
@@ -222,7 +213,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 30s
     logging:
       driver: "json-file"
       options:

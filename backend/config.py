@@ -149,9 +149,9 @@ class Settings:
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() in ("true", "1", "yes")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
     
-    # Redis Configuration (WhatsApp-style: Ephemeral Messages Only)
-    # MANDATORY: All settings enforce in-memory only, NO persistence
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    # Redis Configuration (Production: Use internal Docker service)
+    # CRITICAL: Use redis service name for Docker internal networking
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "redis" if _IS_DOCKER else "localhost")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
