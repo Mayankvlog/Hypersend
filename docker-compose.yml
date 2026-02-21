@@ -196,7 +196,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    args:
+      args:
         # SECURITY: Use production URL for nginx proxy routing
         API_BASE_URL: ${API_BASE_URL:-https://zaply.in.net/api/v1}     
         VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
