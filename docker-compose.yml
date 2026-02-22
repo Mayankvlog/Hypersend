@@ -196,16 +196,17 @@ services:
     container_name: hypersend_frontend
     restart: always
     expose:
-      - "3000"
+      - "80"
     environment:
       - NODE_ENV=production
       - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
+      start_period: 5s
       retries: 3
     logging:
       driver: "json-file"
