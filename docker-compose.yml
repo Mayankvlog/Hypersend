@@ -8,10 +8,9 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/lib/letsencrypt:/var/lib/letsencrypt:ro
       - nginx_cache:/var/cache/nginx
       - ./data/files:/data/files:ro
+      - ./frontend/build/web:/usr/share/nginx/html:ro
     logging:
       driver: "json-file"
       options:
@@ -21,8 +20,6 @@ services:
     command: ['nginx', '-g', 'daemon off;']
     depends_on:
       backend:
-        condition: service_healthy
-      frontend:
         condition: service_healthy
     networks:
       - hypersend_network
@@ -202,15 +199,16 @@ services:
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
-    expose:
-      - "80"
+    volumes:
+      - ./frontend/build/web:/app/build/web:rw
+    command: ["sh", "-c", "cp -r /app/build/web/* /app/build/web/ || true && tail -f /dev/null"]
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1/health || exit 1"]
+      test: ["CMD", "sh", "-c", "test -f /app/build/web/index.html || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
