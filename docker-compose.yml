@@ -27,11 +27,10 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s -H 'Host: zaply.in.net' https://127.0.0.1/api/v1/health || exit 1"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 60s
     environment:
       # Suppress SSL verification warnings for self-signed certs in dev
       - NGINX_ALLOW_UNSAFE_SSL=true
@@ -65,10 +64,9 @@ services:
       - hypersend_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -185,9 +183,8 @@ services:
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/api/v1/health || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      timeout: 5s
+      retries: 3
     logging:
       driver: "json-file"
       options:
