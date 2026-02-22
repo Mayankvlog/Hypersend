@@ -188,43 +188,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        # SECURITY: Use production URL for nginx proxy routing
-        API_BASE_URL: https://zaply.in.net/api/v1     
-        VALIDATE_CERTIFICATES: ${VALIDATE_CERTIFICATES:-true}
-    image: mayank035/hypersend-frontend:latest
-    container_name: hypersend_frontend
-    restart: unless-stopped
-    volumes:
-      - ./frontend/build/web:/app/build/web:rw
-    command: ["sh", "-c", "cp -r /app/build/web/* /app/build/web/ || true && tail -f /dev/null"]
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "sh", "-c", "test -f /app/build/web/index.html || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 networks:
-  hypersend_network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
+  hypersend_network: {}
 
 volumes:
   mongodb_data_v4:
