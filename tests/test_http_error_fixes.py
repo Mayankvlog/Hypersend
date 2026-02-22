@@ -349,6 +349,7 @@ class TestFileUploadFlow:
         request = MagicMock()
         request.method = "POST"  # Set correct HTTP method
         request.client = None
+        request.headers = {"user-agent": "testclient"}  # Set test client user agent
 
         with patch("routes.files.upload_complete_limiter") as mock_limiter, \
              patch("routes.files.settings") as mock_settings, \

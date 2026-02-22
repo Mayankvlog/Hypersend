@@ -188,6 +188,31 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: mayank035/hypersend-frontend:latest
+    container_name: hypersend_frontend
+    restart: always
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
+    networks:
+      - hypersend_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   hypersend_network: {}
 

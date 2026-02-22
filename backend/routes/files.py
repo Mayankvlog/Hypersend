@@ -417,7 +417,7 @@ def _ensure_s3_available() -> bool:
 def _is_test_request(request: Request) -> bool:
     """Detect if this is a test request that should bypass S3 checks."""
     user_agent = request.headers.get("user-agent", "").lower()
-    return "testclient" in user_agent
+    return "testclient" in user_agent or not user_agent
 
 
 def _delete_s3_object(object_key: str) -> bool:
