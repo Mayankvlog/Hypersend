@@ -8,9 +8,8 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - C:/etc/letsencrypt:/etc/letsencrypt:ro
       - nginx_cache:/var/cache/nginx
-      - ./data/files:/data/files:ro
-      - ./frontend/build/web:/usr/share/nginx/html:ro
     logging:
       driver: "json-file"
       options:
@@ -21,10 +20,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      frontend:
+        condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -110,8 +111,8 @@ services:
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: always
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     environment:
       # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
       # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
@@ -144,7 +145,7 @@ services:
       DEBUG: "False"
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: https://zaply.in.net/api/v1
+      API_BASE_URL: http://backend:8000
       
       # ===== CORS CONFIGURATION =====
       # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
@@ -195,11 +196,11 @@ services:
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: always
-    expose:
-      - "80"
+    ports:
+      - "3000:80"
     environment:
       - NODE_ENV=production
-      - API_BASE_URL=${API_BASE_URL:-https://zaply.in.net/api/v1}
+      - API_BASE_URL=http://backend:8000
     networks:
       - hypersend_network
     healthcheck:
