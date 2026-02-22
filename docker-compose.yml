@@ -169,7 +169,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-dummy_app_password_configure_in_env}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
-      SENDER_NAME: ${SENDER_NAME:-Zaply Support}
+      SENDER_NAME: ${SENDER_NAME:-Hypersend Support}
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads

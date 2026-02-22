@@ -31,11 +31,11 @@ class Settings:
     # For development, use MongoDB Atlas or local MongoDB
     # Read MongoDB credentials from environment
     _IS_DOCKER: bool = os.path.exists("/.dockerenv")
-    _MONGO_USER: str = os.getenv("MONGO_USER", "zaply")
-    _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "zaply_secure_password")
+    _MONGO_USER: str = os.getenv("MONGO_USER", "hypersend")
+    _MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "hypersend_secure_password")
     _MONGO_HOST: str = os.getenv("MONGO_HOST", "mongodb" if _IS_DOCKER else "localhost")
     _MONGO_PORT: str = os.getenv("MONGO_PORT", "27017")
-    _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "zaply")
+    _MONGO_DB: str = os.getenv("MONGO_INITDB_DATABASE", "hypersend")
     _MONGODB_ATLAS_ENABLED: bool = os.getenv("MONGODB_ATLAS_ENABLED", "false").lower() in ("true", "1", "yes")
     
     # Priority order for MongoDB URI:
