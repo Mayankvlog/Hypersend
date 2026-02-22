@@ -133,7 +133,7 @@ class Settings:
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))  # Backend listens on 8000, Nginx proxies to it
     # Default public API base URL for this deployment
-    # PROD: https://your-production-domain/api/v1 (requires DNS + SSL)
+    # PROD: https://zaply.in.net/api/v1 (requires DNS + SSL)
     # DEV: Use local backend API endpoint
     API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
     

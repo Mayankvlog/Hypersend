@@ -547,11 +547,20 @@ class ApiService {
     required String name,
   }) async {
     try {
-      final response = await _dio.post('${ApiConstants.authEndpoint}/register', data: {
-        'email': email,
-        'password': password,
-        'name': name,
-      });
+      // CRITICAL: Do not attach Authorization header for register endpoint
+      final response = await _dio.post('${ApiConstants.authEndpoint}/register', 
+        data: {
+          'email': email,
+          'password': password,
+          'name': name,
+        },
+        options: Options(
+          headers: {
+            // Remove Authorization header explicitly for register
+            'Authorization': null,
+          },
+        ),
+      );
       
       // Handle all HTTP status codes for registration
       return _handleRegisterResponse(response);
@@ -628,7 +637,7 @@ class ApiService {
       case 416: return customMessage ?? 'Registration range not satisfiable. Please try again.';
       case 417: return customMessage ?? 'Registration expectation failed. Please try again.';
       case 421: return customMessage ?? 'Misdirected registration request. Please try again.';
-      case 422: return customMessage ?? 'Invalid registration data. Please check your name, email, and password.';
+      case 422: return customMessage ?? 'Invalid registration data. Please check your name, email, and password format.';
       case 423: return customMessage ?? 'Registration locked due to security reasons. Please contact support.';
       case 424: return customMessage ?? 'Registration dependency failed. Please try again.';
       case 425: return customMessage ?? 'Registration request too early. Please wait and try again.';
@@ -642,7 +651,7 @@ class ApiService {
       case 500: return customMessage ?? 'Server registration error. Please try again later.';
       case 501: return customMessage ?? 'Registration method not implemented. Please update app.';
       case 502: return customMessage ?? 'Registration gateway error. Please try again later.';
-      case 503: return customMessage ?? 'Registration service temporarily unavailable. Please try again later.';
+      case 503: return customMessage ?? 'Service temporarily unavailable. Retrying... Please wait.';
       case 504: return customMessage ?? 'Registration gateway timeout. Server is too busy.';
       case 505: return customMessage ?? 'Registration HTTP version not supported. Please update app.';
       case 506: return customMessage ?? 'Registration content negotiation failed. Please try again.';
@@ -734,7 +743,7 @@ class ApiService {
       
       // 4xx Client Errors  
       case 400: return customMessage ?? 'Invalid login request. Please check your credentials.';
-      case 401: return customMessage ?? 'Invalid email or password. Please try again.';
+      case 401: return customMessage ?? 'Authentication failed. Please login again or check your credentials.';
       case 402: return customMessage ?? 'Payment required. Please check your subscription.';
       case 403: return customMessage ?? 'Access forbidden. Your account may be locked or suspended.';
       case 404: return customMessage ?? 'Login endpoint not found. Please update app.';
@@ -750,7 +759,7 @@ class ApiService {
       case 416: return customMessage ?? 'Login range not satisfiable. Please try again.';
       case 417: return customMessage ?? 'Login expectation failed. Please try again.';
       case 421: return customMessage ?? 'Misdirected login request. Please try again.';
-      case 422: return customMessage ?? 'Invalid login data. Please check your email and password.';
+      case 422: return customMessage ?? 'Invalid login data. Please check your email and password format.';
       case 423: return customMessage ?? 'Account locked due to security reasons. Please contact support.';
       case 424: return customMessage ?? 'Login dependency failed. Please try again.';
       case 425: return customMessage ?? 'Login request too early. Please wait and try again.';
@@ -764,7 +773,7 @@ class ApiService {
       case 500: return customMessage ?? 'Server login error. Please try again later.';
       case 501: return customMessage ?? 'Login method not implemented. Please update app.';
       case 502: return customMessage ?? 'Login gateway error. Please try again later.';
-      case 503: return customMessage ?? 'Login service temporarily unavailable. Please try again later.';
+      case 503: return customMessage ?? 'Login service temporarily unavailable. Retrying... Please wait.';
       case 504: return customMessage ?? 'Login gateway timeout. Server is too busy.';
       case 505: return customMessage ?? 'Login HTTP version not supported. Please update app.';
       case 506: return customMessage ?? 'Login content negotiation failed. Please try again.';
