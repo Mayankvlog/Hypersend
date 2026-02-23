@@ -124,8 +124,8 @@ services:
       
       # ===== MONGODB ATLAS CONFIGURATION (Cloud MongoDB - Production) =====
       # Set MONGODB_ATLAS_ENABLED=true and MONGODB_URI to use MongoDB Atlas instead of local
-      MONGODB_ATLAS_ENABLED: ${MONGODB_ATLAS_ENABLED:-true}
-      MONGODB_URI: ${MONGODB_URI:-mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend}
+      MONGODB_ATLAS_ENABLED: "false"  # Force Docker MongoDB
+      MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend"
       
       # ===== API CONFIGURATION =====
       SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
@@ -142,7 +142,7 @@ services:
       CHUNK_SIZE: 33554432
       MAX_PARALLEL_CHUNKS: 4
       FILE_RETENTION_HOURS: 0
-      DEBUG: "False"
+      DEBUG: "true"  # Enable error logs temporarily
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: http://backend:8000

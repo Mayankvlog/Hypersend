@@ -1,9 +1,9 @@
 class ApiConstants {
   // Backend API Base URL - const String.fromEnvironment MUST be in const context only
-// Set at build time via: flutter build web --release --dart-define=API_BASE_URL=https://zaply.in.net/api/v1
+// Set at build time via: flutter build web --release --dart-define=API_BASE_URL=/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://zaply.in.net/api/v1',
+    defaultValue: '/api/v1',  // Relative URLs for Docker
   );
   
   // Dynamic base URL with fallback logic for connectivity issues
@@ -16,7 +16,7 @@ class ApiConstants {
   // Server base URL (without /api/v1) - for avatar images and static files
   static String get serverBaseUrl {
     final uri = Uri.tryParse(baseUrl);
-    if (uri == null) return 'https://zaply.in.net';
+    if (uri == null) return '';  // Relative path for Docker
     
     // Logic: Extract scheme, host, and port only (no /api/v1 path)
     final scheme = uri.scheme;
@@ -35,7 +35,7 @@ class ApiConstants {
       return baseUrl;
     } catch (e) {
 // Fallback for any runtime issues
-      return 'https://zaply.in.net/api/v1';
+      return '/api/v1';  // Relative path for Docker
     }
   }
   
