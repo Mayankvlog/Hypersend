@@ -2,7 +2,7 @@ services:
   nginx:
     image: nginx:alpine
     container_name: hypersend_nginx
-    restart: always
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
@@ -110,8 +110,9 @@ services:
       dockerfile: Dockerfile
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
-    restart: always
-    # Remove port exposure - backend should only be accessible through nginx
+    restart: unless-stopped
+    expose:
+      - "8000"
     environment:
       # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
       # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
@@ -141,7 +142,7 @@ services:
       CHUNK_SIZE: 33554432
       MAX_PARALLEL_CHUNKS: 4
       FILE_RETENTION_HOURS: 0
-      DEBUG: "true"  # Enable error logs temporarily
+      DEBUG: "false"
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_BASE_URL: https://zaply.in.net/api/v1
@@ -194,8 +195,7 @@ services:
       dockerfile: Dockerfile
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
-    restart: always
-    # Remove port exposure - frontend should only be accessible through nginx
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
       - API_BASE_URL=https://zaply.in.net/api/v1

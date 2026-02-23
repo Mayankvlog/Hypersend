@@ -2,8 +2,8 @@ FROM debian:bookworm AS build
 
 # ✅ SECURITY: Use build args for flexibility and security updates
 
-# Development: override with API_BASE_URL=http://localhost:8000/api/v1 in docker-compose build args
-ARG API_BASE_URL=http://localhost:8000/api/v1
+# Production: override with API_BASE_URL=https://zaply.in.net/api/v1 in docker-compose build args
+ARG API_BASE_URL=https://zaply.in.net/api/v1
 
 # LOGIC FIX: Add VALIDATE_CERTIFICATES build arg for flexible SSL configuration
 # Production default: true (enforce valid SSL certificates)
@@ -139,6 +139,6 @@ RUN printf '%s\n' \
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

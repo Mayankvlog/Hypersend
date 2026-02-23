@@ -202,21 +202,12 @@ class Settings:
     
     # Mock mode for testing without MongoDB - CRITICAL: Default to False for production
     USE_MOCK_DB: bool = os.getenv("USE_MOCK_DB", "False").lower() in ("true", "1", "yes")
-    print(f"[CONFIG] USE_MOCK_DB: {USE_MOCK_DB}")
-    print(f"[CONFIG] Is Testing (pytest): {_IS_TESTING}")
-    if USE_MOCK_DB:
+    if USE_MOCK_DB and not _IS_TESTING:
         print("[CONFIG] WARNING: USING MOCK DATABASE - FOR TESTING ONLY")
-    else:
-        print("[CONFIG] Using real MongoDB Atlas database - Production mode")
     
     # Email / SMTP (optional - used for password reset emails)
     ENABLE_PASSWORD_RESET: bool = os.getenv("ENABLE_PASSWORD_RESET", "True").lower() in ("true", "1", "yes")
-    if not ENABLE_PASSWORD_RESET:
-        print("[CONFIG] Password reset functionality disabled")
-    
     ENABLE_EMAIL: bool = os.getenv("ENABLE_EMAIL", "True").lower() in ("true", "1", "yes")
-    if not ENABLE_EMAIL:
-        print("[CONFIG] Email notifications disabled")
     
     # WhatsApp Storage Model (User Device + 24h S3 TTL)
     STORAGE_MODE: str = os.getenv("STORAGE_MODE", "user_device_s3")  # WhatsApp: User Device + 24h S3 TTL
@@ -233,14 +224,9 @@ class Settings:
     NO_SERVER_MEDIA: bool = os.getenv("NO_SERVER_MEDIA", "True").lower() in ("true", "1", "yes")
     
     # WhatsApp Storage Validation
-    if WHATSAPP_STORAGE:
+    if WHATSAPP_STORAGE and not _IS_TESTING:
         print(f"[CONFIG] WhatsApp Storage Model: ENABLED")
-        print(f"[CONFIG] Server Storage: {SERVER_STORAGE_BYTES} bytes (ZERO)")
         print(f"[CONFIG] File TTL: {FILE_TTL_SECONDS} seconds (24h)")
-        print(f"[CONFIG] User Device Only: {USER_DEVICE_ONLY}")
-        print(f"[CONFIG] No Server Media: {NO_SERVER_MEDIA}")
-    else:
-        print(f"[CONFIG] Traditional Storage Model: ENABLED")
     
     # Additional WhatsApp Storage Variables
     FILE_TTL_HOURS: int = int(os.getenv("FILE_TTL_HOURS", "24"))  # 24h temp only like WhatsApp
@@ -340,12 +326,6 @@ class Settings:
         # Production origins - HTTPS only for security
         "https://zaply.in.net",
         "https://www.zaply.in.net",
-        # Docker internal names (keep for compose/k8s internal traffic)
-        "http://zaply_frontend:80",
-        "http://zaply_frontend",
-        "http://frontend:80",
-        "http://frontend",
-        "http://zaply_backend:8000",
     ]
 
     CORS_ORIGINS = cors_origins_default

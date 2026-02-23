@@ -27,7 +27,6 @@ from workers.fan_out_worker import MessageFanOutWorker
 from websocket.delivery_handler import create_websocket_server
 
 # Load environment variables FIRST before importing config
-print("[STARTUP] Loading environment variables...")
 env_paths = [
     Path(__file__).parent / ".env",
     Path(__file__).parent.parent / ".env"
@@ -35,17 +34,8 @@ env_paths = [
 
 for env_path in env_paths:
     if env_path.exists():
-        print(f"[STARTUP] Loading .env from: {env_path}")
         load_dotenv(dotenv_path=env_path)
         break
-else:
-    print("[STARTUP] No .env file found, using environment variables")
-
-# Early diagnostic logging
-print("[STARTUP] Python version:", sys.version)
-print("[STARTUP] Python path:", sys.path)
-print("[STARTUP] Current working directory:", os.getcwd())
-print("[STARTUP] Starting backend imports...")
 
 try:
     # Add current directory to Python path for Docker
@@ -62,56 +52,38 @@ try:
     from config import settings
     # Always use real database - remove mock database option
     from database import connect_db, close_db, fallback_to_mock_database
-    print("[STARTUP] + database module imported (real MongoDB)")
 except Exception as e:
-    print(f"[STARTUP] X Failed to import database: {e}")
     raise
 
 try:
     from routes import auth, files, chats, users, updates, p2p_transfer, groups, messages, channels, debug, devices, e2ee_messages
-    print("[STARTUP] + routes modules imported")
 except Exception as e:
-    print(f"[STARTUP] X Failed to import routes: {e}")
     raise
 
 try:
     from config import settings
-    print("[STARTUP] + config module imported")
-    print(f"[STARTUP] MongoDB URI (sanitized): {settings.MONGODB_URI.split('@')[-1] if '@' in settings.MONGODB_URI else 'invalid'}")
-    print(f"[STARTUP] DEBUG mode: {settings.DEBUG}")
 except Exception as e:
-    print(f"[STARTUP] X Failed to import config: {e}")
     raise
 
 try:
     from mongo_init import ensure_mongodb_ready
-    print("[STARTUP] + mongo_init module imported")
 except Exception as e:
-    print(f"[STARTUP] X Failed to import mongo_init: {e}")
     raise
 
 try:
     from security import SecurityConfig
-    print("[STARTUP] + security module imported")
 except Exception as e:
-    print(f"[STARTUP] X Failed to import security: {e}")
     raise
 
 try:
     from error_handlers import register_exception_handlers
-    print("[STARTUP] + error_handlers module imported")
 except Exception as e:
-    print(f"[STARTUP] X Failed to import error_handlers: {e}")
     raise
 
 try:
     from redis_cache import init_cache, cleanup_cache
-    print("[STARTUP] + redis_cache module imported")
 except Exception as e:
-    print(f"[STARTUP] X Failed to import redis_cache: {e}")
     raise
-
-print("[STARTUP] All imports successful!")
 
 # Setup logger early for use in middleware
 logger = logging.getLogger(__name__)
@@ -1679,7 +1651,6 @@ async def reset_password_alias(request: PasswordResetRequest):
 # Include debug routes (only in DEBUG mode, but router checks internally)
 if settings.DEBUG:
     app.include_router(debug.router, prefix="/api/v1")
-    print("[STARTUP] + Debug routes registered")
 
 # ==================== WHATSAPP-LIKE MESSAGE HISTORY & SYNC ENDPOINTS ====================
 
