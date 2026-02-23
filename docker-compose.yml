@@ -7,7 +7,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/home/ubuntu/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - nginx_cache:/var/cache/nginx
     logging:
       driver: "json-file"
@@ -24,7 +24,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
