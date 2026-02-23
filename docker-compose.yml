@@ -145,7 +145,7 @@ services:
       DEBUG: "true"  # Enable error logs temporarily
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: http://backend:8000
+      API_BASE_URL: https://zaply.in.net/api/v1
       
       # ===== CORS CONFIGURATION =====
       # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
@@ -200,7 +200,10 @@ services:
       - "3000:80"
     environment:
       - NODE_ENV=production
-      - API_BASE_URL=http://backend:8000
+      - API_BASE_URL=https://zaply.in.net/api/v1
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:

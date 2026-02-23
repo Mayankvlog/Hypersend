@@ -1,9 +1,8 @@
 class ApiConstants {
-  // Backend API Base URL - const String.fromEnvironment MUST be in const context only
-// Set at build time via: flutter build web --release --dart-define=API_BASE_URL=/api/v1
+  // Backend API Base URL - Production URL for zaply.in.net
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: '/api/v1',  // Relative URLs for Docker
+    defaultValue: 'https://zaply.in.net/api/v1',  // Production URL
   );
   
   // Dynamic base URL with fallback logic for connectivity issues

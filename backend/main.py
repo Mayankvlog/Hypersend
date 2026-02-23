@@ -1450,19 +1450,69 @@ async def favicon():
 async def health_check():
     """Production health check endpoint - minimal response for load balancers"""
     try:
-        # Minimal health check - always return healthy if server is running
-        # Database checks are handled by detailed health endpoint
+        # Check database connectivity
+        db_status = "healthy"
+        db_error = None
+        
+        try:
+            # Quick database ping with timeout
+            from database import get_db
+            db = get_db()
+            await db.command('ping')
+        except Exception as e:
+            db_status = "unhealthy"
+            db_error = str(e)[:100]
+        
+        # Check Redis connectivity if available
+        redis_status = "healthy"
+        redis_error = None
+        
+        try:
+            from redis_cache import redis_client
+            if redis_client:
+                await redis_client.ping()
+            else:
+                redis_status = "disabled"  # Using in-memory fallback
+        except Exception as e:
+            redis_status = "unhealthy"
+            redis_error = str(e)[:100]
+        
+        # Determine overall status
+        overall_status = "healthy"
+        if db_status == "unhealthy":
+            overall_status = "degraded"
+        if redis_status == "unhealthy":
+            overall_status = "degraded"
+        
+        response_data = {
+            "status": overall_status,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "services": {
+                "database": {
+                    "status": db_status,
+                    "error": db_error
+                },
+                "cache": {
+                    "status": redis_status,
+                    "error": redis_error
+                }
+            }
+        }
+        
         return JSONResponse(
             status_code=200,
-            content={"status": "healthy"}
+            content=response_data
         )
         
     except Exception as e:
         # Even in error, return 200 with status for load balancer compatibility
-        # Load balancers should continue routing even if some services are degraded
         return JSONResponse(
             status_code=200,
-            content={"status": "degraded", "error": str(e)[:50]}
+            content={
+                "status": "degraded", 
+                "error": str(e)[:50],
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
         )
 
 @app.head("/health", tags=["System"])

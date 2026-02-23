@@ -192,7 +192,10 @@ class TestAuthenticationFixes:
     async def test_register_success(self, mock_users_collection, mock_user_data):
         """Test successful user registration"""
         # Mock collection methods
-        mock_users_collection.return_value.find_one.return_value = None
+        mock_users_collection.return_value.find_one.side_effect = [
+            None,  # First call for existing user check
+            {"_id": "507f1f77bcf86cd799439011"}  # Second call for verification
+        ]
         mock_insert_result = AsyncMock()
         mock_insert_result.inserted_id = "507f1f77bcf86cd799439011"
         mock_users_collection.return_value.insert_one.return_value = mock_insert_result
@@ -213,7 +216,7 @@ class TestAuthenticationFixes:
         assert result.avatar is None  # FIXED: No avatar initials
         
         # Verify database operations were called correctly
-        mock_users_collection.return_value.find_one.assert_called_once()
+        assert mock_users_collection.return_value.find_one.call_count == 2  # Called twice: once for check, once for verification
         mock_users_collection.return_value.insert_one.assert_called_once()
         
         print("✓ User registration successful")

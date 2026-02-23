@@ -266,27 +266,18 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         
 
         if not user:
-
+            # Log the authentication failure for debugging
+            logger.warning(f"Authenticated user {current_user} not found in database")
             raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={
-
                     "status": "ERROR",
-
-                    "message": "User not found",
-
+                    "message": "Invalid user session",
                     "data": None
-
                 }
-
             )
 
-        
-
         return UserResponse(
-
             id=user["_id"],
 
             name=user["name"],

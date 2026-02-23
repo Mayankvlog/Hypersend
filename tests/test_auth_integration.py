@@ -81,6 +81,11 @@ class TestAuthenticationIntegration:
         mock_database_setup['users_mock'].insert_one.return_value = AsyncMock(
             inserted_id="507f1f77bcf86cd799439011"
         )
+        # Mock the verification step that checks the inserted user
+        mock_database_setup['users_mock'].find_one.side_effect = [
+            None,  # First call for existing user check
+            {"_id": "507f1f77bcf86cd799439011"}  # Second call for verification
+        ]
         
         # Test registration
         register_data = {

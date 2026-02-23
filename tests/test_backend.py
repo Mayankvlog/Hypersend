@@ -22,7 +22,12 @@ def test_health_check():
         pytest.skip("Test client not available")
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    data = response.json()
+    assert "status" in data
+    assert data["status"] in ["healthy", "degraded"]
+    assert "services" in data
+    assert "database" in data["services"]
+    assert "cache" in data["services"]
 
 
 def test_favicon():

@@ -363,6 +363,13 @@ async def register(user: UserCreate) -> UserResponse:
     try:
         auth_log(f"Registration attempt for email: {user.email}")
         
+        # Validate request schema first
+        if not user.email or not user.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email and password are required"
+            )
+        
         # Name validation is now handled in the model validator (auto-derived from email if not provided)
         
         # Check if user already exists with case-insensitive email lookup
@@ -459,6 +466,14 @@ async def register(user: UserCreate) -> UserResponse:
             if hasattr(inserted_id, '__await__') or asyncio.isfuture(inserted_id):
                 raise RuntimeError(f"Critical async error: inserted_id is a Future object: {type(inserted_id)}")
             
+            # Ensure database session is committed by verifying the insert
+            verification_user = await _await_maybe(
+                users_col.find_one({"_id": inserted_id}),
+                timeout=5.0
+            )
+            if not verification_user:
+                raise RuntimeError("Failed to verify user insertion - database session may not have committed")
+            
             auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {inserted_id})")
         except asyncio.TimeoutError:
             auth_log(f"Database timeout during user insertion")
@@ -474,10 +489,16 @@ async def register(user: UserCreate) -> UserResponse:
             )
         except Exception as db_error:
             auth_log(f"Database error during user insertion: {type(db_error).__name__}: {str(db_error)}")
-            if "duplicate" in str(db_error).lower():
+            # Handle MongoDB duplicate key error specifically
+            if "duplicate key" in str(db_error).lower() or "E11000" in str(db_error):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Email already registered. Please use a different email."
+                )
+            elif "integrity" in str(db_error).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Data integrity error. Please check your input and try again."
                 )
             else:
                 raise HTTPException(
