@@ -158,6 +158,11 @@ services:
       # CRITICAL: Always use real database in production
       USE_MOCK_DB: "False"
       
+      # ===== REDIS CONFIGURATION =====
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      
       # ===== EMAIL CONFIGURATION =====
       ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
