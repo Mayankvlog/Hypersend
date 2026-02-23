@@ -111,8 +111,7 @@ services:
     image: mayank035/hypersend-backend:latest
     container_name: hypersend_backend
     restart: always
-    ports:
-      - "8000:8000"
+    # Remove port exposure - backend should only be accessible through nginx
     environment:
       # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
       # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
@@ -196,8 +195,7 @@ services:
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: always
-    ports:
-      - "3000:80"
+    # Remove port exposure - frontend should only be accessible through nginx
     environment:
       - NODE_ENV=production
       - API_BASE_URL=https://zaply.in.net/api/v1

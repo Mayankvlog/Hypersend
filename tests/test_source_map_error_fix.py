@@ -46,7 +46,7 @@ class TestSourceMapErrorFix:
         content = _read_text_file(nginx_path)
         
         # Should have .map location block
-        assert "\.map$" in content, "nginx.conf should have .map location block"
+        assert r"\.map$" in content, "nginx.conf should have .map location block"
         
         # Should return 204 (No Content) for .map files to prevent console errors
         assert "return 204" in content, "nginx.conf should return 204 for .map files"
@@ -196,9 +196,9 @@ class TestNginxConfiguration:
         assert "server {" in content, "nginx.conf should have server blocks"
         assert "location" in content, "nginx.conf should have location blocks"
         
-        # Should have upstream definitions
-        assert "upstream backend" in content, "nginx.conf should define backend upstream"
-        assert "upstream frontend" in content, "nginx.conf should define frontend upstream"
+        # Should have direct proxy_pass instead of upstream blocks (fixed for production)
+        assert "proxy_pass http://backend:8000" in content, "nginx.conf should use direct proxy_pass to backend"
+        assert "resolver 127.0.0.11" in content, "nginx.conf should have Docker DNS resolver"
         
         print("✅ Nginx.conf has valid syntax and structure")
     
