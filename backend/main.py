@@ -51,7 +51,7 @@ try:
     
     from config import settings
     # Always use real database - remove mock database option
-    from database import connect_db, close_db, fallback_to_mock_database
+    from database import connect_db, close_db
 except Exception as e:
     raise
 
@@ -123,7 +123,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
               """Check if request is from localhost, Docker internal, or production domain"""
               client_host = request.client.host if request.client else ''
               host_header = request.headers.get('host', '').lower()
-              localhost_patterns = ['localhost', '127.0.0.1', 'zaply_frontend', 'zaply_backend', 'frontend', 'backend']
+              localhost_patterns = ['localhost', '127.0.0.1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend']
               production_patterns = ['localhost', '127.0.0.1']
               return (any(pattern in client_host for pattern in localhost_patterns) or any(pattern in host_header for pattern in production_patterns))
 
@@ -204,7 +204,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 client_host = request.client.host if request.client else ''
                 # Allow common localhost patterns for legitimate health checks and development
                 localhost_patterns = [
-                    'localhost', '127.0.0.1', 'zaply_frontend', 'zaply_backend', 'frontend', 'backend'
+                    'localhost', '127.0.0.1', 'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend'
                 ]
                 
                 # Also check for production domain in host header
@@ -274,7 +274,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     # CRITICAL FIX: Allow test client and localhost hosts for testing
                     # Allow production and testing hosts
                     allowed_hostnames = {
-                        'zaply_frontend', 'zaply_backend', 'frontend', 'backend',
+                        'hypersend_frontend', 'hypersend_backend', 'frontend', 'backend',
                         'localhost', '127.0.0.1',
                         '0.0.0.0',  # Docker
                     }
@@ -312,7 +312,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         continue
                         
                     # Skip production domain patterns  
-                    if pattern in ['zaply.in.net'] and ('zaply.in.net' in header_value or 'zaply.in.net' in header_value):
+                    if pattern in ['hypersend.in.net'] and ('hypersend.in.net' in header_value or 'hypersend.in.net' in header_value):
                         continue
                         
                     if pattern in header_value:
@@ -684,29 +684,28 @@ async def lifespan(app: FastAPI):
             print(f"[WARN] Directory initialization warning: {str(e)}")
             print("[WARN] Continuing startup - check file permissions if needed")
         
-        # Database initialization with graceful fallback
-        print("[DB] Initializing database connection...")
-        db_connected = False
+        # Database initialization - fail loudly for production
+        print("[DB] Initializing MongoDB Atlas connection...")
         
-        if not settings.USE_MOCK_DB:
-            # Try real database first
-            max_db_retries = 3  # Reduced for faster startup
-            for db_attempt in range(max_db_retries):
-                try:
-                    await connect_db()
-                    print("[DB] SUCCESS Database connection established")
-                    db_connected = True
-                    break
-                except Exception as e:
-                    if db_attempt < max_db_retries - 1:
-                        print(f"[DB] Attempt {db_attempt + 1}/{max_db_retries} failed, retrying in 3s...")
-                        await asyncio.sleep(3)
-                    else:
-                        print(f"[DB] WARNING: Database connection failed: {str(e)[:100]}")
-                        print("[DB] Continuing without database - some features may be limited")
-        else:
-            print("[DB] Using mock database configuration")
-            db_connected = True
+        # CRITICAL: In production, database must connect - no fallback allowed
+        if settings.USE_MOCK_DB:
+            raise RuntimeError("Mock database is disabled in production. Set USE_MOCK_DB=false")
+        
+        # Try database connection with minimal retries for fast failure
+        max_db_retries = 2
+        for db_attempt in range(max_db_retries):
+            try:
+                await connect_db()
+                print("[DB] SUCCESS MongoDB Atlas connection established")
+                break
+            except Exception as e:
+                if db_attempt < max_db_retries - 1:
+                    print(f"[DB] Attempt {db_attempt + 1}/{max_db_retries} failed, retrying in 2s...")
+                    await asyncio.sleep(2)
+                else:
+                    print(f"[DB] CRITICAL: Database connection failed: {str(e)}")
+                    print("[DB] Application cannot start without database connection")
+                    raise RuntimeError(f"MongoDB Atlas connection failed: {str(e)}")
         
         # Redis cache initialization (non-critical)
         print("[CACHE] Initializing cache...")
@@ -1221,7 +1220,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
 # TrustedHost middleware for additional security
 # TrustedHost middleware disabled for debugging
 # if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "true":
-#     allowed_hosts = os.getenv("ALLOWED_HOSTS", "zaply.in.net,127.0.0.1").split(",")
+#     allowed_hosts = os.getenv("ALLOWED_HOSTS", "hypersend.in.net,127.0.0.1").split(",")
 #     app.add_middleware(
 #         TrustedHostMiddleware,
 #         allowed_hosts=allowed_hosts
@@ -1242,7 +1241,7 @@ if isinstance(cors_origins, list) and len(cors_origins) > 0:
 # SECURITY: Only add local development origins in debug mode
 if settings.DEBUG:
     cors_origins.extend([
-        "https://zaply.in.net/",
+        "https://hypersend.in.net/",
     ])
 
 # app.add_middleware(
@@ -1264,7 +1263,7 @@ async def handle_options_request(full_path: str, request: Request):
     Handle CORS preflight OPTIONS requests.
     These must succeed without authentication for CORS to work in browsers.
     SECURITY: Use exact regex matching to prevent origin bypass attacks
-    (e.g., https://evildomain.zaply.in.net would bypass substring matching)
+    (e.g., https://evildomain.hypersend.in.net would bypass substring matching)
     PRODUCTION: Only allow HTTPS production domains
     """
     import re
@@ -1280,17 +1279,17 @@ async def handle_options_request(full_path: str, request: Request):
         # Production domains - exact matches only, HTTPS only
         if not settings.DEBUG:
             allowed_origins.extend([
-                "https://zaply.in.net",
-                "https://www.zaply.in.net",
+                "https://hypersend.in.net",
+                "https://www.hypersend.in.net",
             ])
         else:
             # Development: Allow more origins for testing
             allowed_origins.extend([
-                "https://zaply.in.net",
-                "https://www.zaply.in.net",
+                "https://hypersend.in.net",
+                "https://www.hypersend.in.net",
                 "http://127.0.0.1:3000",
                 "http://localhost:3000",
-                "http://zaply_frontend:80",
+                "http://hypersend_frontend:80",
                 "http://frontend:80",
             ])
         
@@ -1318,9 +1317,9 @@ async def handle_options_request(full_path: str, request: Request):
 async def api_status(request: Request):
     """
     Detailed API status endpoint for debugging connection issues.
-    RESTRICTED: Only accessible in DEBUG mode or from zaply.in.net.
+    RESTRICTED: Only accessible in DEBUG mode or from hypersend.in.net.
     """
-    # Only allow access in debug mode or from zaply.in.net
+    # Only allow access in debug mode or from hypersend.in.net
     client_host = request.client.host if request.client else "unknown"
     
     if not settings.DEBUG and client_host not in ["localhost", "127.0.0.1"]:
@@ -1579,17 +1578,17 @@ async def preflight_alias_endpoints(request: Request):
         # Production domains - exact matches only, HTTPS only
         if not settings.DEBUG:
             allowed_origins.extend([
-                "https://zaply.in.net",
-                "https://www.zaply.in.net",
+                "https://hypersend.in.net",
+                "https://www.hypersend.in.net",
             ])
         else:
             # Development: Allow more origins for testing
             allowed_origins.extend([
-                "https://zaply.in.net",
-                "https://www.zaply.in.net",
+                "https://hypersend.in.net",
+                "https://www.hypersend.in.net",
                 "http://127.0.0.1:3000",
                 "http://localhost:3000",
-                "http://zaply_frontend:80",
+                "http://hypersend_frontend:80",
                 "http://frontend:80",
             ])
         

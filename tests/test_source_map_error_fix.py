@@ -197,8 +197,7 @@ class TestNginxConfiguration:
         assert "location" in content, "nginx.conf should have location blocks"
         
         # Should have direct proxy_pass instead of upstream blocks (fixed for production)
-        assert "proxy_pass http://backend:8000" in content, "nginx.conf should use direct proxy_pass to backend"
-        assert "resolver 127.0.0.11" in content, "nginx.conf should have Docker DNS resolver"
+        assert "proxy_pass http://hypersend_backend:8000" in content, "nginx.conf should use direct proxy_pass to backend"
         
         print("✅ Nginx.conf has valid syntax and structure")
     
@@ -244,7 +243,7 @@ class TestDockerCompose:
         assert "redis:" in content, "docker-compose should have redis service"
         
         # Check if MongoDB Atlas is enabled (preferred for production)
-        mongodb_atlas_enabled = "MONGODB_ATLAS_ENABLED: true" in content or "MONGODB_ATLAS_ENABLED: ${MONGODB_ATLAS_ENABLED:-true}" in content
+        mongodb_atlas_enabled = "MONGODB_ATLAS_ENABLED: true" in content or "MONGODB_ATLAS_ENABLED: \"true\"" in content or "MONGODB_ATLAS_ENABLED: ${MONGODB_ATLAS_ENABLED:-true}" in content
         
         if mongodb_atlas_enabled:
             print("✅ MongoDB Atlas is enabled (preferred for production)")

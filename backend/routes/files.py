@@ -644,7 +644,8 @@ class _CollectionProxy:
                 async def find_one_and_delete(self, *args, **kwargs):
                     return None
                 def __getattr__(self, name):
-                    return MagicMock()
+                    from ..database import MockCollection
+                    return MockCollection()
             
             return FallbackCollection()
 
@@ -683,9 +684,9 @@ class _CollectionProxy:
         try:
             return getattr(self._safe_get_collection(), item)
         except Exception:
-            # Return MagicMock for any other attributes
-            from unittest.mock import MagicMock
-            return MagicMock()
+            # Return MockCollection for any other attributes
+            from ..database import MockCollection
+            return MockCollection()
 
 
 files_collection = _CollectionProxy(_files_collection_factory)
@@ -700,8 +701,10 @@ def _safe_collection(getter):
     try:
         return getter()
     except Exception:
-        from unittest.mock import MagicMock, AsyncMock
-        coll = MagicMock()
+        from ..database import MockCollection
+        from unittest.mock import AsyncMock
+        coll = MockCollection()
+        # Ensure async methods are properly async
         coll.find_one = AsyncMock(return_value=None)
         coll.insert_one = AsyncMock(return_value=MagicMock(inserted_id="mock_id"))
         coll.find_one_and_update = AsyncMock(return_value=None)

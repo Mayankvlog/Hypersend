@@ -29,7 +29,7 @@ class AppStrings {
   static const String notifications = 'NOTIFICATIONS';
   static const String muteNotifications = 'Mute Notifications';
   static const String customSound = 'Custom Sound';
-  static const String zaplyNote = 'zaply Note';
+  static const String zaplyNote = 'hypersend Note';
   static const String contentPrivacy = 'CONTENT & PRIVACY';
   static const String sharedMedia = 'Shared Media';
   static const String seeAll = 'See All';
@@ -42,7 +42,7 @@ class AppStrings {
   // Permissions
   static const String enableAccess = 'Enable Access';
   static const String permissionsDescription =
-      'To provide the best messaging experience, zaply needs access to a few things. You can update these later in Settings.';
+      'To provide the best messaging experience, hypersend needs access to a few things. You can update these later in Settings.';
   static const String locationPermission = 'Location';
   static const String locationDescription = 'To share your live location';
   static const String cameraPermission = 'Camera';

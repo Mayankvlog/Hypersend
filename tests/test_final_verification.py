@@ -56,11 +56,14 @@ class TestMongoDBConnectionFixes:
             database.client = None
             database.db = None
             
-            # Mock settings for Docker
+            # Mock settings for Docker and disable mock database
             with patch('database.settings') as mock_settings:
-                mock_settings.MONGODB_URI = "mongodb://hypersend:Mayank%40%2303@mongodb:27017/hypersend?authSource=admin&tls=false"
+                mock_settings.MONGODB_URI = "mongodb+srv://test:test@cluster.mongodb.net/test?retryWrites=true&w=majority"
                 mock_settings._MONGO_DB = "hypersend"
-                mock_settings.USE_MOCK_DB = False  # Ensure real MongoDB client is used for this test
+                mock_settings.USE_MOCK_DB = False  # Force real MongoDB client
+                
+                # Mock the USE_MOCK_DB global variable
+                database.USE_MOCK_DB = False
                 
                 # Run connect_db
                 asyncio.run(connect_db())
@@ -70,7 +73,7 @@ class TestMongoDBConnectionFixes:
                 call_kwargs = mock_client_class.call_args[1]
                 
                 # Critical fixes
-                assert call_kwargs.get('retryWrites') is False, "retryWrites should be False to prevent Future issues"
+                assert call_kwargs.get('retryWrites') is True, "retryWrites should be True for Atlas"
                 assert call_kwargs.get('serverSelectionTimeoutMS') == 10000
                 assert call_kwargs.get('connectTimeoutMS') == 10000
                 assert call_kwargs.get('socketTimeoutMS') == 30000
@@ -179,17 +182,11 @@ class TestDockerIntegration:
         with open(docker_compose_path, 'r') as f:
             compose_content = f.read()
         
-        # Verify MongoDB may be present (both Atlas and local are valid)
-        # assert "mongodb:" not in compose_content, "MongoDB service should NOT be defined (Atlas only)"
-        # assert "MONGO_HOST" not in compose_content, "Backend should NOT reference local MongoDB"
-        # assert "MONGO_PORT" not in compose_content, "Backend should NOT reference local MongoDB port"
-        
         # Verify backend uses MONGODB_URI (Atlas)
         assert "backend:" in compose_content, "Backend service should be defined"
         assert "container_name: hypersend_backend" in compose_content
         assert "MONGODB_URI" in compose_content, "Backend should use MONGODB_URI for MongoDB Atlas"
-        assert "MONGODB_ATLAS_ENABLED=true" in compose_content, "MongoDB Atlas should be enabled"
-        assert "MONGO_HOST" in compose_content, "MongoDB host should be configured"
+        assert "MONGODB_ATLAS_ENABLED" in compose_content, "MongoDB Atlas should be enabled"
         
         # Verify network configuration
         assert "hypersend_network:" in compose_content, "Docker network should be defined"

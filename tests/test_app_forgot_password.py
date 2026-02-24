@@ -4,9 +4,15 @@ Test for Token-Based Password Reset Functionality
 Tests all password reset functions using JWT tokens via /auth/reset-password
 """
 
-import pytest
-import sys
+# Set environment variables BEFORE any imports
 import os
+import sys
+
+# Enable mock database for tests
+os.environ['USE_MOCK_DB'] = 'True'
+os.environ['PYTEST_CURRENT_TEST'] = 'test_forgot_password'
+
+import pytest
 import asyncio
 from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient

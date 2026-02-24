@@ -109,7 +109,7 @@ def test_chat_member_can_download_other_users_file():
 
     # Insert file metadata into mock DB
     from backend.db_proxy import files_collection
-    awaitable = files_collection().insert_one({
+    file_doc = {
         "_id": file_id,
         "filename": "hello.txt",
         "size": len(b"hello-from-a"),
@@ -118,16 +118,10 @@ def test_chat_member_can_download_other_users_file():
         "chat_id": chat_id,
         "object_key": "temp/mock/hello.txt",
         "shared_with": [],
-    })
-    # Handle async mock insert
-    try:
-        import asyncio
-        if hasattr(awaitable, '__await__'):
-            asyncio.get_event_loop().run_until_complete(awaitable)
-    except RuntimeError:
-        # No running loop in pytest default; fallback
-        import asyncio
-        asyncio.run(awaitable)
+    }
+    
+    # Directly insert into mock collection data
+    files_collection().data[file_id] = file_doc
 
     # Downloader B should be able to download (as chat member)
     r = client.get(f"/api/v1/files/{file_id}/download", headers=headers_b)

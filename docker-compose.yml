@@ -73,37 +73,7 @@ services:
     sysctls:
       - net.core.somaxconn=65535
 
-  mongodb:
-    image: mongo:7.0
-    container_name: hypersend_mongodb
-    restart: unless-stopped
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hypersend}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
-      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
-    volumes:
-      - mongodb_data_v4:/data/db
-      - mongodb_config_v4:/data/configdb
-    networks:
-      - hypersend_network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    command:
-      - mongod
-      - --auth
-      - --bind_ip_all
-      - --wiredTigerCacheSizeGB
-      - "0.5"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
+  
   backend:
     build:
       context: ./backend
@@ -114,77 +84,73 @@ services:
     expose:
       - "8000"
     environment:
-      # ===== DOCKER INTERNAL DATABASE (Use internal hostname within Docker network) =====
-      # CRITICAL: Use container name 'mongodb' for Docker internal networking, NOT external IP
-      MONGO_USER: ${MONGO_USER:-hypersend}
-      MONGO_PASSWORD: ${MONGO_PASSWORD:-hypersend_secure_password}
-      MONGO_HOST: mongodb
-      MONGO_PORT: 27017
-      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-hypersend}
-      
-      # ===== MONGODB ATLAS CONFIGURATION (Cloud MongoDB - Production) =====
-      # Set MONGODB_ATLAS_ENABLED=true and MONGODB_URI to use MongoDB Atlas instead of local
-      MONGODB_ATLAS_ENABLED: "false"  # Force Docker MongoDB
-      MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend"
+      # ===== DATABASE CONFIGURATION =====
+      # PROD: MongoDB Atlas cloud connection only
+      MONGODB_ATLAS_ENABLED: "true"
+      MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority"
       
       # ===== API CONFIGURATION =====
-      SECRET_KEY: ${SECRET_KEY:-Prod_Secret_Key_For_Hypersend_2025_Secure_Fixed}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 28800
-      REFRESH_TOKEN_EXPIRE_DAYS: 20
-      UPLOAD_TOKEN_EXPIRE_HOURS: 480
-      DATA_ROOT: /data
-      UPLOADS_PATH: /app/uploads
-      # ===== 15GB MAXIMUM FILE SIZE CONFIGURATION =====
-      MAX_FILE_SIZE_BYTES: 16106127360  # 15GB in bytes
-      MAX_FILE_SIZE_MB: 15360  # 15GB in MB
-      MAX_FILE_SIZE_GB: 15  # 15GB
-      CHUNK_SIZE: 33554432
-      MAX_PARALLEL_CHUNKS: 4
-      FILE_RETENTION_HOURS: 0
-      DEBUG: "false"
+      API_BASE_URL: https://zaply.in.net/api/v1
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_BASE_URL: https://zaply.in.net/api/v1
-      
-      # ===== CORS CONFIGURATION =====
-      # PROD: zaply.in.net (requires DNS + SSL). DEV: Override with ALLOWED_ORIGINS env var
-      # Structure: HTTPS production first, then Docker HTTP, then Dev HTTP
-      ALLOWED_ORIGINS: https://zaply.in.net,https://www.zaply.in.net
+      API_KEY: hypersend_secure_api_key
+      API_SECRET: hypersend_secure_api_secret
       
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
-      RATE_LIMIT_WINDOW_SECONDS: 60
-      # CRITICAL: Always use real database in production
-      USE_MOCK_DB: "False"
+      RATE_LIMIT_WINDOW: 3600
+      
+      # ===== CORS CONFIGURATION =====
+      # PROD: Production HTTPS domains only
+      ALLOWED_ORIGINS: https://zaply.in.net,https://www.zaply.in.net
+      
+      # ===== ENVIRONMENT =====
+      DEBUG: "false"
+      ENVIRONMENT: "production"
+      
+      # ===== SECURITY =====
+      SECRET_KEY: "prod-secret-key-change-in-production"
+      JWT_SECRET_KEY: "prod-jwt-secret-key-change-in-production"
+      JWT_REFRESH_SECRET_KEY: "prod-jwt-refresh-secret-key-change-in-production"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
       
       # ===== REDIS CONFIGURATION =====
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: 0
+      REDIS_URL: redis://hypersend_redis:6379/0
+      
+      # ===== FILE STORAGE =====
+      UPLOAD_DIR: /app/uploads
+      MAX_FILE_SIZE: "104857600"  # 100MB
+      ALLOWED_FILE_TYPES: "jpg,jpeg,png,gif,pdf,doc,docx,txt"
+      
+      # ===== LOGGING =====
+      LOG_LEVEL: "INFO"
+      LOG_FORMAT: "json"
+      
+      # ===== MONITORING =====
+      ENABLE_METRICS: "true"
+      METRICS_PORT: "9090"
       
       # ===== EMAIL CONFIGURATION =====
       ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@zaply.in.net}
+      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@hypersend.in.net}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-dummy_app_password_configure_in_env}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@hypersend.in.net}
       SENDER_NAME: ${SENDER_NAME:-Hypersend Support}
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
     depends_on:
-      mongodb:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s http://127.0.0.1:8000/api/v1/health || exit 1"]
+      test: ["CMD", "sh", "-c", "curl -f -s http://hypersend_backend:8000/api/v1/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -203,14 +169,14 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - API_BASE_URL=https://zaply.in.net/api/v1
+      - API_BASE_URL=https://hypersend.in.net/api/v1
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://hypersend_frontend:3000/health"]
       interval: 30s
       timeout: 10s
       start_period: 5s
