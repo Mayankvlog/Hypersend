@@ -8,7 +8,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./certs/live/zaply.in.net:/etc/letsencrypt/live/zaply.in.net:ro
       - nginx_cache:/var/cache/nginx
     logging:
       driver: "json-file"
@@ -25,7 +25,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://hypersend_nginx/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -136,10 +136,10 @@ services:
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@hypersend.in.net}
+      SMTP_USERNAME: ${SMTP_USERNAME:-noreply@zaply.in.net}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-dummy_app_password_configure_in_env}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@hypersend.in.net}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@zaply.in.net}
       SENDER_NAME: ${SENDER_NAME:-Hypersend Support}
     volumes:
       - ./data:/data
@@ -150,7 +150,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f -s http://hypersend_backend:8000/api/v1/health || exit 1"]
+      test: ["CMD", "sh", "-c", "curl -f -s http://localhost:8000/api/v1/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -164,19 +164,24 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        API_BASE_URL: https://zaply.in.net/api/v1
+        VALIDATE_CERTIFICATES: "true"
     image: mayank035/hypersend-frontend:latest
     container_name: hypersend_frontend
     restart: unless-stopped
+    expose:
+      - "80"
     environment:
       - NODE_ENV=production
-      - API_BASE_URL=https://hypersend.in.net/api/v1
+      - API_BASE_URL=https://zaply.in.net/api/v1
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://hypersend_frontend:3000/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       start_period: 5s
@@ -191,10 +196,6 @@ networks:
   hypersend_network: {}
 
 volumes:
-  mongodb_data_v4:
-    driver: local
-  mongodb_config_v4:
-    driver: local
   redis_data:
     driver: local
   nginx_cache:
