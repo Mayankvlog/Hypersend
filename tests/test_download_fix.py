@@ -109,6 +109,10 @@ def test_chat_member_can_download_other_users_file():
 
     # Insert file metadata into mock DB
     from backend.db_proxy import files_collection
+    # Ensure we're using mock by forcing mock mode
+    import os
+    os.environ['USE_MOCK_DB'] = 'True'
+    
     file_doc = {
         "_id": file_id,
         "filename": "hello.txt",
