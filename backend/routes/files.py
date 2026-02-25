@@ -355,22 +355,8 @@ def get_media_lifecycle():
 
 
 def _get_s3_client():
-    if not boto3:
-        return None
-    if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
-        return None
-    
-    # Create actual S3 client
-    try:
-        return boto3.client(
-            "s3",
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_REGION,
-        )
-    except Exception:
-        # Return None if client creation fails, will be handled by test mode fallbacks
-        return None
+    # S3 is disabled - always return None to force local storage
+    return None
 
 
 def _generate_presigned_url(method: str, *, object_key: str, content_type: Optional[str] = None, file_size: Optional[int] = None, expires_in: int = 900):
@@ -404,14 +390,8 @@ def _generate_presigned_url(method: str, *, object_key: str, content_type: Optio
 
 
 def _ensure_s3_available() -> bool:
-    """Check if S3 is properly configured for ephemeral storage."""
-    if not boto3:
-        return False
-    if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
-        return False
-    if not settings.S3_BUCKET:
-        return False
-    return True
+    """S3 is disabled - always return False to force local storage."""
+    return False
 
 
 def _is_test_request(request: Request) -> bool:
@@ -929,23 +909,10 @@ async def initialize_upload(
 ):
     """
     WhatsApp-style ephemeral file upload initialization.
-    Returns pre-signed S3 URL for direct client upload.
-    Server never touches file bytes.
+    Uses local filesystem storage in UPLOAD_DIR.
     """
     
-    # Ensure S3 is available for ephemeral storage (bypass for tests)
-    if not _ensure_s3_available() and not _is_test_request(request):
-        from datetime import datetime as dt, timezone as tz
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "status": "ERROR",
-                "status_code": 503,
-                "error": "HTTPException",
-                "detail": "Temporary storage service unavailable. Configure AWS credentials.",
-                "timestamp": dt.now(tz.utc).isoformat()
-            }
-        )
+    # S3 is disabled - always proceed with local storage
     
     _log("info", f"[WHATSAPP_UPLOAD] File upload initialization", {
         "path": str(request.url.path),
@@ -1158,35 +1125,16 @@ async def initialize_upload(
         file_uuid = str(uuid.uuid4())
         upload_id = str(uuid.uuid4())
         
-        # Create S3 object key with TTL-based structure
+        # WHATSAPP ARCHITECTURE: Use local filesystem storage
+        # Create local file path in UPLOAD_DIR
         from datetime import datetime as dt
         timestamp = dt.utcnow().strftime("%Y%m%d")
-        s3_key = f"ephemeral/{timestamp}/{file_uuid}/{filename}"
+        local_file_path = f"{settings.UPLOAD_DIR}/{timestamp}/{file_uuid}/{filename}"
         
-        # WHATSAPP ARCHITECTURE: Generate pre-signed upload URL
-        # Client uploads directly to S3, server never touches file bytes
-        upload_url = _generate_presigned_url(
-            method="put",
-            object_key=s3_key,
-            content_type=mime_type,
-            expires_in=3600  # 1 hour for upload
-        )
+        # Create upload URL for local storage (relative path)
+        upload_url = f"/api/v1/files/local/{upload_id}"
         
-        # Test mode fallback: use mock URL when S3 is not available
-        if not upload_url and _is_test_request(request):
-            upload_url = f"https://mock-s3.test/{s3_key}"
-        
-        if not upload_url and not _is_test_request(request):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "status": "ERROR",
-                    "message": "Failed to generate upload URL",
-                    "data": {"s3_configured": _ensure_s3_available()}
-                }
-            )
-        
-        # WHATSAPP ARCHITECTURE: Store only metadata in Redis with TTL
+        # WHATSAPP ARCHITECTURE: Store only metadata in database
         file_metadata = {
             "id": str(uuid.uuid4()),
             "upload_id": upload_id,
@@ -1197,13 +1145,12 @@ async def initialize_upload(
             "owner_id": current_user,
             "chat_id": chat_id,
             "receiver_id": receiver_id,
-            "s3_key": s3_key,
-            "s3_bucket": settings.S3_BUCKET,
+            "local_path": local_file_path,
             "checksum": checksum,
             "status": "pending",
             "created_at": dt.utcnow().isoformat(),
             "expires_at": (dt.utcnow() + timedelta(hours=24)).isoformat(),  # 24h TTL
-            "upload_url": upload_url  # Temporary pre-signed URL
+            "upload_url": upload_url
         }
         
         # Store metadata in Redis with TTL (24 hours)

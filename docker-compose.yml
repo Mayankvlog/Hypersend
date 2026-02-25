@@ -74,7 +74,7 @@ services:
     sysctls:
       - net.core.somaxconn=65535
 
-  
+
   backend:
     build:
       context: ./backend
@@ -89,51 +89,52 @@ services:
       # PROD: MongoDB Atlas cloud connection only
       MONGODB_ATLAS_ENABLED: "true"
       MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/Hypersend?retryWrites=true&w=majority"
+      #MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:BkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/?appName=Cluster0"
       DATABASE_NAME: "Hypersend"
-      
-      
+
+
       # ===== API CONFIGURATION =====
       API_BASE_URL: https://zaply.in.net/api/v1
       API_HOST: 0.0.0.0
       API_PORT: 8000
       API_KEY: hypersend_secure_api_key
       API_SECRET: hypersend_secure_api_secret
-      
+
       # ===== RATE LIMITING & SECURITY =====
       RATE_LIMIT_PER_USER: 100
       RATE_LIMIT_WINDOW: 3600
-      
+
       # ===== CORS CONFIGURATION =====
       # PROD: Production HTTPS domains only
       ALLOWED_ORIGINS: https://zaply.in.net,https://www.zaply.in.net
-      
+
       # ===== ENVIRONMENT =====
       DEBUG: "false"
       ENVIRONMENT: "production"
-      
+
       # ===== SECURITY =====
       SECRET_KEY: "prod-secret-key-change-in-production"
       JWT_SECRET_KEY: "prod-jwt-secret-key-change-in-production"
       JWT_REFRESH_SECRET_KEY: "prod-jwt-refresh-secret-key-change-in-production"
       ACCESS_TOKEN_EXPIRE_MINUTES: "30"
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
-      
+
       # ===== REDIS CONFIGURATION =====
       REDIS_URL: redis://hypersend_redis:6379/0
-      
+
       # ===== FILE STORAGE =====
       UPLOAD_DIR: /app/uploads
       MAX_FILE_SIZE: "104857600"  # 100MB
       ALLOWED_FILE_TYPES: "jpg,jpeg,png,gif,pdf,doc,docx,txt"
-      
+
       # ===== LOGGING =====
       LOG_LEVEL: "INFO"
       LOG_FORMAT: "json"
-      
+
       # ===== MONITORING =====
       ENABLE_METRICS: "true"
       METRICS_PORT: "9090"
-      
+
       # ===== EMAIL CONFIGURATION =====
       ENABLE_EMAIL: ${ENABLE_EMAIL:-true}
       ENABLE_PASSWORD_RESET: ${ENABLE_PASSWORD_RESET:-true}

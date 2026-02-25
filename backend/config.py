@@ -78,22 +78,23 @@ class Settings:
     if USE_MOCK_DB and not _IS_TESTING:
         print("[CONFIG] WARNING: USING MOCK DATABASE - FOR TESTING ONLY")
 
-    # Extract database name from URI for validation
-    try:
-        from urllib.parse import urlparse
-
-        parsed_uri = urlparse(MONGODB_URI)
-        db_name = parsed_uri.path.lstrip("/")
-        if not db_name:
-            raise ValueError(
-                "MONGODB_URI must include database name after the final '/'"
-            )
-        _MONGO_DB: str = db_name
-    except Exception as e:
-        raise ValueError(f"Failed to parse database name from MONGODB_URI: {str(e)}")
+    # Extract database name from environment variable or URI for validation
+    DATABASE_NAME = os.getenv("DATABASE_NAME")
+    if not DATABASE_NAME:
+        try:
+            from urllib.parse import urlparse
+            parsed_uri = urlparse(MONGODB_URI)
+            db_name = parsed_uri.path.lstrip("/")
+            if not db_name:
+                raise ValueError(
+                    "MONGODB_URI must include database name after final '/'"
+                )
+            DATABASE_NAME = db_name
+        except Exception as e:
+            raise ValueError(f"Failed to parse database name from MONGODB_URI: {str(e)}")
 
     print(f"[CONFIG] MongoDB Atlas connection configured")
-    print(f"[CONFIG] Database: {_MONGO_DB}")
+    print(f"[CONFIG] Database: {DATABASE_NAME}")
 
     # Log connection info without exposing credentials
     if "@" in MONGODB_URI:

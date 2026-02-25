@@ -180,6 +180,16 @@ class TestAuthenticationFixes:
         yield
     
     @pytest.fixture
+    def mock_motor_client(self):
+        """Mock AsyncIOMotorClient"""
+        with patch('backend.database.AsyncIOMotorClient') as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_client.admin.command.return_value = {"ok": 1}
+            mock_client.__getitem__.return_value = AsyncMock()
+            yield mock_client_class, mock_client
+    
+    @pytest.fixture
     def mock_user_data(self):
         """Mock user data for testing"""
         # Generate proper test hash and salt
@@ -296,7 +306,7 @@ class TestAuthenticationFixes:
         print("✓ Invalid email validation works")
     
     @pytest.mark.asyncio
-    async def test_login_success(self, mock_users_collection, mock_user_data):
+    async def test_login_success(self, mock_users_collection, mock_user_data, mock_motor_client):
         """Test successful user login"""
         # Mock user lookup
         mock_users_collection.return_value.find_one.return_value = mock_user_data
@@ -319,6 +329,11 @@ class TestAuthenticationFixes:
             # Mock request
             mock_request = Mock()
             mock_request.client.host = "127.0.0.1"
+            
+            # Initialize database before login
+            from backend import database
+            database.client = mock_motor_client[1]
+            database.db = mock_motor_client[1].__getitem__.return_value
             
             result = await login(credentials, mock_request)
             

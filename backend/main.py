@@ -687,25 +687,14 @@ async def lifespan(app: FastAPI):
         # Database initialization - fail loudly for production
         print("[DB] Initializing MongoDB Atlas connection...")
         
-        # CRITICAL: In production, database must connect - no fallback allowed
-        if settings.USE_MOCK_DB:
-            raise RuntimeError("Mock database is disabled in production. Set USE_MOCK_DB=false")
-        
-        # Try database connection with minimal retries for fast failure
-        max_db_retries = 2
-        for db_attempt in range(max_db_retries):
-            try:
-                await connect_db()
-                print("[DB] SUCCESS MongoDB Atlas connection established")
-                break
-            except Exception as e:
-                if db_attempt < max_db_retries - 1:
-                    print(f"[DB] Attempt {db_attempt + 1}/{max_db_retries} failed, retrying in 2s...")
-                    await asyncio.sleep(2)
-                else:
-                    print(f"[DB] CRITICAL: Database connection failed: {str(e)}")
-                    print("[DB] Application cannot start without database connection")
-                    raise RuntimeError(f"MongoDB Atlas connection failed: {str(e)}")
+        # Initialize MongoDB connection
+        try:
+            await connect_db()
+            print("[DB] SUCCESS MongoDB Atlas connection established")
+        except Exception as e:
+            print(f"[DB] CRITICAL: Database connection failed: {str(e)}")
+            print("[DB] Application cannot start without database connection")
+            raise RuntimeError(f"MongoDB Atlas connection failed: {str(e)}")
         
         # Redis cache initialization (non-critical)
         print("[CACHE] Initializing cache...")
@@ -1426,10 +1415,15 @@ async def health_check():
         db_error = None
         
         try:
-            # Quick database ping with timeout
-            from database import get_db
-            db = get_db()
-            await db.command('ping')
+            # Check database connectivity with ping
+            from database import client
+            if client is None:
+                db_status = "unhealthy"
+                db_error = "Database not initialized"
+            else:
+                await client.admin.command('ping')
+                db_status = "healthy"
+                db_error = None
         except Exception as e:
             db_status = "unhealthy"
             db_error = str(e)[:100]
@@ -1448,10 +1442,10 @@ async def health_check():
             redis_status = "unhealthy"
             redis_error = str(e)[:100]
         
-        # Determine overall status
+        # Determine overall status - fail if database is unhealthy
         overall_status = "healthy"
         if db_status == "unhealthy":
-            overall_status = "degraded"
+            overall_status = "unhealthy"
         if redis_status == "unhealthy":
             overall_status = "degraded"
         

@@ -1,706 +1,213 @@
 import os
-import sys
-import inspect
 import logging
-from logging import Filter
-from fastapi import status, HTTPException
-
-
-# CRITICAL FIX: Detect pytest environment automatically
-def is_pytest_environment():
-    """Detect if we're running in pytest environment"""
-    return (
-        "pytest" in sys.modules
-        or "PYTEST_CURRENT_TEST" in os.environ
-        or "pytest" in os.environ.get("PYTEST_CURRENT_TEST", "")
-        or any("pytest" in frame.filename for frame in inspect.stack())
-    )
-
-
-# CRITICAL FIX: Enable mock database in pytest environment or when explicitly enabled
-USE_MOCK_DB = (
-    is_pytest_environment() and os.environ.get("USE_MOCK_DB", "true").lower() == "true"
-) or (
-    os.environ.get("USE_MOCK_DB", "false").lower() == "true"
-)
-
-# Import MockDatabase from mock_database.py
-try:
-    from mock_database import MockDatabase as MockDBClass
-except ImportError:
-    # Fallback if import fails - use local MockDatabase
-    class MockDBClass:
-        pass
-
-
-# CRITICAL FIX: Create mock collection class that supports async operations
-class MockCollection:
-    """Mock collection that supports both dictionary and async method access"""
-
-    def __init__(self):
-        self.data = {}
-        self._counter = 0
-
-    def __getitem__(self, key):
-        return self.data[key]
-
-    def __setitem__(self, key, value):
-        self.data[key] = value
-
-    def __contains__(self, key):
-        return key in self.data
-
-    async def find_one(self, query):
-        """Mock find_one method - async"""
-        if isinstance(query, dict):
-            for item in self.data.values():
-                # Match by email
-                if "email" in query:
-                    if item.get("email") == query["email"]:
-                        return item
-                # Match by _id
-                elif "_id" in query:
-                    if item.get("_id") == query["_id"]:
-                        return item
-                # Match by token
-                elif "token" in query:
-                    if item.get("token") == query["token"]:
-                        return item
-                # Match by device_id
-                elif "device_id" in query:
-                    if item.get("device_id") == query["device_id"]:
-                        return item
-                # Match by chat_id
-                elif "chat_id" in query:
-                    if item.get("chat_id") == query["chat_id"]:
-                        return item
-                # Match by upload_id
-                elif "upload_id" in query:
-                    if item.get("upload_id") == query["upload_id"]:
-                        return item
-        return None
-
-    async def find(self, query):
-        """Mock find method - returns list of matching documents"""
-        results = []
-        if isinstance(query, dict):
-            for item in self.data.values():
-                match = True
-                for key, value in query.items():
-                    if key.startswith("$"):
-                        continue  # Skip MongoDB operators
-                    if item.get(key) != value:
-                        match = False
-                        break
-                if match:
-                    results.append(item)
-        return results
-
-    async def insert_one(self, document):
-        """Mock insert_one method - async"""
-        self._counter += 1
-        if "_id" not in document:
-            document["_id"] = f"mock_id_{self._counter}"
-        self.data[document["_id"]] = document
-        return type("InsertResult", (), {"inserted_id": document["_id"]})()
-
-    async def update_one(self, query, update, upsert=False):
-        """Mock update_one method - async"""
-        if isinstance(query, dict):
-            for key, item in list(self.data.items()):
-                match = True
-                if "_id" in query:
-                    if item.get("_id") != query["_id"]:
-                        match = False
-                elif "email" in query:
-                    if item.get("email") != query["email"]:
-                        match = False
-                elif "token" in query:
-                    if item.get("token") != query["token"]:
-                        match = False
-
-                if match:
-                    if "$set" in update:
-                        item.update(update["$set"])
-                    if "$push" in update:
-                        if update["$push"].get("members"):
-                            if "members" not in item:
-                                item["members"] = []
-                            item["members"].extend(update["$push"]["members"])
-                    if "$addToSet" in update:
-                        if update["$addToSet"].get("members"):
-                            if "members" not in item:
-                                item["members"] = []
-                            for m in update["$addToSet"]["members"]:
-                                if m not in item["members"]:
-                                    item["members"].append(m)
-                    self.data[key] = item
-                    return type(
-                        "UpdateResult",
-                        (),
-                        {"matched_count": 1, "modified_count": 1, "upserted_id": None},
-                    )()
-
-        if upsert and query:
-            self._counter += 1
-            new_doc = dict(query)
-            if "$set" in update:
-                new_doc.update(update["$set"])
-            new_doc["_id"] = f"mock_id_{self._counter}"
-            self.data[new_doc["_id"]] = new_doc
-            return type(
-                "UpdateResult",
-                (),
-                {
-                    "matched_count": 0,
-                    "modified_count": 0,
-                    "upserted_id": new_doc["_id"],
-                },
-            )()
-
-        return type(
-            "UpdateResult",
-            (),
-            {"matched_count": 0, "modified_count": 0, "upserted_id": None},
-        )()
-
-    async def delete_one(self, query):
-        """Mock delete_one method - async"""
-        if isinstance(query, dict):
-            for key, item in list(self.data.items()):
-                if "_id" in query:
-                    if item.get("_id") == query["_id"]:
-                        del self.data[key]
-                        return type("DeleteResult", (), {"deleted_count": 1})()
-                elif "email" in query:
-                    if item.get("email") == query["email"]:
-                        del self.data[key]
-                        return type("DeleteResult", (), {"deleted_count": 1})()
-                elif "token" in query:
-                    if item.get("token") == query["token"]:
-                        del self.data[key]
-                        return type("DeleteResult", (), {"deleted_count": 1})()
-        return type("DeleteResult", (), {"deleted_count": 0})()
-
-    async def count_documents(self, query):
-        """Mock count_documents method - async"""
-        count = 0
-        if isinstance(query, dict):
-            for item in self.data.values():
-                match = True
-                for key, value in query.items():
-                    if key.startswith("$"):
-                        continue
-                    if item.get(key) != value:
-                        match = False
-                        break
-                if match:
-                    count += 1
-        return count
-
-    async def list_indexes(self):
-        """Mock list_indexes method - async"""
-        return []
-
-
-# CRITICAL FIX: Suppress pymongo periodic task errors to prevent log spam
-class AtlasAuthenticationFilter(Filter):
-    """Filter to suppress repetitive MongoDB Atlas authentication errors in background tasks"""
-
-    def filter(self, record):
-        """Suppress 'bad auth' errors from pymongo periodic tasks"""
-        msg = record.getMessage()
-        # Suppress background authentication errors that repeat
-        if "bad auth" in msg.lower() and "_process_periodic_tasks" in record.pathname:
-            return False  # Don't log these repetitive errors
-        return True
-
-
-# Apply filter to pymongo logger
-pymongo_logger = logging.getLogger("pymongo.connection")
-pymongo_logger.addFilter(AtlasAuthenticationFilter())
-import random
-import secrets
-import threading
-import inspect
-import sys
-from unittest.mock import Mock, AsyncMock, MagicMock
-from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import HTTPException, status
+from unittest.mock import MagicMock
 
 try:
     from .config import settings
 except ImportError:
     from config import settings
 
-from motor.motor_asyncio import AsyncIOMotorClient
+# MockCollection for test compatibility
+class MockCollection:
+    """Mock collection for testing purposes"""
+    def __init__(self):
+        self.data = {}
+    
+    def __getitem__(self, key):
+        return self.data[key]
+    
+    def __setitem__(self, key, value):
+        self.data[key] = value
+    
+    def __contains__(self, key):
+        return key in self.data
+    
+    def clear(self):
+        """Clear all data from mock collection"""
+        self.data.clear()
+    
+    async def find_one(self, query):
+        return None
+    
+    async def insert_one(self, document):
+        return type("InsertResult", (), {"inserted_id": "mock_id"})()
+    
+    async def update_one(self, query, update, upsert=False):
+        return type("UpdateResult", (), {"matched_count": 1, "modified_count": 1})()
+    
+    async def delete_one(self, query):
+        return type("DeleteResult", (), {"deleted_count": 1})()
+    
+    async def count_documents(self, query):
+        return 0
+
+# MockDatabase for test compatibility
+class MockDatabase:
+    """Mock database with all collection attributes for testing purposes"""
+    def __init__(self):
+        self.users = MockCollection()
+        self.chats = MockCollection()
+        self.messages = MockCollection()
+        self.files = MockCollection()
+        self.uploads = MockCollection()
+        self.refresh_tokens = MockCollection()
+        self.reset_tokens = MockCollection()
+        self.group_activity = MockCollection()
+        self.media = MockCollection()
 
 # Global database connection variables
 client = None
 db = None
-_global_db = None
-_global_client = None
-
 
 async def connect_db():
-    """Connect to MongoDB Atlas or use mock database in pytest"""
-    global client, db, _global_db, _global_client
-
-    # PYTEST ENVIRONMENT: Use mock database if enabled
-    if USE_MOCK_DB:
-        print("[DB] Using mock database for pytest environment")
-        # Use MockDatabase from mock_database.py for proper async support
+    """Connect to MongoDB Atlas using MONGODB_URI environment variable only"""
+    global client, db
+    
+    # Check if mock database is enabled for testing
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    
+    # Also check if settings are mocked and USE_MOCK_DB is False in settings
+    settings_mocked = hasattr(settings, 'USE_MOCK_DB') and not settings.USE_MOCK_DB
+    
+    if use_mock_db and not settings_mocked:
+        print("[DB] Using mock database for testing")
         client = MagicMock()
-        if MockDBClass is not None and MockDBClass != type(None):
-            db = MockDBClass()
-        else:
-            # Fallback to local mock if import failed
-            db = MagicMock()
-        _global_client = client
-        _global_db = db
+        db = MockDatabase()
         return
-
-    # PRODUCTION: Always use real MongoDB Atlas - no mock database fallback
-    print("[DB] Connecting to MongoDB Atlas production database")
-
-    max_retries = 2  # Reduced retries for Atlas to fail fast
-    initial_retry_delay = 2
-
-    # SECURITY: Validate MongoDB URI before connection attempts
-    if not settings.MONGODB_URI or not isinstance(settings.MONGODB_URI, str):
-        print("[ERROR] Invalid MongoDB URI configuration")
-        raise ValueError("Database configuration is invalid - MONGODB_URI must be set")
-
-    # Basic URI format validation for Atlas
+    
+    if client is not None:
+        return  # Already connected
+    
+    # Validate MongoDB URI
+    if not settings.MONGODB_URI:
+        raise ValueError("MONGODB_URI environment variable is required")
+    
     if not settings.MONGODB_URI.startswith("mongodb+srv://"):
-        print("[ERROR] Invalid MongoDB URI format - must use Atlas with mongodb+srv://")
-        raise ValueError(
-            "Database configuration is invalid - must use MongoDB Atlas URI"
+        raise ValueError("MONGODB_URI must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
+    
+    try:
+        # Create AsyncIOMotorClient with Atlas-optimized settings
+        client = AsyncIOMotorClient(
+            settings.MONGODB_URI,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=30000,
+            retryWrites=True,
+            w="majority"
         )
-
-    # Validate required Atlas parameters
-    if "retryWrites=true" not in settings.MONGODB_URI:
-        raise ValueError(
-            "MONGODB_URI must include 'retryWrites=true' for production Atlas deployment"
-        )
-
-    if "w=majority" not in settings.MONGODB_URI:
-        raise ValueError(
-            "MONGODB_URI must include 'w=majority' for production Atlas deployment"
-        )
-
-    last_error = None
-    for attempt in range(max_retries):
-        try:
-            # Create client with Atlas-optimized settings
-            client = AsyncIOMotorClient(
-                settings.MONGODB_URI,
-                serverSelectionTimeoutMS=10000,
-                connectTimeoutMS=10000,
-                socketTimeoutMS=30000,
-                maxPoolSize=10,
-                minPoolSize=2,
-                maxIdleTimeMS=30000,
-                heartbeatFrequencyMS=10000,
-                # Atlas SSL configuration
-                tls=True,
-                tlsAllowInvalidCertificates=True,  # Allow invalid certs for testing
-                tlsAllowInvalidHostnames=True,  # Allow invalid hostnames for testing
-                retryWrites=True,  # Enable retryWrites for Atlas
-                w="majority",  # Write concern for production
-            )
-
-            # Test connection with proper error handling
-            ping_result = client.admin.command("ping", maxTimeMS=5000)
-            if inspect.isawaitable(ping_result):
-                await ping_result
-
-            # Get database instance
-            db = client[settings._MONGO_DB]
-
-            # Test database access
-            result = db.list_collection_names()
-            if inspect.isawaitable(result):
-                await result
-
-            if settings.DEBUG:
-                try:
-                    safe_uri = settings.MONGODB_URI.split("@")[-1]
-                except Exception as e:
-                    safe_uri = "[redacted]"
-                print(f"[OK] Connected to MongoDB Atlas: {safe_uri}")
-            return
-
-        except Exception as e:
-            error_msg = str(e).lower()
-            print(
-                f"[ERROR] MongoDB Atlas connection attempt {attempt + 1}/{max_retries} failed"
-            )
-            print(f"[ERROR] Type: {type(e).__name__}, Details: {error_msg}")
-
-            # Categorize errors for better debugging
-            if "authentication" in error_msg or "auth" in error_msg:
-                print(
-                    "[ERROR] Authentication failure - check Atlas credentials and IP whitelist"
-                )
-                raise ConnectionError(
-                    "MongoDB Atlas authentication failed - verify credentials and IP whitelist"
-                )
-            elif "ssl" in error_msg or "tls" in error_msg:
-                print("[ERROR] SSL/TLS error - check Atlas SSL configuration")
-                raise ConnectionError("MongoDB Atlas SSL configuration error")
-            elif "timeout" in error_msg:
-                print(
-                    "[ERROR] Connection timeout - check network connectivity to Atlas"
-                )
-                raise TimeoutError("MongoDB Atlas connection timeout")
-            elif "network" in error_msg:
-                print("[ERROR] Network error - check Atlas cluster accessibility")
-                raise ConnectionError("MongoDB Atlas network connection failed")
-            else:
-                print("[ERROR] Unknown Atlas connection error")
-                raise ConnectionError(f"MongoDB Atlas connection failed: {error_msg}")
-
-            if attempt < max_retries - 1:
-                import asyncio
-
-                retry_delay = initial_retry_delay * (2**attempt)
-                retry_delay = min(retry_delay, 10)  # Cap at 10 seconds
-                print(f"[ERROR] Retrying in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
-                continue
-
-    # All retries failed - raise the last error
-    if last_error:
-        raise last_error
-    else:
-        raise ConnectionError("MongoDB Atlas connection failed after all retries")
-
+        
+        # Verify connection with ping
+        await client.admin.command("ping", maxTimeMS=5000)
+        
+        # Get database instance
+        db = client[settings.DATABASE_NAME]
+        
+        print(f"[DB] Connected to MongoDB Atlas: {settings.DATABASE_NAME}")
+        
+    except Exception as e:
+        print(f"[DB] Connection failed: {str(e)}")
+        raise ConnectionError(f"Failed to connect to MongoDB Atlas: {str(e)}")
 
 async def close_db():
-    """Close MongoDB connection with proper error handling"""
-    global client, db, _global_db, _global_client
+    """Close MongoDB connection"""
+    global client, db
     if client:
-        try:
-            client.close()
-            if settings.DEBUG:
-                print("[CLOSE] MongoDB connection closed")
-        except Exception as e:
-            # Log error but don't raise - cleanup should continue
-            if settings.DEBUG:
-                print(f"[ERROR] Failed to close MongoDB connection: {str(e)}")
-            else:
-                # In production, log to proper logging system
-                import logging
-
-                logging.getLogger(__name__).error(
-                    f"Database connection close error: {str(e)}"
-                )
-    # Always clear the global reference
+        client.close()
+        print("[DB] MongoDB connection closed")
     client = None
     db = None
-    _global_db = None
-    _global_client = None
-
 
 def get_db():
-    """Get database connection - handle both production and pytest environments"""
-    global db, client, _global_db, _global_client
-
-    # PYTEST ENVIRONMENT: Allow mock database
-    if USE_MOCK_DB:
-        if db is not None:
-            return db
-        if _global_db is not None:
-            db = _global_db
-            return db
-        # Initialize mock database if not already done
-        if MockDBClass is not None and MockDBClass != type(None):
-            db = MockDBClass()
-        else:
-            # Fallback to simple mock if import failed
-            db = MagicMock()
-        _global_db = db
+    """Get database instance"""
+    global db
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    
+    if use_mock_db:
+        if db is None:
+            # Auto-initialize mock database
+            db = MockDatabase()
+            print("[DB] Mock database auto-initialized")
         return db
-
-    # PRODUCTION: Use real MongoDB Atlas
-    # If database is already initialized and connected, return it
-    if db is not None and client is not None:
-        return db
-
-    # Check if we have global database from initialization
-    if _global_db is not None and _global_client is not None:
-        db = _global_db
-        client = _global_client
-        print(f"[DB] Using global database instance")
-        return db
-
-    # CRITICAL: Database not initialized - fail loudly
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Database service is currently unavailable. Please try again later.",
-    )
+    
+    if db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database service is currently unavailable. Please try again later."
+        )
+    return db
 
 
-# Collection shortcuts with error handling
+# Collection shortcuts
 def users_collection():
-    """Get users collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            # Use proper subscript access for MockDatabase
-            try:
-                return database["users"]
-            except (KeyError, TypeError):
-                # Fallback if subscript doesn't work
-                if not hasattr(database, "users"):
-                    database.users = MockCollection()
-                return database.users
-
-        # PRODUCTION: Return real collection
-        return database.users
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        if "Database not initialized" in str(e):
-            # Database connection failed during startup
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Database service is currently unavailable. Please try again later.",
-            )
-        raise
-
+    """Get users collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.users  # Return MockDatabase.users
+    return database.users
 
 def chats_collection():
-    """Get chats collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            try:
-                return database["chats"]
-            except (KeyError, TypeError):
-                if not hasattr(database, "chats"):
-                    database.chats = MockCollection()
-                return database.chats
-
-        # PRODUCTION: Return real collection
-        if database is None:
-            raise RuntimeError("Database not initialized")
-
-        # Check if database has chats collection
-        if not hasattr(database, "chats"):
-            database.chats = MockCollection()
-        return database.chats
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
-
+    """Get chats collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.chats  # Return MockDatabase.chats
+    return database.chats
 
 def messages_collection():
-    """Get messages collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            if not hasattr(database, "messages"):
-                database.messages = MockCollection()
-            return database.messages
-
-        # PRODUCTION: Return real collection
-        if database is None:
-            raise RuntimeError("Database not initialized")
-            
-        return database.messages
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
-
+    """Get messages collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.messages  # Return MockDatabase.messages
+    return database.messages
 
 def files_collection():
-    """Get files collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            try:
-                return database["files"]
-            except (KeyError, TypeError):
-                if not hasattr(database, "files"):
-                    database.files = MockCollection()
-                return database.files
-
-        # PRODUCTION: Return real collection
-        if database is None:
-            raise RuntimeError("Database not initialized")
-            
-        return database.files
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
-
+    """Get files collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.files  # Return MockDatabase.files
+    return database.files
 
 def uploads_collection():
-    """Get uploads collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            try:
-                return database["uploads"]
-            except (KeyError, TypeError):
-                if not hasattr(database, "uploads"):
-                    database.uploads = MockCollection()
-                return database.uploads
-
-        # PRODUCTION: Return real collection
-        if database is None:
-            raise RuntimeError("Database not initialized")
-            
-        return database.uploads
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
-
+    """Get uploads collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.uploads  # Return MockDatabase.uploads
+    return database.uploads
 
 def refresh_tokens_collection():
-    """Get refresh tokens collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            try:
-                return database["refresh_tokens"]
-            except (KeyError, TypeError):
-                if not hasattr(database, "refresh_tokens"):
-                    database.refresh_tokens = MockCollection()
-                return database.refresh_tokens
-
-        # PRODUCTION: Return real collection
-        if database is None:
-            raise RuntimeError("Database not initialized")
-            
-        return database.refresh_tokens
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
-
+    """Get refresh tokens collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.refresh_tokens  # Return MockDatabase.refresh_tokens
+    return database.refresh_tokens
 
 def reset_tokens_collection():
-    """Get reset tokens collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            try:
-                return database["reset_tokens"]
-            except (KeyError, TypeError):
-                if not hasattr(database, "reset_tokens"):
-                    database.reset_tokens = MockCollection()
-                return database.reset_tokens
-
-        # PRODUCTION: Return real collection
-        if database is None:
-            raise RuntimeError("Database not initialized")
-            
-        return database.reset_tokens
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
-
+    """Get reset tokens collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.reset_tokens  # Return MockDatabase.reset_tokens
+    return database.reset_tokens
 
 def group_activity_collection():
-    """Get group activity collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            try:
-                return database["group_activity"]
-            except (KeyError, TypeError):
-                if not hasattr(database, "group_activity"):
-                    database.group_activity = MockCollection()
-                return database.group_activity
-
-        # PRODUCTION: Return real collection
-        if database is None:
-            raise RuntimeError("Database not initialized")
-            
-        return database.group_activity
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
-
+    """Get group activity collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.group_activity  # Return MockDatabase.group_activity
+    return database.group_activity
 
 def media_collection():
-    """Get media collection - handle both production and pytest environments"""
-    try:
-        database = get_db()
-
-        # PYTEST ENVIRONMENT: Return mock collection
-        if USE_MOCK_DB:
-            try:
-                return database["media"]
-            except (KeyError, TypeError):
-                if not hasattr(database, "media"):
-                    database.media = MockCollection()
-                return database.media
-
-        # PRODUCTION: Return real collection
-        if database is None:
-            raise RuntimeError("Database not initialized")
-            
-        return database.media
-    except HTTPException:
-        # Re-raise HTTPException as-is
-        raise
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
+    """Get media collection"""
+    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    database = get_db()
+    if use_mock_db:
+        return database.media  # Return MockDatabase.media
+    return database.media
