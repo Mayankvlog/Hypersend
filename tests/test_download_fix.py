@@ -108,11 +108,12 @@ def test_chat_member_can_download_other_users_file():
     file_id = "file_test_id_001"
 
     # Insert file metadata into mock DB
-    from backend.db_proxy import files_collection
+    from backend.database import files_collection
     # Ensure we're using mock by forcing mock mode
     import os
     os.environ['USE_MOCK_DB'] = 'True'
     
+    files_col = files_collection()
     file_doc = {
         "_id": file_id,
         "filename": "hello.txt",
@@ -124,8 +125,53 @@ def test_chat_member_can_download_other_users_file():
         "shared_with": [],
     }
     
-    # Directly insert into mock collection data
-    files_collection().data[file_id] = file_doc
+    # Handle different mock collection types robustly
+    try:
+        if hasattr(files_col, 'data') and hasattr(files_col.data, '__setitem__'):
+            # Standard MockCollection with data dict
+            files_col.data[file_id] = file_doc
+            print(f"[TEST] Added file to MockCollection data: {file_id}")
+        elif hasattr(files_col, '__setitem__'):
+            # Collection supports direct item assignment
+            files_col[file_id] = file_doc
+            print(f"[TEST] Added file directly to collection: {file_id}")
+        elif hasattr(files_col, 'insert_one') and callable(files_col.insert_one):
+            # Try async insert if available
+            try:
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Create a task to run the async operation
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, files_col.insert_one(file_doc))
+                        result = future.result(timeout=5)
+                    print(f"[TEST] Added file via async insert: {file_id}")
+                except RuntimeError:
+                    # No running loop, safe to use asyncio.run
+                    result = asyncio.run(files_col.insert_one(file_doc))
+                    print(f"[TEST] Added file via asyncio.run: {file_id}")
+            except Exception as e:
+                print(f"[TEST] Async insert failed, trying direct data: {e}")
+                # Fallback to direct data manipulation
+                if hasattr(files_col, 'data'):
+                    files_col.data[file_id] = file_doc
+        else:
+            # Last resort - try to create a proper mock collection
+            print(f"[TEST] Unknown collection type, creating proper MockCollection")
+            from backend.database import MockCollection
+            proper_col = MockCollection()
+            proper_col.data[file_id] = file_doc
+            # Replace the collection in the database
+            import backend.database
+            db = backend.database.get_db()
+            if hasattr(db, '__setitem__'):
+                db['files'] = proper_col
+            elif hasattr(db, 'files'):
+                db.files = proper_col
+    except Exception as e:
+        print(f"[TEST] Warning: Could not add file to collection: {e}")
+        # Continue with test - file might not be found but test should handle gracefully
 
     # Downloader B should be able to download (as chat member)
     r = client.get(f"/api/v1/files/{file_id}/download", headers=headers_b)
@@ -237,14 +283,27 @@ def test_download_with_range_header():
     
     client = TestClient(app)
     
-    # Login
+    # First create a test user and login to ensure user exists
+    register_payload = {
+        "email": "rangetest@example.com",
+        "password": "TestPass123",
+        "username": "rangetest@example.com", 
+        "name": "Range Test User"
+    }
+    
+    # Register user
+    reg_response = client.post("/api/v1/auth/register", json=register_payload)
+    print(f"Range test registration status: {reg_response.status_code}")
+    
+    # Login user
     login_response = client.post("/api/v1/auth/login", json={
-        "email": "downloadtest@example.com",
+        "email": "rangetest@example.com",
         "password": "TestPass123"
     })
     
     if login_response.status_code != 200:
-        print(f"❌ Login failed for range test")
+        print(f"❌ Login failed for range test: {login_response.status_code}")
+        print(f"Response: {login_response.text}")
         assert False, "Login failed for range test"
         
     login_data = login_response.json()
@@ -266,6 +325,7 @@ def test_download_with_range_header():
             assert True
         else:
             print(f"❓ Unexpected range download status: {download_response.status_code}")
+            print(f"Response: {download_response.text}")
             assert False, f"Unexpected range download status: {download_response.status_code}"
             
     except Exception as e:

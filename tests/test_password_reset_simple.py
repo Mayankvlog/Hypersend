@@ -99,12 +99,35 @@ def test_nonexistent_email():
         except ImportError:
             pytest.skip("Could not import database module")
         db = get_db()
-        if hasattr(db, 'clear_all'):
-            db.clear_all()
-        elif hasattr(db, 'users') and hasattr(db.users, 'clear'):
-            # Clear specific users collection
-            db.users.clear()
-            print("[TEST] Cleared users collection for test isolation")
+        
+        # Try different database clearing methods
+        cleared = False
+        if hasattr(db, 'clear_all') and callable(db.clear_all):
+            try:
+                db.clear_all()
+                cleared = True
+                print("[TEST] Cleared database using clear_all()")
+            except Exception as e:
+                print(f"[TEST] clear_all() failed: {e}")
+        
+        if not cleared and hasattr(db, 'users') and hasattr(db.users, 'clear') and callable(db.users.clear):
+            try:
+                db.users.clear()
+                cleared = True
+                print("[TEST] Cleared users collection")
+            except Exception as e:
+                print(f"[TEST] users.clear() failed: {e}")
+        
+        if not cleared and hasattr(db, 'data') and hasattr(db.data, 'clear'):
+            try:
+                db.data.clear()
+                cleared = True
+                print("[TEST] Cleared database data")
+            except Exception as e:
+                print(f"[TEST] data.clear() failed: {e}")
+        
+        if not cleared:
+            print("[TEST] Warning: Could not clear database, continuing anyway")
         
         # Use unique email to avoid conflicts with other tests
         import uuid
