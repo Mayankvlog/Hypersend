@@ -89,7 +89,6 @@ services:
       # PROD: MongoDB Atlas cloud connection only
       MONGODB_ATLAS_ENABLED: "true"
       MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/Hypersend?retryWrites=true&w=majority"
-      #MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:BkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/?appName=Cluster0"
       DATABASE_NAME: "Hypersend"
       
       
