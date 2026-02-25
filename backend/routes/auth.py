@@ -360,7 +360,9 @@ async def authenticate_device(
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate) -> UserResponse:
     """Register a new user account"""
+    print(f"[REG_DEBUG] Registration endpoint called with user: {user}")
     try:
+        print(f"[REG_DEBUG] Starting registration for email: {user.email}")
         auth_log(f"Registration attempt for email: {user.email}")
         
         # Validate request schema first
@@ -418,12 +420,16 @@ async def register(user: UserCreate) -> UserResponse:
             )
         
         # Hash password - CRITICAL FIX: Store hash and salt separately
+        print(f"[REG_DEBUG] About to hash password")
         password_hash, salt = hash_password(user.password)
+        print(f"[REG_DEBUG] Password hashed successfully")
         
         # Remove avatar initials generation - use None instead
         initials = None  # FIXED: Don't generate 2-letter avatar
+        print(f"[REG_DEBUG] Initials set to: {initials}")
         
         # Create user document
+        print(f"[REG_DEBUG] Creating user document")
         user_doc = {
             "_id": str(ObjectId()),
             "name": user.name,
@@ -450,6 +456,7 @@ async def register(user: UserCreate) -> UserResponse:
             "pinned_chats": [],
             "blocked_users": []
         }
+        print(f"[REG_DEBUG] User document created, _id: {user_doc['_id']}")
         
         # Insert user into database
         try:
@@ -475,6 +482,26 @@ async def register(user: UserCreate) -> UserResponse:
                 raise RuntimeError("Failed to verify user insertion - database session may not have committed")
             
             auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {inserted_id})")
+            
+            # Create response
+            return UserResponse(
+                id=str(inserted_id),
+                name=user.name,
+                email=user.email,
+                username=user.email.lower().strip(),
+                bio=None,
+                avatar=initials,  
+                avatar_url=None,
+                quota_used=0,
+                quota_limit=42949672960,
+                created_at=user_doc["created_at"],
+                updated_at=None,
+                last_seen=None,
+                is_online=False,
+                status=None,
+                pinned_chats=[],
+                is_contact=False
+            )
         except asyncio.TimeoutError:
             auth_log(f"Database timeout during user insertion")
             raise HTTPException(
@@ -506,29 +533,13 @@ async def register(user: UserCreate) -> UserResponse:
                     detail="Failed to create user account. Please try again."
                 )
         
-        # Create response
-        return UserResponse(
-            id=str(inserted_id),
-            name=user.name,
-            email=user.email,
-            username=user.email.lower().strip(),
-            bio=None,
-            avatar=initials,  
-            avatar_url=None,
-            quota_used=0,
-            quota_limit=42949672960,
-            created_at=user_doc["created_at"],
-            updated_at=None,
-            last_seen=None,
-            is_online=False,
-            status=None,
-            pinned_chats=[],
-            is_contact=False
-        )
-        
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[REG_DEBUG] Registration error: {type(e).__name__}: {str(e)}")
+        print(f"[REG_DEBUG] Error details: {repr(e)}")
+        import traceback
+        print(f"[REG_DEBUG] Traceback: {traceback.format_exc()}")
         auth_log(f"Registration error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

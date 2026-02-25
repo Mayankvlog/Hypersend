@@ -17,9 +17,11 @@ def is_pytest_environment():
     )
 
 
-# CRITICAL FIX: Enable mock database only in pytest environment
+# CRITICAL FIX: Enable mock database in pytest environment or when explicitly enabled
 USE_MOCK_DB = (
     is_pytest_environment() and os.environ.get("USE_MOCK_DB", "true").lower() == "true"
+) or (
+    os.environ.get("USE_MOCK_DB", "false").lower() == "true"
 )
 
 # Import MockDatabase from mock_database.py
