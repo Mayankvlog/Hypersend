@@ -77,7 +77,7 @@ class TestChatCreationFix:
                 
                 async def insert_one(self, chat_doc):
                     self.chat = chat_doc
-                    return MagicMock(inserted_id="mock_chat_id")
+                    return AsyncMock(inserted_id="mock_chat_id")
 
             module_path = create_chat.__module__
             with patch(f"{module_path}.chats_collection", return_value=MockChatsCollection()), \
@@ -232,7 +232,7 @@ class TestChatCreationFix:
         # Mock collections and ObjectId
         mock_collection = AsyncMock()
         mock_collection.find_one.return_value = None  # No existing chat
-        mock_collection.insert_one.return_value = MagicMock(inserted_id="test_chat_id")
+        mock_collection.insert_one.return_value = AsyncMock(inserted_id="test_chat_id")
 
         module_path = create_chat_root.__module__
         with patch(f'{module_path}.chats_collection', return_value=mock_collection), \
@@ -271,7 +271,12 @@ class TestChatCreationFix:
         # Mock collections
         mock_collection = AsyncMock()
         mock_collection.find_one.return_value = None  # No existing chat
-        mock_collection.insert_one.return_value = MagicMock(inserted_id="test_chat_id")
+        
+        async def mock_insert_one(doc):
+            doc["_id"] = "test_chat_id"
+            return AsyncMock(inserted_id="test_chat_id")
+        
+        mock_collection.insert_one = mock_insert_one
 
         module_path = create_chat.__module__
         with patch(f'{module_path}.chats_collection', return_value=mock_collection):
@@ -321,7 +326,12 @@ class TestChatCreationFix:
         # Mock collections
         mock_collection = AsyncMock()
         mock_collection.find_one.return_value = None  # No existing chat
-        mock_collection.insert_one.return_value = MagicMock(inserted_id="test_chat_id")
+        
+        async def mock_insert_one(doc):
+            doc["_id"] = "test_chat_id"
+            return AsyncMock(inserted_id="test_chat_id")
+        
+        mock_collection.insert_one = mock_insert_one
 
         module_path = create_chat.__module__
         with patch(f'{module_path}.chats_collection', return_value=mock_collection):
@@ -362,7 +372,12 @@ class TestChatCreationFix:
         # Mock collections
         mock_collection = AsyncMock()
         mock_collection.find_one.return_value = None  # No existing chat
-        mock_collection.insert_one.return_value = MagicMock(inserted_id="test_chat_id")
+        
+        async def mock_insert_one(doc):
+            doc["_id"] = "test_chat_id"
+            return AsyncMock(inserted_id="test_chat_id")
+        
+        mock_collection.insert_one = mock_insert_one
 
         module_path = create_chat.__module__
         with patch(f'{module_path}.chats_collection', return_value=mock_collection):
@@ -511,10 +526,10 @@ class TestChatCreationFix:
                 
                 # Mock database operations
                 mock_users.return_value.find_one.return_value = mock_user
-                mock_users.return_value.find_one_and_update.return_value = MagicMock(
+                mock_users.return_value.find_one_and_update.return_value = AsyncMock(
                     matched_count=1, modified_count=1
                 )
-                mock_users.return_value.update_one.return_value = MagicMock(
+                mock_users.return_value.update_one.return_value = AsyncMock(
                     matched_count=1, modified_count=1
                 )
                 
@@ -748,7 +763,7 @@ class TestChatCreationFix:
                 }
                 
                 mock_users.return_value.find_one.return_value = mock_user
-                mock_users.return_value.update_one.return_value = MagicMock(
+                mock_users.return_value.update_one.return_value = AsyncMock(
                     matched_count=1, modified_count=1
                 )
                 
@@ -866,9 +881,9 @@ class TestChatCreationFix:
                         mock_users.return_value.find_one.return_value = mock_user
                         
                         # Mock database updates
-                        mock_users.return_value.update_one.return_value = MagicMock()
-                        mock_reset_tokens.return_value.update_one.return_value = MagicMock()
-                        mock_refresh_tokens.return_value.update_many.return_value = MagicMock()
+                        mock_users.return_value.update_one.return_value = AsyncMock()
+                        mock_reset_tokens.return_value.update_one.return_value = AsyncMock()
+                        mock_refresh_tokens.return_value.update_many.return_value = AsyncMock()
                         
                         # Mock password hashing
                         with patch('auth.utils.hash_password', return_value=("new_hash", "new_salt")):
