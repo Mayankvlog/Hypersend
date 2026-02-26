@@ -106,7 +106,7 @@ except ImportError:
     app = MockApp()
 
 # Database initialization fixture
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 async def initialize_test_database():
     """Initialize database for all tests"""
     try:
