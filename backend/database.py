@@ -191,6 +191,7 @@ def get_database():
 # Collection shortcuts
 def users_collection():
     """Get users collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.users
@@ -198,6 +199,7 @@ def users_collection():
 
 def chats_collection():
     """Get chats collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.chats
@@ -205,6 +207,7 @@ def chats_collection():
 
 def messages_collection():
     """Get messages collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.messages
@@ -212,6 +215,7 @@ def messages_collection():
 
 def files_collection():
     """Get files collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.files
@@ -219,6 +223,7 @@ def files_collection():
 
 def uploads_collection():
     """Get uploads collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.uploads
@@ -226,6 +231,7 @@ def uploads_collection():
 
 def refresh_tokens_collection():
     """Get refresh tokens collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.refresh_tokens
@@ -233,6 +239,7 @@ def refresh_tokens_collection():
 
 def reset_tokens_collection():
     """Get reset tokens collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.reset_tokens
@@ -240,6 +247,7 @@ def reset_tokens_collection():
 
 def group_activity_collection():
     """Get group activity collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.group_activity
@@ -247,6 +255,7 @@ def group_activity_collection():
 
 def media_collection():
     """Get media collection"""
+    global database
     if database is None:
         raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.media
