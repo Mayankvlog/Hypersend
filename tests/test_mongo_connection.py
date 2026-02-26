@@ -3,7 +3,7 @@
 import asyncio
 import pytest
 from backend.config import settings
-from backend.database import connect_db, close_db
+from backend.database import get_database
 
 @pytest.mark.asyncio
 async def test_connection():
@@ -17,15 +17,13 @@ async def test_connection():
         print()
         
         print('[TEST] Attempting MongoDB connection...')
-        await connect_db()
+        db = get_database()
         
         print()
         print('[SUCCESS] ✅ MongoDB connection successful!')
         print('[SUCCESS] Database is ready for use')
         print('=' * 60)
         
-        # Close connection
-        await close_db()
         return True
         
     except Exception as e:

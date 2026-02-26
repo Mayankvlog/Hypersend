@@ -14,7 +14,7 @@ try:
         PersistentMessage, ConversationHistory, DeviceSyncState, UserRelationship,
         MessageHistoryRequest, MessageHistoryResponse, MessageDeliveryReceipt
     )
-    from ..database import get_db
+    from ..database import get_database
     from ..redis_cache import cache
 except ImportError:
     # Fallback for direct execution and testing
@@ -22,7 +22,7 @@ except ImportError:
         PersistentMessage, ConversationHistory, DeviceSyncState, UserRelationship,
         MessageHistoryRequest, MessageHistoryResponse, MessageDeliveryReceipt
     )
-    from database import get_db
+    from database import get_database
     from redis_cache import cache
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class MessageHistoryService:
         if self._collections_initialized:
             return
         
-        self.db = get_db()
+        self.db = get_database()
         
         # Create indexes for efficient queries
         indexes = {

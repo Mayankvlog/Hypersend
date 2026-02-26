@@ -15,12 +15,12 @@ from auth.utils import get_current_user, get_current_user_optional
 from pydantic import BaseModel, Field
 
 try:
-    from ..db_proxy import chats_collection, users_collection, messages_collection, get_db
+    from ..db_proxy import chats_collection, users_collection, messages_collection, get_database
     from ..models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
     from ..redis_cache import GroupCacheService, UserCacheService, SearchCacheService
     from ..config import settings
 except ImportError:
-    from db_proxy import chats_collection, users_collection, messages_collection, get_db
+    from db_proxy import chats_collection, users_collection, messages_collection, get_database
     from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
     from redis_cache import GroupCacheService, UserCacheService, SearchCacheService
     from config import settings
@@ -371,7 +371,7 @@ def _is_admin(group: dict, user_id: str) -> bool:
 
 
 async def _log_activity(group_id: str, actor_id: str, event: str, meta: Optional[dict] = None) -> None:
-    db = get_db()
+    db = get_database()
     col = db.group_activity
     doc = {
         "_id": str(ObjectId()),
@@ -1299,7 +1299,7 @@ async def mute_group(group_id: str, mute: bool = True, current_user: str = Depen
 @router.get("/{group_id}/activity")
 async def get_activity(group_id: str, limit: int = 50, current_user: str = Depends(get_current_user)):
     await _require_group(group_id, current_user)
-    db = get_db()
+    db = get_database()
     col = db.group_activity
     events = await col.find({"group_id": group_id}).sort("created_at", -1).limit(limit).to_list(limit)
     return {"events": list(reversed(events))}

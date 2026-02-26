@@ -7,6 +7,7 @@ Automatically sets up test environment
 import os
 import sys
 import pytest
+import asyncio
 from pathlib import Path
 
 # Enable pytest-asyncio
@@ -101,3 +102,15 @@ except ImportError:
             return decorator
     
     app = MockApp()
+
+# Database initialization fixture
+@pytest.fixture(scope="session", autouse=True)
+async def initialize_test_database():
+    """Initialize database for all tests"""
+    try:
+        # Import the main app to trigger startup event
+        from backend.main import app
+        print("[CONFTEST] Database initialized for tests")
+    except Exception as e:
+        print(f"[CONFTEST] Database initialization failed: {e}")
+        # Continue with tests - mock database should be available

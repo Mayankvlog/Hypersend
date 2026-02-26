@@ -33,6 +33,7 @@ class Settings:
 
     # MongoDB Atlas connection from environment
     env_mongodb_uri = os.getenv("MONGODB_URI")
+    env_database_name = os.getenv("DATABASE_NAME")
 
     if not env_mongodb_uri:
         raise RuntimeError(
@@ -40,6 +41,12 @@ class Settings:
             "No hardcoded fallback is permitted for security reasons. "
             "Please set MONGODB_URI in your environment file with the format: "
             "mongodb+srv://username:password@cluster.mongodb.net/database?retryWrites=true&w=majority"
+        )
+
+    if not env_database_name:
+        raise RuntimeError(
+            "CRITICAL: DATABASE_NAME environment variable is required for MongoDB Atlas. "
+            "Please set DATABASE_NAME in your environment file."
         )
 
     # Validate MongoDB URI format for Atlas
@@ -61,37 +68,10 @@ class Settings:
         )
 
     MONGODB_URI: str = env_mongodb_uri
+    DATABASE_NAME: str = env_database_name
     MONGODB_ATLAS_ENABLED: bool = (
         os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() == "true"
     )
-
-    # Mock database configuration - only for pytest environment
-    # CRITICAL: Mock database is disabled by default in production
-    # Only enabled automatically when running pytest
-    _IS_TESTING: bool = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
-
-    # Allow mock DB if explicitly enabled AND we're running under pytest
-    USE_MOCK_DB: bool = (
-        os.getenv("USE_MOCK_DB", "False").lower() in ("true", "1", "yes")
-        and _IS_TESTING
-    )
-    if USE_MOCK_DB and not _IS_TESTING:
-        print("[CONFIG] WARNING: USING MOCK DATABASE - FOR TESTING ONLY")
-
-    # Extract database name from environment variable or URI for validation
-    DATABASE_NAME = os.getenv("DATABASE_NAME")
-    if not DATABASE_NAME:
-        try:
-            from urllib.parse import urlparse
-            parsed_uri = urlparse(MONGODB_URI)
-            db_name = parsed_uri.path.lstrip("/")
-            if not db_name:
-                raise ValueError(
-                    "MONGODB_URI must include database name after final '/'"
-                )
-            DATABASE_NAME = db_name
-        except Exception as e:
-            raise ValueError(f"Failed to parse database name from MONGODB_URI: {str(e)}")
 
     print(f"[CONFIG] MongoDB Atlas connection configured")
     print(f"[CONFIG] Database: {DATABASE_NAME}")
@@ -312,7 +292,7 @@ class Settings:
     )
 
     # WhatsApp Storage Validation
-    if WHATSAPP_STORAGE and not _IS_TESTING:
+    if WHATSAPP_STORAGE:
         print(f"[CONFIG] WhatsApp Storage Model: ENABLED")
         print(f"[CONFIG] File TTL: {FILE_TTL_SECONDS} seconds (24h)")
 
@@ -435,13 +415,6 @@ class Settings:
     # File upload settings (15GB Support)
     # LARGE_FILE_THRESHOLD and MAX_FILE_SIZE already set above
     # Remove duplicate assignments to avoid conflicts
-
-    # CRITICAL: Production safety check
-    # Allow mock DB if DEBUG is enabled OR if we're running under pytest
-    if not DEBUG and USE_MOCK_DB and not _IS_TESTING:
-        raise RuntimeError(
-            "PRODUCTION SAFETY ERROR: Mock database cannot be used in production. Set USE_MOCK_DB=False"
-        )
 
     # CORS Configuration
     # PRODUCTION: Only allow specific production domains

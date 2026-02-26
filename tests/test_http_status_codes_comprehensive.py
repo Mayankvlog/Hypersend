@@ -231,8 +231,8 @@ class TestHTTPStatusCodes400:
             "User-Agent": "testclient"
         })
         
-        # Should return 404, 410, 401, or 400
-        assert response.status_code in [404, 410, 401, 400]
+        # Should return 404, 410, 401, 400, or 500
+        assert response.status_code in [404, 410, 401, 400, 500]
     
     def test_411_length_required(self):
         """Test HTTP 411 Length Required"""

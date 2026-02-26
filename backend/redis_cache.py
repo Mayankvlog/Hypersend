@@ -2316,10 +2316,10 @@ class MetadataMinimizationService:
         """
         try:
             try:
-                from .db_proxy import get_db
+                from .db_proxy import get_database
             except ImportError:
-                from db_proxy import get_db
-            db = get_db()
+                from db_proxy import get_database
+            db = get_database()
             
             # Clean up expired message metadata
             messages_collection = db.messages
@@ -2370,10 +2370,10 @@ class MetadataMinimizationService:
         """
         try:
             try:
-                from .db_proxy import get_db
+                from .db_proxy import get_database
             except ImportError:
-                from db_proxy import get_db
-            db = get_db()
+                from db_proxy import get_database
+            db = get_database()
             
             # Count documents in each collection
             messages_count = db.messages.count_documents({})
@@ -2418,10 +2418,10 @@ class MetadataMinimizationService:
         if not storage_stats.get("error") and storage_stats.get("estimated_storage_mb", 0) > 1000:  # 1GB limit
             try:
                 try:
-                    from .db_proxy import get_db
+                    from .db_proxy import get_database
                 except ImportError:
-                    from db_proxy import get_db
-                db = get_db()
+                    from db_proxy import get_database
+                db = get_database()
                 
                 # Remove oldest messages beyond 100MB limit
                 messages_collection = db.messages

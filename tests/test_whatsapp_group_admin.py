@@ -18,7 +18,56 @@ if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
 # Import test utilities
-from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+try:
+    from test_utils import clear_collection, setup_test_document, clear_all_test_collections
+except ImportError:
+    # Fallback if test_utils not available
+    def clear_collection(collection_func):
+        """Fallback clear collection"""
+        try:
+            collection = collection_func()
+            if hasattr(collection, 'data'):
+                collection.data.clear()
+            elif hasattr(collection, 'clear'):
+                collection.clear()
+        except Exception as e:
+            print(f"Warning: Could not clear collection: {e}")
+    
+    def setup_test_document(collection_func, document):
+        """Fallback setup test document"""
+        try:
+            collection = collection_func()
+            if hasattr(collection, 'data'):
+                doc_id = document.get('_id', str(len(collection.data) + 1))
+                collection.data[doc_id] = document
+                return doc_id
+            elif hasattr(collection, 'insert_one'):
+                import inspect
+                if inspect.iscoroutinefunction(collection.insert_one):
+                    import asyncio
+                    try:
+                        loop = asyncio.get_running_loop()
+                        if loop.is_running() and not loop.is_closed():
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(asyncio.run, collection.insert_one(document))
+                                result = future.result(timeout=10)
+                        else:
+                            result = asyncio.run(collection.insert_one(document))
+                    except RuntimeError:
+                        result = asyncio.run(collection.insert_one(document))
+                    # Return the actual result, not a coroutine
+                    return result.inserted_id if hasattr(result, 'inserted_id') else None
+                else:
+                    result = collection.insert_one(document)
+                    return result.inserted_id if hasattr(result, 'inserted_id') else None
+        except Exception as e:
+            print(f"Warning: Could not setup document: {e}")
+            return None
+    
+    def clear_all_test_collections():
+        """Fallback clear all collections"""
+        pass
 
 from backend.main import app
 from backend.mock_database import users_collection, chats_collection, messages_collection

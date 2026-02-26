@@ -1,51 +1,46 @@
 import os
 import logging
+import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import HTTPException, status
-from unittest.mock import MagicMock
+from dotenv import load_dotenv
+from pathlib import Path
 
-try:
-    from .config import settings
-except ImportError:
-    from config import settings
+# Load environment variables from .env file
+env_paths = [Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"]
+for env_path in env_paths:
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+        break
 
-# MockCollection for test compatibility
-class MockCollection:
-    """Mock collection for testing purposes"""
-    def __init__(self):
-        self.data = {}
-    
-    def __getitem__(self, key):
-        return self.data[key]
-    
-    def __setitem__(self, key, value):
-        self.data[key] = value
-    
-    def __contains__(self, key):
-        return key in self.data
-    
-    def clear(self):
-        """Clear all data from mock collection"""
-        self.data.clear()
-    
-    async def find_one(self, query):
-        return None
-    
-    async def insert_one(self, document):
-        return type("InsertResult", (), {"inserted_id": "mock_id"})()
-    
-    async def update_one(self, query, update, upsert=False):
-        return type("UpdateResult", (), {"matched_count": 1, "modified_count": 1})()
-    
-    async def delete_one(self, query):
-        return type("DeleteResult", (), {"deleted_count": 1})()
-    
-    async def count_documents(self, query):
-        return 0
+# Load MongoDB Atlas configuration from environment variables
+MONGODB_URI = os.getenv("MONGODB_URI")
+DATABASE_NAME = os.getenv("DATABASE_NAME")
 
-# MockDatabase for test compatibility
+# Validate required environment variables
+if not MONGODB_URI:
+    raise ValueError("MONGODB_URI environment variable is required")
+
+if not DATABASE_NAME:
+    raise ValueError("DATABASE_NAME environment variable is required")
+
+# Validate MongoDB URI format
+if not MONGODB_URI.startswith("mongodb+srv://"):
+    raise ValueError("MONGODB_URI must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
+
+# Print startup log confirming MongoDB configuration
+print(f"[DB] MongoDB Atlas URI configured for database: {DATABASE_NAME}")
+print(f"[DB] MONGODB_URI: {MONGODB_URI}")
+print(f"[DB] DATABASE_NAME: {DATABASE_NAME}")
+print(f"[DB] Connection timeout: 10000ms")
+
+# Global database connection variables as specified
+client = None
+database = None
+
+# Mock database for testing
 class MockDatabase:
-    """Mock database with all collection attributes for testing purposes"""
+    """Mock database for testing"""
     def __init__(self):
         self.users = MockCollection()
         self.chats = MockCollection()
@@ -57,157 +52,169 @@ class MockDatabase:
         self.group_activity = MockCollection()
         self.media = MockCollection()
 
-# Global database connection variables
-client = None
-db = None
+class MockCollection:
+    """Mock collection for testing"""
+    def __init__(self):
+        self.data = {}
+        self._id_counter = 1
+    
+    async def find_one(self, query, **kwargs):
+        # Simple mock implementation
+        if isinstance(query, dict):
+            if "_id" in query:
+                # Find by ID
+                return self.data.get(query["_id"])
+            elif "email" in query:
+                # Find by email
+                for value in self.data.values():
+                    if isinstance(value, dict) and value.get("email") == query["email"]:
+                        return value
+        return None
+    
+    async def insert_one(self, document):
+        # Generate mock ID
+        document = dict(document)
+        document["_id"] = f"mock_id_{self._id_counter}"
+        self._id_counter += 1
+        
+        # Store by ID and also by email if available
+        self.data[document["_id"]] = document
+        if "email" in document:
+            self.data[document["email"]] = document
+        
+        result = type('InsertResult', (), {'inserted_id': document["_id"]})()
+        return result
+    
+    async def update_one(self, query, update, **kwargs):
+        # Mock implementation
+        result = type('UpdateResult', (), {'matched_count': 1, 'modified_count': 1})()
+        return result
+    
+    async def delete_one(self, query, **kwargs):
+        # Mock implementation
+        result = type('DeleteResult', (), {'deleted_count': 1})()
+        return result
+    
+    async def delete_many(self, query, **kwargs):
+        # Mock implementation
+        result = type('DeleteResult', (), {'deleted_count': 1})()
+        return result
+    
+    async def find(self, query, **kwargs):
+        # Mock cursor
+        return MockCursor(list(self.data.values()))
+    
+    async def find_one_and_update(self, query, update, **kwargs):
+        # Mock implementation
+        return None
+    
+    async def find_one_and_delete(self, query, **kwargs):
+        # Mock implementation
+        return None
 
-async def connect_db():
-    """Connect to MongoDB Atlas using MONGODB_URI environment variable only"""
-    global client, db
+class MockCursor:
+    """Mock cursor for testing"""
+    def __init__(self, data):
+        self.data = data
+        self._index = 0
     
-    # Check if mock database is enabled for testing
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
+    async def to_list(self, length=None):
+        return self.data[:length] if length else self.data
     
-    # Also check if settings are mocked and USE_MOCK_DB is False in settings
-    settings_mocked = hasattr(settings, 'USE_MOCK_DB') and not settings.USE_MOCK_DB
+    def limit(self, count):
+        return MockCursor(self.data[:count])
     
-    if use_mock_db and not settings_mocked:
-        print("[DB] Using mock database for testing")
-        client = MagicMock()
-        db = MockDatabase()
-        return
+    def skip(self, count):
+        return MockCursor(self.data[count:])
     
-    if client is not None:
-        return  # Already connected
+    def sort(self, key, direction=1):
+        return self
     
-    # Validate MongoDB URI
-    if not settings.MONGODB_URI:
-        raise ValueError("MONGODB_URI environment variable is required")
+    def __aiter__(self):
+        return self
     
-    if not settings.MONGODB_URI.startswith("mongodb+srv://"):
-        raise ValueError("MONGODB_URI must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
-    
-    try:
-        # Create AsyncIOMotorClient with Atlas-optimized settings
-        client = AsyncIOMotorClient(
-            settings.MONGODB_URI,
-            serverSelectionTimeoutMS=10000,
-            connectTimeoutMS=10000,
-            socketTimeoutMS=30000,
-            retryWrites=True,
-            w="majority"
-        )
-        
-        # Verify connection with ping
-        await client.admin.command("ping", maxTimeMS=5000)
-        
-        # Get database instance
-        db = client[settings.DATABASE_NAME]
-        
-        print(f"[DB] Connected to MongoDB Atlas: {settings.DATABASE_NAME}")
-        
-    except Exception as e:
-        print(f"[DB] Connection failed: {str(e)}")
-        raise ConnectionError(f"Failed to connect to MongoDB Atlas: {str(e)}")
+    async def __anext__(self):
+        if self._index >= len(self.data):
+            raise StopAsyncIteration
+        item = self.data[self._index]
+        self._index += 1
+        return item
 
-async def close_db():
-    """Close MongoDB connection"""
-    global client, db
-    if client:
-        client.close()
-        print("[DB] MongoDB connection closed")
-    client = None
-    db = None
+# Initialize mock database if needed
+if os.getenv("USE_MOCK_DB", "false").lower() == "true":
+    database = MockDatabase()
+    print("[DB] Using mock database for testing")
 
-def get_db():
-    """Get database instance"""
-    global db
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    
-    if use_mock_db:
-        if db is None:
-            # Auto-initialize mock database
-            db = MockDatabase()
-            print("[DB] Mock database auto-initialized")
-        return db
-    
-    if db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service is currently unavailable. Please try again later."
-        )
-    return db
+def get_database():
+    """Get database instance - sync function as specified"""
+    global database
+    return database
 
 
 # Collection shortcuts
 def users_collection():
     """Get users collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.users  # Return MockDatabase.users
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.users
+
 
 def chats_collection():
     """Get chats collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.chats  # Return MockDatabase.chats
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.chats
+
 
 def messages_collection():
     """Get messages collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.messages  # Return MockDatabase.messages
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.messages
+
 
 def files_collection():
     """Get files collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.files  # Return MockDatabase.files
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.files
+
 
 def uploads_collection():
     """Get uploads collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.uploads  # Return MockDatabase.uploads
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.uploads
+
 
 def refresh_tokens_collection():
     """Get refresh tokens collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.refresh_tokens  # Return MockDatabase.refresh_tokens
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.refresh_tokens
+
 
 def reset_tokens_collection():
     """Get reset tokens collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.reset_tokens  # Return MockDatabase.reset_tokens
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.reset_tokens
+
 
 def group_activity_collection():
     """Get group activity collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.group_activity  # Return MockDatabase.group_activity
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.group_activity
+
 
 def media_collection():
     """Get media collection"""
-    use_mock_db = os.getenv('USE_MOCK_DB', 'false').lower() == 'true'
-    database = get_db()
-    if use_mock_db:
-        return database.media  # Return MockDatabase.media
+    if database is None:
+        raise RuntimeError("Database not initialized - ensure startup event has run")
     return database.media
+
+
+# Backward compatibility aliases for tests
+connect_db = lambda: None  # No-op since we use global client
+get_db = get_database

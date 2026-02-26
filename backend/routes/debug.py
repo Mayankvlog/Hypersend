@@ -282,11 +282,11 @@ async def diagnose_password_for_user(
 async def get_database_status():
     """Get database connection status and information"""
     try:
-        from ..db_proxy import get_db, users_collection
+        from ..db_proxy import get_database, users_collection
         import asyncio
         
         # Get database connection
-        db = get_db()
+        db = get_database()
         
         # Test database operations
         try:

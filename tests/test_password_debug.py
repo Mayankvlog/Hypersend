@@ -13,15 +13,40 @@ from backend.auth.utils import verify_password
 async def test_user_data():
     """Check what format existing users have"""
     # This will help us understand if users have password_salt field
+    user = None
     try:
         users_coll = users_collection()
         if hasattr(users_coll, 'find_one'):
-            user = await users_coll.find_one({"email": "test@example.com"})
+            # Handle both sync and async find_one
+            import inspect
+            if inspect.iscoroutinefunction(users_coll.find_one):
+                user = await users_coll.find_one({"email": "test@example.com"})
+            else:
+                user = users_coll.find_one({"email": "test@example.com"})
         else:
             # Mock collection case
             user = None
-    except:
+    except Exception as e:
+        print(f"Error getting user: {e}")
         user = None
+    
+    # Handle case where user might be a coroutine or future
+    if user is not None:
+        try:
+            # Check if user is a coroutine/future that needs to be resolved
+            import asyncio
+            import inspect
+            if inspect.iscoroutine(user) or inspect.isawaitable(user):
+                user = await user
+            elif hasattr(user, '_result') or hasattr(user, 'result'):
+                # It's a Future, get the result
+                if hasattr(user, 'result'):
+                    user = user.result()
+                else:
+                    user = user._result
+        except Exception as e:
+            print(f"Error resolving user: {e}")
+            user = None
     
     if user:
         print("User found:")

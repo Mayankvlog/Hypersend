@@ -9,12 +9,12 @@ try:
     from ..db_proxy import users_collection, chats_collection, messages_collection
     from ..redis_cache import cache
     from ..models import RelationshipGraph, UserRelationship
-    from ..database import get_db
+    from ..database import get_database
 except ImportError:
     from db_proxy import users_collection, chats_collection, messages_collection
     from redis_cache import cache
     from models import RelationshipGraph, UserRelationship
-    from database import get_db
+    from database import get_database
 
 logger = logging.getLogger(__name__)
 
@@ -465,7 +465,7 @@ class RelationshipGraphService:
             user_a_id, user_b_id = sorted([sender_id, receiver_id])
             
             # Get database connection
-            db = get_db()
+            db = get_database()
             collection = db['user_relationships'] if db else None
             
             if collection:
@@ -536,7 +536,7 @@ class RelationshipGraphService:
                                           limit: int = 50) -> List[Dict[str, Any]]:
         """Get user's relationships from persistent storage"""
         try:
-            db = get_db()
+            db = get_database()
             if not db:
                 # Fallback to cache
                 return await self.get_user_relationships(user_id, limit)

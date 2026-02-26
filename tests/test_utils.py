@@ -92,14 +92,32 @@ def setup_test_document(collection_func, document):
             insert_method = collection.insert_one
             # Check if insert_one is async
             if inspect.iscoroutinefunction(insert_method):
-                # Run async insert in event loop
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # Run async insert with proper event loop handling
                 try:
-                    result = loop.run_until_complete(insert_method(document))
-                    return result.inserted_id if hasattr(result, 'inserted_id') else None
-                finally:
-                    loop.close()
+                    import asyncio
+                    loop = asyncio.get_running_loop()
+                    if loop.is_running() and not loop.is_closed():
+                        # Use create_task to run in existing loop
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(asyncio.run, insert_method(document))
+                            result = future.result(timeout=10)
+                    else:
+                        # Loop is closed or not running, create new one
+                        result = asyncio.run(insert_method(document))
+                except RuntimeError as e:
+                    if "Event loop is closed" in str(e):
+                        # Create new event loop
+                        policy = asyncio.get_event_loop_policy()
+                        new_loop = policy.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            result = new_loop.run_until_complete(insert_method(document))
+                        finally:
+                            new_loop.close()
+                    else:
+                        result = asyncio.run(insert_method(document))
+                return result.inserted_id if hasattr(result, 'inserted_id') else None
             else:
                 # Sync insert
                 result = insert_method(document)

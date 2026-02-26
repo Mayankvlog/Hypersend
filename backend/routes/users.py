@@ -16,7 +16,7 @@ try:
 
     )
 
-    from ..db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
+    from ..db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_database
 
     from ..config import settings
 
@@ -32,7 +32,7 @@ except ImportError:
 
     )
 
-    from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_db
+    from db_proxy import users_collection, chats_collection, messages_collection, files_collection, uploads_collection, refresh_tokens_collection, get_database
 
     from config import settings
 
