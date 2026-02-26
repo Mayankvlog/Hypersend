@@ -63,6 +63,7 @@ try:
         debug,
         devices,
         e2ee_messages,
+        presence,
     )
 except Exception as e:
     raise
@@ -100,7 +101,7 @@ logger = logging.getLogger("zaply")
 logger.setLevel(logging.INFO)
 
 app = FastAPI(
-    title="Zaply API",
+    title="Hypersend API",
     description="Secure peer-to-peer file transfer and messaging application",
     version="1.0.0",
     redirect_slashes=False,  # Fix: Prevent automatic trailing slash redirects
@@ -898,7 +899,7 @@ def _configure_s3_lifecycle():
 
 
 # Setup logger
-logger = logging.getLogger("zaply")
+logger = logging.getLogger("hypersend")
 logger.setLevel(logging.INFO)
 
 
@@ -911,6 +912,14 @@ async def startup_event():
     app.state.db = db
     app.state.client = client
     print(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
+    
+    # Initialize Redis cache
+    try:
+        await init_cache()
+        print("[STARTUP] Redis cache initialized")
+    except Exception as e:
+        print(f"[STARTUP] Redis cache initialization failed: {e}")
+        # Continue without Redis - use fallback cache
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -919,7 +928,16 @@ async def shutdown():
         from database import client
         if client:
             client.close()
-            print("[SHUTDOWN] All cleanup complete")
+            print("[SHUTDOWN] Database connection closed")
+        
+        # Cleanup Redis cache
+        try:
+            await cleanup_cache()
+            print("[SHUTDOWN] Redis cache cleaned up")
+        except Exception as e:
+            print(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
+        
+        print("[SHUTDOWN] All cleanup complete")
 
 # Add a comprehensive catch-all exception handler for any unhandled exceptions
 @app.exception_handler(Exception)

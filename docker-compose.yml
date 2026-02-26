@@ -119,6 +119,9 @@ services:
 
       # ===== REDIS CONFIGURATION =====
       REDIS_URL: redis://hypersend_redis:6379/0
+      REDIS_HOST: hypersend_redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
 
       # ===== FILE STORAGE =====
       UPLOAD_DIR: /app/uploads

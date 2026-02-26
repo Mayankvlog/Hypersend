@@ -16,16 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt --timeout=60 --retries=3
 
-# Create the directory structure for proper imports
-RUN mkdir -p /app/backend
-
-# Copy all backend files to /app/backend/
-COPY . /app/backend/
+# Copy all backend files to /app/
+COPY . /app/
 
 # Create empty __init__.py at /app level if not exists
 RUN touch /app/__init__.py
-
-# Runtime environment
 
 # Runtime environment - Optimize memory allocator
 ENV PYTHONUNBUFFERED=1 \
@@ -44,4 +39,4 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
   CMD curl -f http://127.0.0.1:8000/health || exit 1
 
 # Start FastAPI with single process to ensure startup event and handlers share global state
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--http", "httptools"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--http", "httptools"]
