@@ -25,6 +25,7 @@ DATABASE_NAME = os.getenv("DATABASE_NAME")
 MONGODB_ATLAS_ENABLED = os.getenv("MONGODB_ATLAS_ENABLED", "false").lower() == "true"
 
 # Mock database configuration with production override
+# CRITICAL: Production MUST use MongoDB Atlas, never mock database
 if IS_PRODUCTION:
     USE_MOCK_DB = False  # Force disable mock in production
     print("[DB] PRODUCTION MODE: Mock database disabled, MongoDB Atlas required")
@@ -34,20 +35,31 @@ else:
         USE_MOCK_DB = True  # Force enable mock in test
         print("[DB] TEST MODE: Mock database enabled")
 
+# CRITICAL: In production, ensure MongoDB Atlas is enabled and mock is disabled
+if IS_PRODUCTION:
+    if not MONGODB_ATLAS_ENABLED:
+        raise RuntimeError("PRODUCTION ERROR: MONGODB_ATLAS_ENABLED must be true in production")
+    if USE_MOCK_DB:
+        raise RuntimeError("PRODUCTION ERROR: USE_MOCK_DB cannot be true in production")
+    if not MONGODB_URI:
+        raise RuntimeError("PRODUCTION ERROR: MONGODB_URI is required in production")
+    if not DATABASE_NAME:
+        raise RuntimeError("PRODUCTION ERROR: DATABASE_NAME is required in production")
+    print("[DB] PRODUCTION: MongoDB Atlas configuration validated")
+
 # Connection timeout
 CONNECTION_TIMEOUT = int(os.getenv("CONNECTION_TIMEOUT", "10000"))  # 10 seconds default
 
 # Validate configuration and log status
-if MONGODB_ATLAS_ENABLED and not USE_MOCK_DB:
-    # Atlas enabled - validate required variables
-    if not MONGODB_URI:
-        raise ValueError("MONGODB_URI environment variable is required when MONGODB_ATLAS_ENABLED=true")
-    if not DATABASE_NAME:
-        raise ValueError("DATABASE_NAME environment variable is required when MONGODB_ATLAS_ENABLED=true")
-    # Validate MongoDB URI format
-    if not MONGODB_URI.startswith("mongodb+srv://"):
-        raise ValueError("MONGODB_URI must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
-    print(f"[DB] Using MongoDB Atlas")
+if IS_PRODUCTION:
+    # Production: Must use MongoDB Atlas
+    print("[DB] PRODUCTION: Using MongoDB Atlas (mock database disabled)")
+    print(f"[DB] MONGODB_URI: {MONGODB_URI[:50]}...")
+    print(f"[DB] DATABASE_NAME: {DATABASE_NAME}")
+    print(f"[DB] Connection timeout: {CONNECTION_TIMEOUT}ms")
+elif MONGODB_ATLAS_ENABLED and not USE_MOCK_DB:
+    # Atlas enabled for non-production
+    print("[DB] Using MongoDB Atlas")
     print(f"[DB] MONGODB_URI: {MONGODB_URI}")
     print(f"[DB] DATABASE_NAME: {DATABASE_NAME}")
     print(f"[DB] Connection timeout: {CONNECTION_TIMEOUT}ms")
@@ -165,22 +177,25 @@ class MockCursor:
         return item
 
 # Initialize database based on configuration
-if MONGODB_ATLAS_ENABLED:
-    # Atlas enabled - database will be initialized in main.py startup event
-    database = None  # Will be set by startup event
-if USE_MOCK_DB and not MONGODB_ATLAS_ENABLED:
+# CRITICAL: Check USE_MOCK_DB first before creating any mock client
+if USE_MOCK_DB and not IS_PRODUCTION:
     print("[DB] Initializing mock database for testing")
     mock_db = MockDatabase()
     # Create global client and database for compatibility
     client = None
     database = mock_db
+    print("[DB] Mock database initialized")
 else:
-    # Production mode: no mock database initialization
+    # Production or Atlas mode: no mock database initialization
     mock_db = None
     client = None
     database = None
     if IS_PRODUCTION:
-        print("[DB] PRODUCTION: No mock database initialized")
+        print("[DB] PRODUCTION: No mock database initialized - will use MongoDB Atlas")
+    elif MONGODB_ATLAS_ENABLED:
+        print("[DB] MongoDB Atlas will be initialized in startup event")
+    else:
+        print("[DB] No database initialization - waiting for configuration")
 
 def get_database():
     """Get database instance - sync function as specified"""
@@ -191,74 +206,146 @@ def get_database():
 # Collection shortcuts
 def users_collection():
     """Get users collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.users
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'users'):
+        return database.users
+    else:
+        raise RuntimeError("Users collection not available in database")
 
 
 def chats_collection():
     """Get chats collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.chats
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'chats'):
+        return database.chats
+    else:
+        raise RuntimeError("Chats collection not available in database")
 
 
 def messages_collection():
     """Get messages collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.messages
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'messages'):
+        return database.messages
+    else:
+        raise RuntimeError("Messages collection not available in database")
 
 
 def files_collection():
     """Get files collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.files
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'files'):
+        return database.files
+    else:
+        raise RuntimeError("Files collection not available in database")
 
 
 def uploads_collection():
     """Get uploads collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.uploads
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'uploads'):
+        return database.uploads
+    else:
+        raise RuntimeError("Uploads collection not available in database")
 
 
 def refresh_tokens_collection():
     """Get refresh tokens collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.refresh_tokens
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'refresh_tokens'):
+        return database.refresh_tokens
+    else:
+        raise RuntimeError("Refresh tokens collection not available in database")
 
 
 def reset_tokens_collection():
     """Get reset tokens collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.reset_tokens
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'reset_tokens'):
+        return database.reset_tokens
+    else:
+        raise RuntimeError("Reset tokens collection not available in database")
 
 
 def group_activity_collection():
     """Get group activity collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.group_activity
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'group_activity'):
+        return database.group_activity
+    else:
+        raise RuntimeError("Group activity collection not available in database")
 
 
 def media_collection():
     """Get media collection"""
-    global database
+    global database, USE_MOCK_DB, IS_PRODUCTION
     if database is None:
-        raise RuntimeError("Database not initialized - ensure startup event has run")
-    return database.media
+        if IS_PRODUCTION:
+            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
+        else:
+            raise RuntimeError("Database not initialized - ensure startup event has run")
+    
+    # Return appropriate collection based on database type
+    if hasattr(database, 'media'):
+        return database.media
+    else:
+        raise RuntimeError("Media collection not available in database")
 
 
 # Backward compatibility aliases for tests

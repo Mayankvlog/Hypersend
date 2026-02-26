@@ -248,19 +248,15 @@ class PermissionsUpdate(BaseModel):
 @router.get("/me", response_model=UserResponse)
 
 async def get_current_user_profile(current_user: str = Depends(get_current_user)):
-
     """Get current user profile"""
 
     try:
-
+        from bson import ObjectId
+        
         # Add a 5-second timeout to prevent hanging
-
         user = await asyncio.wait_for(
-
-            users_collection().find_one({"_id": current_user}),
-
+            users_collection().find_one({"_id": ObjectId(current_user)}),
             timeout=5.0
-
         )
 
         
@@ -278,7 +274,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             )
 
         return UserResponse(
-            id=user["_id"],
+            id=str(user["_id"]),
 
             name=user["name"],
 

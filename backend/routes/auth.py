@@ -431,7 +431,6 @@ async def register(user: UserCreate) -> UserResponse:
         # Create user document
         print(f"[REG_DEBUG] Creating user document")
         user_doc = {
-            "_id": str(ObjectId()),
             "name": user.name,
             "email": user.email,  # Store email for login
             "username": user.email.lower().strip(),  # Keep username for backward compatibility
@@ -456,7 +455,7 @@ async def register(user: UserCreate) -> UserResponse:
             "pinned_chats": [],
             "blocked_users": []
         }
-        print(f"[REG_DEBUG] User document created, _id: {user_doc['_id']}")
+        print(f"[REG_DEBUG] User document created (no _id yet - Atlas will generate)")
         
         # Insert user into database
         try:
@@ -473,7 +472,7 @@ async def register(user: UserCreate) -> UserResponse:
             if hasattr(inserted_id, '__await__') or asyncio.isfuture(inserted_id):
                 raise RuntimeError(f"Critical async error: inserted_id is a Future object: {type(inserted_id)}")
             
-            # Ensure database session is committed by verifying the insert
+            # Ensure database session is committed by verifying insert
             verification_user = await _await_maybe(
                 users_col.find_one({"_id": inserted_id}),
                 timeout=5.0
@@ -481,7 +480,9 @@ async def register(user: UserCreate) -> UserResponse:
             if not verification_user:
                 raise RuntimeError("Failed to verify user insertion - database session may not have committed")
             
-            auth_log(f"SUCCESS: User registered successfully: {user.email} (ID: {inserted_id})")
+            # Convert ObjectId to string for JWT token
+            user_id_str = str(inserted_id)
+            auth_log(f"SUCCESS: User registered successfully: {user.email} (Atlas ObjectId: {user_id_str})")
             
             # Create response
             return UserResponse(

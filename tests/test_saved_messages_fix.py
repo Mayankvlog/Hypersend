@@ -31,11 +31,19 @@ class TestSavedMessagesFix:
             # Mock find_one to return None (no existing chat)
             mock_chats.find_one.return_value = None
             
-            # Mock insert to return new chat
-            mock_chats.insert_one.return_value.inserted_id = "mock_id"
+            # Mock the find() call to return a mock cursor with to_list method
+            mock_cursor = AsyncMock()
+            mock_cursor.to_list.return_value = []  # Return empty list (no existing chats)
+            mock_chats.find.return_value = mock_cursor
             
-            with patch("routes.chats.chats_collection", return_value=mock_chats):
-                result = await get_or_create_saved_chat(current_user)
+            # Mock insert to return new chat with inserted_id
+            mock_result = AsyncMock()
+            mock_result.inserted_id = "mock_id"
+            mock_chats.insert_one.return_value = mock_result
+            
+            with patch("backend.routes.chats.chats_collection", return_value=mock_chats):
+                with patch("backend.db_proxy.chats_collection", return_value=mock_chats):
+                    result = await get_or_create_saved_chat(current_user)
                 
                 # Verify result structure
                 assert "chat_id" in result

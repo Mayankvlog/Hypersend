@@ -278,13 +278,17 @@ class TestDatabaseConnectionHandling:
     async def test_database_timeout_handling(self):
         """Test database timeout handling"""
         from backend.routes.users import get_current_user_profile
+        from bson import ObjectId
+        
+        # Use a valid ObjectId string for testing
+        test_user_id = str(ObjectId())
         
         # Mock database timeout
         with patch('routes.users.asyncio.wait_for') as mock_wait:
             mock_wait.side_effect = asyncio.TimeoutError("Database timeout")
             
             with pytest.raises(HTTPException) as exc_info:
-                await get_current_user_profile("test_user")
+                await get_current_user_profile(test_user_id)
             
             assert exc_info.value.status_code == 504  # Gateway Timeout
 

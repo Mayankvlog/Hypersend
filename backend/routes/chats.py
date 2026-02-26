@@ -63,13 +63,12 @@ async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)
     if not existing:
         logger.info(f"Exact match failed, trying case-insensitive search for user: {current_user}")
         # Get all saved chats and filter by members case-insensitively
-        all_saved = await chats_collection().find({"type": "saved"})
-        if hasattr(all_saved, '__await__'):
-            cursor = await all_saved
-        else:
-            cursor = all_saved
+        all_saved_cursor = chats_collection().find({"type": "saved"})
+        all_saved = await all_saved_cursor.to_list(length=None)
         
-        async for chat in cursor:
+        # Search for existing chat with current user as member
+        existing = None
+        for chat in all_saved:
             members = chat.get("members", [])
             if any(str(member).lower() == str(current_user).lower() for member in members):
                 existing = chat
@@ -85,16 +84,17 @@ async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)
 
     logger.info(f"Creating new saved chat for user: {current_user}")
     chat_doc = {
-        "_id": str(ObjectId()),
         "type": "saved",
         "name": "Saved Messages",
         "members": [current_user],
         "created_at": datetime.now(timezone.utc)
     }
-    await chats_collection().insert_one(chat_doc)
-    logger.info(f"Created new saved chat: {chat_doc['_id']}")
+    # CRITICAL FIX: Let Atlas generate the ObjectId, don't pre-generate
+    result = await chats_collection().insert_one(chat_doc)
+    inserted_id = result.inserted_id
+    logger.info(f"Created new saved chat with Atlas ObjectId: {inserted_id}")
     return {
-        "chat_id": str(chat_doc["_id"]),
+        "chat_id": str(inserted_id),
         "name": chat_doc["name"],
         "type": chat_doc["type"]
     }
@@ -203,7 +203,6 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
     
     # Create chat document
     chat_doc = {
-        "_id": str(ObjectId()),
         "type": chat.type,
         "name": chat.name,
         "description": getattr(chat, "description", None),
@@ -432,7 +431,6 @@ async def send_message(
     # Create message document
     msg_type = "file" if message.file_id else "text"
     msg_doc = {
-        "_id": str(ObjectId()),
         "chat_id": chat_id,
         "sender_id": current_user,
         "type": msg_type,

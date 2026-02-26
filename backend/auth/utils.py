@@ -576,7 +576,39 @@ async def get_current_user(
             detail="Invalid token type",
         )
     
-    return token_data.user_id
+    # CRITICAL FIX: Verify user exists in Atlas by converting string ID to ObjectId
+    from database import users_collection, IS_PRODUCTION
+    from bson import ObjectId
+    
+    user_id_str = token_data.user_id
+    
+    # In production, always verify user exists in Atlas
+    if IS_PRODUCTION:
+        try:
+            # Convert string ID to ObjectId for Atlas query
+            object_id = ObjectId(user_id_str)
+            users_col = users_collection()
+            
+            # Query Atlas using ObjectId
+            existing_user = await users_col.find_one({"_id": object_id})
+            if not existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found in database",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+                
+            # Log successful Atlas verification in production
+            logger.info(f"PRODUCTION: User verified in Atlas: {user_id_str}")
+            
+        except Exception as e:
+            logger.error(f"PRODUCTION ERROR: Failed to verify user in Atlas: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database verification failed"
+            )
+    
+    return user_id_str
 
 
 async def get_current_user_optional(request: Request) -> Optional[str]:

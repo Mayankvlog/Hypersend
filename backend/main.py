@@ -906,28 +906,51 @@ database = None
 @app.on_event("startup")
 async def startup():
     global client, database
-    from database import MONGODB_ATLAS_ENABLED, MONGODB_URI, DATABASE_NAME, USE_MOCK_DB, IS_PRODUCTION
+    from database import MONGODB_ATLAS_ENABLED, MONGODB_URI, DATABASE_NAME, USE_MOCK_DB, IS_PRODUCTION, IS_TEST
     import database as db_module
     
     if IS_PRODUCTION:
         print("[STARTUP] PRODUCTION MODE: Initializing MongoDB Atlas connection...")
     
+    # CRITICAL: Only initialize Atlas when not using mock database
     if MONGODB_ATLAS_ENABLED and not USE_MOCK_DB and client is None:
         print("[STARTUP] Using MongoDB Atlas")
-        client = AsyncIOMotorClient(
-            MONGODB_URI,
-            uuidRepresentation="standard"
-        )
-        await client.admin.command("ping")
-        database = client[DATABASE_NAME]
-        # Also set the database in the database module
-        db_module.database = database
-        db_module.client = client
-        print(f"[STARTUP] MongoDB Atlas connected successfully to database: {DATABASE_NAME}")
-        if IS_PRODUCTION:
-            print("[STARTUP] PRODUCTION: MongoDB Atlas is active")
+        try:
+            # Initialize AsyncIOMotorClient globally
+            client = AsyncIOMotorClient(
+                MONGODB_URI,
+                uuidRepresentation="standard",
+                serverSelectionTimeoutMS=10000,
+                connectTimeoutMS=10000,
+                socketTimeoutMS=10000
+            )
+            
+            # Test connection
+            await client.admin.command("ping")
+            database = client[DATABASE_NAME]
+            
+            # Set database in both main.py and database module globally
+            db_module.client = client
+            db_module.database = database
+            
+            print(f"[STARTUP] MongoDB Atlas connected successfully to database: {DATABASE_NAME}")
+            if IS_PRODUCTION:
+                print("[STARTUP] PRODUCTION: MongoDB Atlas is active and ready")
+                print("[STARTUP] PRODUCTION: All database operations will use MongoDB Atlas")
+            else:
+                print("[STARTUP] MongoDB Atlas is active for development")
+                
+        except Exception as e:
+            print(f"[STARTUP] ERROR: Failed to connect to MongoDB Atlas: {str(e)}")
+            if IS_PRODUCTION:
+                # In production, this is a critical failure
+                raise RuntimeError(f"PRODUCTION CRITICAL: MongoDB Atlas connection failed: {str(e)}")
+            else:
+                print("[STARTUP] WARNING: Continuing without database connection")
     elif USE_MOCK_DB:
         print("[STARTUP] Using mock database for testing")
+        if IS_TEST:
+            print("[STARTUP] TEST MODE: Mock database is active")
     else:
         print("[STARTUP] WARNING: No database initialized")
 
