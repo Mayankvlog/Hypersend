@@ -906,11 +906,14 @@ database = None
 @app.on_event("startup")
 async def startup():
     global client, database
-    from database import MONGODB_ATLAS_ENABLED, MONGODB_URI, DATABASE_NAME
+    from database import MONGODB_ATLAS_ENABLED, MONGODB_URI, DATABASE_NAME, USE_MOCK_DB, IS_PRODUCTION
     import database as db_module
     
-    if MONGODB_ATLAS_ENABLED and client is None:
-        print("[STARTUP] Initializing MongoDB Atlas connection...")
+    if IS_PRODUCTION:
+        print("[STARTUP] PRODUCTION MODE: Initializing MongoDB Atlas connection...")
+    
+    if MONGODB_ATLAS_ENABLED and not USE_MOCK_DB and client is None:
+        print("[STARTUP] Using MongoDB Atlas")
         client = AsyncIOMotorClient(
             MONGODB_URI,
             uuidRepresentation="standard"
@@ -921,8 +924,12 @@ async def startup():
         db_module.database = database
         db_module.client = client
         print(f"[STARTUP] MongoDB Atlas connected successfully to database: {DATABASE_NAME}")
-    elif not MONGODB_ATLAS_ENABLED:
-        print("[STARTUP] MongoDB Atlas disabled - using mock database or no database")
+        if IS_PRODUCTION:
+            print("[STARTUP] PRODUCTION: MongoDB Atlas is active")
+    elif USE_MOCK_DB:
+        print("[STARTUP] Using mock database for testing")
+    else:
+        print("[STARTUP] WARNING: No database initialized")
 
 @app.on_event("shutdown")
 async def shutdown():

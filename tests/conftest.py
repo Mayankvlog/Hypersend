@@ -13,9 +13,10 @@ from pathlib import Path
 # Enable pytest-asyncio
 pytest_plugins = ('pytest_asyncio',)
 
-# Set USE_MOCK_DB for all tests and disable Atlas to ensure mock database is used
+# Set environment variables for testing
 os.environ['USE_MOCK_DB'] = 'True'
 os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
+os.environ['ENVIRONMENT'] = 'test'
 
 # Set longer timeout for HTTP requests to prevent connection pool issues
 os.environ['TEST_TIMEOUT'] = '60'

@@ -90,6 +90,7 @@ services:
       MONGODB_ATLAS_ENABLED: "true"
       MONGODB_URI: "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/Hypersend?retryWrites=true&w=majority"
       DATABASE_NAME: "Hypersend"
+      USE_MOCK_DB: "false"
 
       # ===== API CONFIGURATION =====
       API_BASE_URL: https://zaply.in.net/api/v1

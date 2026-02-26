@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import sys
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import HTTPException, status
 from dotenv import load_dotenv
@@ -13,17 +14,31 @@ for env_path in env_paths:
         load_dotenv(dotenv_path=env_path)
         break
 
+# Environment detection
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
+IS_TEST = ENVIRONMENT == "test" or "pytest" in sys.modules
+
 # Load MongoDB Atlas configuration from environment variables
 MONGODB_URI = os.getenv("MONGODB_URI")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
 MONGODB_ATLAS_ENABLED = os.getenv("MONGODB_ATLAS_ENABLED", "false").lower() == "true"
 
-# Determine if we should use mock database
-# Only use mock database if explicitly set AND Atlas is not enabled
-USE_MOCK_DB = os.getenv("USE_MOCK_DB", "false").lower() == "true" and not MONGODB_ATLAS_ENABLED
+# Mock database configuration with production override
+if IS_PRODUCTION:
+    USE_MOCK_DB = False  # Force disable mock in production
+    print("[DB] PRODUCTION MODE: Mock database disabled, MongoDB Atlas required")
+else:
+    USE_MOCK_DB = os.getenv("USE_MOCK_DB", "false").lower() == "true"
+    if IS_TEST:
+        USE_MOCK_DB = True  # Force enable mock in test
+        print("[DB] TEST MODE: Mock database enabled")
 
-# Validate configuration
-if MONGODB_ATLAS_ENABLED:
+# Connection timeout
+CONNECTION_TIMEOUT = int(os.getenv("CONNECTION_TIMEOUT", "10000"))  # 10 seconds default
+
+# Validate configuration and log status
+if MONGODB_ATLAS_ENABLED and not USE_MOCK_DB:
     # Atlas enabled - validate required variables
     if not MONGODB_URI:
         raise ValueError("MONGODB_URI environment variable is required when MONGODB_ATLAS_ENABLED=true")
@@ -32,16 +47,16 @@ if MONGODB_ATLAS_ENABLED:
     # Validate MongoDB URI format
     if not MONGODB_URI.startswith("mongodb+srv://"):
         raise ValueError("MONGODB_URI must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
-    print(f"[DB] MongoDB Atlas ENABLED - Using real MongoDB Atlas database")
+    print(f"[DB] Using MongoDB Atlas")
     print(f"[DB] MONGODB_URI: {MONGODB_URI}")
     print(f"[DB] DATABASE_NAME: {DATABASE_NAME}")
-    print(f"[DB] Connection timeout: 10000ms")
+    print(f"[DB] Connection timeout: {CONNECTION_TIMEOUT}ms")
+elif USE_MOCK_DB and not MONGODB_ATLAS_ENABLED:
+    # Mock database for testing
+    print("[DB] Using mock database")
 else:
-    # Atlas not enabled
-    if USE_MOCK_DB:
-        print("[DB] MongoDB Atlas DISABLED - Using mock database for testing")
-    else:
-        print("[DB] WARNING: MongoDB Atlas DISABLED and mock database DISABLED - Database will not be available")
+    # No database available
+    print("[DB] WARNING: No database available - Atlas disabled and mock disabled")
 
 # Global database connection variables as specified
 client = None
@@ -153,14 +168,19 @@ class MockCursor:
 if MONGODB_ATLAS_ENABLED:
     # Atlas enabled - database will be initialized in main.py startup event
     database = None  # Will be set by startup event
-elif USE_MOCK_DB:
-    # Use mock database for testing
-    database = MockDatabase()
-    print("[DB] Using mock database for testing")
+if USE_MOCK_DB and not MONGODB_ATLAS_ENABLED:
+    print("[DB] Initializing mock database for testing")
+    mock_db = MockDatabase()
+    # Create global client and database for compatibility
+    client = None
+    database = mock_db
 else:
-    # No database available
+    # Production mode: no mock database initialization
+    mock_db = None
+    client = None
     database = None
-    print("[DB] WARNING: No database configured - Atlas disabled and mock disabled")
+    if IS_PRODUCTION:
+        print("[DB] PRODUCTION: No mock database initialized")
 
 def get_database():
     """Get database instance - sync function as specified"""
