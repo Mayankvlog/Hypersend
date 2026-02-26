@@ -1011,7 +1011,6 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
     if request_origin:
         if (
             request_origin.startswith("https://zaply.in.net")
-            or request_origin.startswith("http://localhost:8000")
             or request_origin.startswith("http://127.0.0.1")
         ):
             return request_origin
@@ -3360,7 +3359,7 @@ async def get_bug_bounty_info(current_user: str = Depends(get_current_user)):
                     "low": "$100 - $1,000",
                 },
                 "reporting": {
-                    "email": "security@hypersend.com",
+                    "email": "security@zaply.in.net",
                     "pgp_key": "PGP key available on request",
                     "responsible_disclosure": "Required",
                 },

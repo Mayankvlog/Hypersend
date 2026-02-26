@@ -1509,8 +1509,7 @@ async def handle_options_request(full_path: str, request: Request):
                     "https://hypersend.in.net",
                     "https://www.hypersend.in.net",
                     "http://127.0.0.1:3000",
-                    "http://localhost:3000",
-                    "http://hypersend_frontend:80",
+                                        "http://hypersend_frontend:80",
                     "http://frontend:80",
                 ]
             )
@@ -1842,8 +1841,7 @@ async def preflight_alias_endpoints(request: Request):
                     "https://hypersend.in.net",
                     "https://www.hypersend.in.net",
                     "http://127.0.0.1:3000",
-                    "http://localhost:3000",
-                    "http://hypersend_frontend:80",
+                                        "http://hypersend_frontend:80",
                     "http://frontend:80",
                 ]
             )
