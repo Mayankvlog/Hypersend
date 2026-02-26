@@ -39,5 +39,5 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
   CMD curl -f http://127.0.0.1:8000/health || exit 1
 
 # Start FastAPI with single process to ensure startup event and handlers share global state
-# CRITICAL FIX: Use backend.main module for proper PYTHONPATH resolution
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--http", "httptools"]
+# CRITICAL FIX: Use main module directly since WORKDIR is /app and main.py is in backend root
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--http", "httptools"]

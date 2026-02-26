@@ -30,8 +30,8 @@ async def init_database():
     """Initialize MongoDB Atlas database connection"""
     global client, db, _database_initialized
     
-    # Read MONGODB_ATLAS_ENABLED from environment
-    mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED")
+    # Read MONGODB_ATLAS_ENABLED from environment (case insensitive)
+    mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "").lower()
     if mongodb_atlas_enabled != "true":
         raise RuntimeError("MONGODB_ATLAS_ENABLED must be true")
     
