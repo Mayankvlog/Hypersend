@@ -906,13 +906,23 @@ database = None
 @app.on_event("startup")
 async def startup():
     global client, database
-    if client is None:
+    from database import MONGODB_ATLAS_ENABLED, MONGODB_URI, DATABASE_NAME
+    import database as db_module
+    
+    if MONGODB_ATLAS_ENABLED and client is None:
+        print("[STARTUP] Initializing MongoDB Atlas connection...")
         client = AsyncIOMotorClient(
-            "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/Hypersend?retryWrites=true&w=majority",
+            MONGODB_URI,
             uuidRepresentation="standard"
         )
         await client.admin.command("ping")
-        database = client["Hypersend"]
+        database = client[DATABASE_NAME]
+        # Also set the database in the database module
+        db_module.database = database
+        db_module.client = client
+        print(f"[STARTUP] MongoDB Atlas connected successfully to database: {DATABASE_NAME}")
+    elif not MONGODB_ATLAS_ENABLED:
+        print("[STARTUP] MongoDB Atlas disabled - using mock database or no database")
 
 @app.on_event("shutdown")
 async def shutdown():

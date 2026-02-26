@@ -16,29 +16,38 @@ for env_path in env_paths:
 # Load MongoDB Atlas configuration from environment variables
 MONGODB_URI = os.getenv("MONGODB_URI")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
+MONGODB_ATLAS_ENABLED = os.getenv("MONGODB_ATLAS_ENABLED", "false").lower() == "true"
 
-# Validate required environment variables
-if not MONGODB_URI:
-    raise ValueError("MONGODB_URI environment variable is required")
+# Determine if we should use mock database
+# Only use mock database if explicitly set AND Atlas is not enabled
+USE_MOCK_DB = os.getenv("USE_MOCK_DB", "false").lower() == "true" and not MONGODB_ATLAS_ENABLED
 
-if not DATABASE_NAME:
-    raise ValueError("DATABASE_NAME environment variable is required")
-
-# Validate MongoDB URI format
-if not MONGODB_URI.startswith("mongodb+srv://"):
-    raise ValueError("MONGODB_URI must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
-
-# Print startup log confirming MongoDB configuration
-print(f"[DB] MongoDB Atlas URI configured for database: {DATABASE_NAME}")
-print(f"[DB] MONGODB_URI: {MONGODB_URI}")
-print(f"[DB] DATABASE_NAME: {DATABASE_NAME}")
-print(f"[DB] Connection timeout: 10000ms")
+# Validate configuration
+if MONGODB_ATLAS_ENABLED:
+    # Atlas enabled - validate required variables
+    if not MONGODB_URI:
+        raise ValueError("MONGODB_URI environment variable is required when MONGODB_ATLAS_ENABLED=true")
+    if not DATABASE_NAME:
+        raise ValueError("DATABASE_NAME environment variable is required when MONGODB_ATLAS_ENABLED=true")
+    # Validate MongoDB URI format
+    if not MONGODB_URI.startswith("mongodb+srv://"):
+        raise ValueError("MONGODB_URI must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
+    print(f"[DB] MongoDB Atlas ENABLED - Using real MongoDB Atlas database")
+    print(f"[DB] MONGODB_URI: {MONGODB_URI}")
+    print(f"[DB] DATABASE_NAME: {DATABASE_NAME}")
+    print(f"[DB] Connection timeout: 10000ms")
+else:
+    # Atlas not enabled
+    if USE_MOCK_DB:
+        print("[DB] MongoDB Atlas DISABLED - Using mock database for testing")
+    else:
+        print("[DB] WARNING: MongoDB Atlas DISABLED and mock database DISABLED - Database will not be available")
 
 # Global database connection variables as specified
 client = None
 database = None
 
-# Mock database for testing
+# Mock database for testing - ONLY used when Atlas is disabled and USE_MOCK_DB=true
 class MockDatabase:
     """Mock database for testing"""
     def __init__(self):
@@ -140,10 +149,18 @@ class MockCursor:
         self._index += 1
         return item
 
-# Initialize mock database if needed
-if os.getenv("USE_MOCK_DB", "false").lower() == "true":
+# Initialize database based on configuration
+if MONGODB_ATLAS_ENABLED:
+    # Atlas enabled - database will be initialized in main.py startup event
+    database = None  # Will be set by startup event
+elif USE_MOCK_DB:
+    # Use mock database for testing
     database = MockDatabase()
     print("[DB] Using mock database for testing")
+else:
+    # No database available
+    database = None
+    print("[DB] WARNING: No database configured - Atlas disabled and mock disabled")
 
 def get_database():
     """Get database instance - sync function as specified"""
