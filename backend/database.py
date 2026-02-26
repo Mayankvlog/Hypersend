@@ -76,7 +76,7 @@ def users_collection():
     print(f"[DEBUG] users_collection called, db is None: {db is None}, initialized: {_database_initialized}")
     
     # Try global variables first
-    if is_database_initialized():
+    if is_database_initialized() and db is not None:
         return db["users"]
     
     # Fallback to app state if globals are not available
@@ -90,55 +90,318 @@ def users_collection():
     except Exception as e:
         print(f"[DEBUG] App state fallback failed: {e}")
     
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        print("[AUTH_DEBUG] Attempting emergency database initialization")
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If loop is running, create a task
+                asyncio.create_task(init_database())
+            else:
+                # If loop is not running, run directly
+                asyncio.run(init_database())
+            # Wait a moment for initialization
+            import time
+            time.sleep(1)
+        except Exception as e:
+            print(f"[AUTH_DEBUG] Emergency initialization failed: {e}")
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["users"]
+    
     print(f"[DEBUG] Database not initialized - both global and app state failed")
     raise RuntimeError("Database not initialized")
 
 def chats_collection():
     """Get chats collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
-    return db["chats"]
+    # Try global variables first
+    if is_database_initialized() and db is not None:
+        return db["chats"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            return app.state.db["chats"]
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(init_database())
+            else:
+                asyncio.run(init_database())
+            import time
+            time.sleep(1)
+        except Exception:
+            pass
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["chats"]
+    
+    raise RuntimeError("Database not initialized")
 
 def messages_collection():
     """Get messages collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
-    return db["messages"]
+    # Try global variables first
+    if is_database_initialized() and db is not None:
+        return db["messages"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            return app.state.db["messages"]
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(init_database())
+            else:
+                asyncio.run(init_database())
+            import time
+            time.sleep(1)
+        except Exception:
+            pass
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["messages"]
+    
+    raise RuntimeError("Database not initialized")
 
 def files_collection():
     """Get files collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
-    return db["files"]
+    # Try global variables first
+    if is_database_initialized() and db is not None:
+        return db["files"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            return app.state.db["files"]
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(init_database())
+            else:
+                asyncio.run(init_database())
+            import time
+            time.sleep(1)
+        except Exception:
+            pass
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["files"]
+    
+    raise RuntimeError("Database not initialized")
 
 def uploads_collection():
     """Get uploads collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
-    return db["uploads"]
+    # Try global variables first
+    if is_database_initialized() and db is not None:
+        return db["uploads"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            return app.state.db["uploads"]
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(init_database())
+            else:
+                asyncio.run(init_database())
+            import time
+            time.sleep(1)
+        except Exception:
+            pass
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["uploads"]
+    
+    raise RuntimeError("Database not initialized")
 
 def refresh_tokens_collection():
     """Get refresh tokens collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
-    return db["refresh_tokens"]
+    # Try global variables first
+    if is_database_initialized() and db is not None:
+        return db["refresh_tokens"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            return app.state.db["refresh_tokens"]
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(init_database())
+            else:
+                asyncio.run(init_database())
+            import time
+            time.sleep(1)
+        except Exception:
+            pass
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["refresh_tokens"]
+    
+    raise RuntimeError("Database not initialized")
 
 def reset_tokens_collection():
     """Get reset tokens collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
-    return db["reset_tokens"]
+    # Try global variables first
+    if is_database_initialized() and db is not None:
+        return db["reset_tokens"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            return app.state.db["reset_tokens"]
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(init_database())
+            else:
+                asyncio.run(init_database())
+            import time
+            time.sleep(1)
+        except Exception:
+            pass
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["reset_tokens"]
+    
+    raise RuntimeError("Database not initialized")
 
 def group_activity_collection():
     """Get group activity collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
-    return db["group_activity"]
+    # Try global variables first
+    if is_database_initialized() and db is not None:
+        return db["group_activity"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            return app.state.db["group_activity"]
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(init_database())
+            else:
+                asyncio.run(init_database())
+            import time
+            time.sleep(1)
+        except Exception:
+            pass
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["group_activity"]
+    
+    raise RuntimeError("Database not initialized")
 
 def media_collection():
     """Get media collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
+    # Try global variables first
+    if is_database_initialized() and db is not None:
+        return db["media"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            return app.state.db["media"]
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Final attempt - try to initialize if not initialized
+    if not _database_initialized:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(init_database())
+            else:
+                asyncio.run(init_database())
+            import time
+            time.sleep(1)
+        except Exception:
+            pass
+    
+    # Try again after potential initialization
+    if is_database_initialized() and db is not None:
+        return db["media"]
+    
+    raise RuntimeError("Database not initialized")
     return db["media"]
 
 # Backward compatibility aliases for tests
