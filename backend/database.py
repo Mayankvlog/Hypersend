@@ -72,7 +72,75 @@ else:
 
 # Global database connection variables as specified
 client = None
-database = None
+db = None
+
+async def init_database():
+    """Initialize MongoDB database connection with proper logging and error handling"""
+    global client, db
+    
+    # Read environment variables
+    mongodb_uri = os.getenv("MONGODB_URI")
+    database_name = os.getenv("DATABASE_NAME")
+    environment = os.getenv("ENVIRONMENT", "development").lower()
+    
+    # Log initialization start
+    print(f"[DB] Initializing database connection...")
+    print(f"[DB] Environment: {environment}")
+    print(f"[DB] Database Name: {database_name}")
+    
+    if environment == "production":
+        print("[DB] PRODUCTION MODE: MongoDB Atlas required")
+        
+        # Validate production requirements
+        if not mongodb_uri:
+            raise RuntimeError("PRODUCTION ERROR: MONGODB_URI is required in production")
+        if not database_name:
+            raise RuntimeError("PRODUCTION ERROR: DATABASE_NAME is required in production")
+        
+        try:
+            # Create AsyncIOMotorClient
+            print(f"[DB] Connecting to MongoDB Atlas...")
+            client = AsyncIOMotorClient(
+                mongodb_uri,
+                uuidRepresentation="standard",
+                serverSelectionTimeoutMS=10000,
+                connectTimeoutMS=10000,
+                socketTimeoutMS=10000
+            )
+            
+            # Test connection
+            await client.admin.command("ping")
+            print("[DB] MongoDB Atlas connection test successful")
+            
+            # Assign database globally
+            db = client[database_name]
+            
+            # Log success
+            print(f"[DB] MongoDB Atlas initialized successfully")
+            print(f"[DB] Database: {database_name}")
+            print("[DB] PRODUCTION: MongoDB Atlas is active and ready")
+            
+        except Exception as e:
+            print(f"[DB] ERROR: Failed to connect to MongoDB Atlas: {str(e)}")
+            # In production, this is a critical failure
+            raise RuntimeError(f"PRODUCTION CRITICAL: MongoDB Atlas connection failed: {str(e)}")
+    
+    else:
+        # Non-production environment
+        if USE_MOCK_DB:
+            print("[DB] Non-production mode: Using mock database")
+            # Mock database is already initialized above
+            if database is None:
+                database = mock_db
+                print("[DB] Mock database assigned to global database variable")
+        else:
+            print("[DB] Non-production mode: No database initialization")
+            print("[DB] Database will remain None - routes should handle this gracefully")
+
+def get_database():
+    """Get database instance - sync function as specified"""
+    global db
+    return db
 
 # Mock database for testing - ONLY used when Atlas is disabled and USE_MOCK_DB=true
 class MockDatabase:
@@ -199,153 +267,81 @@ else:
 
 def get_database():
     """Get database instance - sync function as specified"""
-    global database
-    return database
+    global db
+    return db
 
 
 # Collection shortcuts
 def users_collection():
     """Get users collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'users'):
-        return database.users
-    else:
-        raise RuntimeError("Users collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["users"]
 
 
 def chats_collection():
     """Get chats collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'chats'):
-        return database.chats
-    else:
-        raise RuntimeError("Chats collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["chats"]
 
 
 def messages_collection():
     """Get messages collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'messages'):
-        return database.messages
-    else:
-        raise RuntimeError("Messages collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["messages"]
 
 
 def files_collection():
     """Get files collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'files'):
-        return database.files
-    else:
-        raise RuntimeError("Files collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["files"]
 
 
 def uploads_collection():
     """Get uploads collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'uploads'):
-        return database.uploads
-    else:
-        raise RuntimeError("Uploads collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["uploads"]
 
 
 def refresh_tokens_collection():
     """Get refresh tokens collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'refresh_tokens'):
-        return database.refresh_tokens
-    else:
-        raise RuntimeError("Refresh tokens collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["refresh_tokens"]
 
 
 def reset_tokens_collection():
     """Get reset tokens collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'reset_tokens'):
-        return database.reset_tokens
-    else:
-        raise RuntimeError("Reset tokens collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["reset_tokens"]
 
 
 def group_activity_collection():
     """Get group activity collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'group_activity'):
-        return database.group_activity
-    else:
-        raise RuntimeError("Group activity collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["group_activity"]
 
 
 def media_collection():
     """Get media collection"""
-    global database, USE_MOCK_DB, IS_PRODUCTION
-    if database is None:
-        if IS_PRODUCTION:
-            raise RuntimeError("PRODUCTION ERROR: Database not initialized - MongoDB Atlas connection failed")
-        else:
-            raise RuntimeError("Database not initialized - ensure startup event has run")
-    
-    # Return appropriate collection based on database type
-    if hasattr(database, 'media'):
-        return database.media
-    else:
-        raise RuntimeError("Media collection not available in database")
+    global db
+    if db is None:
+        raise RuntimeError("Database not initialized")
+    return db["media"]
 
 
 # Backward compatibility aliases for tests
