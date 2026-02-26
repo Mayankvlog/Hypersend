@@ -906,6 +906,11 @@ logger.setLevel(logging.INFO)
 async def startup_event():
     """FastAPI startup event - initialize database"""
     await init_database()
+    # Store database connection in app state for reliable access
+    from database import db, client
+    app.state.db = db
+    app.state.client = client
+    print(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
 
 @app.on_event("shutdown")
 async def shutdown():

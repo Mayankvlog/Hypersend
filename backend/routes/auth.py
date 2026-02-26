@@ -374,8 +374,27 @@ async def register(user: UserCreate) -> UserResponse:
         
         # Name validation is now handled in the model validator (auto-derived from email if not provided)
         
+        # Ensure database is initialized - fallback for global variable issues
+        try:
+            users_col = users_collection()
+        except RuntimeError as e:
+            if "Database not initialized" in str(e):
+                print("[AUTH_DEBUG] Database not initialized, attempting direct initialization")
+                try:
+                    from database import init_database
+                    await init_database()
+                    print("[AUTH_DEBUG] Database re-initialized successfully")
+                    users_col = users_collection()
+                except Exception as init_error:
+                    print(f"[AUTH_DEBUG] Direct initialization failed: {init_error}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Database initialization failed"
+                    )
+            else:
+                raise
+        
         # Check if user already exists with case-insensitive email lookup
-        users_col = users_collection()
         # Use case-insensitive email lookup to prevent duplicates
         normalized_email = user.email.lower().strip()
         

@@ -18,9 +18,17 @@ for env_path in env_paths:
 client = None
 db = None
 
+# Database initialization state tracker
+_database_initialized = False
+
+def is_database_initialized():
+    """Check if database is initialized"""
+    global _database_initialized, db
+    return _database_initialized and db is not None
+
 async def init_database():
     """Initialize MongoDB Atlas database connection"""
-    global client, db
+    global client, db, _database_initialized
     
     # Read MONGODB_ATLAS_ENABLED from environment
     mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED")
@@ -48,6 +56,13 @@ async def init_database():
     
     # Log "MongoDB Atlas connected"
     print("MongoDB Atlas connected")
+    
+    # Set initialization flag
+    _database_initialized = True
+    
+    # Ensure globals are properly set
+    print(f"Database initialized: {db is not None}, Client initialized: {client is not None}")
+    print(f"Database name: {database_name}")
 
 def get_database():
     """Get database instance"""
@@ -58,9 +73,25 @@ def get_database():
 # Collection shortcuts
 def users_collection():
     """Get users collection"""
-    if db is None:
-        raise RuntimeError("Database not initialized")
-    return db["users"]
+    print(f"[DEBUG] users_collection called, db is None: {db is None}, initialized: {_database_initialized}")
+    
+    # Try global variables first
+    if is_database_initialized():
+        return db["users"]
+    
+    # Fallback to app state if globals are not available
+    try:
+        from main import app
+        if hasattr(app.state, 'db') and app.state.db is not None:
+            print(f"[DEBUG] Using app.state.db as fallback")
+            return app.state.db["users"]
+    except ImportError:
+        print(f"[DEBUG] Could not import app for fallback")
+    except Exception as e:
+        print(f"[DEBUG] App state fallback failed: {e}")
+    
+    print(f"[DEBUG] Database not initialized - both global and app state failed")
+    raise RuntimeError("Database not initialized")
 
 def chats_collection():
     """Get chats collection"""
