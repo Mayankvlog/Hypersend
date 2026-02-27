@@ -100,11 +100,51 @@ except Exception as e:
 logger = logging.getLogger("zaply")
 logger.setLevel(logging.INFO)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan event handler - initialize database and cleanup"""
+    # Startup
+    await init_database()
+    # Store database connection in app state for reliable access
+    from database import db, client
+    app.state.db = db
+    app.state.client = client
+    print(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
+    
+    # Initialize Redis cache
+    try:
+        await init_cache()
+        print("[STARTUP] Redis cache initialized")
+    except Exception as e:
+        print(f"[STARTUP] Redis cache initialization failed: {e}")
+        # Continue without Redis - use fallback cache
+    
+    yield
+    
+    # Shutdown
+    if "pytest" not in sys.modules:
+        from database import client
+        if client:
+            client.close()
+            print("[SHUTDOWN] Database connection closed")
+        
+        # Cleanup Redis cache
+        try:
+            await cleanup_cache()
+            print("[SHUTDOWN] Redis cache cleaned up")
+        except Exception as e:
+            print(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
+        
+        print("[SHUTDOWN] All cleanup complete")
+
+
 app = FastAPI(
     title="Hypersend API",
     description="Secure peer-to-peer file transfer and messaging application",
     version="1.0.0",
     redirect_slashes=False,  # Fix: Prevent automatic trailing slash redirects
+    lifespan=lifespan,
 )
 
 # Register custom exception handlers
@@ -897,47 +937,6 @@ def _configure_s3_lifecycle():
         print(f"[S3] WARNING: Unexpected error configuring lifecycle: {str(e)}")
         print("[S3] Continuing without lifecycle configuration")
 
-
-# Setup logger
-logger = logging.getLogger("hypersend")
-logger.setLevel(logging.INFO)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """FastAPI startup event - initialize database"""
-    await init_database()
-    # Store database connection in app state for reliable access
-    from database import db, client
-    app.state.db = db
-    app.state.client = client
-    print(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
-    
-    # Initialize Redis cache
-    try:
-        await init_cache()
-        print("[STARTUP] Redis cache initialized")
-    except Exception as e:
-        print(f"[STARTUP] Redis cache initialization failed: {e}")
-        # Continue without Redis - use fallback cache
-
-@app.on_event("shutdown")
-async def shutdown():
-    """FastAPI shutdown event - cleanup database connection"""
-    if "pytest" not in sys.modules:
-        from database import client
-        if client:
-            client.close()
-            print("[SHUTDOWN] Database connection closed")
-        
-        # Cleanup Redis cache
-        try:
-            await cleanup_cache()
-            print("[SHUTDOWN] Redis cache cleaned up")
-        except Exception as e:
-            print(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
-        
-        print("[SHUTDOWN] All cleanup complete")
 
 # Add a comprehensive catch-all exception handler for any unhandled exceptions
 @app.exception_handler(Exception)

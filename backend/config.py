@@ -185,7 +185,7 @@ class Settings:
 
     # Redis Configuration (Production: Use Docker service name)
     # CRITICAL: Use redis service name for Docker internal networking
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "redis")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "hypersend_redis")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))

@@ -407,3 +407,6 @@ def media_collection():
 # Backward compatibility aliases for tests
 connect_db = lambda: None  # No-op since we use global client
 get_db = get_database
+
+# Add database module export for imports
+database = sys.modules[__name__]
