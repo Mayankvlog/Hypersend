@@ -115,6 +115,12 @@ async def lifespan(app: FastAPI):
     # Initialize Redis cache
     try:
         await init_cache()
+        try:
+            from redis_cache import cache
+            app.state.cache = cache
+        except Exception:
+            # Cache module-level instance not available; continue without state exposure
+            pass
         print("[STARTUP] Redis cache initialized")
     except Exception as e:
         print(f"[STARTUP] Redis cache initialization failed: {e}")

@@ -113,6 +113,30 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
 
 
 
+def _maybe_object_id(value: str):
+
+    if not value:
+
+        return value
+
+    try:
+
+        if isinstance(value, ObjectId):
+
+            return value
+
+        if isinstance(value, str) and ObjectId.is_valid(value):
+
+            return ObjectId(value)
+
+    except Exception:
+
+        return value
+
+    return value
+
+
+
 
 
 async def _log_group_activity(group_id: str, actor_id: str, event: str, meta: Optional[dict] = None):
@@ -926,9 +950,11 @@ async def get_user_stats(current_user: str = Depends(get_current_user)):
 
         # Get user data
 
+        user_id = _maybe_object_id(current_user)
+
         user = await asyncio.wait_for(
 
-            users_collection().find_one({"_id": current_user}),
+            users_collection().find_one({"_id": user_id}),
 
             timeout=5.0
 
@@ -2295,11 +2321,6 @@ async def delete_account(
             detail=f"Delete failed: {str(e)}"
 
         )
-
-
-
-
-
 @router.post("/avatar")
 
 async def upload_avatar(
@@ -2536,9 +2557,11 @@ async def upload_avatar(
 
         try:
 
+            user_id = _maybe_object_id(current_user)
+
             user = await asyncio.wait_for(
 
-                users_collection().find_one({"_id": current_user}),
+                users_collection().find_one({"_id": user_id}),
 
                 timeout=5.0
 
@@ -2584,11 +2607,13 @@ async def upload_avatar(
 
         try:
 
+            user_id = _maybe_object_id(current_user)
+
             result = await asyncio.wait_for(
 
                 users_collection().update_one(
 
-                    {"_id": current_user},
+                    {"_id": user_id},
 
                     {"$set": {"avatar_url": avatar_url, "avatar": None, "updated_at": datetime.now(timezone.utc)}}
 
@@ -2604,7 +2629,7 @@ async def upload_avatar(
 
             updated_user = await asyncio.wait_for(
 
-                users_collection().find_one({"_id": current_user}),
+                users_collection().find_one({"_id": user_id}),
 
                 timeout=5.0
 
@@ -2714,1085 +2739,8 @@ async def upload_avatar(
 
 
 
-@router.post("/avatar-upload")
-
-@router.post("/avatar-upload/")
-
-async def upload_avatar_alt(
-
-    file: UploadFile = File(...),
-
-    current_user: str = Depends(get_current_user)
-
-):
-
-    """Alternative avatar upload endpoint - same as /avatar/ but with different name"""
-
-    try:
-
-        logger.debug("Alternative avatar upload endpoint called")
-
-        
-
-        import aiofiles
-
-        import os
-
-        import uuid
-
-        
-
-        # Validate file type
-
-        if not file.content_type or not file.content_type.startswith("image/"):
-
-            raise HTTPException(
-
-                status_code=status.HTTP_400_BAD_REQUEST,
-
-                detail="File must be an image"
-
-            )
-
-        
-
-        # Create directory
-
-        from pathlib import Path
-
-        data_root = Path(settings.DATA_ROOT)
-
-        avatar_dir = data_root / "avatars"
-
-        avatar_dir.mkdir(parents=True, exist_ok=True)
-
-        
-
-        # Generate unique filename
-
-        file_ext = os.path.splitext(file.filename)[1].lower()
-
-        if not file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_400_BAD_REQUEST,
-
-                detail="Unsupported image format"
-
-            )
-
-        
-
-        unique_id = str(uuid.uuid4())[:8]
-
-        new_file_name = f"{current_user}_{unique_id}{file_ext}"
-
-        new_file_path = avatar_dir / new_file_name
-
-        
-
-        # Save file using async operations
-
-        await file.seek(0)
-
-        async with aiofiles.open(new_file_path, "wb") as buffer:
-
-            content = await file.read()
-
-            await buffer.write(content)
-
-        
-
-        # Generate URL
-
-        avatar_url = f"/api/v1/users/avatar/{new_file_name}"
-
-        
-
-        # Update database and fetch updated user
-
-        updated_user = None
-
-        try:
-
-            await asyncio.wait_for(
-
-                users_collection().update_one(
-
-                    {"_id": current_user},
-
-                    {"$set": {"avatar_url": avatar_url, "updated_at": datetime.now(timezone.utc)}}
-
-                ),
-
-                timeout=5.0
-
-            )
-
-            
-
-            # Fetch updated user to return complete data
-
-            updated_user = await asyncio.wait_for(
-
-                users_collection().find_one({"_id": current_user}),
-
-                timeout=5.0
-
-            )
-
-        except asyncio.TimeoutError:
-
-            logger.warning("Database update timed out")
-
-        except Exception as db_error:
-
-            logger.warning(f"Database update failed: {db_error}")
-
-        
-
-        # Return response with both avatar_url and avatar fields
-
-        # Both fields are required for frontend validation to pass
-
-        current_avatar = updated_user.get("avatar") if updated_user else None
-
-        response_data = {
-
-            "avatar_url": avatar_url,  # Image URL (REQUIRED)
-
-            "avatar": "",  # FIXED: Always empty string for WhatsApp compatibility
-
-            "success": True,
-
-            "filename": new_file_name,
-
-            "message": "Avatar uploaded successfully"
-
-        }
-
-        logger.debug(f"Alternative avatar upload completed: avatar_url={avatar_url}, avatar={response_data['avatar']}")
-
-        
-
-        # Validate response data before sending
-
-        if not isinstance(response_data, dict):
-
-            logger.error(f"Response data is not a dict: {type(response_data)}")
-
-            response_data = {"avatar_url": avatar_url, "avatar": "", "success": False, "message": "Internal error"}
-
-        
-
-        if "avatar_url" not in response_data:
-
-            logger.error("avatar_url missing from response_data in alternative endpoint")
-
-            response_data["avatar_url"] = avatar_url
-
-            
-
-        if "avatar" not in response_data:
-
-            response_data["avatar"] = current_avatar if current_avatar else ""
-
-            
-
-        logger.debug(f"Final alternative response data: {response_data}")
-
-        return JSONResponse(status_code=200, content=response_data)
-
-        
-
-    except HTTPException:
-
-        raise
-
-    except Exception as e:
-
-        logger.error(f"Alternative avatar upload error: {type(e).__name__}")
-
-        raise HTTPException(
-
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-            detail=f"Failed to upload avatar: {str(e)}"
-
-        )
-
-
-
-@router.get("/health")
-
-async def users_health():
-
-    """Health check for users module"""
-
-    return {"status": "healthy", "module": "users", "timestamp": datetime.now(timezone.utc).isoformat(), "avatar_endpoint": "POST /api/v1/users/avatar/"}
-
-
-
-@router.get("/avatar-test")
-
-async def test_avatar_route():
-
-    """Test route to verify API routing for avatar endpoint"""
-
-    return {
-
-        "message": "Avatar API is working",
-
-        "status": "ok",
-
-        "post_endpoint": "POST /api/v1/users/avatar/ - Use this to upload",
-
-        "get_endpoint": "GET /api/v1/users/avatar/{filename} - Use this to retrieve"
-
-    }
-
-
-
-@router.post("/avatar/")
-
-async def upload_avatar_with_slash(
-
-    file: UploadFile = File(...),
-
-    request: Request = None,
-
-    current_user: str = Depends(get_current_user_optional)
-
-):
-
-    """Upload user avatar - POST endpoint with trailing slash (same logic as without slash)"""
-
-    print(f"[AVATAR_UPLOAD_SLASH] POST /avatar/ endpoint called!")
-
-    print(f"[AVATAR_UPLOAD_SLASH] Request method: {request.method if request else 'No request'}")
-
-    return await upload_avatar(file, request, current_user)
-
-
-
-
-
-
-
-@router.options("/avatar")
-
-@router.options("/avatar-upload")
-
-async def avatar_options(request: Request):
-
-    """Handle CORS preflight for avatar endpoints with secure origin validation"""
-
-    from fastapi.responses import Response
-
-    
-
-    origin = request.headers.get("origin", "")
-
-    secure_origin = get_secure_cors_origin(origin)
-
-    
-
-    return Response(
-
-        status_code=200,
-
-        headers={
-
-            "Access-Control-Allow-Origin": secure_origin,
-
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-
-            "Access-Control-Max-Age": "86400"
-
-        }
-
-    )
-
-
-
-@router.get("/avatar/{filename}")
-
-async def get_avatar(filename: str, current_user: str = Depends(get_current_user_optional)):
-
-    """Get user avatar - authenticated access only"""
-
-    from fastapi.responses import FileResponse
-
-    import os
-
-    
-
-    logger.info(f"[AVATAR] Avatar requested: {filename}")
-
-    
-
-# Security: Validate filename to prevent directory traversal
-
-    if not filename:
-
-        logger.warning(f"[AVATAR] Empty filename")
-
-        raise HTTPException(status_code=400, detail="Invalid filename")
-
-    
-
-    # Security: Check for directory traversal attempts (both Unix and Windows)
-
-    dangerous_patterns = ['..', '\\', '/', '\x00']
-
-    for pattern in dangerous_patterns:
-
-        if pattern in filename:
-
-            logger.warning(f"[AVATAR] Dangerous filename detected: {filename}")
-
-            raise HTTPException(status_code=400, detail="Invalid filename")
-
-    
-
-    # Security: Ensure filename is alphanumeric with safe characters only
-
-    import re
-
-    # Allow UUID-style patterns with underscores, hyphens, and periods
-
-    if not re.match(r'^[a-zA-Z0-9_.-]+\.([a-zA-Z0-9]+)$', filename):
-
-        logger.warning(f"[AVATAR] Invalid filename format: {filename}")
-
-        raise HTTPException(status_code=400, detail="Invalid filename format")
-
-    
-
-    # Handle both string and Path objects for DATA_ROOT
-
-    from pathlib import Path
-
-    data_root = Path(settings.DATA_ROOT)
-
-    file_path = data_root / "avatars" / filename
-
-    logger.debug(f"[AVATAR] File path: {file_path}")
-
-    
-
-    if not file_path.exists():
-
-        logger.warning(f"[AVATAR] File not found: {filename}")
-
-        
-
-        # Fallback: Try to find avatar by user ID from filename
-
-        import re
-
-        from pathlib import Path
-
-        import glob
-
-        # Extract user ID from patterns like "69564dea8eac4df1_xyz.png" or "69564dea8eac4df1.png"
-
-        user_id_match = re.match(r'^([a-f0-9]+)', filename)
-
-        if user_id_match and user_id_match.groups():
-
-            user_id = user_id_match.group(1)
-
-            logger.info(f"[AVATAR] Searching for avatar by user_id: {user_id}")
-
-            
-
-            # Search for any avatar file for this user
-
-            avatar_pattern = f"{user_id}_*.*"
-
-            avatar_dir = data_root / "avatars"
-
-            matching_files = list(glob.glob(str(avatar_dir / avatar_pattern)))
-
-            
-
-            if matching_files:
-
-                # Return the most recent avatar file
-
-                latest_file = max(matching_files, key=os.path.getctime)
-
-                file_path = Path(latest_file)
-
-                logger.info(f"[AVATAR] Found fallback avatar: {file_path.name}")
-
-            else:
-
-                logger.warning(f"[AVATAR] No avatar files found for user: {user_id}")
-
-                raise HTTPException(status_code=404, detail="Avatar not found")
-
-        else:
-
-            raise HTTPException(status_code=404, detail="Avatar not found")
-
-    
-
-    # Check if it's actually a file
-
-    if not file_path.is_file():
-
-        logger.warning(f"[AVATAR] Path is not a file: {file_path}")
-
-        raise HTTPException(status_code=404, detail="Avatar not found")
-
-    
-
-    # Determine media type based on file extension
-
-    media_type = None
-
-    filename_lower = filename.lower()
-
-    if filename_lower.endswith(('.jpg', '.jpeg')):
-
-        media_type = 'image/jpeg'
-
-    elif filename_lower.endswith('.png'):
-
-        media_type = 'image/png'
-
-    elif filename_lower.endswith('.gif'):
-
-        media_type = 'image/gif'
-
-    elif filename_lower.endswith('.webp'):
-
-        media_type = 'image/webp'
-
-    else:
-
-        logger.warning(f"[AVATAR] Unsupported file type: {filename}")
-
-        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported file type")
-
-    
-
-    try:
-
-        file_size = os.path.getsize(file_path)
-
-        logger.info(f"[AVATAR] Serving avatar: {filename} ({file_size} bytes, {media_type})")
-
-        return FileResponse(
-
-            file_path, 
-
-            media_type=media_type, 
-
-            filename=filename,
-
-            headers={"Cache-Control": "public, max-age=3600"}
-
-        )
-
-    except Exception as e:
-
-        logger.error(f"[AVATAR] Error serving avatar {filename}: {e}")
-
-        raise HTTPException(status_code=500, detail="Failed to serve avatar")
-
-
-
-
-
-@router.post("/location/update")
-
-async def update_location(
-
-    lat: float,
-
-    lng: float,
-
-    current_user: str = Depends(get_current_user)
-
-):
-
-    """Update user's current location for 'People Nearby' feature.
-
-    
-
-    Args:
-
-        lat: Latitude of current location
-
-        lng: Longitude of current location
-
-    
-
-    Returns:
-
-        Success message with updated location
-
-    """
-
-    try:
-
-        # Validate coordinates
-
-        if lat < -90 or lat > 90 or lng < -180 or lng > 180:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_400_BAD_REQUEST,
-
-                detail="Invalid coordinates. Latitude must be -90 to 90, Longitude must be -180 to 180"
-
-            )
-
-        
-
-        # Update user location
-
-        result = await asyncio.wait_for(
-
-            users_collection().update_one(
-
-                {"_id": current_user},
-
-                {
-
-                    "$set": {
-
-                        "location": {
-
-                            "lat": lat,
-
-                            "lng": lng,
-
-                            "updated_at": datetime.now(timezone.utc)
-
-                        },
-
-                        "updated_at": datetime.now(timezone.utc)
-
-                    }
-
-                }
-
-            ),
-
-            timeout=5.0
-
-        )
-
-        
-
-        if result.matched_count == 0:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="User not found"
-
-            )
-
-        
-
-        return {
-
-            "message": "Location updated successfully",
-
-            "location": {"lat": lat, "lng": lng},
-
-            "updated_at": datetime.now(timezone.utc).isoformat()
-
-        }
-
-        
-
-    except asyncio.TimeoutError:
-
-        logger.error(f"Database operation timed out")
-
-        raise HTTPException(
-
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-
-            detail={
-
-                "status": "ERROR",
-
-                "message": "Database operation timed out. Please try again later.",
-
-                "data": None
-
-            }
-
-        )
-
-    except (ValueError, TypeError) as e:
-
-        raise HTTPException(
-
-            status_code=status.HTTP_400_BAD_REQUEST,
-
-            detail=f"Invalid parameters: {str(e)}"
-
-        )
-
-    except HTTPException:
-
-        raise
-
-    except Exception as e:
-
-        raise HTTPException(
-
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-            detail=f"Failed to update location: {str(e)}"
-
-        )
-
-
-
-
-
-@router.post("/location/clear")
-
-async def clear_location(current_user: str = Depends(get_current_user)):
-
-    """Clear user's location data (opt-out of People Nearby feature)."""
-
-    try:
-
-        result = await asyncio.wait_for(
-
-            users_collection().update_one(
-
-                {"_id": current_user},
-
-                {
-
-                    "$unset": {"location": ""},
-
-                    "$set": {"updated_at": datetime.now(timezone.utc)}
-
-                }
-
-            ),
-
-            timeout=5.0
-
-        )
-
-        
-
-        if result.matched_count == 0:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="User not found"
-
-            )
-
-        
-
-        return {"message": "Location cleared successfully"}
-
-        
-
-    except asyncio.TimeoutError:
-
-        logger.error(f"Database operation timed out")
-
-        raise HTTPException(
-
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-
-            detail={
-
-                "status": "ERROR",
-
-                "message": "Database operation timed out. Please try again later.",
-
-                "data": None
-
-            }
-
-        )
-
-    except HTTPException:
-
-        raise
-
-    except Exception as e:
-
-        raise HTTPException(
-
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-            detail=f"Failed to clear location: {str(e)}"
-
-        )
-
-
-
-
-
-# Contact Management Endpoints
-
-
-
-
-
-@router.get("/simple")
-
-async def get_simple_users(
-
-    offset: int = 0,
-
-    limit: int = 50,
-
-    current_user: str = Depends(get_current_user)
-
-):
-
-    """Get simple list of users for group creation UI.
-
-
-
-    Behaviour:
-
-    - If the user has contacts, return those contacts (paged).
-
-    - If the user has NO contacts, return a generic list of users so that
-
-      group creation UI still shows members to pick from.
-
-    - Always exclude the current user from the list.
-
-    """
-
-    try:
-
-        # Fetch current user (may or may not have contacts configured)
-
-        user = await asyncio.wait_for(
-
-            users_collection().find_one({"_id": current_user}),
-
-            timeout=5.0,
-
-        )
-
-
-
-        contact_ids = user.get("contacts", []) if user else []
-
-
-
-        # If user has contacts, return them in the same shape expected by frontend
-
-        if contact_ids:
-
-            paginated_ids = contact_ids[offset:offset + limit]
-
-
-
-            cursor = users_collection().find(
-
-                {"_id": {"$in": paginated_ids}},
-
-                {
-
-                    "_id": 1,
-
-                    "name": 1,
-
-                    "email": 1,
-
-                    "username": 1,
-
-                    "avatar_url": 1,
-
-                    "is_online": 1,
-
-                    "last_seen": 1,
-
-                    "status": 1,
-
-                },
-
-            )
-
-
-
-            users: list[dict] = []
-
-            async for user_doc in cursor:
-
-                # Normalise to the simple user payload the Flutter UI expects
-
-                users.append(
-
-                    {
-
-                        "id": user_doc.get("_id", ""),
-
-                        "name": user_doc.get("name", ""),
-
-                        "email": user_doc.get("email", ""),
-
-                        "username": user_doc.get("username"),
-
-                        "avatar_url": user_doc.get("avatar_url"),
-
-                        "is_online": user_doc.get("is_online", False),
-
-                        "last_seen": user_doc.get("last_seen"),
-
-                        "status": user_doc.get("status"),
-
-                    }
-
-                )
-
-
-
-            return {
-
-                "users": users,
-
-                "total": len(contact_ids),
-
-                "offset": offset,
-
-                "limit": limit,
-
-            }
-
-
-
-        # No contacts configured for this user -> fall back to a generic user list
-
-        # so that group creation is still usable for first‑time users.
-
-        users_col = users_collection()
-
-
-
-        # Detect in-memory mock used by tests (has a dict-like `.data` store)
-
-        if hasattr(users_col, "data") and isinstance(getattr(users_col, "data"), dict):
-
-            all_docs = []
-
-            for uid, doc in users_col.data.items():
-
-                if uid == current_user:
-
-                    continue
-
-                all_docs.append(doc)
-
-
-
-            # Sort by created_at (newest first), then by name as secondary key
-
-            def _sort_key(doc: dict) -> tuple:
-
-                created = doc.get("created_at")
-
-                name = (doc.get("name") or "").lower()
-
-                # Handle None created_at: treat as older (high value) so newer items come first
-
-                if created is None:
-
-                    # Use very old timestamp for missing created_at
-
-                    created = 0
-
-                elif hasattr(created, 'timestamp'):
-
-                    # Convert datetime to timestamp for proper numeric sorting
-
-                    created = created.timestamp()
-
-                # Negate created to sort descending (newest first), then by name ascending
-
-                return (-created if isinstance(created, (int, float)) else -1000000000, name)
-
-
-
-            all_docs.sort(key=_sort_key)
-
-            paged_docs = all_docs[offset:offset + limit]
-
-
-
-            users: list[dict] = []
-
-            for user_doc in paged_docs:
-
-                users.append(
-
-                    {
-
-                        "id": user_doc.get("_id", ""),
-
-                        "name": user_doc.get("name", ""),
-
-                        "email": user_doc.get("email", ""),
-
-                        "username": user_doc.get("username"),
-
-                        "avatar_url": user_doc.get("avatar_url"),
-
-                        "is_online": user_doc.get("is_online", False),
-
-                        "last_seen": user_doc.get("last_seen"),
-
-                        "status": user_doc.get("status"),
-
-                    }
-
-                )
-
-
-
-            return {
-
-                "users": users,
-
-                "total": len(all_docs),
-
-                "offset": offset,
-
-                "limit": limit,
-
-            }
-
-
-
-        # Real MongoDB path
-
-        base_query = {"_id": {"$ne": current_user}}
-
-
-
-        cursor = users_col.find(
-
-            base_query,
-
-            {
-
-                "_id": 1,
-
-                "name": 1,
-
-                "email": 1,
-
-                "username": 1,
-
-                "avatar_url": 1,
-
-                "is_online": 1,
-
-                "last_seen": 1,
-
-                "status": 1,
-
-            },
-
-        ).sort("created_at", -1).skip(offset).limit(limit)
-
-
-
-        users: list[dict] = []
-
-        async for user_doc in cursor:
-
-            users.append(
-
-                {
-
-                    "id": user_doc.get("_id", ""),
-
-                    "name": user_doc.get("name", ""),
-
-                    "email": user_doc.get("email", ""),
-
-                    "username": user_doc.get("username"),
-
-                    "avatar_url": user_doc.get("avatar_url"),
-
-                    "is_online": user_doc.get("is_online", False),
-
-                    "last_seen": user_doc.get("last_seen"),
-
-                    "status": user_doc.get("status"),
-
-                }
-
-            )
-
-
-
-        return {
-
-            "users": users,
-
-            # Total is approximate when falling back; we at least report page size
-
-            "total": len(users),
-
-            "offset": offset,
-
-            "limit": limit,
-
-        }
-
-
-
-    except asyncio.TimeoutError:
-
-        raise HTTPException(
-
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-
-            detail="Database operation timed out. Please try again later.",
-
-        )
-
-    except HTTPException:
-
-        raise
-
-    except Exception as e:
-
-        raise HTTPException(
-
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-            detail=f"Failed to fetch users: {str(e)}",
-
-        )
-
-
-
-
-
 @router.get("/contacts")
+@router.get("/contacts/")
 
 async def get_contacts(
 
@@ -3912,7 +2860,7 @@ async def get_contacts(
 
                 pipeline = [
 
-                    {"$match": {"_id": {"$ne": current_user}}},
+                    {"$match": {"_id": {"$ne": user_id}}},
 
                     {"$sort": {"is_online": -1, "name": 1}},
 
@@ -3962,7 +2910,7 @@ async def get_contacts(
 
                 # Get total count
 
-                total_count = await users_col.count_documents({"_id": {"$ne": current_user}})
+                total_count = await users_col.count_documents({"_id": {"$ne": user_id}})
 
                 
 
@@ -4034,9 +2982,11 @@ async def get_contacts(
 
             else:
 
+                normalized_ids = [_maybe_object_id(uid) for uid in paginated_ids]
+
                 find_result = users_col.find(
 
-                    {"_id": {"$in": paginated_ids}},
+                    {"_id": {"$in": normalized_ids}},
 
                     {
 
@@ -4147,24 +3097,6 @@ async def get_contacts(
             detail=f"Failed to fetch contacts: {str(e)}"
 
         )
-
-
-@router.get("/users/contacts")
-
-async def get_contacts_alias(
-
-    offset: int = 0,
-
-    limit: int = 50,
-
-    current_user: str = Depends(get_current_user)
-
-):
-
-    return await get_contacts(offset=offset, limit=limit, current_user=current_user)
-
-
-
 
 
 @router.post("/contacts", response_model=ContactResponse)

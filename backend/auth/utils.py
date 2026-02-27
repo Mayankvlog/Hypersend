@@ -577,37 +577,47 @@ async def get_current_user(
         )
     
     # CRITICAL FIX: Verify user exists in Atlas by converting string ID to ObjectId
-    from database import users_collection, IS_PRODUCTION
+    from database import IS_PRODUCTION
     from bson import ObjectId
-    
+
     user_id_str = token_data.user_id
-    
+
     # In production, always verify user exists in Atlas
     if IS_PRODUCTION:
+        # Resolve users collection from request.app.state.db first (authoritative in Docker)
+        users_col = None
         try:
-            # Convert string ID to ObjectId for Atlas query
-            object_id = ObjectId(user_id_str)
+            if request is not None and hasattr(request, "app") and hasattr(request.app, "state"):
+                db = getattr(request.app.state, "db", None)
+                if db is not None:
+                    users_col = db["users"]
+        except Exception:
+            users_col = None
+
+        # Fallback to database module helper if state is not available
+        if users_col is None:
+            from database import users_collection
             users_col = users_collection()
-            
-            # Query Atlas using ObjectId
-            existing_user = await users_col.find_one({"_id": object_id})
-            if not existing_user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User not found in database",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-                
-            # Log successful Atlas verification in production
-            logger.info(f"PRODUCTION: User verified in Atlas: {user_id_str}")
-            
-        except Exception as e:
-            logger.error(f"PRODUCTION ERROR: Failed to verify user in Atlas: {str(e)}")
+
+        # Convert to ObjectId for Atlas query (production stores _id as ObjectId)
+        if not ObjectId.is_valid(user_id_str):
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database verification failed"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token subject",
+                headers={"WWW-Authenticate": "Bearer"},
             )
-    
+
+        object_id = ObjectId(user_id_str)
+        existing_user = await users_col.find_one({"_id": object_id})
+        if not existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found in database",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        logger.info(f"PRODUCTION: User verified in Atlas: {user_id_str}")
+
     return user_id_str
 
 
