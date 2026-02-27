@@ -27,6 +27,17 @@ from backend.models import UserCreate, UserLogin
 get_db = get_database
 
 
+@pytest.fixture(autouse=True)
+def _ensure_atlas_env_vars():
+    os.environ.setdefault("MONGODB_ATLAS_ENABLED", "true")
+    os.environ.setdefault(
+        "MONGODB_URI",
+        "mongodb+srv://test:test@cluster.mongodb.net/test?retryWrites=true&w=majority",
+    )
+    os.environ.setdefault("DATABASE_NAME", "Hypersend")
+    yield
+
+
 class TestMongoDBConnection:
     """Test MongoDB connection fixes and async handling"""
 
@@ -169,23 +180,21 @@ class TestMongoDBConnection:
         """Test users_collection does not return Future objects"""
         from backend import database
 
-        database.client = None
-        database.db = None
+        # The current backend.database implementation doesn't use USE_MOCK_DB;
+        # it relies on global init state. Initialize globals directly.
+        database.client = MagicMock()
+        database.db = MagicMock()
+        database._database_initialized = True
 
-        # Mock settings to use mock database
-        with patch("backend.config.settings") as settings_mock:
-            settings_mock.USE_MOCK_DB = True
-            settings_mock.DEBUG = True
+        users_col = users_collection()
 
-            users_col = users_collection()
+        # Verify collection is not a Future
+        assert not hasattr(users_col, "__await__")
+        assert not asyncio.isfuture(users_col)
 
-            # Verify collection is not a Future
-            assert not hasattr(users_col, "__await__")
-            assert not asyncio.isfuture(users_col)
-
-            # Verify collection methods are callable
-            assert callable(getattr(users_col, "find_one", None))
-            assert callable(getattr(users_col, "insert_one", None))
+        # Verify collection methods are callable
+        assert callable(getattr(users_col, "find_one", None))
+        assert callable(getattr(users_col, "insert_one", None))
 
         print("✓ users_collection returns proper collection, not Future")
 
@@ -341,11 +350,19 @@ class TestAuthenticationFixes:
         # Mock password verification and token creation
         with patch("routes.auth.verify_password") as mock_verify, patch(
             "routes.auth.create_access_token"
-        ) as mock_token, patch("routes.auth.create_refresh_token") as mock_refresh:
+        ) as mock_token, patch("routes.auth.create_refresh_token") as mock_refresh, patch(
+            "routes.auth.refresh_tokens_collection"
+        ) as mock_refresh_tokens_collection:
             mock_verify.return_value = True
             mock_token.return_value = "test_access_token"
             # create_refresh_token returns a tuple (token, jti)
             mock_refresh.return_value = ("test_refresh_token", "test_jti")
+
+            # login() invalidates previous sessions and stores the new refresh token
+            mock_refresh_tokens = AsyncMock()
+            mock_refresh_tokens.delete_many = AsyncMock(return_value=AsyncMock(deleted_count=0))
+            mock_refresh_tokens.insert_one = AsyncMock(return_value=AsyncMock(inserted_id="token_id"))
+            mock_refresh_tokens_collection.return_value = mock_refresh_tokens
 
             credentials = UserLogin(
                 email="testuser@example.com", password="TestPass123"
@@ -353,13 +370,21 @@ class TestAuthenticationFixes:
 
             # Mock request
             mock_request = Mock()
-            mock_request.client.host = "127.0.0.1"
+            mock_request.client.host = "zaply.in.net"
 
             # Initialize database before login
-            from backend import database
+            from backend import database as backend_database
+            import database as plain_database
 
-            database.client = mock_motor_client[1]
-            database.db = mock_motor_client[1].__getitem__.return_value
+            # Auth code imports the module as plain `database`, while some tests import
+            # it as `backend.database`. Keep globals in sync for both.
+            backend_database.client = mock_motor_client[1]
+            backend_database.db = mock_motor_client[1].__getitem__.return_value
+            backend_database._database_initialized = True
+
+            plain_database.client = mock_motor_client[1]
+            plain_database.db = mock_motor_client[1].__getitem__.return_value
+            plain_database._database_initialized = True
 
             result = await login(credentials, mock_request)
 
@@ -385,7 +410,7 @@ class TestAuthenticationFixes:
             )
 
             mock_request = Mock()
-            mock_request.client.host = "127.0.0.1"
+            mock_request.client.host = "zaply.in.net"
 
             with pytest.raises(HTTPException) as exc_info:
                 await login(credentials, mock_request)
@@ -406,7 +431,7 @@ class TestAuthenticationFixes:
         )
 
         mock_request = Mock()
-        mock_request.client.host = "127.0.0.1"
+        mock_request.client.host = "zaply.in.net"
 
         with pytest.raises(HTTPException) as exc_info:
             await login(credentials, mock_request)
