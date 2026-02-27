@@ -4149,6 +4149,21 @@ async def get_contacts(
         )
 
 
+@router.get("/users/contacts")
+
+async def get_contacts_alias(
+
+    offset: int = 0,
+
+    limit: int = 50,
+
+    current_user: str = Depends(get_current_user)
+
+):
+
+    return await get_contacts(offset=offset, limit=limit, current_user=current_user)
+
+
 
 
 
@@ -4357,6 +4372,19 @@ async def add_contact(
         )
 
 
+@router.post("/users/contacts", response_model=ContactResponse)
+
+async def add_contact_alias(
+
+    request: ContactAddRequest,
+
+    current_user: str = Depends(get_current_user)
+
+):
+
+    return await add_contact(request=request, current_user=current_user)
+
+
 
 
 
@@ -4475,6 +4503,19 @@ async def remove_contact(
             detail=f"Failed to remove contact: {str(e)}"
 
         )
+
+
+@router.delete("/users/contacts/{contact_id}")
+
+async def remove_contact_alias(
+
+    contact_id: str,
+
+    current_user: str = Depends(get_current_user)
+
+):
+
+    return await remove_contact(contact_id=contact_id, current_user=current_user)
 
 
 
