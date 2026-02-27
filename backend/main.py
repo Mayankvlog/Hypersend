@@ -68,6 +68,8 @@ try:
 except Exception as e:
     raise
 
+from auth.utils import get_current_user
+
 try:
     from config import settings
 except Exception as e:
@@ -1747,6 +1749,16 @@ async def debug_route(request: Request):
         "client_host": request.client.host if request.client else "none",
         "headers": dict(request.headers),
     }
+
+
+@app.get("/api/v1/users/contacts", tags=["Users"])
+@app.get("/api/v1/users/contacts/", tags=["Users"])
+async def contacts_route(
+    offset: int = 0,
+    limit: int = 50,
+    current_user: str = Depends(get_current_user),
+):
+    return await users.get_contacts(offset=offset, limit=limit, current_user=current_user)
 
 
 # ====================

@@ -19,6 +19,16 @@ logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/chats", tags=["Chats"])
 
+
+def _to_json_safe(value):
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _to_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_json_safe(v) for v in value]
+    return value
+
 # OPTIONS handlers for CORS preflight requests
 @router.options("/saved")
 @router.options("/messages/saved")
@@ -221,12 +231,14 @@ async def create_chat(chat: ChatCreate, current_user: str = Depends(get_current_
     if chat_doc["type"] == "saved" and not chat_doc["name"]:
         chat_doc["name"] = "Saved Messages"
     
-    await chats_collection().insert_one(chat_doc)
+    result = await chats_collection().insert_one(chat_doc)
+    inserted_id = result.inserted_id
+    inserted_id_str = str(inserted_id)
     
     return {
-        "chat_id": chat_doc["_id"], 
-        "id": chat_doc["_id"],  # Frontend compatibility
-        "_id": chat_doc["_id"],  # Frontend compatibility
+        "chat_id": inserted_id_str,
+        "id": inserted_id_str,  # Frontend compatibility
+        "_id": inserted_id_str,  # Frontend compatibility
         "message": "Chat created"
     }
 
@@ -315,7 +327,7 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         chats.sort(key=get_sort_key, reverse=True)
         
         print(f"[CHATS_LIST] SUCCESS: Retrieved {len(chats)} chats for user {current_user}")
-        return {"chats": chats}
+        return {"chats": _to_json_safe(chats)}
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -456,10 +468,11 @@ async def send_message(
         msg_doc["saved_by"] = [current_user]
         logger.info(f"Message sent to saved chat, marking as saved for user: {current_user}")
     
-    await messages_collection().insert_one(msg_doc)
-    logger.info(f"Message inserted with ID: {msg_doc['_id']}")
+    result = await messages_collection().insert_one(msg_doc)
+    inserted_id = result.inserted_id
+    logger.info(f"Message inserted with ID: {inserted_id}")
     
-    return {"message_id": msg_doc["_id"], "created_at": msg_doc["created_at"]}
+    return {"message_id": str(inserted_id), "created_at": msg_doc["created_at"]}
 
 
 @router.post("/messages/{message_id}/save", status_code=status.HTTP_200_OK)
