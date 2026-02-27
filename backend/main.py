@@ -14,6 +14,8 @@ import asyncio
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from models import MessageCreate
+
 # WhatsApp-Grade Cryptographic Imports
 try:
     import redis.asyncio as redis
@@ -1759,6 +1761,40 @@ async def contacts_route(
     current_user: str = Depends(get_current_user),
 ):
     return await users.get_contacts(offset=offset, limit=limit, current_user=current_user)
+
+
+@app.get("/api/v1/chats/{chat_id}/messages", tags=["Chats"])
+@app.get("/api/v1/chats/{chat_id}/messages/", tags=["Chats"])
+async def chat_messages_alias_get(
+    chat_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    before: Optional[str] = None,
+    current_user: str = Depends(get_current_user),
+):
+    return await chats.get_messages(
+        chat_id=chat_id,
+        limit=limit,
+        offset=offset,
+        before=before,
+        current_user=current_user,
+    )
+
+
+@app.post("/api/v1/chats/{chat_id}/messages", tags=["Chats"], status_code=status.HTTP_201_CREATED)
+@app.post("/api/v1/chats/{chat_id}/messages/", tags=["Chats"], status_code=status.HTTP_201_CREATED)
+async def chat_messages_alias_post(
+    chat_id: str,
+    request: Request,
+    message: MessageCreate,
+    current_user: str = Depends(get_current_user),
+):
+    return await chats.send_message(
+        chat_id=chat_id,
+        request=request,
+        message=message,
+        current_user=current_user,
+    )
 
 
 # ====================

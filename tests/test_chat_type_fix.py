@@ -271,12 +271,12 @@ class TestChatCreationFix:
         # Mock collections
         mock_collection = AsyncMock()
         mock_collection.find_one.return_value = None  # No existing chat
-        
-        async def mock_insert_one(doc):
+
+        async def _insert_one_side_effect(doc):
             doc["_id"] = "test_chat_id"
             return AsyncMock(inserted_id="test_chat_id")
-        
-        mock_collection.insert_one = mock_insert_one
+
+        mock_collection.insert_one = AsyncMock(side_effect=_insert_one_side_effect)
 
         module_path = create_chat.__module__
         with patch(f'{module_path}.chats_collection', return_value=mock_collection):
@@ -326,12 +326,12 @@ class TestChatCreationFix:
         # Mock collections
         mock_collection = AsyncMock()
         mock_collection.find_one.return_value = None  # No existing chat
-        
-        async def mock_insert_one(doc):
+
+        async def _insert_one_side_effect(doc):
             doc["_id"] = "test_chat_id"
             return AsyncMock(inserted_id="test_chat_id")
-        
-        mock_collection.insert_one = mock_insert_one
+
+        mock_collection.insert_one = AsyncMock(side_effect=_insert_one_side_effect)
 
         module_path = create_chat.__module__
         with patch(f'{module_path}.chats_collection', return_value=mock_collection):
@@ -372,12 +372,12 @@ class TestChatCreationFix:
         # Mock collections
         mock_collection = AsyncMock()
         mock_collection.find_one.return_value = None  # No existing chat
-        
-        async def mock_insert_one(doc):
+
+        async def _insert_one_side_effect(doc):
             doc["_id"] = "test_chat_id"
             return AsyncMock(inserted_id="test_chat_id")
-        
-        mock_collection.insert_one = mock_insert_one
+
+        mock_collection.insert_one = AsyncMock(side_effect=_insert_one_side_effect)
 
         module_path = create_chat.__module__
         with patch(f'{module_path}.chats_collection', return_value=mock_collection):

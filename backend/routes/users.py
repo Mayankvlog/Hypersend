@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
 
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 
 
@@ -2322,6 +2322,7 @@ async def delete_account(
 
         )
 @router.post("/avatar")
+@router.post("/avatar/")
 
 async def upload_avatar(
 
@@ -2734,6 +2735,28 @@ async def upload_avatar(
             detail=f"Failed to upload avatar: {str(e)}"
 
         )
+
+
+@router.get("/avatar/{filename}")
+@router.get("/avatar/{filename}/")
+async def get_avatar(
+    filename: str,
+    current_user: Optional[str] = Depends(get_current_user_optional),
+):
+    file_name_only = (filename or "").split("/")[-1].split("\\")[-1]
+    if not file_name_only or file_name_only != filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+    if ".." in file_name_only or "\x00" in file_name_only:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+
+    from pathlib import Path
+
+    avatar_dir = Path(settings.DATA_ROOT) / "avatars"
+    file_path = avatar_dir / file_name_only
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avatar not found")
+
+    return FileResponse(str(file_path))
 
 
 
