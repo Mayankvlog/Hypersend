@@ -7,6 +7,12 @@ from fastapi import HTTPException, status
 from dotenv import load_dotenv
 from pathlib import Path
 
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "production" and os.getenv("DEBUG", "").lower() not in (
+    "true",
+    "1",
+    "yes",
+)
+
 # Load environment variables from .env file
 env_paths = [Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"]
 for env_path in env_paths:
