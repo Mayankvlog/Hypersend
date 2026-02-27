@@ -150,8 +150,6 @@ services:
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
-      - ./backend:/app/backend
-      - ./tests:/app/tests
     depends_on:
       redis:
         condition: service_healthy

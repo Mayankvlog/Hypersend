@@ -39,5 +39,5 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
   CMD curl -f http://hypersend_backend:8000/api/v1/health || exit 1
 
 # Start FastAPI with single process to ensure startup event and handlers share global state
-# CRITICAL FIX: Use backend.main module since WORKDIR is /app and main.py is in /app/backend/
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--http", "httptools"]
+# CRITICAL FIX: In the built image (context=./backend), main.py is at /app/main.py
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--http", "httptools"]
