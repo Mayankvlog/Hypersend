@@ -146,11 +146,6 @@ class Settings:
         # Production zaply.in.net origins
         "https://zaply.in.net",
         "https://www.zaply.in.net",
-        # Development / local defaults
-        "http://localhost:3000",         # Local development
-        "http://127.0.0.1:3000",       # Local development alternative
-        "http://localhost:8000",       # Backend API
-        "http://127.0.0.1:8000",      # Backend API alternative
         # Docker internal names
         "http://hypersend_frontend:80",  # Docker internal: frontend container
         "http://hypersend_frontend",     # Docker internal: frontend (port 80 default)

@@ -1007,14 +1007,9 @@ def get_secure_cors_origin(request_origin: Optional[str]) -> str:
         else:
             return "https://zaply.in.net/"  # Secure default
 
-    # In debug mode, allow localhost with validation
+    # In debug mode, allow configured origins only
     if request_origin:
-        if (
-            request_origin.startswith("https://zaply.in.net")
-            or request_origin.startswith("http://127.0.0.1")
-        ):
-            return request_origin
-        elif request_origin in settings.CORS_ORIGINS:
+        if request_origin in settings.CORS_ORIGINS:
             return request_origin
 
     return (
@@ -1418,6 +1413,7 @@ async def initialize_upload(
         # WHATSAPP ARCHITECTURE: Return pre-signed URL for direct upload
         return FileInitResponse(
             uploadId=upload_id,
+            upload_id=upload_id,
             chunk_size=settings.CHUNK_SIZE,
             total_chunks=1,  # For direct upload, single chunk
             expires_in=3600,  # 1 hour

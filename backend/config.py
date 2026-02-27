@@ -470,8 +470,8 @@ class Settings:
                             for docker_host in [
                                 "zaply_frontend:",
                                 "frontend:",
-                                "localhost:8000",
-                                "127.0.0.1:3000",
+                                "hypersend_frontend:",
+                                "hypersend_backend:",
                             ]
                         ):
                             docker_http_origins.append(origin)

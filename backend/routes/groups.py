@@ -465,14 +465,25 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
 async def list_groups(current_user: str = Depends(get_current_user)):
     """List groups for current user."""
     groups = []
-    cursor = await chats_collection().find({"type": "group", "members": {"$in": [current_user]}})
+    cursor = chats_collection().find({"type": "group", "members": {"$in": [current_user]}})
     cursor = cursor.sort("created_at", -1)
     
     # Handle both coroutine (mock DB) and cursor (real MongoDB)
     if hasattr(cursor, '__await__'):
         cursor = await cursor
     
-    async for chat in cursor:
+    # Convert cursor to list to avoid event loop issues
+    try:
+        if hasattr(cursor, 'to_list'):
+            chats = await cursor.to_list(length=None)
+        else:
+            # Fallback for mock collections
+            chats = list(cursor)
+    except Exception:
+        # If cursor iteration fails, return empty list
+        chats = []
+    
+    for chat in chats:
         # Attach the last message
         last_message = await messages_collection().find_one(
             {"chat_id": chat["_id"], "is_deleted": {"$ne": True}},

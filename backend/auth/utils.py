@@ -576,50 +576,45 @@ async def get_current_user(
             detail="Invalid token type",
         )
     
-    # CRITICAL FIX: Verify user exists in Atlas by converting string ID to ObjectId
-    from database import IS_PRODUCTION
     from bson import ObjectId
 
     user_id_str = token_data.user_id
 
-    # In production, always verify user exists in Atlas
-    if IS_PRODUCTION:
-        # Resolve users collection from request.app.state.db first (authoritative in Docker)
+    # Always verify/load the user from Atlas so routes can rely on request.state
+    users_col = None
+    try:
+        if request is not None and hasattr(request, "app") and hasattr(request.app, "state"):
+            db = getattr(request.app.state, "db", None)
+            if db is not None:
+                users_col = db["users"]
+    except Exception:
         users_col = None
-        try:
-            if request is not None and hasattr(request, "app") and hasattr(request.app, "state"):
-                db = getattr(request.app.state, "db", None)
-                if db is not None:
-                    users_col = db["users"]
-        except Exception:
-            users_col = None
 
-        # Fallback to database module helper if state is not available
-        if users_col is None:
-            from database import users_collection
-            users_col = users_collection()
+    if users_col is None:
+        from database import users_collection
+        users_col = users_collection()
 
-        # Atlas _id can be ObjectId (preferred) or string (legacy/test). Verify existence for both.
-        existing_user = None
-        if ObjectId.is_valid(user_id_str):
-            object_id = ObjectId(user_id_str)
-            existing_user = await users_col.find_one({"_id": object_id})
-
-            # Fallback: Some deployments store _id as string; accept that only if it exists.
-            if not existing_user:
-                existing_user = await users_col.find_one({"_id": user_id_str})
-        else:
-            # Token sub is not an ObjectId; treat as legacy string id and verify it exists.
-            existing_user = await users_col.find_one({"_id": user_id_str})
-
+    existing_user = None
+    if ObjectId.is_valid(user_id_str):
+        object_id = ObjectId(user_id_str)
+        existing_user = await users_col.find_one({"_id": object_id})
         if not existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found in database",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            existing_user = await users_col.find_one({"_id": user_id_str})
+    else:
+        existing_user = await users_col.find_one({"_id": user_id_str})
 
-        logger.info(f"PRODUCTION: User verified in Atlas: {user_id_str}")
+    if not existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found in database",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        # Attach loaded user doc for downstream route handlers
+        setattr(request.state, "current_user", existing_user)
+    except Exception:
+        pass
 
     return user_id_str
 

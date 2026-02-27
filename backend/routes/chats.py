@@ -20,6 +20,15 @@ logger.setLevel(logging.INFO)
 router = APIRouter(prefix="/chats", tags=["Chats"])
 
 
+def _parse_object_id(value: str, field_name: str) -> ObjectId:
+    if not value or not isinstance(value, str) or not ObjectId.is_valid(value):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {field_name}"
+        )
+    return ObjectId(value)
+
+
 def _to_json_safe(value):
     if isinstance(value, ObjectId):
         return str(value)
@@ -269,8 +278,8 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         async for chat in cursor:
             # Get last message
             last_message = await messages_collection().find_one(
-                {"chat_id": chat["_id"]},
-                sort=[("created_at", -1)]
+                {"chat_id": {"$in": [str(chat["_id"]), chat["_id"]]}},
+                sort=[("created_at", -1)],
             )
             
             chat["last_message"] = last_message
@@ -339,32 +348,35 @@ async def list_chats(current_user: str = Depends(get_current_user)):
 async def pin_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     """Pin a chat to the top of the list for current user"""
     # Verify chat existence and membership
-    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+    chat_oid = _parse_object_id(chat_id, "chat_id")
+    chat = await chats_collection().find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
         
     await users_collection().update_one(
         {"_id": current_user},
-        {"$addToSet": {"pinned_chats": chat_id}}
+        {"$addToSet": {"pinned_chats": str(chat_oid)}}
     )
-    return {"status": "pinned", "chat_id": chat_id}
+    return {"status": "pinned", "chat_id": str(chat_oid)}
 
 
 @router.post("/{chat_id}/unpin_chat")
 async def unpin_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     """Unpin a chat"""
+    chat_oid = _parse_object_id(chat_id, "chat_id")
     await users_collection().update_one(
         {"_id": current_user},
-        {"$pull": {"pinned_chats": chat_id}}
+        {"$pull": {"pinned_chats": str(chat_oid)}}
     )
-    return {"status": "unpinned", "chat_id": chat_id}
+    return {"status": "unpinned", "chat_id": str(chat_oid)}
 
 
 @router.get("/{chat_id}")
 async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     """Get chat details"""
     
-    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+    chat_oid = _parse_object_id(chat_id, "chat_id")
+    chat = await chats_collection().find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -375,45 +387,88 @@ async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
 
 
 @router.get("/{chat_id}/messages")
-async def get_messages(
+async def get_messages_route(
     chat_id: str,
+    request: Request,
     limit: int = 50,
     offset: int = 0,
     before: Optional[str] = None,
     current_user: str = Depends(get_current_user)
 ):
+    return await get_messages(
+        chat_id=chat_id,
+        request=request,
+        limit=limit,
+        offset=offset,
+        before=before,
+        current_user=current_user,
+    )
+
+
+async def get_messages(
+    chat_id: str,
+    request=None,
+    limit: int = 50,
+    offset: int = 0,
+    before: Optional[str] = None,
+    current_user: str = None,
+):
     """Get messages in a chat with pagination"""
 
+    chat_oid = _parse_object_id(chat_id, "chat_id")
+
+    db = None
+    if request is not None:
+        # Query Atlas directly from app state (authoritative)
+        state = getattr(getattr(request, "app", None), "state", None)
+        db = getattr(state, "db", None)
+    if db is None:
+        from database import get_database
+        db = get_database()
+    chats_col = db["chats"]
+    msgs_col = db["messages"]
+
     # Verify user is member
-    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+    chat = await chats_col.find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found"
         )
 
-    
-    # Build query
-    query = {"chat_id": chat_id}
+    # Build query (support legacy mixed types for chat_id in messages)
+    query = {"$or": [{"chat_id": str(chat_oid)}, {"chat_id": chat_oid}]}
     if before:
-        before_msg = await messages_collection().find_one({"_id": before})
-        if before_msg:
-            query["created_at"] = {"$lt": before_msg["created_at"]}
-    
-    # Fetch messages
+        before_oid = _parse_object_id(before, "before")
+        before_msg = await msgs_col.find_one({"_id": before_oid}, {"created_at": 1})
+        if before_msg and before_msg.get("created_at") is not None:
+            query = {
+                "$and": [
+                    query,
+                    {"created_at": {"$lt": before_msg["created_at"]}},
+                ]
+            }
+
+    if limit < 1:
+        limit = 1
+    if limit > 200:
+        limit = 200
+    if offset < 0:
+        offset = 0
+
+    total = await msgs_col.count_documents(query)
+
     messages = []
-    find_result = messages_collection().find(query)
-    # Check if find_result is a coroutine (mock DB) or cursor (real MongoDB)
-    if hasattr(find_result, '__await__'):
-        cursor = await find_result
-    else:
-        cursor = find_result
-    # Apply sort and limit
-    cursor = cursor.sort("created_at", -1).limit(limit)
+    cursor = msgs_col.find(query).sort("created_at", 1).skip(offset).limit(limit)
     async for msg in cursor:
         messages.append(msg)
-    
-    return {"messages": list(reversed(messages))}
+
+    return {
+        "messages": _to_json_safe(messages),
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
 
 
 @router.post("/{chat_id}/messages", status_code=status.HTTP_201_CREATED)
@@ -424,9 +479,11 @@ async def send_message(
     current_user: str = Depends(get_current_user)
 ):
     """Send a message in a chat"""
-    
-    # Verify user is member - chat_id is stored as string in MongoDB
-    chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+
+    chat_oid = _parse_object_id(chat_id, "chat_id")
+
+    # Verify user is member
+    chat = await chats_collection().find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -443,7 +500,7 @@ async def send_message(
     # Create message document
     msg_type = "file" if message.file_id else "text"
     msg_doc = {
-        "chat_id": chat_id,
+        "chat_id": str(chat_oid),
         "sender_id": current_user,
         "type": msg_type,
         "text": message.text,
@@ -463,7 +520,7 @@ async def send_message(
     }
     
     # If this is a saved chat, automatically mark as saved by the user
-    chat = await chats_collection().find_one({"_id": chat_id})
+    chat = await chats_collection().find_one({"_id": chat_oid})
     if chat and chat.get("type") == "saved":
         msg_doc["saved_by"] = [current_user]
         logger.info(f"Message sent to saved chat, marking as saved for user: {current_user}")

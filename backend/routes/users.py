@@ -2776,335 +2776,89 @@ async def get_avatar(
 
 @router.get("/contacts")
 @router.get("/contacts/")
+async def get_contacts_route(
+    request: Request,
+    offset: int = 0,
+    limit: int = 50,
+    current_user: str = Depends(get_current_user),
+):
+    return await get_contacts(
+        request=request,
+        offset=offset,
+        limit=limit,
+        current_user=current_user,
+    )
+
 
 async def get_contacts(
-
+    request=None,
     offset: int = 0,
-
     limit: int = 50,
-
-    current_user: str = Depends(get_current_user)
-
+    current_user: str = None,
 ):
-
-    """Get current user's contacts with pagination"""
+    """Get users excluding the current user (contacts directory) with pagination."""
 
     try:
-
-        # Get user data
-
-        user = await asyncio.wait_for(
-
-            users_collection().find_one({"_id": current_user}),
-
-            timeout=5.0
-
-        )
-
-        
-
-        if not user:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="User not found"
-
-            )
-
-        
-
-        contact_ids = user.get("contacts", [])
-
-        
-
-        if not contact_ids:
-
-            # CRITICAL FIX: Fallback to all users when no contacts available
-
-            _log("info", f"No contacts found for user {current_user}, loading all users as fallback")
-
-            
-
-            # Get all users except current user
-
-            users_col = users_collection()
-
-            
-
-            # Check if using mock DB or real MongoDB
-
-            if hasattr(users_col, "data") and isinstance(getattr(users_col, "data"), dict):
-
-                # Mock DB - filter manually
-
-                all_users = []
-
-                for uid, doc in users_col.data.items():
-
-                    if uid != current_user:  # Exclude current user
-
-                        all_users.append({
-
-                            "id": doc.get("_id", ""),
-
-                            "name": doc.get("name", ""),
-
-                            "email": doc.get("email", ""),
-
-                            "username": doc.get("username"),
-
-                            "avatar_url": doc.get("avatar_url"),
-
-                            "is_online": doc.get("is_online", False),
-
-                            "last_seen": doc.get("last_seen"),
-
-                            "status": doc.get("status", "")
-
-                        })
-
-                
-
-                # Sort by online status first, then by name
-
-                all_users.sort(key=lambda x: (0 if x["is_online"] else 1, x["name"].lower()))
-
-                
-
-                # Apply pagination
-
-                paginated_users = all_users[offset:offset + limit]
-
-                
-
-                return {
-
-                    "contacts": paginated_users,
-
-                    "total": len(all_users),
-
-                    "fallback_used": True
-
-                }
-
-            else:
-
-                # Real MongoDB - use aggregation
-
-                pipeline = [
-
-                    {"$match": {"_id": {"$ne": user_id}}},
-
-                    {"$sort": {"is_online": -1, "name": 1}},
-
-                    {"$skip": offset},
-
-                    {"$limit": limit},
-
-                    {"$project": {
-
-                        "id": "$_id",
-
-                        "name": 1,
-
-                        "email": 1,
-
-                        "username": 1,
-
-                        "avatar_url": 1,
-
-                        "is_online": {"$ifNull": ["$is_online", False]},
-
-                        "last_seen": 1,
-
-                        "status": {"$ifNull": ["$status", ""]}
-
-                    }}
-
-                ]
-
-                
-
-                cursor = users_col.aggregate(pipeline)
-
-                if hasattr(cursor, '__await__'):
-
-                    cursor = await cursor
-
-                
-
-                contacts = []
-
-                async for doc in cursor:
-
-                    contacts.append(doc)
-
-                
-
-                # Get total count
-
-                total_count = await users_col.count_documents({"_id": {"$ne": user_id}})
-
-                
-
-                return {
-
-                    "contacts": contacts,
-
-                    "total": total_count,
-
-                    "fallback_used": True
-
-                }
-
-        
-
-        # Paginate contacts
-
-        paginated_ids = contact_ids[offset:offset + limit]
-
-        
-
-        # Fetch contact details
+        if offset < 0:
+            offset = 0
+        if limit < 1:
+            limit = 1
+        if limit > 200:
+            limit = 200
+
+        db = None
+        if request is not None:
+            state = getattr(request, "app", None)
+            state = getattr(state, "state", None)
+            db = getattr(state, "db", None)
+        if db is None:
+            from database import get_database
+            db = get_database()
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not initialized")
+
+        users_col = db["users"]
+
+        current_oid = _maybe_object_id(current_user)
+        exclude_values = [current_user]
+        if current_oid is not None:
+            exclude_values.append(current_oid)
+
+        query = {"_id": {"$nin": exclude_values}}
+        total = await users_col.count_documents(query)
+
+        projection = {
+            "_id": 1,
+            "name": 1,
+            "email": 1,
+            "username": 1,
+            "avatar_url": 1,
+            "is_online": 1,
+            "last_seen": 1,
+            "status": 1,
+        }
 
         contacts = []
-
-        if paginated_ids:
-
-            users_col = users_collection()
-
-
-
-            # The in-memory mock DB used by tests stores documents in `users_collection().data`
-
-            # and does not fully support nested Mongo operators like {"_id": {"$in": [...]}}.
-
-            if hasattr(users_col, "data") and isinstance(getattr(users_col, "data"), dict):
-
-                results = []
-
-                for uid in paginated_ids:
-
-                    doc = users_col.data.get(uid)
-
-                    if not doc:
-
-                        continue
-
-                    results.append({
-
-                        "id": doc.get("_id", ""),
-
-                        "name": doc.get("name", ""),
-
-                        "email": doc.get("email", ""),
-
-                        "username": doc.get("username"),
-
-                        "avatar_url": doc.get("avatar_url"),
-
-                        "is_online": doc.get("is_online", False),
-
-                        "last_seen": doc.get("last_seen"),
-
-                        "status": doc.get("status"),
-
-                    })
-
-                contacts = results
-
-            else:
-
-                normalized_ids = [_maybe_object_id(uid) for uid in paginated_ids]
-
-                find_result = users_col.find(
-
-                    {"_id": {"$in": normalized_ids}},
-
-                    {
-
-                        "_id": 1,
-
-                        "name": 1,
-
-                        "email": 1,
-
-                        "username": 1,
-
-                        "avatar_url": 1,
-
-                        "is_online": 1,
-
-                        "last_seen": 1,
-
-                        "status": 1,
-
-                        "created_at": 1
-
-                    }
-
-                )
-
-
-
-                # Support both coroutine-based mock DB and real MongoDB cursors
-
-                if hasattr(find_result, '__await__'):
-
-                    cursor = await find_result
-
-                else:
-
-                    cursor = find_result
-
-                
-
-                async def fetch_contacts():
-
-                    results = []
-
-                    async for contact in cursor:
-
-                        results.append({
-
-                            "id": contact.get("_id", ""),
-
-                            "name": contact.get("name", ""),
-
-                            "email": contact.get("email", ""),
-
-                            "username": contact.get("username"),
-
-                            "avatar_url": contact.get("avatar_url"),
-
-                            "is_online": contact.get("is_online", False),
-
-                            "last_seen": contact.get("last_seen"),
-
-                            "status": contact.get("status")
-
-                        })
-
-                    return results
-
-                
-
-                contacts = await asyncio.wait_for(fetch_contacts(), timeout=5.0)
-
-        
+        cursor = users_col.find(query, projection).sort("name", 1).skip(offset).limit(limit)
+        async for doc in cursor:
+            contacts.append(
+                {
+                    "id": str(doc.get("_id")),
+                    "name": doc.get("name", ""),
+                    "email": doc.get("email", ""),
+                    "username": doc.get("username"),
+                    "avatar_url": doc.get("avatar_url"),
+                    "is_online": doc.get("is_online", False),
+                    "last_seen": doc.get("last_seen"),
+                    "status": doc.get("status", ""),
+                }
+            )
 
         return {
-
             "contacts": contacts,
-
-            "total": len(contact_ids),
-
+            "total": total,
             "offset": offset,
-
-            "limit": limit
-
+            "limit": limit,
         }
 
         

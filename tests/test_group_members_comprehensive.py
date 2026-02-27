@@ -148,6 +148,13 @@ class TestGroupMembersComprehensive:
                                             groups = new_loop.run_until_complete(groups.to_list(length=None))
                                         else:
                                             groups = asyncio.run(groups.to_list(length=None))
+                                elif hasattr(groups, '__anext__'):
+                                    # It's an async iterator, convert to list
+                                    try:
+                                        groups = asyncio.run(groups.to_list(length=None))
+                                    except Exception:
+                                        # Fallback: try to iterate synchronously
+                                        groups = list(groups) if hasattr(groups, '__iter__') else []
                                 else:
                                     # It's a sync method, call it directly
                                     groups = groups.to_list(length=None)

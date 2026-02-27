@@ -967,7 +967,7 @@ async def minimize_message_metadata(
         sender_user_id = current_user
         recipient_user_id = request.get("recipient_user_id")
         message_type = request.get("message_type", "text")
-        client_ip = request.get("client_ip", "127.0.0.1")
+        client_ip = request.get("client_ip") or ""
         
         # Minimize metadata
         minimized = await minimizer.minimize_message_metadata(

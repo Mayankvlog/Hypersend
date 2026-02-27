@@ -129,24 +129,43 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[STARTUP] Redis cache initialization failed: {e}")
         # Continue without Redis - use fallback cache
+
+    print("Application startup complete")
     
     yield
     
     # Shutdown
-    if "pytest" not in sys.modules:
-        from database import client
-        if client:
-            client.close()
-            print("[SHUTDOWN] Database connection closed")
-        
-        # Cleanup Redis cache
+    from database import client
+    if client:
         try:
-            await cleanup_cache()
-            print("[SHUTDOWN] Redis cache cleaned up")
-        except Exception as e:
-            print(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
-        
-        print("[SHUTDOWN] All cleanup complete")
+            client.close()
+        except Exception:
+            pass
+        print("[SHUTDOWN] Database connection closed")
+        try:
+            import database as _database
+            _database.client = None
+            _database.db = None
+            try:
+                _database._database_initialized = False
+            except Exception:
+                pass
+            try:
+                _database._init_lock = None
+                _database._init_loop_id = None
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # Cleanup Redis cache
+    try:
+        await cleanup_cache()
+        print("[SHUTDOWN] Redis cache cleaned up")
+    except Exception as e:
+        print(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
+
+    print("[SHUTDOWN] All cleanup complete")
 
 
 app = FastAPI(
@@ -196,23 +215,20 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             url_path = str(request.url.path)
 
             # Enhanced suspicious pattern detection with more comprehensive coverage
-            # CRITICAL FIX: Allow localhost and production domain requests without blocking
-            def is_localhost_or_production(request):
-                """Check if request is from localhost, Docker internal, or production domain"""
+            def is_internal_request(request):
+                """Check if request is from internal Docker network or explicit service hostnames."""
                 client_host = request.client.host if request.client else ""
                 host_header = request.headers.get("host", "").lower()
-                localhost_patterns = [
-                    "localhost",
-                    "127.0.0.1",
+                internal_patterns = [
                     "hypersend_frontend",
                     "hypersend_backend",
                     "frontend",
                     "backend",
+                    "0.0.0.0",
                 ]
-                production_patterns = ["localhost", "127.0.0.1"]
-                return any(
-                    pattern in client_host for pattern in localhost_patterns
-                ) or any(pattern in host_header for pattern in production_patterns)
+                return any(pattern in client_host for pattern in internal_patterns) or any(
+                    pattern in host_header for pattern in internal_patterns
+                )
 
             # CRITICAL FIX: Less aggressive security patterns to avoid false positives
             # Focus on actual attacks, not normal text containing keywords
@@ -326,7 +342,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 "shell_exec($_",
                 "exec($_POST",
                 "preg_replace eval",
-                # SSRF patterns (only clear SSRF, allow localhost)
+                # SSRF patterns (only clear SSRF)
                 "169.254.169.254",
                 "metadata.google.internal",
                 "file:///",
@@ -353,45 +369,34 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 for k, v in dict(request.headers).items()
             }
 
-            # Enhanced security check with localhost/loopback exception for legitimate requests
-            def is_localhost_or_internal():
-                """Check if request is from localhost or internal Docker network"""
+            # Enhanced security check with internal Docker exception for legitimate requests
+            def is_internal_or_service_host():
+                """Check if request is from internal Docker network"""
                 client_host = request.client.host if request.client else ""
-                # Allow common localhost patterns for legitimate health checks and development
-                localhost_patterns = [
-                    "localhost",
-                    "127.0.0.1",
+
+                internal_patterns = [
                     "hypersend_frontend",
                     "hypersend_backend",
                     "frontend",
                     "backend",
+                    "0.0.0.0",
                 ]
 
-                # Also check for production domain in host header
                 host_header = request.headers.get("host", "").lower()
-                production_patterns = ["localhost", "127.0.0.1"]
 
                 return any(
-                    pattern in client_host for pattern in localhost_patterns
-                ) or any(pattern in host_header for pattern in production_patterns)
+                    pattern in client_host for pattern in internal_patterns
+                ) or any(pattern in host_header for pattern in internal_patterns)
 
-            is_internal = is_localhost_or_internal()
+            is_internal = is_internal_or_service_host()
 
-            # Check URL path for suspicious patterns (but allow legitimate localhost and production requests)
+            # Check URL path for suspicious patterns
             # Always allow health check and API root endpoints
             if url_path in ["/health", "/api/v1/health", "/api/v1/", "/api/v1/test"]:
                 is_internal = True  # Force internal for health checks and API root
 
             for pattern in suspicious_patterns:
-                # Skip localhost-related patterns for internal requests
-                if pattern in ["localhost", "127.0.0.1"] and is_internal:
-                    continue
-
-                # Skip production domain patterns
-                if pattern in ["localhost"] and (
-                    "localhost" in url_lower or "localhost" in url_lower
-                ):
-                    continue
+                # No special-case bypass for loopback hosts
 
                 if pattern in url_lower and not is_internal:
                     logger.warning(
@@ -414,7 +419,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         },
                     )
 
-            # Check headers for suspicious patterns (but allow common legitimate headers and localhost)
+            # Check headers for suspicious patterns
             for header_name, header_value in headers_lower.items():
                 # Skip checking certain safe headers
                 safe_headers = [
@@ -450,15 +455,12 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                             hostname.rpartition(":")[0] if ":" in hostname else hostname
                         )
 
-                    # CRITICAL FIX: Allow test client and localhost hosts for testing
-                    # Allow production and testing hosts
+                    # Allow internal service hostnames
                     allowed_hostnames = {
                         "hypersend_frontend",
                         "hypersend_backend",
                         "frontend",
                         "backend",
-                        "localhost",
-                        "127.0.0.1",
                         "0.0.0.0",  # Docker
                     }
 
@@ -498,20 +500,9 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     continue
 
                 for pattern in suspicious_patterns:
-                    # Skip localhost-related patterns for internal requests
-                    if pattern in ["localhost", "127.0.0.1"] and is_internal:
-                        continue
-
-                    # Skip production domain patterns
-                    if pattern in ["hypersend.in.net"] and (
-                        "hypersend.in.net" in header_value
-                        or "hypersend.in.net" in header_value
-                    ):
-                        continue
-
                     if pattern in header_value:
                         logger.warning(
-                            f"[SECURITY] Suspicious header blocked: {pattern} in {header_name}"
+                            f"[SECURITY] Suspicious pattern found in header {header_name}: {pattern}"
                         )
                         return JSONResponse(
                             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1443,7 +1434,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
 # TrustedHost middleware for additional security
 # TrustedHost middleware disabled for debugging
 # if not settings.DEBUG and os.getenv("ENABLE_TRUSTED_HOST", "false").lower() == "true":
-#     allowed_hosts = os.getenv("ALLOWED_HOSTS", "hypersend.in.net,127.0.0.1").split(",")
+#     allowed_hosts = os.getenv("ALLOWED_HOSTS", "hypersend.in.net").split(",")
 #     app.add_middleware(
 #         TrustedHostMiddleware,
 #         allowed_hosts=allowed_hosts
@@ -1512,13 +1503,12 @@ async def handle_options_request(full_path: str, request: Request):
                 ]
             )
         else:
-            # Development: Allow more origins for testing
+            # Development: Allow internal service origins for testing
             allowed_origins.extend(
                 [
                     "https://hypersend.in.net",
                     "https://www.hypersend.in.net",
-                    "http://127.0.0.1:3000",
-                                        "http://hypersend_frontend:80",
+                    "http://hypersend_frontend:80",
                     "http://frontend:80",
                 ]
             )
@@ -1552,16 +1542,16 @@ async def api_status(request: Request):
     Detailed API status endpoint for debugging connection issues.
     RESTRICTED: Only accessible in DEBUG mode or from hypersend.in.net.
     """
-    # Only allow access in debug mode or from hypersend.in.net
+    # Only allow access in debug mode or from internal service network
     client_host = request.client.host if request.client else "unknown"
 
-    if not settings.DEBUG and client_host not in ["localhost", "127.0.0.1"]:
+    if not settings.DEBUG and client_host not in ["hypersend_backend", "backend", "0.0.0.0"]:
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
             content={
                 "status_code": 403,
                 "error": "Not Found",
-                "detail": "This endpoint is only accessible in debug mode or from localhost",
+                "detail": "This endpoint is only accessible in debug mode",
             },
         )
 
@@ -1888,13 +1878,12 @@ async def preflight_alias_endpoints(request: Request):
                 ]
             )
         else:
-            # Development: Allow more origins for testing
+            # Development: Allow internal service origins for testing
             allowed_origins.extend(
                 [
                     "https://hypersend.in.net",
                     "https://www.hypersend.in.net",
-                    "http://127.0.0.1:3000",
-                                        "http://hypersend_frontend:80",
+                    "http://hypersend_frontend:80",
                     "http://frontend:80",
                 ]
             )

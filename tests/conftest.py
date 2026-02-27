@@ -14,8 +14,8 @@ from pathlib import Path
 pytest_plugins = ('pytest_asyncio',)
 
 # Set environment variables for testing
-os.environ['USE_MOCK_DB'] = 'True'
-os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
+os.environ.setdefault('USE_MOCK_DB', 'False')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
 os.environ['ENVIRONMENT'] = 'test'
 
 # Set longer timeout for HTTP requests to prevent connection pool issues
@@ -48,9 +48,10 @@ if backend_path not in sys.path:
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-# Set USE_MOCK_DB for all tests to avoid database connection issues
-# IMPORTANT: This must be set BEFORE importing backend modules
-os.environ['USE_MOCK_DB'] = 'True'
+# Configure DB mode for tests.
+# IMPORTANT: This must be set BEFORE importing backend modules.
+# If the test runner already provided Atlas env vars, do not override them.
+os.environ.setdefault('USE_MOCK_DB', 'False')
 os.environ['DEBUG'] = 'True'  # Enable debug mode for tests
 
 # Add backend to sys.modules to fix relative imports
@@ -116,3 +117,19 @@ async def initialize_test_database():
     except Exception as e:
         print(f"[CONFTEST] Database initialization failed: {e}")
         # Continue with tests - mock database should be available
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _init_atlas_db_for_tests(event_loop):
+    import database as _database
+    event_loop.run_until_complete(_database.init_database())
+    from backend.main import app as _app
+    _app.state.db = _database.db
+    _app.state.client = _database.client
