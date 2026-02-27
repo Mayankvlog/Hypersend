@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from typing import Optional
 from datetime import datetime, timezone
 from bson import ObjectId
+import asyncio
 
 try:
     from ..models import ChatCreate, MessageCreate, ChatType
@@ -12,6 +13,11 @@ except ImportError:
 
 from auth.utils import get_current_user, get_current_user_for_upload
 import logging
+
+import sys
+
+sys.modules.setdefault("routes.chats", sys.modules[__name__])
+sys.modules.setdefault("backend.routes.chats", sys.modules[__name__])
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -70,8 +76,10 @@ async def chats_options():
 
 
 @router.get("/saved", response_model=dict)
-async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)):
+async def get_or_create_saved_chat(current_user: Optional[str] = Depends(get_current_user)):
     """Get or create personal Saved Messages chat for current user"""
+    if current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication credentials")
     logger.info(f"Looking for saved chat for user: {current_user}")
     # CRITICAL FIX: Use case-insensitive search for database name compatibility
     existing = await chats_collection().find_one({
@@ -83,6 +91,8 @@ async def get_or_create_saved_chat(current_user: str = Depends(get_current_user)
         logger.info(f"Exact match failed, trying case-insensitive search for user: {current_user}")
         # Get all saved chats and filter by members case-insensitively
         all_saved_cursor = chats_collection().find({"type": "saved"})
+        if asyncio.iscoroutine(all_saved_cursor) or (hasattr(all_saved_cursor, "__await__") and not hasattr(all_saved_cursor, "__aiter__")):
+            all_saved_cursor = await all_saved_cursor
         all_saved = await all_saved_cursor.to_list(length=None)
         
         # Search for existing chat with current user as member
@@ -130,9 +140,21 @@ async def get_saved_messages(
     
     logger.info(f"Getting saved messages for user: {current_user}")
     messages = []
+
     cursor = messages_collection().find({"saved_by": current_user})
-    async for msg in cursor:
-        messages.append(msg)
+    if asyncio.iscoroutine(cursor):
+        cursor = await cursor
+
+    if hasattr(cursor, "__aiter__"):
+        async for msg in cursor:
+            messages.append(msg)
+    elif hasattr(cursor, "to_list"):
+        messages = await cursor.to_list(length=limit)
+    else:
+        try:
+            messages = list(cursor)
+        except Exception:
+            messages = []
     
     # Sort messages by created_at in ascending order (oldest first), preserving insertion order for equal timestamps
     messages.sort(key=lambda x: x.get("created_at", datetime.now(timezone.utc)))
@@ -263,17 +285,7 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         pinned_chats = user_doc.get("pinned_chats", []) if user_doc else []
         
         chats = []
-        find_result = chats_collection().find({"members": {"$in": [current_user]}})
-        
-        # Handle both mock database (coroutine) and real MongoDB (cursor)
-        if hasattr(find_result, '__await__'):
-            # Mock database - await the coroutine
-            cursor = await find_result
-        else:
-            # Real MongoDB - use the cursor directly
-            cursor = find_result
-        
-        cursor = cursor.sort("created_at", -1)
+        cursor = chats_collection().find({"members": {"$in": [current_user]}}).sort("created_at", -1)
         
         async for chat in cursor:
             # Get last message
@@ -436,8 +448,8 @@ async def get_messages(
             detail="Chat not found"
         )
 
-    # Build query (support legacy mixed types for chat_id in messages)
-    query = {"$or": [{"chat_id": str(chat_oid)}, {"chat_id": chat_oid}]}
+    # Build query
+    query = {"chat_id": chat_oid}
     if before:
         before_oid = _parse_object_id(before, "before")
         before_msg = await msgs_col.find_one({"_id": before_oid}, {"created_at": 1})
@@ -497,22 +509,26 @@ async def send_message(
             detail="Message must have text or file_id"
         )
     
-    # Create message document
+    if not ObjectId.is_valid(current_user):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
+
+    # Create message document (Atlas ObjectId schema)
     msg_type = "file" if message.file_id else "text"
+    now = datetime.now(timezone.utc)
     msg_doc = {
-        "chat_id": str(chat_oid),
-        "sender_id": current_user,
+        "chat_id": chat_oid,
+        "sender_id": ObjectId(current_user),
+        "content": message.text,
         "type": msg_type,
+        "created_at": now,
+        # Backward compatibility fields still used in other parts of the codebase
         "text": message.text,
         "file_id": message.file_id,
-        # Store language code if provided (frontend may send it)
         "language": message.language,
         "reply_to_message_id": message.reply_to_message_id,
         "scheduled_at": message.scheduled_at,
-        "created_at": datetime.now(timezone.utc),
-        # Message features
         "reactions": {},
-        "read_by": [{"user_id": current_user, "read_at": datetime.now(timezone.utc)}],
+        "read_by": [{"user_id": ObjectId(current_user), "read_at": now}],
         "is_pinned": False,
         "is_edited": False,
         "edit_history": [],
@@ -520,14 +536,30 @@ async def send_message(
     }
     
     # If this is a saved chat, automatically mark as saved by the user
-    chat = await chats_collection().find_one({"_id": chat_oid})
-    if chat and chat.get("type") == "saved":
-        msg_doc["saved_by"] = [current_user]
+    if chat.get("type") == "saved":
+        msg_doc["saved_by"] = [ObjectId(current_user)]
         logger.info(f"Message sent to saved chat, marking as saved for user: {current_user}")
     
     result = await messages_collection().insert_one(msg_doc)
     inserted_id = result.inserted_id
     logger.info(f"Message inserted with ID: {inserted_id}")
+
+    # Update chat last_message and updated_at
+    await chats_collection().update_one(
+        {"_id": chat_oid},
+        {
+            "$set": {
+                "last_message": {
+                    "message_id": inserted_id,
+                    "sender_id": ObjectId(current_user),
+                    "type": msg_type,
+                    "content": message.text,
+                    "created_at": now,
+                },
+                "updated_at": now,
+            }
+        },
+    )
     
     return {"message_id": str(inserted_id), "created_at": msg_doc["created_at"]}
 

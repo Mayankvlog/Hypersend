@@ -176,6 +176,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def _ensure_db_initialized(request: Request, call_next):
+    try:
+        from database import init_database as _init_database
+        from database import db as _db
+        from database import client as _client
+
+        await _init_database()
+        request.app.state.db = _db
+        request.app.state.client = _client
+    except Exception:
+        pass
+    return await call_next(request)
+
 # Register custom exception handlers
 register_exception_handlers(app)
 

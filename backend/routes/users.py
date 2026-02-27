@@ -1,3 +1,13 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import List, Optional
+import logging
+import asyncio
+
+import sys
+
+sys.modules.setdefault("routes.users", sys.modules[__name__])
+sys.modules.setdefault("backend.routes.users", sys.modules[__name__])
+
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
 
 from fastapi.responses import JSONResponse, FileResponse
@@ -384,6 +394,23 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
 
             detail=f"Failed to fetch user: {str(e)}"
 
+        )
+
+    except Exception as e:
+
+        if "timeout" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail={
+                    "status": "ERROR",
+                    "message": "Database operation timed out. Please try again later.",
+                    "data": None,
+                },
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch user",
         )
 
 
@@ -2819,12 +2846,35 @@ async def get_contacts(
 
         users_col = db["users"]
 
+        # Load current user's contacts and return only those.
+        current_doc = None
         current_oid = _maybe_object_id(current_user)
-        exclude_values = [current_user]
         if current_oid is not None:
-            exclude_values.append(current_oid)
+            current_doc = await users_col.find_one({"_id": current_oid})
+        if current_doc is None:
+            current_doc = await users_col.find_one({"_id": current_user})
+        if current_doc is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-        query = {"_id": {"$nin": exclude_values}}
+        contacts_ids = current_doc.get("contacts") or []
+        if not isinstance(contacts_ids, list):
+            contacts_ids = []
+
+        contact_oids = []
+        contact_strs = []
+        for cid in contacts_ids:
+            if cid is None:
+                continue
+            if isinstance(cid, str) and ObjectId.is_valid(cid):
+                contact_oids.append(ObjectId(cid))
+                contact_strs.append(cid)
+            else:
+                contact_strs.append(str(cid))
+
+        if not contact_oids and not contact_strs:
+            return {"contacts": [], "total": 0, "offset": offset, "limit": limit}
+
+        query = {"_id": {"$in": list(set(contact_oids + contact_strs))}}
         total = await users_col.count_documents(query)
 
         projection = {

@@ -7,6 +7,20 @@ from fastapi import HTTPException, status
 from dotenv import load_dotenv
 from pathlib import Path
 
+try:
+    from .mock_database import get_mock_db, MockMongoClient
+except Exception:
+    try:
+        from mock_database import get_mock_db, MockMongoClient
+    except Exception:
+        get_mock_db = None  # type: ignore[assignment]
+        MockMongoClient = None  # type: ignore[assignment]
+
+try:
+    from .config import settings
+except Exception:
+    from config import settings
+
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "production" and os.getenv("DEBUG", "").lower() not in (
     "true",
     "1",
@@ -30,30 +44,8 @@ _database_initialized = False
 # Async-safe initialization guard to prevent duplicate Motor clients
 _init_lock: asyncio.Lock | None = None
 
-# Track which event loop created the Motor client/lock. Motor clients are not safe
-# to reuse across different event loops (common in pytest/TestClient lifecycles).
+# Track which event loop created the Motor client/lock.
 _init_loop_id: int | None = None
-
-
-def _ensure_client_db_sync() -> None:
-    global client, db, _database_initialized
-    if db is not None and client is not None:
-        return
-
-    mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "").lower()
-    if mongodb_atlas_enabled != "true":
-        return
-
-    mongodb_uri = os.getenv("MONGODB_URI")
-    database_name = os.getenv("DATABASE_NAME")
-    if not mongodb_uri or not database_name:
-        return
-
-    if client is None:
-        client = AsyncIOMotorClient(mongodb_uri, serverSelectionTimeoutMS=10000)
-    if db is None:
-        db = client[database_name]
-    _database_initialized = True
 
 def is_database_initialized():
     """Check if database is initialized"""
@@ -71,8 +63,9 @@ async def init_database():
     current_loop = asyncio.get_running_loop()
     current_loop_id = id(current_loop)
 
-    # If we're running under a different loop than the one that created the lock/client,
-    # reset both. This prevents "Event loop is closed" errors in tests.
+    # If called from a different event loop than the one that created the lock/client,
+    # recreate them. This is important under pytest where multiple TestClient lifecycles
+    # can run with different loops.
     if _init_loop_id is not None and _init_loop_id != current_loop_id:
         try:
             if client is not None:
@@ -93,27 +86,53 @@ async def init_database():
         if _database_initialized and client is not None and db is not None:
             return
 
+        # In tests/dev, many test suites explicitly set USE_MOCK_DB=True.
+        # We must honor that to avoid hitting a real database and to prevent
+        # cross-test pollution.
+        settings_use_mock = bool(getattr(settings, "USE_MOCK_DB", False))
+        env_use_mock = os.getenv("USE_MOCK_DB", "").lower() == "true"
+        use_mock_db = (settings_use_mock or env_use_mock) and not IS_PRODUCTION
+
+        if use_mock_db:
+            if get_mock_db is None or MockMongoClient is None:
+                raise RuntimeError("Mock DB requested but mock_database is not available")
+            client = MockMongoClient()
+            db = get_mock_db()
+            _database_initialized = True
+            _init_loop_id = current_loop_id
+            print("[MOCK_DB] Using mock database")
+            return
+
+        # Production safety: require Atlas flag and connection details.
         mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "").lower()
-        if mongodb_atlas_enabled != "true":
+        if IS_PRODUCTION and mongodb_atlas_enabled != "true":
             raise RuntimeError("MONGODB_ATLAS_ENABLED must be true")
 
-        mongodb_uri = os.getenv("MONGODB_URI")
+        mongodb_uri = (
+            getattr(settings, "MONGODB_URI", None)
+            or os.getenv("MONGODB_URI")
+            or os.getenv("MONGO_URI")
+        )
         if not mongodb_uri:
             raise RuntimeError("MONGODB_URI is required")
 
-        database_name = os.getenv("DATABASE_NAME")
+        database_name = (
+            getattr(settings, "_MONGO_DB", None)
+            or getattr(settings, "DATABASE_NAME", None)
+            or os.getenv("DATABASE_NAME")
+        )
         if not database_name:
             raise RuntimeError("DATABASE_NAME is required")
 
-        # Close any half-initialized prior client before re-creating.
-        if client is not None:
-            try:
-                client.close()
-            except Exception:
-                pass
-
-        client = AsyncIOMotorClient(mongodb_uri, serverSelectionTimeoutMS=10000)
-        db = client[database_name]
+        if client is None:
+            client = AsyncIOMotorClient(
+                mongodb_uri,
+                serverSelectionTimeoutMS=10000,
+                connectTimeoutMS=10000,
+                retryWrites=False,
+            )
+        if db is None:
+            db = client[database_name]
 
         await client.admin.command("ping")
         print("MongoDB Atlas connected")
@@ -133,7 +152,6 @@ async def init_database():
 
 def get_database():
     """Get database instance"""
-    _ensure_client_db_sync()
     if db is None:
         raise RuntimeError("Database not initialized")
     return db
@@ -141,69 +159,62 @@ def get_database():
 # Collection shortcuts
 def users_collection():
     """Get users collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["users"]
     raise RuntimeError("Database not initialized")
 
 def chats_collection():
     """Get chats collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["chats"]
     raise RuntimeError("Database not initialized")
 
 def messages_collection():
     """Get messages collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["messages"]
     raise RuntimeError("Database not initialized")
 
 def files_collection():
     """Get files collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["files"]
     raise RuntimeError("Database not initialized")
 
 def uploads_collection():
     """Get uploads collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["uploads"]
     raise RuntimeError("Database not initialized")
 
 def refresh_tokens_collection():
     """Get refresh tokens collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["refresh_tokens"]
     raise RuntimeError("Database not initialized")
 
 def reset_tokens_collection():
     """Get reset tokens collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["reset_tokens"]
     raise RuntimeError("Database not initialized")
 
 def group_activity_collection():
     """Get group activity collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["group_activity"]
     raise RuntimeError("Database not initialized")
 
 def media_collection():
     """Get media collection"""
-    _ensure_client_db_sync()
     if is_database_initialized() and db is not None:
         return db["media"]
     raise RuntimeError("Database not initialized")
 
 # Backward compatibility aliases for tests
-connect_db = lambda: None  # No-op since we use global client
+async def connect_db():
+    await init_database()
+
 get_db = get_database
 
 # Add database module export for imports

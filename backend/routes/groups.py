@@ -466,21 +466,32 @@ async def list_groups(current_user: str = Depends(get_current_user)):
     """List groups for current user."""
     groups = []
     cursor = chats_collection().find({"type": "group", "members": {"$in": [current_user]}})
-    cursor = cursor.sort("created_at", -1)
-    
-    # Handle both coroutine (mock DB) and cursor (real MongoDB)
-    if hasattr(cursor, '__await__'):
-        cursor = await cursor
-    
-    # Convert cursor to list to avoid event loop issues
+
+    # Some test mocks make sort() async, returning a coroutine.
     try:
-        if hasattr(cursor, 'to_list'):
+        cursor_sorted = cursor.sort("created_at", -1)
+        if hasattr(cursor_sorted, "__await__") and not hasattr(cursor_sorted, "__aiter__"):
+            cursor = await cursor_sorted
+        else:
+            cursor = cursor_sorted
+    except Exception:
+        # If sort is not supported, continue without sorting.
+        pass
+
+    # Convert cursor to list with broad compatibility across Motor + mocks.
+    chats = []
+    try:
+        if hasattr(cursor, "__await__") and not hasattr(cursor, "__aiter__"):
+            cursor = await cursor
+
+        if hasattr(cursor, "__aiter__"):
+            async for doc in cursor:
+                chats.append(doc)
+        elif hasattr(cursor, "to_list"):
             chats = await cursor.to_list(length=None)
         else:
-            # Fallback for mock collections
             chats = list(cursor)
     except Exception:
-        # If cursor iteration fails, return empty list
         chats = []
     
     for chat in chats:

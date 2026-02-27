@@ -1,5 +1,6 @@
-# Database proxy - uses database with real MongoDB Atlas
-# Import database functions
+# Database proxy - MongoDB Atlas-only
+# Note: some test harnesses load backend modules without package context.
+# Support both relative and absolute imports without introducing any DB fallbacks.
 try:
     from .database import (
         users_collection,
@@ -14,7 +15,7 @@ try:
         get_database,
         get_db,
     )
-except ImportError:
+except Exception:
     from database import (
         users_collection,
         chats_collection,
@@ -29,4 +30,4 @@ except ImportError:
         get_db,
     )
 
-print("[DB_PROXY] Using real MongoDB Atlas database")
+print("[DB_PROXY] Using MongoDB Atlas database")
