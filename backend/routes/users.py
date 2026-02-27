@@ -278,10 +278,22 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         from bson import ObjectId
         
         # Add a 5-second timeout to prevent hanging
-        user = await asyncio.wait_for(
-            users_collection().find_one({"_id": ObjectId(current_user)}),
-            timeout=5.0
-        )
+        user = None
+        if ObjectId.is_valid(current_user):
+            user = await asyncio.wait_for(
+                users_collection().find_one({"_id": ObjectId(current_user)}),
+                timeout=5.0,
+            )
+            if not user:
+                user = await asyncio.wait_for(
+                    users_collection().find_one({"_id": current_user}),
+                    timeout=5.0,
+                )
+        else:
+            user = await asyncio.wait_for(
+                users_collection().find_one({"_id": current_user}),
+                timeout=5.0,
+            )
 
         
 

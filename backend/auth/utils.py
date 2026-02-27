@@ -599,16 +599,19 @@ async def get_current_user(
             from database import users_collection
             users_col = users_collection()
 
-        # Convert to ObjectId for Atlas query (production stores _id as ObjectId)
-        if not ObjectId.is_valid(user_id_str):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token subject",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        # Atlas _id can be ObjectId (preferred) or string (legacy/test). Verify existence for both.
+        existing_user = None
+        if ObjectId.is_valid(user_id_str):
+            object_id = ObjectId(user_id_str)
+            existing_user = await users_col.find_one({"_id": object_id})
 
-        object_id = ObjectId(user_id_str)
-        existing_user = await users_col.find_one({"_id": object_id})
+            # Fallback: Some deployments store _id as string; accept that only if it exists.
+            if not existing_user:
+                existing_user = await users_col.find_one({"_id": user_id_str})
+        else:
+            # Token sub is not an ObjectId; treat as legacy string id and verify it exists.
+            existing_user = await users_col.find_one({"_id": user_id_str})
+
         if not existing_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
