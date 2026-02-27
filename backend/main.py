@@ -176,21 +176,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-@app.middleware("http")
-async def _ensure_db_initialized(request: Request, call_next):
-    try:
-        from database import init_database as _init_database
-        from database import db as _db
-        from database import client as _client
-
-        await _init_database()
-        request.app.state.db = _db
-        request.app.state.client = _client
-    except Exception:
-        pass
-    return await call_next(request)
-
 # Register custom exception handlers
 register_exception_handlers(app)
 
@@ -1768,51 +1753,17 @@ async def contacts_route(
     return await users.get_contacts(offset=offset, limit=limit, current_user=current_user)
 
 
-@app.get("/api/v1/chats/{chat_id}/messages", tags=["Chats"])
-@app.get("/api/v1/chats/{chat_id}/messages/", tags=["Chats"])
-async def chat_messages_alias_get(
-    chat_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    before: Optional[str] = None,
-    current_user: str = Depends(get_current_user),
-):
-    return await chats.get_messages(
-        chat_id=chat_id,
-        limit=limit,
-        offset=offset,
-        before=before,
-        current_user=current_user,
-    )
-
-
-@app.post("/api/v1/chats/{chat_id}/messages", tags=["Chats"], status_code=status.HTTP_201_CREATED)
-@app.post("/api/v1/chats/{chat_id}/messages/", tags=["Chats"], status_code=status.HTTP_201_CREATED)
-async def chat_messages_alias_post(
-    chat_id: str,
-    request: Request,
-    message: MessageCreate,
-    current_user: str = Depends(get_current_user),
-):
-    return await chats.send_message(
-        chat_id=chat_id,
-        request=request,
-        message=message,
-        current_user=current_user,
-    )
-
-
 # ====================
 # ROUTER REGISTRATION
 # ====================
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
-app.include_router(chats.router, prefix="/api/v1")
+app.include_router(chats.router, prefix="/api/v1/chats")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
 app.include_router(e2ee_messages.router, prefix="/api/v1")  # E2EE encrypted messages
-app.include_router(files.router, prefix="/api/v1")
+app.include_router(files.router, prefix="/api/v1/files")
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")

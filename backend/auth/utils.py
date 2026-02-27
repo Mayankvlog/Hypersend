@@ -554,40 +554,6 @@ async def get_current_user(
     
     token = credentials.credentials
 
-    user_agent = ""
-    try:
-        user_agent = (request.headers.get("user-agent", "") if request is not None else "")
-    except Exception:
-        user_agent = ""
-    is_testclient = "testclient" in user_agent.lower()
-
-    # Some tests incorrectly wrap synchronous token creation in an async helper,
-    # resulting in Authorization: "Bearer None". Allow a deterministic fallback
-    # user id in debug/testclient only so downstream endpoints can be exercised.
-    if (bool(getattr(settings, "DEBUG", False)) or is_testclient) and token in (
-        "None",
-        "fake_test_token_for_testing",
-    ):
-        return "507f1f77bcf86cd799439011"
-
-    # Test-only compatibility: accept the legacy fake token format used throughout
-    # the test suite: "fake_token_for_<user_id>".
-    # This does NOT enable any mock DB; it only bypasses JWT parsing for tests.
-    try:
-        if isinstance(token, str) and token.startswith("fake_token_for_"):
-            user_id_str = token[len("fake_token_for_") :]
-            if not user_id_str:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid authentication credentials",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            return user_id_str
-    except HTTPException:
-        raise
-    except Exception:
-        pass
-
     token_data = decode_token(token)
     
     if token_data.token_type != "access":
@@ -629,10 +595,6 @@ async def get_current_user(
         existing_user = None
 
     if not existing_user:
-        # In tests/debug, we allow requests to proceed with a valid JWT subject
-        # even if the corresponding user document doesn't exist.
-        if bool(getattr(settings, "DEBUG", False)) or is_testclient:
-            return user_id_str
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found in database",

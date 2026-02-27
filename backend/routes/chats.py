@@ -23,7 +23,7 @@ sys.modules.setdefault("backend.routes.chats", sys.modules[__name__])
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-router = APIRouter(prefix="/chats", tags=["Chats"])
+router = APIRouter(prefix="", tags=["Chats"])
 
 
 def _parse_object_id(value: str, field_name: str) -> ObjectId:

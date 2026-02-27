@@ -812,7 +812,7 @@ def detect_binary_content(content: bytes) -> dict:
     return {"is_binary": False, "reason": "safe_content"}
 
 
-router = APIRouter(prefix="/files", tags=["Files"])
+router = APIRouter(prefix="", tags=["Files"])
 
 
 def get_secure_cors_origin(request_origin: Optional[str]) -> str:
@@ -876,7 +876,7 @@ upload_complete_limiter = RateLimiter(
 
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(
-    request: Request, current_user: Optional[str] = Depends(get_current_user_optional)
+    request: Request, current_user: str = Depends(get_current_user)
 ):
     """
     WhatsApp-style ephemeral file upload initialization.
@@ -1199,22 +1199,13 @@ async def initialize_upload(
         from bson import ObjectId
         from datetime import datetime as dt
 
-        upload_user_id: Any
-        if current_user == "anonymous":
-            upload_user_id = "anonymous"
-        else:
-            # In test/mock DB, user IDs are often simple strings like "1".
-            # Accept non-ObjectId identifiers outside production to keep tests stable.
-            if ObjectId.is_valid(current_user):
-                upload_user_id = ObjectId(current_user)
-            else:
-                if not IS_PRODUCTION:
-                    upload_user_id = str(current_user)
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid user_id",
-                    )
+        if not ObjectId.is_valid(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid user_id",
+            )
+
+        upload_user_id = ObjectId(current_user)
 
         upload_id = str(uuid.uuid4())
         now = dt.now(timezone.utc)
@@ -1222,13 +1213,12 @@ async def initialize_upload(
             "upload_id": upload_id,
             "user_id": upload_user_id,
             "filename": filename,
-            "mime_type": mime_type,
-            "chat_id": chat_id,
             "file_size": file_size,
             "chunk_size": chunk_size,
             "total_chunks": total_chunks,
             "uploaded_chunks": [],
             "created_at": now,
+            "updated_at": now,
             "status": "initialized",
         }
         uploads_col = _safe_collection(uploads_collection)
@@ -1286,7 +1276,7 @@ async def upload_chunk(
     upload_id: str,
     request: Request,
     chunk_index: int = Query(...),
-    current_user: Optional[str] = Depends(get_current_user_optional),
+    current_user: str = Depends(get_current_user),
 ):
     """Upload a single file chunk with streaming support"""
 
@@ -1298,7 +1288,7 @@ async def upload_chunk(
         )
 
     # Rate limiting check (before DB operations)
-    limiter_key = f"{current_user or 'anonymous'}:{upload_id}"
+    limiter_key = f"{current_user}:{upload_id}"
     if not upload_chunk_limiter.is_allowed(limiter_key):
         # Direct function-call unit test expects 412. Real HTTP flows and
         # comprehensive HTTP status code tests expect 429.
@@ -1386,9 +1376,19 @@ async def upload_chunk(
 
     from datetime import datetime as dt
 
+    from bson import ObjectId
+    if not ObjectId.is_valid(current_user):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
+
     upload = await _maybe_await(uploads_collection().find_one({"upload_id": upload_id}))
     if not upload:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found")
+
+    if upload.get("user_id") != ObjectId(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to upload chunks for this upload",
+        )
 
     await _maybe_await(
         uploads_collection().update_one(
@@ -1403,13 +1403,13 @@ async def upload_chunk(
     return ChunkUploadResponse(upload_id=upload_id, chunk_index=int(chunk_index), status="received")
 
 
-@router.post("/{upload_id}/complete", response_model=FileCompleteResponse)
+@router.post("/{upload_id}/complete", response_model=dict)
 async def complete_upload(
     upload_id: str,
     request: Request,
     current_user: str = Depends(get_current_user),
 ):
-    """Complete file upload and assemble chunks"""
+    """Complete file upload session (Atlas-only)."""
 
     # Validate HTTP method
     if request.method != "POST":
@@ -1422,9 +1422,6 @@ async def complete_upload(
             },
             headers={"Allow": "POST, OPTIONS"},
         )
-
-    # CRITICAL FIX: Allow anonymous uploads - authentication handled at permission check level
-    # current_user can be None for anonymous uploads
 
     # Enhanced logging for debugging large file uploads
     _log(
@@ -1447,274 +1444,64 @@ async def complete_upload(
         )
 
     try:
-        # CRITICAL FIX: Validate upload_id before querying database
         if (
             not upload_id
             or upload_id == "null"
             or upload_id == "undefined"
             or upload_id.strip() == ""
         ):
-            _log(
-                "error",
-                f"Invalid upload_id in complete endpoint: {repr(upload_id)}",
-                {
-                    "user_id": current_user,
-                    "operation": "file_complete",
-                    "upload_id": upload_id,
-                    "client_ip": request.client.host if request.client else "unknown",
-                    "error": "Frontend did not capture uploadId from init response",
-                },
-            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid upload ID: {upload_id}. Did you call /init first? Check that uploadId was captured correctly.",
+                detail=f"Invalid upload ID: {upload_id}",
             )
 
-        # Get upload record with database connection check
-        try:
-            # CRITICAL FIX: Ensure database is connected before querying
-            try:
-                get_db()  # This will raise if database is not connected
-            except RuntimeError as db_error:
-                _log(
-                    "error",
-                    f"Database not connected: {str(db_error)}",
-                    {
-                        "user_id": current_user,
-                        "operation": "finalize_upload",
-                        "upload_id": upload_id,
-                    },
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Database service temporarily unavailable - please retry",
-                )
+        from bson import ObjectId
+        if not ObjectId.is_valid(current_user):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
 
-            upload_doc = await asyncio.wait_for(
-                uploads_collection().find_one({"_id": upload_id}),
-                timeout=2.0,  # Reduced from 5.0 to 2.0
-            )
-        except asyncio.TimeoutError:
-            _log(
-                "error",
-                f"Database timeout fetching upload: {upload_id}",
-                {
-                    "user_id": current_user,
-                    "operation": "finalize_upload",
-                    "upload_id": upload_id,
-                },
-            )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Database timeout - please retry",
-            )
-
-        # CRITICAL FIX: Handle None result properly (not timeout)
+        uploads_col = _safe_collection(uploads_collection)
+        upload_doc = await _maybe_await(uploads_col.find_one({"upload_id": upload_id}))
         if upload_doc is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Upload not found or expired",
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found")
 
-        # CRITICAL FIX: Handle user_id comparison - enforce strict permission check
-        upload_user_id = upload_doc.get("user_id") or upload_doc.get("owner_id")
-
-        # Enforce that user matches - allow anonymous uploads to be completed anonymously
-        if current_user is not None and upload_user_id != current_user:
-            _log(
-                "warning",
-                f"Permission check failed for upload completion",
-                {
-                    "user_id": current_user,
-                    "upload_user_id": upload_user_id,
-                    "operation": "file_complete",
-                    "upload_id": upload_id,
-                    "mismatch": f"{current_user} != {upload_user_id}",
-                },
-            )
+        upload_user_id = upload_doc.get("user_id")
+        if upload_user_id != ObjectId(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to complete this upload",
             )
 
-        # CRITICAL FIX: Allow anonymous upload completion when both are None
-        if current_user is None and upload_user_id is not None:
-            _log(
-                "warning",
-                f"Permission check failed - anonymous user trying to complete authenticated upload",
-                {
-                    "user_id": current_user,
-                    "upload_user_id": upload_user_id,
-                    "operation": "file_complete",
-                    "upload_id": upload_id,
-                    "mismatch": "anonymous user cannot complete authenticated upload",
-                },
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to complete this upload",
-            )
-
-        # Verify all chunks have been uploaded
-        total_chunks = upload_doc.get("total_chunks", 0)
-        uploaded_chunks = upload_doc.get("uploaded_chunks", [])
-
-        # CRITICAL FIX: Handle MockCollection in tests by converting to list
-        if hasattr(uploaded_chunks, "__len__") and not isinstance(
-            uploaded_chunks, (list, set, tuple)
-        ):
-            try:
-                uploaded_chunks = list(uploaded_chunks)
-            except (TypeError, ValueError):
-                uploaded_chunks = []
-
-        # CRITICAL FIX: Validate chunk data integrity
-        if not isinstance(total_chunks, int) or total_chunks <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid total_chunks count in upload record",
-            )
-
+        total_chunks = upload_doc.get("total_chunks")
+        uploaded_chunks = upload_doc.get("uploaded_chunks") or []
+        if not isinstance(total_chunks, int):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid total_chunks")
         if not isinstance(uploaded_chunks, list):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid uploaded_chunks")
+        if total_chunks != len(uploaded_chunks):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid uploaded_chunks format in upload record",
+                detail="Not all chunks have been uploaded",
             )
 
-        expected_chunks = set(range(total_chunks))
-        actual_chunks = set(uploaded_chunks)
-
-        if expected_chunks != actual_chunks:
-            missing = sorted(list(expected_chunks - actual_chunks))
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Missing chunks: {missing}. Please upload all chunks before completing.",
-            )
-
-        filename = upload_doc.get("filename", "file")
-        size = upload_doc.get("size", 0)
-        mime_type = upload_doc.get("mime_type", "application/octet-stream")
-        chat_id = upload_doc.get("chat_id")
-        object_key = upload_doc.get("object_key")
-
-        if not object_key:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing storage key for upload",
-            )
-
-        if not _s3_object_exists(object_key):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File not found in temporary storage",
-            )
-
-        checksum_value = upload_doc.get("checksum")
-        if not isinstance(checksum_value, str):
-            checksum_value = ""
-
-        file_id = hashlib.sha256(f"{uuid.uuid4()}".encode()).hexdigest()[:16]
-
-        from datetime import datetime as dt, timezone as tz
-
-        file_record = {
-            "_id": file_id,
-            "file_id": file_id,
-            "filename": filename,
-            "size": size,
-            "mime_type": mime_type,
-            "chat_id": chat_id,
-            "owner_id": current_user,
-            "receiver_id": upload_doc.get("receiver_id"),
-            "object_key": object_key,
-            "checksum": checksum_value,
-            "created_at": dt.now(tz.utc),
-            "expiry_time": dt.now(tz.utc) + timedelta(hours=settings.FILE_TTL_HOURS),
-            "status": "uploaded",
-            "delivery_status": "ready_for_download",
-        }
-
-        try:
-            try:
-                get_db()
-            except RuntimeError as db_error:
-                _log(
-                    "error",
-                    f"Database not connected during file insert: {str(db_error)}",
-                    {
-                        "user_id": current_user,
-                        "operation": "file_insert",
-                        "upload_id": upload_id,
-                        "file_id": file_id,
-                    },
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Database service temporarily unavailable - please retry",
-                )
-
-            await asyncio.wait_for(
-                files_collection().insert_one(file_record), timeout=30.0
-            )
-        except asyncio.TimeoutError:
-            _log(
-                "error",
-                f"Database timeout inserting file record: {file_id}",
+        now = datetime.now(timezone.utc)
+        await _maybe_await(
+            uploads_col.update_one(
+                {"upload_id": upload_id},
                 {
-                    "user_id": current_user,
-                    "operation": "file_insert_timeout",
-                    "upload_id": upload_id,
+                    "$set": {
+                        "status": "completed",
+                        "completed_at": now,
+                        "updated_at": now,
+                    }
                 },
             )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Database timeout - file record not saved",
-            )
-
-        try:
-            try:
-                get_db()
-            except RuntimeError as db_error:
-                _log(
-                    "warning",
-                    f"Database not connected during upload cleanup: {str(db_error)}",
-                    {
-                        "user_id": current_user,
-                        "operation": "upload_cleanup",
-                        "upload_id": upload_id,
-                    },
-                )
-            else:
-                await asyncio.wait_for(
-                    uploads_collection().delete_one({"_id": upload_id}), timeout=30.0
-                )
-        except asyncio.TimeoutError:
-            _log(
-                "error",
-                f"Database timeout deleting upload record: {upload_id}",
-                {"user_id": current_user, "operation": "upload_delete_timeout"},
-            )
-
-        _log(
-            "info",
-            f"Upload completed successfully",
-            {
-                "user_id": current_user,
-                "operation": "upload_complete",
-                "upload_id": upload_id,
-                "file_id": file_id,
-                "filename": filename,
-                "size": size,
-            },
         )
 
-        return FileCompleteResponse(
-            file_id=file_id,
-            filename=filename,
-            size=size,
-            checksum=checksum_value,
-            storage_path=None,
-        )
+        return {
+            "success": True,
+            "upload_id": upload_id,
+            "status": "completed",
+        }
 
     except HTTPException:
         raise

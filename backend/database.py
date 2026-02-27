@@ -8,15 +8,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 try:
-    from .mock_database import get_mock_db, MockMongoClient
-except Exception:
-    try:
-        from mock_database import get_mock_db, MockMongoClient
-    except Exception:
-        get_mock_db = None  # type: ignore[assignment]
-        MockMongoClient = None  # type: ignore[assignment]
-
-try:
     from .config import settings
 except Exception:
     from config import settings
@@ -44,8 +35,7 @@ _database_initialized = False
 # Async-safe initialization guard to prevent duplicate Motor clients
 _init_lock: asyncio.Lock | None = None
 
-# Track which event loop created the Motor client/lock.
-_init_loop_id: int | None = None
+# Atlas-only mode: do not recreate the Motor client based on event loop.
 
 def is_database_initialized():
     """Check if database is initialized"""
@@ -58,71 +48,31 @@ async def init_database():
     This function is designed to be called exactly once during FastAPI startup.
     It is async-safe and will not create duplicate clients under concurrent calls.
     """
-    global client, db, _database_initialized, _init_lock, _init_loop_id
-
-    current_loop = asyncio.get_running_loop()
-    current_loop_id = id(current_loop)
-
-    # If called from a different event loop than the one that created the lock/client,
-    # recreate them. This is important under pytest where multiple TestClient lifecycles
-    # can run with different loops.
-    if _init_loop_id is not None and _init_loop_id != current_loop_id:
-        try:
-            if client is not None:
-                client.close()
-        except Exception:
-            pass
-        client = None
-        db = None
-        _database_initialized = False
-        _init_lock = None
-        _init_loop_id = None
+    global client, db, _database_initialized, _init_lock
 
     if _init_lock is None:
         _init_lock = asyncio.Lock()
-        _init_loop_id = current_loop_id
 
     async with _init_lock:
         if _database_initialized and client is not None and db is not None:
             return
 
-        # In tests/dev, many test suites explicitly set USE_MOCK_DB=True.
-        # We must honor that to avoid hitting a real database and to prevent
-        # cross-test pollution.
-        settings_use_mock = bool(getattr(settings, "USE_MOCK_DB", False))
-        env_use_mock = os.getenv("USE_MOCK_DB", "").lower() == "true"
-        use_mock_db = (settings_use_mock or env_use_mock) and not IS_PRODUCTION
+        # Atlas-only mode (no mock/fallback): require exact env flags.
+        mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED")
+        if (mongodb_atlas_enabled or "").lower() != "true":
+            raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true"')
 
-        if use_mock_db:
-            if get_mock_db is None or MockMongoClient is None:
-                raise RuntimeError("Mock DB requested but mock_database is not available")
-            client = MockMongoClient()
-            db = get_mock_db()
-            _database_initialized = True
-            _init_loop_id = current_loop_id
-            print("[MOCK_DB] Using mock database")
-            return
+        use_mock_db = os.getenv("USE_MOCK_DB")
+        if (use_mock_db or "").lower() == "true":
+            raise RuntimeError('USE_MOCK_DB must be "false" for Atlas-only operation')
 
-        # Production safety: require Atlas flag and connection details.
-        mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "").lower()
-        if IS_PRODUCTION and mongodb_atlas_enabled != "true":
-            raise RuntimeError("MONGODB_ATLAS_ENABLED must be true")
-
-        mongodb_uri = (
-            getattr(settings, "MONGODB_URI", None)
-            or os.getenv("MONGODB_URI")
-            or os.getenv("MONGO_URI")
-        )
+        mongodb_uri = os.getenv("MONGODB_URI")
         if not mongodb_uri:
-            raise RuntimeError("MONGODB_URI is required")
+            raise RuntimeError('MONGODB_URI is required for Atlas-only operation')
 
-        database_name = (
-            getattr(settings, "_MONGO_DB", None)
-            or getattr(settings, "DATABASE_NAME", None)
-            or os.getenv("DATABASE_NAME")
-        )
+        database_name = os.getenv("DATABASE_NAME")
         if not database_name:
-            raise RuntimeError("DATABASE_NAME is required")
+            raise RuntimeError('DATABASE_NAME is required for Atlas-only operation')
 
         if client is None:
             client = AsyncIOMotorClient(
@@ -146,7 +96,6 @@ async def init_database():
             pass
 
         _database_initialized = True
-        _init_loop_id = current_loop_id
         print(f"Database initialized: {db is not None}, Client initialized: {client is not None}")
         print(f"Database name: {database_name}")
 
