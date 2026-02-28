@@ -10,6 +10,14 @@ import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
+# Configure Atlas-only test environment BEFORE any backend imports
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
+
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
@@ -19,6 +27,12 @@ class TestEmailServiceConfiguration:
     
     def test_email_service_uses_sender_password_fallback(self):
         """Test that email service falls back to SMTP_PASSWORD if SENDER_PASSWORD not set"""
+        # Clear all email environment variables first
+        email_vars = ["SENDER_PASSWORD", "SMTP_PASSWORD", "SENDER_EMAIL", "SMTP_USERNAME", "EMAIL_FROM", "SMTP_FROM"]
+        for var in email_vars:
+            if var in os.environ:
+                del os.environ[var]
+        
         # Set up environment
         os.environ["SENDER_PASSWORD"] = ""
         os.environ["SMTP_PASSWORD"] = "test_smtp_password"
@@ -38,6 +52,12 @@ class TestEmailServiceConfiguration:
     
     def test_email_service_prefers_sender_password(self):
         """Test that email service prefers SENDER_PASSWORD over SMTP_PASSWORD"""
+        # Clear all email environment variables first
+        email_vars = ["SENDER_PASSWORD", "SMTP_PASSWORD", "SENDER_EMAIL", "SMTP_USERNAME", "EMAIL_FROM", "SMTP_FROM"]
+        for var in email_vars:
+            if var in os.environ:
+                del os.environ[var]
+        
         os.environ["SENDER_PASSWORD"] = "sender_password"
         os.environ["SMTP_PASSWORD"] = "smtp_password"
         os.environ["SENDER_EMAIL"] = "sender@example.com"
@@ -55,6 +75,12 @@ class TestEmailServiceConfiguration:
     
     def test_email_service_uses_email_from_fallback(self):
         """Test that email service falls back to EMAIL_FROM if SENDER_EMAIL not set"""
+        # Clear all email environment variables first
+        email_vars = ["SENDER_PASSWORD", "SMTP_PASSWORD", "SENDER_EMAIL", "SMTP_USERNAME", "EMAIL_FROM", "SMTP_FROM"]
+        for var in email_vars:
+            if var in os.environ:
+                del os.environ[var]
+        
         os.environ["SENDER_EMAIL"] = ""
         os.environ["EMAIL_FROM"] = "noreply@example.com"
         os.environ["SMTP_USERNAME"] = "smtp@example.com"
@@ -75,10 +101,18 @@ class TestPasswordResetEmailFlow:
     @pytest.mark.asyncio
     async def test_send_password_reset_email_with_valid_credentials(self):
         """Test sending password reset email with valid SMTP credentials"""
+        # Clear all email environment variables first
+        email_vars = ["SENDER_PASSWORD", "SMTP_PASSWORD", "SENDER_EMAIL", "SMTP_USERNAME", "EMAIL_FROM", "SMTP_FROM", "SMTP_HOST", "SMTP_PORT"]
+        for var in email_vars:
+            if var in os.environ:
+                del os.environ[var]
+        
         # Set up environment with valid credentials
         os.environ["SENDER_PASSWORD"] = "valid_password"
         os.environ["SENDER_EMAIL"] = "test@gmail.com"
         os.environ["ENABLE_EMAIL"] = "True"
+        os.environ["SMTP_HOST"] = "smtp.gmail.com"
+        os.environ["SMTP_PORT"] = "587"
         
         import importlib
         import backend.utils.email_service as email_module

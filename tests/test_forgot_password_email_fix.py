@@ -29,6 +29,20 @@ def test_email_service_configuration():
     """Test email service configuration"""
     print("\n🔧 Testing Email Service Configuration...")
     
+    # Set up environment variables for email service
+    os.environ["EMAIL_SERVICE_ENABLED"] = "True"
+    os.environ["SMTP_HOST"] = "smtp.gmail.com"
+    os.environ["SMTP_PORT"] = "587"
+    os.environ["SMTP_USERNAME"] = "test@gmail.com"
+    os.environ["SMTP_PASSWORD"] = "test_password"
+    os.environ["EMAIL_FROM"] = "test@gmail.com"
+    
+    # Reload settings to pick up new environment
+    import importlib
+    import backend.config as config_module
+    importlib.reload(config_module)
+    from backend.config import settings
+    
     print(f"EMAIL_SERVICE_ENABLED: {settings.EMAIL_SERVICE_ENABLED if settings else 'N/A'}")
     print(f"SMTP_HOST: {settings.SMTP_HOST if settings else 'N/A'}")
     print(f"SMTP_PORT: {settings.SMTP_PORT if settings else 'N/A'}")

@@ -6,25 +6,16 @@ from urllib.parse import quote_plus
 import secrets
 
 # Load environment variables from .env file
-env_path = Path(__file__).parent / ".env"
-print(f"[CONFIG] Looking for .env at: {env_path}")
-if env_path.exists():
-    print(f"[CONFIG] Loading .env from: {env_path}")
-    load_dotenv(dotenv_path=env_path)
-else:
-    print(f"[CONFIG] .env not found at: {env_path}")
+# Docker requirement: only load from /app/backend/.env and /app/.env inside container.
+_docker_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
+_local_env_paths = [Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"]
+_env_paths = _docker_env_paths if Path("/app").exists() else _local_env_paths
+for env_path in _env_paths:
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=False)
+        break
 
-# Also check parent directory
-env_path_parent = Path(__file__).parent.parent / ".env"
-if env_path_parent.exists():
-    print(f"[CONFIG] Loading .env from parent: {env_path_parent}")
-    load_dotenv(dotenv_path=env_path_parent)
-
-# Also check current directory
-if not os.getenv("MONGODB_URI") and not os.getenv("MONGO_USER"):
-    print("[CONFIG] Loading .env from current directory")
-    load_dotenv()
-
+# Removed current-directory dotenv loading to comply with Docker-only env loading
 
 class Settings:
     # MongoDB Connection - Atlas Only Configuration
@@ -418,9 +409,7 @@ class Settings:
 
     # CORS Configuration
     # PRODUCTION: Only allow specific production domains
-    # ENHANCED: Load from environment with secure defaults
     cors_origins_default = [
-        # Production origins - HTTPS only for security
         "https://zaply.in.net",
         "https://www.zaply.in.net",
     ]
@@ -428,122 +417,13 @@ class Settings:
     CORS_ORIGINS = cors_origins_default
 
     def __init__(self):
-        self.CORS_ORIGINS = self._get_cors_origins()
+        # Strict production CORS policy: ignore env overrides to prevent accidental localhost/http origins.
+        self.CORS_ORIGINS = list(self.cors_origins_default)
 
     # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production
     def _get_cors_origins(self) -> list:
         """Get CORS origins based on environment"""
-        # Priority: ALLOWED_ORIGINS > CORS_ORIGINS > API_BASE_URL-derived > defaults
-        env_allowed_origins = os.getenv(
-            "ALLOWED_ORIGINS"
-        )  # Highest priority: docker-compose
-        env_cors_origins = os.getenv("CORS_ORIGINS")  # Alternative name
-        env_api_base_url = os.getenv("API_BASE_URL")  # Used to derive domain
-        origins: list = []
-        https_origins: list = []
-
-        # FIRST: Use ALLOWED_ORIGINS if explicitly provided (takes precedence)
-        if env_allowed_origins:
-            origins = [
-                origin.strip()
-                for origin in env_allowed_origins.split(",")
-                if origin.strip()
-            ]
-            if origins:
-                # SECURITY: Filter out HTTP origins in production mode using self.DEBUG
-                if not self.DEBUG:
-                    # Production mode: Only allow HTTPS origins
-                    https_origins = [
-                        origin for origin in origins if origin.startswith("https://")
-                    ]
-                    http_origins = [
-                        origin for origin in origins if origin.startswith("http://")
-                    ]
-
-                    # Check if HTTP origins are Docker internal (safe) vs external (security risk)
-                    external_http_origins = []
-                    docker_http_origins = []
-
-                    for origin in http_origins:
-                        if any(
-                            docker_host in origin
-                            for docker_host in [
-                                "zaply_frontend:",
-                                "frontend:",
-                                "hypersend_frontend:",
-                                "hypersend_backend:",
-                            ]
-                        ):
-                            docker_http_origins.append(origin)
-                        else:
-                            external_http_origins.append(origin)
-
-                    if external_http_origins:
-                        # PRODUCTION SECURITY: BLOCK external HTTP origins completely
-                        print(
-                            f"[CORS_SECURITY] ❌ SECURITY ERROR: External HTTP origins in PRODUCTION!"
-                        )
-                        print(
-                            f"[CORS_SECURITY] ❌ External HTTP origins: {external_http_origins}"
-                        )
-                        print(
-                            f"[CORS_SECURITY] ❌ These are BLOCKED for security - use HTTPS only!"
-                        )
-                        # Remove external HTTP origins - DO NOT allow them
-                        origins = https_origins + docker_http_origins
-
-                    if docker_http_origins:
-                        print(
-                            f"[CORS_SECURITY] Docker internal HTTP origins (safe): {docker_http_origins}"
-                        )
-
-                    if https_origins:
-                        print(
-                            f"[CORS_SECURITY] OK Production CORS origins (HTTPS only): {https_origins}"
-                        )
-                return https_origins if https_origins else origins
-
-            return origins
-
-        if env_cors_origins:
-            origins = [
-                origin.strip()
-                for origin in env_cors_origins.split(",")
-                if origin.strip()
-            ]
-            if origins:
-                if not self.DEBUG:
-                    https_origins = [
-                        origin for origin in origins if origin.startswith("https://")
-                    ]
-                    return https_origins if https_origins else origins
-                return origins
-
-        if env_api_base_url:
-            derived = env_api_base_url.replace("/api/v1", "").strip()
-            if derived:
-                # PRODUCTION: Ensure derived origin is HTTPS in production
-                if not self.DEBUG and not derived.startswith("https://"):
-                    print(
-                        f"[CORS_SECURITY] ❌ Derived API_BASE_URL is not HTTPS in production: {derived}"
-                    )
-                    return []  # Reject non-HTTPS in production
-                return [derived]
-
-        # PRODUCTION: Return only HTTPS production domains
-        if not self.DEBUG:
-            production_origins = [
-                origin
-                for origin in self.cors_origins_default
-                if origin.startswith("https://")
-            ]
-            print(
-                f"[CORS_SECURITY] ✅ Production CORS origins (HTTPS only): {production_origins}"
-            )
-            return production_origins
-
-        # DEBUG: Return all origins for development
-        return self.cors_origins_default
+        return list(self.cors_origins_default)
 
     def validate_email_config(self):
         """Validate email service configuration with enhanced checking"""

@@ -4,6 +4,15 @@ Database cleanup script to clear all avatar text-based values
 This will permanently remove any existing text-based avatars from the database
 """
 
+# Configure Atlas-only test environment BEFORE any backend imports
+import os
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
+
 import asyncio
 import sys
 import os

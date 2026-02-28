@@ -6,6 +6,15 @@ Comprehensive test for the complete password reset flow:
 3. User uses token to reset password (reset-password)
 """
 
+# Configure Atlas-only test environment BEFORE any backend imports
+import os
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
+
 import pytest
 import sys
 import os
@@ -190,7 +199,7 @@ class TestPasswordResetFlow:
 
     @pytest.mark.asyncio
     async def test_forgot_password_generates_simple_token(self):
-        """Test that forgot password generates both JWT and simple reset tokens"""
+        """Test that forgot password returns success and stores token hash even if email send fails"""
         from backend.routes.auth import forgot_password  # type: ignore
         from backend.config import settings  # type: ignore
 
@@ -203,30 +212,25 @@ class TestPasswordResetFlow:
 
         with patch('backend.routes.auth.users_collection') as mock_users_col:
             mock_users_col.return_value.find_one = AsyncMock(return_value=mock_user)
-            
-            # Mock reset tokens collection
-            with patch('backend.routes.auth.reset_tokens_collection') as mock_reset_col:
-                mock_reset_col.return_value.insert_one = AsyncMock(return_value=MagicMock(inserted_id="token123"))
-                
-                # Mock email service
-                with patch('backend.routes.auth.email_service') as mock_email:
-                    mock_email.send_password_reset_email = AsyncMock(return_value=False)
-                    
-                    # Enable debug mode to get tokens in response
-                    with patch.object(settings, 'DEBUG', True):
-                        result = await forgot_password({"email": "test@example.com"})
+            mock_users_col.return_value.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
 
-                        # Verify response structure
-                        assert result is not None
-                        assert result["success"] is True
-                        assert "message" in result
-                        assert "token" in result  # JWT token
-                        assert "simple_reset_token" in result  # Simple reset token
-                        assert len(result["simple_reset_token"]) > 20  # Should be substantial length
-                        
-                        print(f"✅ Forgot password generates both JWT and simple tokens")
-                        print(f"   JWT Token: {result['token'][:50]}...")
-                        print(f"   Simple Token: {result['simple_reset_token']}")
+            # Mock email service (simulate SMTP/auth failure)
+            with patch('backend.routes.auth.email_service') as mock_email:
+                mock_email.send_password_reset_email = AsyncMock(return_value=False)
+
+                result = await forgot_password({"email": "test@example.com"})
+
+                # Verify response structure (must not leak tokens)
+                assert result is not None
+                assert result["success"] is True
+                assert "message" in result
+                assert "token" not in result
+                assert "simple_reset_token" not in result
+
+                # Verify token hash was stored on user document
+                assert mock_users_col.return_value.update_one.called
+
+                print("✅ Forgot password stores token hash and returns success even if email fails")
 
     @pytest.mark.asyncio
     async def test_reset_password_with_simple_token(self):
@@ -234,55 +238,47 @@ class TestPasswordResetFlow:
         from backend.routes.auth import reset_password  # type: ignore
         from backend.models import PasswordResetRequest  # type: ignore
 
-        # Create mock reset token document with simple token
-        mock_reset_doc = {
-            "_id": "token_doc_id",
-            "simple_token": "test_simple_reset_token_12345",
-            "user_id": "507f1f77bcf86cd799439011",
-            "email": "test@example.com",
-            "token_type": "password_reset",
-            "created_at": datetime.now(timezone.utc),
-            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
-            "used": False
-        }
+        # Create token and matching user-doc hash entry (preferred production flow)
+        token_value = "test_simple_reset_token_12345"
+        import hashlib
+        token_hash = hashlib.sha256(token_value.encode("utf-8")).hexdigest()
 
         # Create mock user
         mock_user = {
             "_id": "507f1f77bcf86cd799439011",
             "email": "test@example.com",
             "name": "Test User",
+            "password_reset": {
+                "token_hash": token_hash,
+                "created_at": datetime.now(timezone.utc),
+                "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+                "used": False,
+            },
             "password_hash": "old_hash",
             "password_salt": "old_salt"
         }
 
-        request = PasswordResetRequest(
-            token="test_simple_reset_token_12345",
-            new_password="NewSecurePassword123!"
-        )
+        request = PasswordResetRequest(token=token_value, new_password="NewPassword123!")
 
-        with patch('backend.routes.auth.reset_tokens_collection') as mock_reset_col:
-            mock_reset_col.return_value.find_one = AsyncMock(return_value=mock_reset_doc)
-            mock_reset_col.return_value.update_one = AsyncMock(return_value=MagicMock())
-            
-            with patch('backend.routes.auth.users_collection') as mock_users_col:
-                mock_users_col.return_value.find_one = AsyncMock(return_value=mock_user)
-                mock_users_col.return_value.update_one = AsyncMock(return_value=MagicMock())
-                
-                with patch('backend.routes.auth.refresh_tokens_collection') as mock_refresh_col:
-                    mock_refresh_col.return_value.update_many = AsyncMock(return_value=MagicMock())
-                    
-                    with patch('backend.routes.auth.hash_password') as mock_hash:
-                        mock_hash.return_value = ("new_hash", "new_salt")
-                        
-                        result = await reset_password(request)
+        with patch('backend.routes.auth.users_collection') as mock_users_col:
+            mock_users_col.return_value.find_one = AsyncMock(return_value=mock_user)
+            mock_users_col.return_value.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
 
-                        # Verify response
-                        assert result.success is True
-                        assert "Password reset successfully" in result.message
-                        assert result.redirect_url == "/login"
-                        
-                        print(f"✅ Simple reset token validation successful")
-                        print(f"   Response: {result.message}")
+            with patch('backend.routes.auth.refresh_tokens_collection') as mock_refresh_col:
+                mock_refresh_col.return_value.update_many = AsyncMock(return_value=MagicMock())
+
+                with patch('backend.routes.auth.hash_password') as mock_hash:
+                    mock_hash.return_value = ("new_hash", "new_salt")
+
+                    result = await reset_password(request)
+
+                    # Verify response
+                    assert result.success is True
+                    assert "Password reset successfully" in result.message
+                    assert result.redirect_url == "/login"
+
+                    print(f"✅ Simple reset token validation successful")
+                    print(f"   Response: {result.message}")
 
     @pytest.mark.asyncio
     async def test_simple_token_expiry(self):
@@ -334,7 +330,7 @@ class TestPasswordResetFlow:
         from backend.routes.auth import forgot_password, reset_password  # type: ignore
         from backend.models import PasswordResetRequest  # type: ignore
         from backend.config import settings  # type: ignore
-
+        
         # Mock user
         mock_user = {
             "_id": "507f1f77bcf86cd799439011",
@@ -358,47 +354,12 @@ class TestPasswordResetFlow:
                     with patch.object(settings, 'DEBUG', True):
                         forgot_result = await forgot_password({"email": "test@example.com"})
                         
-                        # Extract simple token
-                        simple_token = forgot_result.get("simple_reset_token")
-                        assert simple_token is not None
-                        assert len(simple_token) > 20
+                        # Check that we got a success response (no token returned for security)
+                        assert forgot_result.get("success") is True
+                        assert forgot_result.get("message") is not None
+                        assert "password reset link has been sent" in forgot_result.get("message", "").lower()
                         
-                        print(f"✅ Step 1 - Simple token generated: {simple_token[:8]}...")
-
-                        # Step 2: Use simple token to reset password
-                        mock_reset_doc = {
-                            "_id": "token_doc_id",
-                            "simple_token": simple_token,
-                            "user_id": "507f1f77bcf86cd799439011",
-                            "email": "test@example.com",
-                            "token_type": "password_reset",
-                            "created_at": datetime.now(timezone.utc),
-                            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
-                            "used": False
-                        }
-                        
-                        mock_reset_col.return_value.find_one = AsyncMock(return_value=mock_reset_doc)
-                        mock_reset_col.return_value.update_one = AsyncMock(return_value=MagicMock())
-                        
-                        with patch('backend.routes.auth.refresh_tokens_collection') as mock_refresh_col:
-                            mock_refresh_col.return_value.update_many = AsyncMock(return_value=MagicMock())
-                            
-                            with patch('backend.routes.auth.hash_password') as mock_hash:
-                                mock_hash.return_value = ("new_hash", "new_salt")
-                                
-                                reset_request = PasswordResetRequest(
-                                    token=simple_token,
-                                    new_password="NewSecurePassword123!"
-                                )
-                                
-                                reset_result = await reset_password(reset_request)
-                                
-                                # Verify reset was successful
-                                assert reset_result.success is True
-                                assert "Password reset successfully" in reset_result.message
-                                
-                                print(f"✅ Step 2 - Password reset successful")
-                                print(f"   Complete simple token flow working correctly")
+                        print("✅ Password reset request completed successfully")
 
 
 if __name__ == "__main__":

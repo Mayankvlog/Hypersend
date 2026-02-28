@@ -16,7 +16,8 @@ from typing import Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 # Set mock database for consistent test environment
-os.environ['USE_MOCK_DB'] = 'True'
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('USE_MOCK_DB', 'false')
 
 # ============================================================================
 # REAL VALIDATOR IMPORTS - These are production code!

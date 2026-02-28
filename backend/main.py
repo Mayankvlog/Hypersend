@@ -30,11 +30,13 @@ from workers.fan_out_worker import MessageFanOutWorker
 from websocket.delivery_handler import create_websocket_server
 
 # Load environment variables FIRST before importing config
-env_paths = [Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"]
-
-for env_path in env_paths:
+# Docker requirement: only load from /app/backend/.env and /app/.env inside container.
+_docker_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
+_local_env_paths = [Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"]
+_env_paths = _docker_env_paths if Path("/app").exists() else _local_env_paths
+for env_path in _env_paths:
     if env_path.exists():
-        load_dotenv(dotenv_path=env_path)
+        load_dotenv(dotenv_path=env_path, override=False)
         break
 
 try:
@@ -1452,23 +1454,23 @@ if isinstance(cors_origins, str):
 if isinstance(cors_origins, list) and len(cors_origins) > 0:
     cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
 
-# SECURITY: Only add local development origins in debug mode
-if settings.DEBUG:
-    cors_origins.extend(
-        [
-            "https://hypersend.in.net/",
-        ]
-    )
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=cors_origins,
-#     allow_credentials=True,
-#     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
-#     allow_headers=["*"],
-#     expose_headers=["Content-Disposition", "X-Total-Count", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers", "Content-Length"],
-#     max_age=3600,  # Cache preflight requests for 1 hour
-# )
+# Production CORS: allow only configured zaply origins (no localhost or extra debug origins)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=[
+        "Content-Disposition",
+        "X-Total-Count",
+        "Access-Control-Allow-Origin",
+        "Access-Control-Allow-Methods",
+        "Access-Control-Allow-Headers",
+        "Content-Length",
+    ],
+    max_age=3600,  # Cache preflight requests for 1 hour
+)
 
 
 # CRITICAL FIX: Handle CORS preflight requests (OPTIONS) without requiring authentication
@@ -1495,23 +1497,12 @@ async def handle_options_request(full_path: str, request: Request):
         allowed_origins = []
 
         # Production domains - exact matches only, HTTPS only
-        if not settings.DEBUG:
-            allowed_origins.extend(
-                [
-                    "https://hypersend.in.net",
-                    "https://www.hypersend.in.net",
-                ]
-            )
-        else:
-            # Development: Allow internal service origins for testing
-            allowed_origins.extend(
-                [
-                    "https://hypersend.in.net",
-                    "https://www.hypersend.in.net",
-                    "http://hypersend_frontend:80",
-                    "http://frontend:80",
-                ]
-            )
+        allowed_origins.extend(
+            [
+                "https://zaply.in.net",
+                "https://www.zaply.in.net",
+            ]
+        )
 
         # SECURITY: Exact match only - no pattern matching to prevent bypass
         allowed_origin = origin if origin in allowed_origins else "null"
@@ -1679,10 +1670,10 @@ async def health_check():
         redis_error = None
 
         try:
-            from redis_cache import redis_client
+            from redis_cache import cache
 
-            if redis_client:
-                await redis_client.ping()
+            if getattr(cache, "is_connected", False) and getattr(cache, "redis_client", None) is not None:
+                await cache.redis_client.ping()
             else:
                 redis_status = "disabled"  # Using in-memory fallback
         except Exception as e:

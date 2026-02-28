@@ -11,6 +11,14 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone, timedelta
 
+# Configure Atlas-only test environment BEFORE any backend imports
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
+
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
@@ -40,6 +48,19 @@ class TestPasswordResetEmailFlow:
     @pytest.mark.asyncio
     async def test_password_reset_email_contains_token(self):
         """Test that password reset email contains the reset token"""
+        # Set up environment variables for email service
+        os.environ["SMTP_HOST"] = "smtp.gmail.com"
+        os.environ["SMTP_PORT"] = "587"
+        os.environ["SMTP_USERNAME"] = "test@gmail.com"
+        os.environ["SMTP_PASSWORD"] = "test_password"
+        os.environ["SMTP_FROM"] = "test@gmail.com"
+        os.environ["ENABLE_EMAIL"] = "True"
+        
+        # Reload email service to pick up new environment
+        import importlib
+        import backend.utils.email_service as email_module
+        importlib.reload(email_module)
+        
         from backend.utils.email_service import email_service
         
         # Mock SMTP
@@ -70,7 +91,20 @@ class TestPasswordResetEmailFlow:
     
     @pytest.mark.asyncio
     async def test_password_changed_email_sent_after_reset(self):
-        """Test that password changed email is sent after successful reset"""
+        """Test that password changed confirmation email is sent after reset"""
+        # Set up environment variables for email service
+        os.environ["SMTP_HOST"] = "smtp.gmail.com"
+        os.environ["SMTP_PORT"] = "587"
+        os.environ["SMTP_USERNAME"] = "test@gmail.com"
+        os.environ["SMTP_PASSWORD"] = "test_password"
+        os.environ["SMTP_FROM"] = "test@gmail.com"
+        os.environ["ENABLE_EMAIL"] = "True"
+        
+        # Reload email service to pick up new environment
+        import importlib
+        import backend.utils.email_service as email_module
+        importlib.reload(email_module)
+        
         from backend.utils.email_service import email_service
         
         # Mock SMTP
@@ -92,6 +126,19 @@ class TestPasswordResetEmailFlow:
     
     def test_email_service_configuration_complete(self):
         """Test that email service has all required configuration"""
+        # Set up environment variables for email service
+        os.environ["SMTP_HOST"] = "smtp.gmail.com"
+        os.environ["SMTP_PORT"] = "587"
+        os.environ["SMTP_USERNAME"] = "test@gmail.com"
+        os.environ["SMTP_PASSWORD"] = "test_password"
+        os.environ["SMTP_FROM"] = "test@gmail.com"
+        os.environ["ENABLE_EMAIL"] = "True"
+        
+        # Reload email service to pick up new environment
+        import importlib
+        import backend.utils.email_service as email_module
+        importlib.reload(email_module)
+        
         from backend.utils.email_service import email_service
         from backend.config import settings
         
@@ -172,6 +219,12 @@ class TestPasswordResetEmailFlow:
     
     def test_email_service_fallback_configuration(self):
         """Test that email service uses fallback configuration"""
+        # Clear all email environment variables first
+        email_vars = ["SENDER_PASSWORD", "SMTP_PASSWORD", "SENDER_EMAIL", "SMTP_USERNAME", "EMAIL_FROM", "SMTP_FROM", "SMTP_HOST", "SMTP_PORT"]
+        for var in email_vars:
+            if var in os.environ:
+                del os.environ[var]
+        
         from backend.utils.email_service import EmailService
         
         # Test SENDER_PASSWORD fallback to SMTP_PASSWORD

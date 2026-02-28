@@ -6,8 +6,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 # Set mock database
-os.environ['USE_MOCK_DB'] = 'True'
-os.environ['DEBUG'] = 'True'
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('USE_MOCK_DB', 'false')
 
 from fastapi.testclient import TestClient
 try:

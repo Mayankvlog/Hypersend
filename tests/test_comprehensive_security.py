@@ -6,11 +6,19 @@ Tests all HTTP error scenarios, security vulnerabilities, and edge cases
 import pytest
 import asyncio
 import json
+import os
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 import tempfile
-import os
 from pathlib import Path
+
+# Configure Atlas-only test environment BEFORE any backend imports
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
 
 # Import application and modules
 try:

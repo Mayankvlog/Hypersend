@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 """
-Isolated test for empty MIME type
+Isolated test for empty MIME type handling
+Tests the specific case of empty MIME type in file uploads
 """
-import sys
+import pytest
 import os
+import sys
+
+# Configure Atlas-only test environment BEFORE any backend imports
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import asyncio

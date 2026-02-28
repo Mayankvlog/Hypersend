@@ -12,9 +12,17 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 from datetime import datetime, timedelta
 import jwt
+import os
+
+# Configure Atlas-only test environment BEFORE any backend imports
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
 
 # Add backend to path for imports
-import os
 backend_path = os.path.join(os.path.dirname(__file__), "..", "backend")
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)

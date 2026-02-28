@@ -7,9 +7,19 @@ Tests all actual implemented fixes with proper validation
 import pytest
 import sys
 import asyncio
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException, status
 from bson import ObjectId
+
+# Configure Atlas-only test environment BEFORE any backend imports
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
+
 sys.path.append('backend')
 
 class TestHTTPErrorHandlers:
