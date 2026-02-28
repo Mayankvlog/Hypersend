@@ -1,16 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
+from fastapi.responses import JSONResponse, FileResponse
 from typing import List, Optional
 import logging
 import asyncio
-
 import sys
 
 sys.modules.setdefault("routes.users", sys.modules[__name__])
 sys.modules.setdefault("backend.routes.users", sys.modules[__name__])
-
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
-
-from fastapi.responses import JSONResponse, FileResponse
 
 
 
@@ -2799,6 +2795,80 @@ async def get_avatar(
 
 
 
+
+
+@router.get("/simple")
+@router.get("/simple/")
+async def get_users_simple(
+    request: Request,
+    offset: int = 0,
+    limit: int = 50,
+    current_user: str = Depends(get_current_user),
+):
+    """Get simple user list for group creation (excluding current user)"""
+    try:
+        if offset < 0:
+            offset = 0
+        if limit < 1:
+            limit = 1
+        if limit > 200:
+            limit = 200
+
+        # Get all users except current user
+        users_col = users_collection()
+        
+        # Build query to exclude current user
+        query = {"_id": {"$ne": current_user}}
+        
+        # Get total count
+        total = await users_col.count_documents(query)
+        
+        # Get users with projection for simple response
+        projection = {
+            "_id": 1,
+            "name": 1,
+            "email": 1,
+            "username": 1,
+            "avatar_url": 1,
+            "is_online": 1,
+            "last_seen": 1,
+            "status": 1,
+        }
+        
+        cursor = users_col.find(query, projection).sort("name", 1).skip(offset).limit(limit)
+        
+        users = []
+        async for doc in cursor:
+            users.append({
+                "id": str(doc.get("_id")),
+                "name": doc.get("name", ""),
+                "email": doc.get("email", ""),
+                "username": doc.get("username", ""),
+                "avatar_url": doc.get("avatar_url"),
+                "is_online": doc.get("is_online", False),
+                "last_seen": doc.get("last_seen"),
+                "status": doc.get("status", ""),
+            })
+
+        return {
+            "users": users,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Database operation timed out. Please try again later."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch users: {str(e)}"
+        )
 
 
 @router.get("/contacts")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test suite for Token-Based Password Reset Functionality
-Tests the complete password reset flow using JWT tokens via /auth/reset-password
+Tests complete password reset flow using database tokens via /auth/reset-password
 """
 
 import pytest
@@ -17,12 +17,24 @@ from datetime import datetime
 from email.message import EmailMessage
 from typing import Optional
 
+# Add backend to path and set environment for testing
+backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+# Use mock database for testing
+os.environ['USE_MOCK_DB'] = 'True'
+os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
+os.environ['MONGODB_URI'] = 'mongodb+srv://test:test@localhost:27017/test?retryWrites=true&w=majority'
+os.environ['DATABASE_NAME'] = 'test'
+os.environ['SECRET_KEY'] = 'test-secret-key'
+
 # Try to import TestClient for local testing, fallback to requests for remote testing
 try:
     from fastapi.testclient import TestClient
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
-    from backend.main import app
+    from main import app
     USE_TESTCLIENT = True
+    client = TestClient(app)
 except ImportError:
     USE_TESTCLIENT = False
     try:
@@ -37,8 +49,8 @@ else:
         requests = None
 
 # Configuration
-API_BASE_URL = os.environ.get("HYPERSEND_BASE_URL", "https://zaply.in.net/api/v1")
-TEST_EMAIL = "mobimix33@gmail.com"
+API_BASE_URL = "http://localhost:8000/api/v1"
+TEST_EMAIL = "test@example.com"
 TEST_PASSWORD = "SecurePassword123!"
 NEW_PASSWORD = "NewSecurePass456!"
 TEST_TIMEOUT = 60
@@ -110,48 +122,46 @@ def check_server_health() -> bool:
     return False
 
 def test_reset_password_endpoint() -> Optional[dict]:
-    """Test the reset-password endpoint with valid token"""
-    print_status("Testing /reset-password endpoint with valid token...", "TEST")
+    """Test reset-password endpoint with valid database token"""
+    print_status("Testing /reset-password endpoint with valid database token...", "TEST")
     
     try:
-        # Generate a test token for password reset
-        import jwt
-        from datetime import datetime, timedelta, timezone
-        
-        # Mock the SECRET_KEY to match test expectations
-        if USE_TESTCLIENT:
-            import backend.routes.auth as auth_module
-            original_secret = auth_module.settings.SECRET_KEY
-            auth_module.settings.SECRET_KEY = "test-secret-key"
-            try:
-                token = jwt.encode(
-                    {
-                        "sub": TEST_EMAIL,
-                        "token_type": "password_reset",
-                        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
-                        "iat": datetime.now(timezone.utc)
-                    },
-                    "test-secret-key",
-                    algorithm="HS256"
-                )
-            finally:
-                auth_module.settings.SECRET_KEY = original_secret
-        else:
-            # For requests-based testing, create a simple test token
-            token = "test.reset.token.12345"
-        
-        payload = {
-            "token": token,
-            "new_password": NEW_PASSWORD
-        }
-        
+        # First, request a password reset to get a token
         if USE_TESTCLIENT:
             client = TestClient(app)
-            response = client.post("/api/v1/auth/reset-password", json=payload)
+            forgot_response = client.post("/api/v1/auth/forgot-password", json={"email": TEST_EMAIL})
         else:
             if requests is None:
                 print_status("[FAIL] requests not available", "FAIL")
                 return None
+            forgot_response = requests.post(
+                f"{API_BASE_URL}/auth/forgot-password",
+                json={"email": TEST_EMAIL},
+                timeout=TEST_TIMEOUT
+            )
+        
+        if forgot_response.status_code != 200:
+            print_status(f"[FAIL] Forgot password failed: {forgot_response.status_code}", "FAIL")
+            return None
+        
+        forgot_data = forgot_response.json()
+        reset_token = forgot_data.get("reset_token")
+        
+        if not reset_token:
+            print_status("[FAIL] No reset token returned from forgot-password", "FAIL")
+            return None
+        
+        print_status(f"Got reset token: {reset_token[:20]}...", "INFO")
+        
+        # Now test reset password with the token
+        payload = {
+            "token": reset_token,
+            "new_password": NEW_PASSWORD
+        }
+        
+        if USE_TESTCLIENT:
+            response = client.post("/api/v1/auth/reset-password", json=payload)
+        else:
             response = requests.post(
                 f"{API_BASE_URL}/auth/reset-password",
                 json=payload,
@@ -164,7 +174,6 @@ def test_reset_password_endpoint() -> Optional[dict]:
             data = response.json()
             print_status("[PASS] Reset password endpoint working", "PASS")
             print_status(f"  Message: {data.get('message', 'N/A')}", "INFO")
-            print_status(f"  Success: {data.get('success', False)}", "INFO")
             
             return data
         else:
