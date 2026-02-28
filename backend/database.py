@@ -20,9 +20,7 @@ IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "production" and os.gete
 
 # Load environment variables from .env file
 # Docker requirement: only load from /app/backend/.env and /app/.env inside container.
-_docker_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
-_local_env_paths = [Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"]
-_env_paths = _docker_env_paths if Path("/app").exists() else _local_env_paths
+_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
 for env_path in _env_paths:
     if env_path.exists():
         load_dotenv(dotenv_path=env_path, override=False)
@@ -88,16 +86,11 @@ async def init_database():
         if not database_name:
             raise RuntimeError('DATABASE_NAME is required for Atlas-only operation')
 
-        # Pytest safety: use a dedicated test database unless explicitly overridden.
-        if _is_pytest_running():
-            database_name = os.getenv("TEST_DATABASE_NAME") or f"{database_name}_test"
-
         if client is None:
             client = AsyncIOMotorClient(
                 mongodb_uri,
                 serverSelectionTimeoutMS=10000,
                 connectTimeoutMS=10000,
-                retryWrites=False,
             )
         if db is None:
             db = client[database_name]
@@ -120,13 +113,7 @@ async def init_database():
 def get_database():
     """Get database instance"""
     if db is None:
-        # Fallback to mock database for test environments
-        try:
-            from .mock_database import get_mock_db
-            mock_db = get_mock_db()
-            return mock_db
-        except ImportError:
-            raise RuntimeError("Database not initialized")
+        raise RuntimeError("Database not initialized")
     return db
 
 # Collection shortcuts
@@ -134,109 +121,55 @@ def users_collection():
     """Get users collection"""
     if is_database_initialized() and db is not None:
         return db["users"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["users"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 def chats_collection():
     """Get chats collection"""
     if is_database_initialized() and db is not None:
         return db["chats"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["chats"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 def messages_collection():
     """Get messages collection"""
     if is_database_initialized() and db is not None:
         return db["messages"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["messages"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 def files_collection():
     """Get files collection"""
     if is_database_initialized() and db is not None:
         return db["files"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["files"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 def uploads_collection():
     """Get uploads collection"""
     if is_database_initialized() and db is not None:
         return db["uploads"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["uploads"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 def refresh_tokens_collection():
     """Get refresh tokens collection"""
     if is_database_initialized() and db is not None:
         return db["refresh_tokens"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["refresh_tokens"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 def reset_tokens_collection():
     """Get reset tokens collection"""
     if is_database_initialized() and db is not None:
         return db["reset_tokens"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["reset_tokens"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 def group_activity_collection():
     """Get group activity collection"""
     if is_database_initialized() and db is not None:
         return db["group_activity"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["group_activity"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 def media_collection():
     """Get media collection"""
     if is_database_initialized() and db is not None:
         return db["media"]
-    # Fallback to mock database for test environments
-    try:
-        from .mock_database import get_mock_db
-        mock_db = get_mock_db()
-        return mock_db["media"]
-    except ImportError:
-        raise RuntimeError("Database not initialized")
+    raise RuntimeError("Database not initialized")
 
 # Backward compatibility aliases for tests
 async def connect_db():

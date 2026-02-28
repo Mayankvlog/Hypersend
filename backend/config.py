@@ -6,10 +6,8 @@ from urllib.parse import quote_plus
 import secrets
 
 # Load environment variables from .env file
-# Docker requirement: only load from /app/backend/.env and /app/.env inside container.
-_docker_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
-_local_env_paths = [Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"]
-_env_paths = _docker_env_paths if Path("/app").exists() else _local_env_paths
+# Docker requirement: only load from /app/backend/.env and /app/.env.
+_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
 for env_path in _env_paths:
     if env_path.exists():
         load_dotenv(dotenv_path=env_path, override=False)
@@ -417,7 +415,7 @@ class Settings:
     CORS_ORIGINS = cors_origins_default
 
     def __init__(self):
-        # Strict production CORS policy: ignore env overrides to prevent accidental localhost/http origins.
+        # Strict production CORS policy: ignore env overrides to prevent accidental non-production origins.
         self.CORS_ORIGINS = list(self.cors_origins_default)
 
     # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production

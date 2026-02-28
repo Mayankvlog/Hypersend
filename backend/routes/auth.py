@@ -105,9 +105,13 @@ import asyncio
 import secrets
 import hashlib
 
+import logging
+
 from collections import defaultdict
 from typing import Dict, Tuple, List, Optional
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+logger = logging.getLogger("zaply")
 
 import sys
 
@@ -1412,71 +1416,69 @@ async def forgot_password(request: dict) -> dict:
                 detail="Invalid email format"
             )
         
-        # Find user by email
-        user = None
+        # Ensure we only operate on real MongoDB Atlas user docs.
         try:
             user = await asyncio.wait_for(
                 users_collection().find_one({"email": email}),
-                timeout=5.0
+                timeout=5.0,
             )
         except asyncio.TimeoutError:
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Database timeout - please try again"
+                detail="Database timeout - please try again",
             )
         except Exception as e:
             auth_log(f"Database error finding user: {type(e).__name__}: {str(e)}")
-            # Don't expose internal errors
-            pass
-        
-        # Always return success message to prevent email enumeration.
-        # Requirement: always return HTTP 200 with success message regardless of email send status.
-        response = {
-            "message": "If an account with this email exists, a password reset link has been sent to that email",
-            "success": True,
-            "expires_in": 3600,
-        }
+            user = None
 
-        # Only generate/store/send token if user exists (but response is always success).
-        if user:
-            now = datetime.now(timezone.utc)
-            expires_at = now + timedelta(hours=1)
+        if not user:
+            # Do not leak account existence, but keep response stable.
+            return {"message": "Reset token generated successfully"}
 
-            # Generate a single-use reset token and store only its hash.
-            reset_token = secrets.token_urlsafe(48)
-            reset_token_hash = hashlib.sha256(reset_token.encode("utf-8")).hexdigest()
+        # Generate token (always), store only sha256 hash on the user document.
+        reset_token = secrets.token_urlsafe(32)
+        reset_token_hash = hashlib.sha256(reset_token.encode("utf-8")).hexdigest()
+        expiry_minutes = int(getattr(settings, "PASSWORD_RESET_EXPIRE_MINUTES", 30))
+        now_utc = datetime.utcnow()
+        expires_at_utc = now_utc + timedelta(minutes=expiry_minutes)
 
-            try:
-                await users_collection().update_one(
-                    {"_id": user["_id"]},
-                    {
-                        "$set": {
-                            "password_reset": {
-                                "token_hash": reset_token_hash,
-                                "created_at": now,
-                                "expires_at": expires_at,
-                                "used": False,
-                            },
-                            "updated_at": now,
-                        }
-                    },
-                )
-                auth_log(f"Password reset token hash stored for user: {user.get('_id')}")
-            except Exception as e:
-                auth_log(f"Warning: Failed to store password reset token hash: {type(e).__name__}: {str(e)[:120]}")
+        # Log token in Docker logs for manual entry on frontend (do not return it in JSON).
+        logger.info(f"RESET_TOKEN_DEBUG email={email} token={reset_token}")
 
-            # Email sending must never break response.
-            try:
+        try:
+            await users_collection().update_one(
+                {"email": email},
+                {
+                    "$set": {
+                        "reset_token_hash": reset_token_hash,
+                        "reset_token_expiry": expires_at_utc,
+                        "updated_at": now_utc,
+                    }
+                },
+            )
+            auth_log(f"Password reset token hash stored for user email: {email}")
+        except Exception as e:
+            auth_log(
+                f"Warning: Failed to store reset token hash: {type(e).__name__}: {str(e)[:160]}"
+            )
+
+        # Email sending must never break execution; disable sending if creds missing/invalid.
+        try:
+            smtp_user = (getattr(settings, "SMTP_USERNAME", "") or "").strip()
+            smtp_pass = (getattr(settings, "SMTP_PASSWORD", "") or "").strip()
+            if smtp_user and smtp_pass:
                 user_name = user.get("name", user.get("email", "User"))
                 await email_service.send_password_reset_email(
-                    to_email=user["email"],
+                    to_email=user.get("email", email),
                     reset_token=reset_token,
                     user_name=user_name,
                 )
-            except Exception as e:
-                auth_log(f"SMTP send failed (non-fatal): {type(e).__name__}: {str(e)[:160]}")
+            else:
+                auth_log("SMTP disabled or not configured; skipping password reset email send")
+        except Exception as e:
+            auth_log(f"SMTP send failed (non-fatal): {type(e).__name__}: {str(e)[:160]}")
 
-        return response
+        return {"message": "Reset token generated successfully"}
         
     except HTTPException:
         raise
@@ -1530,22 +1532,14 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                 detail="New password must be at least 6 characters"
             )
         
-        # Preferred production flow:
-        # Validate token against hash stored on the user document (Atlas persistence)
-        reset_doc = None
+        # Production flow (Atlas-only): validate sha256(token) against users.reset_token_hash
         user = None
-        token_type = "user_doc"
-
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.utcnow()
         token_hash = hashlib.sha256(request.token.encode("utf-8")).hexdigest()
+
         try:
             user = await asyncio.wait_for(
-                users_collection().find_one(
-                    {
-                        "password_reset.token_hash": token_hash,
-                        "password_reset.used": False,
-                    }
-                ),
+                users_collection().find_one({"reset_token_hash": token_hash}),
                 timeout=5.0,
             )
         except asyncio.TimeoutError:
@@ -1557,228 +1551,32 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
             auth_log(f"Database error checking reset token hash: {type(e).__name__}: {str(e)}")
             user = None
 
-        if user:
-            pr = user.get("password_reset") or {}
-            expires_at = pr.get("expires_at")
-            if not isinstance(expires_at, datetime):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid or expired reset token",
-                )
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            if expires_at <= now_utc:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Reset token has expired - request a new one",
-                )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset token",
+            )
+
+        expires_at = user.get("reset_token_expiry")
+        if not isinstance(expires_at, datetime):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset token",
+            )
+        # Ensure UTC comparison
+        if expires_at.tzinfo is not None:
+            expires_at_cmp = expires_at.astimezone(timezone.utc).replace(tzinfo=None)
         else:
-            # Backward compatibility: legacy reset token storage.
-            # Try to validate as simple reset token first
-            simple_reset_token = request.token
-            token_type = "simple"
-        
-            try:
-                reset_doc = await asyncio.wait_for(
-                    reset_tokens_collection().find_one({
-                        "simple_token": simple_reset_token,
-                        "token_type": "password_reset",
-                        "used": False,
-                        "$or": [
-                            {"invalidated": {"$exists": False}},
-                            {"invalidated": False}
-                        ]
-                    }),
-                    timeout=5.0
-                )
-            except asyncio.TimeoutError:
-                raise HTTPException(
-                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                    detail="Database timeout - please try again"
-                )
-            except Exception as e:
-                auth_log(f"Database error checking simple reset token: {type(e).__name__}: {str(e)}")
-        
-            if reset_doc:
-                # Simple token found - get user from reset document
-                auth_log("Simple reset token found, validating user")
-                user_id = reset_doc.get("user_id")
-                if not user_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid reset token: missing user identifier"
-                    )
-                
-                try:
-                    user = await asyncio.wait_for(
-                        users_collection().find_one({"_id": user_id}),
-                        timeout=5.0
-                    )
-                except asyncio.TimeoutError:
-                    raise HTTPException(
-                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                        detail="Database timeout - please try again"
-                    )
-                except Exception as e:
-                    auth_log(f"Database error finding user: {type(e).__name__}: {str(e)}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to find user account"
-                    )
-                
-                if not user:
-                    auth_log(f"User not found for reset: {user_id}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid reset token"
-                    )
-            else:
-                # Simple token not found, try JWT validation
-                token_type = "jwt"
-                auth_log("Simple token not found, trying JWT validation")
+            expires_at_cmp = expires_at
+        if expires_at_cmp <= now_utc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Reset token has expired - request a new one",
+            )
 
-                # Decode and validate JWT token
-                token_data = None
-                try:
-                    token_data = decode_token(request.token)
-                except HTTPException as e:
-                    auth_log(f"JWT validation failed: {e.detail}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid or expired reset token - please request a new one"
-                    )
-                except Exception as e:
-                    auth_log(f"Token decode error: {type(e).__name__}: {str(e)}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid reset token format"
-                    )
-                
-                # Verify token is a password reset token
-                if token_data.token_type != "password_reset":
-                    auth_log(f"Invalid token type: {token_data.token_type}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid token type - expected password reset token"
-                    )
-                
-                # Verify user ID exists in token
-                if not token_data.user_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid reset token: missing user identifier"
-                    )
-                
-                # Check JTI in database - prevent replay attacks
-                jti = getattr(token_data, 'jti', None)
-                if not jti:
-                    auth_log("Reset token missing JTI")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid reset token: missing JTI"
-                    )
-                
-                try:
-                    reset_doc = await asyncio.wait_for(
-                        reset_tokens_collection().find_one({
-                            "jti": jti,
-                            "token_type": "password_reset",
-                            "used": False,
-                            "$or": [
-                                {"invalidated": {"$exists": False}},
-                                {"invalidated": False}
-                            ]
-                        }),
-                        timeout=5.0
-                    )
-                except asyncio.TimeoutError:
-                    raise HTTPException(
-                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                        detail="Database timeout - please try again"
-                    )
-                except Exception as e:
-                    auth_log(f"Database error checking reset token: {type(e).__name__}: {str(e)}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to verify reset token"
-                    )
-                
-                if not reset_doc:
-                    auth_log("Reset token not found or already used")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid or expired reset token - token may have already been used"
-                    )
-                
-                # Get user by ID from token (support both string and ObjectId _id fields)
-                try:
-                    raw_user_id = token_data.user_id
-                    candidate_ids = []
-                    # Always try raw ID first (most deployments store _id as string)
-                    if raw_user_id is not None:
-                        candidate_ids.append(raw_user_id)
-                    # If it looks like an ObjectId, also try BSON ObjectId variant
-                    if isinstance(raw_user_id, str) and ObjectId.is_valid(raw_user_id):
-                        try:
-                            oid = ObjectId(raw_user_id)
-                        except Exception as conv_error:
-                            oid = None
-                            auth_log(
-                                f"[RESET_PASSWORD_DEBUG] ObjectId conversion failed for {raw_user_id}: {conv_error}"
-                            )
-                        if oid is not None:
-                            candidate_ids.append(oid)
-
-                    if not candidate_ids:
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Invalid reset token: missing user identifier"
-                        )
-
-                    user = await asyncio.wait_for(
-                        users_collection().find_one({"_id": {"$in": candidate_ids}}),
-                        timeout=5.0
-                    )
-                except asyncio.TimeoutError:
-                    raise HTTPException(
-                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                        detail="Database timeout - please try again"
-                    )
-                except Exception as e:
-                    auth_log(f"Database error finding user: {type(e).__name__}: {str(e)}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to find user account"
-                    )
-                
-                if not user:
-                    auth_log(f"User not found for reset: {token_data.user_id}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid reset token"
-                    )
+        # Atlas-only flow validated. Proceed to update the password.
         
-        # Verify token not expired (legacy flows only). User-doc flow checks above.
-        if token_type != "user_doc":
-            expires_at = reset_doc.get("expires_at")
-            if not expires_at:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid reset token: no expiration"
-                )
-            
-            # Handle both naive and aware datetimes
-            if isinstance(expires_at, datetime):
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-                if expires_at <= now_utc:
-                    auth_log("Reset token expired")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Reset token has expired - request a new one"
-                    )
-        
-        auth_log(f"Password reset validated using {token_type} token for user: {user['_id']}")
+        auth_log(f"Password reset validated using Atlas hashed token for user: {user['_id']}")
         
         # Hash new password
         password_hash, password_salt = hash_password(request.new_password)
@@ -1802,36 +1600,23 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                 detail="Failed to reset password"
             )
         
-        # Mark reset token as used - prevent reuse
-        if token_type == "user_doc":
-            try:
-                await users_collection().update_one(
-                    {"_id": user["_id"]},
-                    {
-                        "$set": {
-                            "password_reset.used": True,
-                            "password_reset.used_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc),
-                        }
+        # Clear reset token fields on success (prevent reuse)
+        try:
+            await users_collection().update_one(
+                {"_id": user["_id"]},
+                {
+                    "$unset": {
+                        "reset_token_hash": "",
+                        "reset_token_expiry": "",
                     },
-                )
-                auth_log("Reset token marked as used (user doc)")
-            except Exception as e:
-                auth_log(f"Warning: Failed to mark user password_reset token as used: {type(e).__name__}")
-        else:
-            try:
-                await reset_tokens_collection().update_one(
-                    {"_id": reset_doc["_id"]},
-                    {"$set": {
-                        "used": True,
-                        "used_at": datetime.now(timezone.utc),
-                        "completed": True
-                    }}
-                )
-                auth_log(f"Reset token marked as used: {token_type}")
-            except Exception as e:
-                auth_log(f"Warning: Failed to mark reset token as used: {type(e).__name__}")
-                # Don't fail the operation if this fails
+                    "$set": {
+                        "updated_at": datetime.utcnow(),
+                    },
+                },
+            )
+            auth_log("Reset token cleared from user document")
+        except Exception as e:
+            auth_log(f"Warning: Failed to clear reset token fields: {type(e).__name__}: {str(e)[:120]}")
         
         # Invalidate all refresh tokens for this user - forces re-login
         try:
@@ -1849,17 +1634,18 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
             auth_log(f"Warning: Failed to invalidate refresh tokens: {type(e).__name__}")
             # Don't fail the operation if this fails
         
-        # Send password changed confirmation email
+        # Send password changed confirmation email (optional; never break reset)
         try:
-            user_name = user.get("name", user.get("email", "User"))
-            await email_service.send_password_changed_email(
-                to_email=user["email"],
-                user_name=user_name
-            )
-            auth_log(f"✅ Password change confirmation email sent to {user['email']}")
+            smtp_user = (getattr(settings, "SMTP_USERNAME", "") or "").strip()
+            smtp_pass = (getattr(settings, "SMTP_PASSWORD", "") or "").strip()
+            if smtp_user and smtp_pass:
+                user_name = user.get("name", user.get("email", "User"))
+                await email_service.send_password_changed_email(
+                    to_email=user.get("email"),
+                    user_name=user_name,
+                )
         except Exception as e:
-            auth_log(f"Warning: Failed to send confirmation email: {type(e).__name__}")
-            # Don't fail if email sending fails
+            auth_log(f"Warning: Failed to send confirmation email: {type(e).__name__}: {str(e)[:160]}")
         
         auth_log(f"[SUCCESS] Password reset successful for user: {user['_id']}")
         

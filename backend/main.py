@@ -1454,7 +1454,7 @@ if isinstance(cors_origins, str):
 if isinstance(cors_origins, list) and len(cors_origins) > 0:
     cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
 
-# Production CORS: allow only configured zaply origins (no localhost or extra debug origins)
+# Production CORS: allow only configured zaply origins (no extra debug origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
