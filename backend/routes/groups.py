@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, UploadFile, File
+from fastapi.encoders import jsonable_encoder
 from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
@@ -77,6 +78,19 @@ def _log(level: str, message: str, meta: Optional[dict] = None) -> None:
 router = APIRouter(prefix="/groups", tags=["Groups"])
 
 import sys
+
+
+def _id_query(id_value: str) -> dict:
+    try:
+        if ObjectId.is_valid(id_value):
+            return {"$or": [{"_id": ObjectId(id_value)}, {"_id": id_value}]}
+    except Exception:
+        pass
+    return {"_id": id_value}
+
+
+def _encode_doc(doc: Any) -> Any:
+    return jsonable_encoder(doc, custom_encoder={ObjectId: str})
 
 sys.modules.setdefault("routes.groups", sys.modules[__name__])
 sys.modules.setdefault("backend.routes.groups", sys.modules[__name__])
@@ -750,11 +764,12 @@ async def update_group(group_id: str, payload: GroupUpdate, current_user: str = 
 
     if update:
         update["updated_at"] = _now()
-        await chats_collection().update_one({"_id": group_id}, {"$set": update})
+        await chats_collection().update_one(_id_query(group_id), {"$set": update})
+    if update:
         await _log_activity(group_id, current_user, "group_updated", {"fields": list(update.keys())})
 
-    group_new = await chats_collection().find_one({"_id": group_id})
-    return {"group": group_new}
+    group_new = await chats_collection().find_one(_id_query(group_id))
+    return {"group": _encode_doc(group_new)}
 
 
 @router.post("/{group_id}/members")
@@ -840,7 +855,7 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
 
     # Persist to database (add to members set)
     await chats_collection().update_one(
-        {"_id": group_id},
+        _id_query(group_id),
         {"$addToSet": {"members": {"$each": new_ids}}},
     )
 
@@ -866,399 +881,6 @@ async def add_members(group_id: str, payload: GroupMembersUpdate, current_user: 
         "message": f"Successfully added {len(new_ids)} members",
     }
 
-# ============ GROUP PROFILE CHANGE FUNCTIONALITY ============
-
-@router.put("/{group_id}/profile", response_model=dict)
-async def update_group_profile(
-    group_id: str,
-    profile_data: dict = Body(...),
-    current_user: str = Depends(get_current_user)
-):
-    """Update group profile information"""
-    _log("info", f"Group profile update request", {"group_id": group_id, "user_id": current_user, "operation": "group_profile_update"})
-    
-    try:
-        # Validate user is member of the group
-        chats = chats_collection()
-        group = await chats.find_one({"_id": ObjectId(group_id)})
-        
-        if not group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Group not found"
-            )
-        
-        if current_user not in group.get("members", []):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You must be a member of this group to update profile"
-            )
-        
-        # Extract profile data
-        group_name = profile_data.get("name")
-        group_description = profile_data.get("description")
-        group_avatar = profile_data.get("avatar")
-        group_settings = profile_data.get("settings", {})
-        
-        # Build update data
-        update_data = {}
-        
-        if group_name and group_name != group.get("name"):
-            # Check if name is available
-            existing_group = await chats.find_one({
-                "name": group_name,
-                "_id": {"$ne": ObjectId(group_id)}
-            })
-            
-            if existing_group:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Group name already exists"
-                )
-            
-            update_data["name"] = group_name
-        
-        if group_description is not None:
-            update_data["description"] = group_description
-        
-        if group_avatar is not None:
-            # Handle avatar upload/update
-            avatar_file_id = None
-            if isinstance(group_avatar, str) and group_avatar.startswith("file_id:"):
-                avatar_file_id = group_avatar[9:]  # Remove "file_id:" prefix
-            elif isinstance(group_avatar, dict) and "file_id" in group_avatar:
-                avatar_file_id = group_avatar["file_id"]
-            
-            if avatar_file_id:
-                update_data["avatar"] = avatar_file_id
-                update_data["avatar_updated_at"] = datetime.now(timezone.utc)
-        
-        # Update group settings
-        if group_settings:
-            update_data["settings"] = {
-                "privacy": group_settings.get("privacy", group.get("settings", {}).get("privacy", "private")),
-                "allow_invites": group_settings.get("allow_invites", group.get("settings", {}).get("allow_invites", True)),
-                "approval_required": group_settings.get("approval_required", group.get("settings", {}).get("approval_required", False)),
-                "max_members": group_settings.get("max_members", group.get("settings", {}).get("max_members", 256))
-            }
-        
-        # Add updated by and updated at
-        update_data["updated_by"] = current_user
-        update_data["updated_at"] = datetime.now(timezone.utc)
-        
-        # Perform update
-        await chats.update_one(
-            {"_id": ObjectId(group_id)},
-            {"$set": update_data}
-        )
-        
-        # Log the change
-        _log("info", f"Group profile updated", {"group_id": group_id, "user_id": current_user, "updated_fields": list(update_data.keys())})
-        
-        return {
-            "message": "Group profile updated successfully",
-            "group_id": group_id,
-            "updated_fields": list(update_data.keys()),
-            "success": True
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log("error", f"Group profile update failed", {"group_id": group_id, "user_id": current_user, "error": str(e), "operation": "group_profile_update"})
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update group profile"
-        )
-
-@router.get("/{group_id}/profile")
-async def get_group_profile(
-    group_id: str,
-    current_user: str = Depends(get_current_user)
-):
-    """Get group profile information"""
-    try:
-        chats = chats_collection()
-        group = await chats.find_one({"_id": ObjectId(group_id)})
-        
-        if not group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Group not found"
-            )
-        
-        if current_user not in group.get("members", []):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You must be a member of this group to view profile"
-            )
-        
-        return {
-            "group_id": group_id,
-            "name": group.get("name"),
-            "description": group.get("description"),
-            "avatar": group.get("avatar"),
-            "created_at": group.get("created_at"),
-            "created_by": group.get("created_by"),
-            "updated_at": group.get("updated_at"),
-            "updated_by": group.get("updated_by"),
-            "member_count": len(group.get("members", [])),
-            "settings": group.get("settings", {}),
-            "success": True
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log("error", f"Group profile fetch failed", {"group_id": group_id, "user_id": current_user, "error": str(e), "operation": "group_profile_fetch"})
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get group profile"
-        )
-
-# ============ ADD MEMBERS TO GROUP FUNCTIONALITY ============
-
-@router.post("/{group_id}/add-members", response_model=dict)
-async def add_members_to_group(
-    group_id: str,
-    members_data: dict = Body(...),
-    current_user: str = Depends(get_current_user)
-):
-    """Add multiple members to a group"""
-    _log("info", f"Add members to group request", {"group_id": group_id, "user_id": current_user, "operation": "add_members"})
-    
-    try:
-        # Validate user is admin of the group
-        chats = chats_collection()
-        group = await chats.find_one({"_id": ObjectId(group_id)})
-        
-        if not group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Group not found"
-            )
-        
-        if current_user not in group.get("members", []):
-            # Check if user is admin
-            group_settings = group.get("settings", {})
-            if group_settings.get("admin_only_add", False) and current_user != group.get("created_by"):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only group admins can add members"
-                )
-        
-        # Extract member data
-        members_to_add = members_data.get("members", [])
-        message = members_data.get("message", "")
-        
-        if not members_to_add:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No members provided"
-            )
-        
-        added_members = []
-        failed_members = []
-        
-        # Get users collection
-        users = users_collection()
-        current_members = set(group.get("members", []))
-        
-        for member_info in members_to_add:
-            if isinstance(member_info, str):
-                # Just a user ID/username
-                user_id_or_email = member_info
-            elif isinstance(member_info, dict):
-                # Detailed member info
-                user_id_or_email = member_info.get("user_id") or member_info.get("email") or member_info.get("username")
-            else:
-                failed_members.append({
-                    "member": member_info,
-                    "reason": "Invalid member format"
-                })
-                continue
-            
-            # Find the user
-            user = None
-            if ObjectId.is_valid(user_id_or_email):
-                user = await users.find_one({"_id": ObjectId(user_id_or_email)})
-            else:
-                # Try email first, then username
-                user = await users.find_one({"email": user_id_or_email})
-                if not user:
-                    user = await users.find_one({"username": user_id_or_email})
-            
-            if not user:
-                failed_members.append({
-                    "member": member_info,
-                    "reason": "User not found"
-                })
-                continue
-            
-            user_id_str = str(user["_id"])
-            
-            # Check if user is already a member
-            if user_id_str in current_members:
-                failed_members.append({
-                    "member": member_info,
-                    "reason": "Already a member"
-                })
-                continue
-            
-            # Add to group
-            await chats.update_one(
-                {"_id": ObjectId(group_id)},
-                {"$push": {"members": user_id_str}}
-            )
-            
-            # Update user's groups
-            await users.update_one(
-                {"_id": user["_id"]},
-                {"$push": {"groups": group_id}}
-            )
-            
-            # Send notification (if message provided)
-            if message:
-                notification_data = {
-                    "type": "group_add",
-                    "group_id": group_id,
-                    "group_name": group.get("name"),
-                    "message": message,
-                    "added_by": current_user,
-                    "created_at": datetime.now(timezone.utc)
-                }
-                
-                # Store notification (you can implement notification service later)
-                _log("info", f"Group notification created", {"user_id": user_id_str, "group_id": group_id, "notification": notification_data})
-            
-            added_members.append({
-                "user_id": user_id_str,
-                "username": user.get("username"),
-                "name": user.get("name"),
-                "email": user.get("email")
-            })
-        
-        # Update group stats
-        new_member_count = len(current_members) + len(added_members)
-        await chats.update_one(
-            {"_id": ObjectId(group_id)},
-            {"$set": {
-                "member_count": new_member_count,
-                "last_member_added": datetime.now(timezone.utc),
-                "last_member_added_by": current_user
-            }}
-        )
-        
-        _log("info", f"Members added to group", {"group_id": group_id, "user_id": current_user, "added_count": len(added_members), "failed_count": len(failed_members)})
-        
-        return {
-            "message": f"Added {len(added_members)} members to group",
-            "group_id": group_id,
-            "added_members": added_members,
-            "failed_members": failed_members,
-            "success": len(added_members) > 0
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log("error", f"Add members to group failed", {"group_id": group_id, "user_id": current_user, "error": str(e), "operation": "add_members"})
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to add members to group"
-        )
-
-@router.get("/{group_id}/members")
-async def get_group_members(
-    group_id: str,
-    current_user: str = Depends(get_current_user),
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100)
-):
-    """Get group members with pagination"""
-    try:
-        chats = chats_collection()
-        group = await chats.find_one({"_id": ObjectId(group_id)})
-        
-        if not group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Group not found"
-            )
-        
-        if current_user not in group.get("members", []):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You must be a member of this group to view members"
-            )
-        
-        members = group.get("members", [])
-        users = users_collection()
-        
-        # Get member details with pagination
-        start_index = (page - 1) * limit
-        end_index = start_index + limit
-        members_slice = members[start_index:end_index]
-        
-        member_details = []
-        for member_id in members_slice:
-            user = await users.find_one({"_id": ObjectId(member_id)}, {
-                "password": 0,  # Exclude password
-                "tokens": 0,  # Exclude tokens
-                "reset_tokens": 0  # Exclude reset tokens
-            })
-            
-            if user:
-                member_details.append({
-                    "user_id": member_id,
-                    "username": user.get("username"),
-                    "name": user.get("name"),
-                    "email": user.get("email"),
-                    "avatar": user.get("avatar"),
-                    "joined_at": user.get("joined_at")
-                })
-        
-        return {
-            "group_id": group_id,
-            "members": member_details,
-            "pagination": {
-                "page": page,
-                "limit": limit,
-                "total": len(members),
-                "has_next": end_index < len(members)
-            },
-            "success": True
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log("error", f"Get group members failed", {"group_id": group_id, "user_id": current_user, "error": str(e), "operation": "get_members"})
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get group members"
-        )
-
-
-@router.delete("/{group_id}/members/{member_id}")
-async def remove_member(group_id: str, member_id: str, current_user: str = Depends(get_current_user)):
-    group = await _require_group(group_id, current_user)
-    if not _is_admin(group, current_user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can remove members")
-    if member_id == group.get("created_by"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove group creator")
-
-    await chats_collection().update_one({"_id": group_id}, {"$pull": {"members": member_id, "admins": member_id}})
-    
-    # Update cache
-    await GroupCacheService.remove_member_from_cache(group_id, member_id)
-    
-    # Invalidate group info cache
-    await GroupCacheService.invalidate_group_cache(group_id)
-    
-    await _log_activity(group_id, current_user, "member_removed", {"user_id": member_id})
-    return {"removed": member_id}
-
 
 @router.put("/{group_id}/members/{member_id}/role")
 async def update_member_role(
@@ -1276,59 +898,33 @@ async def update_member_role(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
 
     if role == "admin":
-        await chats_collection().update_one({"_id": group_id}, {"$addToSet": {"admins": member_id}})
+        await chats_collection().update_one(_id_query(group_id), {"$addToSet": {"admins": member_id}})
         await _log_activity(group_id, current_user, "member_promoted", {"user_id": member_id})
     else:
         # Prevent removing the last admin
         admins = group.get("admins", [])
         if member_id in admins and len(admins) <= 1:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group must have at least 1 admin")
-        await chats_collection().update_one({"_id": group_id}, {"$pull": {"admins": member_id}})
+        await chats_collection().update_one(_id_query(group_id), {"$pull": {"admins": member_id}})
         await _log_activity(group_id, current_user, "member_demoted", {"user_id": member_id})
 
-    new_group = await chats_collection().find_one({"_id": group_id})
-    return {"group": new_group}
+    new_group = await chats_collection().find_one(_id_query(group_id))
+    return {"group": _encode_doc(new_group)}
 
 
-@router.post("/{group_id}/leave")
-async def leave_group(group_id: str, current_user: str = Depends(get_current_user)):
-    group = await _require_group(group_id, current_user)
-    if current_user == group.get("created_by"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Creator must delete the group or transfer ownership")
-
-    # If admin leaving, ensure at least 1 admin remains
-    admins = group.get("admins", [])
-    if current_user in admins and len(admins) <= 1:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assign another admin before leaving")
-
-    await chats_collection().update_one({"_id": group_id}, {"$pull": {"members": current_user, "admins": current_user}})
-    await _log_activity(group_id, current_user, "member_left", {"user_id": current_user})
-    return {"status": "left"}
-
-
-@router.delete("/{group_id}")
-async def delete_group(group_id: str, current_user: str = Depends(get_current_user)):
-    group = await _require_group(group_id, current_user)
-    if current_user != group.get("created_by") and not _is_admin(group, current_user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can delete group")
-
-    await chats_collection().delete_one({"_id": group_id})
-    await messages_collection().delete_many({"chat_id": group_id})
-    await _log_activity(group_id, current_user, "group_deleted", {})
-    return {"status": "deleted"}
 
 
 @router.post("/{group_id}/mute")
 async def mute_group(group_id: str, mute: bool = True, current_user: str = Depends(get_current_user)):
     group = await _require_group(group_id, current_user)
     if mute:
-        await chats_collection().update_one({"_id": group_id}, {"$addToSet": {"muted_by": current_user}})
+        await chats_collection().update_one(_id_query(group_id), {"$addToSet": {"muted_by": current_user}})
         await _log_activity(group_id, current_user, "notifications_muted", {})
     else:
-        await chats_collection().update_one({"_id": group_id}, {"$pull": {"muted_by": current_user}})
+        await chats_collection().update_one(_id_query(group_id), {"$pull": {"muted_by": current_user}})
         await _log_activity(group_id, current_user, "notifications_unmuted", {})
-    new_group = await chats_collection().find_one({"_id": group_id})
-    return {"group": new_group}
+    new_group = await chats_collection().find_one(_id_query(group_id))
+    return {"group": _encode_doc(new_group)}
 
 
 @router.get("/{group_id}/activity")
