@@ -742,7 +742,7 @@ async def get_group(group_id: str, current_user: str = Depends(get_current_user)
     
     print(f"[GET_GROUP] Group {group_id}: {len(member_ids)} members, {len(members)} member details")
     
-    return {"group": group_out}
+    return {"group": _encode_doc(group_out)}
 
 
 @router.put("/{group_id}")

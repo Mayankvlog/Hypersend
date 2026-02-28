@@ -71,12 +71,15 @@ async def init_database():
         # even under pytest.
         mongodb_atlas_enabled = (os.getenv("MONGODB_ATLAS_ENABLED") or "").lower() == "true"
         use_mock_db = (os.getenv("USE_MOCK_DB") or "").lower() == "true"
-        if mongodb_atlas_enabled:
-            if use_mock_db:
-                raise RuntimeError('USE_MOCK_DB must be "false" when MongoDB Atlas is enabled')
-        else:
+        
+        if not mongodb_atlas_enabled:
             # Atlas must be enabled for this backend.
             raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true"')
+            
+        if mongodb_atlas_enabled and use_mock_db:
+            raise RuntimeError('USE_MOCK_DB must be "false" when MongoDB Atlas is enabled')
+            
+        # Continue with Atlas initialization
 
         mongodb_uri = os.getenv("MONGODB_URI")
         if not mongodb_uri:

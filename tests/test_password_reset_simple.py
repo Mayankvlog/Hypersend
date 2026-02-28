@@ -12,12 +12,18 @@ backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ba
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-# Use mock database for testing (MongoDB Atlas has event loop issues with TestClient)
-os.environ['USE_MOCK_DB'] = 'True'
-os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
-os.environ['MONGODB_URI'] = 'mongodb+srv://test:test@localhost:27017/test?retryWrites=true&w=majority'
-os.environ['DATABASE_NAME'] = 'test'
-os.environ['SECRET_KEY'] = 'test-secret-key'
+# Use MongoDB Atlas for testing (as requested by user)
+# Only set defaults if not already set
+if 'USE_MOCK_DB' not in os.environ:
+    os.environ['USE_MOCK_DB'] = 'False'
+if 'MONGODB_ATLAS_ENABLED' not in os.environ:
+    os.environ['MONGODB_ATLAS_ENABLED'] = 'true'
+if 'MONGODB_URI' not in os.environ:
+    os.environ['MONGODB_URI'] = 'mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/Hypersend?retryWrites=true&w=majority'
+if 'DATABASE_NAME' not in os.environ:
+    os.environ['DATABASE_NAME'] = 'Hypersend'
+if 'SECRET_KEY' not in os.environ:
+    os.environ['SECRET_KEY'] = 'test-secret-key'
 
 try:
     from fastapi.testclient import TestClient
