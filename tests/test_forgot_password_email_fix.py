@@ -112,14 +112,14 @@ def test_forgot_password_endpoint():
             print(f"Response data: {data}")
             
             # Check if response is successful
-            if data.get("success"):
+            if data.get("message") and "reset token generated" in data.get("message", "").lower():
                 print("✅ Forgot password request successful")
                 
                 # In DEBUG mode, token should be included when email fails or is disabled
                 if settings and settings.DEBUG:
-                    if data.get("token"):
+                    if data.get("reset_token"):
                         print("✅ Token included in debug response")
-                        print(f"Token: {data.get('token')[:20]}...")
+                        print(f"Token: {data.get('reset_token')[:20]}...")
                     elif data.get("debug_message"):
                         print(f"✅ Debug mode active: {data.get('debug_message')}")
                     else:

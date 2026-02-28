@@ -1439,7 +1439,7 @@ async def forgot_password(request: dict) -> dict:
         reset_token = secrets.token_urlsafe(32)
         reset_token_hash = hashlib.sha256(reset_token.encode("utf-8")).hexdigest()
         expiry_minutes = int(getattr(settings, "PASSWORD_RESET_EXPIRE_MINUTES", 30))
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(timezone.utc)
         expires_at_utc = now_utc + timedelta(minutes=expiry_minutes)
 
         # Log token in Docker logs for manual entry on frontend
@@ -1524,7 +1524,7 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
         
         # Production flow (Atlas-only): validate sha256(token) against users.reset_token_hash
         user = None
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(timezone.utc)
         token_hash = hashlib.sha256(request.token.encode("utf-8")).hexdigest()
 
         try:
@@ -1553,11 +1553,16 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired reset token",
             )
-        # Ensure UTC comparison
-        if expires_at.tzinfo is not None:
-            expires_at_cmp = expires_at.astimezone(timezone.utc).replace(tzinfo=None)
+        
+        # Ensure both datetimes are timezone-aware for comparison
+        if expires_at.tzinfo is None:
+            # If stored datetime is naive, assume it's UTC
+            expires_at_cmp = expires_at.replace(tzinfo=timezone.utc)
         else:
-            expires_at_cmp = expires_at
+            # If stored datetime is timezone-aware, convert to UTC
+            expires_at_cmp = expires_at.astimezone(timezone.utc)
+        
+        # now_utc is already timezone-aware from earlier
         if expires_at_cmp <= now_utc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1600,8 +1605,8 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
                         "reset_token_expiry": "",
                     },
                     "$set": {
-                        "updated_at": datetime.utcnow(),
-                    },
+                            "updated_at": datetime.now(timezone.utc),
+                        },
                 },
             )
             auth_log("Reset token cleared from user document")
