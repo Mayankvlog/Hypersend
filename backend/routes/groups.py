@@ -359,7 +359,19 @@ async def get_group_avatar(filename: str, current_user: Optional[str] = Depends(
 
 
 async def _require_group(group_id: str, current_user: str) -> dict:
-    group = await chats_collection().find_one({"_id": group_id, "type": "group", "members": {"$in": [current_user]}})
+    # Backward compatibility: older data stored chats._id as a string.
+    query = {"_id": group_id, "type": "group", "members": {"$in": [current_user]}}
+    try:
+        if ObjectId.is_valid(group_id):
+            query = {
+                "$or": [{"_id": ObjectId(group_id)}, {"_id": group_id}],
+                "type": "group",
+                "members": {"$in": [current_user]},
+            }
+    except Exception:
+        pass
+
+    group = await chats_collection().find_one(query)
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return group
@@ -400,9 +412,10 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
         print(f"[GROUP_CREATE] ERROR: Group must have at least 2 members, got {len(member_ids)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group must have at least 2 members")
 
-    group_id = str(ObjectId())
+    group_oid = ObjectId()
+    group_id = str(group_oid)
     chat_doc = {
-        "_id": group_id,
+        "_id": group_oid,
         "type": "group",
         "name": payload.name.strip(),
         "description": (payload.description or "").strip(),

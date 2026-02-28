@@ -390,6 +390,9 @@ async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     chat_oid = _parse_object_id(chat_id, "chat_id")
     chat = await chats_collection().find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
     if not chat:
+        # Backward compatibility: older data stored chats._id as a string.
+        chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+    if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found"
@@ -442,6 +445,11 @@ async def get_messages(
 
     # Verify user is member
     chat = await chats_col.find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
+    chat_key = chat_oid
+    if not chat:
+        # Backward compatibility: older data stored chats._id as a string.
+        chat = await chats_col.find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+        chat_key = chat_id
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -449,7 +457,8 @@ async def get_messages(
         )
 
     # Build query
-    query = {"chat_id": chat_oid}
+    # Support both Atlas ObjectId schema and legacy string chat_id schema
+    query = {"chat_id": chat_key}
     if before:
         before_oid = _parse_object_id(before, "before")
         before_msg = await msgs_col.find_one({"_id": before_oid}, {"created_at": 1})
@@ -496,6 +505,11 @@ async def send_message(
 
     # Verify user is member
     chat = await chats_collection().find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
+    chat_key = chat_oid
+    if not chat:
+        # Backward compatibility: older data stored chats._id as a string.
+        chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+        chat_key = chat_id
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -516,7 +530,8 @@ async def send_message(
     msg_type = "file" if message.file_id else "text"
     now = datetime.now(timezone.utc)
     msg_doc = {
-        "chat_id": chat_oid,
+        # Support legacy string chat ids as well.
+        "chat_id": chat_key,
         "sender_id": ObjectId(current_user),
         "content": message.text,
         "type": msg_type,
@@ -546,7 +561,7 @@ async def send_message(
 
     # Update chat last_message and updated_at
     await chats_collection().update_one(
-        {"_id": chat_oid},
+        {"_id": chat_key},
         {
             "$set": {
                 "last_message": {
