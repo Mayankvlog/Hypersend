@@ -85,10 +85,16 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # IDENTITY MODEL: Username + Device Key Authentication (NO PHONE NUMBERS)
 # Phone number authentication is FORBIDDEN - using username + device key instead
 
-from auth.utils import (
-    hash_password, verify_password, create_access_token, 
-    create_refresh_token, decode_token, get_current_user
-)
+try:
+    from backend.auth.utils import (
+        hash_password, verify_password, create_access_token,
+        create_refresh_token, decode_token, get_current_user,
+    )
+except ImportError:
+    from auth.utils import (
+        hash_password, verify_password, create_access_token,
+        create_refresh_token, decode_token, get_current_user,
+    )
 
 try:
     from ..validators import validate_user_id

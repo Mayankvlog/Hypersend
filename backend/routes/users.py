@@ -286,15 +286,11 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         # Add a 5-second timeout to prevent hanging
         user = None
         if ObjectId.is_valid(current_user):
+            object_id = ObjectId(current_user)
             user = await asyncio.wait_for(
-                users_collection().find_one({"_id": ObjectId(current_user)}),
+                users_collection().find_one({"_id": object_id}),
                 timeout=5.0,
             )
-            if not user:
-                user = await asyncio.wait_for(
-                    users_collection().find_one({"_id": current_user}),
-                    timeout=5.0,
-                )
         else:
             user = await asyncio.wait_for(
                 users_collection().find_one({"_id": current_user}),
@@ -573,33 +569,26 @@ async def update_profile(
 
                 )
 
-            # Check if the username is already taken
-
+            # Check if username is already taken (excluding current user)
             if username != "":
-
+                from bson import ObjectId
+                current_user_id = current_user_data.get("_id") if current_user_data else None
+                
                 existing_username = await asyncio.wait_for(
-
                     users_collection().find_one({"username": username}),
-
                     timeout=5.0
-
                 )
-
-                if existing_username and existing_username.get("_id") != current_user:
-
+                
+                # Allow username change if it's the same user or username is not taken
+                if existing_username and existing_username.get("_id") != current_user_id:
                     logger.warning(f"Username already taken: {username} by {existing_username.get('_id')}")
-
                     raise HTTPException(
-
                         status_code=status.HTTP_409_CONFLICT,
-
                         detail="Username already taken"
-
                     )
-
-            logger.info(f"SUCCESS: Username validation passed: {username}")
-
-            update_data["username"] = username
+                
+                logger.info(f"SUCCESS: Username validation passed: {username}")
+                update_data["username"] = username
 
         
 

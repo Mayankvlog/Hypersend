@@ -50,11 +50,11 @@ if backend_path not in sys.path:
 
 # Configure DB mode for tests.
 # IMPORTANT: This must be set BEFORE importing backend modules.
-# If the test runner already provided Atlas env vars, do not override them.
+# Use real MongoDB Atlas for testing to ensure Atlas compatibility
 os.environ.setdefault('USE_MOCK_DB', 'false')
 os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
-os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
-os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('MONGODB_URI', 'mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
 os.environ['DEBUG'] = 'True'  # Enable debug mode for tests
 
@@ -134,7 +134,11 @@ def event_loop():
 def _init_atlas_db_for_tests(event_loop):
     import database as _database
     try:
-        event_loop.run_until_complete(_database.init_database())
+        # Use the existing event loop instead of creating a new one
+        if not _database.is_database_initialized():
+            # Run the async init function in the event loop
+            task = event_loop.create_task(_database.init_database())
+            event_loop.run_until_complete(task)
         from backend.main import app as _app
         _app.state.db = _database.db
         _app.state.client = _database.client

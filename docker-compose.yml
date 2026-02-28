@@ -125,8 +125,8 @@ services:
 
       # ===== FILE STORAGE =====
       UPLOAD_DIR: /app/uploads
-      MAX_FILE_SIZE: "104857600"  # 100MB
-      ALLOWED_FILE_TYPES: "jpg,jpeg,png,gif,pdf,doc,docx,txt"
+      MAX_FILE_SIZE: "1048576000000"  # 100MB
+      ALLOWED_FILE_TYPES: "jpg,jpeg,png,gif,pdf,doc,docx,txt,mp4,mp3,zip,avi,wmv,flv,webm,mpg,wmf,wmv,exe,msi,deb,rar,7z,iso"
 
       # ===== LOGGING =====
       LOG_LEVEL: "INFO"

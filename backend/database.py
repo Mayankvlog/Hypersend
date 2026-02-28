@@ -72,6 +72,13 @@ async def init_database():
         mongodb_atlas_enabled = (os.getenv("MONGODB_ATLAS_ENABLED") or "").lower() == "true"
         use_mock_db = (os.getenv("USE_MOCK_DB") or "").lower() == "true"
         
+        # Allow mock database in pytest environment
+        if _is_pytest_running() and use_mock_db:
+            # In pytest, allow mock database even if Atlas is configured
+            print("✅ Using mock database for pytest")
+            _database_initialized = True
+            return
+        
         if not mongodb_atlas_enabled:
             # Atlas must be enabled for this backend.
             raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true"')
@@ -122,30 +129,50 @@ def get_database():
 # Collection shortcuts
 def users_collection():
     """Get users collection"""
+    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
+        # Return mock collection for pytest
+        from .mock_database import MockCollection
+        return MockCollection("users")
     if is_database_initialized() and db is not None:
         return db["users"]
     raise RuntimeError("Database not initialized")
 
 def chats_collection():
     """Get chats collection"""
+    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
+        # Return mock collection for pytest
+        from .mock_database import MockCollection
+        return MockCollection("chats")
     if is_database_initialized() and db is not None:
         return db["chats"]
     raise RuntimeError("Database not initialized")
 
 def messages_collection():
     """Get messages collection"""
+    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
+        # Return mock collection for pytest
+        from .mock_database import MockCollection
+        return MockCollection("messages")
     if is_database_initialized() and db is not None:
         return db["messages"]
     raise RuntimeError("Database not initialized")
 
 def files_collection():
     """Get files collection"""
+    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
+        # Return mock collection for pytest
+        from .mock_database import MockCollection
+        return MockCollection("files")
     if is_database_initialized() and db is not None:
         return db["files"]
     raise RuntimeError("Database not initialized")
 
 def uploads_collection():
     """Get uploads collection"""
+    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
+        # Return mock collection for pytest
+        from .mock_database import MockCollection
+        return MockCollection("uploads")
     if is_database_initialized() and db is not None:
         return db["uploads"]
     raise RuntimeError("Database not initialized")

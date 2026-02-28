@@ -19,18 +19,22 @@ from pathlib import Path
 
 # Robust import handling for settings and models
 try:
-    # Try direct import first (when running from backend directory)
-    from config import settings
+    # Prefer canonical package import to avoid duplicate modules (backend.config vs config)
+    from backend.config import settings
 except ImportError:
     try:
-        # Try parent directory import (when running from project root)
-        sys.path.insert(0, str(Path(__file__).parent.parent))
+        # Try direct import (when running from backend directory)
         from config import settings
-    except ImportError as e:
-        raise ImportError(
-            f"Failed to import settings from config module. "
-            f"Ensure config.py exists in backend directory. Error: {e}"
-        ) from e
+    except ImportError:
+        try:
+            # Try parent directory import (when running from project root)
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from config import settings
+        except ImportError as e:
+            raise ImportError(
+                f"Failed to import settings from config module. "
+                f"Ensure config.py exists in backend directory. Error: {e}"
+            ) from e
 
 try:
     # Try direct import first
@@ -48,6 +52,19 @@ except ImportError:
 
 # Configure logger
 logger = logging.getLogger(__name__)
+
+
+def _get_settings():
+    """Return the current settings object.
+
+    Some tests reload backend.config; importing `settings` once at module import time
+    can leave this module with a stale SECRET_KEY/ALGORITHM reference.
+    """
+    try:
+        import backend.config as _backend_config
+        return _backend_config.settings
+    except Exception:
+        return settings
 
 # Token lifetime constants
 UPLOAD_TOKEN_MAX_LIFETIME_HOURS = 480  # 20 days - maximum lifetime for upload tokens
@@ -393,11 +410,12 @@ def diagnose_password_format(hashed_password: str, salt: str = None) -> dict:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token"""
+    s = _get_settings()
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=s.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     # Add expiration to the token payload
     to_encode.update({"exp": expire})
@@ -411,23 +429,26 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     if "token_type" not in to_encode:
         to_encode.update({"token_type": "access"})
     
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, s.SECRET_KEY, algorithm=s.ALGORITHM)
     return encoded_jwt
 
 
 def create_refresh_token(data: dict) -> Tuple[str, str]:
     """Create JWT refresh token and return (token, jti)."""
+    s = _get_settings()
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc) + timedelta(days=s.REFRESH_TOKEN_EXPIRE_DAYS)
     jti = str(uuid.uuid4())
     to_encode.update({"exp": expire, "token_type": "refresh", "jti": jti})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    s = _get_settings()
+    encoded_jwt = jwt.encode(to_encode, s.SECRET_KEY, algorithm=s.ALGORITHM)
     return encoded_jwt, jti
 
 
 def decode_token(token: str) -> TokenData:
     """Decode and validate JWT token with enhanced validation and timing attack protection"""
     try:
+        s = _get_settings()
         # SECURITY FIX: Remove random delay to improve performance
         # Timing attacks are mitigated by constant-time comparison in hmac.compare_digest
         
@@ -438,7 +459,7 @@ def decode_token(token: str) -> TokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, s.SECRET_KEY, algorithms=[s.ALGORITHM])
         user_id: str = payload.get("sub")
         token_type: str = payload.get("token_type")
         jti: Optional[str] = payload.get("jti")  # CRITICAL FIX: Extract JTI for token revocation
@@ -526,7 +547,8 @@ def verify_token(token: str) -> dict:
         raise ValueError("Token must be a non-empty string")
     
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        s = _get_settings()
+        payload = jwt.decode(token, s.SECRET_KEY, algorithms=[s.ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise jwt.ExpiredSignatureError("Token has expired")
     except jwt.InvalidTokenError:
@@ -582,6 +604,9 @@ async def get_current_user(
 
     existing_user = None
     try:
+        # Convert user_id_str to ObjectId for MongoDB query
+        from bson import ObjectId
+        
         if ObjectId.is_valid(user_id_str):
             object_id = ObjectId(user_id_str)
             existing_user = await users_col.find_one({"_id": object_id})
@@ -642,7 +667,7 @@ async def get_current_user_optional(request: Request) -> Optional[str]:
         return None
 
 async def get_current_user_or_query(
-    request: Request, 
+    request: Request,
     token: Optional[str] = Query(None)
 ) -> str:
     """ENHANCED DEPENDENCY WITH AUTOMATIC TOKEN REFRESH FOR SESSION PERSISTENCE.
@@ -703,8 +728,8 @@ async def get_current_user_or_query(
         try:
             payload = jwt.decode(
                 header_token,
-                settings.SECRET_KEY,
-                algorithms=[settings.ALGORITHM],
+                _get_settings().SECRET_KEY,
+                algorithms=[_get_settings().ALGORITHM],
                 options={"verify_exp": False},
             )
             user_id = payload.get("sub")
@@ -733,86 +758,35 @@ async def get_current_user_or_query(
         raise
 
 
-async def get_current_user_from_query(token: Optional[str] = Query(None)) -> str:
-    """DEPENDENCY TO GET CURRENT USER FROM TOKEN IN QUERY PARAMETER.
-    
-    SECURITY WARNING: THIS FUNCTION IS DEPRECATED AND DISABLED FOR SECURITY REASONS.
-    QUERY PARAMETER AUTHENTICATION EXPOSES TOKENS IN URLS WHICH CAN BE:
-    - LOGGED IN SERVER LOGS
-    - STORED IN BROWSER HISTORY
-    - LEAKED VIA REFERRER HEADERS
-    - ACCESSED BY THIRD-PARTY SCRIPTS
-    
-    USE HEADER AUTHENTICATION INSTEAD: Authorization: Bearer <token>
-    
-    Args:
-        token: The JWT token passed as a query parameter (?token=...)
-        
-    Returns:
-        NEVER RETURNS - ALWAYS THROWS EXCEPTION
-        
-    Raises:
-        HTTPException: ALWAYS THROWS 401 UNAUTHORIZED FOR SECURITY
+async def get_current_user_from_query(
+    token: Optional[str] = Query(None),
+) -> str:
+    """Backward-compatible entrypoint for query-param auth.
+
+    Query-parameter authentication is disabled for security. This function exists
+    to preserve older imports and to explicitly reject attempts.
     """
-    # SECURITY: Always reject query parameter authentication
-    logger.warning("SECURITY VIOLATION: Query parameter authentication attempted - blocked for security")
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Query parameter authentication is disabled for security. Use Authorization header instead.",
+        detail="Query parameter authentication is disabled for security",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
 
-def validate_upload_token(payload: dict) -> str:
-    """Validate upload token payload and return user_id"""
-    # Validate payload itself
-    if not payload or not isinstance(payload, dict):
-        logger.warning(f"Upload token validation failed: invalid payload type {type(payload)}")
+def validate_upload_token(token: str) -> TokenData:
+    """Validate an upload token.
+
+    This is a small wrapper kept for backwards compatibility with older code and
+    tests that patch/spy on `validate_upload_token`.
+    """
+    token_data = decode_token(token)
+    if token_data.token_type not in {"upload", "access"}:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid upload token: corrupted token payload",
-            )
-    
-    upload_id = payload.get("upload_id")
-    if not upload_id or not isinstance(upload_id, str) or not upload_id.strip():
-        logger.warning(f"Upload token missing or invalid upload_id field: {upload_id}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid upload token: missing or invalid upload_id",
-            )
-    
-    # Validate upload_id format (basic security check)
-    import re
-    if len(upload_id) > 256:
-        logger.warning(f"Upload token has excessively long upload_id: {len(upload_id)} chars")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid upload token: upload_id exceeds maximum length",
-            )
-    
-    if not re.match(r'^[a-zA-Z0-9_-]+$', upload_id):
-        logger.warning(f"Upload token has invalid upload_id format: {upload_id}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid upload token: malformed upload_id",
-            )
-    
-    user_id = payload.get("sub")
-    if not user_id or not isinstance(user_id, str) or not user_id.strip():
-        logger.warning("Upload token missing or invalid user_id (sub) field")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid upload token: missing or invalid user_id",
-            )
-    
-    if len(user_id) > 256:
-        logger.warning(f"Upload token has excessively long user_id: {len(user_id)} chars")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid upload token: user_id exceeds maximum length",
-            )
-    
-    return user_id  # Return user_id from payload
+            detail="Invalid token type",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token_data
 
 
 async def get_current_user_for_upload(
@@ -868,11 +842,12 @@ async def get_current_user_for_upload(
     # First try normal JWT decode
     try:
         logger.debug(f"Attempting to decode JWT token: {token_str[:30]}...")
+        s = _get_settings()
         decoded = jwt.decode(
             token_str,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM],
-            options={"verify_exp": True}
+            s.SECRET_KEY,
+            algorithms=[s.ALGORITHM],
+            options={"verify_exp": True},
         )
         user_id = decoded.get("sub")
         logger.debug(f"JWT decoded successfully, user_id: {user_id}")
@@ -889,10 +864,11 @@ async def get_current_user_for_upload(
         if use_extended_validation:
             try:
                 # Decode without expiration check to see the issue time
+                s = _get_settings()
                 decoded = jwt.decode(
                     token_str,
-                    settings.SECRET_KEY,
-                    algorithms=[settings.ALGORITHM],
+                    s.SECRET_KEY,
+                    algorithms=[s.ALGORITHM],
                     options={"verify_exp": False}
                 )
                 

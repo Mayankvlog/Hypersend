@@ -36,10 +36,10 @@ except ImportError as e:
     def clear_all_test_collections(): return True
 
 try:
-    from backend.config import settings
+    import backend.config as backend_config
 except ImportError as e:
     print(f"Warning: Could not import backend.config: {e}")
-    settings = None
+    backend_config = None
 
 try:
     from backend.main import app
@@ -49,12 +49,12 @@ except ImportError as e:
     app = None
 
 try:
-    from backend.routes.auth import (
-        decode_token, 
+    from backend.auth.utils import (
+        decode_token,
         create_access_token,
     )
 except ImportError as e:
-    print(f"Warning: Could not import backend.routes.auth: {e}")
+    print(f"Warning: Could not import backend.auth.utils: {e}")
     decode_token = None
     create_access_token = None
 
@@ -110,89 +110,58 @@ class TestTokenBasedPasswordReset:
         """Test JWT reset token generation for password reset"""
         print("\n🧪 Test: Generate Password Reset Token")
         
-        # Patch jwt.encode to use test key
-        original_encode = jwt.encode
-        def patched_encode(payload, key, algorithm="HS256", headers=None, json=None):
-            if key == settings.SECRET_KEY:
-                key = "test-secret-key"
-            return original_encode(payload, key, algorithm, headers, json)
-        
-        jwt.encode = patched_encode
-        
         try:
             user_id = "testuser123"  # Use alphanumeric ID
             # Generate a password reset token using create_access_token with password_reset type
-            token = create_access_token(
-                data={"sub": user_id, "token_type": "password_reset"},
+            reset_token = create_access_token(
+                {
+                    "sub": user_id,
+                    "token_type": "password_reset",
+                    "purpose": "reset_password"
+                },
                 expires_delta=timedelta(hours=1)
             )
             
-            print(f"📥 Generated Token: {token[:50]}...")
-            print(f"📥 Token Length: {len(token)}")
+            print(f"📥 Generated Token: {reset_token[:50]}...")
+            print(f"📥 Token Length: {len(reset_token)}")
             
             # Verify token is a JWT
-            assert isinstance(token, str), "Token should be a string"
-            assert len(token) > 100, "JWT token should be substantial length"
+            assert isinstance(reset_token, str), "Token should be a string"
+            assert len(reset_token) > 100, "JWT token should be substantial length"
             
-            # Decode and verify payload
-            payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
-            assert payload["sub"] == user_id, "Token should contain correct user ID"
-            assert payload["token_type"] == "password_reset", "Token should be password reset type"
-            assert "exp" in payload, "Token should have expiration"
+            # Verify token signature is valid
+            decoded_payload = jwt.decode(
+                reset_token,
+                backend_config.settings.SECRET_KEY,
+                algorithms=[backend_config.settings.ALGORITHM],
+            )
+            assert decoded_payload["sub"] == user_id
+            assert decoded_payload["token_type"] == "password_reset"
+            assert decoded_payload["purpose"] == "reset_password"
             
             print("✅ Password reset token generation successful")
         finally:
-            # Restore original jwt.encode
-            jwt.encode = original_encode
+            pass
     
     def test_verify_password_reset_token_valid(self, mock_user_data):
         """Test valid password reset token verification"""
         print("\n🧪 Test: Verify Valid Reset Token")
-        
-        # Mock jwt.encode to use test secret key
-        original_encode = jwt.encode
-        def patched_encode(payload, key, algorithm="HS256", headers=None, json=None):
-            if key == settings.SECRET_KEY:
-                key = "test-secret-key"
-            return original_encode(payload, key, algorithm, headers, json)
-        
-        # Mock jwt.decode to use test secret key
-        original_decode = jwt.decode
-        def patched_decode(token, key, algorithms=["HS256"], options=None):
-            if key == settings.SECRET_KEY:
-                key = "test-secret-key"
-            return original_decode(token, key, algorithms, options)
-        
-        jwt.encode = patched_encode
-        jwt.decode = patched_decode
-        
-        # Mock SECRET_KEY to match test expectations
-        print(f"🔍 Original SECRET_KEY: {settings.SECRET_KEY}")
-        original_secret = settings.SECRET_KEY
-        settings.SECRET_KEY = "test-secret-key"
-        print(f"🔍 Set SECRET_KEY to: {settings.SECRET_KEY}")
-        
-        try:
-            # Use a proper user identifier format (alphanumeric)
-            user_id = "testuser123"  # Use alphanumeric ID instead of email
-            token = create_access_token(
-                data={"sub": user_id, "token_type": "password_reset"},
-                expires_delta=timedelta(hours=1)
-            )
-            
-            print(f"📥 Generated Token: {token[:50]}...")
-            
-            # Verify token using the verification function
-            token_data = decode_token(token)
-            assert token_data.user_id == user_id, f"Token verification should succeed, got {token_data.user_id}"
-            assert token_data.token_type == "password_reset", "Token type should be password_reset"
-            
-            print("✅ Valid password reset token verification successful")
-        finally:
-            # Restore original jwt functions and secret
-            jwt.encode = original_encode
-            jwt.decode = original_decode
-            settings.SECRET_KEY = original_secret
+
+        # Use a proper user identifier format (alphanumeric)
+        user_id = "testuser123"  # Use alphanumeric ID instead of email
+        token = create_access_token(
+            data={"sub": user_id, "token_type": "password_reset"},
+            expires_delta=timedelta(hours=1)
+        )
+
+        print(f"📥 Generated Token: {token[:50]}...")
+
+        # Verify token using the verification function
+        token_data = decode_token(token)
+        assert token_data.user_id == user_id, f"Token verification should succeed, got {token_data.user_id}"
+        assert token_data.token_type == "password_reset", "Token type should be password_reset"
+
+        print("✅ Valid password reset token verification successful")
     
     def test_verify_password_reset_token_invalid(self, mock_user_data):
         """Test invalid password reset token verification"""
@@ -222,32 +191,29 @@ class TestTokenBasedPasswordReset:
         import jwt
         from datetime import datetime, timedelta, timezone
         
-        # Mock SECRET_KEY for consistent testing
-        original_secret = settings.SECRET_KEY
-        settings.SECRET_KEY = "test-secret-key"
-        
+        # Create expired token
+        now = datetime.now(timezone.utc)
+        payload = {
+            "sub": "testuser123",  # Use alphanumeric ID
+            "token_type": "password_reset",
+            "exp": int((now - timedelta(hours=1)).timestamp()),  # Expired
+            "iat": int((now - timedelta(hours=2)).timestamp()),
+        }
+
+        expired_token = jwt.encode(
+            payload,
+            backend_config.settings.SECRET_KEY,
+            algorithm=backend_config.settings.ALGORITHM,
+        )
+
         try:
-            # Create expired token
-            payload = {
-                "sub": "testuser123",  # Use alphanumeric ID
-                "token_type": "password_reset",
-                "exp": datetime.now(timezone.utc) - timedelta(hours=1),  # Expired
-                "iat": datetime.now(timezone.utc) - timedelta(hours=2)
-            }
-            
-            expired_token = jwt.encode(payload, "test-secret-key", algorithm="HS256")
-            
-            try:
-                token_data = decode_token(expired_token)
-                assert False, "Expired token should be invalid"
-            except Exception:
-                # Expected behavior - expired tokens should raise exceptions
-                pass
-            
-            print("✅ Expired token verification successful")
-            
-        finally:
-            settings.SECRET_KEY = original_secret
+            decode_token(expired_token)
+            assert False, "Expired token should be invalid"
+        except Exception:
+            # Expected behavior - expired tokens should raise exceptions
+            pass
+
+        print("✅ Expired token verification successful")
     
     def test_reset_password_endpoint(self, client, mock_user_data):
         """Test reset password endpoint with valid token"""
@@ -280,76 +246,64 @@ class TestTokenBasedPasswordReset:
             users_coll.data["test@example.com"] = mock_user_data
         
         # Generate a valid password reset token
-        original_secret = settings.SECRET_KEY
-        settings.SECRET_KEY = "test-secret-key"
+        token = create_access_token(
+            data={"sub": str(mock_user_data["_id"]), "token_type": "password_reset"},
+            expires_delta=timedelta(hours=1)
+        )
+            
+        new_password = "newSecurePassword123"
+        response = client.post(
+            "/api/v1/auth/reset-password",
+            json={
+                "token": token,
+                "new_password": new_password
+            }
+        )
         
-        try:
-            token = create_access_token(
-                data={"sub": "test@example.com", "token_type": "password_reset"},
-                expires_delta=timedelta(hours=1)
-            )
+        print(f"📥 Response Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"📥 Response: {result}")
             
-            new_password = "newSecurePassword123"
-            response = client.post(
-                "/api/v1/auth/reset-password",
-                json={
-                    "token": token,
-                    "new_password": new_password
-                }
-            )
+            assert result["success"] is True, "Password reset should be successful"
+            assert "message" in result, "Should return success message"
             
-            print(f"📥 Response Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                print(f"📥 Response: {result}")
-                
-                assert result["success"] is True, "Password reset should be successful"
-                assert "message" in result, "Should return success message"
-                
-                print("✅ Reset password endpoint successful")
-            else:
-                print(f"❌ Endpoint failed: {response.text}")
-                # Don't fail test - might be validation issue
-                print("⚠️  Endpoint test skipped due to validation")
-        finally:
-            settings.SECRET_KEY = original_secret
+            print("✅ Reset password endpoint successful")
+        else:
+            print(f"❌ Endpoint failed: {response.text}")
+            # Don't fail test - might be validation issue
+            print("⚠️  Endpoint test skipped due to validation")
     
     def test_reset_password_user_not_found(self, client):
         """Test reset password with token for non-existent user"""
         print("\n🧪 Test: Reset Password - User Not Found")
         
         # Generate a token for non-existent user
-        original_secret = settings.SECRET_KEY
-        settings.SECRET_KEY = "test-secret-key"
+        token = create_access_token(
+            data={"sub": "nonexistent_user", "token_type": "password_reset"},
+            expires_delta=timedelta(hours=1)
+        )
+            
+        response = client.post(
+            "/api/v1/auth/reset-password",
+            json={
+                "token": token,
+                "new_password": "newPassword123"
+            }
+        )
         
-        try:
-            token = create_access_token(
-                data={"sub": "nonexistent@example.com", "token_type": "password_reset"},
-                expires_delta=timedelta(hours=1)
-            )
+        print(f"📥 Response Status: {response.status_code}")
+        
+        if response.status_code == 404:
+            result = response.json()
+            print(f"📥 Response: {result}")
             
-            response = client.post(
-                "/api/v1/auth/reset-password",
-                json={
-                    "token": token,
-                    "new_password": "newPassword123"
-                }
-            )
-            
-            print(f"📥 Response Status: {response.status_code}")
-            
-            if response.status_code == 404:
-                result = response.json()
-                print(f"📥 Response: {result}")
-                
-                assert "User not found" in result.get("detail", ""), "Should return user not found error"
-                print("✅ User not found handling successful")
-            else:
-                print(f"❌ Unexpected response: {response.text}")
-                print("⚠️  User not found test skipped")
-        finally:
-            settings.SECRET_KEY = original_secret
+            assert "User not found" in result.get("detail", ""), "Should return user not found error"
+            print("✅ User not found handling successful")
+        else:
+            print(f"❌ Unexpected response: {response.text}")
+            print("⚠️  User not found test skipped")
     
     def test_reset_password_invalid_token(self, client):
         """Test reset password with invalid token"""
@@ -407,102 +361,57 @@ class TestTokenBasedPasswordReset:
                 print(f"[INFO] Could not setup user data: {e}")
         
         # Generate a valid token
-        from backend import config
-        original_secret = config.settings.SECRET_KEY
-        config.settings.SECRET_KEY = "test-secret-key"
+        token = create_access_token(
+            data={"sub": str(mock_user_data["_id"]), "token_type": "password_reset"},
+            expires_delta=timedelta(hours=1)
+        )
+            
+        weak_passwords = ["weak", "123", "short", ""]
         
-        try:
-            token = create_access_token(
-                data={"sub": "test@example.com", "token_type": "password_reset"},
-                expires_delta=timedelta(hours=1)
+        for weak_password in weak_passwords:
+            response = client.post(
+                "/api/v1/auth/reset-password",
+                json={
+                    "token": token,
+                    "new_password": weak_password
+                }
             )
             
-            weak_passwords = ["weak", "123", "short", ""]
+            print(f"📥 Weak password '{weak_password}' - Status: {response.status_code}")
             
-            for weak_password in weak_passwords:
-                response = client.post(
-                    "/api/v1/auth/reset-password",
-                    json={
-                        "token": token,
-                        "new_password": weak_password
-                    }
-                )
-                
-                print(f"📥 Weak password '{weak_password}' - Status: {response.status_code}")
-                
-                if response.status_code in [400, 422]:
-                    print(f"✅ Correctly rejected weak password: '{weak_password}'")
-                else:
-                    print(f"⚠ Unexpected status for weak password: {response.status_code}")
-        
-        finally:
-            settings.SECRET_KEY = original_secret
+            if response.status_code in [400, 422]:
+                print(f"✅ Correctly rejected weak password: '{weak_password}'")
+            else:
+                print(f"⚠ Unexpected status for weak password: {response.status_code}")
     
     def test_complete_token_flow_simulation(self, mock_user_data):
         """Test complete token-based password reset flow simulation"""
-        print("\n🧪 Test: Complete Token-Based Password Reset Flow")
-        
-        # Setup mock user
-        mock_user_data["email"] = "test@example.com"
-        try:
-            users_coll = users_collection()
-        except RuntimeError as e:
-            if "Database not initialized" in str(e):
-                pytest.skip("Database not initialized - skipping test")
-            raise
-        # Check if it's our MockCollection by checking the class name
-        if users_coll.__class__.__name__ == 'MockCollection':
-            # MockCollection - use direct assignment
-            users_coll.data["test@example.com"] = mock_user_data
-        else:
-            # AsyncIOMotorCollection - use insert_one
-            try:
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    if loop.is_running():
-                        print("[INFO] Skipping user setup - running loop detected")
-                    else:
-                        asyncio.run(users_coll.insert_one(mock_user_data))
-                except RuntimeError:
-                    asyncio.run(users_coll.insert_one(mock_user_data))
-            except Exception as e:
-                print(f"[INFO] Could not setup user data: {e}")
-        print(f"📥 Stored user data with key: test@example.com")
-        
-        # Patch jwt.encode to use test key
-        original_encode = jwt.encode
-        def patched_encode(payload, key, algorithm="HS256", headers=None, json=None):
-            if key == settings.SECRET_KEY:
-                key = "test-secret-key"
-            return original_encode(payload, key, algorithm, headers, json)
-        
-        # Patch jwt.decode to use test key
-        original_decode = jwt.decode
-        def patched_decode(token, key, algorithms=["HS256"], options=None):
-            if key == settings.SECRET_KEY:
-                key = "test-secret-key"
-            return original_decode(token, key, algorithms, options)
-        
-        jwt.encode = patched_encode
-        jwt.decode = patched_decode
-        
+        print("\n🧪 Test: Complete Token Flow Simulation")
+
         try:
             # Step 1: Generate reset token
-            user_id = "testuser123"  # Use alphanumeric ID
-            token = create_access_token(
-                data={"sub": user_id, "token_type": "password_reset"},
+            user_id = "testuser123"
+            reset_token = create_access_token(
+                {
+                    "sub": user_id,
+                    "token_type": "password_reset",
+                    "purpose": "reset_password"
+                },
                 expires_delta=timedelta(hours=1)
             )
-            print(f"📥 Step 1 - Token generated: {token[:50]}...")
+            print(f"📥 Step 1 - Token generated: {reset_token[:50]}...")
             
             # Step 2: Verify token
-            token_data = decode_token(token)
+            token_data = decode_token(reset_token)
             assert token_data.user_id == user_id, "Token verification should succeed"
             print(f"📥 Step 2 - Token verified for: {token_data.user_id}")
             
             # Step 3: Test token structure
-            payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
+            payload = jwt.decode(
+                reset_token,
+                backend_config.settings.SECRET_KEY,
+                algorithms=[backend_config.settings.ALGORITHM],
+            )
             assert payload["sub"] == user_id, "Payload should contain correct user ID"
             assert payload["token_type"] == "password_reset", "Payload should have correct token type"
             assert "exp" in payload, "Payload should have expiration"
@@ -511,9 +420,7 @@ class TestTokenBasedPasswordReset:
             print("✅ Complete token-based password reset flow simulation successful")
         
         finally:
-            # Restore original jwt functions
-            jwt.encode = original_encode
-            jwt.decode = original_decode
+            pass
 
 
 if __name__ == "__main__":

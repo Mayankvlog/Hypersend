@@ -465,8 +465,26 @@ def get_media_lifecycle():
 
 
 def _get_s3_client():
-    # S3 is disabled - always return None to force local storage
-    return None
+    """Get S3 client for AWS presigned URL generation"""
+    try:
+        # Check if S3 credentials are available
+        if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
+            _log("warning", "S3 credentials not configured")
+            return None
+        
+        # Initialize S3 client with AWS credentials
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_REGION
+        )
+        
+        _log("info", f"S3 client initialized for region: {settings.AWS_REGION}")
+        return s3_client
+    except Exception as e:
+        _log("error", f"Failed to initialize S3 client: {str(e)}")
+        return None
 
 
 def _generate_presigned_url(
@@ -1497,9 +1515,46 @@ async def complete_upload(
             )
         )
 
+        # Store file metadata in files collection for MongoDB Atlas
+        from bson import ObjectId
+        file_id = str(ObjectId())
+        storage_key = f"files/{upload_user_id}/{upload_id}/{filename}"
+        
+        file_doc = {
+            "_id": ObjectId(file_id),
+            "file_id": file_id,
+            "owner_id": upload_user_id,
+            "filename": filename,
+            "size": upload_doc.get("file_size"),
+            "mime_type": upload_doc.get("mime_type"),
+            "storage_key": storage_key,
+            "bucket": settings.S3_BUCKET,
+            "region": settings.AWS_REGION,
+            "created_at": now,
+            "updated_at": now,
+            "status": "active",
+            "upload_id": upload_id,
+        }
+        
+        files_col = _safe_collection(files_collection)
+        await _maybe_await(files_col.insert_one(file_doc))
+        
+        _log(
+            "info",
+            f"[FILE_METADATA] File metadata stored in Atlas",
+            {
+                "file_id": file_id,
+                "filename": filename,
+                "owner_id": str(upload_user_id),
+                "storage_key": storage_key,
+                "bucket": settings.S3_BUCKET,
+            },
+        )
+
         return {
             "success": True,
             "upload_id": upload_id,
+            "file_id": file_id,
             "status": "completed",
         }
 
@@ -1833,21 +1888,10 @@ async def download_file(
         import asyncio
         from bson import ObjectId
 
-        file_id_key = file_id
-        try:
-            if ObjectId.is_valid(file_id):
-                file_id_key = ObjectId(file_id)
-        except Exception:
-            file_id_key = file_id
-
+        # Query using file_id and owner_id ObjectId for proper access control
         file_doc = await asyncio.wait_for(
-            files_collection().find_one({"_id": file_id_key}), timeout=30.0
+            files_collection().find_one({"file_id": file_id, "owner_id": ObjectId(current_user)}), timeout=30.0
         )
-        if not file_doc and file_id_key != file_id:
-            # Backward compatibility: some deployments stored _id as a string.
-            file_doc = await asyncio.wait_for(
-                files_collection().find_one({"_id": file_id}), timeout=30.0
-            )
 
         if file_doc:
             # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
@@ -1974,7 +2018,10 @@ async def download_file(
                     )
 
             # Fallback to presigned URL flow (if object_key exists)
-            if not object_key:
+            storage_key = file_doc.get("storage_key")
+            bucket = file_doc.get("bucket")
+            
+            if not storage_key or not bucket:
                 _log(
                     "error",
                     "File missing storage reference in DB",
@@ -1985,7 +2032,7 @@ async def download_file(
                     detail="File not found - storage reference missing",
                 )
 
-            download_url = _generate_presigned_url("get", object_key=object_key, expires_in=600)
+            download_url = _generate_presigned_url("get", object_key=storage_key, expires_in=600)
 
             # Test mode fallback: use mock URL when S3 is not available
             if not download_url and _is_test_request(request):

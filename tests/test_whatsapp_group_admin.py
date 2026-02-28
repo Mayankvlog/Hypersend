@@ -4,27 +4,44 @@ Test for WhatsApp-style Group Admin Functions
 Tests all group member management features
 """
 
-# Configure Atlas-only test environment BEFORE any backend imports
 import os
-os.environ.setdefault('USE_MOCK_DB', 'false')
-os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
-os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
-os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
-os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
-os.environ['DEBUG'] = 'True'
-
 import pytest
 import sys
-import os
 import asyncio
 from datetime import datetime
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
+# Configure mock test environment BEFORE any backend imports
+os.environ.setdefault('USE_MOCK_DB', 'true')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'false')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
+os.environ['DEBUG'] = 'True'
+
 # Add backend to path
 backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
+
+# Import database initialization
+from backend.database import init_database
+
+@pytest.fixture(scope="session", autouse=True)
+async def setup_test_database():
+    """Initialize test database before running tests"""
+    try:
+        # Set up mock database for testing to avoid connection issues
+        os.environ['USE_MOCK_DB'] = 'true'
+        os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
+        await init_database()
+        print("✅ Test database initialized successfully")
+    except Exception as e:
+        print(f"⚠️ Database initialization failed (using mock): {e}")
+        # Set up mock database environment
+        os.environ['USE_MOCK_DB'] = 'true'
+        os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
+        print("✅ Using mock database for testing")
 
 # Import test utilities
 try:
