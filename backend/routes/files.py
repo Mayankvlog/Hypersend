@@ -1564,14 +1564,30 @@ async def get_file_info(
 
         # First try to find file in files_collection (regular chat files)
         import asyncio
+        from bson import ObjectId
+
+        file_id_key = file_id
+        try:
+            if ObjectId.is_valid(file_id):
+                file_id_key = ObjectId(file_id)
+        except Exception:
+            file_id_key = file_id
 
         file_doc = await asyncio.wait_for(
-            files_collection().find_one({"_id": file_id}), timeout=30.0
+            files_collection().find_one({"_id": file_id_key}), timeout=30.0
         )
+        if not file_doc and file_id_key != file_id:
+            # Backward compatibility: some deployments stored _id as a string.
+            file_doc = await asyncio.wait_for(
+                files_collection().find_one({"_id": file_id}), timeout=30.0
+            )
 
         if file_doc:
             owner_id = file_doc.get("owner_id")
-            if owner_id != current_user and file_doc.get("receiver_id") != current_user:
+            receiver_id = file_doc.get("receiver_id")
+            owner_ok = str(owner_id) == str(current_user)
+            receiver_ok = receiver_id is not None and str(receiver_id) == str(current_user)
+            if not owner_ok and not receiver_ok:
                 _log(
                     "warning",
                     f"Unauthorized file info attempt: user={current_user}, file={file_id}",
@@ -1815,10 +1831,23 @@ async def download_file(
 
         # First try to find file in files_collection (regular chat files)
         import asyncio
+        from bson import ObjectId
+
+        file_id_key = file_id
+        try:
+            if ObjectId.is_valid(file_id):
+                file_id_key = ObjectId(file_id)
+        except Exception:
+            file_id_key = file_id
 
         file_doc = await asyncio.wait_for(
-            files_collection().find_one({"_id": file_id}), timeout=30.0
+            files_collection().find_one({"_id": file_id_key}), timeout=30.0
         )
+        if not file_doc and file_id_key != file_id:
+            # Backward compatibility: some deployments stored _id as a string.
+            file_doc = await asyncio.wait_for(
+                files_collection().find_one({"_id": file_id}), timeout=30.0
+            )
 
         if file_doc:
             # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
@@ -1827,14 +1856,14 @@ async def download_file(
             shared_with = file_doc.get("shared_with", [])
 
             # Owner can always access
-            if owner_id == current_user:
+            if str(owner_id) == str(current_user):
                 _log(
                     "info",
                     f"Owner downloading file: user={current_user}, file={file_id}",
                     {"user_id": current_user, "operation": "file_download"},
                 )
             # Shared user can access
-            elif current_user in shared_with:
+            elif str(current_user) in [str(x) for x in (shared_with or [])]:
                 _log(
                     "info",
                     f"Shared user downloading file: user={current_user}, file={file_id}",
@@ -1846,7 +1875,11 @@ async def download_file(
                     from db_proxy import chats_collection
 
                     chat_doc = await chats_collection().find_one({"_id": chat_id})
-                    if chat_doc and current_user in chat_doc.get("members", []):
+                    if not chat_doc and ObjectId.is_valid(str(chat_id)):
+                        chat_doc = await chats_collection().find_one({"_id": ObjectId(str(chat_id))})
+
+                    members = chat_doc.get("members", []) if chat_doc else []
+                    if chat_doc and str(current_user) in [str(m) for m in members]:
                         _log(
                             "info",
                             f"Chat member downloading file: user={current_user}, chat={chat_id}, file={file_id}",
@@ -1905,19 +1938,54 @@ async def download_file(
                     )
 
             object_key = file_doc.get("object_key")
+            storage_path = file_doc.get("storage_path")
+
+            # Prefer local filesystem download when available (S3 is disabled in this deployment).
+            if storage_path:
+                try:
+                    file_path = Path(storage_path)
+                except Exception:
+                    file_path = None
+
+                if file_path and file_path.exists() and file_path.is_file():
+                    mime_type = file_doc.get("mime_type") or "application/octet-stream"
+                    filename = file_doc.get("filename") or str(file_path.name)
+                    try:
+                        await files_collection().update_one(
+                            {"_id": file_doc.get("_id")},
+                            {
+                                "$set": {
+                                    "delivery_status": "downloading",
+                                    "download_requested_at": datetime.now(timezone.utc),
+                                }
+                            },
+                        )
+                    except Exception:
+                        pass
+
+                    return FileResponse(
+                        path=str(file_path),
+                        filename=filename,
+                        media_type=mime_type,
+                        headers={
+                            "Cache-Control": "no-store",
+                            "Accept-Ranges": "bytes",
+                        },
+                    )
+
+            # Fallback to presigned URL flow (if object_key exists)
             if not object_key:
                 _log(
                     "error",
-                    "File missing object key in DB",
+                    "File missing storage reference in DB",
                     {"user_id": current_user, "operation": "file_download"},
                 )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found - storage key missing",
+                    detail="File not found - storage reference missing",
                 )
-            download_url = _generate_presigned_url(
-                "get", object_key=object_key, expires_in=600
-            )
+
+            download_url = _generate_presigned_url("get", object_key=object_key, expires_in=600)
 
             # Test mode fallback: use mock URL when S3 is not available
             if not download_url and _is_test_request(request):
@@ -1928,8 +1996,9 @@ async def download_file(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Temporary storage unavailable",
                 )
+
             await files_collection().update_one(
-                {"_id": file_id},
+                {"_id": file_doc.get("_id")},
                 {
                     "$set": {
                         "delivery_status": "downloading",
@@ -1939,7 +2008,7 @@ async def download_file(
             )
             return {
                 "download_url": download_url,
-                "file_id": file_id,
+                "file_id": str(file_doc.get("_id")),
                 "filename": file_doc.get("filename"),
                 "size": file_doc.get("size"),
                 "mime_type": file_doc.get("mime_type", "application/octet-stream"),

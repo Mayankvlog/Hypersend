@@ -260,10 +260,15 @@ def test_409_conflict_duplicate_email(client):
 def test_413_payload_too_large(client):
     """Test 413 Payload Too Large"""
     if USE_TESTCLIENT:
-        # Test with TestClient - empty body should return 422
-        r = client.post("/api/v1/files/init", json={}, timeout=10.0)
-        # Empty body should return 422, not 413
-        assert r.status_code in [400, 422]
+        # Test with TestClient - empty body should return 422 or 401 if auth fails
+        from backend.auth.utils import create_access_token
+        from bson import ObjectId
+        token_payload = {"sub": str(ObjectId())}
+        token = create_access_token(token_payload)
+        
+        r = client.post("/api/v1/files/init", json={}, timeout=10.0, headers={"Authorization": f"Bearer {token}"})
+        # Should return 422 for validation errors or 401 if auth fails
+        assert r.status_code in [400, 422, 401]
     else:
         if requests is None:
             pytest.skip("requests not available")

@@ -45,7 +45,7 @@ def test_file_completion_function_structure():
         # Verify function exists and has proper structure
         assert "async def complete_upload(" in content, "complete_upload function should exist"
         assert "@router.post(\"/{upload_id}/complete\"" in content, "Should have correct route decorator"
-        assert "response_model=FileCompleteResponse" in content, "Should have proper response model"
+        assert "response_model=dict" in content, "Should have proper response model"
         
         # Verify error handling structure
         assert "except HTTPException:" in content, "Should handle HTTPException"

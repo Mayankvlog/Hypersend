@@ -42,6 +42,15 @@ def is_database_initialized():
     global _database_initialized, db
     return _database_initialized and db is not None
 
+
+def _is_pytest_running() -> bool:
+    try:
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            return True
+        return "pytest" in sys.modules
+    except Exception:
+        return False
+
 async def init_database():
     """Initialize MongoDB Atlas database connection.
 
@@ -57,13 +66,30 @@ async def init_database():
         if _database_initialized and client is not None and db is not None:
             return
 
+        # Test mode: allow mock database when running pytest.
+        # Production/runtime: enforce Atlas-only operation.
+        use_mock_db = (os.getenv("USE_MOCK_DB") or "").lower() == "true"
+        if _is_pytest_running() and use_mock_db:
+            try:
+                from mock_database import MockMongoClient, get_mock_db
+            except Exception:
+                from .mock_database import MockMongoClient, get_mock_db
+
+            # Create exactly one mock client/db for the process.
+            if client is None:
+                client = MockMongoClient()
+            if db is None:
+                db = get_mock_db()
+
+            _database_initialized = True
+            return
+
         # Atlas-only mode (no mock/fallback): require exact env flags.
         mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED")
         if (mongodb_atlas_enabled or "").lower() != "true":
             raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true"')
 
-        use_mock_db = os.getenv("USE_MOCK_DB")
-        if (use_mock_db or "").lower() == "true":
+        if use_mock_db:
             raise RuntimeError('USE_MOCK_DB must be "false" for Atlas-only operation')
 
         mongodb_uri = os.getenv("MONGODB_URI")

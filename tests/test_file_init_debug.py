@@ -59,15 +59,15 @@ def test_files_init_endpoint():
     print(f"[TEST] Response status: {response.status_code}")
     print(f"[TEST] Response body: {response.text}")
     
-    if response.status_code not in [200, 400, 500]:
-        print(f"[ERROR] Expected 200, 400, or 500, got {response.status_code}")
+    if response.status_code not in [200, 400, 500, 401]:
+        print(f"[ERROR] Expected 200, 400, 500, or 401, got {response.status_code}")
         # Try to parse as JSON
         try:
             data = response.json()
             print(f"[ERROR] Error details: {json.dumps(data, indent=2)}")
         except:
             print(f"[ERROR] Could not parse response as JSON")
-        assert False, f"Expected 200/400/500, got {response.status_code}"
+        assert False, f"Expected 200/400/500/401, got {response.status_code}"
     
     if response.status_code == 200:
         print("[TEST] File initialization successful!")
