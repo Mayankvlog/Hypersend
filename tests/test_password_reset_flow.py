@@ -231,7 +231,11 @@ class TestPasswordResetFlow:
             with patch('backend.routes.auth.email_service') as mock_email:
                 mock_email.send_password_reset_email = AsyncMock(return_value=False)
 
-                result = await forgot_password({"email": "test@example.com"})
+                # Mock rate limiter to avoid 429 errors
+                with patch('backend.routes.auth.password_reset_limiter') as mock_limiter:
+                    mock_limiter.is_allowed.return_value = True
+
+                    result = await forgot_password({"email": "test@example.com"})
 
                 # Verify response structure (must not leak tokens in production)
                 assert result is not None

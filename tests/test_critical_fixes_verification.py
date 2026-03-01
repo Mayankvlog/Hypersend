@@ -12,7 +12,7 @@ import json
 import asyncio
 from datetime import datetime, timezone
 from bson import ObjectId
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from unittest.mock import patch, MagicMock, AsyncMock
 
 # Import after path setup
@@ -37,7 +37,7 @@ class TestGroupCreationObjectIdFix:
     @pytest.mark.asyncio
     async def test_create_group_returns_json_serializable_response(self):
         """Test that create group endpoint returns properly encoded response"""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_user_id = str(ObjectId())
             test_payload = {
                 "name": "Test Group",
@@ -93,7 +93,7 @@ class TestForgotPasswordTokenFix:
     @pytest.mark.asyncio
     async def test_forgot_password_returns_token_directly(self):
         """Test that forgot password returns token without email dependency"""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_email = "test@example.com"
             test_payload = {"email": test_email}
             
@@ -133,7 +133,7 @@ class TestForgotPasswordTokenFix:
     @pytest.mark.asyncio
     async def test_forgot_password_includes_user_id(self):
         """Test that forgot password response includes user_id"""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_email = "test@example.com"
             test_user_id = str(ObjectId())
             test_payload = {"email": test_email}
@@ -164,7 +164,7 @@ class TestFileDownloadResponseFix:
     @pytest.mark.asyncio
     async def test_file_download_presigned_url_response_structure(self):
         """Test that presigned URL response has all required fields"""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_file_id = str(ObjectId())
             test_user_id = str(ObjectId())
             
@@ -218,7 +218,7 @@ class TestFileDownloadResponseFix:
     @pytest.mark.asyncio
     async def test_file_download_includes_download_url_alias(self):
         """Test that response includes download_url alias for compatibility"""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_file_id = str(ObjectId())
             test_user_id = str(ObjectId())
             
@@ -265,7 +265,7 @@ class TestObjectIdSerializationIntegration:
     @pytest.mark.asyncio
     async def test_list_groups_returns_serialized_groups(self):
         """Test that list groups endpoint properly encodes all ObjectId objects"""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_user_id = str(ObjectId())
             
             with patch("backend.routes.groups.get_current_user") as mock_get_user:
@@ -319,7 +319,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_forgot_password_validation_errors(self):
         """Test forgot password validation"""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             # Test with invalid email
             response = await client.post(
                 "/api/v1/auth/forgot-password",
@@ -334,7 +334,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_group_creation_validation(self):
         """Test group creation validation"""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_user_id = str(ObjectId())
             
             # Test with invalid payload

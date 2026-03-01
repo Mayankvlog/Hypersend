@@ -2131,7 +2131,10 @@ async def download_file(
                 }
 
             if dl_requested:
+                # NEVER return JSON when dl=1 is requested - always redirect to actual file
                 return RedirectResponse(url=download_url, status_code=status.HTTP_302_FOUND)
+
+            # Only return JSON metadata when dl is NOT requested (API mode)
 
             try:
                 await files_collection().update_one(
