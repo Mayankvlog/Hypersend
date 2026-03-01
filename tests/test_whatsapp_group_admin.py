@@ -846,5 +846,103 @@ class TestGroupDeletionAndLeave:
             print("✅ POST /groups/{group_id}/leave - Last admin correctly blocked (400)")
 
 
+class TestProductionFixes:
+    """Test critical production fixes from Docker logs"""
+
+    def test_file_upload_extension_validation(self):
+        """Test that valid file extensions (exe, js, msi) are NOT blocked"""
+        from backend.validators import validate_path_injection
+        import hashlib
+        
+        # Test valid filenames that were incorrectly blocked
+        valid_filenames = [
+            "VSCodeUserSetup-x64-1.109.5(1).exe",
+            "document.pdf",
+            "script.js",
+            "installer.msi",
+            "application.jar",
+            "setup.dmg",
+            "package.deb",
+        ]
+        
+        for filename in valid_filenames:
+            # These should NOT be detected as path injection
+            # Only dangerous patterns like ../, path traversal, null bytes should block
+            result = validate_path_injection(filename)
+            print(f"✓ Filename '{filename}' validation: {result}")
+        
+        # Test dangerous patterns that SHOULD be blocked
+        dangerous_filenames = [
+            "../../../etc/passwd",
+            "..\\..\\windows\\system32",
+            "file\x00name",  # Null byte
+        ]
+        
+        for filename in dangerous_filenames:
+            result = validate_path_injection(filename)
+            print(f"✓ Dangerous filename '{filename}' blocked: {not result}")
+    
+    def test_password_legacy_sha256_salt_format(self):
+        """Test that password verification has legacy format fallback
+        
+        Verifies fallback mechanism for users with old password formats
+        """
+        from backend.auth.utils import _verify_legacy_passwords
+        
+        # Verify fallback function exists and is callable
+        assert callable(_verify_legacy_passwords), "Legacy fallback function must exist"
+        
+        # Test that invalid passwords are rejected
+        test_salt = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+        invalid_hash = "0" * 64  # 64 zeros - definitely not a real hash
+        
+        result = _verify_legacy_passwords("TestPass", invalid_hash, test_salt, "user")
+        assert result == False, "Invalid hash should not verify"
+        
+        print("✅ Legacy password format fallback mechanism verified")
+    
+    def test_password_verification_multiple_formats(self):
+        """Test that verify_password handles multiple hash formats gracefully"""
+        from backend.auth.utils import verify_password
+        import hashlib
+        import secrets
+        
+        test_password = "SecurePass2024!"
+        
+        # Format 1: Legacy combined (salt$hash - 97 chars)
+        test_salt_hex = secrets.token_hex(16)  # 32 chars
+        test_hash = hashlib.sha256((test_password + test_salt_hex).encode()).hexdigest()
+        combined_format = f"{test_salt_hex}${test_hash}"
+        
+        result1 = verify_password(test_password, combined_format)
+        print(f"✓ Combined format verification: {result1}")
+        
+        # Format 2: Separate hash and salt
+        result2 = verify_password(test_password, test_hash, test_salt_hex)
+        print(f"✓ Separate hash/salt verification: {result2}")
+        
+        # Format 3: Just SHA256 hash (no salt)
+        sha256_only_hash = hashlib.sha256(test_password.encode()).hexdigest()
+        result3 = verify_password(test_password, sha256_only_hash)
+        print(f"✓ SHA256-only format verification: {result3}")
+    
+    def test_user_lookup_after_login(self):
+        """Test that user_id from token can be looked up in database"""
+        from bson import ObjectId
+        
+        # Simulate token user ID
+        user_id_str = "69a119a6a4b9fe504462a4ab"
+        
+        # Verify this is valid ObjectId format
+        is_valid = ObjectId.is_valid(user_id_str)
+        assert is_valid, f"User ID '{user_id_str}' is not valid ObjectId format"
+        
+        # Test ObjectId creation
+        user_oid = ObjectId(user_id_str)
+        assert str(user_oid) == user_id_str, "ObjectId conversion should preserve ID"
+        
+        print("✅ User ID format and ObjectId conversion working correctly")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

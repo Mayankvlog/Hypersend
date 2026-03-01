@@ -1146,21 +1146,27 @@ async def initialize_upload(
                 },
             )
 
-        # Validate filename for path traversal and dangerous patterns
+        # CRITICAL FIX: Validate filename for ACTUAL dangerous patterns only
+        # Do NOT block legitimate file extensions (.exe, .js, .msi, .jar, etc.)
+        # Users should be able to share ANY file type via encrypted connection
+        # Only block actual security threats: path traversal, code injection, reserved names
+        
         dangerous_filename_patterns = [
+            # Path traversal - CRITICAL SECURITY
             "../",
             "..\\",
-            "..",
-            "..\\",
-            "..",
-            "..",
-            "..",
-            "..",
-            "..",  # Path traversal
+            # Code injection - CRITICAL SECURITY  
+            "<script",
+            "</script>",
+            "javascript:",
+            "vbscript:",
+            "data:",
+            "text/html",
+            # Windows reserved names - CRITICAL SECURITY
             "CON",
             "PRN",
             "AUX",
-            "NUL",  # Windows reserved names
+            "NUL",
             "COM1",
             "COM2",
             "COM3",
@@ -1179,32 +1185,9 @@ async def initialize_upload(
             "LPT7",
             "LPT8",
             "LPT9",
-            "<script",
-            "</script>",
-            "javascript:",
-            "vbscript:",
-            "data:",
-            "text/html",
-            ".php",
-            ".asp",
-            ".jsp",
-            ".exe",
-            ".bat",
-            ".cmd",
-            ".com",
-            ".scr",
-            ".pif",
-            ".vbs",
-            ".js",
-            ".jar",
-            ".app",
-            ".deb",
-            ".rpm",
-            ".dmg",
-            ".pkg",
-            ".msi",
-            ".lnk",
-            ".url",
+            # REMOVED: .exe, .js, .msi, .jar, .app, .deb, .rpm, .dmg, .pkg, .lnk, .url
+            # REMOVED: .php, .asp, .jsp, .bat, .cmd, .com, .scr, .pif, .vbs
+            # These are legitimate file types that users should be able to share
         ]
 
         filename_lower = filename.lower()
