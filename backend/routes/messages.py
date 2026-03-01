@@ -1018,7 +1018,7 @@ async def update_delivery_status(
             for participant in participants:
                 if participant != message_data.get("sender_user_id"):
                     device_key = f"user_devices:{participant}"
-                    devices = await redis_client.smembers(device_key)
+                    devices = await cache.smembers(device_key)
                     recipient_devices.extend(devices or ["default"])
             
             # Check if all devices have read the message
@@ -1044,20 +1044,18 @@ async def delivery_receipt(
     current_user: str = Depends(get_current_user)
 ):
     """Process delivery receipts - WhatsApp-style per-device tracking"""
-    from ..redis_cache import redis_client
-    
     # Verify recipient matches current user
     if receipt.recipient_id != current_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized")
     
     # Get current message state
     state_key = f"message_state:{receipt.message_id}"
-    state_data = await redis_client.get(state_key)
+    state_data = await cache.get(state_key)
     
     if not state_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
     
-    message_state = MessageStateUpdate(**json.loads(state_data))
+    message_state = MessageStateUpdate(**json.loads(state_data) if isinstance(state_data, str) else state_data)
     
     # Update device state
     message_state.device_states[receipt.device_id] = receipt.status
@@ -1068,12 +1066,18 @@ async def delivery_receipt(
     elif receipt.status == MessageState.DELIVERED and message_state.state != MessageState.READ:
         message_state.state = MessageState.DELIVERED
     
-    # Save updated state
-    await redis_client.setex(state_key, 3600, message_state.model_dump_json())
+    # Save updated state to cache
+    try:
+        await cache.set(state_key, json.dumps(message_state.model_dump()), expire_seconds=3600)
+    except Exception as e:
+        logger.debug(f"Failed to save message state to cache: {e}")
     
     # Remove from device queue (ACK-based deletion)
     queue_key = f"device_queue:{current_user}:{receipt.device_id}"
-    await redis_client.zrem(queue_key, receipt.message_id)
+    try:
+        await cache.zrem(queue_key, receipt.message_id)
+    except Exception as e:
+        logger.debug(f"Failed to remove from queue: {e}")
     
     # Notify sender about delivery status
     sender_notification = {
@@ -1086,7 +1090,10 @@ async def delivery_receipt(
         "timestamp": receipt.timestamp.isoformat()
     }
     
-    await redis_client.publish(f"user_channel:{message_state.sender_id}", json.dumps(sender_notification))
+    try:
+        await cache.publish(f"user_channel:{message_state.sender_id}", json.dumps(sender_notification))
+    except Exception as e:
+        logger.debug(f"Failed to publish delivery receipt: {e}")
     
     return {"status": "acknowledged", "message_state": message_state.state}
 
@@ -1098,21 +1105,25 @@ async def get_device_messages(
     limit: int = 50
 ):
     """Get pending messages for a device - WhatsApp-style queue processing"""
-    from ..redis_cache import redis_client
-    
     queue_key = f"device_queue:{current_user}:{device_id}"
     
     # Get messages with lowest sequence numbers (ordered delivery)
-    messages = await redis_client.zrange(queue_key, 0, limit - 1, withscores=True)
+    messages = await cache.zrange(queue_key, 0, limit - 1, withscores=True)
     
     result = []
-    for message_json, sequence in messages:
-        message_data = json.loads(message_json)
-        result.append(message_data)
+    if messages:
+        for message_json, sequence in messages:
+            try:
+                message_data = json.loads(message_json) if isinstance(message_json, str) else message_json
+                result.append(message_data)
+            except Exception as e:
+                logger.debug(f"Failed to parse message from queue: {e}")
+    
+    queue_size = await cache.zcard(queue_key)
     
     return {
         "messages": result,
-        "queue_size": await redis_client.zcard(queue_key),
+        "queue_size": queue_size or 0,
         "device_id": device_id
     }
 
@@ -1124,28 +1135,37 @@ async def acknowledge_message(
     current_user: str = Depends(get_current_user)
 ):
     """Acknowledge message delivery and remove from queue"""
-    from ..redis_cache import redis_client
-    
     queue_key = f"device_queue:{current_user}:{device_id}"
-    removed = await redis_client.zrem(queue_key, message_id)
     
-    if not removed:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not in queue")
-    
-    # Update message state to delivered
-    await delivery_receipt(
-        DeliveryReceipt(
-            message_id=message_id,
-            chat_id="",  # Will be validated in the function
-            recipient_id=current_user,
-            device_id=device_id,
-            status=MessageState.DELIVERED,
-            timestamp=_utcnow()
-        ),
-        current_user
-    )
-    
-    return {"status": "acknowledged", "message_id": message_id}
+    try:
+        removed = await cache.zrem(queue_key, message_id)
+        
+        if not removed:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not in queue")
+        
+        # Update message state to delivered if possible
+        try:
+            await delivery_receipt(
+                DeliveryReceipt(
+                    message_id=message_id,
+                    chat_id="",  # Will be validated in the function
+                    recipient_id=current_user,
+                    device_id=device_id,
+                    status=MessageState.DELIVERED,
+                    timestamp=_utcnow()
+                ),
+                current_user
+            )
+        except HTTPException:
+            # If delivery receipt fails, still acknowledge the removal
+            pass
+        
+        return {"status": "acknowledged", "message_id": message_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to acknowledge message: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to acknowledge message")
 
 
 def _utcnow():
@@ -1154,15 +1174,45 @@ def _utcnow():
 
 
 async def _get_message_or_404(message_id: str) -> dict:
-    """Get message from Redis (WhatsApp-style ephemeral storage)"""
+    """Get message from Redis or MongoDB (fallback) - WhatsApp-style ephemeral storage with persistence fallback"""
+    # Try Redis first
     try:
-        from ..redis_cache import redis_client
-        message_data = await redis_client.get(f"message:{message_id}")
-        if not message_data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found or expired")
-        return json.loads(message_data)
+        message_data = await cache.get(f"message:{message_id}")
+        if message_data:
+            # Handle both string and dict returns from cache
+            if isinstance(message_data, str):
+                return json.loads(message_data)
+            return message_data
     except Exception as e:
-        logger.error(f"Failed to get message from Redis: {e}")
+        logger.debug(f"Redis get message failed: {e}")
+    
+    # Fallback to MongoDB if Redis fails or message not found
+    try:
+        from bson import ObjectId
+        msg_collection = messages_collection()
+        
+        # Try to convert string ID to ObjectId, handle both formats
+        try:
+            obj_id = ObjectId(message_id)
+            msg = await msg_collection.find_one({"_id": obj_id})
+            if msg:
+                msg["_id"] = str(msg["_id"])  # Convert ObjectId back to string for JSON response
+                return msg
+        except Exception:
+            pass
+        
+        # Try direct string ID lookup
+        msg = await msg_collection.find_one({"_id": message_id})
+        if msg:
+            if "_id" in msg:
+                msg["_id"] = str(msg["_id"])
+            return msg
+        
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get message from MongoDB: {e}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found or expired")
 
 
@@ -1205,9 +1255,8 @@ async def edit_message(
     if not new_text:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message text cannot be empty")
 
-    # Update message in Redis with edit flag
+    # Update message in both Redis and MongoDB with edit flag
     try:
-        from ..redis_cache import redis_client
         msg["text"] = new_text
         msg["is_edited"] = True
         msg["edited_at"] = _utcnow().isoformat()
@@ -1218,13 +1267,38 @@ async def edit_message(
         elapsed = (_utcnow() - created_at).total_seconds() if created_at else 0
         remaining_ttl = max(300, int(ttl - elapsed))  # Minimum 5 minutes
         
-        await redis_client.setex(
-            f"message:{message_id}",
-            remaining_ttl,
-            json.dumps(msg)
-        )
+        # Update in Redis
+        try:
+            await cache.set(
+                f"message:{message_id}",
+                json.dumps(msg),
+                expire_seconds=remaining_ttl
+            )
+        except Exception as e:
+            logger.debug(f"Failed to update message in Redis: {e}")
+        
+        # Update in MongoDB
+        try:
+            from bson import ObjectId
+            msg_collection = messages_collection()
+            update_data = {
+                "text": new_text,
+                "is_edited": True,
+                "edited_at": msg["edited_at"],
+                "edited_by": current_user
+            }
+            
+            try:
+                obj_id = ObjectId(message_id)
+                await msg_collection.update_one({"_id": obj_id}, {"$set": update_data})
+            except Exception:
+                # Try direct string ID update
+                await msg_collection.update_one({"_id": message_id}, {"$set": update_data})
+        except Exception as e:
+            logger.debug(f"Failed to update message in MongoDB: {e}")
+            
     except Exception as e:
-        logger.error(f"Failed to update message in Redis: {e}")
+        logger.error(f"Failed to update message: {e}")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Message update failed")
 
     return {"status": "edited", "message_id": message_id}
@@ -1236,28 +1310,57 @@ async def delete_message(
     hard_delete: bool = False,
     current_user: str = Depends(get_current_user),
 ):
-    """Delete a message - WhatsApp-style immediate deletion from Redis."""
+    """Delete a message - WhatsApp-style immediate deletion with MongoDB cleanup."""
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
 
-    if msg.get("sender_id") != current_user:
+    sender_id = msg.get("sender_id") or msg.get("user_id") or msg.get("from")
+    if sender_id != current_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only delete your own messages")
 
-    # WhatsApp-style: Delete immediately from Redis (no soft delete)
+    # Delete from both Redis and MongoDB
+    deletion_errors = []
+    deletion_success = False
+    
+    # Delete from Redis
     try:
-        from ..redis_cache import redis_client
-        
-        # Remove message from Redis
-        await redis_client.delete(f"message:{message_id}")
-        
-        # Remove from chat's message list
-        await redis_client.lrem(f"chat_messages:{msg['chat_id']}", 0, message_id)
-        
+        await cache.delete(f"message:{message_id}")
+        await cache.lrem(f"chat_messages:{msg.get('chat_id')}", 0, message_id)
+        deletion_success = True
     except Exception as e:
-        logger.error(f"Failed to delete message from Redis: {e}")
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Message deletion failed")
+        deletion_errors.append(f"Redis deletion failed: {e}")
+        logger.debug(f"Failed to delete message from Redis: {e}")
+    
+    # Delete from MongoDB
+    try:
+        from bson import ObjectId
+        msg_collection = messages_collection()
+        
+        # Try to convert string ID to ObjectId
+        try:
+            obj_id = ObjectId(message_id)
+            result = await msg_collection.delete_one({"_id": obj_id})
+            if result.deleted_count > 0:
+                deletion_success = True
+            else:
+                # Try direct string ID deletion
+                result = await msg_collection.delete_one({"_id": message_id})
+                if result.deleted_count > 0:
+                    deletion_success = True
+        except Exception:
+            # Try direct string ID deletion
+            result = await msg_collection.delete_one({"_id": message_id})
+            if result.deleted_count > 0:
+                deletion_success = True
+    except Exception as e:
+        deletion_errors.append(f"MongoDB deletion failed: {e}")
+        logger.debug(f"Failed to delete message from MongoDB: {e}")
+    
+    if not deletion_success:
+        logger.error(f"Message deletion failed for message_id {message_id}: {deletion_errors}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Message deletion failed")
 
-    return {"status": "deleted", "hard_delete": True}
+    return {"status": "deleted", "hard_delete": True, "message_id": message_id}
 
 
 @router.get("/{message_id}/versions")
@@ -1283,9 +1386,13 @@ async def toggle_reaction(
 
     # WhatsApp-style: Store reactions in Redis
     message_key = f"message:{message_id}"
-    message_data = await redis_client.get(message_key)
+    message_data = await cache.get(message_key)
     if not message_data:
         raise HTTPException(status_code=404, detail="Message not found")
+    
+    # Convert to dict if needed
+    if isinstance(message_data, str):
+        message_data = json.loads(message_data)
     
     reactions = message_data.get("reactions", {})
     emoji_reactions = reactions.get(emoji, [])
@@ -1302,8 +1409,23 @@ async def toggle_reaction(
     reactions[emoji] = emoji_reactions
     message_data["reactions"] = reactions
     
-    # Update message in Redis
-    await redis_client.set(message_key, json.dumps(message_data), expire_seconds=24*60*60)
+    # Update message in Redis and MongoDB
+    try:
+        await cache.set(message_key, json.dumps(message_data), expire_seconds=24*60*60)
+    except Exception as e:
+        logger.debug(f"Failed to update reactions in Redis: {e}")
+    
+    # Also update in MongoDB if available
+    try:
+        from bson import ObjectId
+        msg_collection = messages_collection()
+        try:
+            obj_id = ObjectId(message_id)
+            await msg_collection.update_one({"_id": obj_id}, {"$set": {"reactions": reactions}})
+        except Exception:
+            await msg_collection.update_one({"_id": message_id}, {"$set": {"reactions": reactions}})
+    except Exception as e:
+        logger.debug(f"Failed to update reactions in MongoDB: {e}")
     
     return {"status": "success", "action": action, "message_id": message_id, "reactions": reactions}
 
@@ -1371,10 +1493,8 @@ async def mark_read(message_id: str, current_user: str = Depends(get_current_use
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
 
-    # Update delivery status in Redis
+    # Update delivery status in Redis and MongoDB
     try:
-        from ..redis_cache import redis_client
-        
         # Add read receipt to message
         msg["read_by"] = msg.get("read_by", [])
         
@@ -1395,13 +1515,32 @@ async def mark_read(message_id: str, current_user: str = Depends(get_current_use
             
             # Update message in Redis with remaining TTL
             ttl = int(msg.get("ttl_seconds", 3600))
-            await redis_client.setex(
-                f"message:{message_id}",
-                ttl,
-                json.dumps(msg)
-            )
+            try:
+                await cache.set(
+                    f"message:{message_id}",
+                    json.dumps(msg),
+                    expire_seconds=ttl
+                )
+            except Exception as e:
+                logger.debug(f"Failed to update message in Redis: {e}")
+            
+            # Update in MongoDB
+            try:
+                from bson import ObjectId
+                msg_collection = messages_collection()
+                update_data = {"read_by": msg["read_by"], "delivery_status": msg["delivery_status"]}
+                try:
+                    obj_id = ObjectId(message_id)
+                    await msg_collection.update_one({"_id": obj_id}, {"$set": update_data})
+                except Exception:
+                    await msg_collection.update_one({"_id": message_id}, {"$set": update_data})
+            except Exception as e:
+                logger.debug(f"Failed to update message in MongoDB: {e}")
+                
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to update message read status in Redis: {e}")
+        logger.error(f"Failed to update message read status: {e}")
         # Continue without failing - read receipt is non-critical
     
     return {"status": "read", "message_id": message_id}
@@ -1449,35 +1588,57 @@ async def search_messages(
         # Prevent regex injection by escaping special characters
         q_escaped = re.escape(q)
     
-    # WhatsApp-style: Search only in Redis (no MongoDB persistence)
+    # WhatsApp-style: Search in both Redis and MongoDB
     try:
-        from ..redis_cache import redis_client
-        
         # Get user's accessible chats
         user_chats = await chats_collection().find({"members": current_user}, {"_id": 1}).to_list(1000)
         user_chat_ids = [c["_id"] for c in user_chats]
         
-        # Search in Redis for each chat
+        # Search in both Redis and MongoDB
         all_messages = []
         search_chats = [chat_id] if chat_id else user_chat_ids
         
         for chat_id_to_search in search_chats:
-            # Get message IDs from chat's message list
-            message_ids = await redis_client.lrange(f"chat_messages:{chat_id_to_search}", 0, -1)
+            # Try to get message IDs from Redis cache first (for performance)
+            try:
+                message_ids = await cache.lrange(f"chat_messages:{chat_id_to_search}", 0, -1)
+                
+                if message_ids:
+                    for message_id in message_ids:
+                        # Get message data from Redis
+                        msg_id_str = message_id.decode('utf-8') if isinstance(message_id, bytes) else message_id
+                        message_data = await cache.get(f"message:{msg_id_str}")
+                        if message_data:
+                            msg = json.loads(message_data) if isinstance(message_data, str) else message_data
+                            
+                            # Apply filters
+                            if q and msg.get("text") and q_escaped.lower() in msg["text"].lower():
+                                all_messages.append(msg)
+                            elif has_media and msg.get("file_id"):
+                                all_messages.append(msg)
+                            elif has_link and msg.get("text") and "http" in msg["text"]:
+                                all_messages.append(msg)
+            except Exception as e:
+                logger.debug(f"Failed to search in Redis: {e}")
             
-            for message_id in message_ids:
-                # Get message data from Redis
-                message_data = await redis_client.get(f"message:{message_id.decode('utf-8')}")
-                if message_data:
-                    msg = json.loads(message_data)
-                    
-                    # Apply filters
-                    if q and msg.get("text") and q_escaped.lower() in msg["text"].lower():
+            # Fallback to MongoDB search
+            try:
+                msg_collection = messages_collection()
+                search_criteria = {"chat_id": chat_id_to_search}
+                if q:
+                    search_criteria["text"] = {"$regex": q_escaped, "$options": "i"}
+                if has_media:
+                    search_criteria["file_id"] = {"$exists": True}
+                if has_link:
+                    search_criteria["text"] = {**search_criteria.get("text", {}), "$regex": "http", "$options": "i"}
+                
+                mongo_messages = await msg_collection.find(search_criteria).sort("created_at", -1).limit(limit).to_list(limit)
+                for msg in mongo_messages:
+                    msg["_id"] = str(msg.get("_id", ""))
+                    if msg not in all_messages:  # Avoid duplicates
                         all_messages.append(msg)
-                    elif has_media and msg.get("file_id"):
-                        all_messages.append(msg)
-                    elif has_link and msg.get("text") and "http" in msg["text"]:
-                        all_messages.append(msg)
+            except Exception as e:
+                logger.debug(f"Failed to search in MongoDB: {e}")
         
         # Sort by created_at and limit
         all_messages.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -1561,10 +1722,8 @@ async def generate_device_linking_qr(
 ):
     """Generate QR code for device linking"""
     try:
-        from ..redis_cache import redis_client
-        
-        # Initialize multi-device manager
-        device_manager = MultiDeviceManager(redis_client)
+        # Initialize multi-device manager with global cache instance
+        device_manager = MultiDeviceManager(cache)
         
         # Get user's primary device identity keys
         primary_device = await device_manager.get_primary_device(current_user)
@@ -1624,10 +1783,8 @@ async def confirm_device_linking(
 ):
     """Confirm and complete device linking"""
     try:
-        from ..redis_cache import redis_client
-        
-        # Initialize multi-device manager
-        device_manager = MultiDeviceManager(redis_client)
+        # Initialize multi-device manager with global cache instance
+        device_manager = MultiDeviceManager(cache)
         
         # Parse QR data
         linking_data = DeviceLinkingData.from_qr_data(request.qr_data)
@@ -1696,11 +1853,9 @@ async def send_encrypted_message(
 ):
     """Send end-to-end encrypted message"""
     try:
-        from ..redis_cache import redis_client
-        
-        # Initialize services
-        delivery_manager = DeliveryManager(redis_client)
-        device_manager = MultiDeviceManager(redis_client)
+        # Initialize services with global cache instance
+        delivery_manager = DeliveryManager(cache)
+        device_manager = MultiDeviceManager(cache)
         
         # Get recipient devices
         chat_data = await chats_collection().find_one({"_id": request.chat_id})
@@ -1729,9 +1884,12 @@ async def send_encrypted_message(
         message_id = secrets.token_urlsafe(32)
         
         # WhatsApp-grade abuse detection and spam prevention
-        from ..crypto.abuse_detection import AbuseDetectionService
+        try:
+            from crypto.abuse_detection import AbuseDetectionService
+        except:
+            from ..crypto.abuse_detection import AbuseDetectionService
         
-        abuse_service = AbuseDetectionService(redis_client)
+        abuse_service = AbuseDetectionService(cache)
         
         # Check for spam patterns
         spam_score = await abuse_service.analyze_message(
@@ -1787,8 +1945,11 @@ async def send_encrypted_message(
             "ttl_seconds": 24 * 60 * 60  # 24h default TTL
         }
         
-        await redis_client.set(f"encrypted_message:{message_id}", json.dumps(message_data))
-        await redis_client.lpush(f"chat_encrypted:{request.chat_id}", message_id)
+        try:
+            await cache.set(f"encrypted_message:{message_id}", json.dumps(message_data), expire_seconds=24*60*60)
+            await cache.lpush(f"chat_encrypted:{request.chat_id}", message_id)
+        except Exception as e:
+            logger.debug(f"Failed to store encrypted message in cache: {e}")
         
         return EncryptedMessageResponse(
             message_id=message_id,
@@ -1816,10 +1977,8 @@ async def update_delivery_receipt(
 ):
     """Update delivery receipt for message"""
     try:
-        from ..redis_cache import redis_client
-        
-        # Initialize delivery manager
-        delivery_manager = DeliveryManager(redis_client)
+        # Initialize delivery manager with global cache instance
+        delivery_manager = DeliveryManager(cache)
         
         # Update receipt based on status
         if request.status == "delivered":
@@ -1867,13 +2026,11 @@ async def get_pending_deliveries(
 ):
     """Get pending message deliveries for device"""
     try:
-        from ..redis_cache import redis_client
-        
-        # Initialize delivery manager
-        delivery_manager = DeliveryManager(redis_client)
+        # Initialize delivery manager with global cache instance
+        delivery_manager = DeliveryManager(cache)
         
         # Verify device belongs to user
-        device_manager = MultiDeviceManager(redis_client)
+        device_manager = MultiDeviceManager(cache)
         user_devices = await device_manager.get_user_devices(current_user)
         if not any(d.device_id == device_id for d in user_devices):
             raise HTTPException(
@@ -1887,9 +2044,10 @@ async def get_pending_deliveries(
         # Get encrypted messages
         messages = []
         for receipt in pending_receipts:
-            message_data = await redis_client.get(f"encrypted_message:{receipt.message_id}")
+            message_data = await cache.get(f"encrypted_message:{receipt.message_id}")
             if message_data:
-                messages.append(json.loads(message_data))
+                msg_parsed = json.loads(message_data) if isinstance(message_data, str) else message_data
+                messages.append(msg_parsed)
         
         return {
             "device_id": device_id,
@@ -2346,12 +2504,12 @@ async def update_privacy_settings(
 ):
     """Update privacy settings"""
     try:
-        # Store privacy settings in Redis
+        # Store privacy settings in cache
         settings_key = f"privacy_settings:{current_user}"
         
         # Get existing settings
-        existing_data = await redis_client.get(settings_key)
-        settings = json.loads(existing_data) if existing_data else {}
+        existing_data = await cache.get(settings_key)
+        settings = json.loads(existing_data) if isinstance(existing_data, str) else (existing_data or {})
         
         # Update settings
         if request.disappearing_timer is not None:
@@ -2361,7 +2519,22 @@ async def update_privacy_settings(
         
         settings["updated_at"] = time.time()
         
-        await redis_client.setex(settings_key, 86400 * 365, json.dumps(settings))  # 1 year
+        # Store in cache with 1 year expiration
+        try:
+            await cache.set(settings_key, json.dumps(settings), expire_seconds=86400 * 365)
+        except Exception as e:
+            logger.debug(f"Failed to save privacy settings to cache: {e}")
+        
+        # Also store in MongoDB for persistence
+        try:
+            users_coll = await users_collection()
+            await users_coll.update_one(
+                {"_id": current_user},
+                {"$set": {"privacy_settings": settings}},
+                upsert=False
+            )
+        except Exception as e:
+            logger.debug(f"Failed to save privacy settings to MongoDB: {e}")
         
         return {"status": "updated", "settings": settings}
         
