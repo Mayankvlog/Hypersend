@@ -76,11 +76,14 @@ class Settings:
             )
 
     # Security
-    # SECRET_KEY must be set in production - no fallbacks allowed
+    _env_jwt_secret = os.getenv("JWT_SECRET_KEY")
     _env_secret = os.getenv("SECRET_KEY")
-    if not _env_secret:
-        raise ValueError("SECRET_KEY environment variable must be set in production")
-    SECRET_KEY: str = _env_secret
+    if not (_env_jwt_secret or _env_secret):
+        raise ValueError(
+            "JWT_SECRET_KEY environment variable must be set in production"
+        )
+    JWT_SECRET_KEY: str = _env_jwt_secret or _env_secret  # type: ignore[assignment]
+    SECRET_KEY: str = JWT_SECRET_KEY
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
 
     # Token expiration constants
@@ -101,12 +104,16 @@ class Settings:
         os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "30")
     )
 
-    # File Storage (WhatsApp-style: Local only)
-    STORAGE_MODE: str = os.getenv("STORAGE_MODE", "local")  # local, server, or hybrid
-    DATA_ROOT: Path = Path(os.getenv("DATA_ROOT", "./data"))  # Only for metadata/temp
-    UPLOAD_DIR: str = os.getenv(
-        "UPLOAD_DIR", "./uploads"
-    )  # Upload directory for chunks
+    # File Storage
+    STORAGE_MODE: str = os.getenv("STORAGE_MODE", "local")
+    DATA_ROOT: Path = Path(os.getenv("DATA_ROOT", "/app/data"))
+    TEMP_STORAGE_PATH: str = os.getenv("TEMP_STORAGE_PATH", "/app/temp")
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/app/uploads")
+    SERVER_STORAGE_ENABLED: bool = os.getenv("SERVER_STORAGE_ENABLED", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "4194304"))  # 4 MiB
     UPLOAD_CHUNK_SIZE: int = CHUNK_SIZE
     MAX_FILE_SIZE_BYTES: int = int(
@@ -531,7 +538,8 @@ class Settings:
         """Create necessary directories"""
         try:
             self.DATA_ROOT.mkdir(exist_ok=True, parents=True)
-            (self.DATA_ROOT / "tmp").mkdir(exist_ok=True, parents=True)
+            os.makedirs(self.TEMP_STORAGE_PATH, exist_ok=True)
+            os.makedirs(self.UPLOAD_DIR, exist_ok=True)
             (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True)
             (self.DATA_ROOT / "avatars").mkdir(exist_ok=True, parents=True)
             print(f"[OK] Data directories initialized at {self.DATA_ROOT}")

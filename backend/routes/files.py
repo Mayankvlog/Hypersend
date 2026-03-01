@@ -682,6 +682,20 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+def _ensure_storage_dirs() -> Tuple[Path, Path]:
+    temp_root = Path(getattr(settings, "TEMP_STORAGE_PATH", "/app/temp"))
+    upload_root = Path(getattr(settings, "UPLOAD_DIR", "/app/uploads"))
+    try:
+        os.makedirs(str(temp_root), exist_ok=True)
+        os.makedirs(str(upload_root), exist_ok=True)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Temporary storage unavailable",
+        ) from e
+    return temp_root, upload_root
+
+
 async def _await_maybe(value, timeout: float = 5.0):
     if hasattr(value, "__await__"):
         return await asyncio.wait_for(value, timeout=timeout)
@@ -730,14 +744,31 @@ async def _save_chunk_to_disk(
             },
         )
 
-    # chunk_size = settings.CHUNK_SIZE  # Use configured chunk size
+    try:
+        os.makedirs(str(chunk_path.parent), exist_ok=True)
+        async with aiofiles.open(str(chunk_path), "wb") as f:
+            await f.write(chunk_data)
+    except Exception as e:
+        _log(
+            "error",
+            f"Failed to persist chunk {chunk_index}",
+            {
+                "user_id": user_id,
+                "operation": "chunk_persist",
+                "chunk_index": chunk_index,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Temporary storage unavailable",
+        ) from e
 
     _log(
         "info",
-        f"Chunk {chunk_index} validated without disk persistence",
+        f"Chunk {chunk_index} persisted",
         {
             "user_id": user_id,
-            "operation": "chunk_validate",
+            "operation": "chunk_persist",
             "chunk_size": len(chunk_data),
         },
     )
@@ -1405,6 +1436,20 @@ async def upload_chunk(
             detail="You don't have permission to upload chunks for this upload",
         )
 
+    temp_root, _upload_root = _ensure_storage_dirs()
+    upload_temp_dir = temp_root / upload_id
+    chunk_path = upload_temp_dir / f"{int(chunk_index)}.part"
+
+    try:
+        chunk_data = await request.body()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to read chunk data",
+        ) from e
+
+    await _save_chunk_to_disk(chunk_path, chunk_data, int(chunk_index), current_user)
+
     await _maybe_await(
         uploads_collection().update_one(
             {"upload_id": upload_id},
@@ -1505,6 +1550,35 @@ async def complete_upload(
                 detail="Not all chunks have been uploaded",
             )
 
+        temp_root, upload_root = _ensure_storage_dirs()
+        upload_temp_dir = temp_root / upload_id
+        final_dir = upload_root / upload_id
+        os.makedirs(str(final_dir), exist_ok=True)
+        final_path = final_dir / filename
+
+        try:
+            async with aiofiles.open(str(final_path), "wb") as out_f:
+                for idx in range(int(total_chunks)):
+                    part_path = upload_temp_dir / f"{idx}.part"
+                    if not part_path.exists():
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Missing chunk {idx}",
+                        )
+                    async with aiofiles.open(str(part_path), "rb") as in_f:
+                        while True:
+                            buf = await in_f.read(1024 * 1024)
+                            if not buf:
+                                break
+                            await out_f.write(buf)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Temporary storage unavailable",
+            ) from e
+
         now = datetime.now(timezone.utc)
         await _maybe_await(
             uploads_col.update_one(
@@ -1544,6 +1618,7 @@ async def complete_upload(
             "updated_at": now,
             "status": "active",
             "upload_id": upload_id,
+            "storage_path": str(final_path),
         }
         
         files_col = _safe_collection(files_collection)
@@ -3145,13 +3220,22 @@ async def cancel_upload(
         else:
             raise e
 
-    # Cleanup chunks
-    upload_dir = settings.DATA_ROOT / "tmp" / upload_id
-    if upload_dir.exists():
+    temp_root, _upload_root = _ensure_storage_dirs()
+    upload_dir = temp_root / upload_id
+    if upload_dir.exists() and upload_dir.is_dir():
         for chunk_file in upload_dir.glob("*.part"):
-            chunk_file.unlink()
-        (upload_dir / "manifest.json").unlink(missing_ok=True)
-        upload_dir.rmdir()
+            try:
+                chunk_file.unlink()
+            except Exception:
+                pass
+        try:
+            (upload_dir / "manifest.json").unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            upload_dir.rmdir()
+        except Exception:
+            pass
 
     # Delete upload record (CRITICAL FIX: Use correct field name)
     await uploads_collection().delete_one({"_id": upload_id})
