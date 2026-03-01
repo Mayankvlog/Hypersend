@@ -1155,48 +1155,46 @@ async def initialize_upload(
         # Reasoning: Users should be able to share ANY file type via encrypted connection
         # Server-side encryption ensures users cannot run malicious code
         import re
+        from pathlib import Path as PathlibPath
         
-        dangerous_filename_patterns = [
-            # Path traversal - CRITICAL SECURITY - prevent directory escape
-            "../",
-            "..\\",
-            # Null byte injection - CRITICAL SECURITY
-            "\x00",
-            # Code injection patterns that could affect OS (if saved unwisely)
-            # Only block if the patterns appear to be INTENTIONAL code, not just file data
-            "^<script",  # Starts with script tag
-            "^javascript:",  # Starts with javascript protocol
-            # Windows reserved device names - CRITICAL SECURITY
-            # Only block exact matches at start or as whole filename
-            "^con$", "^prn$", "^aux$", "^nul$",
-            "^com[1-9]$", "^lpt[1-9]$",
-        ]
-        
+        # ONLY block actual security threats, NOT legitimate file types
         filename_lower = filename.lower()
-        is_dangerous = False
+        filename_without_ext = PathlibPath(filename).stem.lower()
         
-        # Check exact patterns (must be careful with regex)
-        for pattern in dangerous_filename_patterns:
-            if pattern.startswith("^"):
-                # Regex pattern - use proper regex matching
-                if re.match(pattern, filename_lower):
-                    is_dangerous = True
-                    break
-            else:
-                # Simple substring check
-                if pattern in filename_lower:
-                    is_dangerous = True
-                    break
+        # Windows reserved device names - EXACT match only (critical security)
+        reserved_names = {
+            'con', 'prn', 'aux', 'nul',
+            'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+            'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'
+        }
+        
+        is_dangerous = False
+        danger_reason = ""
+        
+        # Check 1: Path traversal attempts - CRITICAL SECURITY
+        if '../' in filename or '..\\'  in filename:
+            is_dangerous = True
+            danger_reason = "Path traversal pattern detected"
+        
+        # Check 2: Null byte injection - CRITICAL SECURITY (already removed by sanitize_input)
+        elif '\x00' in filename:
+            is_dangerous = True
+            danger_reason = "Null byte injection detected"
+        
+        # Check 3: Windows reserved names - must be EXACT match (case-insensitive)
+        elif filename_without_ext in reserved_names:
+            is_dangerous = True
+            danger_reason = f"Windows reserved name: {filename_without_ext}"
         
         if is_dangerous:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
                     "status": "ERROR",
-                    "message": f"Dangerous filename detected: {filename}",
+                    "message": f"Invalid filename: {danger_reason}",
                     "data": {
                         "filename": filename,
-                        "reason": "Filename contains dangerous patterns like path traversal or null bytes",
+                        "reason": danger_reason,
                     },
                 },
             )
