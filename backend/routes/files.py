@@ -1919,7 +1919,10 @@ async def download_file(
             f"Path injection attempt blocked: file_id={file_id}",
             {"user_id": current_user, "operation": "file_download"},
         )
-        raise PathInjectionException("Invalid file identifier format")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file identifier format",
+        )
 
     try:
         _log(
@@ -2569,6 +2572,9 @@ async def stream_media(
     try:
         # Get media lifecycle service
         media_service = get_media_lifecycle()
+        
+        # Get S3 client (may be None if S3 is disabled)
+        s3_client = _get_s3_client()
 
         # Validate token
         token_key = f"download_token:{token}"
@@ -2605,6 +2611,11 @@ async def stream_media(
                 chunk_key = f"media/{media_id}/chunk_{chunk_index}"
 
                 try:
+                    if not s3_client:
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="S3 storage is unavailable",
+                        )
                     obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=chunk_key)
 
                     # Stream the encrypted data
