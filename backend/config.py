@@ -424,6 +424,11 @@ class Settings:
     def __init__(self):
         # Strict production CORS policy: ignore env overrides to prevent accidental non-production origins.
         self.CORS_ORIGINS = list(self.cors_origins_default)
+        
+        # CRITICAL: Initialize storage directories at startup, before any routes load
+        # This ensures storage is available before the first request
+        self.init_directories()
+        self.validate_storage_paths()
 
     # NOTE: CORS origins should be configured per environment - NEVER use wildcard "*" in production
     def _get_cors_origins(self) -> list:
@@ -534,20 +539,62 @@ class Settings:
 
         print("[INFO] Production validations completed")
 
+    def validate_storage_paths(self):
+        """Validate storage paths are writable and log configuration"""
+        print(f"[STORAGE] Validating storage configuration...")
+        print(f"[STORAGE] SERVER_STORAGE_ENABLED: {self.SERVER_STORAGE_ENABLED}")
+        print(f"[STORAGE] TEMP_STORAGE_PATH: {self.TEMP_STORAGE_PATH}")
+        print(f"[STORAGE] UPLOAD_DIR: {self.UPLOAD_DIR}")
+        
+        # Validate environment variable reading
+        if not os.getenv("TEMP_STORAGE_PATH"):
+            print(f"[WARN] TEMP_STORAGE_PATH not in environment, using default: {self.TEMP_STORAGE_PATH}")
+        if not os.getenv("UPLOAD_DIR"):
+            print(f"[WARN] UPLOAD_DIR not in environment, using default: {self.UPLOAD_DIR}")
+        
+        # Validate paths exist and are writable
+        storage_paths = [
+            ("TEMP_STORAGE_PATH", self.TEMP_STORAGE_PATH),
+            ("UPLOAD_DIR", self.UPLOAD_DIR),
+            ("DATA_ROOT", str(self.DATA_ROOT)),
+        ]
+        
+        for path_name, path_str in storage_paths:
+            path_obj = Path(path_str)
+            if not path_obj.exists():
+                print(f"[WARN] {path_name} does not exist: {path_str}")
+            else:
+                # Check if writable
+                try:
+                    # Try to create a temp file to test writability
+                    test_file = path_obj / ".write_test"
+                    test_file.touch(exist_ok=True)
+                    test_file.unlink(missing_ok=True)
+                    print(f"[OK] {path_name} is writable: {path_str}")
+                except Exception as e:
+                    print(f"[ERROR] {path_name} is not writable: {path_str} - {type(e).__name__}: {str(e)}")
+
     def init_directories(self):
-        """Create necessary directories"""
+        """Create necessary directories - CRITICAL: called at Settings initialization"""
         try:
             self.DATA_ROOT.mkdir(exist_ok=True, parents=True)
             os.makedirs(self.TEMP_STORAGE_PATH, exist_ok=True)
             os.makedirs(self.UPLOAD_DIR, exist_ok=True)
             (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True)
             (self.DATA_ROOT / "avatars").mkdir(exist_ok=True, parents=True)
-            print(f"[OK] Data directories initialized at {self.DATA_ROOT}")
+            print(f"[OK] Data directories initialized:")
+            print(f"  - DATA_ROOT: {self.DATA_ROOT}")
+            print(f"  - TEMP_STORAGE_PATH: {self.TEMP_STORAGE_PATH}")
+            print(f"  - UPLOAD_DIR: {self.UPLOAD_DIR}")
+        except PermissionError as e:
+            print(f"[ERROR] Storage initialization FAILED - Permission denied: {str(e)}")
+            print(f"[ERROR] Backend must have write permission to storage directories")
+            raise RuntimeError(f"Storage permission error: {str(e)}")
         except Exception as e:
-            print(f"[WARN] Failed to initialize directories: {str(e)}")
-            print(
-                "[WARN] Continuing with startup - check file permissions if this is critical"
-            )
+            print(f"[ERROR] Failed to initialize directories: {type(e).__name__}: {str(e)}")
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            raise RuntimeError(f"Storage initialization error: {str(e)}")
 
 
 settings = Settings()

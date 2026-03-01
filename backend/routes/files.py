@@ -683,17 +683,73 @@ logger.setLevel(logging.INFO)
 
 
 def _ensure_storage_dirs() -> Tuple[Path, Path]:
+    """
+    Ensure storage directories exist and are writable.
+    CRITICAL: This function is called before every upload operation.
+    Raises HTTPException with 503 if storage is unavailable.
+    """
     temp_root = Path(getattr(settings, "TEMP_STORAGE_PATH", "/app/temp"))
     upload_root = Path(getattr(settings, "UPLOAD_DIR", "/app/uploads"))
+    
+    error_details = []
+    
     try:
+        # Create directories if they don't exist
         os.makedirs(str(temp_root), exist_ok=True)
         os.makedirs(str(upload_root), exist_ok=True)
-    except Exception as e:
+        
+        # Validate writeability - try to create and remove a test file
+        temp_test_file = temp_root / ".write_test"
+        upload_test_file = upload_root / ".write_test"
+        
+        try:
+            temp_test_file.touch(exist_ok=True)
+            temp_test_file.unlink(missing_ok=True)
+        except Exception as e:
+            error_details.append(f"TEMP_STORAGE_PATH not writable ({temp_root}): {type(e).__name__}: {str(e)}")
+        
+        try:
+            upload_test_file.touch(exist_ok=True)
+            upload_test_file.unlink(missing_ok=True)
+        except Exception as e:
+            error_details.append(f"UPLOAD_DIR not writable ({upload_root}): {type(e).__name__}: {str(e)}")
+        
+        if error_details:
+            error_msg = " | ".join(error_details)
+            logger.error(f"[STORAGE] Writability check failed: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Storage unavailable - permission denied: {error_msg}",
+            )
+        
+        logger.debug(f"[STORAGE] Storage directories validated: temp={temp_root}, upload={upload_root}")
+        return temp_root, upload_root
+        
+    except HTTPException:
+        raise
+    except PermissionError as e:
+        error_msg = f"Permission denied accessing storage: {str(e)}"
+        logger.error(f"[STORAGE] {error_msg}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Temporary storage unavailable",
+            detail=f"Storage unavailable: {error_msg}",
         ) from e
-    return temp_root, upload_root
+    except OSError as e:
+        error_msg = f"OS error accessing storage: {type(e).__name__}: {str(e)}"
+        logger.error(f"[STORAGE] {error_msg}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Storage unavailable: {error_msg}",
+        ) from e
+    except Exception as e:
+        error_msg = f"Failed to initialize storage: {type(e).__name__}: {str(e)}"
+        logger.error(f"[STORAGE] {error_msg}")
+        import traceback
+        logger.error(f"[STORAGE] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Temporary storage unavailable: {type(e).__name__}",
+        ) from e
 
 
 async def _await_maybe(value, timeout: float = 5.0):

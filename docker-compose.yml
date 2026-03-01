@@ -124,8 +124,15 @@ services:
       REDIS_DB: 0
 
       # ===== FILE STORAGE =====
+      # CRITICAL: Container-internal paths ONLY - no localhost or host paths
+      SERVER_STORAGE_ENABLED: "true"
+      STORAGE_PATH: /app/storage
+      TEMP_STORAGE_PATH: /app/temp
       UPLOAD_DIR: /app/uploads
-      MAX_FILE_SIZE: "1048576000000"  # 100MB
+      MAX_FILE_SIZE_BYTES: "16106127360"  # 15 GiB
+      CHUNK_SIZE: "4194304"  # 4 MiB
+      FILE_RETENTION_HOURS: "0"
+      AUTO_CLEANUP_ENABLED: "true"
       ALLOWED_FILE_TYPES: "jpg,jpeg,png,gif,pdf,doc,docx,txt,mp4,mp3,zip,avi,wmv,flv,webm,mpg,wmf,wmv,exe,msi,deb,rar,7z,iso"
 
       # ===== LOGGING =====
@@ -149,6 +156,8 @@ services:
     volumes:
       - ./data:/data
       - ./backend/uploads:/app/uploads
+      - ./data/temp:/app/temp
+      - ./data/storage:/app/storage
     depends_on:
       redis:
         condition: service_healthy

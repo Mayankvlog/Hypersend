@@ -107,18 +107,75 @@ logger = logging.getLogger("zaply")
 logger.setLevel(logging.INFO)
 
 
+def init_storage():
+    """Initialize and validate storage system - must run before routes load"""
+    print("[STARTUP] Initializing storage system...")
+    try:
+        # settings module automatically initializes storage directories in __init__
+        # Just validate that it's properly set up
+        if not settings.SERVER_STORAGE_ENABLED:
+            print("[STARTUP] WARNING: SERVER_STORAGE_ENABLED is False - storage may be disabled")
+        
+        from pathlib import Path
+        
+        # Verify paths are accessible
+        temp_path = Path(settings.TEMP_STORAGE_PATH)
+        upload_path = Path(settings.UPLOAD_DIR)
+        
+        if not temp_path.exists():
+            raise RuntimeError(f"TEMP_STORAGE_PATH does not exist: {settings.TEMP_STORAGE_PATH}")
+        if not upload_path.exists():
+            raise RuntimeError(f"UPLOAD_DIR does not exist: {settings.UPLOAD_DIR}")
+        
+        # Check writability
+        try:
+            test_file_temp = temp_path / ".write_test"
+            test_file_temp.touch(exist_ok=True)
+            test_file_temp.unlink(missing_ok=True)
+            print(f"[STARTUP] Storage validated - TEMP_STORAGE_PATH is writable: {settings.TEMP_STORAGE_PATH}")
+        except Exception as e:
+            raise RuntimeError(f"TEMP_STORAGE_PATH is not writable: {str(e)}")
+        
+        try:
+            test_file_upload = upload_path / ".write_test"
+            test_file_upload.touch(exist_ok=True)
+            test_file_upload.unlink(missing_ok=True)
+            print(f"[STARTUP] Storage validated - UPLOAD_DIR is writable: {settings.UPLOAD_DIR}")
+        except Exception as e:
+            raise RuntimeError(f"UPLOAD_DIR is not writable: {str(e)}")
+        
+        print("[STARTUP] Storage system initialized successfully")
+        return True
+    except Exception as e:
+        print(f"[STARTUP] CRITICAL: Storage initialization failed: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f"[STARTUP] Traceback: {traceback.format_exc()}")
+        raise RuntimeError(f"Storage initialization failed: {str(e)}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI lifespan event handler - initialize database and cleanup"""
-    # Startup
-    await init_database()
+    """FastAPI lifespan event handler - initialize storage, database and cleanup"""
+    # Startup - CRITICAL: Storage must initialize first, before all other systems
+    # Call synchronous storage init function
+    try:
+        init_storage()
+    except Exception as e:
+        print(f"[STARTUP] CRITICAL: Storage initialization failed, cannot start application: {str(e)}")
+        raise
+    
+    # Database initialization - only initialize if not already done by conftest or external setup
+    from database import is_database_initialized
+    if not is_database_initialized():
+        await init_database()
+    
     # Store database connection in app state for reliable access
     from database import db, client
     app.state.db = db
     app.state.client = client
     print(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
     
-    # Initialize Redis cache
+    # Initialize Redis cache (non-critical, continue if fails)
     try:
         await init_cache()
         try:
@@ -129,7 +186,7 @@ async def lifespan(app: FastAPI):
             pass
         print("[STARTUP] Redis cache initialized")
     except Exception as e:
-        print(f"[STARTUP] Redis cache initialization failed: {e}")
+        print(f"[STARTUP] Redis cache initialization failed (non-critical): {e}")
         # Continue without Redis - use fallback cache
 
     print("Application startup complete")
@@ -1637,6 +1694,37 @@ async def favicon():
 async def health_check():
     """Production health check endpoint - minimal response for load balancers"""
     try:
+        # Check storage availability FIRST
+        storage_status = "healthy"
+        storage_error = None
+
+        try:
+            from pathlib import Path
+            temp_path = Path(settings.TEMP_STORAGE_PATH)
+            upload_path = Path(settings.UPLOAD_DIR)
+            
+            if not temp_path.exists() or not upload_path.exists():
+                storage_status = "unhealthy"
+                storage_error = "Storage directories do not exist"
+            else:
+                # Check writability
+                try:
+                    test_file_temp = temp_path / ".health_test"
+                    test_file_temp.touch(exist_ok=True)
+                    test_file_temp.unlink(missing_ok=True)
+                    
+                    test_file_upload = upload_path / ".health_test"
+                    test_file_upload.touch(exist_ok=True)
+                    test_file_upload.unlink(missing_ok=True)
+                    
+                    storage_status = "healthy"
+                except Exception as e:
+                    storage_status = "unhealthy"
+                    storage_error = f"Storage not writable: {str(e)[:50]}"
+        except Exception as e:
+            storage_status = "unhealthy"
+            storage_error = str(e)[:100]
+
         # Check database connectivity using get_database dependency
         db_status = "healthy"
         db_error = None
@@ -1680,17 +1768,18 @@ async def health_check():
             redis_status = "unhealthy"
             redis_error = str(e)[:100]
 
-        # Determine overall status - fail if database is unhealthy
+        # Determine overall status - fail if storage or database is unhealthy
         overall_status = "healthy"
-        if db_status == "unhealthy":
+        if storage_status == "unhealthy" or db_status == "unhealthy":
             overall_status = "unhealthy"
-        if redis_status == "unhealthy":
+        elif redis_status == "unhealthy":
             overall_status = "degraded"
 
         response_data = {
             "status": overall_status,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "services": {
+                "storage": {"status": storage_status, "error": storage_error},
                 "database": {"status": db_status, "error": db_error},
                 "cache": {"status": redis_status, "error": redis_error},
             },
