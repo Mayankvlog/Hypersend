@@ -151,7 +151,7 @@ async def _log_group_activity(group_id: str, actor_id: str, event: str, meta: Op
 
     try:
 
-        db = get_db()
+        db = get_database()
 
         col = db.group_activity
 
@@ -300,16 +300,35 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
         
 
         if not user:
-            # Log the authentication failure for debugging
-            logger.warning(f"Authenticated user {current_user} not found in database")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid user session",
-                    "data": None
-                }
-            )
+            # CRITICAL FIX: User not found after successful authentication
+            # This may indicate a race condition (user created but not inserted yet)
+            # or a database synchronization issue. Log and retry once.
+            logger.warning(f"Authenticated user {current_user} not found on first attempt")
+            
+            # Brief retry to handle eventual consistency
+            await asyncio.sleep(0.5)  # Wait 500ms for database synchronization
+            if ObjectId.is_valid(current_user):
+                object_id = ObjectId(current_user)
+                user = await asyncio.wait_for(
+                    users_collection().find_one({"_id": object_id}),
+                    timeout=5.0,
+                )
+            else:
+                user = await asyncio.wait_for(
+                    users_collection().find_one({"_id": current_user}),
+                    timeout=5.0,
+                )
+            
+            if not user:
+                logger.error(f"User {current_user} not found in database after retry - returning 401")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail={
+                        "status": "ERROR",
+                        "message": "User session invalid",
+                        "data": None
+                    }
+                )
 
         return UserResponse(
             id=str(user["_id"]),

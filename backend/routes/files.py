@@ -1151,47 +1151,44 @@ async def initialize_upload(
         # Users should be able to share ANY file type via encrypted connection
         # Only block actual security threats: path traversal, code injection, reserved names
         
+        # COMPREHENSIVE SECURITY: Only block ACTUAL threats, NOT legitimate file types
+        # Reasoning: Users should be able to share ANY file type via encrypted connection
+        # Server-side encryption ensures users cannot run malicious code
+        import re
+        
         dangerous_filename_patterns = [
-            # Path traversal - CRITICAL SECURITY
+            # Path traversal - CRITICAL SECURITY - prevent directory escape
             "../",
             "..\\",
-            # Code injection - CRITICAL SECURITY  
-            "<script",
-            "</script>",
-            "javascript:",
-            "vbscript:",
-            "data:",
-            "text/html",
-            # Windows reserved names - CRITICAL SECURITY
-            "CON",
-            "PRN",
-            "AUX",
-            "NUL",
-            "COM1",
-            "COM2",
-            "COM3",
-            "COM4",
-            "COM5",
-            "COM6",
-            "COM7",
-            "COM8",
-            "COM9",
-            "LPT1",
-            "LPT2",
-            "LPT3",
-            "LPT4",
-            "LPT5",
-            "LPT6",
-            "LPT7",
-            "LPT8",
-            "LPT9",
-            # REMOVED: .exe, .js, .msi, .jar, .app, .deb, .rpm, .dmg, .pkg, .lnk, .url
-            # REMOVED: .php, .asp, .jsp, .bat, .cmd, .com, .scr, .pif, .vbs
-            # These are legitimate file types that users should be able to share
+            # Null byte injection - CRITICAL SECURITY
+            "\x00",
+            # Code injection patterns that could affect OS (if saved unwisely)
+            # Only block if the patterns appear to be INTENTIONAL code, not just file data
+            "^<script",  # Starts with script tag
+            "^javascript:",  # Starts with javascript protocol
+            # Windows reserved device names - CRITICAL SECURITY
+            # Only block exact matches at start or as whole filename
+            "^con$", "^prn$", "^aux$", "^nul$",
+            "^com[1-9]$", "^lpt[1-9]$",
         ]
-
+        
         filename_lower = filename.lower()
-        if any(pattern in filename_lower for pattern in dangerous_filename_patterns):
+        is_dangerous = False
+        
+        # Check exact patterns (must be careful with regex)
+        for pattern in dangerous_filename_patterns:
+            if pattern.startswith("^"):
+                # Regex pattern - use proper regex matching
+                if re.match(pattern, filename_lower):
+                    is_dangerous = True
+                    break
+            else:
+                # Simple substring check
+                if pattern in filename_lower:
+                    is_dangerous = True
+                    break
+        
+        if is_dangerous:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
@@ -1199,7 +1196,7 @@ async def initialize_upload(
                     "message": f"Dangerous filename detected: {filename}",
                     "data": {
                         "filename": filename,
-                        "reason": "Filename contains dangerous patterns",
+                        "reason": "Filename contains dangerous patterns like path traversal or null bytes",
                     },
                 },
             )

@@ -275,28 +275,49 @@ def verify_password(plain_password: str, hashed_password: str, salt: str = None,
 def _verify_legacy_passwords(plain_password: str, hashed_password: str, salt: str = None, user_id: str = None) -> bool:
     """Verify legacy password formats for migration purposes"""
     try:
-        # CRITICAL FIX: Handle legacy SHA256 with separate salt (current database format)
-        if (salt and len(salt) == 32 and hashed_password and len(hashed_password) == 64 and 
-            all(c in '0123456789abcdefABCDEF' for c in hashed_password) and
-            all(c in '0123456789abcdefABCDEF' for c in salt)):
+        # CRITICAL FIX: Be flexible with salt validation - try multiple legacy formats
+        if salt and hashed_password:
+            _log("debug", f"Attempting legacy password verification formats for {user_id}")
             
-            _log("debug", f"Attempting legacy SHA256 with separate salt for {user_id}")
             try:
-                # Legacy format: SHA256(password + salt) 
+                # Format 1: SHA256(password + salt) with hex salt
                 combined_input = plain_password + salt
                 legacy_hash = hashlib.sha256(combined_input.encode()).hexdigest()
-                
                 if hmac.compare_digest(legacy_hash, hashed_password):
-                    _log("warning", f"User {user_id} using legacy SHA256+salt format - migration recommended")
+                    _log("warning", f"User {user_id} using legacy SHA256(password+salt) format - migration recommended")
                     return True
                     
-                # Try alternative: SHA256(salt + password)
+                # Format 2: SHA256(salt + password) with hex salt
                 combined_input_alt = salt + plain_password
                 legacy_hash_alt = hashlib.sha256(combined_input_alt.encode()).hexdigest()
-                
                 if hmac.compare_digest(legacy_hash_alt, hashed_password):
-                    _log("warning", f"User {user_id} using legacy SHA256+salt (salt+password) format - migration recommended")
+                    _log("warning", f"User {user_id} using legacy SHA256(salt+password) format - migration recommended")
                     return True
+                
+                # Format 3: PBKDF2 with string salt (not hex-decoded)
+                try:
+                    password_bytes = plain_password.encode('utf-8')
+                    salt_bytes = salt.encode('utf-8')
+                    password_hash = hashlib.pbkdf2_hmac('sha256', password_bytes, salt_bytes, 100000)
+                    pbkdf2_hex = password_hash.hex()
+                    if hmac.compare_digest(pbkdf2_hex, hashed_password):
+                        _log("warning", f"User {user_id} using legacy PBKDF2 with string salt - migration recommended")
+                        return True
+                except Exception as e:
+                    _log("debug", f"PBKDF2 with string salt failed for {user_id}: {e}")
+                
+                # Format 4: Try with salt as hex bytes (if salt is a valid hex string)
+                if len(salt) == 32 and all(c in '0123456789abcdefABCDEF' for c in salt):
+                    try:
+                        salt_bytes = bytes.fromhex(salt)
+                        password_bytes = plain_password.encode('utf-8')
+                        password_hash = hashlib.pbkdf2_hmac('sha256', password_bytes, salt_bytes, 100000)
+                        pbkdf2_hex = password_hash.hex()
+                        if hmac.compare_digest(pbkdf2_hex, hashed_password):
+                            _log("warning", f"User {user_id} using legacy PBKDF2 with hex salt - migration recommended")
+                            return True
+                    except Exception as e:
+                        _log("debug", f"PBKDF2 with hex salt failed for {user_id}: {e}")
                     
             except Exception as e:
                 _log("error", f"Legacy SHA256+salt verification failed: {type(e).__name__}")
