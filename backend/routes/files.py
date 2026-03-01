@@ -47,6 +47,7 @@ from fastapi.responses import (
     JSONResponse,
     RedirectResponse,
 )
+from fastapi.encoders import jsonable_encoder
 from typing import Optional, List, Dict, Any, Tuple
 import inspect
 
@@ -467,20 +468,26 @@ def get_media_lifecycle():
 def _get_s3_client():
     """Get S3 client for AWS presigned URL generation"""
     try:
-        # Check if S3 credentials are available
-        if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
-            _log("warning", "S3 credentials not configured")
+        if boto3 is None:
             return None
+
+        # Prefer explicit credentials when provided, otherwise fall back to boto3's
+        # default credential provider chain (IAM role, env vars, shared config, etc.).
+        client_kwargs: Dict[str, Any] = {"region_name": getattr(settings, "AWS_REGION", None)}
+        if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+            client_kwargs.update(
+                {
+                    "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
+                    "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
+                }
+            )
+
+        # Remove None values to avoid boto warnings.
+        client_kwargs = {k: v for k, v in client_kwargs.items() if v}
+
+        s3_client = boto3.client("s3", **client_kwargs)
         
-        # Initialize S3 client with AWS credentials
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_REGION
-        )
-        
-        _log("info", f"S3 client initialized for region: {settings.AWS_REGION}")
+        _log("info", f"S3 client initialized for region: {getattr(settings, 'AWS_REGION', None)}")
         return s3_client
     except Exception as e:
         _log("error", f"Failed to initialize S3 client: {str(e)}")
@@ -1671,12 +1678,21 @@ async def get_file_info(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: you don't have permission to access this file.",
                 )
+
+            # Ensure all values are JSON-serializable (Mongo ObjectId -> str, etc.)
+            encoded_doc = jsonable_encoder(
+                file_doc,
+                custom_encoder={
+                    # Keep import local to avoid hard dependency when bson isn't installed.
+                    __import__("bson").ObjectId: str  # type: ignore[attr-defined]
+                },
+            )
             return {
                 "file_id": file_id,
-                "filename": file_doc.get("filename"),
-                "size": file_doc.get("size"),
-                "uploaded_by": owner_id,
-                "created_at": file_doc.get(
+                "filename": encoded_doc.get("filename"),
+                "size": encoded_doc.get("size"),
+                "uploaded_by": str(owner_id) if owner_id is not None else None,
+                "created_at": encoded_doc.get(
                     "created_at",
                     (
                         __import__("datetime").datetime.now(
@@ -1684,13 +1700,13 @@ async def get_file_info(
                         )
                     ),
                 ),
-                "checksum": file_doc.get("checksum"),
+                "checksum": encoded_doc.get("checksum"),
                 "file_type": "file",
-                "mime_type": file_doc.get("mime_type"),
-                "owner_id": owner_id,
-                "chat_id": file_doc.get("chat_id"),
-                "delivery_status": file_doc.get("delivery_status"),
-                "expiry_time": file_doc.get("expiry_time"),
+                "mime_type": encoded_doc.get("mime_type"),
+                "owner_id": str(owner_id) if owner_id is not None else None,
+                "chat_id": str(file_doc.get("chat_id")) if file_doc.get("chat_id") is not None else None,
+                "delivery_status": encoded_doc.get("delivery_status"),
+                "expiry_time": encoded_doc.get("expiry_time"),
                 "user_id": current_user,
             }
 
