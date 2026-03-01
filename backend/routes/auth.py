@@ -1469,11 +1469,13 @@ async def forgot_password(request: dict) -> dict:
             )
             # Continue anyway - token is still valid for testing
 
-        # Return token directly for testing (no email dependency)
+        # Return token directly for immediate password reset without email
         return {
             "message": "Reset token generated successfully",
-            "reset_token": reset_token,
-            "expires_in_minutes": expiry_minutes
+            "token": reset_token,  # Direct token for immediate reset
+            "reset_token": reset_token,  # Backward compatibility
+            "expires_in_minutes": expiry_minutes,
+            "user_id": str(user.get("_id")) if user.get("_id") else None
         }
         
     except HTTPException:

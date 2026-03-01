@@ -485,7 +485,14 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
     
     print(f"[GROUP_CREATE] Returning group with {len(member_ids)} members and {len(members_detail)} member details")
     
-    return {"group_id": group_id, "chat_id": group_id, "group": _encode_doc(chat_doc)}
+    # FIXED: Encode the entire response to handle nested ObjectId objects
+    response = {
+        "group_id": group_id,
+        "chat_id": group_id,
+        "group": _encode_doc(chat_doc)
+    }
+    # Ensure all ObjectId objects are converted to strings
+    return json.loads(json.dumps(_encode_doc(response), default=str))
 
 
 @router.get("")
@@ -537,7 +544,10 @@ async def list_groups(current_user: str = Depends(get_current_user)):
         print(f"[LIST_GROUPS] Group {chat['_id']}: {len(members)} members")
         
         groups.append(chat)
-    return {"groups": groups}
+    
+    # FIXED: Properly encode all groups to handle ObjectId objects
+    encoded_groups = [_encode_doc(g) for g in groups]
+    return {"groups": json.loads(json.dumps(encoded_groups, default=str))}
 
 
 @router.get("/{group_id}/member-suggestions", response_model=List[UserPublic])

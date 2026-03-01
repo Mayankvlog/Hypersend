@@ -2130,55 +2130,76 @@ async def download_file(
             if dl_requested:
                 return RedirectResponse(url=download_url, status_code=status.HTTP_302_FOUND)
 
-            await files_collection().update_one(
-                {"_id": file_doc.get("_id")},
-                {
-                    "$set": {
-                        "delivery_status": "downloading",
-                        "download_requested_at": datetime.now(timezone.utc),
-                    }
-                },
-            )
-            return {
-                "presigned_url": download_url,
-                "file_id": str(file_doc.get("_id")),
-                "filename": file_doc.get("filename"),
-                "size": file_doc.get("size"),
-                "mime_type": file_doc.get("mime_type", "application/octet-stream"),
-                "expires_in": 600,
-            }
-
-        # Check if it's an avatar file
-        if await _is_avatar_owner(file_id, current_user):
-            _log(
-                "info",
-                f"Downloading avatar file: {file_id}",
-                {"user_id": current_user, "operation": "file_download"},
-            )
-            avatar_path = settings.DATA_ROOT / "avatars" / file_id
-            if not avatar_path.exists():
+            try:
+                await files_collection().update_one(
+                    {"_id": file_doc.get("_id")},
+                    {
+                        "$set": {
+                            "delivery_status": "downloading",
+                            "download_requested_at": datetime.now(timezone.utc),
+                        }
+                    },
+                )
+            except Exception as e:
                 _log(
-                    "error",
-                    f"Avatar file not found on disk: {file_id}",
+                    "warning",
+                    f"Failed to update delivery status: {str(e)}",
                     {"user_id": current_user, "operation": "file_download"},
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Avatar file not found",
-                )
+            
+            # Ensure all fields are properly typed and serializable
+            response_data = {
+                "presigned_url": download_url,
+                "download_url": download_url,  # Alias for compatibility
+                "file_id": str(file_doc.get("_id", "")),
+                "filename": file_doc.get("filename", "file"),
+                "size": int(file_doc.get("size", 0)) if file_doc.get("size") else 0,
+                "mime_type": file_doc.get("mime_type", "application/octet-stream"),
+                "expires_in": 600,
+                "status": "ready"
+            }
+            return response_data
 
-            # Enhanced avatar file response with proper headers
-            avatar_size = avatar_path.stat().st_size
-            return FileResponse(
-                path=str(avatar_path),
-                filename=f"avatar_{current_user}",
-                media_type="image/jpeg",
-                headers={
-                    "Content-Length": str(avatar_size),
-                    "Content-Disposition": f'inline; filename="avatar_{current_user}"',
-                    "Cache-Control": "public, max-age=3600",  # Cache avatars for 1 hour
-                    "Accept-Ranges": "bytes",
-                },
+        # Check if it's an avatar file
+        try:
+            if await _is_avatar_owner(file_id, current_user):
+                _log(
+                    "info",
+                    f"Downloading avatar file: {file_id}",
+                    {"user_id": current_user, "operation": "file_download"},
+                )
+                avatar_path = settings.DATA_ROOT / "avatars" / file_id
+                if not avatar_path.exists():
+                    _log(
+                        "error",
+                        f"Avatar file not found on disk: {file_id}",
+                        {"user_id": current_user, "operation": "file_download"},
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Avatar file not found",
+                    )
+
+                # Enhanced avatar file response with proper headers
+                avatar_size = avatar_path.stat().st_size
+                return FileResponse(
+                    path=str(avatar_path),
+                    filename=f"avatar_{current_user}",
+                    media_type="image/jpeg",
+                    headers={
+                        "Content-Length": str(avatar_size),
+                        "Content-Disposition": f'inline; filename="avatar_{current_user}"',
+                        "Cache-Control": "public, max-age=3600",  # Cache avatars for 1 hour
+                        "Accept-Ranges": "bytes",
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            _log(
+                "error",
+                f"Error checking avatar: {str(e)}",
+                {"user_id": current_user, "operation": "file_download"},
             )
 
         # File not found
