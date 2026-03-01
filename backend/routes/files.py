@@ -1909,6 +1909,9 @@ async def download_file(
 ):
     """Generate presigned download URL for ephemeral storage"""
 
+    dl_param = request.query_params.get("dl")
+    dl_requested = str(dl_param).strip() in {"1", "true", "True", "yes", "on"}
+
     # SECURITY: Validate file_id to prevent path injection attacks
     if not validate_path_injection(file_id):
         _log(
@@ -2076,6 +2079,11 @@ async def download_file(
                         headers={
                             "Cache-Control": "no-store",
                             "Accept-Ranges": "bytes",
+                            "Content-Disposition": (
+                                f'attachment; filename="{filename}"'
+                                if dl_requested
+                                else f'inline; filename="{filename}"'
+                            ),
                         },
                     )
 
@@ -2118,6 +2126,9 @@ async def download_file(
                     "expires_in": 0,
                     "error": "Temporary storage unavailable",
                 }
+
+            if dl_requested:
+                return RedirectResponse(url=download_url, status_code=status.HTTP_302_FOUND)
 
             await files_collection().update_one(
                 {"_id": file_doc.get("_id")},

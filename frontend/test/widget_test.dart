@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('hypersend app smoke test', (WidgetTester tester) async {
+  testWidgets('Zaply app smoke test', (WidgetTester tester) async {
     // Create a simple app widget to test basic functionality
     await tester.pumpWidget(
       MaterialApp(
@@ -18,7 +18,7 @@ void main() {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text('hypersend', style: TextStyle(fontSize: 24)),
+                const Text('Zaply', style: TextStyle(fontSize: 24)),
                 const Text('Fast. Secure. Chat.'),
                 ElevatedButton(
                   onPressed: () {},
@@ -40,7 +40,7 @@ void main() {
     // Check that we have the expected widgets
     expect(find.byType(Scaffold), findsOneWidget);
     expect(find.byType(Column), findsOneWidget);
-    expect(find.text('hypersend'), findsOneWidget);
+    expect(find.text('Zaply'), findsOneWidget);
     expect(find.text('Fast. Secure. Chat.'), findsOneWidget);
     expect(find.text('Test Button'), findsOneWidget);
     
