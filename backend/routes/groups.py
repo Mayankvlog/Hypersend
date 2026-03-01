@@ -937,6 +937,36 @@ async def mute_group(group_id: str, mute: bool = True, current_user: str = Depen
     return {"group": _encode_doc(new_group)}
 
 
+@router.post("/{group_id}/leave")
+async def leave_group(group_id: str, current_user: str = Depends(get_current_user)):
+    """Leave a group chat."""
+    group = await _require_group(group_id, current_user)
+    if current_user == group.get("created_by"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Creator must delete the group or transfer ownership")
+
+    # If admin leaving, ensure at least 1 admin remains
+    admins = group.get("admins", [])
+    if current_user in admins and len(admins) <= 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assign another admin before leaving")
+
+    await chats_collection().update_one(_id_query(group_id), {"$pull": {"members": current_user, "admins": current_user}})
+    await _log_activity(group_id, current_user, "member_left", {"user_id": current_user})
+    return {"status": "left"}
+
+
+@router.delete("/{group_id}")
+async def delete_group(group_id: str, current_user: str = Depends(get_current_user)):
+    """Delete a group chat (admin/creator only)."""
+    group = await _require_group(group_id, current_user)
+    if current_user != group.get("created_by") and not _is_admin(group, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can delete group")
+
+    await chats_collection().delete_one(_id_query(group_id))
+    await messages_collection().delete_many({"chat_id": group_id})
+    await _log_activity(group_id, current_user, "group_deleted", {})
+    return {"status": "deleted"}
+
+
 @router.get("/{group_id}/activity")
 async def get_activity(group_id: str, limit: int = 50, current_user: str = Depends(get_current_user)):
     await _require_group(group_id, current_user)

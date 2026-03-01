@@ -597,5 +597,254 @@ class TestWhatsAppGroupAdmin:
         print("✅ Complete WhatsApp flow simulation successful")
 
 
+class TestGroupDeletionAndLeave:
+    """Test group deletion and leave functionality (fix for 404 error)"""
+    
+    @pytest.fixture
+    def client(self):
+        """Create test client"""
+        from backend.main import app
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch
+        from auth.utils import get_current_user
+        
+        # Override get_current_user to return a test user ID
+        app.dependency_overrides[get_current_user] = lambda: "user123"
+        
+        yield TestClient(app)
+        app.dependency_overrides.clear()
+    
+    def test_delete_group_as_admin(self, client):
+        """Test DELETE /groups/{group_id} - admin can delete"""
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from bson import ObjectId
+        
+        group_id = "507f1f77bcf86cd799439012"
+        current_user = "user123"
+        
+        with patch('backend.routes.groups.chats_collection') as mock_chats, \
+             patch('backend.routes.groups.messages_collection') as mock_msgs, \
+             patch('backend.routes.groups._log_activity') as mock_log:
+            
+            # Mock group retrieval - user is admin
+            mock_group = {
+                "_id": group_id,
+                "name": "Test Group",
+                "admins": [current_user],
+                "members": ["user123", "user456"],
+                "created_by": current_user,
+                "type": "group"
+            }
+            
+            mock_chats.return_value.find_one = AsyncMock(return_value=mock_group)
+            mock_chats.return_value.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
+            mock_msgs.return_value.delete_many = AsyncMock(return_value=MagicMock(deleted_count=10))
+            mock_log.return_value = None
+            
+            response = client.delete(
+                f"/api/v1/groups/{group_id}",
+                headers={"Authorization": "Bearer mock_token"}
+            )
+            
+            # Should return 200 OK
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+            data = response.json()
+            assert data["status"] == "deleted", f"Expected status 'deleted', got {data.get('status')}"
+            
+            # Verify correct operations were called
+            assert mock_chats.return_value.delete_one.called, "chats collection delete_one not called"
+            assert mock_msgs.return_value.delete_many.called, "messages collection delete_many not called"
+            
+            print("✅ DELETE /groups/{group_id} - Admin deletion successful")
+    
+    def test_delete_group_as_creator(self, client):
+        """Test DELETE /groups/{group_id} - creator can delete"""
+        from unittest.mock import patch, AsyncMock, MagicMock
+        
+        group_id = "507f1f77bcf86cd799439012"
+        current_user = "user123"
+        
+        with patch('backend.routes.groups.chats_collection') as mock_chats, \
+             patch('backend.routes.groups.messages_collection') as mock_msgs, \
+             patch('backend.routes.groups._log_activity') as mock_log:
+            
+            # Mock group retrieval - user is creator
+            mock_group = {
+                "_id": group_id,
+                "name": "Test Group",
+                "admins": ["user456"],
+                "members": ["user123", "user456"],
+                "created_by": current_user,  # Current user is creator
+                "type": "group"
+            }
+            
+            mock_chats.return_value.find_one = AsyncMock(return_value=mock_group)
+            mock_chats.return_value.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
+            mock_msgs.return_value.delete_many = AsyncMock(return_value=MagicMock(deleted_count=5))
+            mock_log.return_value = None
+            
+            response = client.delete(
+                f"/api/v1/groups/{group_id}",
+                headers={"Authorization": "Bearer mock_token"}
+            )
+            
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+            print("✅ DELETE /groups/{group_id} - Creator deletion successful")
+    
+    def test_delete_group_not_authorized(self, client):
+        """Test DELETE /groups/{group_id} - non-admin cannot delete"""
+        from unittest.mock import patch, AsyncMock
+        
+        group_id = "507f1f77bcf86cd799439012"
+        current_user = "user123"
+        
+        with patch('backend.routes.groups.chats_collection') as mock_chats:
+            # Mock group retrieval - user is NOT admin or creator
+            mock_group = {
+                "_id": group_id,
+                "name": "Test Group",
+                "admins": ["user456"],  # Different user is admin
+                "members": ["user123", "user456"],
+                "created_by": "user456",  # Different user created it
+                "type": "group"
+            }
+            
+            mock_chats.return_value.find_one = AsyncMock(return_value=mock_group)
+            
+            response = client.delete(
+                f"/api/v1/groups/{group_id}",
+                headers={"Authorization": "Bearer mock_token"}
+            )
+            
+            # Should return 403 FORBIDDEN
+            assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+            data = response.json()
+            assert "Only admins can delete" in data["detail"], f"Unexpected error message: {data['detail']}"
+            
+            print("✅ DELETE /groups/{group_id} - Non-admin correctly denied (403)")
+    
+    def test_delete_nonexistent_group(self, client):
+        """Test DELETE /groups/{group_id} - group not found"""
+        from unittest.mock import patch, AsyncMock
+        
+        group_id = "nonexistent"
+        
+        with patch('backend.routes.groups.chats_collection') as mock_chats:
+            # Mock group not found
+            mock_chats.return_value.find_one = AsyncMock(return_value=None)
+            
+            response = client.delete(
+                f"/api/v1/groups/{group_id}",
+                headers={"Authorization": "Bearer mock_token"}
+            )
+            
+            # Should return 404 NOT FOUND
+            assert response.status_code == 404, f"Expected 404, got {response.status_code}"
+            
+            print("✅ DELETE /groups/{group_id} - Nonexistent group correctly returns 404")
+    
+    def test_leave_group(self, client):
+        """Test POST /groups/{group_id}/leave - member leaves group"""
+        from unittest.mock import patch, AsyncMock, MagicMock
+        
+        group_id = "507f1f77bcf86cd799439012"
+        current_user = "user123"
+        
+        with patch('backend.routes.groups.chats_collection') as mock_chats, \
+             patch('backend.routes.groups._log_activity') as mock_log:
+            
+            # Mock group retrieval - user is NOT creator but is member
+            mock_group = {
+                "_id": group_id,
+                "name": "Test Group",
+                "admins": ["user456", "user123"],  # Multiple admins
+                "members": ["user123", "user456"],
+                "created_by": "user456",  # Different creator
+                "type": "group"
+            }
+            
+            mock_chats.return_value.find_one = AsyncMock(return_value=mock_group)
+            mock_chats.return_value.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+            mock_log.return_value = None
+            
+            response = client.post(
+                f"/api/v1/groups/{group_id}/leave",
+                headers={"Authorization": "Bearer mock_token"}
+            )
+            
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+            data = response.json()
+            assert data["status"] == "left", f"Expected status 'left', got {data.get('status')}"
+            
+            # Verify update_one was called
+            assert mock_chats.return_value.update_one.called, "update_one not called"
+            
+            print("✅ POST /groups/{group_id}/leave - Member left successfully")
+    
+    def test_leave_group_creator_blocked(self, client):
+        """Test POST /groups/{group_id}/leave - creator cannot leave"""
+        from unittest.mock import patch, AsyncMock
+        
+        group_id = "507f1f77bcf86cd799439012"
+        current_user = "user123"
+        
+        with patch('backend.routes.groups.chats_collection') as mock_chats:
+            # Mock group - current user is creator
+            mock_group = {
+                "_id": group_id,
+                "name": "Test Group",
+                "admins": ["user123"],
+                "members": ["user123", "user456"],
+                "created_by": current_user,  # User is creator
+                "type": "group"
+            }
+            
+            mock_chats.return_value.find_one = AsyncMock(return_value=mock_group)
+            
+            response = client.post(
+                f"/api/v1/groups/{group_id}/leave",
+                headers={"Authorization": "Bearer mock_token"}
+            )
+            
+            # Should return 400 BAD REQUEST
+            assert response.status_code == 400, f"Expected 400, got {response.status_code}"
+            data = response.json()
+            assert "Creator must delete" in data["detail"], f"Unexpected error: {data['detail']}"
+            
+            print("✅ POST /groups/{group_id}/leave - Creator correctly blocked (400)")
+    
+    def test_leave_group_last_admin_blocked(self, client):
+        """Test POST /groups/{group_id}/leave - last admin cannot leave"""
+        from unittest.mock import patch, AsyncMock
+        
+        group_id = "507f1f77bcf86cd799439012"
+        current_user = "user123"
+        
+        with patch('backend.routes.groups.chats_collection') as mock_chats:
+            # Mock group - current user is only admin
+            mock_group = {
+                "_id": group_id,
+                "name": "Test Group",
+                "admins": [current_user],  # Only one admin (current user)
+                "members": ["user123", "user456"],
+                "created_by": "user456",  # Different creator
+                "type": "group"
+            }
+            
+            mock_chats.return_value.find_one = AsyncMock(return_value=mock_group)
+            
+            response = client.post(
+                f"/api/v1/groups/{group_id}/leave",
+                headers={"Authorization": "Bearer mock_token"}
+            )
+            
+            # Should return 400 BAD REQUEST
+            assert response.status_code == 400, f"Expected 400, got {response.status_code}"
+            data = response.json()
+            assert "Assign another admin" in data["detail"], f"Unexpected error: {data['detail']}"
+            
+            print("✅ POST /groups/{group_id}/leave - Last admin correctly blocked (400)")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
