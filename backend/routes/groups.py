@@ -485,7 +485,7 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
     
     print(f"[GROUP_CREATE] Returning group with {len(member_ids)} members and {len(members_detail)} member details")
     
-    return {"group_id": group_id, "chat_id": group_id, "group": chat_doc}
+    return {"group_id": group_id, "chat_id": group_id, "group": _encode_doc(chat_doc)}
 
 
 @router.get("")
