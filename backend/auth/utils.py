@@ -613,10 +613,14 @@ async def get_current_user(
     existing_user = None
     try:
         existing_user = await users_col.find_one({"_id": user_oid})
-    except Exception:
-        # If DB lookup fails here, let downstream endpoints decide how to handle
-        # database errors instead of turning them into an auth failure.
-        existing_user = None
+    except Exception as e:
+        # Authentication must not "randomly fail" due to transient DB issues.
+        # If Atlas is unavailable, surface it as a service error rather than
+        # incorrectly treating the user as unauthenticated.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable",
+        ) from e
 
     if not existing_user:
         raise HTTPException(

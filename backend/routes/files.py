@@ -473,7 +473,8 @@ def _get_s3_client():
 
         # Prefer explicit credentials when provided, otherwise fall back to boto3's
         # default credential provider chain (IAM role, env vars, shared config, etc.).
-        client_kwargs: Dict[str, Any] = {"region_name": getattr(settings, "AWS_REGION", None)}
+        # IMPORTANT: Deployment requirement: always use us-east-1 for zaply-temp bucket.
+        client_kwargs: Dict[str, Any] = {"region_name": "us-east-1"}
         if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
             client_kwargs.update(
                 {
@@ -1241,9 +1242,11 @@ async def initialize_upload(
         upload_doc = {
             "upload_id": upload_id,
             "user_id": upload_user_id,
+            "owner_id": upload_user_id,
             "file_id": file_oid,
             "filename": filename,
             "file_size": file_size,
+            "mime_type": mime_type,
             "chunk_size": chunk_size,
             "total_chunks": total_chunks,
             "storage_key": storage_key,
@@ -1253,6 +1256,7 @@ async def initialize_upload(
             "created_at": now,
             "updated_at": now,
             "status": "initialized",
+            "upload_status": "initialized",
         }
         uploads_col = _safe_collection(uploads_collection)
         await _maybe_await(uploads_col.insert_one(upload_doc))
@@ -1530,6 +1534,7 @@ async def complete_upload(
                 {
                     "$set": {
                         "status": "completed",
+                        "upload_status": "completed",
                         "completed_at": now,
                         "updated_at": now,
                     }
@@ -1556,6 +1561,7 @@ async def complete_upload(
             "storage_key": storage_key,
             "bucket": "zaply-temp",
             "region": "us-east-1",
+            "upload_status": "completed",
             "created_at": now,
             "updated_at": now,
             "status": "active",
@@ -2101,10 +2107,17 @@ async def download_file(
                 download_url = f"https://mock-s3.test/{storage_key}"
 
             if not download_url:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Temporary storage unavailable",
-                )
+                # Do not block downloads when S3 is temporarily unavailable.
+                # Return a stable JSON payload so clients can retry or surface UI state.
+                return {
+                    "presigned_url": None,
+                    "file_id": str(file_doc.get("_id")),
+                    "filename": file_doc.get("filename"),
+                    "size": file_doc.get("size"),
+                    "mime_type": file_doc.get("mime_type", "application/octet-stream"),
+                    "expires_in": 0,
+                    "error": "Temporary storage unavailable",
+                }
 
             await files_collection().update_one(
                 {"_id": file_doc.get("_id")},
