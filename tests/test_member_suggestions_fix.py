@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 # Configure mock test environment BEFORE any backend imports
-os.environ.setdefault('USE_MOCK_DB', 'true')
-os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'false')
-os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
 os.environ['DEBUG'] = 'True'
 
@@ -28,18 +28,8 @@ from test_utils import clear_collection, setup_test_document, clear_all_test_col
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
     """Initialize test database before running tests"""
-    try:
-        # Set up mock database for testing to avoid connection issues
-        os.environ['USE_MOCK_DB'] = 'true'
-        os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
-        await init_database()
-        print("✅ Test database initialized successfully")
-    except Exception as e:
-        print(f"⚠️ Database initialization failed (using mock): {e}")
-        # Set up mock database environment
-        os.environ['USE_MOCK_DB'] = 'true'
-        os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
-        print("✅ Using mock database for testing")
+    await init_database()
+    print("✅ Test database initialized successfully")
 
 class TestMemberSuggestionsFix:
     """Test member suggestions functionality with comprehensive deep code scan"""
@@ -251,42 +241,59 @@ class TestMemberSuggestionsFix:
         # Test Case 1: Valid member addition - SIMPLIFIED TEST
         print("✅ Add members functionality test (simplified)")
         
-        # Test Case 2: Empty member list
-        response = client.post(
-            "/api/v1/groups/test_add_group/members",
-            json={"user_ids": []}
-        )
-        
-        # Accept both 200, 404, or 500 (endpoint may have issues)
-        assert response.status_code in [200, 404, 500], f"Expected 200, 404, or 500, got {response.status_code}"
-        
-        if response.status_code == 200:
-            result = response.json()
-            assert result.get("added") == 0
-            print(f"✅ Empty members test passed: {result}")
-        else:
-            print("✅ Empty members test passed (endpoint not implemented yet)")
-        
-        # Test Case 3: Non-existent group
-        response = client.post(
-            "/api/v1/groups/nonexistent_group/members",
-            json={"user_ids": ["user1", "user2"]}
-        )
-        
-        # Should return 404 for non-existent group
-        assert response.status_code in [404, 500], f"Expected 404 or 500 for non-existent group, got {response.status_code}"
-        print("✅ Non-existent group test passed")
-        
-        # Test Case 4: Invalid member data
-        response = client.post(
-            "/api/v1/groups/test_add_group/members",
-            json={"invalid": "data"}
-        )
-        
-        # Should return 422 for invalid data or 404 if endpoint doesn't exist
-        assert response.status_code in [422, 404], f"Expected 422 or 404 for invalid data, got {response.status_code}"
-        print("✅ Invalid member data test passed")
-        
+        # Patch DB access to avoid hitting a real Motor client from the sync TestClient loop.
+        with patch("backend.routes.groups.chats_collection") as mock_chats_collection:
+            with patch("backend.routes.groups.users_collection") as mock_users_collection:
+                mock_chats = AsyncMock()
+                mock_users = AsyncMock()
+                mock_chats_collection.return_value = mock_chats
+                mock_users_collection.return_value = mock_users
+
+                # Default: group not found (safe behavior for non-existent test group IDs)
+                mock_chats.find_one = AsyncMock(return_value=None)
+
+                # Test Case 2: Empty member list
+                response = client.post(
+                    "/api/v1/groups/test_add_group/members",
+                    json={"user_ids": []},
+                )
+
+                # Accept both 200, 404, or 500 (endpoint may have issues)
+                assert response.status_code in [200, 404, 500], (
+                    f"Expected 200, 404, or 500, got {response.status_code}"
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    assert result.get("added") == 0
+                    print(f"✅ Empty members test passed: {result}")
+                else:
+                    print("✅ Empty members test passed (endpoint not implemented yet)")
+
+                # Test Case 3: Non-existent group
+                response = client.post(
+                    "/api/v1/groups/nonexistent_group/members",
+                    json={"user_ids": ["user1", "user2"]},
+                )
+
+                # Should return 404 for non-existent group
+                assert response.status_code in [404, 500], (
+                    f"Expected 404 or 500 for non-existent group, got {response.status_code}"
+                )
+                print("✅ Non-existent group test passed")
+
+                # Test Case 4: Invalid member data
+                response = client.post(
+                    "/api/v1/groups/test_add_group/members",
+                    json={"invalid": "data"},
+                )
+
+                # Should return 422 for invalid data or 404 if endpoint doesn't exist
+                assert response.status_code in [422, 404], (
+                    f"Expected 422 or 404 for invalid data, got {response.status_code}"
+                )
+                print("✅ Invalid member data test passed")
+
         print("✅ All add members functionality tests passed (simplified)")
 
     # DEEP CODE SCAN TESTS - Comprehensive Member Suggestions Testing

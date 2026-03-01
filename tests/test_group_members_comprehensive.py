@@ -146,8 +146,27 @@ class TestGroupMembersComprehensive:
                                             # Create new event loop
                                             policy = asyncio.get_event_loop_policy()
                                             new_loop = policy.new_event_loop()
+                                            old_loop = None
+                                            try:
+                                                old_loop = asyncio.get_event_loop()
+                                            except Exception:
+                                                old_loop = None
+
                                             asyncio.set_event_loop(new_loop)
-                                            groups = new_loop.run_until_complete(groups.to_list(length=None))
+                                            try:
+                                                groups = new_loop.run_until_complete(groups.to_list(length=None))
+                                            finally:
+                                                try:
+                                                    new_loop.close()
+                                                except Exception:
+                                                    pass
+                                                try:
+                                                    if old_loop is not None and not old_loop.is_closed():
+                                                        asyncio.set_event_loop(old_loop)
+                                                    else:
+                                                        asyncio.set_event_loop(None)
+                                                except Exception:
+                                                    pass
                                         else:
                                             groups = asyncio.run(groups.to_list(length=None))
                                 elif hasattr(groups, '__anext__'):

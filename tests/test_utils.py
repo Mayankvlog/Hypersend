@@ -25,18 +25,36 @@ def clear_collection(collection_func):
         elif hasattr(collection, 'clear'):
             if asyncio.iscoroutinefunction(collection.clear):
                 # Async clear method
+                old_loop = None
+                try:
+                    old_loop = asyncio.get_event_loop()
+                except Exception:
+                    old_loop = None
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
                     loop.run_until_complete(collection.clear())
                 finally:
                     loop.close()
+                    # Never leave a closed loop as the current loop
+                    try:
+                        if old_loop is not None and not old_loop.is_closed():
+                            asyncio.set_event_loop(old_loop)
+                        else:
+                            asyncio.set_event_loop(None)
+                    except Exception:
+                        pass
             else:
                 # Sync clear method
                 collection.clear()
             return True
         # For real Motor collections, we need to delete all documents
         elif hasattr(collection, 'delete_many'):
+            old_loop = None
+            try:
+                old_loop = asyncio.get_event_loop()
+            except Exception:
+                old_loop = None
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
@@ -69,6 +87,14 @@ def clear_collection(collection_func):
                         return False
             finally:
                 loop.close()
+                # Never leave a closed loop as the current loop
+                try:
+                    if old_loop is not None and not old_loop.is_closed():
+                        asyncio.set_event_loop(old_loop)
+                    else:
+                        asyncio.set_event_loop(None)
+                except Exception:
+                    pass
             return True
         else:
             print(f"[TEST_UTILS] Cannot clear collection - no supported method found")

@@ -494,6 +494,7 @@ def _generate_presigned_url(
     content_type: Optional[str] = None,
     file_size: Optional[int] = None,
     expires_in: int = 900,
+    bucket: Optional[str] = None,
 ):
     s3_client = _get_s3_client()
     if not s3_client:
@@ -514,7 +515,7 @@ def _generate_presigned_url(
         pass
 
     try:
-        params = {"Bucket": settings.S3_BUCKET, "Key": object_key}
+        params = {"Bucket": bucket or settings.S3_BUCKET, "Key": object_key}
         if content_type:
             params["ContentType"] = content_type
         if file_size:
@@ -894,7 +895,7 @@ upload_complete_limiter = RateLimiter(
 
 @router.post("/init", response_model=FileInitResponse)
 async def initialize_upload(
-    request: Request, current_user: str = Depends(get_current_user)
+    request: Request, current_user: Optional[str] = Depends(get_current_user_for_upload)
 ):
     """
     WhatsApp-style ephemeral file upload initialization.
@@ -1082,8 +1083,7 @@ async def initialize_upload(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        if not current_user:
-            current_user = "anonymous"
+        is_anonymous = not bool(current_user)
 
         # Check file size against quota (10GB default)
         user_quota_bytes = getattr(
@@ -1217,23 +1217,31 @@ async def initialize_upload(
         from bson import ObjectId
         from datetime import datetime as dt
 
-        if not ObjectId.is_valid(current_user):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid user_id",
-            )
-
-        upload_user_id = ObjectId(current_user)
+        upload_user_id: Optional[ObjectId] = None
+        if not is_anonymous:
+            if not ObjectId.is_valid(current_user):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid user_id",
+                )
+            upload_user_id = ObjectId(current_user)
 
         upload_id = str(uuid.uuid4())
         now = dt.now(timezone.utc)
+        file_oid = ObjectId()
+        storage_key_owner = str(upload_user_id) if upload_user_id is not None else "anonymous"
+        storage_key = f"files/{storage_key_owner}/{upload_id}/{filename}"
         upload_doc = {
             "upload_id": upload_id,
             "user_id": upload_user_id,
+            "file_id": file_oid,
             "filename": filename,
             "file_size": file_size,
             "chunk_size": chunk_size,
             "total_chunks": total_chunks,
+            "storage_key": storage_key,
+            "bucket": "zaply-temp",
+            "region": "us-east-1",
             "uploaded_chunks": [],
             "created_at": now,
             "updated_at": now,
@@ -1482,6 +1490,13 @@ async def complete_upload(
         if upload_doc is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found")
 
+        filename = upload_doc.get("filename")
+        if not filename or not isinstance(filename, str):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Upload metadata missing filename",
+            )
+
         upload_user_id = upload_doc.get("user_id")
         if upload_user_id != ObjectId(current_user):
             raise HTTPException(
@@ -1517,19 +1532,23 @@ async def complete_upload(
 
         # Store file metadata in files collection for MongoDB Atlas
         from bson import ObjectId
-        file_id = str(ObjectId())
-        storage_key = f"files/{upload_user_id}/{upload_id}/{filename}"
+        file_oid = upload_doc.get("file_id")
+        if not isinstance(file_oid, ObjectId):
+            file_oid = ObjectId()
+
+        file_id = str(file_oid)
+        storage_key = upload_doc.get("storage_key") or f"files/{upload_user_id}/{upload_id}/{filename}"
         
         file_doc = {
-            "_id": ObjectId(file_id),
-            "file_id": file_id,
+            "_id": file_oid,
+            "file_id": file_oid,
             "owner_id": upload_user_id,
             "filename": filename,
             "size": upload_doc.get("file_size"),
             "mime_type": upload_doc.get("mime_type"),
             "storage_key": storage_key,
-            "bucket": settings.S3_BUCKET,
-            "region": settings.AWS_REGION,
+            "bucket": "zaply-temp",
+            "region": "us-east-1",
             "created_at": now,
             "updated_at": now,
             "status": "active",
@@ -1888,10 +1907,31 @@ async def download_file(
         import asyncio
         from bson import ObjectId
 
-        # Query using file_id and owner_id ObjectId for proper access control
-        file_doc = await asyncio.wait_for(
-            files_collection().find_one({"file_id": file_id, "owner_id": ObjectId(current_user)}), timeout=30.0
-        )
+        file_doc = None
+        if ObjectId.is_valid(file_id):
+            file_oid = ObjectId(file_id)
+
+            # Query by file_id only; enforce access control checks after retrieval.
+            file_doc = await asyncio.wait_for(
+                files_collection().find_one({"file_id": file_oid}),
+                timeout=30.0,
+            )
+            if not file_doc:
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"_id": file_oid}),
+                    timeout=30.0,
+                )
+        else:
+            # Some legacy/test flows treat file identifiers as opaque strings.
+            file_doc = await asyncio.wait_for(
+                files_collection().find_one({"_id": file_id}),
+                timeout=30.0,
+            )
+            if not file_doc:
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"file_id": file_id}),
+                    timeout=30.0,
+                )
 
         if file_doc:
             # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
@@ -1973,7 +2013,7 @@ async def download_file(
                 if dt.now(tz.utc) > expiry_time:
                     _delete_s3_object(file_doc.get("object_key"))
                     await files_collection().update_one(
-                        {"_id": file_id},
+                        {"_id": file_doc.get("_id")},
                         {"$set": {"status": "expired", "delivery_status": "expired"}},
                     )
                     raise HTTPException(
@@ -2020,8 +2060,9 @@ async def download_file(
             # Fallback to presigned URL flow (if object_key exists)
             storage_key = file_doc.get("storage_key")
             bucket = file_doc.get("bucket")
+            region = file_doc.get("region")
             
-            if not storage_key or not bucket:
+            if not storage_key or not bucket or not region:
                 _log(
                     "error",
                     "File missing storage reference in DB",
@@ -2029,14 +2070,19 @@ async def download_file(
                 )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found - storage reference missing",
+                    detail="File not found - storage key missing",
                 )
 
-            download_url = _generate_presigned_url("get", object_key=storage_key, expires_in=600)
+            download_url = _generate_presigned_url(
+                "get",
+                object_key=storage_key,
+                expires_in=600,
+                bucket=bucket,
+            )
 
             # Test mode fallback: use mock URL when S3 is not available
             if not download_url and _is_test_request(request):
-                download_url = f"https://mock-s3.test/{object_key}"
+                download_url = f"https://mock-s3.test/{storage_key}"
 
             if not download_url:
                 raise HTTPException(
@@ -2054,7 +2100,7 @@ async def download_file(
                 },
             )
             return {
-                "download_url": download_url,
+                "presigned_url": download_url,
                 "file_id": str(file_doc.get("_id")),
                 "filename": file_doc.get("filename"),
                 "size": file_doc.get("size"),

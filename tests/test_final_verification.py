@@ -11,9 +11,9 @@ from unittest.mock import Mock, AsyncMock, patch
 from pathlib import Path
 
 # Configure mock test environment BEFORE any backend imports
-os.environ.setdefault('USE_MOCK_DB', 'true')
-os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'false')
-os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
 os.environ['DEBUG'] = 'True'
 
@@ -26,18 +26,8 @@ from backend.database import init_database
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
     """Initialize test database before running tests"""
-    try:
-        # Set up mock database for testing to avoid connection issues
-        os.environ['USE_MOCK_DB'] = 'true'
-        os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
-        await init_database()
-        print("✅ Test database initialized successfully")
-    except Exception as e:
-        print(f"⚠️ Database initialization failed (using mock): {e}")
-        # Set up mock database environment
-        os.environ['USE_MOCK_DB'] = 'true'
-        os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
-        print("✅ Using mock database for testing")
+    await init_database()
+    print("✅ Test database initialized successfully")
 
 class TestMongoDBConnectionFixes:
     """Test MongoDB connection fixes comprehensively"""

@@ -477,12 +477,10 @@ async def update_profile(
 
         logger.info(f"Fetching current user data from database...")
 
+        current_user_oid = _maybe_object_id(current_user)
         current_user_data = await asyncio.wait_for(
-
-            users_collection().find_one({"_id": current_user}),
-
-            timeout=5.0
-
+            users_collection().find_one({"_id": current_user_oid}),
+            timeout=5.0,
         )
 
         
@@ -571,20 +569,22 @@ async def update_profile(
 
             # Check if username is already taken (excluding current user)
             if username != "":
-                from bson import ObjectId
-                current_user_id = current_user_data.get("_id") if current_user_data else None
-                
+                current_user_id = current_user_data.get("_id") if current_user_data else current_user_oid
+
                 existing_username = await asyncio.wait_for(
-                    users_collection().find_one({"username": username}),
-                    timeout=5.0
+                    users_collection().find_one(
+                        {"username": username, "_id": {"$ne": current_user_id}}
+                    ),
+                    timeout=5.0,
                 )
-                
-                # Allow username change if it's the same user or username is not taken
-                if existing_username and existing_username.get("_id") != current_user_id:
-                    logger.warning(f"Username already taken: {username} by {existing_username.get('_id')}")
+
+                if existing_username:
+                    logger.warning(
+                        f"Username already taken: {username} by {existing_username.get('_id')}"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
-                        detail="Username already taken"
+                        detail="Username already taken",
                     )
                 
                 logger.info(f"SUCCESS: Username validation passed: {username}")
@@ -649,11 +649,8 @@ async def update_profile(
                 # Get current user data to check for existing avatar
 
                 current_user_data = await asyncio.wait_for(
-
-                    users_collection().find_one({"_id": current_user}),
-
-                    timeout=5.0
-
+                    users_collection().find_one({"_id": current_user_oid}),
+                    timeout=5.0,
                 )
 
                 
@@ -710,7 +707,7 @@ async def update_profile(
 
                 current_user_data = await asyncio.wait_for(
 
-                    users_collection().find_one({"_id": current_user}),
+                    users_collection().find_one({"_id": current_user_oid}),
 
                     timeout=5.0
 
@@ -790,7 +787,7 @@ async def update_profile(
 
             users_collection().update_one(
 
-                {"_id": current_user},
+                {"_id": current_user_oid},
 
                 {"$set": update_data}
 
@@ -836,7 +833,7 @@ async def update_profile(
 
         updated_user = await asyncio.wait_for(
 
-            users_collection().find_one({"_id": current_user}),
+            users_collection().find_one({"_id": current_user_oid}),
 
             timeout=5.0
 
@@ -878,7 +875,7 @@ async def update_profile(
 
         return UserResponse(
 
-            id=updated_user["_id"],
+            id=str(updated_user["_id"]),
 
             name=updated_user["name"],
 

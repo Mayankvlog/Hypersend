@@ -125,24 +125,54 @@ async def initialize_test_database():
 
 @pytest.fixture(scope="session")
 def event_loop():
+    old_loop = None
+    try:
+        old_loop = asyncio.get_event_loop()
+    except Exception:
+        old_loop = None
+
     loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+    asyncio.set_event_loop(loop)
+    try:
+        yield loop
+    finally:
+        # Never leave a closed loop as the current loop
+        try:
+            if old_loop is not None and not old_loop.is_closed():
+                asyncio.set_event_loop(old_loop)
+            else:
+                asyncio.set_event_loop(None)
+        except Exception:
+            pass
+        loop.close()
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _init_atlas_db_for_tests(event_loop):
-    import database as _database
+    # IMPORTANT: Always initialize using the canonical `backend.database` module.
+    # Importing `database` via sys.path can load the same file under a different
+    # module name in some harnesses, which would create separate globals.
     try:
-        # Use the existing event loop instead of creating a new one
+        # Force Atlas-only flags (do not rely on setdefault).
+        os.environ["USE_MOCK_DB"] = "false"
+        os.environ["MONGODB_ATLAS_ENABLED"] = "true"
+        # Force canonical Atlas URI + DB name for tests in case other test modules
+        # override environment variables with invalid values.
+        os.environ["MONGODB_URI"] = (
+            "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/"
+            "Hypersend?retryWrites=true&w=majority"
+        )
+        os.environ["DATABASE_NAME"] = "Hypersend"
+        from backend import database as _database
+        from backend.main import app as _app
+
         if not _database.is_database_initialized():
-            # Run the async init function in the event loop
             task = event_loop.create_task(_database.init_database())
             event_loop.run_until_complete(task)
-        from backend.main import app as _app
+
         _app.state.db = _database.db
         _app.state.client = _database.client
         print("[CONFTEST] Atlas database initialized for tests")
     except Exception as e:
-        print(f"[CONFTEST] Atlas DB initialization failed (expected in CI): {e}")
-        # Tests can still run with mocks or skip DB-dependent tests
+        # Atlas-only test suite requirement: fail fast if Atlas cannot be initialized.
+        raise RuntimeError(f"[CONFTEST] Atlas DB initialization failed: {e}")

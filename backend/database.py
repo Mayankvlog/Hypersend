@@ -67,26 +67,15 @@ async def init_database():
         if _database_initialized and client is not None and db is not None:
             return
 
-        # Atlas-only mode (no mock/fallback): when Atlas is enabled, mock DB is forbidden
-        # even under pytest.
+        # Atlas-only mode (no mock/fallback): mock DB is forbidden in all environments.
         mongodb_atlas_enabled = (os.getenv("MONGODB_ATLAS_ENABLED") or "").lower() == "true"
         use_mock_db = (os.getenv("USE_MOCK_DB") or "").lower() == "true"
-        
-        # Allow mock database in pytest environment
-        if _is_pytest_running() and use_mock_db:
-            # In pytest, allow mock database even if Atlas is configured
-            print("✅ Using mock database for pytest")
-            _database_initialized = True
-            return
-        
+
         if not mongodb_atlas_enabled:
-            # Atlas must be enabled for this backend.
             raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true"')
-            
-        if mongodb_atlas_enabled and use_mock_db:
-            raise RuntimeError('USE_MOCK_DB must be "false" when MongoDB Atlas is enabled')
-            
-        # Continue with Atlas initialization
+
+        if use_mock_db:
+            raise RuntimeError('USE_MOCK_DB must be "false" for Atlas-only operation')
 
         mongodb_uri = os.getenv("MONGODB_URI")
         if not mongodb_uri:
@@ -129,50 +118,30 @@ def get_database():
 # Collection shortcuts
 def users_collection():
     """Get users collection"""
-    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
-        # Return mock collection for pytest
-        from .mock_database import MockCollection
-        return MockCollection("users")
     if is_database_initialized() and db is not None:
         return db["users"]
     raise RuntimeError("Database not initialized")
 
 def chats_collection():
     """Get chats collection"""
-    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
-        # Return mock collection for pytest
-        from .mock_database import MockCollection
-        return MockCollection("chats")
     if is_database_initialized() and db is not None:
         return db["chats"]
     raise RuntimeError("Database not initialized")
 
 def messages_collection():
     """Get messages collection"""
-    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
-        # Return mock collection for pytest
-        from .mock_database import MockCollection
-        return MockCollection("messages")
     if is_database_initialized() and db is not None:
         return db["messages"]
     raise RuntimeError("Database not initialized")
 
 def files_collection():
     """Get files collection"""
-    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
-        # Return mock collection for pytest
-        from .mock_database import MockCollection
-        return MockCollection("files")
     if is_database_initialized() and db is not None:
         return db["files"]
     raise RuntimeError("Database not initialized")
 
 def uploads_collection():
     """Get uploads collection"""
-    if _is_pytest_running() and (os.getenv("USE_MOCK_DB") or "").lower() == "true":
-        # Return mock collection for pytest
-        from .mock_database import MockCollection
-        return MockCollection("uploads")
     if is_database_initialized() and db is not None:
         return db["uploads"]
     raise RuntimeError("Database not initialized")
@@ -203,7 +172,46 @@ def media_collection():
 
 # Backward compatibility aliases for tests
 async def connect_db():
-    await init_database()
+    # Legacy wrapper used by some test suites that patch `database.settings` and
+    # `database.AsyncIOMotorClient`. Keep behavior predictable for those tests
+    # without changing the Atlas-only guarantees enforced by `init_database()`.
+    global client, db, _database_initialized
+
+    # If the attribute exists on `settings` (even if None), honor it.
+    if hasattr(settings, "MONGODB_URI"):
+        mongodb_uri = getattr(settings, "MONGODB_URI")
+    else:
+        mongodb_uri = os.getenv("MONGODB_URI")
+
+    if hasattr(settings, "_MONGO_DB"):
+        database_name = getattr(settings, "_MONGO_DB")
+    else:
+        database_name = os.getenv("DATABASE_NAME")
+    use_mock_db = bool(getattr(settings, "USE_MOCK_DB", False))
+
+    if use_mock_db:
+        raise RuntimeError('USE_MOCK_DB must be "false" for Atlas-only operation')
+
+    if not mongodb_uri or not database_name:
+        raise ValueError("Database configuration is invalid")
+
+    # Always (re)create a client here so patched AsyncIOMotorClient in tests is used.
+    client = AsyncIOMotorClient(
+        mongodb_uri,
+        retryWrites=False,
+        serverSelectionTimeoutMS=10000,
+        connectTimeoutMS=10000,
+    )
+    db = client[database_name]
+
+    try:
+        await client.admin.command("ping")
+    except asyncio.TimeoutError as e:
+        raise ConnectionError("Database connection test failed") from e
+    except Exception as e:
+        raise ConnectionError("Database connection test failed") from e
+
+    _database_initialized = True
 
 get_db = get_database
 

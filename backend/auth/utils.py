@@ -587,6 +587,14 @@ async def get_current_user(
     from bson import ObjectId
 
     user_id_str = token_data.user_id
+    if not ObjectId.is_valid(user_id_str):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user identifier in token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_oid = ObjectId(user_id_str)
 
     # Always verify/load the user from Atlas so routes can rely on request.state
     users_col = None
@@ -604,16 +612,7 @@ async def get_current_user(
 
     existing_user = None
     try:
-        # Convert user_id_str to ObjectId for MongoDB query
-        from bson import ObjectId
-        
-        if ObjectId.is_valid(user_id_str):
-            object_id = ObjectId(user_id_str)
-            existing_user = await users_col.find_one({"_id": object_id})
-            if not existing_user:
-                existing_user = await users_col.find_one({"_id": user_id_str})
-        else:
-            existing_user = await users_col.find_one({"_id": user_id_str})
+        existing_user = await users_col.find_one({"_id": user_oid})
     except Exception:
         # If DB lookup fails here, let downstream endpoints decide how to handle
         # database errors instead of turning them into an auth failure.

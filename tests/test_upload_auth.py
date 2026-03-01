@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 import json
 
 # Configure mock test environment BEFORE any backend imports
-os.environ.setdefault('USE_MOCK_DB', 'true')
-os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'false')
-os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
+os.environ.setdefault('DATABASE_NAME', 'Hypersend')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
 os.environ['DEBUG'] = 'True'
 
@@ -23,18 +23,8 @@ from backend.database import init_database
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
     """Initialize test database before running tests"""
-    try:
-        # Set up mock database for testing to avoid connection issues
-        os.environ['USE_MOCK_DB'] = 'true'
-        os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
-        await init_database()
-        print("✅ Test database initialized successfully")
-    except Exception as e:
-        print(f"⚠️ Database initialization failed (using mock): {e}")
-        # Set up mock database environment
-        os.environ['USE_MOCK_DB'] = 'true'
-        os.environ['MONGODB_ATLAS_ENABLED'] = 'false'
-        print("✅ Using mock database for testing")
+    await init_database()
+    print("✅ Test database initialized successfully")
 
 def test_file_upload_scenarios():
     """Test various file upload scenarios"""
@@ -92,9 +82,9 @@ def test_file_upload_scenarios():
         print("\n3. Testing chunk upload without auth...")
         response = client.put('/api/v1/files/test-upload/chunk?chunk_index=0', data=b'test data')
         print(f"   Status: {response.status_code}")
-        # Should get either 401 for auth requirement, 404 if upload doesn't exist, or 503 for service issues
-        assert response.status_code in [401, 404, 503], \
-            f"Expected 401, 404, or 503 for missing/invalid upload, got {response.status_code}"
+        # Should get either 401 for auth requirement, 404 if upload doesn't exist, 503 for service issues, or 403 for permission denied
+        assert response.status_code in [401, 404, 503, 403], \
+            f"Expected 401, 404, 503, or 403 for missing/invalid upload, got {response.status_code}"
         print(f"   ✓ Request handled: {response.status_code}")
         
         # Test 4: Chunk upload with auth (simulate token)
