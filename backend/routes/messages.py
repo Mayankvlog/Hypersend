@@ -2979,6 +2979,8 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
     }
     """
     user_id = None
+    redis_task = None
+    pubsub = None
     
     try:
         # Extract and validate JWT token from query params
@@ -2998,7 +3000,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
             return
         
         # Verify user is member of chat
-        chat_doc = await chats_collection.find_one(
+        chat_doc = await chats_collection().find_one(
             {"_id": ObjectId(chat_id), "participants": user_id}
         )
         if not chat_doc:
@@ -3008,62 +3010,88 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
         # Connect to chat
         await manager.connect(chat_id, user_id, websocket)
         
-        # Subscribe to Redis channel for this chat
+        # Subscribe to Redis channel for this chat.
+        # CRITICAL: This endpoint must preserve timestamps from DB/Redis payloads.
+        # It must NOT regenerate message timestamps.
         if cache and cache.is_connected:
             try:
                 redis_channel = f"chat:{chat_id}"
                 logger.info(f"[WEBSOCKET] Starting Redis subscription to {redis_channel}")
-                
-                # Create Pub/Sub instance
+
                 pubsub = await cache.redis_client.pubsub()
                 await pubsub.subscribe(redis_channel)
-                
-                # Start listening for broadcast messages in background task
+
                 async def listen_redis():
                     try:
                         async for message in pubsub.listen():
-                            if message['type'] == 'message':
-                                try:
-                                    data = json.loads(message['data'])
-                                    # Broadcast to all connected clients in this chat
-                                    await manager.broadcast_to_chat(chat_id, data)
-                                except json.JSONDecodeError as e:
-                                    logger.error(f"[WEBSOCKET] Invalid JSON from Redis: {e}")
+                            if message.get("type") != "message":
+                                continue
+
+                            data_raw = message.get("data")
+                            if data_raw is None:
+                                continue
+
+                            # Data may be bytes or str depending on Redis client settings.
+                            if isinstance(data_raw, bytes):
+                                data_str = data_raw.decode("utf-8")
+                            else:
+                                data_str = data_raw
+
+                            try:
+                                data = json.loads(data_str)
+                            except json.JSONDecodeError as e:
+                                logger.error(f"[WEBSOCKET] Invalid JSON from Redis: {e}")
+                                continue
+
+                            # Forward payload exactly as published (no timestamp mutation).
+                            await manager.broadcast_to_chat(chat_id, data)
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as e:
                         logger.error(f"[WEBSOCKET] Redis listening error: {e}")
-                    finally:
-                        await pubsub.close()
-                
-                # Start Redis listener as background task
+
                 redis_task = asyncio.create_task(listen_redis())
             except Exception as e:
                 logger.error(f"[WEBSOCKET] Failed to subscribe to Redis: {e}")
                 redis_task = None
-        else:
-            redis_task = None
         
-        # Handle incoming WebSocket messages
+        # Handle incoming WebSocket messages.
+        # CRITICAL: Client MUST NOT publish chat messages via WebSocket.
+        # Authoritative message timestamps come from DB insert (REST) and are propagated via Redis.
         while True:
             data = await websocket.receive_json()
             message_type = data.get('type', 'message')
             
             logger.info(f"[WEBSOCKET] Received {message_type} from {user_id} in chat {chat_id}")
             
-            # Broadcast to all connected clients including sender
-            broadcast_message = {
+            if message_type == "message":
+                # Enforce REST-only message creation to guarantee:
+                # DB commit BEFORE Redis publish BEFORE WebSocket broadcast.
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "error": "message_not_allowed_over_websocket",
+                        "detail": "Send messages via REST so DB created_at is authoritative and preserved in real-time.",
+                    }
+                )
+                continue
+
+            # For non-message real-time events (typing/reaction/etc.), we still do NOT accept a
+            # timestamp from the frontend. We publish a server-side UTC timestamp.
+            event_payload = {
                 "type": message_type,
                 "sender_id": user_id,
                 "chat_id": chat_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "content": data.get('content', {}),
+                "content": data.get("content", {}),
             }
-            
-            await manager.broadcast_to_chat(chat_id, broadcast_message)
-            
-            # Publish to Redis for multi-container communication
+
+            # Local broadcast first so sender sees their own event immediately.
+            await manager.broadcast_to_chat(chat_id, event_payload)
+
             if cache and cache.is_connected:
                 try:
-                    await cache.publish(f"chat:{chat_id}", broadcast_message)
+                    await cache.publish(f"chat:{chat_id}", event_payload)
                     logger.debug(f"[WEBSOCKET] Published {message_type} to Redis for chat {chat_id}")
                 except Exception as e:
                     logger.error(f"[WEBSOCKET] Failed to publish to Redis: {e}")
@@ -3079,3 +3107,17 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
             await websocket.close(code=1011, reason="Internal server error")
         except Exception:
             pass
+
+    finally:
+        # Ensure Redis listener is stopped and pubsub closed.
+        if redis_task:
+            try:
+                redis_task.cancel()
+            except Exception:
+                pass
+
+        if pubsub:
+            try:
+                await pubsub.close()
+            except Exception:
+                pass

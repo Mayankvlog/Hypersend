@@ -618,7 +618,7 @@ class RedisCache:
     
     async def publish(self, channel: str, message: Any) -> int:
         """Publish message to a channel"""
-        serialized_message = json.dumps(message, default=str)
+        serialized_message = json.dumps(message, default=str, ensure_ascii=False)
         
         if self.is_connected and self.redis_client:
             try:

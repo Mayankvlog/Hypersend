@@ -6,7 +6,7 @@ Provides persistent encrypted message storage with metadata tracking
 import logging
 import hashlib
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 
 try:
@@ -216,7 +216,7 @@ class MessageHistoryService:
             total_count=len(message_metadata),
             has_more=len(messages) == request.limit,
             device_id=request.device_id,
-            synced_at=datetime.utcnow()
+            synced_at=datetime.now(timezone.utc)
         )
     
     async def get_encrypted_message(self, message_id: str, user_id: str) -> Optional[Dict[str, Any]]:
@@ -265,7 +265,7 @@ class MessageHistoryService:
         
         # Update device-specific delivery status
         update_data = {}
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(timezone.utc)
         
         if status == "delivered":
             update_data["device_deliveries." + device_id] = timestamp
@@ -309,7 +309,7 @@ class MessageHistoryService:
             {
                 "$set": {
                     "is_deleted": True,
-                    "deleted_at": datetime.utcnow(),
+                    "deleted_at": datetime.now(timezone.utc),
                     "delivery_state": "deleted"
                 }
             }
@@ -351,7 +351,7 @@ class MessageHistoryService:
         device_sync = await self._get_or_create_device_sync(user_id, device_id)
         
         # Calculate sync cutoff date
-        cutoff_date = datetime.utcnow() - timedelta(days=sync_days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=sync_days)
         
         # Get all messages since cutoff or last sync
         query = {
@@ -371,7 +371,7 @@ class MessageHistoryService:
         messages = await cursor.to_list(length=None)
         
         # Update device sync state
-        sync_start = datetime.utcnow()
+        sync_start = datetime.now(timezone.utc)
         await self.db['device_sync_states'].update_one(
             {"user_id": user_id, "device_id": device_id},
             {
@@ -407,7 +407,7 @@ class MessageHistoryService:
                 )
             
             # Mark sync complete
-            sync_end = datetime.utcnow()
+            sync_end = datetime.now(timezone.utc)
             sync_duration = int((sync_end - sync_start).total_seconds() * 1000)
             
             last_message = messages[-1] if messages else None
@@ -498,7 +498,7 @@ class MessageHistoryService:
                     "last_message_timestamp": message.created_at,
                     "last_message_type": message.message_type,
                     "last_message_sender": message.receiver_id,
-                    "updated_at": datetime.utcnow(),
+                    "updated_at": datetime.now(timezone.utc),
                     "needs_sync": True,
                     "last_interaction": message.created_at
                 },
@@ -520,7 +520,7 @@ class MessageHistoryService:
                     "last_message_timestamp": message.created_at,
                     "last_message_type": message.message_type,
                     "last_message_sender": message.sender_id,
-                    "updated_at": datetime.utcnow(),
+                    "updated_at": datetime.now(timezone.utc),
                     "needs_sync": True,
                     "last_interaction": message.created_at
                 },
@@ -569,7 +569,7 @@ class MessageHistoryService:
             await collection.insert_one(relationship.model_dump(by_alias=True))
         else:
             # Update existing metrics
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             updates = {
                 "$inc": {
                     "total_messages": 1
@@ -657,7 +657,7 @@ class MessageHistoryService:
                 "$set": {
                     "last_synced_message_id": message_id,
                     "last_synced_timestamp": timestamp,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -690,7 +690,7 @@ class MessageHistoryService:
         """Clean up expired messages based on retention policies"""
         await self._ensure_collections()
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         total_deleted = 0
         
         # Find expired messages
