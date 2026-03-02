@@ -925,14 +925,59 @@ async def update_member_role(
 
 
 @router.post("/{group_id}/mute")
-async def mute_group(group_id: str, mute: bool = True, current_user: str = Depends(get_current_user)):
+async def mute_group(
+    group_id: str, 
+    mute: bool = True, 
+    duration_hours: int = 0,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Mute or unmute group notifications.
+    
+    Args:
+        group_id: Group ID
+        mute: True to mute, False to unmute
+        duration_hours: Duration in hours (0 = permanent until explicitly unmuted, -1 = unmute immediately)
+    
+    CRITICAL: Mute check uses UTC timestamps only.
+    Notification system checks mute_until before publishing events.
+    Messages are always delivered via WebSocket, only events are suppressed.
+    """
     group = await _require_group(group_id, current_user)
+    
     if mute:
-        await chats_collection().update_one(_id_query(group_id), {"$addToSet": {"muted_by": current_user}})
-        await _log_activity(group_id, current_user, "notifications_muted", {})
+        # Mute: Add to muted_by with mute_until timestamp
+        now_utc = datetime.now(timezone.utc)
+        mute_until = now_utc if duration_hours <= 0 else (now_utc + timedelta(hours=duration_hours))
+        
+        await chats_collection().update_one(
+            _id_query(group_id), 
+            {
+                "$set": {
+                    f"mute_config.{current_user}": {
+                        "muted_at": now_utc.isoformat(),
+                        "mute_until": mute_until.isoformat(),
+                        "duration_hours": duration_hours
+                    }
+                },
+                "$addToSet": {"muted_by": current_user}
+            }
+        )
+        await _log_activity(group_id, current_user, "notifications_muted", {
+            "mute_until": mute_until.isoformat(),
+            "duration_hours": duration_hours
+        })
     else:
-        await chats_collection().update_one(_id_query(group_id), {"$pull": {"muted_by": current_user}})
+        # Unmute: Remove from muted_by and clear mute_config
+        await chats_collection().update_one(
+            _id_query(group_id), 
+            {
+                "$pull": {"muted_by": current_user},
+                "$unset": {f"mute_config.{current_user}": 1}
+            }
+        )
         await _log_activity(group_id, current_user, "notifications_unmuted", {})
+    
     new_group = await chats_collection().find_one(_id_query(group_id))
     return {"group": _encode_doc(new_group)}
 

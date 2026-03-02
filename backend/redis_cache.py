@@ -167,7 +167,7 @@ class RedisCache:
         
         # Fallback to mock cache with expiration check
         if key in self.mock_expirations:
-            if datetime.now() > self.mock_expirations[key]:
+            if datetime.now(timezone.utc) > self.mock_expirations[key]:
                 # Expired, remove from cache
                 self.mock_cache.pop(key, None)
                 self.mock_expirations.pop(key, None)
@@ -189,7 +189,7 @@ class RedisCache:
         # Fallback to mock cache
         self.mock_cache[key] = value
         if expire_seconds > 0:
-            self.mock_expirations[key] = datetime.now() + timedelta(seconds=expire_seconds)
+            self.mock_expirations[key] = datetime.now(timezone.utc) + timedelta(seconds=expire_seconds)
     
     async def delete(self, key: str):
         """Delete key from cache"""
@@ -214,7 +214,7 @@ class RedisCache:
         
         # Fallback to mock cache with expiration check
         if key in self.mock_expirations:
-            if datetime.now() > self.mock_expirations[key]:
+            if datetime.now(timezone.utc) > self.mock_expirations[key]:
                 # Expired, remove from cache
                 self.mock_cache.pop(key, None)
                 self.mock_expirations.pop(key, None)
@@ -284,7 +284,7 @@ class RedisCache:
         # Fallback to mock cache
         if key in self.mock_cache:
             if seconds > 0:
-                self.mock_expirations[key] = datetime.now() + timedelta(seconds=seconds)
+                self.mock_expirations[key] = datetime.now(timezone.utc) + timedelta(seconds=seconds)
             else:
                 self.mock_expirations.pop(key, None)
             return True
@@ -306,7 +306,7 @@ class RedisCache:
         if key not in self.mock_expirations:
             return -1  # No expiration set
         
-        ttl_seconds = (self.mock_expirations[key] - datetime.now()).total_seconds()
+        ttl_seconds = (self.mock_expirations[key] - datetime.now(timezone.utc)).total_seconds()
         return max(0, int(ttl_seconds))
     
     async def hget(self, key: str, field: str) -> Optional[Any]:
@@ -565,7 +565,7 @@ class RedisCache:
         if self.is_connected and self.redis_client:
             try:
                 lock_key = f"lock:{key}"
-                identifier = f"{id(self)}:{datetime.now().timestamp()}"
+                identifier = f"{id(self)}:{datetime.now(timezone.utc).timestamp()}"
                 end_time = asyncio.get_event_loop().time() + wait_time
                 
                 while asyncio.get_event_loop().time() < end_time:
@@ -581,7 +581,7 @@ class RedisCache:
         if lock_key not in self.mock_cache:
             self.mock_cache[lock_key] = {
                 'locked': True,
-                'expires': datetime.now() + timedelta(seconds=timeout)
+                'expires': datetime.now(timezone.utc) + timedelta(seconds=timeout)
             }
             return True
         return False
