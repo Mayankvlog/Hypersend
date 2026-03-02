@@ -136,10 +136,15 @@ addopts = [
   "-ra", 
   "-q", 
   "--strict-markers", 
-  "--strict-config"
+  "--strict-config",
+  "--ignore-glob='**/node_modules/**'",
+  "--ignore-glob='**/.git/**'"
 ]
-testpaths = ["tests"]
+testpaths = ["tests", "backend"]
 asyncio_mode = "auto"
+python_files = ["test_*.py", "*_test.py", "testing.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "integration: marks tests as integration tests",

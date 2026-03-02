@@ -1693,6 +1693,8 @@ async def complete_upload(
         file_id = str(file_oid)
         storage_key = upload_doc.get("storage_key") or f"files/{upload_user_id}/{upload_id}/{filename}"
         
+        expires_at = now + timedelta(hours=72)  # 72-hour file expiry
+        
         file_doc = {
             "_id": file_oid,
             "file_id": file_oid,
@@ -1706,6 +1708,7 @@ async def complete_upload(
             "upload_status": "completed",
             "created_at": now,
             "updated_at": now,
+            "expires_at": expires_at,  # 72-hour expiry for file downloads
             "status": "active",
             "upload_id": upload_id,
             "storage_path": str(final_path),
@@ -2174,14 +2177,14 @@ async def download_file(
                     detail="Access denied: you don't have permission to download this file. Ask the file owner to share it with you.",
                 )
 
-            # Check expiry
-            expiry_time = file_doc.get("expiry_time")
-            if expiry_time:
+            # Check file expiry (72 hours from creation)
+            expires_at = file_doc.get("expires_at")
+            if expires_at:
                 from datetime import datetime as dt, timezone as tz
 
-                if expiry_time.tzinfo is None:
-                    expiry_time = expiry_time.replace(tzinfo=tz.utc)
-                if dt.now(tz.utc) > expiry_time:
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=tz.utc)
+                if dt.now(tz.utc) > expires_at:
                     _delete_s3_object(file_doc.get("object_key"))
                     await files_collection().update_one(
                         {"_id": file_doc.get("_id")},
@@ -2189,7 +2192,7 @@ async def download_file(
                     )
                     raise HTTPException(
                         status_code=status.HTTP_410_GONE,
-                        detail="File has expired and was deleted",
+                        detail="File has expired (72-hour limit reached) and was deleted",
                     )
 
             object_key = file_doc.get("object_key")
@@ -2988,7 +2991,7 @@ async def get_bug_bounty_info(current_user: str = Depends(get_current_user)):
             "bug_bounty_program": {
                 "title": "Hypersend WhatsApp-Grade Bug Bounty Program",
                 "version": "1.0",
-                "date": datetime.utcnow().isoformat(),
+                "date": datetime.now(timezone.utc).isoformat(),
                 "scope": [
                     "Signal Protocol implementation vulnerabilities",
                     "Multi-device encryption bypasses",
@@ -4618,7 +4621,7 @@ class WhatsAppSecurityProcess:
             "threat_model": {
                 "title": "WhatsApp-Grade Threat Model for Hypersend",
                 "version": "1.0",
-                "date": datetime.utcnow().isoformat(),
+                "date": datetime.now(timezone.utc).isoformat(),
                 "threats": [
                     {
                         "id": "THREAT-001",
@@ -4676,7 +4679,7 @@ class WhatsAppSecurityProcess:
             "cryptographic_specification": {
                 "title": "WhatsApp-Grade Cryptographic Specification",
                 "version": "1.0",
-                "date": datetime.utcnow().isoformat(),
+                "date": datetime.now(timezone.utc).isoformat(),
                 "algorithms": {
                     "key_exchange": "X3DH (Extended Triple Diffie-Hellman)",
                     "encryption": "Double Ratchet with AES-256-GCM",
@@ -4708,7 +4711,7 @@ class WhatsAppSecurityProcess:
             "security_assumptions": {
                 "title": "WhatsApp-Grade Security Assumptions",
                 "version": "1.0",
-                "date": datetime.utcnow().isoformat(),
+                "date": datetime.now(timezone.utc).isoformat(),
                 "assumptions": [
                     {
                         "id": "ASSUMP-001",
@@ -4751,7 +4754,7 @@ class WhatsAppSecurityProcess:
             "audit_checklist": {
                 "title": "WhatsApp-Grade External Audit Checklist",
                 "version": "1.0",
-                "date": datetime.utcnow().isoformat(),
+                "date": datetime.now(timezone.utc).isoformat(),
                 "categories": [
                     {
                         "name": "Cryptographic Implementation",
@@ -4996,9 +4999,9 @@ async def save_to_public_directory(
             else:
                 target_path = target_directory
 
-        # Create target filename
+        # Create target filename with UTC timestamp
         original_filename = file_doc.get("filename", f"file_{file_id}")
-        target_filename = f"{int(datetime.now().timestamp())}_{original_filename}"
+        target_filename = f"{int(datetime.now(timezone.utc).timestamp())}_{original_filename}"
         target_full_path = Path(target_path) / target_filename
 
         # Get source file path

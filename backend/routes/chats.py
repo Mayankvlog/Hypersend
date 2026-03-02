@@ -582,7 +582,11 @@ async def send_message(
         },
     )
     
-    # CRITICAL: Publish message to Redis for real-time delivery across all connected clients
+    # CRITICAL: STEP 1 - Ensure message is persisted in DB before any broadcast
+    # This prevents message loss if Redis/WebSocket fails
+    
+    # STEP 2 - Publish to Redis for real-time delivery across all containers
+    redis_published = False
     try:
         from ..redis_cache import cache
         if cache and cache.is_connected:
@@ -596,18 +600,53 @@ async def send_message(
                 "file_id": message.file_id,
                 "message_type": msg_type,
                 "created_at": now.isoformat(),
-                "timestamp": int(now.timestamp())
+                "timestamp": int(now.timestamp()),
+                # Deduplication key - subscribers use this to avoid re-inserting
+                "db_inserted": True,
+                "broadcast_id": f"{str(chat_key)}:{str(inserted_id)}:{int(now.timestamp() * 1000)}"
             }
             
             # Publish to chat-specific channel for multi-container communication
             redis_channel = f"chat:{str(chat_key)}"
             await cache.publish(redis_channel, redis_payload)
+            redis_published = True
             logger.info(f"[REDIS] Published new message to {redis_channel}: {inserted_id}")
         else:
             logger.debug("[REDIS] Redis not connected, skipping publish")
     except Exception as e:
         logger.error(f"[REDIS] Failed to publish message to Redis: {type(e).__name__}: {e}")
-        # Don't fail the response if Redis publish fails
+        # Continue - DB insert is the source of truth
+    
+    # STEP 3 - WebSocket broadcast after Redis publish completes
+    # This ensures proper ordering: DB -> Redis -> WebSocket
+    if redis_published:
+        try:
+            # Import WebSocket manager if available
+            from ..websocket_manager import websocket_manager
+            if websocket_manager:
+                # Get all participants in the chat
+                participants = chat.get("members", [])
+                ws_payload = {
+                    "type": "new_message",
+                    "message_id": str(inserted_id),
+                    "chat_id": str(chat_key),
+                    "sender_id": current_user,
+                    "content": message.text,
+                    "file_id": message.file_id,
+                    "message_type": msg_type,
+                    "created_at": now.isoformat(),
+                    # Prevent duplicate processing in WebSocket handler
+                    "skip_db_insert": True
+                }
+                # Broadcast to all participants
+                for participant in participants:
+                    if participant != current_user:  # Don't echo to sender
+                        await websocket_manager.send_to_user(participant, ws_payload)
+                logger.info(f"[WEBSOCKET] Broadcasted message {inserted_id} to {len(participants)-1} participants")
+        except ImportError:
+            logger.debug("[WEBSOCKET] WebSocket manager not available, skipping broadcast")
+        except Exception as e:
+            logger.error(f"[WEBSOCKET] Failed to broadcast message: {type(e).__name__}: {e}")
     
     return {"message_id": str(inserted_id), "created_at": msg_doc["created_at"]}
 
