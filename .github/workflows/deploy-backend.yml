@@ -28,13 +28,11 @@ jobs:
           
       - name: Install dependencies
         run: |
-          cd backend
-          pip install -r requirements.txt
+          pip install -r backend/requirements.txt
           pip install pytest pytest-asyncio
           
       - name: Run tests
         run: |
-          cd backend
           # Auto-discover tests from pyproject.toml testpaths config
           # Exit code 0 if no tests found (CI must never fail due to missing tests)
           pytest -v --tb=short || [ $? -eq 5 ] && exit 0 || exit $?

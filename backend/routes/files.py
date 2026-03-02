@@ -835,30 +835,27 @@ async def _validate_chunk_data(chunk_data: bytes, chunk_index: int) -> None:
         )
 
     try:
-        os.makedirs(str(chunk_path.parent), exist_ok=True)
-        async with aiofiles.open(str(chunk_path), "wb") as f:
-            await f.write(chunk_data)
+        # Validation only - no disk operations
+        pass
     except Exception as e:
         _log(
             "error",
-            f"Failed to persist chunk {chunk_index}",
+            f"Failed to validate chunk {chunk_index}",
             {
-                "user_id": user_id,
-                "operation": "chunk_persist",
+                "operation": "chunk_validate",
                 "chunk_index": chunk_index,
             },
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Temporary storage unavailable",
+            detail="Validation service unavailable",
         ) from e
 
     _log(
         "info",
-        f"Chunk {chunk_index} persisted",
+        f"Chunk {chunk_index} validated",
         {
-            "user_id": user_id,
-            "operation": "chunk_persist",
+            "operation": "chunk_validate",
             "chunk_size": len(chunk_data),
         },
     )
