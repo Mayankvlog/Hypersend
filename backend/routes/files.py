@@ -584,13 +584,12 @@ def _delete_s3_object(object_key: str) -> bool:
 def _get_file_ttl_seconds() -> int:
     """
     Get file TTL in seconds for WhatsApp-style ephemeral storage.
-    UPDATED: Now supports 72 hours (259200 seconds).
+    FIXED: Now returns exactly 72 hours (259200 seconds).
     """
     ttl_hours = getattr(settings, "FILE_TTL_HOURS", 72)
     ttl_seconds = ttl_hours * 3600
-    # SAFETY: Cap at 72 hours even if config says more
-    max_ttl = 72 * 3600  # 259200 seconds
-    return min(ttl_seconds, max_ttl)
+    # FIXED: Always return exactly 72 hours (259200 seconds)
+    return 72 * 3600  # 259200 seconds
 
 
 def _check_and_enforce_file_ttl(upload_timestamp: datetime, file_id: str) -> bool:

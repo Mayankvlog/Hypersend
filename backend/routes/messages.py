@@ -289,29 +289,6 @@ class WhatsAppDeliveryEngine:
         # STEP 2: Check mute status before publishing to notifications channel
         await self._publish_notifications_if_not_muted(message_payload)
     
-    async def _broadcast_to_websockets(self, message: Dict[str, Any]):
-        """Broadcast to WebSocket connections after Redis publish completes"""
-        # Convert ObjectId to string before sending
-        message_payload = {
-            "type": "new_message",
-            "message_id": message["message_id"],
-            "chat_id": message["chat_id"],
-            "sender_id": message["sender_user_id"],
-            "recipient_id": message["recipient_user_id"],
-            "message_type": message["message_type"],
-            "created_at": message["created_at"],  # Original timestamp from DB
-            "sequence_number": message["sequence_number"]
-        }
-        
-        # Broadcast to WebSocket delivery handler
-        try:
-            from ..websocket.delivery_handler import WebSocketDeliveryHandler
-            # Signal WebSocket handler to broadcast
-            await cache.publish(f"websocket_broadcast:{message['chat_id']}", json.dumps(message_payload))
-        except ImportError:
-            # Fallback if WebSocket handler not available
-            pass
-    
     async def _publish_notifications_if_not_muted(self, message_payload: Dict[str, Any]):
         """Publish to separate notification channels with per-user mute checking"""
         from ..db_proxy import chats_collection
@@ -322,18 +299,18 @@ class WhatsAppDeliveryEngine:
         chat = await chats_collection().find_one({"_id": chat_id})
         if not chat or not chat.get("mute_config"):
             # No mute config, publish to both channels normally
-            await cache.publish(f"chat_messages_channel:{chat_id}", json.dumps(message_payload))
-            await cache.publish(f"chat_notifications_channel:{chat_id}", json.dumps(message_payload))
+            await cache.publish(f"chat_messages:{chat_id}", json.dumps(message_payload))
+            await cache.publish(f"chat_notifications:{chat_id}", json.dumps(message_payload))
             return
         
         # Check each user's mute status
         mute_config = chat["mute_config"]
         current_time = datetime.now(timezone.utc)
         
-        # STEP 1: Always publish to messages channel (delivery regardless of mute)
-        await cache.publish(f"chat_messages_channel:{chat_id}", json.dumps(message_payload))
+        # STEP 1: Always publish to chat messages channel (delivery regardless of mute)
+        await cache.publish(f"chat_messages:{chat_id}", json.dumps(message_payload))
         
-        # STEP 2: Publish to notifications channel only for unmuted users
+        # STEP 2: Publish to chat notifications channel only for unmuted users
         for user_id, mute_info in mute_config.items():
             try:
                 # Parse mute_until timestamp
@@ -355,8 +332,8 @@ class WhatsAppDeliveryEngine:
                 # Error parsing mute time, err on side of sending notification
                 await cache.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
         
-        # STEP 3: Also publish to general notifications channel for users without mute config
-        await cache.publish(f"chat_notifications_channel:{chat_id}", json.dumps(message_payload))
+        # STEP 3: Also publish to general chat notifications channel for users without mute config
+        await cache.publish(f"chat_notifications:{chat_id}", json.dumps(message_payload))
 
     async def _update_message_state(self, message: Dict[str, Any]):
         """Update message state based on device states"""
@@ -372,7 +349,6 @@ class WhatsAppDeliveryEngine:
             if message["state"] != "delivered":
                 message["state"] = "delivered"
                 message["delivered_at"] = datetime.now(timezone.utc).isoformat()  # UTC only
-                message["delivered_at"] = datetime.now(timezone.utc).isoformat()
         
         # Check if all devices are sent
         elif all(state in ["sent", "delivered", "read"] for state in device_states):

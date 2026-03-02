@@ -125,8 +125,8 @@ class Settings:
     )  # 10 GB default
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
     FILE_RETENTION_HOURS: int = int(
-        os.getenv("FILE_RETENTION_HOURS", "0")
-    )  # 0 = no server storage
+        os.getenv("FILE_RETENTION_HOURS", "72")
+    )  # 72 hours - 3 days
     UPLOAD_EXPIRE_HOURS: int = int(
         os.getenv("UPLOAD_EXPIRE_HOURS", "72")
     )  # Extended to 72 hours (3 days) for very large files
@@ -318,8 +318,8 @@ class Settings:
 
     # WhatsApp-like File Management with 15GB Support
     FILE_RETENTION_HOURS: int = int(
-        os.getenv("FILE_RETENTION_HOURS", "0")
-    )  # 0 hours - immediate deletion
+        os.getenv("FILE_RETENTION_HOURS", "72")
+    )  # 72 hours - 3 days temporary storage
     TEMP_FILE_RETENTION_HOURS: int = int(
         os.getenv("TEMP_FILE_RETENTION_HOURS", "0")
     )  # 0 hours - immediate deletion
@@ -397,7 +397,7 @@ class Settings:
     print(f"[CONFIG] Server Storage: {SERVER_STORAGE_BYTES} bytes (0 = no storage)")
     print(f"[CONFIG] User Device Storage: {USER_DEVICE_STORAGE}")
     print(f"[CONFIG] Cost Model: {COST_MODEL}")
-    print(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours (immediate deletion)")
+    print(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours (72h temporary storage)")
     print(f"[CONFIG] Auto Cleanup: {AUTO_CLEANUP_ENABLED}")
     print(
         f"[CONFIG] Max Storage/User: {MAX_STORAGE_PER_USER_GB}GB (0 = no server storage)"

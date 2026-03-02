@@ -61,8 +61,8 @@ def generate_qr_code_for_device_linking(user_id: str, device_type: str):
         link_id=session_id,
         user_id=user_id,
         device_type=device_type,
-        timestamp=datetime.utcnow(),
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        timestamp=datetime.now(timezone.utc),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         _signature=""  # Will be signed by primary device
     )
     
@@ -451,7 +451,7 @@ async def register_device(
             temp_key = f"temp_device:{current_user}:{request.device_id}"
             temp_data = {
                 "device_info": device_info,
-                "registered_at": datetime.utcnow().isoformat(),
+                "registered_at": datetime.now(timezone.utc).isoformat(),
                 "status": "pending_verification"
             }
             await redis_client.setex(temp_key, 300, json.dumps(temp_data))  # 5 min TTL

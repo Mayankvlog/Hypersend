@@ -459,7 +459,7 @@ class RelationshipGraphService:
         """Update relationship metrics from a new message (persistent storage)"""
         try:
             if timestamp is None:
-                timestamp = datetime.utcnow()
+                timestamp = datetime.now(timezone.utc)
             
             # Ensure consistent ordering (user_a_id < user_b_id)
             user_a_id, user_b_id = sorted([sender_id, receiver_id])
@@ -492,7 +492,7 @@ class RelationshipGraphService:
                     relationship_id = str(result.inserted_id)
                 else:
                     # Update existing relationship
-                    now = datetime.utcnow()
+                    now = datetime.now(timezone.utc)
                     updates = {
                         "$inc": {
                             "total_messages": 1
