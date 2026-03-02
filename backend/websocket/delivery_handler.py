@@ -20,7 +20,7 @@ import logging
 import secrets
 from typing import Dict, List, Optional, Set, Any
 from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import websockets
 from websockets.server import WebSocketServerProtocol
 
@@ -30,6 +30,13 @@ try:
 except ImportError:
     print("[WARNING] Redis not available - using fallback cache")
     redis = None
+
+# TYPE_CHECKING for type hints when redis module is not available
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    import redis.asyncio as redis_type
+else:
+    redis_type = Any
 
 # Import our cryptographic modules
 from crypto.signal_protocol import SignalProtocol
@@ -69,7 +76,7 @@ class WebSocketConnection:
 class WebSocketDeliveryHandler:
     """WhatsApp-grade WebSocket delivery handler"""
     
-    def __init__(self, redis_client: redis.Redis):
+    def __init__(self, redis_client: Optional[Any]):
         self.redis = redis_client
         self.delivery_manager = DeliveryManager(redis_client)
         self.device_manager = MultiDeviceManager(redis_client)
@@ -402,7 +409,7 @@ class WebSocketDeliveryHandler:
                 # Send ping
                 ping_data = {
                     'type': 'ping',
-                    'timestamp': time.time()
+                    'timestamp': datetime.now(timezone.utc).isoformat()  # UTC ISO format
                 }
                 
                 await connection.websocket.send(json.dumps(ping_data))
@@ -536,7 +543,7 @@ class DeviceState:
     DISCONNECTING = "disconnecting"
 
 # WebSocket server factory
-async def create_websocket_server(redis_client: redis.Redis, host: str = "0.0.0.0", port: int = 8001):
+async def create_websocket_server(redis_client: Optional[Any], host: str = "0.0.0.0", port: int = 8001):
     """Create WebSocket server with delivery handler"""
     handler = WebSocketDeliveryHandler(redis_client)
     

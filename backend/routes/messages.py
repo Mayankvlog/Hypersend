@@ -21,17 +21,17 @@ from fastapi import Query
 # WhatsApp-Grade Cryptographic Imports
 try:
     from ..crypto.signal_protocol import SignalProtocol, X3DHBundle
-    from ..crypto.multi_device import MultiDeviceManager, DeviceInfo
+    from ..crypto.multi_device import MultiDeviceManager, DeviceInfo, DeviceLinkingData
     from ..crypto.delivery_semantics import DeliveryManager, MessageStatus
     from ..crypto.media_encryption import MediaEncryptionService
 except ImportError:
     from crypto.signal_protocol import SignalProtocol, X3DHBundle
-    from crypto.multi_device import MultiDeviceManager, DeviceInfo
+    from crypto.multi_device import MultiDeviceManager, DeviceInfo, DeviceLinkingData
     from crypto.delivery_semantics import DeliveryManager, MessageStatus
     from crypto.media_encryption import MediaEncryptionService
 
 try:
-    from ..db_proxy import chats_collection, messages_collection
+    from ..db_proxy import chats_collection, messages_collection, users_collection
     from ..models import (
         MessageEditRequest, MessageReactionRequest, MessageHistoryRequest, 
         MessageHistoryResponse, ConversationMetadata, RelationshipGraph, 
@@ -41,8 +41,9 @@ try:
     from ..redis_cache import cache
     from ..services.relationship_graph_service import relationship_graph_service
     from ..services.message_history_service import message_history_service
+    from ..e2ee_service import EncryptionError, DecryptionError
 except ImportError:
-    from db_proxy import chats_collection, messages_collection
+    from db_proxy import chats_collection, messages_collection, users_collection
     from models import (
         MessageEditRequest, MessageReactionRequest, MessageHistoryRequest, 
         MessageHistoryResponse, ConversationMetadata, RelationshipGraph, 
@@ -50,16 +51,14 @@ except ImportError:
         PersistentMessage, ConversationHistory
     )
     from redis_cache import cache
+    from e2ee_service import EncryptionError, DecryptionError
     try:
         from services.relationship_graph_service import relationship_graph_service
         from services.message_history_service import message_history_service
     except ImportError:
         # Fallback for direct execution
-        import sys
-        import os
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'services'))
-        from relationship_graph_service import relationship_graph_service
-        from message_history_service import message_history_service
+        from backend.services.relationship_graph_service import relationship_graph_service
+        from backend.services.message_history_service import message_history_service
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +105,7 @@ class WhatsAppDeliveryEngine:
             "sequence_number": sequence_number,
             "state": "sent",
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "sent_at": datetime.now(timezone.utc).isoformat(),  # UTC only, do NOT convert to IST
             "retry_count": 0,
             "max_retries": self.max_retry_attempts,
             "device_states": {
@@ -221,6 +220,7 @@ class WhatsAppDeliveryEngine:
                     "queued_at": datetime.now(timezone.utc).isoformat()
                 }
                 
+                # CRITICAL: Use exact DB timestamp, never regenerate
                 await cache.lpush(queue_key, json.dumps(delivery_task))
                 await cache.expire(queue_key, 24*60*60)
                 
@@ -240,13 +240,13 @@ class WhatsAppDeliveryEngine:
         # Check if any device has read
         if any(state == "read" for state in device_states):
             if message["state"] != "read":
-                message["state"] = "read"
-                message["read_at"] = datetime.now(timezone.utc).isoformat()
+                message["state"] = "read"  # UTC only
         
         # Check if any device has delivered
         elif any(state == "delivered" for state in device_states):
             if message["state"] != "delivered":
                 message["state"] = "delivered"
+                message["delivered_at"] = datetime.now(timezone.utc).isoformat()  # UTC only
                 message["delivered_at"] = datetime.now(timezone.utc).isoformat()
         
         # Check if all devices are sent
@@ -263,9 +263,10 @@ class WhatsAppDeliveryEngine:
             "device_id": device_id,
             "receipt_type": receipt_type,
             "message_state": message["state"],
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()  # UTC only
         }
         
+        # Await Redis publish to ensure delivery
         await cache.publish(update_key, json.dumps(update_data))
 
 
@@ -296,7 +297,7 @@ class WhatsAppMetadataMinimizer:
             "message_type": message_type,
             "timing_padding_applied": True,
             "metadata_minimized": True,
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()  # UTC only
         }
     
     def _obfuscate_ip(self, ip: str) -> str:
@@ -345,11 +346,13 @@ def get_metadata_minimizer():
         metadata_minimizer = WhatsAppMetadataMinimizer(cache)
     return metadata_minimizer
 
-# def get_e2ee_service():
-#     global e2ee_service
-#     if e2ee_service is None:
-#         e2ee_service = E2EEService(db=None, redis_client=cache)
-#     return e2ee_service
+def get_e2ee_service():
+    """Get or create E2EE service instance"""
+    try:
+        from e2ee_service import E2EEService
+    except ImportError:
+        from ..e2ee_service import E2EEService
+    return E2EEService(db=None, redis_client=cache)
 
 
 class MessageSendRequest(BaseModel):
@@ -644,7 +647,7 @@ async def get_user_e2ee_bundle(
                 }
                 for key in bundle.one_time_pre_keys[:10]  # Return first 10
             ],
-            "timestamp": time.time()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
@@ -677,7 +680,7 @@ async def receive_e2ee_message(
             "message_id": message_id,
             "plaintext": plaintext,
             "decrypted": True,
-            "timestamp": time.time(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "message": "✓ Message decrypted successfully"
         }
         
@@ -742,7 +745,7 @@ async def get_e2ee_message_state(
         return {
             "message_id": message_id,
             "state": state,
-            "timestamp": time.time(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "message": "✓ Message state retrieved"
         }
         
@@ -838,12 +841,15 @@ async def send_whatsapp_message(
         # Generate content hash
         content_hash = hashlib.sha256(request.message.encode()).hexdigest()
         
+        # Compute recipient user ID
+        recipient_user_id = participants[0] if len(participants) > 1 else current_user
+        
         # Send message with WhatsApp delivery tracking
         message = await delivery_service.send_message(
             chat_id=request.chat_id,
             sender_user_id=current_user,
             sender_device_id=request.device_id or "primary",
-            recipient_user_id=participants[0] if len(participants) > 1 else current_user,
+            recipient_user_id=recipient_user_id,
             content_hash=content_hash,
             message_type=request.message_type,
             recipient_devices=recipient_devices
@@ -1919,8 +1925,8 @@ async def confirm_device_linking(
             platform=request.platform,
             user_agent=request.user_agent,
             capabilities=request.device_info.get("capabilities", []),
-            created_at=time.time(),
-            last_active=time.time(),
+            created_at=datetime.now(timezone.utc).isoformat(),  # UTC only
+            last_active=datetime.now(timezone.utc).isoformat(),  # UTC only
             is_active=True,
             is_primary=False
         )
@@ -2011,7 +2017,7 @@ async def send_encrypted_message(
             chat_id=request.chat_id,
             message_type=request.message_type,
             metadata=request.metadata,
-            timestamp=time.time()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
         
         if spam_score > 0.8:  # High spam threshold
@@ -2048,7 +2054,7 @@ async def send_encrypted_message(
             "auth_tag": request.auth_tag,
             "message_type": request.message_type,
             "sequence_number": sequence_number,
-            "timestamp": time.time(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "metadata": request.metadata or {},
             # WhatsApp-grade privacy features
             "disappearing_timer": request.metadata.get("disappearing_timer") if request.metadata else None,
@@ -2068,7 +2074,7 @@ async def send_encrypted_message(
         return EncryptedMessageResponse(
             message_id=message_id,
             sequence_number=sequence_number,
-            timestamp=time.time(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             delivery_receipts=[device_id for device_id in receipts.keys()]
         )
         
@@ -2219,7 +2225,7 @@ async def create_encrypted_backup(
     try:
         from ..crypto.encrypted_backup import EncryptedBackupService
         
-        backup_service = EncryptedBackupService(redis_client)
+        backup_service = EncryptedBackupService(cache)
         
         # Create backup metadata
         metadata = await backup_service.create_backup(
@@ -2260,7 +2266,7 @@ async def initiate_encrypted_call(
     try:
         from ..crypto.encrypted_calls import EncryptedCallService, CallType
         
-        call_service = EncryptedCallService(redis_client)
+        call_service = EncryptedCallService(cache)
         
         # Generate call encryption keys
         call_keys = call_service.generate_call_keys()
@@ -2631,7 +2637,7 @@ async def update_privacy_settings(
         if request.read_receipts_enabled is not None:
             settings["read_receipts_enabled"] = request.read_receipts_enabled
         
-        settings["updated_at"] = time.time()
+        settings["updated_at"] = datetime.now(timezone.utc).isoformat()  # UTC only
         
         # Store in cache with 1 year expiration
         try:

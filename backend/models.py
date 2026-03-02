@@ -509,11 +509,12 @@ class MessageCreate(BaseModel):
         if not v.strip():
             raise ValueError("Message text cannot be empty")
         # Sanitize text to prevent XSS
-        # Remove HTML tags
+        # Remove HTML tags but preserve emoji (UTF-8)
         v = re.sub(r"<[^>]*>", "", v)
-        # Remove potentially dangerous characters
+        # Remove control characters except space and unicode emoji sequences
+        # Keep all non-ASCII UTF-8 sequences (emoji support for 8 categories)
         v = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", v)
-        # Limit length to prevent DoS
+        # Limit length to prevent DoS (counted by characters, not bytes, to allow emoji)
         if len(v) > 10000:
             raise ValueError("Message text too long (max 10000 characters)")
         return v.strip()
@@ -556,6 +557,9 @@ class MessageInDB(BaseModel):
     # Metadata fields only
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     language: Optional[str] = None  # Language code metadata
+    
+    # Emoji support: Up to 8 categories (Smileys, Animals, Food, Travel, Activities, Objects, Symbols, Flags)
+    # UTF-8 encoding preserved fully in MongoDB storage
 
     # Channel metadata
     views: int = 0
