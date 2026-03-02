@@ -276,7 +276,7 @@ class Settings:
         "1",
         "yes",
     )
-    FILE_TTL_SECONDS: int = int(os.getenv("FILE_TTL_SECONDS", "86400"))  # 24 hours
+    FILE_TTL_SECONDS: int = int(os.getenv("FILE_TTL_SECONDS", "259200"))  # 72 hours
     USER_DEVICE_ONLY: bool = os.getenv("USER_DEVICE_ONLY", "True").lower() in (
         "true",
         "1",
@@ -291,12 +291,12 @@ class Settings:
     # WhatsApp Storage Validation
     if WHATSAPP_STORAGE:
         print(f"[CONFIG] WhatsApp Storage Model: ENABLED")
-        print(f"[CONFIG] File TTL: {FILE_TTL_SECONDS} seconds (24h)")
+        print(f"[CONFIG] File TTL: {FILE_TTL_SECONDS} seconds (72h)")
 
     # Additional WhatsApp Storage Variables
     FILE_TTL_HOURS: int = int(
-        os.getenv("FILE_TTL_HOURS", "24")
-    )  # 24h temp only like WhatsApp
+        os.getenv("FILE_TTL_HOURS", "72")
+    )  # 72h temp only like WhatsApp
     USER_DEVICE_STORAGE: bool = os.getenv("USER_DEVICE_STORAGE", "True").lower() in (
         "true",
         "1",
@@ -393,7 +393,7 @@ class Settings:
     print(f"[CONFIG] WhatsApp Storage Model: {STORAGE_MODE}")
     print(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
     print(f"[CONFIG] AWS Region: {AWS_REGION}")
-    print(f"[CONFIG] File TTL: {FILE_TTL_HOURS} hours (24h like WhatsApp)")
+    print(f"[CONFIG] File TTL: {FILE_TTL_HOURS} hours (72h like WhatsApp)")
     print(f"[CONFIG] Server Storage: {SERVER_STORAGE_BYTES} bytes (0 = no storage)")
     print(f"[CONFIG] User Device Storage: {USER_DEVICE_STORAGE}")
     print(f"[CONFIG] Cost Model: {COST_MODEL}")

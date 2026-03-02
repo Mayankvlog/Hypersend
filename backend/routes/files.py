@@ -257,7 +257,7 @@ class WhatsAppMediaLifecycle:
             "mime_type": mime_type,
             "chunk_count": chunk_count,
             "created_at": int(time.time()),
-            "expires_at": int(time.time()) + 24 * 60 * 60,
+            "expires_at": int(time.time()) + settings.FILE_TTL_SECONDS,
             "delivery_status": {
                 device_id: {
                     "upload_status": "pending",
@@ -270,7 +270,7 @@ class WhatsAppMediaLifecycle:
 
         # Store metadata
         metadata_key = f"media_metadata:{media_id}"
-        await cache.set(metadata_key, metadata, expire_seconds=24 * 60 * 60)
+        await cache.set(metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS)
 
         # Generate upload tokens
         upload_tokens = {}
@@ -367,7 +367,7 @@ class WhatsAppMediaLifecycle:
         # Update metadata
         metadata["file_hash"] = file_hash
         metadata["upload_status"] = "completed"
-        await cache.set(metadata_key, metadata, expire_seconds=24 * 60 * 60)
+        await cache.set(metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS)
 
         # Distribute encrypted media keys
         media_key_bytes = base64.b64decode(media_key)
@@ -386,7 +386,7 @@ class WhatsAppMediaLifecycle:
                 # Store key package
                 key_package_key = f"media_key:{media_id}:{device_id}"
                 await cache.set(
-                    key_package_key, key_package, expire_seconds=24 * 60 * 60
+                    key_package_key, key_package, expire_seconds=settings.FILE_TTL_SECONDS
                 )
 
         # Generate download tokens
@@ -430,7 +430,7 @@ class WhatsAppMediaLifecycle:
             metadata["delivery_status"][device_id][f"{ack_type}_at"] = int(time.time())
             metadata["delivery_status"][device_id]["ack_status"] = ack_type
 
-        await cache.set(metadata_key, metadata, expire_seconds=24 * 60 * 60)
+        await cache.set(metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS)
 
         # Check if all devices have ACKed
         await self._check_all_devices_acked(media_id, ack_type)
@@ -584,12 +584,12 @@ def _delete_s3_object(object_key: str) -> bool:
 def _get_file_ttl_seconds() -> int:
     """
     Get file TTL in seconds for WhatsApp-style ephemeral storage.
-    MANDATORY: Never exceed 24 hours (86400 seconds).
+    UPDATED: Now supports 72 hours (259200 seconds).
     """
-    ttl_hours = getattr(settings, "FILE_TTL_HOURS", 24)
+    ttl_hours = getattr(settings, "FILE_TTL_HOURS", 72)
     ttl_seconds = ttl_hours * 3600
-    # SAFETY: Cap at 24 hours even if config says more
-    max_ttl = 24 * 3600  # 86400 seconds
+    # SAFETY: Cap at 72 hours even if config says more
+    max_ttl = 72 * 3600  # 259200 seconds
     return min(ttl_seconds, max_ttl)
 
 

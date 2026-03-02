@@ -74,16 +74,14 @@ class RedisCache:
     async def connect(self, host: str = "hypersend_redis", port: int = 6379, db: int = 0, password: Optional[str] = None):
         """Connect to Redis server with connection pooling"""
         if not REDIS_AVAILABLE:
-            # Only log if debug mode is enabled
-            import os
-            if os.getenv('DEBUG', '').lower() in ('true', '1', 'yes') or os.getenv('REDIS_DEBUG', '').lower() in ('true', '1', 'yes'):
-                logger.warning("Redis not installed, using mock cache")
+            # CRITICAL: Always log Redis unavailability, not just in debug mode
+            logger.error("[REDIS] Redis not installed - application will run with degraded functionality")
             return False
             
         try:
             # Create connection pool for connection reuse
             # CRITICAL: Use Docker service name (hypersend_redis) not localhost
-            logger.debug(f"[REDIS] Creating connection pool: host={host}, port={port}, db={db}, password={'***' if password else 'None'}")
+            logger.info(f"[REDIS] Connecting to Redis at {host}:{port} db={db}")
             
             # ConnectionPool with proper configuration for large file operations
             self.connection_pool = redis.ConnectionPool(
@@ -98,7 +96,7 @@ class RedisCache:
                 socket_keepalive_options={3: (1, 3, 5)} if hasattr(redis, 'ConnectionPool') else None,  # TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT
                 max_connections=50,  # Connection pool size
                 retry_on_timeout=True,
-                connection_class=redis.connection.Connection  # Use async-compatible connection
+                connection_class=redis.Connection  # Use async-compatible connection
             )
             
             # Create async Redis client using the connection pool
@@ -107,24 +105,35 @@ class RedisCache:
                 decode_responses=True,
             )
             
-            # Test connection with timeout
-            logger.debug(f"[REDIS] Testing connection to {host}:{port}...")
+            # Test connection with timeout - CRITICAL: Prevent app startup without Redis validation
+            logger.info(f"[REDIS] Testing connection to {host}:{port}...")
             ping_result = await asyncio.wait_for(self.redis_client.ping(), timeout=10)
             
             if ping_result:
                 self.is_connected = True
-                logger.info(f"[REDIS] Successfully connected to {host}:{port} db={db} - connection pool initialized")
+                logger.info(f"[REDIS] Successfully connected to {host}:{port} db={db}")
                 
                 # Log Redis server info
                 try:
                     info = await asyncio.wait_for(self.redis_client.info('server'), timeout=5)
-                    logger.debug(f"[REDIS] Server version: {info.get('redis_version', 'unknown')}")
+                    logger.info(f"[REDIS] Server version: {info.get('redis_version', 'unknown')}")
                 except Exception as e:
-                    logger.debug(f"[REDIS] Could not fetch server info: {e}")
+                    logger.warning(f"[REDIS] Could not fetch server info: {e}")
+                
+                # CRITICAL: Test pub/sub functionality
+                try:
+                    test_pubsub = self.redis_client.pubsub()
+                    await test_pubsub.subscribe("test_connection")
+                    await test_pubsub.close()
+                    logger.info(f"[REDIS] Pub/Sub functionality verified")
+                except Exception as e:
+                    logger.error(f"[REDIS] Pub/Sub test failed: {e}")
+                    self.is_connected = False
+                    return False
                 
                 return True
             else:
-                logger.warning(f"[REDIS] Ping returned False for {host}:{port}")
+                logger.error(f"[REDIS] Ping returned False for {host}:{port}")
                 self.is_connected = False
                 return False
             
