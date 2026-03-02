@@ -5,6 +5,20 @@ from typing import List
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
 import secrets
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
+
+# CRITICAL FIX: Strict environment variable validation
+def _validate_env_var(var_name: str, required: bool = True, default: str = None) -> str:
+    """Validate an environment variable"""
+    value = os.getenv(var_name, default)
+    if required and (value is None or (isinstance(value, str) and value.strip() == "")):
+        raise RuntimeError(f"CRITICAL: {var_name} is required but not set or empty")
+    if value and value.startswith(("change-me", "sample", "example")):
+        logger.warning(f"[CONFIG] WARNING: {var_name} uses placeholder value")
+    return value or default
 
 # Load environment variables from .env file
 # Docker requirement: only load from /app/backend/.env and /app/.env.
@@ -127,9 +141,28 @@ class Settings:
     FILE_RETENTION_HOURS: int = int(
         os.getenv("FILE_RETENTION_HOURS", "72")
     )  # 72 hours - 3 days
-    UPLOAD_EXPIRE_HOURS: int = int(
-        os.getenv("UPLOAD_EXPIRE_HOURS", "72")
-    )  # Extended to 72 hours (3 days) for very large files
+    # CRITICAL FIX: Prevent FILE_RETENTION_HOURS=0 from causing immediate deletion
+    # If set to 0, default to 72 hours (WhatsApp compliance)
+    if FILE_RETENTION_HOURS <= 0:
+        logger.warning(f"[CONFIG] FILE_RETENTION_HOURS={FILE_RETENTION_HOURS} is invalid (<=0) - defaulting to 72 hours")
+        FILE_RETENTION_HOURS = 72
+    
+    # CENTRALIZED FILE TTL - Single source of truth (72 hours)
+    # CRITICAL: All file expiry uses this value, not multiple conflicting definitions
+    FILE_TTL_SECONDS: int = 259200  # Exactly 72 hours in seconds - hardcoded for consistency
+    FILE_TTL_HOURS: int = 72  # Exactly 72 hours - hardcoded for consistency
+    
+    # Validate FILE_TTL matches FILE_RETENTION
+    _calculated_retention_seconds = FILE_RETENTION_HOURS * 3600
+    if _calculated_retention_seconds != FILE_TTL_SECONDS:
+        logger.warning(
+            f"[CONFIG] FILE_RETENTION_HOURS ({FILE_RETENTION_HOURS}h = {_calculated_retention_seconds}s) "
+            f"differs from FILE_TTL_SECONDS ({FILE_TTL_SECONDS}s) - using FILE_TTL_SECONDS as source of truth"
+        )
+        FILE_RETENTION_HOURS = 72  # Force consistency
+    
+    print(f"[CONFIG] Centralized File TTL: {FILE_TTL_SECONDS} seconds ({FILE_TTL_HOURS} hours)")
+    print(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours (aligned with TTL)")
 
     # Enhanced timeout settings for large file transfers
     CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(
@@ -180,9 +213,15 @@ class Settings:
     )
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
 
-    # Redis Configuration (Production: Use Docker service name)
-    # CRITICAL: Use redis service name for Docker internal networking
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "hypersend_redis")
+    # Redis Configuration (Production: Use Docker service name ONLY)
+    # CRITICAL: Must NEVER use localhost - only service name 'hypersend_redis'
+    redis_host_env = os.getenv("REDIS_HOST", "hypersend_redis")
+    if redis_host_env in ('localhost', '127.0.0.1', '::1'):
+        logger.error(f"[CONFIG] CRITICAL: REDIS_HOST cannot be localhost - found '{redis_host_env}'")
+        logger.error(f"[CONFIG] Must use Docker service name 'hypersend_redis' in production")
+        redis_host_env = "hypersend_redis"
+    
+    REDIS_HOST: str = redis_host_env
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))

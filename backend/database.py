@@ -7,6 +7,8 @@ from fastapi import HTTPException, status
 from dotenv import load_dotenv
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 try:
     from .config import settings
 except Exception:

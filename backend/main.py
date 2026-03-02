@@ -156,6 +156,24 @@ def init_storage():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan event handler - initialize storage, database and cleanup"""
+    import sys
+    
+    # CRITICAL FIX: Detect pytest BEFORE Redis initialization to avoid unnecessary Redis connection
+    def _is_pytest_running() -> bool:
+        """Detect if running under pytest"""
+        try:
+            if os.getenv("PYTEST_CURRENT_TEST"):
+                return True
+            if "pytest" in sys.modules:
+                return True
+            return False
+        except Exception:
+            return False
+    
+    is_test_mode = _is_pytest_running()
+    if is_test_mode:
+        print("[STARTUP] Pytest detected - running in test mode with mock cache only")
+    
     # Startup - CRITICAL: Storage must initialize first, before all other systems
     # Call synchronous storage init function
     try:
@@ -175,86 +193,99 @@ async def lifespan(app: FastAPI):
     app.state.client = client
     print(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
     
-    # Initialize Redis cache (non-critical, continue if fails)
-    try:
-        await init_cache()
+    # Initialize Redis cache (non-critical, continue if fails, skip in test mode)
+    if not is_test_mode:
+        try:
+            await init_cache()
+            try:
+                from redis_cache import cache
+                app.state.cache = cache
+            except Exception:
+                # Cache module-level instance not available; continue without state exposure
+                pass
+            print("[STARTUP] Redis cache initialized")
+        except Exception as e:
+            print(f"[STARTUP] Redis cache initialization failed (non-critical): {e}")
+            # Continue without Redis - use fallback cache
+    else:
+        # In test mode, initialize mock cache only
         try:
             from redis_cache import cache
+            await cache.clear_mock_cache()
             app.state.cache = cache
-        except Exception:
-            # Cache module-level instance not available; continue without state exposure
-            pass
-        print("[STARTUP] Redis cache initialized")
-    except Exception as e:
-        print(f"[STARTUP] Redis cache initialization failed (non-critical): {e}")
-        # Continue without Redis - use fallback cache
+            print("[STARTUP] Mock cache initialized for test mode")
+        except Exception as e:
+            print(f"[STARTUP] Mock cache initialization failed: {e}")
     
     # CRITICAL: Start global Redis Pub/Sub subscriber for multi-container communication
     # This listens to all chat channels and broadcasts to connected WebSocket clients
     redis_subscriber_task = None
-    try:
-        from redis_cache import cache
-        
-        if cache and cache.is_connected and cache.redis_client:
-            async def global_redis_subscriber():
-                """Listen to Redis channels and broadcast to WebSocket clients"""
-                pubsub = None
-                try:
-                    print("[REDIS] Starting global Redis Pub/Sub subscriber...")
-                    pubsub = await cache.redis_client.pubsub()
-                    
-                    # Subscribe to all chat channels (pattern matching)
-                    await pubsub.psubscribe("chat:*")
-                    print("[REDIS] Subscribed to chat:* channels")
-                    
-                    async for message in pubsub.listen():
-                        try:
-                            if message['type'] in ['message', 'pmessage']:
-                                channel = message.get('channel', '').decode() if isinstance(message.get('channel'), bytes) else message.get('channel', '')
-                                data_raw = message.get('data')
-                                
-                                # Parse data (could be bytes or str depending on decode_responses setting)
-                                if isinstance(data_raw, bytes):
-                                    data_str = data_raw.decode('utf-8')
-                                else:
-                                    data_str = data_raw
-                                
-                                try:
-                                    data = json.loads(data_str)
-                                    
-                                    # Log publish/subscribe activity
-                                    logger.debug(f"[REDIS] Received {message['type']} on {channel}: {data.get('type', 'unknown')}")
-                                    
-                                    # For now, just log - actual WebSocket broadcasting happens in the WebSocket endpoint
-                                    # This is here for cross-container communication
-                                except json.JSONDecodeError as e:
-                                    logger.error(f"[REDIS] Failed to parse message from {channel}: {e}")
-                        
-                        except Exception as e:
-                            logger.error(f"[REDIS] Error processing Redis message: {type(e).__name__}: {e}")
-                
-                except asyncio.CancelledError:
-                    logger.info("[REDIS] Redis subscriber cancelled")
-                except Exception as e:
-                    logger.error(f"[REDIS] Global Redis subscriber error: {type(e).__name__}: {e}")
-                finally:
-                    if pubsub:
-                        try:
-                            await pubsub.close()
-                        except Exception as e:
-                            logger.error(f"[REDIS] Failed to close pubsub: {e}")
-                    print("[REDIS] Global Pub/Sub subscriber stopped")
+    if not is_test_mode:
+        try:
+            from redis_cache import cache
             
-            # Start Redis subscriber as background task
-            redis_subscriber_task = asyncio.create_task(global_redis_subscriber())
-            app.state.redis_subscriber_task = redis_subscriber_task
-            print("[REDIS] Global Pub/Sub subscriber started in background")
-        else:
-            print("[REDIS] Redis not connected - Pub/Sub subscriber not started")
-    
-    except Exception as e:
-        logger.error(f"[REDIS] Failed to start Redis Pub/Sub subscriber: {type(e).__name__}: {e}")
-        print(f"[REDIS] Pub/Sub subscriber initialization failed (non-critical): {e}")
+            if cache and cache.is_connected and cache.redis_client:
+                async def global_redis_subscriber():
+                    """Listen to Redis channels and broadcast to WebSocket clients"""
+                    pubsub = None
+                    try:
+                        print("[REDIS] Starting global Redis Pub/Sub subscriber...")
+                        pubsub = await cache.redis_client.pubsub()
+                        
+                        # Subscribe to all chat channels (pattern matching)
+                        await pubsub.psubscribe("chat:*")
+                        print("[REDIS] Subscribed to chat:* channels")
+                        
+                        async for message in pubsub.listen():
+                            try:
+                                if message['type'] in ['message', 'pmessage']:
+                                    channel = message.get('channel', '').decode() if isinstance(message.get('channel'), bytes) else message.get('channel', '')
+                                    data_raw = message.get('data')
+                                    
+                                    # Parse data (could be bytes or str depending on decode_responses setting)
+                                    if isinstance(data_raw, bytes):
+                                        data_str = data_raw.decode('utf-8')
+                                    else:
+                                        data_str = data_raw
+                                    
+                                    try:
+                                        data = json.loads(data_str)
+                                        
+                                        # Log publish/subscribe activity
+                                        logger.debug(f"[REDIS] Received {message['type']} on {channel}: {data.get('type', 'unknown')}")
+                                        
+                                        # For now, just log - actual WebSocket broadcasting happens in the WebSocket endpoint
+                                        # This is here for cross-container communication
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"[REDIS] Failed to parse message from {channel}: {e}")
+                            
+                            except Exception as e:
+                                logger.error(f"[REDIS] Error processing Redis message: {type(e).__name__}: {e}")
+                    
+                    except asyncio.CancelledError:
+                        logger.info("[REDIS] Redis subscriber cancelled")
+                    except Exception as e:
+                        logger.error(f"[REDIS] Global Redis subscriber error: {type(e).__name__}: {e}")
+                    finally:
+                        if pubsub:
+                            try:
+                                await pubsub.close()
+                            except Exception as e:
+                                logger.error(f"[REDIS] Failed to close pubsub: {e}")
+                        print("[REDIS] Global Pub/Sub subscriber stopped")
+                
+                # Start Redis subscriber as background task
+                redis_subscriber_task = asyncio.create_task(global_redis_subscriber())
+                app.state.redis_subscriber_task = redis_subscriber_task
+                print("[REDIS] Global Pub/Sub subscriber started in background")
+            else:
+                print("[REDIS] Redis not connected - Pub/Sub subscriber not started")
+        
+        except Exception as e:
+            logger.error(f"[REDIS] Failed to start Redis Pub/Sub subscriber: {type(e).__name__}: {e}")
+            print(f"[REDIS] Pub/Sub subscriber initialization failed (non-critical): {e}")
+    else:
+        print("[REDIS] Test mode - Pub/Sub subscriber not started")
 
     print("Application startup complete")
     
