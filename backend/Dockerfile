@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     tzdata \
     ca-certificates \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies with IPv4 enforcement and timeout
@@ -32,8 +33,18 @@ ENV PYTHONUNBUFFERED=1 \
 ARG DOCKERHUB_USERNAME
 ARG DOCKERHUB_TOKEN
 
-# Create data directory
+# Create data directory with proper permissions
 RUN mkdir -p /data/tmp /data/files
+
+# Create app user and set proper permissions
+RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser && \
+    mkdir -p /app/storage /app/temp /app/uploads /app/data/files /app/data/avatars && \
+    chmod -R 755 /app/storage /app/temp /app/uploads /app/data && \
+    chown -R appuser:appuser /app/storage /app/temp /app/uploads /app/data /data
+
+# Copy entrypoint script and make it executable
+COPY backend/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Health check (inside container) - More robust health check
 HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
@@ -41,4 +52,5 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
 
 # Start FastAPI with single process to ensure startup event and handlers share global state
 WORKDIR /app/backend
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--http", "httptools"]

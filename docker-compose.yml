@@ -158,6 +158,8 @@ services:
       - ./backend/uploads:/app/uploads
       - ./data/temp:/app/temp
       - ./data/storage:/app/storage
+    # Run as root to handle permissions, then switch in entrypoint
+    user: "0:0"
     depends_on:
       redis:
         condition: service_healthy
