@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Body
 from typing import Optional, Dict, List, Tuple, Any, Set
 from datetime import datetime, timedelta, timezone
 import uuid
@@ -87,13 +87,16 @@ class WhatsAppDeliveryEngine:
                           recipient_user_id: str, content_hash: str, message_type: str,
                           recipient_devices: List[str]) -> Dict[str, Any]:
         """Send WhatsApp message with delivery tracking"""
+        # CRITICAL: Generate timestamp once and preserve throughout pipeline
+        message_timestamp = datetime.now(timezone.utc)
+        
         # Get next sequence number
         sequence_number = await self._get_next_sequence_number(chat_id)
         
         # Generate message ID
         message_id = f"msg_{chat_id}_{sequence_number}_{uuid.uuid4().hex[:8]}"
         
-        # Create message
+        # Create message with preserved timestamp
         message = {
             "message_id": message_id,
             "chat_id": chat_id,
@@ -104,8 +107,8 @@ class WhatsAppDeliveryEngine:
             "message_type": message_type,
             "sequence_number": sequence_number,
             "state": "sent",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "sent_at": datetime.now(timezone.utc).isoformat(),  # UTC only, do NOT convert to IST
+            "created_at": message_timestamp.isoformat(),  # Use preserved timestamp
+            "sent_at": message_timestamp.isoformat(),  # Same timestamp
             "retry_count": 0,
             "max_retries": self.max_retry_attempts,
             "device_states": {
@@ -114,17 +117,26 @@ class WhatsAppDeliveryEngine:
             }
         }
         
-        # Store message
-        await self._store_message(message)
+        # STEP 1: Store in MongoDB first (DB insert completes before Redis)
+        await self._store_message_in_db(message)
         
-        # Check for duplicates
-        if await self._is_duplicate_message(message):
+        # STEP 2: Check for duplicates in DB (must happen after DB insert)
+        if await self._is_duplicate_message_in_db(message):
             message["state"] = "failed"
-            await self._store_message(message)
+            await self._store_message_in_db(message)
             raise ValueError("Duplicate message detected")
         
-        # Queue for delivery
+        # STEP 3: Store in Redis cache (after DB confirmation)
+        await self._store_message_in_redis(message)
+        
+        # STEP 4: Queue for delivery (after Redis storage)
         await self._queue_for_delivery(message)
+        
+        # STEP 5: Publish to Redis (after queuing, before WebSocket)
+        await self._publish_to_redis(message)
+        
+        # STEP 6: WebSocket broadcast (final step, after all persistence)
+        await self._broadcast_to_websockets(message)
         
         return message
     
@@ -173,10 +185,38 @@ class WhatsAppDeliveryEngine:
         await cache.set(seq_key, next_seq, expire_seconds=7*24*60*60)
         return next_seq
     
-    async def _store_message(self, message: Dict[str, Any]):
-        """Store message in Redis"""
+    async def _store_message_in_db(self, message: Dict[str, Any]):
+        """Store message in MongoDB first"""
+        from ..db_proxy import messages_collection
+        
+        # Convert string timestamp back to datetime for MongoDB
+        message_doc = message.copy()
+        if isinstance(message_doc.get("created_at"), str):
+            message_doc["created_at"] = datetime.fromisoformat(message_doc["created_at"].replace('Z', '+00:00'))
+        if isinstance(message_doc.get("sent_at"), str):
+            message_doc["sent_at"] = datetime.fromisoformat(message_doc["sent_at"].replace('Z', '+00:00'))
+        
+        await messages_collection().insert_one(message_doc)
+    
+    async def _store_message_in_redis(self, message: Dict[str, Any]):
+        """Store message in Redis cache after DB"""
         message_key = f"message:{message['message_id']}"
         await cache.set(message_key, message, expire_seconds=24*60*60)
+    
+    async def _is_duplicate_message_in_db(self, message: Dict[str, Any]) -> bool:
+        """Check for duplicate message in DB"""
+        from ..db_proxy import messages_collection
+        
+        # Check by content hash within time window
+        time_window = datetime.now(timezone.utc) - timedelta(minutes=5)
+        
+        existing = await messages_collection().find_one({
+            "chat_id": message["chat_id"],
+            "content_hash": message["content_hash"],
+            "created_at": {"$gte": time_window}
+        })
+        
+        return existing is not None
     
     async def _get_message(self, message_id: str) -> Optional[Dict[str, Any]]:
         """Get message from Redis"""
@@ -204,7 +244,7 @@ class WhatsAppDeliveryEngine:
         return False
     
     async def _queue_for_delivery(self, message: Dict[str, Any]):
-        """Queue message for device delivery"""
+        """Queue message for device delivery after Redis storage"""
         for device_id in message["device_states"].keys():
             if message["device_states"][device_id] == "not_sent":
                 queue_key = f"delivery_queue:{message['recipient_user_id']}:{device_id}"
@@ -216,7 +256,7 @@ class WhatsAppDeliveryEngine:
                     "device_id": device_id,
                     "content_hash": message["content_hash"],
                     "sequence_number": message["sequence_number"],
-                    "created_at": message["created_at"],
+                    "created_at": message["created_at"],  # Use original timestamp
                     "queued_at": datetime.now(timezone.utc).isoformat()
                 }
                 
@@ -228,14 +268,99 @@ class WhatsAppDeliveryEngine:
                 message["device_states"][device_id] = "sent"
         
         await self._update_message_state(message)
-        await self._store_message(message)
     
+    async def _publish_to_redis(self, message: Dict[str, Any]):
+        """Publish to Redis channels after queuing"""
+        # CRITICAL: Publish with original timestamp, never regenerate
+        message_payload = {
+            "type": "new_message",
+            "message_id": message["message_id"],
+            "chat_id": message["chat_id"],
+            "sender_id": message["sender_user_id"],
+            "recipient_id": message["recipient_user_id"],
+            "message_type": message["message_type"],
+            "created_at": message["created_at"],  # Original timestamp from DB
+            "sequence_number": message["sequence_number"]
+        }
+        
+        # STEP 1: Always publish to chat messages channel (delivery)
+        await cache.publish(f"chat_messages:{message['chat_id']}", json.dumps(message_payload))
+        
+        # STEP 2: Check mute status before publishing to notifications channel
+        await self._publish_notifications_if_not_muted(message_payload)
+    
+    async def _broadcast_to_websockets(self, message: Dict[str, Any]):
+        """Broadcast to WebSocket connections after Redis publish completes"""
+        # Convert ObjectId to string before sending
+        message_payload = {
+            "type": "new_message",
+            "message_id": message["message_id"],
+            "chat_id": message["chat_id"],
+            "sender_id": message["sender_user_id"],
+            "recipient_id": message["recipient_user_id"],
+            "message_type": message["message_type"],
+            "created_at": message["created_at"],  # Original timestamp from DB
+            "sequence_number": message["sequence_number"]
+        }
+        
+        # Broadcast to WebSocket delivery handler
+        try:
+            from ..websocket.delivery_handler import WebSocketDeliveryHandler
+            # Signal WebSocket handler to broadcast
+            await cache.publish(f"websocket_broadcast:{message['chat_id']}", json.dumps(message_payload))
+        except ImportError:
+            # Fallback if WebSocket handler not available
+            pass
+    
+    async def _publish_notifications_if_not_muted(self, message_payload: Dict[str, Any]):
+        """Publish to separate notification channels with per-user mute checking"""
+        from ..db_proxy import chats_collection
+        
+        chat_id = message_payload["chat_id"]
+        
+        # Get chat to check mute configurations
+        chat = await chats_collection().find_one({"_id": chat_id})
+        if not chat or not chat.get("mute_config"):
+            # No mute config, publish to both channels normally
+            await cache.publish(f"chat_messages_channel:{chat_id}", json.dumps(message_payload))
+            await cache.publish(f"chat_notifications_channel:{chat_id}", json.dumps(message_payload))
+            return
+        
+        # Check each user's mute status
+        mute_config = chat["mute_config"]
+        current_time = datetime.now(timezone.utc)
+        
+        # STEP 1: Always publish to messages channel (delivery regardless of mute)
+        await cache.publish(f"chat_messages_channel:{chat_id}", json.dumps(message_payload))
+        
+        # STEP 2: Publish to notifications channel only for unmuted users
+        for user_id, mute_info in mute_config.items():
+            try:
+                # Parse mute_until timestamp
+                mute_until_str = mute_info.get("mute_until")
+                if not mute_until_str:
+                    # No mute_until, user receives notifications
+                    await cache.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
+                    continue
+                
+                mute_until = datetime.fromisoformat(mute_until_str.replace('Z', '+00:00'))
+                
+                # Check if mute is still active
+                if current_time >= mute_until:
+                    # Mute expired, user receives notifications
+                    await cache.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
+                # else: User is still muted, do NOT send notification
+                
+            except Exception as e:
+                # Error parsing mute time, err on side of sending notification
+                await cache.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
+        
+        # STEP 3: Also publish to general notifications channel for users without mute config
+        await cache.publish(f"chat_notifications_channel:{chat_id}", json.dumps(message_payload))
+
     async def _update_message_state(self, message: Dict[str, Any]):
         """Update message state based on device states"""
-        device_states = list(message["device_states"].values())
-        
-        if not device_states:
-            return
+        device_states = message.get("device_states", {}).values()
         
         # Check if any device has read
         if any(state == "read" for state in device_states):
@@ -884,6 +1009,138 @@ async def send_whatsapp_message(
     except Exception as e:
         logger.error(f"Failed to send WhatsApp message: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send message")
+
+
+@router.get("/emojis")
+async def get_emojis(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    search: Optional[str] = Query(None, description="Search emojis by name"),
+    popular: bool = Query(False, description="Return popular emojis only"),
+    current_user: str = Depends(get_current_user)
+):
+    """Get WhatsApp-style emojis with 8 categories"""
+    try:
+        from ..services.emoji_service import get_emoji_service
+        emoji_svc = get_emoji_service()
+        
+        if popular:
+            emojis = emoji_svc.get_popular_emojis()
+            return {
+                "status": "success",
+                "emojis": emojis,
+                "type": "popular",
+                "total": len(emojis)
+            }
+        
+        if search:
+            emojis = emoji_svc.search_emojis(search)
+            return {
+                "status": "success",
+                "emojis": emojis,
+                "type": "search",
+                "query": search,
+                "total": len(emojis)
+            }
+        
+        if category:
+            if category not in emoji_svc.categories:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid category. Available: {list(emoji_svc.categories.keys())}"
+                )
+            emojis = emoji_svc.get_emojis_by_category(category)
+            return {
+                "status": "success",
+                "category": category,
+                "emojis": emojis,
+                "type": "category",
+                "total": len(emojis)
+            }
+        
+        # Return all emojis grouped by category
+        all_emojis = emoji_svc.get_all_emojis()
+        return {
+            "status": "success",
+            "emojis": all_emojis,
+            "type": "all",
+            "categories": list(emoji_svc.categories.keys()),
+            "total_emojis": sum(len(cat["emojis"]) for cat in all_emojis)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get emojis: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve emojis"
+        )
+
+
+@router.get("/emojis/categories")
+async def get_emoji_categories(current_user: str = Depends(get_current_user)):
+    """Get available emoji categories"""
+    try:
+        from ..services.emoji_service import get_emoji_service
+        emoji_svc = get_emoji_service()
+        
+        categories = []
+        for category_name, emojis in emoji_svc.categories.items():
+            categories.append({
+                "name": category_name,
+                "count": len(emojis),
+                "sample": emojis[:5]  # First 5 emojis as sample
+            })
+        
+        return {
+            "status": "success",
+            "categories": categories,
+            "total_categories": len(categories)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get emoji categories: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve emoji categories"
+        )
+
+
+@router.post("/emojis/validate")
+async def validate_emoji(
+    emoji: dict = Body(..., description={"symbol": "😀"}),
+    current_user: str = Depends(get_current_user)
+):
+    """Validate if emoji symbol is supported"""
+    try:
+        symbol = emoji.get("symbol")
+        if not symbol:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Emoji symbol is required"
+            )
+        
+        from ..services.emoji_service import get_emoji_service
+        emoji_svc = get_emoji_service()
+        
+        is_valid = emoji_svc.validate_emoji(symbol)
+        emoji_info = emoji_svc.get_emoji_info(symbol) if is_valid else None
+        
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "valid": is_valid,
+            "info": emoji_info
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to validate emoji: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to validate emoji"
+        )
 
 
 # @router.post("/delivery-receipt-whatsapp")

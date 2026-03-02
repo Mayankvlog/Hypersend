@@ -1335,6 +1335,11 @@ async def initialize_upload(
         file_oid = ObjectId()
         storage_key_owner = str(upload_user_id) if upload_user_id is not None else "anonymous"
         storage_key = f"files/{storage_key_owner}/{upload_id}/{filename}"
+        
+        # CRITICAL: 72-hour expiry for WhatsApp compliance (UTC only)
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(hours=72)
+        
         upload_doc = {
             "upload_id": upload_id,
             "user_id": upload_user_id,
@@ -1351,6 +1356,7 @@ async def initialize_upload(
             "uploaded_chunks": [],
             "created_at": now,
             "updated_at": now,
+            "expires_at": expires_at,  # 72-hour expiry
             "status": "initialized",
             "upload_status": "initialized",
         }
@@ -1690,8 +1696,7 @@ async def complete_upload(
         file_id = str(file_oid)
         storage_key = upload_doc.get("storage_key") or f"files/{upload_user_id}/{upload_id}/{filename}"
         
-        expires_at = now + timedelta(hours=72)  # 72-hour file expiry
-        
+        expires_at = now + timedelta(hours=72)  # 72-hour file expiry (UTC only)
         file_doc = {
             "_id": file_oid,
             "file_id": file_oid,
@@ -2174,18 +2179,31 @@ async def download_file(
                     detail="Access denied: you don't have permission to download this file. Ask the file owner to share it with you.",
                 )
 
-            # Check file expiry (72 hours from creation)
+            # Check file expiry (72 hours from creation - UTC only)
             expires_at = file_doc.get("expires_at")
             if expires_at:
                 from datetime import datetime as dt, timezone as tz
-
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=tz.utc)
-                if dt.now(tz.utc) > expires_at:
-                    _delete_s3_object(file_doc.get("object_key"))
-                    await files_collection().update_one(
-                        {"_id": file_doc.get("_id")},
-                        {"$set": {"status": "expired", "delivery_status": "expired"}},
+                
+                current_utc = dt.now(tz.utc)
+                
+                # Handle both datetime objects and ISO strings
+                if isinstance(expires_at, str):
+                    expires_at_dt = dt.fromisoformat(expires_at.replace('Z', '+00:00'))
+                elif isinstance(expires_at, dt):
+                    expires_at_dt = expires_at
+                else:
+                    expires_at_dt = expires_at
+                
+                # Ensure expires_at is timezone-aware UTC
+                if expires_at_dt.tzinfo is None:
+                    expires_at_dt = expires_at_dt.replace(tzinfo=tz.utc)
+                elif expires_at_dt.tzinfo != tz.utc:
+                    expires_at_dt = expires_at_dt.astimezone(tz.utc)
+                
+                # STRICT: Block download if current UTC >= expires_at UTC
+                if current_utc >= expires_at_dt:
+                    logger.warning(
+                        f"File expired: {file_id} - expired at {expires_at_dt.isoformat()}, current time {current_utc.isoformat()}"
                     )
                     raise HTTPException(
                         status_code=status.HTTP_410_GONE,
