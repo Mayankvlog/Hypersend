@@ -1,4 +1,4 @@
-name: Build & Deploy Backend
+name: Test & Deploy Backend
 
 on:
   push:
@@ -6,10 +6,42 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/deploy-backend.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Run Backend Tests
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+          
+      - name: Run tests
+        run: |
+          cd backend
+          pytest tests/ -v --tb=short
+        timeout-minutes: 15
+
   build-and-deploy:
     runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
 
     env:
       IMAGE_NAME: yourusername/hypersend-backend
@@ -71,21 +103,21 @@ jobs:
           command_timeout: 20m
           script_stop: true
           script: |
-            # Use optimized deployment scripts with production environment
+            # Use deployment scripts with localhost development environment
             echo "📋 Starting deployment with optimized scripts..."
             
-            # Set production environment variables for zaply.in.net
-            export API_BASE_URL=https://zaply.in.net/api/v1
-            export APP_URL=https://zaply.in.net
-            export DEBUG=false
-            export DOMAIN_NAME=zaply.in.net
-            export SSL_CERT_PATH=/etc/nginx/ssl/zaply.in.net/fullchain.pem
-            export SSL_KEY_PATH=/etc/nginx/ssl/zaply.in.net/privkey.pem
-            export CORS_ORIGINS='["https://zaply.in.net", "https://www.zaply.in.net"]'
-            export EMAIL_FROM=noreply@zaply.in.net
+            # Set environment variables for localhost development
+            export API_BASE_URL=http://localhost:8000/api/v1
+            export APP_URL=http://localhost:3000
+            export DEBUG=true
+            export DOMAIN_NAME=localhost
+            export SSL_CERT_PATH=/etc/letsencrypt/live/localhost/fullchain.pem
+            export SSL_KEY_PATH=/etc/letsencrypt/live/localhost/privkey.pem
+            export CORS_ORIGINS='["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:3000", "http://127.0.0.1:8000"]'
+            export EMAIL_FROM=noreply@localhost.com
             export SENDER_NAME=Hypersend Support
             export RATE_LIMIT_ENABLED=true
-            export USE_MOCK_DB=false
+            export USE_MOCK_DB=true
             export DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
             export DOCKERHUB_TOKEN=${{ secrets.DOCKERHUB_TOKEN }}
             
@@ -106,9 +138,9 @@ jobs:
               docker compose up -d --build backend
               sleep 30
               
-              # Health check with retry (production endpoint)
+              # Health check with retry (localhost endpoint)
               for i in {1..20}; do
-                if curl -sf https://zaply.in.net/api/v1/health >/dev/null 2>&1; then
+                if curl -sf http://localhost:8000/api/v1/health >/dev/null 2>&1; then
                   echo "✅ Backend deployment completed!"
                   exit 0
                 fi
@@ -119,4 +151,3 @@ jobs:
               echo "❌ Backend health check failed"
               docker compose logs backend --tail 50 2>/dev/null || true
               exit 1
-            
