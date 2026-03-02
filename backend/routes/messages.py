@@ -105,8 +105,8 @@ class WhatsAppDeliveryEngine:
             "message_type": message_type,
             "sequence_number": sequence_number,
             "state": "sent",
-            "created_at": int(datetime.utcnow().timestamp()),
-            "sent_at": int(datetime.utcnow().timestamp()),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "sent_at": datetime.now(timezone.utc).isoformat(),
             "retry_count": 0,
             "max_retries": self.max_retry_attempts,
             "device_states": {
@@ -192,13 +192,14 @@ class WhatsAppDeliveryEngine:
         
         if existing_hash:
             existing_time = existing_hash["timestamp"]
-            if int(datetime.utcnow().timestamp()) - existing_time < 300:  # 5 minutes
+            current_time = datetime.now(timezone.utc).timestamp()
+            if current_time - existing_time < 300:  # 5 minutes
                 return True
         
         # Store hash for duplicate detection
         await cache.set(hash_key, {
             "message_id": message["message_id"],
-            "timestamp": int(datetime.utcnow().timestamp())
+            "timestamp": datetime.now(timezone.utc).timestamp()
         }, expire_seconds=300)
         
         return False
@@ -217,7 +218,7 @@ class WhatsAppDeliveryEngine:
                     "content_hash": message["content_hash"],
                     "sequence_number": message["sequence_number"],
                     "created_at": message["created_at"],
-                    "queued_at": int(datetime.utcnow().timestamp())
+                    "queued_at": datetime.now(timezone.utc).isoformat()
                 }
                 
                 await cache.lpush(queue_key, json.dumps(delivery_task))
@@ -240,13 +241,13 @@ class WhatsAppDeliveryEngine:
         if any(state == "read" for state in device_states):
             if message["state"] != "read":
                 message["state"] = "read"
-                message["read_at"] = int(datetime.utcnow().timestamp())
+                message["read_at"] = datetime.now(timezone.utc).isoformat()
         
         # Check if any device has delivered
         elif any(state == "delivered" for state in device_states):
             if message["state"] != "delivered":
                 message["state"] = "delivered"
-                message["delivered_at"] = int(datetime.utcnow().timestamp())
+                message["delivered_at"] = datetime.now(timezone.utc).isoformat()
         
         # Check if all devices are sent
         elif all(state in ["sent", "delivered", "read"] for state in device_states):
@@ -262,7 +263,7 @@ class WhatsAppDeliveryEngine:
             "device_id": device_id,
             "receipt_type": receipt_type,
             "message_state": message["state"],
-            "timestamp": int(datetime.utcnow().timestamp())
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         await cache.publish(update_key, json.dumps(update_data))
@@ -295,7 +296,7 @@ class WhatsAppMetadataMinimizer:
             "message_type": message_type,
             "timing_padding_applied": True,
             "metadata_minimized": True,
-            "created_at": int(datetime.utcnow().timestamp())
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
     
     def _obfuscate_ip(self, ip: str) -> str:
@@ -2452,7 +2453,7 @@ async def get_conversations_metadata(
             "conversations": conversations,
             "total_count": len(conversations),
             "device_id": device_id,
-            "synced_at": datetime.utcnow().isoformat()
+            "synced_at": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
@@ -2539,7 +2540,7 @@ async def get_relationship_graph(
             "relationships": user_relationships,
             "contact_suggestions": contact_suggestions,
             "total_contacts": len(user_relationships),
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
@@ -2559,7 +2560,7 @@ async def _update_device_sync_state(user_id: str, device_id: str, chat_id: str,
         "chat_id": chat_id,
         "last_message_id": last_message_id,
         "messages_count": messages_count,
-        "last_sync_timestamp": datetime.utcnow().isoformat(),
+        "last_sync_timestamp": datetime.now(timezone.utc).isoformat(),
         "sync_progress": 1.0
     }
     
@@ -2568,7 +2569,7 @@ async def _update_device_sync_state(user_id: str, device_id: str, chat_id: str,
 
 async def _generate_sync_token(user_id: str, device_id: str, chat_id: str) -> str:
     """Generate sync token for incremental sync"""
-    token_data = f"{user_id}:{device_id}:{chat_id}:{datetime.utcnow().timestamp()}"
+    token_data = f"{user_id}:{device_id}:{chat_id}:{datetime.now(timezone.utc).timestamp()}"
     return base64.b64encode(token_data.encode()).decode()
 
 
@@ -2838,7 +2839,7 @@ async def delete_message(
         return {
             "message_id": message_id,
             "deleted": True,
-            "deleted_at": datetime.utcnow().isoformat()
+            "deleted_at": datetime.now(timezone.utc).isoformat()
         }
         
     except HTTPException:
@@ -2881,7 +2882,7 @@ async def cleanup_expired_messages(
         
         return {
             "deleted_messages": deleted_count,
-            "cleanup_at": datetime.utcnow().isoformat()
+            "cleanup_at": datetime.now(timezone.utc).isoformat()
         }
         
     except HTTPException:

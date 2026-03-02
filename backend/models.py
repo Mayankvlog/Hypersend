@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 from pydantic import (
     BaseModel,
@@ -193,7 +193,7 @@ class UserInDB(BaseModel):
     avatar_url: Optional[str] = None
     quota_used: int = 0
     quota_limit: int = 16106127360  # 15 GiB default
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
     last_seen: Optional[datetime] = None
     is_online: bool = False
@@ -414,7 +414,7 @@ class ChatMember(BaseModel):
     user_id: str
     chat_id: str
     role: str = Role.MEMBER
-    joined_at: datetime = Field(default_factory=datetime.utcnow)
+    joined_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     invited_by: Optional[str] = None
     permissions: Optional[AdminPermissions] = None  # For admins
     restricted_permissions: Optional[ChatPermissions] = None  # For restricted users
@@ -481,8 +481,8 @@ class ChatInDB(BaseModel):
     # Generic linkage
     linked_chat_id: Optional[str] = None  # e.g. Channel <-> Discussion Group
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # Message Models
@@ -554,7 +554,7 @@ class MessageInDB(BaseModel):
     file_type: Optional[str] = None  # MIME type metadata only
 
     # Metadata fields only
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     language: Optional[str] = None  # Language code metadata
 
     # Channel metadata
@@ -627,7 +627,7 @@ class MessageHistoryResponse(BaseModel):
     next_after_id: Optional[str] = None
     sync_token: Optional[str] = None  # For incremental sync
     device_id: str
-    synced_at: datetime = Field(default_factory=datetime.utcnow)
+    synced_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ConversationMetadata(BaseModel):
@@ -664,8 +664,8 @@ class ConversationMetadata(BaseModel):
     contact_frequency_score: float = 0.0  # Interaction frequency
     last_interaction: Optional[datetime] = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class RelationshipGraph(BaseModel):
@@ -690,8 +690,8 @@ class RelationshipGraph(BaseModel):
     shared_groups: List[str] = Field(default_factory=list)
 
     # Metadata
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class DeviceSyncState(BaseModel):
@@ -723,8 +723,8 @@ class DeviceSyncState(BaseModel):
     device_type: str = "unknown"  # mobile, desktop, web
     app_version: Optional[str] = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class MessageDeliveryReceipt(BaseModel):
@@ -738,7 +738,7 @@ class MessageDeliveryReceipt(BaseModel):
 
     # Receipt type and timestamp
     receipt_type: str  # delivered, read
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Device metadata
     device_type: Optional[str] = None
@@ -880,7 +880,7 @@ class FileInDB(BaseModel):
     status: str = "pending"  # pending, completed, failed - processing status only
 
     # WhatsApp compliance: Auto-expiration
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None  # S3 TTL auto-delete time
     downloaded_at: Optional[datetime] = None  # Download tracking
     acknowledged_at: Optional[datetime] = None  # Receiver ACK time
@@ -900,7 +900,7 @@ class UploadInDB(BaseModel):
     received_chunks: List[int] = Field(default_factory=list)
     checksum: Optional[str] = None
     expires_at: datetime
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class UserSearchResponse(BaseModel):
@@ -939,7 +939,7 @@ class QRCodeSession(BaseModel):
     qr_code_data: str  # Base64 encoded QR code image
     device_type: str  # 'mobile', 'web', 'desktop'
     device_name: Optional[str] = None  # Custom device name
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime  # QR code expires after 5 minutes
     is_verified: bool = False
     verified_at: Optional[datetime] = None
@@ -1195,7 +1195,7 @@ class Device(BaseModel):
     session_count: int = 0  # Number of active sessions
 
     # Device lifecycle
-    registered_at: datetime = Field(default_factory=datetime.utcnow)
+    registered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     verified_at: Optional[datetime] = None
     last_seen: Optional[datetime] = None
     expires_at: Optional[datetime] = None  # Session expiration
@@ -1234,7 +1234,7 @@ class DeviceSession(BaseModel):
     peer_device_id: Optional[str] = None  # For 1-to-1 sessions with specific device
 
     # Session lifecycle
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_activity: Optional[datetime] = None
     expires_at: Optional[datetime] = None  # Session expiration for inactive sessions
 
@@ -1257,7 +1257,7 @@ class IdentityKey(BaseModel):
     )  # SHA256 fingerprint
 
     # Key lifecycle
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     key_version: int = 1  # For future key rotation
     is_active: bool = True
 
@@ -1284,7 +1284,7 @@ class PreKey(BaseModel):
     is_available: bool = True  # Available for new sessions
 
     # Key lifecycle
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     used_at: Optional[datetime] = None  # When this prekey was last used
     expires_at: Optional[datetime] = None  # Prekeys expire after 30 days
 
@@ -1307,7 +1307,7 @@ class SignedPreKey(BaseModel):
     )  # Signed with identity key
 
     # Signed prekey lifecycle (~7 day rotation)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     valid_until: datetime  # When to rotate (typically 7 days)
     is_current: bool = True  # The current signed prekey in use
     previous_version: Optional[int] = None  # Version of previously signed prekey
@@ -1342,7 +1342,7 @@ class EncryptedMessage(BaseModel):
     read_timestamp: Optional[datetime] = None
 
     # Message lifecycle (ephemeral storage)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None  # Auto-delete timestamp
     ttl_seconds: int = 3600  # Default 1 hour TTL
 
@@ -1425,7 +1425,7 @@ class MessageDeliveryStatus(BaseModel):
     new_status: str = Field(
         ..., description="One of: pending, sent, delivered, read, deleted, failed"
     )
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     error: Optional[str] = None  # Error message if status is failed
 
 
@@ -1446,8 +1446,8 @@ class ReplayProtectionData(BaseModel):
     )  # Per-session counters
     duplicate_detection_window: int = 1024  # Sliding window for duplicates
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class DevicePublicKeyBundle(BaseModel):
@@ -1473,8 +1473,8 @@ class DevicePublicKeyBundle(BaseModel):
     )  # [{id, key}, ...] (limited)
 
     # Publishing metadata
-    published_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    published_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_current: bool = True
 
 
@@ -1515,8 +1515,8 @@ class DeviceSession(BaseModel):
     # Session state
     is_active: bool = True
     is_initiator: bool = False
-    initialized_at: datetime = Field(default_factory=datetime.utcnow)
-    last_activity: datetime = Field(default_factory=datetime.utcnow)
+    initialized_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_activity: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     dh_ratchet_count: int = 0
 
     # Lifecycle
@@ -1558,7 +1558,7 @@ class EncryptedMessage(BaseModel):
     is_group: bool = False
 
     # Delivery tracking
-    sent_at: datetime = Field(default_factory=datetime.utcnow)
+    sent_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     received_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
@@ -1585,7 +1585,7 @@ class MessageDeliveryReceipt(BaseModel):
 
     # Receipt type and timestamp
     receipt_type: str  # delivered, read
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Device metadata
     device_type: Optional[str] = None
@@ -1621,7 +1621,7 @@ class PersistentMessage(BaseModel):
     mime_type: Optional[str] = None
 
     # Timestamps (critical for sync)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     delivered_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
 
@@ -1717,8 +1717,8 @@ class ConversationHistory(BaseModel):
     disappearing_messages: bool = False
     disappearing_timer: int = 0
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class DeviceSyncState(BaseModel):
@@ -1758,8 +1758,8 @@ class DeviceSyncState(BaseModel):
     device_type: str = "unknown"
     app_version: Optional[str] = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class UserRelationship(BaseModel):
@@ -1793,8 +1793,8 @@ class UserRelationship(BaseModel):
     is_blocked: bool = False
     is_muted: bool = False
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class MessageHistoryRequest(BaseModel):
@@ -1820,10 +1820,10 @@ class MessageHistoryResponse(BaseModel):
     next_after_id: Optional[str] = None
     sync_token: Optional[str] = None
     device_id: str
-    synced_at: datetime = Field(default_factory=datetime.utcnow)
+    synced_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     device_id: str
     receipt_type: str = Field(..., description="sent, delivered, read, failed")
-    receipt_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    receipt_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     error_reason: Optional[str] = None
 
 
@@ -1857,8 +1857,8 @@ class E2EEBackup(BaseModel):
     device_id_backed_from: str  # Which device created this
 
     # Lifecycle
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_restored: Optional[datetime] = None
 
     # Retention
@@ -1896,7 +1896,7 @@ class AbuseReport(BaseModel):
     moderator_notes: Optional[str] = None
 
     # Lifecycle
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     reviewed_at: Optional[datetime] = None
     action_timestamp: Optional[datetime] = None
 
@@ -1938,7 +1938,7 @@ class AbuseScoreCard(BaseModel):
     is_suspended: bool = False  # Account suspended
 
     # Lifecycle
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_incident: Optional[datetime] = None
     last_action: Optional[datetime] = None
 
@@ -1971,8 +1971,8 @@ class UserDeviceList(BaseModel):
     signature_b64: str = Field(..., min_length=80)
 
     # Metadata
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_current: bool = True
 
 
@@ -2017,13 +2017,13 @@ class SenderKey(BaseModel):
     )  # {recipient_device_id: {key_b64, counter}}
 
     # State
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_used_at: Optional[datetime] = None
 
     # TTL for Redis
     expires_at: datetime = Field(
-        default_factory=lambda: datetime.utcnow() + timedelta(days=30)
+        default_factory=lambda: (datetime.now(timezone.utc) + timedelta(days=30))
     )
 
 
@@ -2067,8 +2067,8 @@ class GroupMessageState(BaseModel):
     group_admins: List[str] = Field(default_factory=list, description="Admin user IDs")
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ChatSequenceState(BaseModel):
@@ -2108,8 +2108,8 @@ class ChatSequenceState(BaseModel):
     )
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ==================== PRESENCE & TYPING ====================
@@ -2151,9 +2151,9 @@ class UserPresence(BaseModel):
     platform: Optional[str] = Field(None, pattern="^(ios|android|web|desktop)$")
 
     # TTL Tracking
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = Field(
-        default_factory=lambda: datetime.utcnow() + timedelta(minutes=5)
+        default_factory=lambda: (datetime.now(timezone.utc) + timedelta(minutes=5))
     )
 
 
@@ -2185,9 +2185,9 @@ class TypingIndicator(BaseModel):
     is_typing: bool = Field(default=True)
 
     # Metadata
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = Field(
-        default_factory=lambda: datetime.utcnow() + timedelta(minutes=3)
+        default_factory=lambda: (datetime.now(timezone.utc) + timedelta(minutes=3))
     )
 
 
@@ -2232,9 +2232,9 @@ class PushNotification(BaseModel):
     delivered_at: Optional[datetime] = None
 
     # TTL
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = Field(
-        default_factory=lambda: datetime.utcnow() + timedelta(days=30)
+        default_factory=lambda: (datetime.now(timezone.utc) + timedelta(days=30))
     )
 
 
@@ -2274,7 +2274,7 @@ class MessageDeliveryState(BaseModel):
     )
 
     # Timestamps for Each State
-    pending_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    pending_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
     sent_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
@@ -2286,9 +2286,9 @@ class MessageDeliveryState(BaseModel):
     failure_reason: Optional[str] = None
 
     # TTL
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = Field(
-        default_factory=lambda: datetime.utcnow() + timedelta(days=7)
+        default_factory=lambda: (datetime.now(timezone.utc) + timedelta(days=7))
     )
 
 
@@ -2338,8 +2338,8 @@ class BackgroundWorkerState(BaseModel):
     next_retry_at: Optional[datetime] = None
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ==================== WHATSAPP-LIKE MESSAGE HISTORY & METADATA ====================
@@ -2419,7 +2419,7 @@ class PersistentMessageHistory(BaseModel):
 
     # Retention Policy
     retention_until: datetime = Field(
-        default_factory=lambda: datetime.utcnow() + timedelta(days=90),
+        default_factory=lambda: (datetime.now(timezone.utc) + timedelta(days=90)),
         description="Auto-delete after this timestamp",
     )
 
@@ -2479,7 +2479,7 @@ class ConversationMetadataTracker(BaseModel):
     # Frequency Metrics
     messages_sent_by_user1: int = Field(default=0)
     messages_sent_by_user2: int = Field(default=0)
-    last_interaction_at: datetime = Field(default_factory=datetime.utcnow)
+    last_interaction_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_message_sender: Optional[str] = None
     last_message_preview: Optional[str] = Field(None, max_length=100)
 
@@ -2501,8 +2501,8 @@ class ConversationMetadataTracker(BaseModel):
     deleted_at: Optional[datetime] = None
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_sync_at: Optional[datetime] = None
 
 
@@ -2536,8 +2536,8 @@ class UserRelationshipGraph(BaseModel):
     messages_received_by_user: int = Field(default=0)
 
     # Temporal Metrics
-    first_interaction_at: datetime = Field(default_factory=datetime.utcnow)
-    last_interaction_at: datetime = Field(default_factory=datetime.utcnow)
+    first_interaction_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_interaction_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     interaction_days: int = Field(default=0)
 
     # Activity Pattern
@@ -2552,9 +2552,9 @@ class UserRelationshipGraph(BaseModel):
     deleted_at: Optional[datetime] = None
 
     # Update tracking
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    last_score_calculated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_score_calculated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class DeviceMessageSync(BaseModel):
@@ -2582,9 +2582,9 @@ class DeviceMessageSync(BaseModel):
 
     # Message Range
     sync_from_timestamp: datetime = Field(
-        default_factory=lambda: datetime.utcnow() - timedelta(days=90)
+        default_factory=lambda: (datetime.now(timezone.utc) - timedelta(days=90))
     )
-    sync_until_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    sync_until_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Progress Tracking
     total_messages_to_sync: int = Field(default=0)
@@ -2601,10 +2601,10 @@ class DeviceMessageSync(BaseModel):
     last_error: Optional[str] = None
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    last_sync_update_at: datetime = Field(default_factory=datetime.utcnow)
+    last_sync_update_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Retry Information
     retry_count: int = Field(default=0)
@@ -2657,8 +2657,8 @@ class MessageRetentionPolicy(BaseModel):
     sync_messages_older_than_days: int = Field(default=90)
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = Field(default=True)
 
 
@@ -2683,9 +2683,9 @@ class MultiDeviceState(BaseModel):
     max_devices_allowed: int = Field(default=4)
 
     # Sync State
-    last_multi_device_sync_at: datetime = Field(default_factory=datetime.utcnow)
+    last_multi_device_sync_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     requiring_sync_count: int = Field(default=0)
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

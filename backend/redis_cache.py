@@ -1343,7 +1343,7 @@ class MessageQueueService:
                 **message_data,
                 'seq_no': seq_no,
                 'target_device_id': device_id,
-                'created_at': datetime.utcnow().isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat()
             }
             await cache.set(key, device_message, expire_seconds=ttl_minutes * 60)
             
@@ -1353,7 +1353,7 @@ class MessageQueueService:
                 'message_id': message_id,
                 'device_id': device_id,
                 'state': 'sent',
-                'sent_at': datetime.utcnow().isoformat(),
+                'sent_at': datetime.now(timezone.utc).isoformat(),
                 'seq_no': seq_no
             }
             await cache.set(delivery_key, delivery_state, expire_seconds=ttl_minutes * 60)
@@ -1393,7 +1393,7 @@ class MessageQueueService:
         
         # Update state with timestamp
         current_state['state'] = new_state
-        current_state[f'{new_state}_at'] = datetime.utcnow().isoformat()
+        current_state[f'{new_state}_at'] = datetime.now(timezone.utc).isoformat()
         
         await cache.set(delivery_key, current_state, expire_seconds=60 * 60 * 24)  # 24h TTL
         
@@ -1474,7 +1474,7 @@ class MessageQueueService:
         backoff_intervals = [1, 5, 15, 60]
         if retry_data['count'] <= len(backoff_intervals):
             retry_data['next_retry'] = (
-                datetime.utcnow() + timedelta(seconds=backoff_intervals[retry_data['count'] - 1])
+                datetime.now(timezone.utc) + timedelta(seconds=backoff_intervals[retry_data['count'] - 1])
             ).isoformat()
         
         await cache.set(retry_key, retry_data, expire_seconds=60 * 60)  # 1h TTL
@@ -1494,7 +1494,7 @@ class MessageQueueService:
             return False
         
         next_retry = datetime.fromisoformat(retry_data['next_retry'])
-        return datetime.utcnow() >= next_retry
+        return datetime.now(timezone.utc) >= next_retry
     
     @staticmethod
     async def get_chat_sequence_number(chat_id: str):
@@ -1523,16 +1523,16 @@ class DeviceTrustGraphService:
             "primary_device": device_id,
             "linked_devices": {},
             "device_signatures": {},
-            "created_at": datetime.utcnow().isoformat(),
-            "last_updated": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
         
         # Add primary device info
         trust_graph["linked_devices"][device_id] = {
             "type": "primary",
             "status": "active",
-            "registered_at": datetime.utcnow().isoformat(),
-            "last_seen": datetime.utcnow().isoformat(),
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+            "last_seen": datetime.now(timezone.utc).isoformat(),
             "device_info": device_info
         }
         
@@ -1571,13 +1571,13 @@ class DeviceTrustGraphService:
             "status": "active",
             "authorized_by": primary_device_id,
             "signature": signature,
-            "registered_at": datetime.utcnow().isoformat(),
-            "last_seen": datetime.utcnow().isoformat(),
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+            "last_seen": datetime.now(timezone.utc).isoformat(),
             "device_info": device_info,
             "permissions": ["read", "send"]  # Linked devices have limited permissions
         }
         
-        trust_graph["last_updated"] = datetime.utcnow().isoformat()
+        trust_graph["last_updated"] = datetime.now(timezone.utc).isoformat()
         
         await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)
         
@@ -1592,7 +1592,7 @@ class DeviceTrustGraphService:
             "device_id": new_device_id,
             "device_type": "linked",
             "authorized_by": primary_device_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
         return trust_graph
@@ -1629,7 +1629,7 @@ class DeviceTrustGraphService:
         device_set_key = f"user_devices:{user_id}"
         await cache.srem(device_set_key, device_to_revoke)
         
-        trust_graph["last_updated"] = datetime.utcnow().isoformat()
+        trust_graph["last_updated"] = datetime.now(timezone.utc).isoformat()
         
         await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)
         
@@ -1639,7 +1639,7 @@ class DeviceTrustGraphService:
             "revoked_device": device_to_revoke,
             "revoked_by": primary_device_id,
             "trigger_rekey": True,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
         # Publish device revocation event
@@ -1647,7 +1647,7 @@ class DeviceTrustGraphService:
             "type": "device_revoked",
             "device_id": device_to_revoke,
             "revoked_by": primary_device_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
         return {
@@ -1689,8 +1689,8 @@ class DeviceTrustGraphService:
         trust_graph = await cache.get(trust_key)
         
         if trust_graph and device_id in trust_graph["linked_devices"]:
-            trust_graph["linked_devices"][device_id]["last_seen"] = datetime.utcnow().isoformat()
-            trust_graph["last_updated"] = datetime.utcnow().isoformat()
+            trust_graph["linked_devices"][device_id]["last_seen"] = datetime.now(timezone.utc).isoformat()
+            trust_graph["last_updated"] = datetime.now(timezone.utc).isoformat()
             
             await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)
             
@@ -1758,8 +1758,8 @@ class DeviceTrustGraphService:
         # Promote device
         trust_graph["linked_devices"][device_id]["permissions"] = ["read", "send", "admin"]
         trust_graph["linked_devices"][device_id]["promoted_by"] = primary_device_id
-        trust_graph["linked_devices"][device_id]["promoted_at"] = datetime.utcnow().isoformat()
-        trust_graph["last_updated"] = datetime.utcnow().isoformat()
+        trust_graph["linked_devices"][device_id]["promoted_at"] = datetime.now(timezone.utc).isoformat()
+        trust_graph["last_updated"] = datetime.now(timezone.utc).isoformat()
         
         await cache.set(trust_key, trust_graph, expire_seconds=30 * 24 * 60 * 60)
         
@@ -1768,7 +1768,7 @@ class DeviceTrustGraphService:
             "type": "device_promoted",
             "device_id": device_id,
             "promoted_by": primary_device_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
         return trust_graph["linked_devices"][device_id]
@@ -1809,8 +1809,8 @@ class GroupSenderKeyService:
             "creator_user_id": creator_user_id,
             "creator_device_id": creator_device_id,
             "member_count": len(initial_members),
-            "created_at": datetime.utcnow().isoformat(),
-            "last_rotated": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_rotated": datetime.now(timezone.utc).isoformat(),
             "active": True
         }
         
@@ -1838,7 +1838,7 @@ class GroupSenderKeyService:
                     "creator_user_id": creator_user_id,
                     "target_member": member_id,
                     "sender_key_data": sender_key_data,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 })
         
         return sender_key_metadata
@@ -1870,7 +1870,7 @@ class GroupSenderKeyService:
             "group_id": group_id,
             "sender_key_id": sender_key_id,
             "distributed_by": creator_info,
-            "distributed_at": datetime.utcnow().isoformat()
+            "distributed_at": datetime.now(timezone.utc).isoformat()
         }, expire_seconds=30 * 24 * 60 * 60)
         
         # Register this device's sender key
@@ -1900,7 +1900,7 @@ class GroupSenderKeyService:
             "changed_by": f"{admin_user_id}:{admin_device_id}",
             "affected_member": new_member_id,
             "signature": signature,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "sequence_number": await cache.incr(f"group_state_seq:{group_id}")
         }
         
@@ -1922,7 +1922,7 @@ class GroupSenderKeyService:
                 "target_member": new_member_id,
                 "target_devices": new_member_devices,
                 "state_change_seq": state_change['sequence_number'],
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
         
         # Publish member addition event
@@ -1933,7 +1933,7 @@ class GroupSenderKeyService:
             "added_by": f"{admin_user_id}:{admin_device_id}",
             "signature": signature,
             "sequence_number": state_change['sequence_number'],
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
         return state_change
@@ -1954,7 +1954,7 @@ class GroupSenderKeyService:
             "changed_by": f"{admin_user_id}:{admin_device_id}",
             "affected_member": member_to_remove,
             "signature": signature,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "sequence_number": await cache.incr(f"group_state_seq:{group_id}")
         }
         
@@ -1983,7 +1983,7 @@ class GroupSenderKeyService:
             "removed_by": f"{admin_user_id}:{admin_device_id}",
             "signature": signature,
             "sequence_number": state_change['sequence_number'],
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
         # Publish member removal event
@@ -1994,7 +1994,7 @@ class GroupSenderKeyService:
             "removed_by": f"{admin_user_id}:{admin_device_id}",
             "signature": signature,
             "sequence_number": state_change['sequence_number'],
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
         return state_change
@@ -2046,7 +2046,7 @@ class GroupSenderKeyService:
             "group_id": group_id,
             "triggered_by": f"{trigger_user_id}:{trigger_device_id}",
             "reason": reason,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "sequence_number": await cache.incr(f"group_state_seq:{group_id}")
         }
         
@@ -2062,7 +2062,7 @@ class GroupSenderKeyService:
             "triggered_by": f"{trigger_user_id}:{trigger_device_id}",
             "reason": reason,
             "sequence_number": rotation_event['sequence_number'],
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
         return rotation_event
@@ -2124,7 +2124,7 @@ class PushNotificationService:
                 "message_id": message_id,
                 "sender_id": sender_id,
                 "device_id": device_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "1.0"
             }
             
@@ -2209,7 +2209,7 @@ class PushNotificationService:
             "type": "typing",
             "chat_id": chat_id,
             "typing_user_id": typing_user_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         encrypted_notifications = []
@@ -2240,7 +2240,7 @@ class PushNotificationService:
             "message_id": message_id,
             "chat_id": chat_id,
             "receipt_data": receipt_data,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         encrypted_notifications = []
@@ -2298,7 +2298,7 @@ class PushNotificationService:
         return {
             "devices_with_notifications": devices_with_notifications,
             "total_queued_notifications": total_queued,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -2329,8 +2329,8 @@ class MetadataMinimizationService:
             "message_type": message_type,
             "delivery_state": "sent",
             "sequence_number": sequence_number,
-            "created_at": datetime.utcnow(),
-            "expires_at": datetime.utcnow() + timedelta(hours=24),  # 24h TTL
+            "created_at": datetime.now(timezone.utc),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)),  # 24h TTL
             # WhatsApp: NO message content, NO media URLs, NO file paths
         }
     
@@ -2346,8 +2346,8 @@ class MetadataMinimizationService:
             "creator_user_id": creator_user_id,
             "chat_type": chat_type,  # "individual" or "group"
             "member_count": member_count,
-            "created_at": datetime.utcnow(),
-            "last_activity": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "last_activity": datetime.now(timezone.utc),
             # WhatsApp: NO chat names, NO descriptions, NO avatars in server
         }
     
@@ -2360,8 +2360,8 @@ class MetadataMinimizationService:
         return {
             "_id": user_id,
             "primary_device_id": device_id,
-            "created_at": datetime.utcnow(),
-            "last_seen": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "last_seen": datetime.now(timezone.utc),
             # WhatsApp: NO usernames, NO profile data, NO contact info
         }
     
@@ -2381,12 +2381,12 @@ class MetadataMinimizationService:
             # Clean up expired message metadata
             messages_collection = db.messages
             expired_messages = await messages_collection.delete_many({
-                "expires_at": {"$lt": datetime.utcnow()}
+                "expires_at": {"$lt": datetime.now(timezone.utc)}
             })
             
             # Clean up inactive chat metadata (older than 30 days with no activity)
             chats_collection = db.chats
-            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30))
             inactive_chats = await chats_collection.delete_many({
                 "last_activity": {"$lt": thirty_days_ago}
             })
@@ -2394,7 +2394,7 @@ class MetadataMinimizationService:
             return {
                 "expired_messages_removed": expired_messages.deleted_count,
                 "inactive_chats_removed": inactive_chats.deleted_count,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
@@ -2454,7 +2454,7 @@ class MetadataMinimizationService:
                 "users_count": users_count,
                 "estimated_storage_bytes": total_size,
                 "estimated_storage_mb": round(total_size / (1024 * 1024), 2),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
@@ -2604,8 +2604,8 @@ class WhatsAppSessionService:
         session_data = {
             'user_id': user_id,
             'device_info': device_info,
-            'created_at': datetime.utcnow().isoformat(),
-            'last_active': datetime.utcnow().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'last_active': datetime.now(timezone.utc).isoformat(),
             'has_history': False  # WhatsApp: No history sync
         }
         
@@ -2633,7 +2633,7 @@ class WhatsAppSessionService:
         """
         session_data = await cache.get(session_id)
         if session_data:
-            session_data['last_active'] = datetime.utcnow().isoformat()
+            session_data['last_active'] = datetime.now(timezone.utc).isoformat()
             await cache.set(session_id, session_data)
     
     @staticmethod
