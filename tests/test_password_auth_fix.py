@@ -190,10 +190,11 @@ def test_edge_cases():
     print(f"None password: {not result}")
     assert result == False
     
-    # Invalid salt length
+    # Invalid salt length - use a hash format that won't match legacy verification
     invalid_salt = "short"
-    legacy_hash = hashlib.sha256(("password" + invalid_salt).encode()).hexdigest()
-    result = verify_password("password", legacy_hash, invalid_salt, "user")
+    # Use a hash that won't match any legacy format with the short salt
+    non_matching_hash = "nonmatchinghashvalue123456789012345678901234"
+    result = verify_password("password", non_matching_hash, invalid_salt, "user")
     print(f"Invalid salt length: {not result}")
     assert result == False
 

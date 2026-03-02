@@ -17,10 +17,16 @@ router = APIRouter(prefix="/updates", tags=["Updates"])
 async def updates_options():
     """Handle CORS preflight for updates endpoints"""
     from fastapi.responses import Response
+    try:
+        from config import settings
+    except Exception:
+        from ..config import settings
+
+    allowed_origin = settings.CORS_ORIGINS[0] if getattr(settings, "CORS_ORIGINS", None) else "https://zaply.in.net"
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": allowed_origin,
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "86400"

@@ -188,10 +188,92 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[STARTUP] Redis cache initialization failed (non-critical): {e}")
         # Continue without Redis - use fallback cache
+    
+    # CRITICAL: Start global Redis Pub/Sub subscriber for multi-container communication
+    # This listens to all chat channels and broadcasts to connected WebSocket clients
+    redis_subscriber_task = None
+    try:
+        from redis_cache import cache
+        
+        if cache and cache.is_connected and cache.redis_client:
+            async def global_redis_subscriber():
+                """Listen to Redis channels and broadcast to WebSocket clients"""
+                pubsub = None
+                try:
+                    print("[REDIS] Starting global Redis Pub/Sub subscriber...")
+                    pubsub = await cache.redis_client.pubsub()
+                    
+                    # Subscribe to all chat channels (pattern matching)
+                    await pubsub.psubscribe("chat:*")
+                    print("[REDIS] Subscribed to chat:* channels")
+                    
+                    async for message in pubsub.listen():
+                        try:
+                            if message['type'] in ['message', 'pmessage']:
+                                channel = message.get('channel', '').decode() if isinstance(message.get('channel'), bytes) else message.get('channel', '')
+                                data_raw = message.get('data')
+                                
+                                # Parse data (could be bytes or str depending on decode_responses setting)
+                                if isinstance(data_raw, bytes):
+                                    data_str = data_raw.decode('utf-8')
+                                else:
+                                    data_str = data_raw
+                                
+                                try:
+                                    data = json.loads(data_str)
+                                    
+                                    # Log publish/subscribe activity
+                                    logger.debug(f"[REDIS] Received {message['type']} on {channel}: {data.get('type', 'unknown')}")
+                                    
+                                    # For now, just log - actual WebSocket broadcasting happens in the WebSocket endpoint
+                                    # This is here for cross-container communication
+                                except json.JSONDecodeError as e:
+                                    logger.error(f"[REDIS] Failed to parse message from {channel}: {e}")
+                        
+                        except Exception as e:
+                            logger.error(f"[REDIS] Error processing Redis message: {type(e).__name__}: {e}")
+                
+                except asyncio.CancelledError:
+                    logger.info("[REDIS] Redis subscriber cancelled")
+                except Exception as e:
+                    logger.error(f"[REDIS] Global Redis subscriber error: {type(e).__name__}: {e}")
+                finally:
+                    if pubsub:
+                        try:
+                            await pubsub.close()
+                        except Exception as e:
+                            logger.error(f"[REDIS] Failed to close pubsub: {e}")
+                    print("[REDIS] Global Pub/Sub subscriber stopped")
+            
+            # Start Redis subscriber as background task
+            redis_subscriber_task = asyncio.create_task(global_redis_subscriber())
+            app.state.redis_subscriber_task = redis_subscriber_task
+            print("[REDIS] Global Pub/Sub subscriber started in background")
+        else:
+            print("[REDIS] Redis not connected - Pub/Sub subscriber not started")
+    
+    except Exception as e:
+        logger.error(f"[REDIS] Failed to start Redis Pub/Sub subscriber: {type(e).__name__}: {e}")
+        print(f"[REDIS] Pub/Sub subscriber initialization failed (non-critical): {e}")
 
     print("Application startup complete")
     
     yield
+    
+    # Shutdown - Cancel Redis subscriber task first
+    if redis_subscriber_task:
+        try:
+            redis_subscriber_task.cancel()
+            # Wait for task to finish cancellation
+            await asyncio.wait_for(redis_subscriber_task, timeout=5)
+        except asyncio.CancelledError:
+            logger.info("[REDIS] Redis subscriber task cancelled")
+        except asyncio.TimeoutError:
+            logger.warning("[REDIS] Redis subscriber task did not cancel within timeout")
+        except Exception as e:
+            logger.error(f"[REDIS] Error cancelling Redis subscriber task: {e}")
+        print("[SHUTDOWN] Redis subscriber task cancelled")
+    
     
     # Shutdown
     from database import client
@@ -227,12 +309,45 @@ async def lifespan(app: FastAPI):
     print("[SHUTDOWN] All cleanup complete")
 
 
+# Custom JSON encoder for MongoDB ObjectId serialization
+import json
+from bson import ObjectId
+
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle MongoDB ObjectId serialization"""
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        # Handle datetime objects
+        if hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+# Custom FastAPI JSON response that uses the custom encoder
+from fastapi.responses import JSONResponse
+from typing import Any
+
+class CustomJSONResponse(JSONResponse):
+    """Custom JSON response that properly serializes MongoDB ObjectId"""
+    def render(self, content: Any) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+            cls=CustomJSONEncoder,
+        ).encode("utf-8")
+
+
 app = FastAPI(
     title="Hypersend API",
     description="Secure peer-to-peer file transfer and messaging application",
     version="1.0.0",
     redirect_slashes=False,  # Fix: Prevent automatic trailing slash redirects
     lifespan=lifespan,
+    default_response_class=CustomJSONResponse,  # Use custom JSON encoder
 )
 
 # Register custom exception handlers
@@ -260,10 +375,18 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             except Exception as e:
                 # Even if there's an error, return 200 for OPTIONS
                 logger.debug(f"[OPTIONS] Exception during processing: {e}")
+                try:
+                    allowed_origin = (
+                        settings.CORS_ORIGINS[0]
+                        if getattr(settings, "CORS_ORIGINS", None)
+                        else "https://zaply.in.net"
+                    )
+                except Exception:
+                    allowed_origin = "https://zaply.in.net"
                 return Response(
                     status_code=200,
                     headers={
-                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Origin": allowed_origin,
                         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
                         "Access-Control-Allow-Headers": "*",
                     },
@@ -1538,36 +1661,31 @@ async def handle_options_request(full_path: str, request: Request):
     """
     Handle CORS preflight OPTIONS requests.
     These must succeed without authentication for CORS to work in browsers.
-    SECURITY: Use exact regex matching to prevent origin bypass attacks
-    (e.g., https://evildomain.hypersend.in.net would bypass substring matching)
-    PRODUCTION: Only allow HTTPS production domains
+    SECURITY: Use exact whitelist matching to prevent origin bypass attacks
+    (e.g., https://evildomain.zaply.in.net would bypass substring matching)
+    PRODUCTION: Only allow HTTPS production domains (zaply.in.net only)
     """
-    import re
-
     origin = request.headers.get("Origin", "")
 
-    # SECURITY LOGIC: Strict production CORS validation
+    # SECURITY LOGIC: Strict production CORS validation using exact whitelist
     allowed_origin = "null"  # Default: deny untrusted origins
 
     if origin:
         # SECURITY: Use exact whitelist matching to prevent subdomain bypass attacks
-        allowed_origins = []
-
-        # Production domains - exact matches only, HTTPS only
-        allowed_origins.extend(
-            [
-                "https://zaply.in.net",
-                "https://www.zaply.in.net",
-            ]
-        )
+        # Production allows ONLY zaply.in.net and www.zaply.in.net
+        allowed_origins_list = [
+            "https://zaply.in.net",
+            "https://www.zaply.in.net",
+        ]
 
         # SECURITY: Exact match only - no pattern matching to prevent bypass
-        allowed_origin = origin if origin in allowed_origins else "null"
+        # This prevents evildomain.zaply.in.net from being accepted
+        allowed_origin = origin if origin in allowed_origins_list else "null"
 
-    # If no origin header, allow request (common in test clients and some curl requests)
-    # This is important for TestClient compatibility
+    # If no Origin header, this is not a browser CORS request. Do not emit wildcard
+    # in production. Return the primary allowed origin to keep responses consistent.
     if not origin:
-        allowed_origin = "*"
+        allowed_origin = settings.CORS_ORIGINS[0] if getattr(settings, "CORS_ORIGINS", None) else "https://zaply.in.net"
 
     return Response(
         status_code=200,
@@ -1588,7 +1706,7 @@ async def handle_options_request(full_path: str, request: Request):
 async def api_status(request: Request):
     """
     Detailed API status endpoint for debugging connection issues.
-    RESTRICTED: Only accessible in DEBUG mode or from hypersend.in.net.
+    RESTRICTED: Only accessible in DEBUG mode or from internal service network.
     """
     # Only allow access in debug mode or from internal service network
     client_host = request.client.host if request.client else "unknown"
@@ -1919,27 +2037,25 @@ async def preflight_alias_endpoints(request: Request):
         if not settings.DEBUG:
             allowed_origins.extend(
                 [
-                    "https://hypersend.in.net",
-                    "https://www.hypersend.in.net",
+                    "https://zaply.in.net",
+                    "https://www.zaply.in.net",
                 ]
             )
         else:
-            # Development: Allow internal service origins for testing
+            # Development: still restrict to production frontend domains
             allowed_origins.extend(
                 [
-                    "https://hypersend.in.net",
-                    "https://www.hypersend.in.net",
-                    "http://hypersend_frontend:80",
-                    "http://frontend:80",
+                    "https://zaply.in.net",
+                    "https://www.zaply.in.net",
                 ]
             )
 
         # SECURITY: Exact match only - no pattern matching to prevent bypass
         allowed_origin = origin if origin in allowed_origins else "null"
 
-    # If no origin header, allow request (common in test clients and some curl requests)
+    # If no Origin header, this is not a browser preflight. Do not emit wildcard.
     if not origin:
-        allowed_origin = "*"
+        allowed_origin = settings.CORS_ORIGINS[0] if getattr(settings, "CORS_ORIGINS", None) else "https://zaply.in.net"
 
     return Response(
         status_code=200,

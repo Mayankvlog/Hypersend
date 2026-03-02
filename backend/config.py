@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import List
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
 import secrets
@@ -420,10 +421,16 @@ class Settings:
     ]
 
     CORS_ORIGINS = cors_origins_default
+    
+    # Production domain for token validation
+    PRODUCTION_DOMAIN: str = "zaply.in.net"
+    ALLOWED_FRONTEND_ORIGINS: List[str] = cors_origins_default
 
     def __init__(self):
         # Strict production CORS policy: ignore env overrides to prevent accidental non-production origins.
         self.CORS_ORIGINS = list(self.cors_origins_default)
+        self.PRODUCTION_DOMAIN = "zaply.in.net"
+        self.ALLOWED_FRONTEND_ORIGINS = list(self.cors_origins_default)
         
         # CRITICAL: Initialize storage directories at startup, before any routes load
         # This ensures storage is available before the first request

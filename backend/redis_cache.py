@@ -71,8 +71,8 @@ class RedisCache:
         self.pubsub = None
         self.lock_timeout = 30  # Default lock timeout in seconds
         
-    async def connect(self, host: str = "redis", port: int = 6379, db: int = 0, password: Optional[str] = None):
-        """Connect to Redis server"""
+    async def connect(self, host: str = "hypersend_redis", port: int = 6379, db: int = 0, password: Optional[str] = None):
+        """Connect to Redis server with connection pooling"""
         if not REDIS_AVAILABLE:
             # Only log if debug mode is enabled
             import os
@@ -81,32 +81,62 @@ class RedisCache:
             return False
             
         try:
-            # Disable cluster mode and use simple Redis connection
-            self.redis_client = redis.Redis(
+            # Create connection pool for connection reuse
+            # CRITICAL: Use Docker service name (hypersend_redis) not localhost
+            logger.debug(f"[REDIS] Creating connection pool: host={host}, port={port}, db={db}, password={'***' if password else 'None'}")
+            
+            # ConnectionPool with proper configuration for large file operations
+            self.connection_pool = redis.ConnectionPool(
                 host=host,
                 port=port,
                 db=db,
                 password=password,
                 decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=5,
+                socket_connect_timeout=10,  # Increased for slow networks
+                socket_timeout=30,  # Increased for large operations
+                socket_keepalive=True,
+                socket_keepalive_options={3: (1, 3, 5)} if hasattr(redis, 'ConnectionPool') else None,  # TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT
+                max_connections=50,  # Connection pool size
                 retry_on_timeout=True,
-                max_connections=10
+                connection_class=redis.connection.Connection  # Use async-compatible connection
             )
             
-            # Test connection
-            await self.redis_client.ping()
-            self.is_connected = True
-            logger.info(f"Connected to Redis at {host}:{port}")
-            return True
+            # Create async Redis client using the connection pool
+            self.redis_client = redis.Redis(
+                connection_pool=self.connection_pool,
+                decode_responses=True,
+            )
             
-        except Exception as e:
-            # Only log connection errors in debug mode
-            import os
-            if os.getenv('DEBUG', '').lower() in ('true', '1', 'yes') or os.getenv('REDIS_DEBUG', '').lower() in ('true', '1', 'yes'):
-                logger.error(f"Failed to connect to Redis: {e}")
+            # Test connection with timeout
+            logger.debug(f"[REDIS] Testing connection to {host}:{port}...")
+            ping_result = await asyncio.wait_for(self.redis_client.ping(), timeout=10)
+            
+            if ping_result:
+                self.is_connected = True
+                logger.info(f"[REDIS] Successfully connected to {host}:{port} db={db} - connection pool initialized")
+                
+                # Log Redis server info
+                try:
+                    info = await asyncio.wait_for(self.redis_client.info('server'), timeout=5)
+                    logger.debug(f"[REDIS] Server version: {info.get('redis_version', 'unknown')}")
+                except Exception as e:
+                    logger.debug(f"[REDIS] Could not fetch server info: {e}")
+                
+                return True
+            else:
+                logger.warning(f"[REDIS] Ping returned False for {host}:{port}")
+                self.is_connected = False
+                return False
+            
+        except asyncio.TimeoutError as e:
+            logger.error(f"[REDIS] Connection timeout to {host}:{port}: {e}")
             self.is_connected = False
             return False
+        except Exception as e:
+            logger.error(f"[REDIS] Failed to connect to {host}:{port}: {type(e).__name__}: {e}")
+            self.is_connected = False
+            return False
+
     
     async def disconnect(self):
         """Disconnect from Redis"""
@@ -1184,27 +1214,54 @@ class CacheUtils:
 async def init_cache():
     """Initialize Redis cache connection"""
     from config import settings
+    import os
     
-    # Try to connect to Redis
-    redis_host = getattr(settings, 'REDIS_HOST', 'redis')
-    redis_port = getattr(settings, 'REDIS_PORT', 6379)
-    redis_password = getattr(settings, 'REDIS_PASSWORD', None)
-    redis_db = getattr(settings, 'REDIS_DB', 0)
+    # Try REDIS_URL first (supports password, auth, etc.)
+    redis_url = getattr(settings, 'REDIS_URL', None)
+    
+    # Parse REDIS_URL if provided, otherwise build from components
+    if redis_url:
+        # Extract host, port, db from URL like redis://host:port/db
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(redis_url)
+            redis_host = parsed.hostname or 'hypersend_redis'
+            redis_port = parsed.port or 6379
+            redis_password = parsed.password
+            redis_db = int(parsed.path.lstrip('/')) if parsed.path else 0
+            logger.info(f"[REDIS] Using REDIS_URL: {redis_url[:50]}...")
+        except Exception as e:
+            logger.error(f"[REDIS] Failed to parse REDIS_URL, falling back to components: {e}")
+            redis_host = getattr(settings, 'REDIS_HOST', 'hypersend_redis')
+            redis_port = getattr(settings, 'REDIS_PORT', 6379)
+            redis_password = getattr(settings, 'REDIS_PASSWORD', None)
+            redis_db = getattr(settings, 'REDIS_DB', 0)
+    else:
+        # Build from individual components (Docker service name preferred)
+        redis_host = getattr(settings, 'REDIS_HOST', 'hypersend_redis')
+        redis_port = getattr(settings, 'REDIS_PORT', 6379)
+        redis_password = getattr(settings, 'REDIS_PASSWORD', None)
+        redis_db = getattr(settings, 'REDIS_DB', 0)
+        logger.info(f"[REDIS] Using components: host={redis_host}, port={redis_port}, db={redis_db}")
+    
+    # Clean up empty password
+    if redis_password == '':
+        redis_password = None
     
     connected = await cache.connect(
         host=redis_host,
         port=redis_port,
-        password=redis_password if redis_password else None,
+        password=redis_password,
         db=redis_db
     )
     
     if connected:
-        logger.info("Redis cache initialized successfully")
+        logger.info(f"[REDIS] Connected to {redis_host}:{redis_port} db={redis_db} - cache initialized successfully")
     else:
         # Only show warning in debug mode or when explicitly requested
-        import os
         if os.getenv('DEBUG', '').lower() in ('true', '1', 'yes') or os.getenv('REDIS_DEBUG', '').lower() in ('true', '1', 'yes'):
-            logger.warning("Redis cache not available, using in-memory fallback")
+            logger.warning(f"[REDIS] Connection failed to {redis_host}:{redis_port}, using in-memory fallback")
+        logger.debug(f"[REDIS] Connection details: host={redis_host}, port={redis_port}, db={redis_db}, password={'***' if redis_password else 'None'}")
     
     return connected
 

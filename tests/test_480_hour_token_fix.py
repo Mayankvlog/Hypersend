@@ -171,6 +171,7 @@ async def test_token_older_than_480_hours_rejected():
     assert ("older than 480 hours" in error_detail or 
             "Invalid or expired token" in error_detail or
             "Authentication failed" in error_detail or
+            "Token has expired" in error_detail or
             "Token expired" in error_detail)
         
     print(f"✓ Token older than 480 hours correctly rejected")

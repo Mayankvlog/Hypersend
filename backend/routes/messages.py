@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from typing import Optional, Dict, List, Tuple, Any
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from typing import Optional, Dict, List, Tuple, Any, Set
 from datetime import datetime, timedelta, timezone
 import uuid
 import logging
@@ -9,9 +9,11 @@ import secrets
 import base64
 import hashlib
 import hmac
+import asyncio
 from pydantic import BaseModel, Field
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
+from bson import ObjectId
 
 from auth.utils import get_current_user
 from fastapi import Query
@@ -418,10 +420,16 @@ router = APIRouter(prefix="/messages", tags=["Messages"])
 async def messages_options():
     """Handle CORS preflight for messages endpoints"""
     from fastapi.responses import Response
+    try:
+        from config import settings
+    except Exception:
+        from ..config import settings
+
+    allowed_origin = settings.CORS_ORIGINS[0] if getattr(settings, "CORS_ORIGINS", None) else "https://zaply.in.net"
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": allowed_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "86400"
@@ -1310,57 +1318,162 @@ async def delete_message(
     hard_delete: bool = False,
     current_user: str = Depends(get_current_user),
 ):
-    """Delete a message - WhatsApp-style immediate deletion with MongoDB cleanup."""
+    """Delete a message - WhatsApp-style immediate deletion with MongoDB cleanup.
+    
+    SECURITY: Verifies the authenticated user is the message sender before allowing deletion.
+    Handles both string and ObjectId formats consistently.
+    
+    Args:
+        message_id: The message to delete
+        hard_delete: Whether to permanently delete (unused, kept for compatibility)
+        current_user: Authenticated user from JWT token
+        
+    Returns:
+        Dictionary with deletion status and message_id
+        
+    Raises:
+        HTTPException(404): If message not found
+        HTTPException(403): If user is not the message sender
+        HTTPException(500): If deletion fails
+    """
+    from bson import ObjectId
+
+    # Get the message and verify it exists
     msg = await _get_message_or_404(message_id)
+
+    # Verify user has access to the chat containing this message
     await _get_chat_for_message_or_403(msg, current_user)
 
-    sender_id = msg.get("sender_id") or msg.get("user_id") or msg.get("from")
-    if sender_id != current_user:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only delete your own messages")
+    # Normalize sender_id variants and compare safely (ObjectId vs string)
+    sender_id = (
+        msg.get("sender_id")
+        or msg.get("sender_user_id")
+        or msg.get("user_id")
+        or msg.get("from")
+    )
 
-    # Delete from both Redis and MongoDB
+    if sender_id is None or current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Can only delete your own messages",
+        )
+
+    sender_id_str = str(sender_id)
+    current_user_str = str(current_user)
+
+    # If both are valid ObjectIds, compare as ObjectId to avoid string formatting edge cases.
+    if ObjectId.is_valid(sender_id_str) and ObjectId.is_valid(current_user_str):
+        if ObjectId(sender_id_str) != ObjectId(current_user_str):
+            logger.warning(
+                f"Unauthorized message deletion attempt: user={current_user_str} tried to delete message owned by {sender_id_str}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only delete your own messages",
+            )
+    else:
+        if sender_id_str != current_user_str:
+            logger.warning(
+                f"Unauthorized message deletion attempt: user={current_user_str} tried to delete message owned by {sender_id_str}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only delete your own messages",
+            )
+
+    msg_collection = messages_collection()
+
+    # Build an ownership-bound MongoDB filter to prevent TOCTOU issues.
+    owner_filters = []
+    try:
+        owner_filters.append({"sender_id": ObjectId(current_user_str)})
+    except Exception:
+        pass
+    owner_filters.append({"sender_id": current_user_str})
+    message_owner_filter = {"$or": owner_filters}
+
     deletion_errors = []
-    deletion_success = False
     
-    # Delete from Redis
+    # Redis deletion is best-effort and should not determine success.
     try:
         await cache.delete(f"message:{message_id}")
-        await cache.lrem(f"chat_messages:{msg.get('chat_id')}", 0, message_id)
-        deletion_success = True
+        try:
+            chat_id = msg.get("chat_id")
+            if chat_id:
+                await cache.lrem(f"chat_messages:{chat_id}", 0, message_id)
+        except Exception:
+            pass
     except Exception as e:
         deletion_errors.append(f"Redis deletion failed: {e}")
-        logger.debug(f"Failed to delete message from Redis: {e}")
-    
-    # Delete from MongoDB
-    try:
-        from bson import ObjectId
-        msg_collection = messages_collection()
-        
-        # Try to convert string ID to ObjectId
-        try:
-            obj_id = ObjectId(message_id)
-            result = await msg_collection.delete_one({"_id": obj_id})
-            if result.deleted_count > 0:
-                deletion_success = True
-            else:
-                # Try direct string ID deletion
-                result = await msg_collection.delete_one({"_id": message_id})
-                if result.deleted_count > 0:
-                    deletion_success = True
-        except Exception:
-            # Try direct string ID deletion
-            result = await msg_collection.delete_one({"_id": message_id})
-            if result.deleted_count > 0:
-                deletion_success = True
-    except Exception as e:
-        deletion_errors.append(f"MongoDB deletion failed: {e}")
-        logger.debug(f"Failed to delete message from MongoDB: {e}")
-    
-    if not deletion_success:
-        logger.error(f"Message deletion failed for message_id {message_id}: {deletion_errors}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Message deletion failed")
 
-    return {"status": "deleted", "hard_delete": True, "message_id": message_id}
+    # Apply hard vs soft delete.
+    if hard_delete:
+        deleted_count = 0
+        try:
+            if ObjectId.is_valid(message_id):
+                result = await msg_collection.delete_one(
+                    {"_id": ObjectId(message_id), **message_owner_filter}
+                )
+                deleted_count = result.deleted_count
+        except Exception as e:
+            deletion_errors.append(f"MongoDB hard-delete (ObjectId) failed: {e}")
+
+        if deleted_count == 0:
+            try:
+                result = await msg_collection.delete_one(
+                    {"_id": message_id, **message_owner_filter}
+                )
+                deleted_count = result.deleted_count
+            except Exception as e:
+                deletion_errors.append(f"MongoDB hard-delete (string) failed: {e}")
+
+        if deleted_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found",
+            )
+        logger.info(f"Message {message_id} hard-deleted by user {current_user_str}")
+        return {"status": "deleted", "hard_delete": True, "message_id": message_id}
+
+    # Soft delete: mark as deleted and keep record.
+    update_doc = {
+        "$set": {
+            "is_deleted": True,
+            "deleted_at": _utcnow().isoformat(),
+            "deleted_by": current_user_str,
+        }
+    }
+
+    modified = 0
+    try:
+        if ObjectId.is_valid(message_id):
+            result = await msg_collection.update_one(
+                {"_id": ObjectId(message_id), **message_owner_filter},
+                update_doc,
+            )
+            modified = result.modified_count
+    except Exception as e:
+        deletion_errors.append(f"MongoDB soft-delete (ObjectId) failed: {e}")
+
+    if modified == 0:
+        try:
+            result = await msg_collection.update_one(
+                {"_id": message_id, **message_owner_filter},
+                update_doc,
+            )
+            modified = result.modified_count
+        except Exception as e:
+            deletion_errors.append(f"MongoDB soft-delete (string) failed: {e}")
+
+    if modified == 0:
+        # Distinguish between not found vs unauthorized without leaking ownership.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found",
+        )
+
+    logger.info(f"Message {message_id} soft-deleted by user {current_user_str}")
+    return {"status": "deleted", "hard_delete": False, "message_id": message_id}
 
 
 @router.get("/{message_id}/versions")
@@ -2776,3 +2889,186 @@ async def cleanup_expired_messages(
     except Exception as e:
         logger.error(f"Failed to cleanup expired messages: {e}")
         raise HTTPException(status_code=500, detail="Failed to cleanup expired messages")
+
+# ============================================================================
+# WEBSOCKET REAL-TIME MESSAGING
+# ============================================================================
+
+from fastapi import WebSocket, WebSocketDisconnect
+from typing import Set
+
+class ChatConnectionManager:
+    """Manages WebSocket connections for real-time chat messaging"""
+    
+    def __init__(self):
+        # Maps chat_id -> {user_id -> set of websockets}
+        self.active_connections: Dict[str, Dict[str, Set[WebSocket]]] = {}
+        self._lock = asyncio.Lock()
+    
+    async def connect(self, chat_id: str, user_id: str, websocket: WebSocket):
+        """Register a new WebSocket connection"""
+        await websocket.accept()
+        async with self._lock:
+            if chat_id not in self.active_connections:
+                self.active_connections[chat_id] = {}
+            if user_id not in self.active_connections[chat_id]:
+                self.active_connections[chat_id][user_id] = set()
+            self.active_connections[chat_id][user_id].add(websocket)
+            logger.info(f"[WEBSOCKET] User {user_id} connected to chat {chat_id}")
+    
+    async def disconnect(self, chat_id: str, user_id: str, websocket: WebSocket):
+        """Unregister a WebSocket connection"""
+        async with self._lock:
+            if chat_id in self.active_connections:
+                if user_id in self.active_connections[chat_id]:
+                    self.active_connections[chat_id][user_id].discard(websocket)
+                    if not self.active_connections[chat_id][user_id]:
+                        del self.active_connections[chat_id][user_id]
+                    logger.info(f"[WEBSOCKET] User {user_id} disconnected from chat {chat_id}")
+                if not self.active_connections[chat_id]:
+                    del self.active_connections[chat_id]
+    
+    async def broadcast_to_chat(self, chat_id: str, message: Dict[str, Any], exclude_user: Optional[str] = None):
+        """Broadcast message to all connected clients in a chat"""
+        if chat_id not in self.active_connections:
+            logger.debug(f"[WEBSOCKET] No connections for chat {chat_id}")
+            return
+        
+        disconnected_users = []
+        async with self._lock:
+            for user_id, websockets in self.active_connections.get(chat_id, {}).items():
+                # Skip sender if specified
+                if exclude_user and user_id == exclude_user:
+                    continue
+                
+                for websocket in websockets:
+                    try:
+                        await websocket.send_json(message)
+                    except Exception as e:
+                        logger.error(f"[WEBSOCKET] Error sending message to {user_id} in chat {chat_id}: {e}")
+                        disconnected_users.append((chat_id, user_id, websocket))
+        
+        # Clean up disconnected websockets
+        for chat_id_dc, user_id_dc, ws in disconnected_users:
+            await self.disconnect(chat_id_dc, user_id_dc, ws)
+
+
+# Global connection manager instance
+manager = ChatConnectionManager()
+
+
+@router.websocket("/ws/chat/{chat_id}")
+async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = None):
+    """
+    WebSocket endpoint for real-time chat messaging
+    
+    Query parameters:
+    - token: JWT authentication token
+    
+    Message format:
+    {
+        "type": "message|typing|reaction|delete",
+        "content": {...}
+    }
+    """
+    user_id = None
+    
+    try:
+        # Extract and validate JWT token from query params
+        if not token:
+            await websocket.close(code=4001, reason="Token required")
+            return
+        
+        # Decode JWT token
+        try:
+            from auth.utils import decode_token
+            token_data = decode_token(token)
+            user_id = token_data.user_id
+            logger.info(f"[WEBSOCKET] User {user_id} authenticated for WebSocket")
+        except Exception as e:
+            logger.error(f"[WEBSOCKET] Token validation failed: {e}")
+            await websocket.close(code=4003, reason="Invalid token")
+            return
+        
+        # Verify user is member of chat
+        chat_doc = await chats_collection.find_one(
+            {"_id": ObjectId(chat_id), "participants": user_id}
+        )
+        if not chat_doc:
+            await websocket.close(code=4003, reason="Not a member of this chat")
+            return
+        
+        # Connect to chat
+        await manager.connect(chat_id, user_id, websocket)
+        
+        # Subscribe to Redis channel for this chat
+        if cache and cache.is_connected:
+            try:
+                redis_channel = f"chat:{chat_id}"
+                logger.info(f"[WEBSOCKET] Starting Redis subscription to {redis_channel}")
+                
+                # Create Pub/Sub instance
+                pubsub = await cache.redis_client.pubsub()
+                await pubsub.subscribe(redis_channel)
+                
+                # Start listening for broadcast messages in background task
+                async def listen_redis():
+                    try:
+                        async for message in pubsub.listen():
+                            if message['type'] == 'message':
+                                try:
+                                    data = json.loads(message['data'])
+                                    # Broadcast to all connected clients in this chat
+                                    await manager.broadcast_to_chat(chat_id, data)
+                                except json.JSONDecodeError as e:
+                                    logger.error(f"[WEBSOCKET] Invalid JSON from Redis: {e}")
+                    except Exception as e:
+                        logger.error(f"[WEBSOCKET] Redis listening error: {e}")
+                    finally:
+                        await pubsub.close()
+                
+                # Start Redis listener as background task
+                redis_task = asyncio.create_task(listen_redis())
+            except Exception as e:
+                logger.error(f"[WEBSOCKET] Failed to subscribe to Redis: {e}")
+                redis_task = None
+        else:
+            redis_task = None
+        
+        # Handle incoming WebSocket messages
+        while True:
+            data = await websocket.receive_json()
+            message_type = data.get('type', 'message')
+            
+            logger.info(f"[WEBSOCKET] Received {message_type} from {user_id} in chat {chat_id}")
+            
+            # Broadcast to all connected clients including sender
+            broadcast_message = {
+                "type": message_type,
+                "sender_id": user_id,
+                "chat_id": chat_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "content": data.get('content', {}),
+            }
+            
+            await manager.broadcast_to_chat(chat_id, broadcast_message)
+            
+            # Publish to Redis for multi-container communication
+            if cache and cache.is_connected:
+                try:
+                    await cache.publish(f"chat:{chat_id}", broadcast_message)
+                    logger.debug(f"[WEBSOCKET] Published {message_type} to Redis for chat {chat_id}")
+                except Exception as e:
+                    logger.error(f"[WEBSOCKET] Failed to publish to Redis: {e}")
+    
+    except WebSocketDisconnect:
+        if user_id and chat_id:
+            await manager.disconnect(chat_id, user_id, websocket)
+            logger.info(f"[WEBSOCKET] User {user_id} disconnected from chat {chat_id}")
+    
+    except Exception as e:
+        logger.error(f"[WEBSOCKET] Unexpected error: {type(e).__name__}: {e}")
+        try:
+            await websocket.close(code=1011, reason="Internal server error")
+        except Exception:
+            pass

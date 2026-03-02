@@ -58,6 +58,14 @@ os.environ.setdefault('DATABASE_NAME', 'Hypersend')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
 os.environ['DEBUG'] = 'True'  # Enable debug mode for tests
 
+# Configure Redis for tests (use Docker service name in test environment)
+# CRITICAL: Use hypersend_redis service name, not localhost
+os.environ.setdefault('REDIS_HOST', 'hypersend_redis')  # Docker service name
+os.environ.setdefault('REDIS_PORT', '6379')
+os.environ.setdefault('REDIS_DB', '0')
+os.environ.setdefault('REDIS_PASSWORD', '')  # No password in development
+os.environ.setdefault('REDIS_URL', 'redis://hypersend_redis:6379/0')
+
 # Add backend to sys.modules to fix relative imports
 import importlib.util
 import sys

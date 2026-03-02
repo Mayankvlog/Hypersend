@@ -126,6 +126,35 @@ def _safe_collection(factory_or_collection):
         return factory_or_collection()
     return factory_or_collection
 
+
+async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str):
+    """Save chunk data to disk with proper error handling"""
+    try:
+        # Ensure directory exists
+        chunk_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write chunk data to file
+        async with aiofiles.open(chunk_path, 'wb') as f:
+            await f.write(chunk_data)
+        
+        _log("info", f"Chunk {chunk_index} saved successfully for user {user_id}", {
+            "chunk_index": chunk_index,
+            "chunk_size": len(chunk_data),
+            "user_id": user_id,
+            "chunk_path": str(chunk_path)
+        })
+        
+    except Exception as e:
+        _log("error", f"Failed to save chunk {chunk_index} for user {user_id}", {
+            "chunk_index": chunk_index,
+            "user_id": user_id,
+            "error": str(e)
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save chunk {chunk_index}: {str(e)}"
+        )
+
 import sys
 
 sys.modules.setdefault("routes.files", sys.modules[__name__])
@@ -674,6 +703,13 @@ async def get_current_user_for_download(
     )
 
 
+async def get_current_user_for_download_dependency(
+    request: Request, token: Optional[str] = Query(None)
+) -> str:
+    # Indirection layer so tests patching get_current_user_for_download affect auth behavior.
+    return await get_current_user_for_download(request=request, token=token)
+
+
 files_collection = _files_collection_factory
 uploads_collection = _uploads_collection_factory
 
@@ -758,9 +794,7 @@ async def _await_maybe(value, timeout: float = 5.0):
     return value
 
 
-async def _save_chunk_to_disk(
-    chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str
-):
+async def _validate_chunk_data(chunk_data: bytes, chunk_index: int) -> None:
     """
     Validate chunk data without persisting to disk (WhatsApp-style courier mode).
     Server disk usage must remain 0 bytes.
@@ -771,18 +805,18 @@ async def _save_chunk_to_disk(
             detail=f"Chunk {chunk_index} is empty - no data to process",
         )
 
-    if len(chunk_data) > settings.CHUNK_SIZE:
+    chunk_size = settings.CHUNK_SIZE  # Use configured chunk size
+    if len(chunk_data) > chunk_size:
         actual_size_mb = len(chunk_data) / (1024 * 1024)
-        max_size_mb = settings.CHUNK_SIZE / (1024 * 1024)
+        max_size_mb = chunk_size / (1024 * 1024)
         _log(
             "warning",
             f"Chunk {chunk_index} size exceeded: {actual_size_mb:.2f}MB > {max_size_mb}MB",
             {
-                "user_id": user_id,
                 "operation": "chunk_upload",
                 "chunk_index": chunk_index,
                 "actual_size": len(chunk_data),
-                "max_size": settings.CHUNK_SIZE,
+                "max_size": chunk_size,
                 "actual_size_mb": actual_size_mb,
                 "max_size_mb": max_size_mb,
             },
@@ -793,7 +827,7 @@ async def _save_chunk_to_disk(
             detail={
                 "error": f"Chunk {chunk_index} exceeds maximum size",
                 "actual_size": len(chunk_data),
-                "max_size": settings.CHUNK_SIZE,
+                "max_size": chunk_size,
                 "actual_size_mb": round(actual_size_mb, 2),
                 "max_size_mb": max_size_mb,
                 "guidance": f"Please split your data into chunks of max {max_size_mb}MB each",
@@ -2014,7 +2048,7 @@ async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
 async def download_file(
     file_id: str,
     request: Request,
-    current_user: str = Depends(get_current_user_for_download),
+    current_user: str = Depends(get_current_user_for_download_dependency),
 ):
     """Generate presigned download URL for ephemeral storage"""
 
@@ -3323,66 +3357,31 @@ def _ensure_session_validity(
             "file_complete",
         ]
 
-        # For long operations or refresh, ensure extended session validity
+        # For long operations or refresh, ensure the access token is still valid.
+        # SECURITY: Never accept expired tokens for "session persistence".
         if is_refresh or is_long_operation:
-            # Check token expiration and extend if needed
             auth_header = request.headers.get("authorization", "")
             if auth_header.startswith("Bearer "):
                 token = auth_header.replace("Bearer ", "").strip()
-                try:
-                    # Decode token to check issuance time
-                    decoded = jwt.decode(
-                        token,
-                        settings.SECRET_KEY,
-                        algorithms=[settings.ALGORITHM],
-                        options={"verify_exp": False},
-                    )
-                    issued_at = decoded.get("iat")
-                    current_time = datetime.now(timezone.utc).timestamp()
-
-                    if issued_at:
-                        hours_since_issued = (current_time - issued_at) / 3600
-
-                        # If token is older than 400 hours, log warning but allow
-                        if hours_since_issued > 400:
-                            _log(
-                                "warning",
-                                f"Long-running session detected",
-                                {
-                                    "user_id": current_user,
-                                    "operation": operation,
-                                    "hours_since_issued": hours_since_issued,
-                                    "is_refresh": is_refresh,
-                                    "session_extended": True,
-                                    "debug": "session_management",
-                                },
-                            )
-
-                        _log(
-                            "info",
-                            f"Session validity confirmed for {operation}",
-                            {
-                                "user_id": current_user,
-                                "operation": operation,
-                                "hours_since_issued": hours_since_issued,
-                                "session_valid": True,
-                                "debug": "session_management",
-                            },
+                if token:
+                    from auth.utils import decode_token
+                    token_data = decode_token(token)
+                    if token_data.token_type != "access":
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid token type - access token required",
+                            headers={"WWW-Authenticate": "Bearer"},
                         )
 
-                except jwt.InvalidTokenError:
                     _log(
-                        "error",
-                        f"Invalid token in session check",
+                        "info",
+                        f"Session validity confirmed for {operation}",
                         {
                             "user_id": current_user,
                             "operation": operation,
+                            "session_valid": True,
                             "debug": "session_management",
                         },
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Session expired - please login again",
                     )
 
         return current_user

@@ -140,12 +140,13 @@ def create_success_response(
         response_data["path"] = str(request.url.path)
         response_data["method"] = request.method
 
-    # Default headers
+    # SECURITY: Set security headers to prevent attacks
     response_headers = {
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "X-XSS-Protection": "1; mode=block",
         "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Content-Type": "application/json",
     }
 
     # Add custom headers
@@ -357,9 +358,16 @@ def create_client_error_response(
         response_data["error_count"] = len(field_errors)
 
     # Add hints
-    response_data["hints"] = default_hints.get(
+    base_hints = default_hints.get(
         status_code, ["Try again later", "Contact support if persistent"]
     )
+    combined_hints: List[str] = []
+    try:
+        combined_hints.extend(base_hints)
+        if hints:
+            combined_hints.extend([h for h in hints if h])
+    except Exception:
+        combined_hints = base_hints
     response_data["hints"] = combined_hints
 
     # Default headers

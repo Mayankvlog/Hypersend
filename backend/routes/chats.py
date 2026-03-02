@@ -64,10 +64,16 @@ def _to_json_safe(value):
 async def chats_options():
     """Handle CORS preflight for chats endpoints"""
     from fastapi.responses import Response
+    try:
+        from config import settings
+    except Exception:
+        from ..config import settings
+
+    allowed_origin = settings.CORS_ORIGINS[0] if getattr(settings, "CORS_ORIGINS", None) else "https://zaply.in.net"
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": allowed_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "86400"
@@ -576,6 +582,33 @@ async def send_message(
         },
     )
     
+    # CRITICAL: Publish message to Redis for real-time delivery across all connected clients
+    try:
+        from ..redis_cache import cache
+        if cache and cache.is_connected:
+            # Create payload with ObjectId converted to string for JSON serialization
+            redis_payload = {
+                "type": "new_message",
+                "message_id": str(inserted_id),
+                "chat_id": str(chat_key),
+                "sender_id": current_user,  # Already a string user_id
+                "content": message.text,
+                "file_id": message.file_id,
+                "message_type": msg_type,
+                "created_at": now.isoformat(),
+                "timestamp": int(now.timestamp())
+            }
+            
+            # Publish to chat-specific channel for multi-container communication
+            redis_channel = f"chat:{str(chat_key)}"
+            await cache.publish(redis_channel, redis_payload)
+            logger.info(f"[REDIS] Published new message to {redis_channel}: {inserted_id}")
+        else:
+            logger.debug("[REDIS] Redis not connected, skipping publish")
+    except Exception as e:
+        logger.error(f"[REDIS] Failed to publish message to Redis: {type(e).__name__}: {e}")
+        # Don't fail the response if Redis publish fails
+    
     return {"message_id": str(inserted_id), "created_at": msg_doc["created_at"]}
 
 
@@ -740,17 +773,52 @@ async def delete_message(
     current_user: str = Depends(get_current_user)
 ):
     """Delete a message"""
-    message = await messages_collection().find_one({"_id": message_id})
+    # CRITICAL: Parse message_id properly - could be ObjectId or string
+    msg_oid = _parse_object_id(message_id, "message_id")
+    
+    message = await messages_collection().find_one({"_id": msg_oid})
     
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
     
-    if message["sender_id"] != current_user:
+    # Handle both ObjectId and string sender_id formats
+    sender_id = message.get("sender_id")
+    if isinstance(sender_id, ObjectId):
+        sender_id = str(sender_id)
+    
+    if sender_id != current_user:
         raise HTTPException(status_code=403, detail="Can only delete your own messages")
     
-    await messages_collection().delete_one({"_id": message_id})
+    # Get chat_id before deletion for Redis publish
+    chat_id = message.get("chat_id")
     
-    return {"status": "deleted", "message_id": message_id}
+    await messages_collection().delete_one({"_id": msg_oid})
+    
+    # CRITICAL: Publish message deletion event to Redis for real-time UI updates
+    try:
+        from ..redis_cache import cache
+        if cache and cache.is_connected and chat_id:
+            # Create deletion event payload
+            redis_payload = {
+                "type": "message_deleted",
+                "message_id": str(msg_oid),
+                "chat_id": str(chat_id),
+                "deleted_by": current_user,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "deleted_at": int(datetime.now(timezone.utc).timestamp())
+            }
+            
+            # Publish to chat-specific channel for all containers
+            redis_channel = f"chat:{str(chat_id)}"
+            await cache.publish(redis_channel, redis_payload)
+            logger.info(f"[REDIS] Published message deletion event to {redis_channel}: {msg_oid}")
+        else:
+            logger.debug("[REDIS] Redis not connected, skipping delete event publish")
+    except Exception as e:
+        logger.error(f"[REDIS] Failed to publish message deletion event: {type(e).__name__}: {e}")
+        # Don't fail the deletion if Redis publish fails
+    
+    return {"status": "deleted", "message_id": str(msg_oid)}
 
 
 @router.post("/{chat_id}/ban")

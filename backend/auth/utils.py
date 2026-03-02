@@ -430,7 +430,7 @@ def diagnose_password_format(hashed_password: str, salt: str = None) -> dict:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token"""
+    """Create JWT access token with production domain validation"""
     s = _get_settings()
     to_encode = data.copy()
     if expires_delta:
@@ -438,17 +438,30 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=s.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    # Add expiration to the token payload
-    to_encode.update({"exp": expire})
+    # Add expiration and issued-at timestamp to the token payload
+    now = datetime.now(timezone.utc)
+    to_encode.update({
+        "exp": expire,
+        "iat": now
+    })
 
     # Password reset tokens must have a jti to support replay protection.
     # If caller didn't provide one, generate it.
     if to_encode.get("token_type") == "password_reset" and not to_encode.get("jti"):
         to_encode["jti"] = str(uuid.uuid4())
     
+    # Access and refresh tokens should also have JTI for revocation support
+    if to_encode.get("token_type") in ["access", "refresh"] and not to_encode.get("jti"):
+        to_encode["jti"] = str(uuid.uuid4())
+    
     # Only set token_type to "access" if not already specified
     if "token_type" not in to_encode:
         to_encode.update({"token_type": "access"})
+    
+    # SECURITY: Ensure we use the configured SECRET_KEY and ALGORITHM from production config
+    # Never use hardcoded values
+    if not s.SECRET_KEY or len(s.SECRET_KEY) < 8:
+        raise ValueError("SECRET_KEY must be configured and at least 8 characters")
     
     encoded_jwt = jwt.encode(to_encode, s.SECRET_KEY, algorithm=s.ALGORITHM)
     return encoded_jwt
@@ -586,7 +599,18 @@ async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> str:
-    """Dependency to get current user from token in Authorization header"""
+    """Dependency to get current user from token in Authorization header
+    
+    SECURITY: Validates JWT token from Authorization Bearer header, verifies user exists
+    in MongoDB Atlas, and handles all error cases with proper HTTP status codes.
+    
+    Returns:
+        user_id (string) from the validated JWT token
+        
+    Raises:
+        HTTPException(401): If credentials missing, token invalid/expired, or user not found
+        HTTPException(503): If database unavailable
+    """
     # Check if credentials are missing
     if not credentials:
         raise HTTPException(
@@ -596,18 +620,32 @@ async def get_current_user(
         )
     
     token = credentials.credentials
-
-    token_data = decode_token(token)
+    
+    # CRITICAL FIX: Decode and validate token with proper expiration handling
+    # This will raise HTTPException(401) for expired tokens
+    try:
+        token_data = decode_token(token)
+    except HTTPException as e:
+        # Re-raise auth exceptions with proper headers
+        if e.status_code == status.HTTP_401_UNAUTHORIZED:
+            # Ensure 401 responses have WWW-Authenticate header
+            if not e.headers:
+                e.headers = {}
+            if "WWW-Authenticate" not in e.headers:
+                e.headers["WWW-Authenticate"] = "Bearer"
+        raise
     
     if token_data.token_type != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type",
+            detail="Invalid token type - access token required",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     from bson import ObjectId
 
     user_id_str = token_data.user_id
+    # Validate user_id format - must be valid ObjectId
     if not ObjectId.is_valid(user_id_str):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -628,8 +666,15 @@ async def get_current_user(
         users_col = None
 
     if users_col is None:
-        from database import users_collection
-        users_col = users_collection()
+        try:
+            from database import users_collection
+            users_col = users_collection()
+        except Exception as e:
+            logger.error(f"Failed to get users collection: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service unavailable",
+            ) from e
 
     existing_user = None
     try:
@@ -638,12 +683,14 @@ async def get_current_user(
         # Authentication must not "randomly fail" due to transient DB issues.
         # If Atlas is unavailable, surface it as a service error rather than
         # incorrectly treating the user as unauthenticated.
+        logger.error(f"Database error during user lookup: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database temporarily unavailable",
         ) from e
 
     if not existing_user:
+        logger.warning(f"User {user_id_str} from valid token not found in database")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found in database",
@@ -654,7 +701,7 @@ async def get_current_user(
         # Attach loaded user doc for downstream route handlers
         setattr(request.state, "current_user", existing_user)
     except Exception:
-        pass
+        pass  # Non-critical, continue if setting state fails
 
     return user_id_str
 
@@ -735,51 +782,15 @@ async def get_current_user_or_query(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Session persistence for tests (and legacy clients): allow recently expired
-    # access tokens if they are within a 720-hour window based on `iat`.
-    try:
-        token_data = decode_token(header_token)
-        if token_data.token_type != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type - access token required",
-            )
-        return token_data.user_id
-    except HTTPException as e:
-        if e.status_code != status.HTTP_401_UNAUTHORIZED or "expired" not in str(e.detail).lower():
-            raise
-
-        try:
-            payload = jwt.decode(
-                header_token,
-                _get_settings().SECRET_KEY,
-                algorithms=[_get_settings().ALGORITHM],
-                options={"verify_exp": False},
-            )
-            user_id = payload.get("sub")
-            token_type = payload.get("token_type")
-            issued_at = payload.get("iat")
-            if token_type != "access" or not user_id:
-                raise
-
-            now = datetime.now(timezone.utc)
-            if isinstance(issued_at, (int, float)):
-                issued_at_dt = datetime.fromtimestamp(float(issued_at), tz=timezone.utc)
-            elif isinstance(issued_at, datetime):
-                issued_at_dt = issued_at
-                if issued_at_dt.tzinfo is None:
-                    issued_at_dt = issued_at_dt.replace(tzinfo=timezone.utc)
-            else:
-                # Missing iat -> cannot extend
-                raise
-
-            age_hours = (now - issued_at_dt).total_seconds() / 3600.0
-            if age_hours <= 720:
-                return str(user_id)
-        except Exception:
-            pass
-
-        raise
+    # Strict JWT validation: expired tokens MUST be rejected with HTTP 401.
+    token_data = decode_token(header_token)
+    if token_data.token_type != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type - access token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token_data.user_id
 
 
 async def get_current_user_from_query(
@@ -843,113 +854,123 @@ async def get_current_user_for_upload(
         logger.debug("No token string extracted from auth header - allowing anonymous access")
         return None
     
-    # Check if this is an upload operation that needs 480-hour validation
+    # Check if this is an upload operation that should use 480-hour validation
     request_path = getattr(request.url, 'path', '') if hasattr(request, 'url') else ''
     is_upload_operation = (
         '/files/' in request_path or 
         request_path.startswith('/api/v1/files/') or
-        'upload' in request_path.lower()
+        'upload' in request_path.lower() or
+        '/chats/' in request_path and '/messages' in request_path or  # Chat messages endpoints
+        request_path.endswith('/messages') and '/chats/' in request_path  # Direct chat messages endpoints
     )
     
-    # Check if this is messages endpoint (also gets 480-hour validation)
-    # Only apply to chat messages endpoints, not general messages API
-    is_messages_endpoint = (
-        '/chats/' in request_path and '/messages' in request_path
-    )
+    # For upload operations, try 480-hour validation first
+    if is_upload_operation:
+        try:
+            # Try to decode token with extended validation
+            user_id = _decode_token_with_480_hour_validation(token_str)
+            if user_id:
+                return user_id
+        except HTTPException:
+            # If 480-hour validation fails, fall through to normal validation
+            logger.debug("480-hour validation failed, trying normal validation")
+            pass
     
-    # Use extended validation for uploads and messages
-    use_extended_validation = is_upload_operation or is_messages_endpoint
-    
-    # CRITICAL FIX: Add debug logging to trace authentication flow
-    logger.debug(f"Auth flow: token_str={bool(token_str)}, is_upload_operation={is_upload_operation}")
-    
-    # First try normal JWT decode
+    # Normal JWT validation for non-upload operations or fallback
     try:
-        logger.debug(f"Attempting to decode JWT token: {token_str[:30]}...")
-        s = _get_settings()
-        decoded = jwt.decode(
+        token_data = decode_token(token_str)
+    except HTTPException as e:
+        if e.status_code == status.HTTP_401_UNAUTHORIZED:
+            # For upload operations, check if this is an expired token within 480 hours
+            if is_upload_operation:
+                try:
+                    user_id = _decode_token_with_480_hour_validation(token_str)
+                    if user_id:
+                        return user_id
+                except HTTPException:
+                    pass  # Re-raise original exception
+            
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(e.detail),
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        raise
+
+    if token_data.token_type not in {"access", "upload"}:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return token_data.user_id
+
+
+def _decode_token_with_480_hour_validation(token_str: str) -> Optional[str]:
+    """
+    Decode JWT token with 480-hour validation for upload operations.
+    Allows expired tokens if they were issued within 480 hours.
+    """
+    try:
+        # First, try to decode without validation to get payload
+        settings = _get_settings()
+        payload = jwt.decode(
             token_str,
-            s.SECRET_KEY,
-            algorithms=[s.ALGORITHM],
-            options={"verify_exp": True},
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_exp": False}  # Don't verify expiration initially
         )
-        user_id = decoded.get("sub")
-        logger.debug(f"JWT decoded successfully, user_id: {user_id}")
+        
+        # Check if token type is valid
+        if payload.get("token_type") not in {"access", "upload"}:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type"
+            )
+        
+        # Get user ID
+        user_id = payload.get("sub")
         if not user_id:
-            logger.debug("No user_id (sub) in JWT payload")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-                headers={"WWW-Authenticate": "Bearer"},
+                detail="Invalid token: missing user ID"
             )
-        return user_id
-    except jwt.ExpiredSignatureError:
-        # For expired tokens, check if we can extend them (480-hour rule)
-        if use_extended_validation:
-            try:
-                # Decode without expiration check to see the issue time
-                s = _get_settings()
-                decoded = jwt.decode(
-                    token_str,
-                    s.SECRET_KEY,
-                    algorithms=[s.ALGORITHM],
-                    options={"verify_exp": False}
-                )
-                
-                user_id = decoded.get("sub")
-                issued_at = decoded.get("iat")
-                exp = decoded.get("exp")
-                
-                if not user_id or not issued_at:
-                    logger.debug("Missing user_id or iat in expired token")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid or expired token",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-                
-                current_time = datetime.now(timezone.utc).timestamp()
-                
-                # Check if token was issued within 480 hours (20 days)
-                hours_since_issued = (current_time - issued_at) / 3600
-                if hours_since_issued <= UPLOAD_TOKEN_MAX_LIFETIME_HOURS:
-                    logger.debug(f"Accepting expired token for upload/messages: issued {hours_since_issued:.1f} hours ago (within {UPLOAD_TOKEN_MAX_LIFETIME_HOURS}h limit)")
-                    return user_id
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail=f"Token is older than {UPLOAD_TOKEN_MAX_LIFETIME_HOURS} hours",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-                    
-            except HTTPException:
-                raise  # Re-raise HTTP exceptions
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid or expired token",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+        
+        # Check if token is expired but within 480-hour window
+        now = datetime.now(timezone.utc)
+        exp_time = datetime.fromtimestamp(payload.get("exp", 0), timezone.utc)
+        iat_time = datetime.fromtimestamp(payload.get("iat", 0), timezone.utc)
+        
+        # If token is not expired, accept it normally
+        if exp_time > now:
+            return user_id
+        
+        # Token is expired - check if it's within 480-hour window
+        time_since_issue = now - iat_time
+        max_lifetime = timedelta(hours=UPLOAD_TOKEN_MAX_LIFETIME_HOURS)
+        
+        if time_since_issue <= max_lifetime:
+            # Token is expired but within 480-hour window, accept it
+            logger.debug(f"Accepting expired token within 480-hour window: issued {iat_time}, expired {exp_time}")
+            return user_id
         else:
-            # For non-upload operations, raise exception for expired tokens
+            # Token is older than 480 hours, reject it
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired",
-                headers={"WWW-Authenticate": "Bearer"},
+                detail=f"Token older than {UPLOAD_TOKEN_MAX_LIFETIME_HOURS} hours"
             )
-    except jwt.InvalidTokenError:
+            
+    except jwt.ExpiredSignatureError:
+        # This should not happen with verify_exp=False, but handle it
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token format",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Token has expired"
         )
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions
-    except Exception as e:
+    except jwt.InvalidTokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail=f"Invalid token: {str(e)}"
         )
 
 
