@@ -2,9 +2,14 @@
 MongoDB initialization - Creates admin and application users on first startup
 """
 import asyncio
+import logging
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import settings
+
+# Setup logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 async def init_mongodb():
@@ -32,14 +37,14 @@ async def init_mongodb():
                 connectTimeoutMS=15000,
             )
             await asyncio.wait_for(client.admin.command('ping'), timeout=10.0)
-            print("[MONGO_INIT] Connected with existing credentials")
+            logger.info("[MONGO_INIT] Connected with existing credentials")
         except asyncio.TimeoutError:
-            print("[MONGO_INIT] Connection timeout - MongoDB might not be ready yet")
+            logger.warning("[MONGO_INIT] Connection timeout - MongoDB might not be ready yet")
             if client:
                 client.close()
             return
         except Exception as auth_error:
-            print(f"[MONGO_INIT] Authentication failed: {str(auth_error)[:80]}")
+            logger.warning(f"[MONGO_INIT] Authentication failed: {str(auth_error)[:80]}")
             if client:
                 client.close()
             
@@ -58,7 +63,7 @@ async def init_mongodb():
             try:
                 root_client = AsyncIOMotorClient(root_uri, serverSelectionTimeoutMS=15000, connectTimeoutMS=15000)
                 await asyncio.wait_for(root_client.admin.command('ping'), timeout=10.0)
-                print("[MONGO_INIT] Connected as root user")
+                logger.info("[MONGO_INIT] Connected as root user")
                 
                 # Create application user
                 admin_db = root_client.admin
@@ -75,14 +80,14 @@ async def init_mongodb():
                         ),
                         timeout=5.0
                     )
-                    print(f"[MONGO_INIT] Created user '{username}' successfully")
+                    logger.info(f"[MONGO_INIT] Created user '{username}' successfully")
                 except asyncio.TimeoutError:
-                    print("[MONGO_INIT] User creation timeout")
+                    logger.warning("[MONGO_INIT] User creation timeout")
                 except Exception as create_error:
                     if "already exists" in str(create_error).lower():
-                        print(f"[MONGO_INIT] User '{username}' already exists")
+                        logger.info(f"[MONGO_INIT] User '{username}' already exists")
                     else:
-                        print(f"[MONGO_INIT] Could not create user: {str(create_error)[:80]}")
+                        logger.warning(f"[MONGO_INIT] Could not create user: {str(create_error)[:80]}")
                 
                 root_client.close()
                 
@@ -93,15 +98,15 @@ async def init_mongodb():
                     connectTimeoutMS=15000,
                 )
                 await asyncio.wait_for(client.admin.command('ping'), timeout=10.0)
-                print("[MONGO_INIT] Connected with application user")
+                logger.info("[MONGO_INIT] Connected with application user")
                 
             except asyncio.TimeoutError:
-                print("[MONGO_INIT] Root connection timeout")
+                logger.warning("[MONGO_INIT] Root connection timeout")
                 if root_client:
                     root_client.close()
                 return
             except Exception as root_error:
-                print(f"[MONGO_INIT] Could not connect as root: {str(root_error)[:80]}")
+                logger.warning(f"[MONGO_INIT] Could not connect as root: {str(root_error)[:80]}")
                 if 'root_client' in locals():
                     root_client.close()
                 # Last resort: try without auth
@@ -110,11 +115,11 @@ async def init_mongodb():
                     client = AsyncIOMotorClient(no_auth_uri, serverSelectionTimeoutMS=5000)
                     await asyncio.wait_for(client.admin.command('ping'), timeout=5.0)
                 except:
-                    print("[MONGO_INIT] All connection methods failed")
+                    logger.error("[MONGO_INIT] All connection methods failed")
                     return
         
         if not client:
-            print("[MONGO_INIT] No client connection established")
+            logger.error("[MONGO_INIT] No client connection established")
             return
             
         app_db = client.Hypersend  # Use the existing database name
@@ -134,9 +139,9 @@ async def init_mongodb():
                     app_db.create_collection(collection_name),
                     timeout=3.0
                 )
-                print(f"[MONGO_INIT] Created collection: {collection_name}")
+                logger.info(f"[MONGO_INIT] Created collection: {collection_name}")
             except asyncio.TimeoutError:
-                print(f"[MONGO_INIT] Timeout creating collection: {collection_name}")
+                logger.warning(f"[MONGO_INIT] Timeout creating collection: {collection_name}")
             except Exception as e:
                 # Collection might already exist - this is expected behavior
                 if "already exists" in str(e).lower():
@@ -165,9 +170,9 @@ async def init_mongodb():
                     app_db[collection_name].create_index(keys, **options),
                     timeout=3.0
                 )
-                print(f"[MONGO_INIT] Created index: {description}")
+                logger.info(f"[MONGO_INIT] Created index: {description}")
             except asyncio.TimeoutError:
-                print(f"[MONGO_INIT] Timeout creating index: {description}")
+                logger.warning(f"[MONGO_INIT] Timeout creating index: {description}")
             except Exception as e:
                 # Index might already exist - this is normal on subsequent runs
                 if "already exists" not in str(e).lower():
@@ -182,12 +187,12 @@ async def init_mongodb():
         database._global_db = app_db
         database._global_client = client
         
-        print("[MONGO_INIT] [OK] MongoDB initialization complete")
+        logger.info("[MONGO_INIT] [OK] MongoDB initialization complete")
         # CRITICAL FIX: Don't close the client - keep it open for the application
         # client.close()  # REMOVED: This was causing the Future object error
         
     except Exception as e:
-        print(f"[MONGO_INIT] Warning: {str(e)[:100]}")
+        logger.warning(f"[MONGO_INIT] Warning: {str(e)[:100]}")
         if 'client' in locals() and client:
             try:
                 client.close()
@@ -210,11 +215,11 @@ async def ensure_mongodb_ready():
             retry_count += 1
             error_str = str(e)
             if retry_count < max_retries:
-                print(f"[MONGO_INIT] Retry {retry_count}/{max_retries}: {error_str[:100]}")
+                logger.info(f"[MONGO_INIT] Retry {retry_count}/{max_retries}: {error_str[:100]}")
                 await asyncio.sleep(1)  # Wait 1 second between retries
             else:
-                print(f"[MONGO_INIT] Failed to initialize after {max_retries} retries")
-                print(f"[MONGO_INIT] Last error: {error_str}")
+                logger.error(f"[MONGO_INIT] Failed to initialize after {max_retries} retries")
+                logger.error(f"[MONGO_INIT] Last error: {error_str}")
                 # Don't raise - allow app to start with collections created on first use
                 return False
     

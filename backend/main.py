@@ -14,13 +14,17 @@ import asyncio
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
+# Setup logger EARLY - before any other imports that might need logging
+logger = logging.getLogger("zaply")
+logger.setLevel(logging.INFO)
+
 from backend.models import MessageCreate
 
 # WhatsApp-Grade Cryptographic Imports
 try:
     import redis.asyncio as redis
 except ImportError:
-    print("[WARNING] Redis not available - using fallback cache")
+    logger.warning("[WARNING] Redis not available - using fallback cache")
     redis = None
 from backend.crypto.signal_protocol import SignalProtocol
 from backend.crypto.multi_device import MultiDeviceManager
@@ -31,13 +35,8 @@ from backend.websocket.delivery_handler import create_websocket_server
 
 # Load environment variables FIRST before importing config
 # Docker requirement: only load from /app/backend/.env and /app/.env inside container.
-_docker_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
-_local_env_paths = [Path(__file__).parent / ".env", Path(__file__).parent.parent / ".env"]
-_env_paths = _docker_env_paths if Path("/app").exists() else _local_env_paths
-for env_path in _env_paths:
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=False)
-        break
+# NOTE: config.py module already handles environment loading - do NOT reload here
+# This prevents duplicate config initialization
 
 try:
     # Add current directory to Python path for Docker
@@ -102,19 +101,15 @@ try:
 except Exception as e:
     raise
 
-# Setup logger
-logger = logging.getLogger("zaply")
-logger.setLevel(logging.INFO)
-
 
 def init_storage():
     """Initialize and validate storage system - must run before routes load"""
-    print("[STARTUP] Initializing storage system...")
+    logger.info("[STARTUP] Initializing storage system...")
     try:
         # settings module automatically initializes storage directories in __init__
         # Just validate that it's properly set up
         if not settings.SERVER_STORAGE_ENABLED:
-            print("[STARTUP] WARNING: SERVER_STORAGE_ENABLED is False - storage may be disabled")
+            logger.warning("[STARTUP] WARNING: SERVER_STORAGE_ENABLED is False - storage may be disabled")
         
         from pathlib import Path
         
@@ -132,7 +127,7 @@ def init_storage():
             test_file_temp = temp_path / ".write_test"
             test_file_temp.touch(exist_ok=True)
             test_file_temp.unlink(missing_ok=True)
-            print(f"[STARTUP] Storage validated - TEMP_STORAGE_PATH is writable: {settings.TEMP_STORAGE_PATH}")
+            logger.info(f"[STARTUP] Storage validated - TEMP_STORAGE_PATH is writable: {settings.TEMP_STORAGE_PATH}")
         except Exception as e:
             raise RuntimeError(f"TEMP_STORAGE_PATH is not writable: {str(e)}")
         
@@ -140,16 +135,16 @@ def init_storage():
             test_file_upload = upload_path / ".write_test"
             test_file_upload.touch(exist_ok=True)
             test_file_upload.unlink(missing_ok=True)
-            print(f"[STARTUP] Storage validated - UPLOAD_DIR is writable: {settings.UPLOAD_DIR}")
+            logger.info(f"[STARTUP] Storage validated - UPLOAD_DIR is writable: {settings.UPLOAD_DIR}")
         except Exception as e:
             raise RuntimeError(f"UPLOAD_DIR is not writable: {str(e)}")
         
-        print("[STARTUP] Storage system initialized successfully")
+        logger.info("[STARTUP] Storage system initialized successfully")
         return True
     except Exception as e:
-        print(f"[STARTUP] CRITICAL: Storage initialization failed: {type(e).__name__}: {str(e)}")
+        logger.error(f"[STARTUP] CRITICAL: Storage initialization failed: {type(e).__name__}: {str(e)}")
         import traceback
-        print(f"[STARTUP] Traceback: {traceback.format_exc()}")
+        logger.error(f"[STARTUP] Traceback: {traceback.format_exc()}")
         raise RuntimeError(f"Storage initialization failed: {str(e)}")
 
 
@@ -172,14 +167,14 @@ async def lifespan(app: FastAPI):
     
     is_test_mode = _is_pytest_running()
     if is_test_mode:
-        print("[STARTUP] Pytest detected - running in test mode with mock cache only")
+        logger.info("[STARTUP] Pytest detected - running in test mode with mock cache only")
     
     # Startup - CRITICAL: Storage must initialize first, before all other systems
     # Call synchronous storage init function
     try:
         init_storage()
     except Exception as e:
-        print(f"[STARTUP] CRITICAL: Storage initialization failed, cannot start application: {str(e)}")
+        logger.error(f"[STARTUP] CRITICAL: Storage initialization failed, cannot start application: {str(e)}")
         raise
     
     # Database initialization - only initialize if not already done by conftest or external setup
@@ -191,7 +186,7 @@ async def lifespan(app: FastAPI):
     from database import db, client
     app.state.db = db
     app.state.client = client
-    print(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
+    logger.info(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
     
     # Initialize Redis cache (non-critical, continue if fails, skip in test mode)
     if not is_test_mode:
@@ -203,9 +198,9 @@ async def lifespan(app: FastAPI):
             except Exception:
                 # Cache module-level instance not available; continue without state exposure
                 pass
-            print("[STARTUP] Redis cache initialized")
+            logger.info("[STARTUP] Redis cache initialized")
         except Exception as e:
-            print(f"[STARTUP] Redis cache initialization failed (non-critical): {e}")
+            logger.warning(f"[STARTUP] Redis cache initialization failed (non-critical): {e}")
             # Continue without Redis - use fallback cache
     else:
         # In test mode, initialize mock cache only
@@ -213,9 +208,9 @@ async def lifespan(app: FastAPI):
             from redis_cache import cache
             await cache.clear_mock_cache()
             app.state.cache = cache
-            print("[STARTUP] Mock cache initialized for test mode")
+            logger.info("[STARTUP] Mock cache initialized for test mode")
         except Exception as e:
-            print(f"[STARTUP] Mock cache initialization failed: {e}")
+            logger.warning(f"[STARTUP] Mock cache initialization failed: {e}")
     
     # CRITICAL: Start global Redis Pub/Sub subscriber for multi-container communication
     # This listens to all chat channels and broadcasts to connected WebSocket clients
@@ -229,12 +224,12 @@ async def lifespan(app: FastAPI):
                     """Listen to Redis channels and broadcast to WebSocket clients"""
                     pubsub = None
                     try:
-                        print("[REDIS] Starting global Redis Pub/Sub subscriber...")
+                        logger.info("[REDIS] Starting global Redis Pub/Sub subscriber...")
                         pubsub = await cache.redis_client.pubsub()
                         
                         # Subscribe to all chat channels (pattern matching)
                         await pubsub.psubscribe("chat:*")
-                        print("[REDIS] Subscribed to chat:* channels")
+                        logger.info("[REDIS] Subscribed to chat:* channels")
                         
                         async for message in pubsub.listen():
                             try:
@@ -272,22 +267,22 @@ async def lifespan(app: FastAPI):
                                 await pubsub.close()
                             except Exception as e:
                                 logger.error(f"[REDIS] Failed to close pubsub: {e}")
-                        print("[REDIS] Global Pub/Sub subscriber stopped")
+                        logger.info("[REDIS] Global Pub/Sub subscriber stopped")
                 
                 # Start Redis subscriber as background task
                 redis_subscriber_task = asyncio.create_task(global_redis_subscriber())
                 app.state.redis_subscriber_task = redis_subscriber_task
-                print("[REDIS] Global Pub/Sub subscriber started in background")
+                logger.info("[REDIS] Global Pub/Sub subscriber started in background")
             else:
-                print("[REDIS] Redis not connected - Pub/Sub subscriber not started")
+                logger.warning("[REDIS] Redis not connected - Pub/Sub subscriber not started")
         
         except Exception as e:
             logger.error(f"[REDIS] Failed to start Redis Pub/Sub subscriber: {type(e).__name__}: {e}")
-            print(f"[REDIS] Pub/Sub subscriber initialization failed (non-critical): {e}")
+            logger.warning(f"[REDIS] Pub/Sub subscriber initialization failed (non-critical): {e}")
     else:
-        print("[REDIS] Test mode - Pub/Sub subscriber not started")
+        logger.info("[REDIS] Test mode - Pub/Sub subscriber not started")
 
-    print("Application startup complete")
+    logger.info("Application startup complete")
     
     yield
     
@@ -303,7 +298,7 @@ async def lifespan(app: FastAPI):
             logger.warning("[REDIS] Redis subscriber task did not cancel within timeout")
         except Exception as e:
             logger.error(f"[REDIS] Error cancelling Redis subscriber task: {e}")
-        print("[SHUTDOWN] Redis subscriber task cancelled")
+        logger.info("[SHUTDOWN] Redis subscriber task cancelled")
     
     
     # Shutdown
@@ -313,7 +308,7 @@ async def lifespan(app: FastAPI):
             client.close()
         except Exception:
             pass
-        print("[SHUTDOWN] Database connection closed")
+        logger.info("[SHUTDOWN] Database connection closed")
         try:
             import database as _database
             _database.client = None
@@ -333,11 +328,11 @@ async def lifespan(app: FastAPI):
     # Cleanup Redis cache
     try:
         await cleanup_cache()
-        print("[SHUTDOWN] Redis cache cleaned up")
+        logger.info("[SHUTDOWN] Redis cache cleaned up")
     except Exception as e:
-        print(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
+        logger.warning(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
 
-    print("[SHUTDOWN] All cleanup complete")
+    logger.info("[SHUTDOWN] All cleanup complete")
 
 
 # Custom JSON encoder for MongoDB ObjectId serialization
@@ -1088,11 +1083,11 @@ def _configure_s3_lifecycle():
         import boto3  # type: ignore[import-not-found]
         from botocore.exceptions import ClientError  # type: ignore[import-not-found]
     except ImportError:
-        print("[S3] WARNING: boto3 not available, skipping lifecycle configuration")
+        logger.warning("[S3] boto3 not available, skipping lifecycle configuration")
         return
 
     if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
-        print("[S3] WARNING: AWS credentials not configured, skipping lifecycle setup")
+        logger.warning("[S3] AWS credentials not configured, skipping lifecycle setup")
         return
 
     s3_client = boto3.client(
@@ -1131,25 +1126,25 @@ def _configure_s3_lifecycle():
             Bucket=settings.S3_BUCKET, LifecycleConfiguration=lifecycle_policy
         )
 
-        print(f"[S3] Lifecycle policy configured for bucket: {settings.S3_BUCKET}")
-        print(f"[S3] - Temporary files (temp/) auto-deleted after 24 hours")
-        print(f"[S3] - Incomplete uploads (temp/) cleaned after 24 hours")
-        print("[S3] WhatsApp-style ephemeral storage: Enabled ✓")
+        logger.info(f"[S3] Lifecycle policy configured for bucket: {settings.S3_BUCKET}")
+        logger.info(f"[S3] - Temporary files (temp/) auto-deleted after 24 hours")
+        logger.info(f"[S3] - Incomplete uploads (temp/) cleaned after 24 hours")
+        logger.info("[S3] WhatsApp-style ephemeral storage: Enabled ✓")
 
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
         if error_code == "NoSuchBucket":
-            print(f"[S3] WARNING: Bucket '{settings.S3_BUCKET}' does not exist")
-            print(f"[S3] Please create the S3 bucket and configure lifecycle manually:")
-            print(
+            logger.warning(f"[S3] Bucket '{settings.S3_BUCKET}' does not exist")
+            logger.warning(f"[S3] Please create the S3 bucket and configure lifecycle manually:")
+            logger.warning(
                 f"[S3] Lifecycle policy needed: Delete objects in 'temp/' prefix after 24 hours"
             )
         else:
-            print(f"[S3] WARNING: Failed to configure lifecycle: {error_code}")
-            print(f"[S3] Details: {str(e)}")
+            logger.warning(f"[S3] Failed to configure lifecycle: {error_code}")
+            logger.warning(f"[S3] Details: {str(e)}")
     except Exception as e:
-        print(f"[S3] WARNING: Unexpected error configuring lifecycle: {str(e)}")
-        print("[S3] Continuing without lifecycle configuration")
+        logger.warning(f"[S3] Unexpected error configuring lifecycle: {str(e)}")
+        logger.warning("[S3] Continuing without lifecycle configuration")
 
 
 # Add a comprehensive catch-all exception handler for any unhandled exceptions
@@ -1445,8 +1440,8 @@ async def not_found_handler(request: Request, exc: HTTPException):
     import re
 
     # DEBUG: Add logging to understand the issue
-    print(f"[DEBUG 404] Raw path: {str(request.url.path)}")
-    print(f"[DEBUG 404] Path type: {type(str(request.url.path))}")
+    logger.debug(f"[DEBUG 404] Raw path: {str(request.url.path)}")
+    logger.debug(f"[DEBUG 404] Path type: {type(str(request.url.path))}")
 
     # Check for dangerous patterns in the normalized path
     dangerous_patterns = [
@@ -1486,16 +1481,16 @@ async def not_found_handler(request: Request, exc: HTTPException):
 
     is_dangerous_path = dangerous_in_path or dangerous_in_original
 
-    print(f"[DEBUG 404] Dangerous in path: {dangerous_in_path}")
-    print(f"[DEBUG 404] Dangerous in original: {dangerous_in_original}")
-    print(f"[DEBUG 404] Is dangerous path: {is_dangerous_path}")
+    logger.debug(f"[DEBUG 404] Dangerous in path: {dangerous_in_path}")
+    logger.debug(f"[DEBUG 404] Dangerous in original: {dangerous_in_original}")
+    logger.debug(f"[DEBUG 404] Is dangerous path: {is_dangerous_path}")
 
     # Use generic path for dangerous requests to prevent information disclosure
     safe_path = (
         "/api/v1/files/invalid_path" if is_dangerous_path else str(request.url.path)
     )
 
-    print(f"[DEBUG 404] Safe path: {safe_path}")
+    logger.debug(f"[DEBUG 404] Safe path: {safe_path}")
 
     # Distinguish between:
     # - true route-miss 404s (wrong URL) vs

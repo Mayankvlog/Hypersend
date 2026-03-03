@@ -6,27 +6,12 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import HTTPException, status
 from dotenv import load_dotenv
 from pathlib import Path
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-try:
-    from backend.config import settings
-except Exception:
-    from backend.config import settings
-
-IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "production" and os.getenv("DEBUG", "").lower() not in (
-    "true",
-    "1",
-    "yes",
-)
-
-# Load environment variables from .env file
-# Docker requirement: only load from /app/backend/.env and /app/.env inside container.
-_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
-for env_path in _env_paths:
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=False)
-        break
+# NOTE: Environment variables are already loaded by config.py
+# Do NOT reload .env files here to prevent duplicate initialization
 
 # Global database connection variables as specified
 client = None
@@ -69,21 +54,24 @@ async def init_database():
         if _database_initialized and client is not None and db is not None:
             return
 
-        # Atlas-only mode (no mock/fallback): mock DB is forbidden in all environments.
-        mongodb_atlas_enabled = (os.getenv("MONGODB_ATLAS_ENABLED") or "").lower() == "true"
-        use_mock_db = (os.getenv("USE_MOCK_DB") or "").lower() == "true"
+        # Import settings to get centralized config (already validated by config.py)
+        try:
+            from backend.config import settings
+        except ImportError:
+            from config import settings
+        
+        # Get configuration from centralized settings object
+        # config.py has already validated and processed these values
+        mongodb_uri = settings.MONGODB_URI
+        database_name = settings.DATABASE_NAME
+        mongodb_atlas_enabled = settings.MONGODB_ATLAS_ENABLED
 
         if not mongodb_atlas_enabled:
             raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true"')
 
-        if use_mock_db:
-            raise RuntimeError('USE_MOCK_DB must be "false" for Atlas-only operation')
-
-        mongodb_uri = os.getenv("MONGODB_URI")
         if not mongodb_uri:
             raise RuntimeError('MONGODB_URI is required for Atlas-only operation')
 
-        database_name = os.getenv("DATABASE_NAME")
         if not database_name:
             raise RuntimeError('DATABASE_NAME is required for Atlas-only operation')
 

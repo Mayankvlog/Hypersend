@@ -10,6 +10,10 @@ import pytest
 import asyncio
 from pathlib import Path
 
+# CRITICAL: Set PYTEST_CURRENT_TEST BEFORE importing any backend modules
+# This allows pytest detection to work during module initialization
+os.environ['PYTEST_CURRENT_TEST'] = 'pytest:conftest'
+
 # Enable pytest-asyncio
 pytest_plugins = ('pytest_asyncio',)
 

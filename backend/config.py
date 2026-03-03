@@ -201,8 +201,8 @@ class Settings:
         )
         FILE_RETENTION_HOURS = 72  # Force consistency
     
-    print(f"[CONFIG] Centralized File TTL: {FILE_TTL_SECONDS} seconds ({FILE_TTL_HOURS} hours)")
-    print(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours (aligned with TTL)")
+    logger.info(f"[CONFIG] Centralized File TTL: {FILE_TTL_SECONDS} seconds ({FILE_TTL_HOURS} hours)")
+    logger.info(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours (aligned with TTL)")
 
     # Enhanced timeout settings for large file transfers
     CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(
@@ -431,9 +431,9 @@ class Settings:
         "upload": UPLOADS_PATH,
     }
 
-    print(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
-    print(f"[CONFIG] AWS Region: {AWS_REGION}")
-    print(f"[CONFIG] File TTL: {FILE_TTL_HOURS} hours (72h like WhatsApp)")
+    logger.info(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
+    logger.info(f"[CONFIG] AWS Region: {AWS_REGION}")
+    logger.info(f"[CONFIG] File TTL: {FILE_TTL_HOURS} hours (72h like WhatsApp)")
 
     # File upload settings (15GB Support)
     # LARGE_FILE_THRESHOLD and MAX_FILE_SIZE already set above
@@ -471,41 +471,41 @@ class Settings:
     def validate_email_config(self):
         """Validate email service configuration with enhanced checking"""
         if self.EMAIL_SERVICE_ENABLED:
-            print(f"[EMAIL] Email service configured with host: {self.SMTP_HOST}")
-            print(f"[EMAIL] Email from: {self.EMAIL_FROM}")
-            print(
+            logger.info(f"[EMAIL] Email service configured with host: {self.SMTP_HOST}")
+            logger.info(f"[EMAIL] Email from: {self.EMAIL_FROM}")
+            logger.info(
                 f"[EMAIL] Rate limits: {self.EMAIL_RATE_LIMIT_PER_HOUR}/hour, {self.EMAIL_RATE_LIMIT_PER_DAY}/day"
             )
 
             # Enhanced email format validation
             if "@" not in self.EMAIL_FROM or "." not in self.EMAIL_FROM.split("@")[1]:
-                print(f"[EMAIL] WARNING: Invalid email format: {self.EMAIL_FROM}")
+                logger.warning(f"[EMAIL] WARNING: Invalid email format: {self.EMAIL_FROM}")
 
             # Validate SMTP configuration
             self._validate_smtp_config()
 
-            print("[EMAIL] Email service ready for use")
+            logger.info("[EMAIL] Email service ready for use")
         else:
             # Only show email warning in debug mode to reduce log noise in production
             if self.DEBUG:
-                print(
+                logger.info(
                     "[EMAIL] Email service NOT configured - password reset emails will not be sent"
                 )
-                print(
+                logger.info(
                     "[EMAIL] To enable email, set: SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM"
                 )
             else:
-                print(
+                logger.info(
                     "[EMAIL] Email service disabled (optional - configure SMTP for password reset)"
                 )
 
             if self.EMAIL_FALLBACK_ENABLED and self.DEBUG:
-                print(
+                logger.info(
                     "[EMAIL] Fallback mode: Tokens returned in debug mode for testing"
                 )
 
             if self.EMAIL_AUTO_CONFIGURE:
-                print(
+                logger.info(
                     "[EMAIL] Auto-configuration enabled - attempting to setup default email"
                 )
 
@@ -514,20 +514,20 @@ class Settings:
         # Common SMTP port validation
         valid_ports = [25, 465, 587, 2525]
         if self.SMTP_PORT not in valid_ports:
-            print(f"[EMAIL] WARNING: Unusual SMTP port: {self.SMTP_PORT}")
-            print("[EMAIL] Common ports: 25 (SMTP), 465 (SMTPS), 587 (SMTP+TLS), 2525")
+            logger.warning(f"[EMAIL] WARNING: Unusual SMTP port: {self.SMTP_PORT}")
+            logger.warning("[EMAIL] Common ports: 25 (SMTP), 465 (SMTPS), 587 (SMTP+TLS), 2525")
 
         # Gmail-specific validation
         if "gmail.com" in self.SMTP_HOST.lower():
             if self.SMTP_PORT != 587 and self.SMTP_PORT != 465:
-                print("[EMAIL] WARNING: Gmail usually uses port 587 (TLS) or 465 (SSL)")
-            print(
+                logger.warning("[EMAIL] WARNING: Gmail usually uses port 587 (TLS) or 465 (SSL)")
+            logger.info(
                 f"[EMAIL] Port {self.SMTP_PORT} configured for Gmail - verifying TLS/SSL requirements"
             )
             if self.SMTP_USE_TLS:
-                print("[EMAIL] Email service configured with TLS - settings validated")
+                logger.info("[EMAIL] Email service configured with TLS - settings validated")
             else:
-                print(
+                logger.warning(
                     "[EMAIL] WARNING: Gmail requires TLS/SSL - SMTP_USE_TLS should be True"
                 )
 
@@ -540,8 +540,8 @@ class Settings:
         without leaking any real secret in the codebase or repo.
         """
         if self.DEBUG:
-            print("[INFO] Development mode enabled - production validations skipped")
-            print(
+            logger.info("[INFO] Development mode enabled - production validations skipped")
+            logger.warning(
                 "[INFO] WARNING: Remember to set DEBUG=False for production deployment"
             )
             return
@@ -556,34 +556,34 @@ class Settings:
             "dev-secret-key" in self.SECRET_KEY.lower()
             or self.SECRET_KEY in placeholder_keys
         ):
-            print(
+            logger.warning(
                 "[WARN] WARNING: PRODUCTION MODE but SECRET_KEY is still a placeholder."
             )
-            print("[WARN] Generating a temporary SECRET_KEY for this process.")
-            print(
+            logger.warning("[WARN] Generating a temporary SECRET_KEY for this process.")
+            logger.warning(
                 "[WARN] For stable JWT tokens across restarts, set SECRET_KEY in .env or environment."
             )
             self.SECRET_KEY = secrets.token_urlsafe(32)
 
         if self.CORS_ORIGINS == ["*"]:
-            print(
+            logger.warning(
                 "[WARN] WARNING: CORS_ORIGINS set to wildcard in production. Consider restricting it."
             )
 
-        print("[INFO] Production validations completed")
+        logger.info("[INFO] Production validations completed")
 
     def validate_storage_paths(self):
         """Validate storage paths are writable and log configuration"""
-        print(f"[STORAGE] Validating storage configuration...")
-        print(f"[STORAGE] SERVER_STORAGE_ENABLED: {self.SERVER_STORAGE_ENABLED}")
-        print(f"[STORAGE] TEMP_STORAGE_PATH: {self.TEMP_STORAGE_PATH}")
-        print(f"[STORAGE] UPLOAD_DIR: {self.UPLOAD_DIR}")
+        logger.info(f"[STORAGE] Validating storage configuration...")
+        logger.info(f"[STORAGE] SERVER_STORAGE_ENABLED: {self.SERVER_STORAGE_ENABLED}")
+        logger.info(f"[STORAGE] TEMP_STORAGE_PATH: {self.TEMP_STORAGE_PATH}")
+        logger.info(f"[STORAGE] UPLOAD_DIR: {self.UPLOAD_DIR}")
         
         # Validate environment variable reading
         if not os.getenv("TEMP_STORAGE_PATH"):
-            print(f"[WARN] TEMP_STORAGE_PATH not in environment, using default: {self.TEMP_STORAGE_PATH}")
+            logger.warning(f"TEMP_STORAGE_PATH not in environment, using default: {self.TEMP_STORAGE_PATH}")
         if not os.getenv("UPLOAD_DIR"):
-            print(f"[WARN] UPLOAD_DIR not in environment, using default: {self.UPLOAD_DIR}")
+            logger.warning(f"UPLOAD_DIR not in environment, using default: {self.UPLOAD_DIR}")
         
         # Validate paths exist and are writable
         storage_paths = [
@@ -595,7 +595,7 @@ class Settings:
         for path_name, path_str in storage_paths:
             path_obj = Path(path_str)
             if not path_obj.exists():
-                print(f"[WARN] {path_name} does not exist: {path_str}")
+                logger.warning(f"[WARN] {path_name} does not exist: {path_str}")
             else:
                 # Check if writable
                 try:
@@ -603,9 +603,9 @@ class Settings:
                     test_file = path_obj / ".write_test"
                     test_file.touch(exist_ok=True)
                     test_file.unlink(missing_ok=True)
-                    print(f"[OK] {path_name} is writable: {path_str}")
+                    logger.info(f"[OK] {path_name} is writable: {path_str}")
                 except Exception as e:
-                    print(f"[ERROR] {path_name} is not writable: {path_str} - {type(e).__name__}: {str(e)}")
+                    logger.error(f"[ERROR] {path_name} is not writable: {path_str} - {type(e).__name__}: {str(e)}")
 
     def init_directories(self):
         """Create necessary directories - CRITICAL: called at Settings initialization"""
@@ -615,18 +615,18 @@ class Settings:
             os.makedirs(self.UPLOAD_DIR, exist_ok=True)
             (self.DATA_ROOT / "files").mkdir(exist_ok=True, parents=True)
             (self.DATA_ROOT / "avatars").mkdir(exist_ok=True, parents=True)
-            print(f"[OK] Data directories initialized:")
-            print(f"  - DATA_ROOT: {self.DATA_ROOT}")
-            print(f"  - TEMP_STORAGE_PATH: {self.TEMP_STORAGE_PATH}")
-            print(f"  - UPLOAD_DIR: {self.UPLOAD_DIR}")
+            logger.info(f"Data directories initialized:")
+            logger.info(f"  - DATA_ROOT: {self.DATA_ROOT}")
+            logger.info(f"  - TEMP_STORAGE_PATH: {self.TEMP_STORAGE_PATH}")
+            logger.info(f"  - UPLOAD_DIR: {self.UPLOAD_DIR}")
         except PermissionError as e:
-            print(f"[ERROR] Storage initialization FAILED - Permission denied: {str(e)}")
-            print(f"[ERROR] Backend must have write permission to storage directories")
+            logger.error(f"Storage initialization FAILED - Permission denied: {str(e)}")
+            logger.error(f"Backend must have write permission to storage directories")
             raise RuntimeError(f"Storage permission error: {str(e)}")
         except Exception as e:
-            print(f"[ERROR] Failed to initialize directories: {type(e).__name__}: {str(e)}")
+            logger.error(f"Failed to initialize directories: {type(e).__name__}: {str(e)}")
             import traceback
-            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise RuntimeError(f"Storage initialization error: {str(e)}")
 
 
@@ -634,5 +634,5 @@ settings = Settings()
 
 # Test email service on startup in DEBUG mode
 if settings.DEBUG and False:
-    print("[CONFIG] DEBUG mode enabled - testing email service...")
+    logger.info("[CONFIG] DEBUG mode enabled - testing email service...")
     settings.validate_email_config()
