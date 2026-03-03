@@ -518,7 +518,18 @@ class EmojiUtils {
       return results;
     }
     
-    // Fall back to returning all emojis if partial search matches multiple keywords
-    return [];
+    // Fallback: Search for partial matches in keywords (more flexible search)
+    for (var entry in emojiKeywords.entries) {
+      for (var keyword in entry.value) {
+        // Check if search term is a substring of keyword
+        if (keyword.startsWith(searchTerm) || keyword.contains(searchTerm)) {
+          if (!results.contains(entry.key)) {
+            results.add(entry.key);
+          }
+        }
+      }
+    }
+    
+    return results;
   }
 }
