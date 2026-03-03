@@ -469,7 +469,6 @@ EMOJI_CATEGORIES = {
     
     "Flags": [
         {"name": "Checkered Flag", "symbol": "🏁", "unicode": "U+1F3C1"},
-        {"name": "Triangular Flag", "symbol": "🚩", "unicode": "U+1F6A9"},
         {"name": "Crossed Flags", "symbol": "🎌", "unicode": "U+1F38C"},
         {"name": "Black Flag", "symbol": "🏴", "unicode": "U+1F3F4"},
         {"name": "White Flag", "symbol": "🏳️", "unicode": "U+1F3F3"},
