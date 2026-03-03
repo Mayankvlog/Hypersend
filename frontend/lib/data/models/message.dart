@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-enum MessageStatus { sent, delivered, read }
+enum MessageStatus { sending, sent, delivered, read }
 
 class Message extends Equatable {
   final String id;
@@ -75,7 +75,7 @@ class Message extends Equatable {
       senderId: senderId,
       content: isDeleted ? null : text,
       timestamp: createdAt ?? DateTime.now(),
-      status: readBy.length > 1 ? MessageStatus.read : MessageStatus.sent,
+      status: _parseMessageStatus(json, readBy),
       isOwn: senderId == currentUserId,
       isPinned: json['is_pinned'] == true,
       isEdited: json['is_edited'] == true,
@@ -86,6 +86,32 @@ class Message extends Equatable {
       readBy: readBy,
       fileId: fileId,
     );
+  }
+
+  // Helper function to parse message status from API response
+  static MessageStatus _parseMessageStatus(Map<String, dynamic> json, List<String> readBy) {
+    // Check for explicit status field first
+    final statusStr = (json['status'] ?? json['message_state'])?.toString().toLowerCase();
+    
+    switch (statusStr) {
+      case 'sending':
+        return MessageStatus.sending;
+      case 'sent':
+        return MessageStatus.sent;
+      case 'delivered':
+        return MessageStatus.delivered;
+      case 'read':
+        return MessageStatus.read;
+    }
+    
+    // Fallback: infer from read_by count
+    if (readBy.length > 1) {
+      return MessageStatus.read;
+    } else if (readBy.length == 1) {
+      return MessageStatus.delivered;
+    } else {
+      return MessageStatus.sent;
+    }
   }
 
   Message copyWith({

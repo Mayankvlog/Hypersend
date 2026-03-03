@@ -1542,6 +1542,42 @@ async def upload_chunk(
 
     await _save_chunk_to_disk(chunk_path, chunk_data, int(chunk_index), current_user)
 
+    # Update upload progress and broadcast via WebSocket
+    total_chunks = upload.get("total_chunks", 1)
+    uploaded_chunks = upload.get("uploaded_chunks", [])
+    uploaded_chunks.append(int(chunk_index))
+    progress_percent = (len(uploaded_chunks) / total_chunks) * 100
+    
+    # Broadcast upload progress via WebSocket
+    try:
+        from websocket.websocket_manager import websocket_manager
+        progress_message = {
+            'type': 'upload_progress',
+            'upload_id': upload_id,
+            'user_id': current_user,
+            'chunk_index': int(chunk_index),
+            'total_chunks': total_chunks,
+            'uploaded_chunks': len(uploaded_chunks),
+            'progress_percent': round(progress_percent, 2),
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }
+        
+        # Send to all user devices
+        await websocket_manager.send_message_to_device(current_user, progress_message)
+        
+        _log("info", f"Upload progress broadcast: {progress_percent}%", {
+            "upload_id": upload_id,
+            "user_id": current_user,
+            "chunk_index": int(chunk_index),
+            "progress_percent": progress_percent
+        })
+        
+    except Exception as e:
+        _log("warning", f"Failed to broadcast upload progress: {e}", {
+            "upload_id": upload_id,
+            "user_id": current_user
+        })
+
     await _maybe_await(
         uploads_collection().update_one(
             {"upload_id": upload_id},

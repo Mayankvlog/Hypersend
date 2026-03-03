@@ -31,7 +31,7 @@ from backend.crypto.multi_device import MultiDeviceManager
 from backend.crypto.delivery_semantics import DeliveryManager
 from backend.crypto.media_encryption import MediaEncryptionService
 from backend.workers.fan_out_worker import MessageFanOutWorker
-from backend.websocket.delivery_handler import create_websocket_server
+from websocket.websocket_manager import websocket_manager
 
 # Load environment variables FIRST before importing config
 # Docker requirement: only load from /app/backend/.env and /app/.env inside container.
@@ -327,7 +327,11 @@ class CustomJSONEncoder(json.JSONEncoder):
             return str(obj)
         # Handle datetime objects
         if hasattr(obj, 'isoformat'):
-            return obj.isoformat()
+            iso_str = obj.isoformat()
+            # Convert UTC timezone (+00:00) to Z suffix for consistency
+            if iso_str.endswith('+00:00'):
+                return iso_str.replace('+00:00', 'Z')
+            return iso_str
         return super().default(obj)
 
 
@@ -597,7 +601,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                             "status_code": 400,
                             "error": "Bad Request - Malicious request detected",
                             "detail": "Request contains potentially malicious content",
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "timestamp": datetime.utcnow().isoformat(),
                             "path": "/api/v1/files/invalid_path",  # Don't echo malicious path
                             "method": request.method,
                             "hints": [
@@ -666,7 +670,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 "status_code": 400,
                                 "error": "Bad Request - Invalid host",
                                 "detail": "Request contains invalid host header",
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "timestamp": datetime.utcnow().isoformat(),
                                 "path": "/api/v1/files/invalid_path",
                                 "method": request.method,
                                 "hints": [
@@ -699,7 +703,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 "status_code": 400,
                                 "error": "Bad Request - Malicious header detected",
                                 "detail": "Request header contains potentially malicious content",
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "timestamp": datetime.utcnow().isoformat(),
                                 "path": url_path,
                                 "method": request.method,
                                 "hints": [
@@ -732,7 +736,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                     "status_code": 413,
                                     "error": "Payload Too Large - Request body is too big",
                                     "detail": f"Request size {content_length} bytes exceeds maximum {max_size} bytes",
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "timestamp": datetime.utcnow().isoformat(),
                                     "path": url_path,
                                     "method": request.method,
                                     "hints": [
@@ -749,7 +753,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 "status_code": 411,
                                 "error": "Length Required - Content-Length header is invalid",
                                 "detail": "Content-Length header must be a valid integer",
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "timestamp": datetime.utcnow().isoformat(),
                                 "path": url_path,
                                 "method": request.method,
                                 "hints": [
@@ -768,7 +772,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "status_code": 414,
                         "error": "URI Too Long - The requested URL is too long",
                         "detail": f"URL length {url_length} exceeds maximum 8000 characters",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                         "path": url_path,
                         "method": request.method,
                         "hints": ["Shorten the URL", "Use POST for complex queries"],
@@ -807,7 +811,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                     "status_code": 415,
                                     "error": "Unsupported Media Type - Content type not allowed",
                                     "detail": f"Content type '{content_type}' is not permitted for security reasons",
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "timestamp": datetime.utcnow().isoformat(),
                                     "path": str(request.url.path),
                                     "method": request.method,
                                     "hints": [
@@ -982,7 +986,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "status_code": 422,
                         "error": "Unprocessable Entity - Invalid input data",
                         "detail": str(e) if settings.DEBUG else "Invalid input data",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": [
@@ -1002,7 +1006,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "status_code": 504,
                         "error": "Gateway Timeout - Request took too long",
                         "detail": str(e) if settings.DEBUG else "Request timeout",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": [
@@ -1024,7 +1028,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "detail": str(e)
                         if settings.DEBUG
                         else "Service temporarily unavailable",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": [
@@ -1043,7 +1047,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "detail": "Server error processing request"
                         if not settings.DEBUG
                         else str(e),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": [
@@ -1383,7 +1387,7 @@ async def general_exception_handler(request: Request, exc: Exception):
         "status_code": status_code,
         "error": type(exc).__name__ if settings.DEBUG else error_msg.title(),
         "detail": error_msg if not settings.DEBUG else str(exc),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "path": safe_path,
         "method": request.method,
         "hints": hints,
@@ -1504,7 +1508,7 @@ async def not_found_handler(request: Request, exc: HTTPException):
                 "status_code": 404,
                 "error": "Not Found",
                 "detail": detail_msg,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "path": safe_path,
                 "method": method,
                 "hints": [
@@ -1521,7 +1525,7 @@ async def not_found_handler(request: Request, exc: HTTPException):
             "status_code": 404,
             "error": "Not Found",
             "detail": "The requested resource doesn't exist. Check the URL path.",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
             "path": safe_path,
             "method": method,
             "hints": [
@@ -1555,7 +1559,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
                 "status_code": 404,
                 "error": "Not Found",
                 "detail": "Invalid path format - the requested resource doesn't exist.",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "path": path,
                 "method": method,
                 "hints": [
@@ -1582,7 +1586,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
                 "status_code": 404,
                 "error": "Not Found",
                 "detail": "The requested endpoint doesn't exist.",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "path": path,
                 "method": method,
                 "hints": [
@@ -1608,7 +1612,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
             "status_code": 405,
             "error": "Method Not Allowed",
             "detail": f"The HTTP {method} method is not supported for this endpoint.",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
             "path": path,
             "method": method,
             "allowed_methods": sorted(list(allowed_methods)),
@@ -1734,7 +1738,7 @@ async def api_status(request: Request):
             "status": "operational",
             "service": "zaply-api",
             "version": "1.0.0",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
     # In debug mode, return detailed information
@@ -1742,7 +1746,7 @@ async def api_status(request: Request):
         "status": "operational",
         "service": "zaply-api",
         "version": "1.0.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "api": {
             "base_url": settings.API_BASE_URL,
             "host": settings.API_HOST,
@@ -1902,7 +1906,7 @@ async def health_check():
 
         response_data = {
             "status": overall_status,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
             "services": {
                 "storage": {"status": storage_status, "error": storage_error},
                 "database": {"status": db_status, "error": db_error},
@@ -1919,7 +1923,7 @@ async def health_check():
             content={
                 "status": "degraded",
                 "error": str(e)[:50],
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
             },
         )
 
@@ -2182,7 +2186,7 @@ async def sync_message_history(
 
         # Default: sync from 90 days ago if not specified
         if not sync_from:
-            sync_from = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+            sync_from = (datetime.utcnow() - timedelta(days=90)).isoformat()
 
         # Validate batch size
         if batch_size > 1000 or batch_size < 10:
@@ -2202,14 +2206,14 @@ async def sync_message_history(
             "total_batches": 0,  # Calculated by sync worker
             "progress_percent": 0,
             "has_more": False,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"[HISTORY-SYNC] Error: {e}")
         return {
             "sync_state": "failed",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
 
@@ -2262,7 +2266,7 @@ async def get_conversation_metadata(
             "is_muted": False,
             "is_archived": False,
             "active_devices": [],
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"[METADATA-QUERY] Error: {e}")
@@ -2296,7 +2300,7 @@ async def sync_device_state(
             "device_id": device_id,
             "sync_state": "synced",
             "pending_messages": 0,
-            "last_sync_at": datetime.now(timezone.utc).isoformat(),
+            "last_sync_at": datetime.utcnow().isoformat(),
             "active_devices": [device_id],
             "primary_device": device_id,
         }
@@ -2345,7 +2349,7 @@ async def get_relationship_graph(
             "total_count": 0,
             "score_min": score_min,
             "limit": limit,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"[RELATIONSHIP-GRAPH] Error: {e}")
@@ -2400,7 +2404,7 @@ async def get_retention_policy(current_user: str = Depends(get_current_user)):
                 "ENABLE_MULTI_DEVICE_SYNC", "true"
             ).lower()
             == "true",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"[RETENTION-POLICY] Error: {e}")

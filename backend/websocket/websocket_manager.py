@@ -1,0 +1,1007 @@
+"""
+WhatsApp-Grade Singleton WebSocket Manager
+==========================================
+
+Implements singleton pattern for WebSocket connections with Redis Pub/Sub.
+Ensures only one connection per device and provides real-time messaging.
+
+Key Features:
+- Singleton pattern with thread-safe initialization
+- Redis Pub/Sub for cross-container communication
+- Per-device connection deduplication
+- Message state tracking (sending→sent→delivered→read)
+- Graceful reconnection and error handling
+- Async-only operations with proper cleanup
+"""
+
+import asyncio
+import json
+import time
+import logging
+import secrets
+from typing import Dict, List, Optional, Set, Any, Union
+from dataclasses import dataclass, asdict
+from datetime import datetime, timedelta
+import websockets
+from websockets.server import WebSocketServerProtocol
+
+# WhatsApp-Grade Cryptographic Imports
+try:
+    import redis.asyncio as redis
+except ImportError:
+    logging.warning("[WARNING] Redis not available - using fallback cache")
+    redis = None
+
+# TYPE_CHECKING for type hints when redis module is not available
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    import redis.asyncio as redis_type
+else:
+    redis_type = Any
+
+# Import our cryptographic modules
+try:
+    from crypto.signal_protocol import SignalProtocol
+    from crypto.multi_device import MultiDeviceManager
+    from crypto.delivery_semantics import DeliveryManager, MessageStatus, DeviceState
+    from crypto.media_encryption import MediaEncryptionService
+except ImportError:
+    logging.warning("[WARNING] Cryptographic modules not available")
+    SignalProtocol = None
+    MultiDeviceManager = None
+    DeliveryManager = None
+    DeviceState = None
+    MediaEncryptionService = None
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class WebSocketConnection:
+    """WebSocket connection metadata with message state tracking"""
+    websocket: WebSocketServerProtocol
+    device_id: str
+    user_id: str
+    connected_at: float
+    last_ping: float
+    last_pong: float
+    is_authenticated: bool = False
+    message_queue: List[Dict[str, Any]] = None
+    message_states: Dict[str, str] = None  # message_id -> state
+    
+    def __post_init__(self):
+        if self.message_queue is None:
+            self.message_queue = []
+        if self.message_states is None:
+            self.message_states = {}
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'device_id': self.device_id,
+            'user_id': self.user_id,
+            'connected_at': self.connected_at,
+            'last_ping': self.last_ping,
+            'last_pong': self.last_pong,
+            'is_authenticated': self.is_authenticated,
+            'queue_size': len(self.message_queue),
+            'active_message_states': len(self.message_states)
+        }
+
+class WebSocketManager:
+    """WhatsApp-grade singleton WebSocket manager"""
+    
+    _instance = None
+    _lock = asyncio.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
+    async def initialize(self, redis_client: Optional[Any] = None):
+        """Initialize the singleton manager (async-safe)"""
+        async with self._lock:
+            if self._initialized:
+                return
+            
+            self.redis = redis_client
+            
+            # Initialize cryptographic services
+            if DeliveryManager and redis_client:
+                self.delivery_manager = DeliveryManager(redis_client)
+            else:
+                self.delivery_manager = None
+                
+            if MultiDeviceManager and redis_client:
+                self.device_manager = MultiDeviceManager(redis_client)
+            else:
+                self.device_manager = None
+                
+            if SignalProtocol:
+                self.signal_protocol = SignalProtocol()
+            else:
+                self.signal_protocol = None
+                
+            if MediaEncryptionService and redis_client:
+                self.media_service = MediaEncryptionService(redis_client)
+            else:
+                self.media_service = None
+            
+            # Active connections by device_id (memory-safe structure)
+            # CRITICAL: One connection per device_id - old connections auto-replaced
+            self.connections: Dict[str, WebSocketConnection] = {}
+            self.connection_lock = asyncio.Lock()  # Prevent race conditions
+            
+            # Redis Pub/Sub subscriptions (one per connection handler)
+            self.pubsub_subscriptions: Dict[str, Any] = {}
+            
+            # Global Redis Pub/Sub task for cross-container communication
+            self.global_pubsub_task = None
+            
+            # Configuration
+            self.heartbeat_interval = 30  # seconds
+            self.pong_timeout = 10  # seconds
+            self.max_queue_size = 1000
+            self.connection_timeout = 7200  # 2 hours
+            self.reconnect_grace_period = 5  # 5 seconds for reconnect dedupe
+            
+            # Message state tracking
+            self.message_states: Dict[str, Dict[str, str]] = {}  # message_id -> {device_id: state}
+            self.state_lock = asyncio.Lock()
+            
+            # Message deduplication to prevent duplicate triggers
+            self.message_deduplication: Dict[str, float] = {}  # message_hash -> timestamp
+            self.deduplication_lock = asyncio.Lock()
+            self.deduplication_window = 5.0  # 5 seconds deduplication window
+            
+            self._initialized = True
+            logger.info("[WS-MANAGER] Singleton WebSocket manager initialized")
+    
+    async def handle_connection(self, websocket: WebSocketServerProtocol, path: str):
+        """Handle new WebSocket connection with deduplication and state tracking"""
+        device_id = None
+        user_id = None
+        heartbeat_task = None
+        pubsub_task = None
+        
+        try:
+            logger.info(f"New WebSocket connection from {websocket.remote_address}")
+            
+            # Extract device and user IDs from headers
+            device_id = websocket.request_headers.get('X-Device-ID')
+            user_id = websocket.request_headers.get('X-User-ID')
+            
+            if not device_id or not user_id:
+                await websocket.close(4001, "Missing device or user ID")
+                return
+            
+            # Authenticate device
+            if not await self._authenticate_device(websocket, device_id, user_id):
+                await websocket.close(4003, "Authentication failed")
+                return
+            
+            # Create connection object
+            new_connection = WebSocketConnection(
+                websocket=websocket,
+                device_id=device_id,
+                user_id=user_id,
+                connected_at=time.time(),
+                last_ping=time.time(),
+                last_pong=time.time(),
+                is_authenticated=True
+            )
+            
+            # CRITICAL: Replace old connection if exists (deduplication)
+            # This prevents duplicate sockets for same device_id
+            async with self.connection_lock:
+                old_connection = self.connections.get(device_id)
+                if old_connection and old_connection.websocket:
+                    try:
+                        await old_connection.websocket.close(4001, "Duplicate connection")
+                        logger.info(f"Closed duplicate connection for device {device_id}")
+                    except Exception as e:
+                        logger.debug(f"Failed to close old connection: {e}")
+                
+                # Store new connection (thread-safe)
+                self.connections[device_id] = new_connection
+            
+            # Update device connection status
+            if self.delivery_manager:
+                await self.delivery_manager.update_device_connection(
+                    device_id=device_id,
+                    user_id=user_id,
+                    state="online",  # Use string instead of enum
+                    websocket_id=id(websocket),
+                    ip_address=websocket.remote_address[0],
+                    user_agent=websocket.request_headers.get('User-Agent', '')
+                )
+            
+            logger.info(f"Device {device_id} connected (total: {len(self.connections)})")
+            
+            # Start background tasks
+            heartbeat_task = asyncio.create_task(
+                self._heartbeat_loop(device_id, new_connection)
+            )
+            
+            # Subscribe to Redis Pub/Sub for broadcasts
+            pubsub_task = asyncio.create_task(
+                self._redis_pubsub_listener(device_id, user_id, new_connection)
+            )
+            
+            # Process offline messages
+            await self._process_offline_messages(new_connection)
+            
+            # Handle incoming WebSocket messages
+            await self._handle_messages(new_connection)
+            
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"WebSocket connection closed for device {device_id}")
+        except Exception as e:
+            logger.error(f"Error handling WebSocket connection: {e}")
+        finally:
+            # Cleanup
+            if device_id:
+                await self._cleanup_connection(device_id)
+            
+            # Cancel all background tasks
+            if heartbeat_task:
+                heartbeat_task.cancel()
+            if pubsub_task:
+                pubsub_task.cancel()
+            
+            try:
+                await asyncio.gather(heartbeat_task, pubsub_task, return_exceptions=True)
+            except Exception:
+                pass
+    
+    async def _authenticate_device(
+        self,
+        websocket: WebSocketServerProtocol,
+        device_id: str,
+        user_id: str
+    ) -> bool:
+        """Authenticate WebSocket connection"""
+        try:
+            # Verify device belongs to user
+            if self.device_manager:
+                user_devices = await self.device_manager.get_user_devices(user_id)
+                
+                if not any(device.device_id == device_id for device in user_devices):
+                    logger.warning(f"Device {device_id} not found for user {user_id}")
+                    return False
+                
+                # Check device session
+                device_session = await self.device_manager.get_device_session(user_id, device_id)
+                
+                if not device_session:
+                    logger.warning(f"No session found for device {device_id}")
+                    return False
+                
+                # Send authentication challenge
+                challenge = secrets.token_urlsafe(32)
+                await websocket.send(json.dumps({
+                    'type': 'auth_challenge',
+                    'challenge': challenge,
+                    'timestamp': time.time()
+                }))
+                
+                # Wait for response
+                response = await asyncio.wait_for(
+                    websocket.recv(),
+                    timeout=10.0
+                )
+                
+                auth_data = json.loads(response)
+                
+                # Verify challenge response
+                expected_response = self._calculate_challenge_response(
+                    challenge,
+                    device_session.session_key
+                )
+                
+                if auth_data.get('response') != expected_response:
+                    logger.warning(f"Invalid auth response for device {device_id}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Authentication error for device {device_id}: {e}")
+            return False
+    
+    async def _handle_messages(self, connection: WebSocketConnection):
+        """Handle incoming WebSocket messages with state tracking"""
+        try:
+            async for message in connection.websocket:
+                try:
+                    data = json.loads(message)
+                    await self._process_message(connection, data)
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON from device {connection.device_id}")
+                    await connection.websocket.close(4002, "Invalid JSON")
+                    break
+                except Exception as e:
+                    logger.error(f"Error processing message: {e}")
+                    
+        except websockets.exceptions.ConnectionClosed:
+            pass
+    
+    async def _process_message(
+        self,
+        connection: WebSocketConnection,
+        data: Dict[str, Any]
+    ):
+        """Process incoming WebSocket message with state tracking"""
+        message_type = data.get('type')
+        
+        if message_type == 'pong':
+            connection.last_pong = time.time()
+            return
+        
+        elif message_type == 'delivery_receipt':
+            await self._handle_delivery_receipt(connection, data)
+        
+        elif message_type == 'read_receipt':
+            await self._handle_read_receipt(connection, data)
+        
+        elif message_type == 'typing':
+            await self._handle_typing_indicator(connection, data)
+        
+        elif message_type == 'presence':
+            await self._handle_presence_update(connection, data)
+        
+        elif message_type == 'message_state_update':
+            await self._handle_message_state_update(connection, data)
+        
+        else:
+            logger.warning(f"Unknown message type: {message_type}")
+    
+    async def _handle_delivery_receipt(
+        self,
+        connection: WebSocketConnection,
+        data: Dict[str, Any]
+    ):
+        """Handle delivery receipt with state tracking"""
+        message_id = data.get('message_id')
+        timestamp = data.get('timestamp', time.time())
+        
+        if not message_id:
+            return
+        
+        # Update delivery status
+        if self.delivery_manager:
+            success = await self.delivery_manager.mark_message_delivered(
+                message_id,
+                connection.device_id
+            )
+            
+            if success:
+                # Update message state
+                await self.update_message_state(message_id, connection.device_id, "delivered")
+                
+                # Broadcast to other devices
+                await self._broadcast_to_user_devices(
+                    connection.user_id,
+                    connection.device_id,
+                    {
+                        'type': 'delivery_receipt',
+                        'message_id': message_id,
+                        'device_id': connection.device_id,
+                        'timestamp': timestamp,
+                        'state': 'delivered'
+                    }
+                )
+                
+                logger.info(f"Delivery receipt for message {message_id} from device {connection.device_id}")
+    
+    async def _handle_read_receipt(
+        self,
+        connection: WebSocketConnection,
+        data: Dict[str, Any]
+    ):
+        """Handle read receipt with state tracking"""
+        message_id = data.get('message_id')
+        timestamp = data.get('timestamp', time.time())
+        
+        if not message_id:
+            return
+        
+        # Update read status
+        if self.delivery_manager:
+            success = await self.delivery_manager.mark_message_read(
+                message_id,
+                connection.device_id
+            )
+            
+            if success:
+                # Update message state
+                await self.update_message_state(message_id, connection.device_id, "read")
+                
+                # Broadcast to other devices
+                await self._broadcast_to_user_devices(
+                    connection.user_id,
+                    connection.device_id,
+                    {
+                        'type': 'read_receipt',
+                        'message_id': message_id,
+                        'device_id': connection.device_id,
+                        'timestamp': timestamp,
+                        'state': 'read'
+                    }
+                )
+                
+                logger.info(f"Read receipt for message {message_id} from device {connection.device_id}")
+    
+    async def _handle_message_state_update(
+        self,
+        connection: WebSocketConnection,
+        data: Dict[str, Any]
+    ):
+        """Handle message state updates (sending→sent→delivered→read)"""
+        message_id = data.get('message_id')
+        new_state = data.get('state')
+        timestamp = data.get('timestamp', time.time())
+        
+        if not message_id or not new_state:
+            return
+        
+        # Validate state transition
+        valid_states = ['sending', 'sent', 'delivered', 'read', 'failed']
+        if new_state not in valid_states:
+            logger.warning(f"Invalid message state: {new_state}")
+            return
+        
+        # Update message state
+        await self.update_message_state(message_id, connection.device_id, new_state)
+        
+        # Broadcast state change to other devices
+        await self._broadcast_to_user_devices(
+            connection.user_id,
+            connection.device_id,
+            {
+                'type': 'message_state_update',
+                'message_id': message_id,
+                'device_id': connection.device_id,
+                'state': new_state,
+                'timestamp': timestamp
+            }
+        )
+        
+        logger.info(f"Message {message_id} state updated to {new_state} by device {connection.device_id}")
+    
+    async def update_message_state(self, message_id: str, device_id: str, state: str):
+        """Update message state in thread-safe manner"""
+        async with self.state_lock:
+            if message_id not in self.message_states:
+                self.message_states[message_id] = {}
+            
+            self.message_states[message_id][device_id] = state
+            
+            # Update connection's local state tracking
+            connection = self.connections.get(device_id)
+            if connection:
+                connection.message_states[message_id] = state
+    
+    async def get_message_state(self, message_id: str, device_id: str) -> Optional[str]:
+        """Get current state for a message on a device"""
+        async with self.state_lock:
+            return self.message_states.get(message_id, {}).get(device_id)
+    
+    async def get_all_message_states(self, message_id: str) -> Dict[str, str]:
+        """Get all device states for a message"""
+        async with self.state_lock:
+            return self.message_states.get(message_id, {}).copy()
+    
+    async def _handle_typing_indicator(
+        self,
+        connection: WebSocketConnection,
+        data: Dict[str, Any]
+    ):
+        """Handle typing indicator"""
+        chat_id = data.get('chat_id')
+        is_typing = data.get('is_typing', False)
+        
+        if not chat_id:
+            return
+        
+        # Broadcast to chat participants
+        await self._broadcast_to_chat_participants(
+            chat_id,
+            connection.user_id,
+            {
+                'type': 'typing',
+                'user_id': connection.user_id,
+                'device_id': connection.device_id,
+                'chat_id': chat_id,
+                'is_typing': is_typing,
+                'timestamp': time.time()
+            }
+        )
+    
+    async def _handle_presence_update(
+        self,
+        connection: WebSocketConnection,
+        data: Dict[str, Any]
+    ):
+        """Handle presence update"""
+        presence = data.get('presence', 'online')
+        
+        # Update device presence
+        if self.delivery_manager:
+            state = DeviceState.ONLINE if presence == 'online' else DeviceState.OFFLINE
+            await self.delivery_manager.update_device_connection(
+                device_id=connection.device_id,
+                user_id=connection.user_id,
+                state=state
+            )
+    
+    async def _process_offline_messages(self, connection: WebSocketConnection):
+        """Process messages that arrived while device was offline"""
+        try:
+            if not self.redis:
+                return
+                
+            # Get offline messages queue
+            offline_messages = await self.redis.lrange(
+                f"device_offline_queue:{connection.device_id}",
+                0,
+                -1
+            )
+            
+            if offline_messages:
+                logger.info(f"Processing {len(offline_messages)} offline messages for device {connection.device_id}")
+                
+                # Send messages to device
+                for message_data in offline_messages:
+                    try:
+                        await connection.websocket.send(message_data)
+                        await asyncio.sleep(0.01)  # Small delay to prevent overwhelming
+                    except Exception as e:
+                        logger.error(f"Failed to send offline message: {e}")
+                
+                # Clear offline queue
+                await self.redis.delete(f"device_offline_queue:{connection.device_id}")
+                
+        except Exception as e:
+            logger.error(f"Error processing offline messages: {e}")
+    
+    async def _heartbeat_loop(self, device_id: str, connection: WebSocketConnection):
+        """Send periodic heartbeat pings (keep connection persistent)"""
+        while True:
+            try:
+                await asyncio.sleep(self.heartbeat_interval)
+                
+                # Verify connection still exists and is active
+                if device_id not in self.connections:
+                    logger.debug(f"Device {device_id} not in active connections")
+                    break
+                
+                # Check if connection is still alive
+                if time.time() - connection.last_pong > self.pong_timeout:
+                    logger.warning(f"Pong timeout for device {device_id}")
+                    await connection.websocket.close(4000, "Pong timeout")
+                    break
+                
+                # Send ping (UTC ISO format)
+                ping_data = {
+                    'type': 'ping',
+                    'timestamp': datetime.utcnow().isoformat() + 'Z',
+                    'sequence': int(time.time() * 1000)  # Millisecond sequence
+                }
+                
+                await connection.websocket.send(json.dumps(ping_data))
+                connection.last_ping = time.time()
+                
+            except websockets.exceptions.ConnectionClosed:
+                logger.debug(f"Heartbeat: Connection closed for device {device_id}")
+                break
+            except asyncio.CancelledError:
+                logger.debug(f"Heartbeat: Cancelled for device {device_id}")
+                break
+            except Exception as e:
+                logger.error(f"Heartbeat error for device {device_id}: {e}")
+                break
+    
+    async def _broadcast_to_user_devices(
+        self,
+        user_id: str,
+        exclude_device_id: str,
+        message: Dict[str, Any]
+    ):
+        """Broadcast message to all user devices except one"""
+        if self.device_manager:
+            user_devices = await self.device_manager.get_active_devices(user_id)
+            
+            for device in user_devices:
+                if device.device_id == exclude_device_id:
+                    continue
+                
+                connection = self.connections.get(device.device_id)
+                if connection:
+                    try:
+                        await connection.websocket.send(json.dumps(message))
+                    except Exception as e:
+                        logger.error(f"Failed to broadcast to device {device.device_id}: {e}")
+    
+    async def _broadcast_to_chat_participants(
+        self,
+        chat_id: str,
+        exclude_user_id: str,
+        message: Dict[str, Any]
+    ):
+        """Broadcast message to all chat participants except one"""
+        if not self.redis:
+            return
+            
+        # Get chat participants
+        chat_data = await self.redis.hgetall(f"chat:{chat_id}")
+        if not chat_data:
+            return
+        
+        members = json.loads(chat_data.get('members', '[]'))
+        
+        for user_id in members:
+            if user_id == exclude_user_id:
+                continue
+            
+            await self._broadcast_to_user_devices(user_id, '', message)
+    
+    async def _cleanup_connection(self, device_id: str):
+        """Clean up closed connection (thread-safe)"""
+        async with self.connection_lock:
+            if device_id in self.connections:
+                connection = self.connections[device_id]
+                
+                # Update device status to offline
+                try:
+                    if self.delivery_manager:
+                        await self.delivery_manager.update_device_connection(
+                            device_id=device_id,
+                            user_id=connection.user_id,
+                            state="offline"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to update device status to offline: {e}")
+                
+                # Close socket if still open
+                try:
+                    if connection.websocket and not connection.websocket.closed:
+                        await connection.websocket.close()
+                except Exception as e:
+                    logger.debug(f"Socket already closed: {e}")
+                
+                # Remove from active connections
+                del self.connections[device_id]
+                
+                logger.info(f"Cleaned up connection for device {device_id} (total: {len(self.connections)})")
+            
+            # Clean up Redis Pub/Sub subscription
+            if device_id in self.pubsub_subscriptions:
+                try:
+                    await self.pubsub_subscriptions[device_id].close()
+                except Exception as e:
+                    logger.debug(f"Failed to close pubsub: {e}")
+                del self.pubsub_subscriptions[device_id]
+    
+    def _calculate_challenge_response(self, challenge: str, session_key: str) -> str:
+        """Calculate authentication challenge response"""
+        # Use HMAC with session key
+        import hmac
+        import hashlib
+        
+        hmac_obj = hmac.new(
+            session_key.encode(),
+            challenge.encode(),
+            hashlib.sha256
+        )
+        
+        return hmac_obj.hexdigest()
+    
+    async def _should_deduplicate_message(self, message: Dict[str, Any]) -> bool:
+        """Check if message should be deduplicated to prevent duplicate triggers"""
+        try:
+            # Create a hash of the message content for deduplication
+            message_content = {
+                'type': message.get('type'),
+                'message_id': message.get('message_id'),
+                'chat_id': message.get('chat_id'),
+                'device_id': message.get('device_id'),
+                'timestamp': message.get('timestamp')
+            }
+            
+            # Create a simple hash string
+            import hashlib
+            message_str = json.dumps(message_content, sort_keys=True)
+            message_hash = hashlib.md5(message_str.encode()).hexdigest()
+            
+            current_time = time.time()
+            async with self.deduplication_lock:
+                # Check if we've seen this message recently
+                if message_hash in self.message_deduplication:
+                    last_seen = self.message_deduplication[message_hash]
+                    if current_time - last_seen < self.deduplication_window:
+                        logger.debug(f"Deduplicating message: {message_hash}")
+                        return True
+                
+                # Record this message
+                self.message_deduplication[message_hash] = current_time
+                
+                # Clean up old deduplication entries
+                await self._cleanup_deduplication()
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error in deduplication check: {e}")
+            return False
+    
+    async def _cleanup_deduplication(self):
+        """Clean up old deduplication entries"""
+        current_time = time.time()
+        expired_keys = []
+        
+        for message_hash, timestamp in self.message_deduplication.items():
+            if current_time - timestamp > self.deduplication_window:
+                expired_keys.append(message_hash)
+        
+        for key in expired_keys:
+            del self.message_deduplication[key]
+    
+    async def send_message_to_device(self, device_id: str, message: Dict[str, Any]) -> bool:
+        """Send message to specific device (online or queue for offline)"""
+        # Check for message deduplication
+        if await self._should_deduplicate_message(message):
+            return True  # Message was deduplicated, but consider it "sent"
+        
+        async with self.connection_lock:
+            connection = self.connections.get(device_id)
+        
+        if connection:
+            try:
+                await connection.websocket.send(json.dumps(message))
+                return True
+            except Exception as e:
+                logger.warning(f"Failed to send message to device {device_id}: {e}")
+                # Fall through to queue for offline
+        
+        # Device is offline or send failed, queue message in Redis
+        try:
+            if self.redis:
+                await self.redis.lpush(
+                    f"device_offline_queue:{device_id}",
+                    json.dumps(message)
+                )
+                # Set TTL on queue (1 hour)
+                await self.redis.expire(f"device_offline_queue:{device_id}", 3600)
+                logger.debug(f"Queued message for offline device {device_id}")
+        except Exception as e:
+            logger.error(f"Failed to queue message for device {device_id}: {e}")
+        
+        return False
+    
+    async def get_connection_stats(self) -> Dict[str, Any]:
+        """Get WebSocket connection statistics"""
+        total_connections = len(self.connections)
+        authenticated_connections = sum(
+            1 for conn in self.connections.values() if conn.is_authenticated
+        )
+        
+        # Calculate connection duration stats
+        now = time.time()
+        durations = [
+            now - conn.connected_at for conn in self.connections.values()
+        ]
+        
+        avg_duration = sum(durations) / len(durations) if durations else 0
+        
+        # Get message state stats
+        async with self.state_lock:
+            total_message_states = sum(
+                len(states) for states in self.message_states.values()
+            )
+        
+        return {
+            'total_connections': total_connections,
+            'authenticated_connections': authenticated_connections,
+            'average_connection_duration': avg_duration,
+            'total_message_states': total_message_states,
+            'connections': [
+                conn.to_dict() for conn in self.connections.values()
+            ]
+        }
+    
+    async def _redis_pubsub_listener(self, device_id: str, user_id: str, connection: WebSocketConnection):
+        """Listen to Redis Pub/Sub for broadcast messages"""
+        if not self.redis:
+            return
+        
+        try:
+            pubsub = self.redis.pubsub()
+            self.pubsub_subscriptions[device_id] = pubsub
+            
+            # Subscribe to broadcast channels
+            channels = [
+                f"broadcast:user:{user_id}",  # Messages to user
+                f"broadcast:device:{device_id}",  # Messages to device
+            ]
+            
+            await pubsub.subscribe(*channels)
+            logger.info(f"Device {device_id} subscribed to {len(channels)} channels")
+            
+            # Listen for messages (Redis Pub/Sub)
+            async for message in pubsub.listen():
+                if message['type'] == 'message':
+                    try:
+                        # Verify connection still exists
+                        if device_id not in self.connections:
+                            break
+                        
+                        # Send message via WebSocket
+                        await connection.websocket.send(message['data'])
+                        logger.debug(f"Broadcast to device {device_id}")
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to send broadcast to device {device_id}: {e}")
+                        break
+                
+                elif message['type'] == 'subscribe':
+                    logger.debug(f"Subscribed to {message['channel']}")
+        
+        except Exception as e:
+            logger.error(f"Pub/Sub error for device {device_id}: {e}")
+        finally:
+            try:
+                if device_id in self.pubsub_subscriptions:
+                    await pubsub.close()
+                    del self.pubsub_subscriptions[device_id]
+            except Exception:
+                pass
+    
+    async def start_global_pubsub(self):
+        """Start global Redis Pub/Sub subscriber for cross-container communication"""
+        if not self.redis or self.global_pubsub_task:
+            return
+        
+        async def global_redis_subscriber():
+            """Listen to Redis channels and broadcast to WebSocket clients"""
+            pubsub = None
+            try:
+                logger.info("[REDIS] Starting global Redis Pub/Sub subscriber...")
+                pubsub = await self.redis.pubsub()
+                
+                # Subscribe to all chat channels (pattern matching)
+                await pubsub.psubscribe("chat:*")
+                logger.info("[REDIS] Subscribed to chat:* channels")
+                
+                async for message in pubsub.listen():
+                    try:
+                        if message['type'] in ['message', 'pmessage']:
+                            channel = message.get('channel', '').decode() if isinstance(message.get('channel'), bytes) else message.get('channel', '')
+                            data_raw = message.get('data')
+                            
+                            # Parse data (could be bytes or str depending on decode_responses setting)
+                            if isinstance(data_raw, bytes):
+                                data_str = data_raw.decode('utf-8')
+                            else:
+                                data_str = data_raw
+                            
+                            try:
+                                data = json.loads(data_str)
+                                
+                                # Log publish/subscribe activity
+                                logger.debug(f"[REDIS] Received {message['type']} on {channel}: {data.get('type', 'unknown')}")
+                                
+                                # Broadcast to relevant WebSocket connections
+                                await self._broadcast_redis_message(data, channel)
+                                
+                            except json.JSONDecodeError as e:
+                                logger.error(f"[REDIS] Failed to parse message from {channel}: {e}")
+                    
+                    except Exception as e:
+                        logger.error(f"[REDIS] Error processing Redis message: {type(e).__name__}: {e}")
+            
+            except asyncio.CancelledError:
+                logger.info("[REDIS] Redis subscriber cancelled")
+            except Exception as e:
+                logger.error(f"[REDIS] Global Redis subscriber error: {type(e).__name__}: {e}")
+            finally:
+                if pubsub:
+                    try:
+                        await pubsub.close()
+                    except Exception as e:
+                        logger.error(f"[REDIS] Failed to close pubsub: {e}")
+                logger.info("[REDIS] Global Pub/Sub subscriber stopped")
+        
+        # Start Redis subscriber as background task
+        self.global_pubsub_task = asyncio.create_task(global_redis_subscriber())
+        logger.info("[REDIS] Global Pub/Sub subscriber started in background")
+    
+    async def _broadcast_redis_message(self, data: Dict[str, Any], channel: str):
+        """Broadcast Redis message to relevant WebSocket connections"""
+        try:
+            # Extract target information from data or channel
+            message_type = data.get('type')
+            
+            if message_type in ['delivery_receipt', 'read_receipt', 'message_state_update']:
+                # Broadcast to specific user's devices
+                user_id = data.get('user_id')
+                if user_id:
+                    await self._broadcast_to_user_devices(user_id, '', data)
+            
+            elif message_type == 'typing':
+                # Broadcast to chat participants
+                chat_id = data.get('chat_id')
+                exclude_user_id = data.get('user_id')
+                if chat_id and exclude_user_id:
+                    await self._broadcast_to_chat_participants(chat_id, exclude_user_id, data)
+            
+            elif message_type == 'presence':
+                # Broadcast presence updates to user's other devices
+                user_id = data.get('user_id')
+                if user_id:
+                    await self._broadcast_to_user_devices(user_id, data.get('device_id', ''), data)
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting Redis message: {e}")
+    
+    async def shutdown(self):
+        """Graceful shutdown of WebSocket manager"""
+        logger.info("[WS-MANAGER] Shutting down WebSocket manager")
+        
+        # Cancel global Pub/Sub task
+        if self.global_pubsub_task:
+            try:
+                self.global_pubsub_task.cancel()
+                await asyncio.wait_for(self.global_pubsub_task, timeout=5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                logger.info("[WS-MANAGER] Global Pub/Sub task cancelled")
+        
+        # Close all connections
+        async with self.connection_lock:
+            for device_id, connection in list(self.connections.items()):
+                try:
+                    if connection.websocket and not connection.websocket.closed:
+                        await connection.websocket.close(4000, "Server shutdown")
+                except Exception as e:
+                    logger.debug(f"Error closing connection {device_id}: {e}")
+            
+            self.connections.clear()
+        
+        # Close all Pub/Sub subscriptions
+        for device_id, pubsub in list(self.pubsub_subscriptions.items()):
+            try:
+                await pubsub.close()
+            except Exception as e:
+                logger.debug(f"Error closing pubsub {device_id}: {e}")
+        
+        self.pubsub_subscriptions.clear()
+        
+        # Clear message states
+        async with self.state_lock:
+            self.message_states.clear()
+        
+        logger.info("[WS-MANAGER] WebSocket manager shutdown complete")
+
+# Global singleton instance
+websocket_manager = WebSocketManager()
+
+# WebSocket server factory
+async def create_websocket_server(redis_client: Optional[Any], host: str = "0.0.0.0", port: int = 8001):
+    """Create WebSocket server with singleton manager"""
+    await websocket_manager.initialize(redis_client)
+    
+    # Start global Pub/Sub subscriber
+    await websocket_manager.start_global_pubsub()
+    
+    logger.info(f"Starting WebSocket server on {host}:{port}")
+    
+    return await websockets.serve(
+        websocket_manager.handle_connection,
+        host,
+        port,
+        ping_interval=None,  # We handle our own heartbeat
+        ping_timeout=None,
+        close_timeout=10,
+        max_size=10 * 1024 * 1024,  # 10MB max message size
+        compression=None,  # Disable compression for security
+    )
