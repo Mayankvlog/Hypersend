@@ -40,7 +40,17 @@ class Message extends Equatable {
   factory Message.fromApi(Map<String, dynamic> json, {required String currentUserId}) {
     final senderId = (json['sender_id'] ?? json['senderId'] ?? '').toString().trim();
     final createdAtRaw = json['created_at'] ?? json['createdAt'];
-    final createdAt = createdAtRaw is String ? DateTime.tryParse(createdAtRaw) : null;
+    DateTime? createdAt;
+    
+    if (createdAtRaw is String) {
+      createdAt = DateTime.tryParse(createdAtRaw);
+      // If parsed timestamp is UTC, convert to local time for display
+      if (createdAt != null && createdAt.isUtc) {
+        createdAt = createdAt.toLocal();
+      }
+    } else if (createdAtRaw is DateTime) {
+      createdAt = createdAtRaw.isUtc ? createdAtRaw.toLocal() : createdAtRaw;
+    }
 
     final reactionsRaw = (json['reactions'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
     final reactions = <String, List<String>>{};
