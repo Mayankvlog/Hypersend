@@ -449,8 +449,7 @@ class EmojiUtils {
     '☎️': ['telephone', 'phone', 'call', 'vintage'],
     '📟': ['pager', 'device', 'oldschool', 'vintage'],
     '📠': ['fax', 'machine', 'document', 'office'],
-    '📺': ['tv', 'television', 'watch', 'media', 'news'],
-    '📻': ['radio', 'broadcast', 'listen', 'media'],
+    '': ['radio', 'broadcast', 'listen', 'media'],
     '🎙️': ['studio', 'microphone', 'podcast', 'voice', 'record'],
     '🎚️': ['level', 'slider', 'sound', 'music', 'volume'],
     '🎛️': ['control', 'knobs', 'dj', 'music', 'sound'],
@@ -461,11 +460,8 @@ class EmojiUtils {
     '📡': ['satellite', 'antenna', 'signal', 'broadcast'],
     '🔋': ['battery', 'power', 'energy', 'charge'],
     '🔌': ['electric', 'plug', 'power', 'charge', 'outlet'],
-    '💡': ['light', 'bulb', 'idea', 'bright'],
     
     // Symbols
-    '❤️': ['love', 'heart', 'red', 'symbol'],
-    '💔': ['broken', 'heart', 'sad', 'heartbreak'],
     '✅': ['check', 'mark', 'yes', 'ok', 'verified'],
     '❌': ['cross', 'mark', 'no', 'wrong', 'cancel'],
     '⚠️': ['warning', 'alert', 'caution', 'danger'],
