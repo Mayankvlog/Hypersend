@@ -425,11 +425,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void _showEmojiPicker() {
     int selectedCategoryIndex = 0;
     final TextEditingController searchController = TextEditingController();
+    final List<String> _searchSuggestions = ['smile', 'love', 'animal', 'food', 'sport', 'travel'];
     
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.backgroundDark,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
+        ),
+      ),
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           final categories = EmojiUtils.categories;
@@ -439,132 +446,262 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               : EmojiUtils.searchEmojis(searchQuery);
           
           return SizedBox(
-            height: MediaQuery.of(context).size.height * 0.7,
+            height: MediaQuery.of(context).size.height * 0.75,
             child: Column(
               children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(12.0),
+                // Header with close button
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: AppTheme.dividerColor,
+                        width: 1,
+                      ),
+                    ),
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.only(left: 16),
-                        child: Text('Emojis', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Text(
+                        'Emojis',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
                       ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Done', style: TextStyle(color: AppTheme.primaryCyan)),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          child: const Icon(Icons.close, size: 24),
+                        ),
                       ),
                     ],
                   ),
                 ),
                 
-                // Search bar
+                // Search bar - WhatsApp style
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: TextField(
                     controller: searchController,
                     onChanged: (_) => setState(() {}),
+                    textAlignVertical: TextAlignVertical.center,
                     decoration: InputDecoration(
-                      hintText: 'Search emojis (smile, animal, food...)',
-                      prefixIcon: const Icon(Icons.search, size: 20),
+                      hintText: 'Search emojis',
+                      hintStyle: TextStyle(
+                        color: AppTheme.textSecondary.withValues(alpha: 0.5),
+                        fontSize: 14,
+                      ),
+                      prefixIcon: const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Icon(
+                          Icons.search,
+                          size: 20,
+                          color: AppTheme.primaryCyan,
+                        ),
+                      ),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 32),
                       suffixIcon: searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 20),
-                              onPressed: () {
+                          ? GestureDetector(
+                              onTap: () {
                                 searchController.clear();
                                 setState(() {});
                               },
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                child: const Icon(
+                                  Icons.cancel,
+                                  size: 18,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
                             )
                           : null,
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      filled: true,
+                      fillColor: AppTheme.dividerColor.withValues(alpha: 0.3),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(
+                          color: AppTheme.primaryCyan,
+                          width: 1,
+                        ),
                       ),
                     ),
+                    style: const TextStyle(fontSize: 14),
                   ),
                 ),
                 
+                // Quick search suggestions
+                if (searchQuery.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Wrap(
+                      spacing: 8,
+                      children: _searchSuggestions.map((suggestion) {
+                        return GestureDetector(
+                          onTap: () {
+                            searchController.text = suggestion;
+                            setState(() {});
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppTheme.dividerColor.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              suggestion,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.primaryCyan,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                
+                // Search result count
+                if (searchQuery.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Row(
+                      children: [
+                        Text(
+                          '${displayedEmojis.length} result${displayedEmojis.length == 1 ? '' : 's'}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppTheme.textSecondary,
+                                fontSize: 12,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                
                 // Category tabs (visible only when not searching)
                 if (searchQuery.isEmpty)
-                  SizedBox(
-                    height: 50,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: categories.length,
-                      itemBuilder: (context, index) {
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: List.generate(categories.length, (index) {
                         final isSelected = index == selectedCategoryIndex;
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: InkWell(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          child: GestureDetector(
                             onTap: () => setState(() => selectedCategoryIndex = index),
-                            borderRadius: BorderRadius.circular(8),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              width: 44,
+                              height: 44,
                               decoration: BoxDecoration(
-                                color: isSelected ? AppTheme.primaryCyan.withValues(alpha: 0.2) : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isSelected ? AppTheme.primaryCyan : Colors.transparent,
-                                  width: 1,
-                                ),
+                                shape: BoxShape.circle,
+                                color: isSelected
+                                    ? AppTheme.primaryCyan.withValues(alpha: 0.2)
+                                    : AppTheme.dividerColor.withValues(alpha: 0.2),
+                                border: isSelected
+                                    ? Border.all(
+                                        color: AppTheme.primaryCyan,
+                                        width: 2,
+                                      )
+                                    : null,
                               ),
                               child: Center(
                                 child: Text(
                                   categories[index].icon,
-                                  style: const TextStyle(fontSize: 24),
+                                  style: const TextStyle(fontSize: 22),
                                 ),
                               ),
                             ),
                           ),
                         );
-                      },
+                      }),
                     ),
                   ),
                 
                 // Emoji grid
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     child: displayedEmojis.isEmpty
                         ? Center(
-                            child: Text(
-                              'No emojis found',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: AppTheme.textSecondary,
-                                  ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.emoji_emotions_outlined,
+                                  size: 56,
+                                  color: AppTheme.textSecondary,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No results found',
+                                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                        color: AppTheme.textSecondary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Try: smile, love, animal, food',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: AppTheme.textSecondary.withValues(alpha: 0.6),
+                                        fontSize: 13,
+                                      ),
+                                ),
+                              ],
                             ),
                           )
                         : GridView.builder(
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 8,
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
+                              crossAxisCount: 7,
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
                             ),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                             itemCount: displayedEmojis.length,
-                            itemBuilder: (context, index) => InkWell(
-                              onTap: () {
-                                final emoji = displayedEmojis[index];
-                                final text = _messageController.text;
-                                final selection = _messageController.selection;
-                                final start = selection.start >= 0 ? selection.start : text.length;
-                                final end = selection.end >= 0 ? selection.end : text.length;
-                                final newText = text.replaceRange(start, end, emoji);
-                                _messageController.value = TextEditingValue(
-                                  text: newText,
-                                  selection: TextSelection.collapsed(offset: start + emoji.length),
-                                );
-                              },
-                              child: Center(
-                                child: Text(
-                                  displayedEmojis[index],
-                                  style: const TextStyle(fontSize: 24),
+                            itemBuilder: (context, index) {
+                              final emoji = displayedEmojis[index];
+                              return GestureDetector(
+                                onTap: () {
+                                  final text = _messageController.text;
+                                  final selection = _messageController.selection;
+                                  final start = selection.start >= 0 ? selection.start : text.length;
+                                  final end = selection.end >= 0 ? selection.end : text.length;
+                                  final newText = text.replaceRange(start, end, emoji);
+                                  _messageController.value = TextEditingValue(
+                                    text: newText,
+                                    selection: TextSelection.collapsed(offset: start + emoji.length),
+                                  );
+                                  Navigator.pop(context);
+                                },
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: Colors.transparent,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      emoji,
+                                      style: const TextStyle(fontSize: 32),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           ),
                   ),
                 ),
