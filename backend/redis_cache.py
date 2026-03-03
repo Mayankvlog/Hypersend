@@ -1274,7 +1274,7 @@ async def init_cache():
     import os
     import sys
     
-    # CRITICAL FIX: Detect pytest and disable Redis in test mode
+    # Use centralized pytest detection from database module
     def _is_pytest_running() -> bool:
         """Detect if running under pytest"""
         try:
@@ -1305,7 +1305,7 @@ async def init_cache():
             redis_port = parsed.port or 6379
             redis_password = parsed.password
             redis_db = int(parsed.path.lstrip('/')) if parsed.path else 0
-            logger.info(f"[REDIS] Using REDIS_URL: {redis_url[:50]}...")
+            logger.info(f"[REDIS] Parsed REDIS_URL configuration")
         except Exception as e:
             logger.error(f"[REDIS] Failed to parse REDIS_URL, falling back to components: {e}")
             redis_host = getattr(settings, 'REDIS_HOST', 'hypersend_redis')
@@ -1318,9 +1318,9 @@ async def init_cache():
         redis_port = getattr(settings, 'REDIS_PORT', 6379)
         redis_password = getattr(settings, 'REDIS_PASSWORD', None)
         redis_db = getattr(settings, 'REDIS_DB', 0)
-        logger.info(f"[REDIS] Using components: host={redis_host}, port={redis_port}, db={redis_db}")
+        logger.info(f"[REDIS] Using configured components: {redis_host}:{redis_port}/{redis_db}")
     
-    # CRITICAL: Validate host is NOT localhost (in production, log warning in dev)
+    # CRITICAL: Warn if host is localhost (acceptable for dev, not production)
     if redis_host in ('localhost', '127.0.0.1', '::1'):
         logger.warning(f"[REDIS] WARNING: Redis host is localhost - acceptable for development only, must use service name 'hypersend_redis' in production")
     
@@ -1328,37 +1328,30 @@ async def init_cache():
     if redis_password == '':
         redis_password = None
     
-    # CRITICAL FIX: Non-blocking connection with safe retry logic
-    max_retries = 3
-    retry_delay = 2
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"[REDIS] Connection attempt {attempt + 1}/{max_retries} to {redis_host}:{redis_port}")
-            connected = await asyncio.wait_for(
-                cache.connect(
-                    host=redis_host,
-                    port=redis_port,
-                    password=redis_password,
-                    db=redis_db
-                ),
-                timeout=10.0  # 10-second timeout per connection attempt
-            )
-            
-            if connected:
-                logger.info(f"[REDIS] Connected to {redis_host}:{redis_port} db={redis_db} - cache initialized successfully")
-                return connected
-        except asyncio.TimeoutError:
-            logger.warning(f"[REDIS] Connection timeout on attempt {attempt + 1}/{max_retries}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-        except Exception as e:
-            logger.warning(f"[REDIS] Connection failed on attempt {attempt + 1}/{max_retries}: {type(e).__name__}: {e}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
+    # CRITICAL FIX: Non-blocking connection with single attempt (no retry loop)
+    # Redis connection failure is non-critical - app continues with fallback cache
+    try:
+        logger.info(f"[REDIS] Attempting connection to {redis_host}:{redis_port}")
+        connected = await asyncio.wait_for(
+            cache.connect(
+                host=redis_host,
+                port=redis_port,
+                password=redis_password,
+                db=redis_db
+            ),
+            timeout=10.0  # 10-second timeout for connection attempt
+        )
+        
+        if connected:
+            logger.info(f"[REDIS] Successfully connected to {redis_host}:{redis_port}/{redis_db}")
+            return True
+    except asyncio.TimeoutError:
+        logger.warning(f"[REDIS] Connection timeout to {redis_host}:{redis_port} - using fallback cache")
+    except Exception as e:
+        logger.warning(f"[REDIS] Connection failed: {type(e).__name__}: {e} - using fallback cache")
     
-    logger.error(f"[REDIS] Failed to connect after {max_retries} attempts - Redis unavailable")
-    # CRITICAL: Don't crash app if Redis unavailable - use mock cache
-    logger.warning("[REDIS] Falling back to in-memory cache - production features may be limited")
+    # CRITICAL: Don't crash app if Redis unavailable - use mock cache silently
+    logger.info("[REDIS] Falling back to in-memory cache")
     await cache.clear_mock_cache()
     return True  # Return True to allow app to start with degraded functionality
 

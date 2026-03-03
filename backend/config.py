@@ -121,8 +121,7 @@ class Settings:
     DATABASE_NAME: str = _raw_database_name.strip()
     MONGODB_ATLAS_ENABLED: bool = _raw_atlas_enabled
     
-    logger.info(f"[CONFIG] MongoDB Atlas enabled with database: {DATABASE_NAME}")
-    logger.info(f"[CONFIG] MongoDB URI (masked): {_mask_mongodb_uri(MONGODB_URI)}")
+    logger.info(f"[CONFIG] MongoDB Atlas configured: {_mask_mongodb_uri(MONGODB_URI)} -> {DATABASE_NAME}")
     
     # ============================================================================
     # SECURITY CONFIGURATION
@@ -178,14 +177,12 @@ class Settings:
         os.getenv("USER_QUOTA_BYTES", str(10 * 1024 * 1024 * 1024))
     )  # 10 GB default
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
-    FILE_RETENTION_HOURS: int = int(
+    _raw_file_retention = int(
         os.getenv("FILE_RETENTION_HOURS", "72")
     )  # 72 hours - 3 days
-    # CRITICAL FIX: Prevent FILE_RETENTION_HOURS=0 from causing immediate deletion
-    # If set to 0, default to 72 hours (WhatsApp compliance)
-    if FILE_RETENTION_HOURS <= 0:
-        logger.warning(f"[CONFIG] FILE_RETENTION_HOURS={FILE_RETENTION_HOURS} is invalid (<=0) - defaulting to 72 hours")
-        FILE_RETENTION_HOURS = 72
+    # CRITICAL FIX: Prevent FILE_RETENTION_HOURS<=0 from causing immediate deletion
+    # If set to 0 or negative, silently default to 72 hours (WhatsApp compliance)
+    FILE_RETENTION_HOURS: int = 72 if _raw_file_retention <= 0 else _raw_file_retention
     
     # CENTRALIZED FILE TTL - Single source of truth (72 hours)
     # CRITICAL: All file expiry uses this value, not multiple conflicting definitions
@@ -433,7 +430,6 @@ class Settings:
 
     logger.info(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
     logger.info(f"[CONFIG] AWS Region: {AWS_REGION}")
-    logger.info(f"[CONFIG] File TTL: {FILE_TTL_HOURS} hours (72h like WhatsApp)")
 
     # File upload settings (15GB Support)
     # LARGE_FILE_THRESHOLD and MAX_FILE_SIZE already set above

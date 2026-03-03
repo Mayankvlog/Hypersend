@@ -78,11 +78,6 @@ try:
 except Exception as e:
     raise
 
-try:
-    from backend.mongo_init import ensure_mongodb_ready
-except Exception as e:
-    raise
-
 # Import database initialization function
 from backend.database import init_database
 
@@ -151,19 +146,9 @@ def init_storage():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan event handler - initialize storage, database and cleanup"""
-    import sys
     
-    # CRITICAL FIX: Detect pytest BEFORE Redis initialization to avoid unnecessary Redis connection
-    def _is_pytest_running() -> bool:
-        """Detect if running under pytest"""
-        try:
-            if os.getenv("PYTEST_CURRENT_TEST"):
-                return True
-            if "pytest" in sys.modules:
-                return True
-            return False
-        except Exception:
-            return False
+    # Import pytest detection from centralized location
+    from database import _is_pytest_running
     
     is_test_mode = _is_pytest_running()
     if is_test_mode:
@@ -186,7 +171,7 @@ async def lifespan(app: FastAPI):
     from database import db, client
     app.state.db = db
     app.state.client = client
-    logger.info(f"[STARTUP] Database stored in app state: db={db is not None}, client={client is not None}")
+    logger.info(f"[STARTUP] Database available in app.state")
     
     # Initialize Redis cache (non-critical, continue if fails, skip in test mode)
     if not is_test_mode:
@@ -200,7 +185,7 @@ async def lifespan(app: FastAPI):
                 pass
             logger.info("[STARTUP] Redis cache initialized")
         except Exception as e:
-            logger.warning(f"[STARTUP] Redis cache initialization failed (non-critical): {e}")
+            logger.warning(f"[STARTUP] Redis cache initialization failed (non-critical, continuing): {e}")
             # Continue without Redis - use fallback cache
     else:
         # In test mode, initialize mock cache only
@@ -274,15 +259,14 @@ async def lifespan(app: FastAPI):
                 app.state.redis_subscriber_task = redis_subscriber_task
                 logger.info("[REDIS] Global Pub/Sub subscriber started in background")
             else:
-                logger.warning("[REDIS] Redis not connected - Pub/Sub subscriber not started")
+                logger.info("[REDIS] Redis not connected - Pub/Sub subscriber not started")
         
         except Exception as e:
             logger.error(f"[REDIS] Failed to start Redis Pub/Sub subscriber: {type(e).__name__}: {e}")
-            logger.warning(f"[REDIS] Pub/Sub subscriber initialization failed (non-critical): {e}")
     else:
-        logger.info("[REDIS] Test mode - Pub/Sub subscriber not started")
+        logger.info("[STARTUP] Test mode - Pub/Sub subscriber not started")
 
-    logger.info("Application startup complete")
+    logger.info("[STARTUP] Application startup complete")
     
     yield
     
@@ -293,15 +277,13 @@ async def lifespan(app: FastAPI):
             # Wait for task to finish cancellation
             await asyncio.wait_for(redis_subscriber_task, timeout=5)
         except asyncio.CancelledError:
-            logger.info("[REDIS] Redis subscriber task cancelled")
+            logger.info("[SHUTDOWN] Redis subscriber task cancelled")
         except asyncio.TimeoutError:
-            logger.warning("[REDIS] Redis subscriber task did not cancel within timeout")
+            logger.warning("[SHUTDOWN] Redis subscriber task did not cancel within timeout")
         except Exception as e:
-            logger.error(f"[REDIS] Error cancelling Redis subscriber task: {e}")
-        logger.info("[SHUTDOWN] Redis subscriber task cancelled")
+            logger.error(f"[SHUTDOWN] Error cancelling Redis subscriber task: {e}")
     
-    
-    # Shutdown
+    # Shutdown database connection
     from database import client
     if client:
         try:
@@ -319,7 +301,6 @@ async def lifespan(app: FastAPI):
                 pass
             try:
                 _database._init_lock = None
-                _database._init_loop_id = None
             except Exception:
                 pass
         except Exception:
@@ -332,7 +313,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
 
-    logger.info("[SHUTDOWN] All cleanup complete")
+    logger.info("[SHUTDOWN] Application shutdown complete")
 
 
 # Custom JSON encoder for MongoDB ObjectId serialization

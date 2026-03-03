@@ -1,6 +1,10 @@
 # Database proxy - MongoDB Atlas-only
 # Note: some test harnesses load backend modules without package context.
 # Support both relative and absolute imports without introducing any DB fallbacks.
+import logging
+
+logger = logging.getLogger(__name__)
+
 try:
     from backend.database import (
         users_collection,
@@ -30,4 +34,5 @@ except ImportError:
         get_db,
     )
 
-print("[DB_PROXY] Using MongoDB Atlas database")
+# Note: MongoDB Atlas configuration is validated at config.py import time
+# No additional logging needed here - config.py handles all initialization logs

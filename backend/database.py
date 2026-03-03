@@ -32,10 +32,13 @@ def is_database_initialized():
 
 
 def _is_pytest_running() -> bool:
+    """Centralized pytest detection - used across all modules"""
     try:
         if os.getenv("PYTEST_CURRENT_TEST"):
             return True
-        return "pytest" in sys.modules
+        if "pytest" in sys.modules:
+            return True
+        return False
     except Exception:
         return False
 
@@ -60,11 +63,11 @@ async def init_database():
         except ImportError:
             from config import settings
         
-        # Get configuration from centralized settings object
-        # config.py has already validated and processed these values
-        mongodb_uri = settings.MONGODB_URI
-        database_name = settings.DATABASE_NAME
-        mongodb_atlas_enabled = settings.MONGODB_ATLAS_ENABLED
+        # CRITICAL FIX: Check environment directly for values that may change at runtime (e.g., during pytest)
+        # config.py was loaded at import time, but pytest may change env vars after that
+        mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() == "true"
+        mongodb_uri = os.getenv("MONGODB_URI") or settings.MONGODB_URI
+        database_name = os.getenv("DATABASE_NAME") or settings.DATABASE_NAME
 
         if not mongodb_atlas_enabled:
             raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true"')
@@ -76,7 +79,7 @@ async def init_database():
             raise RuntimeError('DATABASE_NAME is required for Atlas-only operation')
 
         if client is None:
-            logger.info(f"[DATABASE] Connecting to MongoDB Atlas: {_mask_uri(mongodb_uri)}")
+            logger.info(f"[DATABASE] Initializing MongoDB Atlas connection...")
             client = AsyncIOMotorClient(
                 mongodb_uri,
                 serverSelectionTimeoutMS=10000,
@@ -86,8 +89,7 @@ async def init_database():
             db = client[database_name]
 
         await client.admin.command("ping")
-        logger.info(f"[DATABASE] MongoDB Atlas connected successfully")
-        logger.info(f"[DATABASE] Database: {database_name}")
+        logger.info(f"[DATABASE] MongoDB Atlas connected successfully (db={database_name})")
 
         # Create/update indexes used by hot-path queries (idempotent)
         try:
@@ -99,7 +101,6 @@ async def init_database():
             logger.warning(f"[DATABASE] Index creation skipped: {type(e).__name__}")
 
         _database_initialized = True
-        logger.info(f"[DATABASE] Database fully initialized")
 
 def _mask_uri(uri: str) -> str:
     """Mask MongoDB URI password for logging"""
