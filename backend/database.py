@@ -10,9 +10,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 try:
-    from .config import settings
+    from backend.config import settings
 except Exception:
-    from config import settings
+    from backend.config import settings
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "production" and os.getenv("DEBUG", "").lower() not in (
     "true",
@@ -88,6 +88,7 @@ async def init_database():
             raise RuntimeError('DATABASE_NAME is required for Atlas-only operation')
 
         if client is None:
+            logger.info(f"[DATABASE] Connecting to MongoDB Atlas: {_mask_uri(mongodb_uri)}")
             client = AsyncIOMotorClient(
                 mongodb_uri,
                 serverSelectionTimeoutMS=10000,
@@ -97,19 +98,34 @@ async def init_database():
             db = client[database_name]
 
         await client.admin.command("ping")
-        print("MongoDB Atlas connected")
+        logger.info(f"[DATABASE] MongoDB Atlas connected successfully")
+        logger.info(f"[DATABASE] Database: {database_name}")
 
         # Create/update indexes used by hot-path queries (idempotent)
         try:
             await db["messages"].create_index([("chat_id", 1), ("created_at", 1)])
             await db["users"].create_index([("email", 1)], unique=True)
-        except Exception:
+            logger.info("[DATABASE] Indexes created/verified")
+        except Exception as e:
             # Index creation should not prevent startup; Atlas may restrict permissions.
-            pass
+            logger.warning(f"[DATABASE] Index creation skipped: {type(e).__name__}")
 
         _database_initialized = True
-        print(f"Database initialized: {db is not None}, Client initialized: {client is not None}")
-        print(f"Database name: {database_name}")
+        logger.info(f"[DATABASE] Database fully initialized")
+
+def _mask_uri(uri: str) -> str:
+    """Mask MongoDB URI password for logging"""
+    try:
+        if "@" not in uri:
+            return uri
+        prefix = uri.split("@")[0]
+        suffix = uri.split("@")[1]
+        if "://" in prefix:
+            scheme = prefix.split("://")[0]
+            return f"{scheme}://***:***@{suffix}"
+        return uri
+    except Exception:
+        return "***MASKED***"
 
 def get_database():
     """Get database instance"""

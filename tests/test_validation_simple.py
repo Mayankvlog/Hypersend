@@ -201,7 +201,12 @@ class TestDockerNames:
     def test_docker_name_format(self):
         """Test Docker name format compliance"""
         import re
-        docker_pattern = re.compile(r'^[a-z0-9][a-z0-9_.-]*[a-z0-9]$')
+        # Docker service name rules:
+        # - Only lowercase letters, numbers, underscores, dots, hyphens
+        # - Must start with lowercase letter or number
+        # - Must end with lowercase letter or number
+        # - Cannot contain "localhost" or other forbidden terms
+        docker_pattern = re.compile(r'^[a-z0-9][a-z0-9_.-]*[a-z0-9]$|^[a-z0-9]$')
         
         valid_names = ["hypersend_backend", "hypersend_redis", "hypersend_nginx"]
         invalid_names = ["localhost-backend", "127.0.0.1-service", "UPPERCASE"]
@@ -210,7 +215,11 @@ class TestDockerNames:
             assert docker_pattern.match(name), f"'{name}' should be Docker-compatible"
         
         for name in invalid_names:
-            assert not docker_pattern.match(name), f"'{name}' should not be Docker-compatible"
+            # Check both pattern match and forbidden content
+            pattern_match = docker_pattern.match(name)
+            has_forbidden = any(forbidden in name.lower() for forbidden in ["localhost", "127.0.0.1"])
+            is_valid = pattern_match and not has_forbidden
+            assert not is_valid, f"'{name}' should not be Docker-compatible"
 
 
 class TestMessageOrdering:

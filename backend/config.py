@@ -1,103 +1,143 @@
 import os
 import sys
-from pathlib import Path
-from typing import List
-from dotenv import load_dotenv
-from urllib.parse import quote_plus
-import secrets
 import logging
+from pathlib import Path
+from typing import List, Optional
+from dotenv import load_dotenv
+from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+import secrets
 
-# Setup logging
+# Setup logging FIRST
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-# CRITICAL FIX: Strict environment variable validation
-def _validate_env_var(var_name: str, required: bool = True, default: str = None) -> str:
-    """Validate an environment variable"""
-    value = os.getenv(var_name, default)
-    if required and (value is None or (isinstance(value, str) and value.strip() == "")):
-        raise RuntimeError(f"CRITICAL: {var_name} is required but not set or empty")
-    if value and value.startswith(("change-me", "sample", "example")):
-        logger.warning(f"[CONFIG] WARNING: {var_name} uses placeholder value")
-    return value or default
+# ============================================================================
+# CENTRALIZED ENVIRONMENT LOADING - Single source of truth
+# ============================================================================
 
-# Load environment variables from .env file
-# Docker requirement: only load from /app/backend/.env and /app/.env.
-_env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
-for env_path in _env_paths:
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=False)
-        break
+def _load_env_files():
+    """Load environment files in production order"""
+    _env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
+    for env_path in _env_paths:
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=False)
+            return
 
-# Removed current-directory dotenv loading to comply with Docker-only env loading
+_load_env_files()
+
+def _strip_quotes(value: str) -> str:
+    """Safely strip quotes from environment variable values"""
+    if not value:
+        return value
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+def _validate_mongodb_uri(uri: str) -> str:
+    """Validate and auto-fix MongoDB URI for Atlas production use"""
+    uri = uri.strip()
+    
+    # Strip quotes if present
+    uri = _strip_quotes(uri)
+    
+    # Check scheme
+    if not uri.startswith("mongodb+srv://"):
+        raise ValueError(
+            f"MONGODB_URI must be Atlas URI starting with 'mongodb+srv://'. Got: {uri[:60]}..."
+        )
+    
+    # Parse URI to check and auto-append missing parameters
+    parsed = urlparse(uri)
+    query_params = parse_qs(parsed.query)
+    
+    # Auto-append missing critical parameters
+    requires_fix = False
+    if "retryWrites" not in query_params:
+        query_params["retryWrites"] = ["true"]
+        requires_fix = True
+    if "w" not in query_params:
+        query_params["w"] = ["majority"]
+        requires_fix = True
+    
+    if requires_fix:
+        # Reconstruct query string
+        new_query = urlencode({k: v[0] for k, v in query_params.items()}, safe='')
+        uri = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment
+        ))
+        logger.info("[CONFIG] MongoDB URI auto-fixed with retryWrites=true and w=majority")
+    
+    return uri
+
+def _mask_mongodb_uri(uri: str) -> str:
+    """Mask password in MongoDB URI for logging"""
+    try:
+        if "@" not in uri:
+            return uri
+        prefix = uri.split("@")[0]
+        suffix = uri.split("@")[1]
+        # Hide password in prefix
+        if "://" in prefix:
+            scheme_part = prefix.split("://")[0]
+            return f"{scheme_part}://***:***@{suffix}"
+        return uri
+    except Exception:
+        return "***MASKED***"
 
 class Settings:
-    # MongoDB Connection - Atlas Only Configuration
-    # Production: Use MongoDB Atlas cloud database only
-    # CRITICAL: No local MongoDB or fallback database allowed
-
-    # MongoDB Atlas connection from environment
-    env_mongodb_uri = os.getenv("MONGODB_URI")
-    env_database_name = os.getenv("DATABASE_NAME")
-
-    if not env_mongodb_uri:
+    # ============================================================================
+    # MONGODB ATLAS CONFIGURATION - Production only, no local fallback
+    # ============================================================================
+    
+    # Load raw values
+    _raw_mongodb_uri = os.getenv("MONGODB_URI")
+    _raw_database_name = os.getenv("DATABASE_NAME")
+    _raw_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() == "true"
+    
+    # Validation and auto-fixing
+    if not _raw_mongodb_uri:
         raise RuntimeError(
-            "CRITICAL: MONGODB_URI environment variable is required for MongoDB Atlas. "
-            "No hardcoded fallback is permitted for security reasons. "
-            "Please set MONGODB_URI in your environment file with the format: "
-            "mongodb+srv://username:password@cluster.mongodb.net/database?retryWrites=true&w=majority"
+            "CRITICAL: MONGODB_URI is required for MongoDB Atlas production deployment. "
+            "Format: mongodb+srv://user:password@cluster.mongodb.net/db?retryWrites=true&w=majority"
         )
-
-    if not env_database_name:
+    
+    if not _raw_database_name:
         raise RuntimeError(
-            "CRITICAL: DATABASE_NAME environment variable is required for MongoDB Atlas. "
-            "Please set DATABASE_NAME in your environment file."
+            "CRITICAL: DATABASE_NAME is required for MongoDB Atlas."
         )
-
-    # Validate MongoDB URI format for Atlas
-    if not env_mongodb_uri.startswith("mongodb+srv://"):
-        raise ValueError(
-            f"MONGODB_URI must be a MongoDB Atlas URI starting with 'mongodb+srv://'. "
-            f"Got: {env_mongodb_uri[:50]}..."
+    
+    if not _raw_atlas_enabled and not os.getenv("PYTEST_CURRENT_TEST"):
+        raise RuntimeError(
+            "CRITICAL: MONGODB_ATLAS_ENABLED must be 'true' for production (no local MongoDB allowed)."
         )
-
-    # Validate required Atlas parameters
-    if "retryWrites=true" not in env_mongodb_uri:
-        raise ValueError(
-            "MONGODB_URI must include 'retryWrites=true' for production Atlas deployment"
-        )
-
-    if "w=majority" not in env_mongodb_uri:
-        raise ValueError(
-            "MONGODB_URI must include 'w=majority' for production Atlas deployment"
-        )
-
-    MONGODB_URI: str = env_mongodb_uri
-    DATABASE_NAME: str = env_database_name
-    MONGODB_ATLAS_ENABLED: bool = (
-        os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() == "true"
-    )
-
-    print(f"[CONFIG] MongoDB Atlas connection configured")
-    print(f"[CONFIG] Database: {DATABASE_NAME}")
-
-    # Log connection info without exposing credentials
-    if "@" in MONGODB_URI:
-        try:
-            cluster_part = MONGODB_URI.split("@")[1].split("/")[0]
-            print(f"[CONFIG] MongoDB Atlas cluster: {cluster_part}")
-        except Exception as e:
-            print(
-                f"[CONFIG] MongoDB Atlas URI configured (error parsing details: {str(e)})"
-            )
-
-    # Security
-    _env_jwt_secret = os.getenv("JWT_SECRET_KEY")
-    _env_secret = os.getenv("SECRET_KEY")
+    
+    # Validate and auto-fix URI
+    MONGODB_URI: str = _validate_mongodb_uri(_raw_mongodb_uri)
+    DATABASE_NAME: str = _raw_database_name.strip()
+    MONGODB_ATLAS_ENABLED: bool = _raw_atlas_enabled
+    
+    logger.info(f"[CONFIG] MongoDB Atlas enabled with database: {DATABASE_NAME}")
+    logger.info(f"[CONFIG] MongoDB URI (masked): {_mask_mongodb_uri(MONGODB_URI)}")
+    
+    # ============================================================================
+    # SECURITY CONFIGURATION
+    # ============================================================================
+    
+    # JWT and SECRET keys - REQUIRED in production
+    _env_jwt_secret = _strip_quotes(os.getenv("JWT_SECRET_KEY", "")).strip()
+    _env_secret = _strip_quotes(os.getenv("SECRET_KEY", "")).strip()
+    
     if not (_env_jwt_secret or _env_secret):
         raise ValueError(
-            "JWT_SECRET_KEY environment variable must be set in production"
+            "CRITICAL: JWT_SECRET_KEY or SECRET_KEY must be set in production"
         )
-    JWT_SECRET_KEY: str = _env_jwt_secret or _env_secret  # type: ignore[assignment]
+    
+    JWT_SECRET_KEY: str = _env_jwt_secret or _env_secret
     SECRET_KEY: str = JWT_SECRET_KEY
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
 
@@ -213,15 +253,16 @@ class Settings:
     )
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
 
-    # Redis Configuration (Production: Use Docker service name ONLY)
-    # CRITICAL: Must NEVER use localhost - only service name 'hypersend_redis'
-    redis_host_env = os.getenv("REDIS_HOST", "hypersend_redis")
-    if redis_host_env in ('localhost', '127.0.0.1', '::1'):
-        logger.error(f"[CONFIG] CRITICAL: REDIS_HOST cannot be localhost - found '{redis_host_env}'")
-        logger.error(f"[CONFIG] Must use Docker service name 'hypersend_redis' in production")
-        redis_host_env = "hypersend_redis"
+    # ============================================================================
+    # REDIS CONFIGURATION - Docker service name only, NO localhost
+    # ============================================================================
     
-    REDIS_HOST: str = redis_host_env
+    _raw_redis_host = os.getenv("REDIS_HOST", "hypersend_redis").strip()
+    if _raw_redis_host in ('localhost', '127.0.0.1', '::1'):
+        logger.error("[CONFIG] CRITICAL: REDIS_HOST cannot be localhost in production")
+        _raw_redis_host = "hypersend_redis"
+    
+    REDIS_HOST: str = _raw_redis_host
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
@@ -299,51 +340,28 @@ class Settings:
         "yes",
     )
 
-    # WhatsApp Storage Model (User Device + 24h S3 TTL)
-    STORAGE_MODE: str = os.getenv(
-        "STORAGE_MODE", "user_device_s3"
-    )  # WhatsApp: User Device + 24h S3 TTL
+    # ============================================================================
+    # AWS/S3 CONFIGURATION (optional for WhatsApp model)
+    # ============================================================================
+    
     S3_BUCKET: str = os.getenv("S3_BUCKET", "zaply-temp")
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
-
-    # WhatsApp Storage Configuration
+    
+    # ============================================================================
+    # STORAGE MODEL CONFIGURATION
+    # ============================================================================
+    
+    WHATSAPP_STORAGE: bool = os.getenv("WHATSAPP_STORAGE", "true").lower() in ("true", "1", "yes")
+    USER_DEVICE_ONLY: bool = os.getenv("USER_DEVICE_ONLY", "true").lower() in ("true", "1", "yes")
+    NO_SERVER_MEDIA: bool = os.getenv("NO_SERVER_MEDIA", "true").lower() in ("true", "1", "yes")
+    USER_DEVICE_STORAGE: bool = os.getenv("USER_DEVICE_STORAGE", "true").lower() in ("true", "1", "yes")
+    COST_MODEL: str = os.getenv("COST_MODEL", "free")
+    MAX_STORAGE_PER_USER_GB: int = int(os.getenv("MAX_STORAGE_PER_USER_GB", "0"))
     SERVER_STORAGE_BYTES: int = int(os.getenv("SERVER_STORAGE_BYTES", "0"))
-    WHATSAPP_STORAGE: bool = os.getenv("WHATSAPP_STORAGE", "True").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-    FILE_TTL_SECONDS: int = int(os.getenv("FILE_TTL_SECONDS", "259200"))  # 72 hours
-    USER_DEVICE_ONLY: bool = os.getenv("USER_DEVICE_ONLY", "True").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-    NO_SERVER_MEDIA: bool = os.getenv("NO_SERVER_MEDIA", "True").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-
-    # WhatsApp Storage Validation
-    if WHATSAPP_STORAGE:
-        print(f"[CONFIG] WhatsApp Storage Model: ENABLED")
-        print(f"[CONFIG] File TTL: {FILE_TTL_SECONDS} seconds (72h)")
-
-    # Additional WhatsApp Storage Variables
-    FILE_TTL_HOURS: int = int(
-        os.getenv("FILE_TTL_HOURS", "72")
-    )  # 72h temp only like WhatsApp
-    USER_DEVICE_STORAGE: bool = os.getenv("USER_DEVICE_STORAGE", "True").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-    COST_MODEL: str = os.getenv("COST_MODEL", "free")  # No server storage cost
-
-    # For backward compatibility - define paths but they won't be used in S3 mode
+    
+    # Backward compatibility paths
     UPLOADS_PATH: str = os.getenv("UPLOADS_PATH", "/app/uploads")
     MEDIA_PATH: str = os.getenv("MEDIA_PATH", "/app/media")
     DOCUMENTS_PATH: str = os.getenv("DOCUMENTS_PATH", "/app/documents")
@@ -354,22 +372,6 @@ class Settings:
     CHAT_FILES_PATH: str = os.getenv("CHAT_FILES_PATH", "/app/chat_files")
     TEMP_PATH: str = os.getenv("TEMP_PATH", "/app/temp")
     THUMBNAILS_PATH: str = os.getenv("THUMBNAILS_PATH", "/app/thumbnails")
-
-    # WhatsApp-like File Management with 15GB Support
-    FILE_RETENTION_HOURS: int = int(
-        os.getenv("FILE_RETENTION_HOURS", "72")
-    )  # 72 hours - 3 days temporary storage
-    TEMP_FILE_RETENTION_HOURS: int = int(
-        os.getenv("TEMP_FILE_RETENTION_HOURS", "0")
-    )  # 0 hours - immediate deletion
-    AUTO_CLEANUP_ENABLED: bool = os.getenv("AUTO_CLEANUP_ENABLED", "True").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-    MAX_STORAGE_PER_USER_GB: int = int(
-        os.getenv("MAX_STORAGE_PER_USER_GB", "0")
-    )  # 0GB - no server storage
 
     # 15GB Maximum File Size Support
     MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "15360"))  # 15GB in MB
@@ -429,24 +431,9 @@ class Settings:
         "upload": UPLOADS_PATH,
     }
 
-    print(f"[CONFIG] WhatsApp Storage Model: {STORAGE_MODE}")
     print(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
     print(f"[CONFIG] AWS Region: {AWS_REGION}")
     print(f"[CONFIG] File TTL: {FILE_TTL_HOURS} hours (72h like WhatsApp)")
-    print(f"[CONFIG] Server Storage: {SERVER_STORAGE_BYTES} bytes (0 = no storage)")
-    print(f"[CONFIG] User Device Storage: {USER_DEVICE_STORAGE}")
-    print(f"[CONFIG] Cost Model: {COST_MODEL}")
-    print(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours (72h temporary storage)")
-    print(f"[CONFIG] Auto Cleanup: {AUTO_CLEANUP_ENABLED}")
-    print(
-        f"[CONFIG] Max Storage/User: {MAX_STORAGE_PER_USER_GB}GB (0 = no server storage)"
-    )
-    print(f"[CONFIG] Max File Size: {MAX_FILE_SIZE_MB}MB ({MAX_FILE_SIZE_MB//1024}GB)")
-    print(f"[CONFIG] Large File Threshold: {LARGE_FILE_THRESHOLD_GB}GB")
-    print(f"[CONFIG] Max Image Size: {MAX_IMAGE_SIZE_MB}MB")
-    print(f"[CONFIG] Max Video Size: {MAX_VIDEO_SIZE_MB}MB")
-    print(f"[CONFIG] Max Audio Size: {MAX_AUDIO_SIZE_MB}MB")
-    print(f"[CONFIG] Max Document Size: {MAX_DOCUMENT_SIZE_MB}MB")
 
     # File upload settings (15GB Support)
     # LARGE_FILE_THRESHOLD and MAX_FILE_SIZE already set above

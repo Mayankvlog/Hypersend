@@ -56,26 +56,15 @@ SECURITY ENHANCEMENTS:
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.responses import JSONResponse
 
-try:
-    from ..models import (
-        UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
-        PasswordResetRequest, PasswordResetResponse,
-        EmailChangeRequest, EmailVerificationRequest,
-        QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
-        QRCodeSession, TokenData, ChangePasswordRequest
-    )
-    from ..db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
-    from ..config import settings
-except ImportError:
-    from models import (
-        UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
-        PasswordResetRequest, PasswordResetResponse,
-        EmailChangeRequest, EmailVerificationRequest,
-        QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
-        QRCodeSession, TokenData, ChangePasswordRequest
-    )
-    from db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
-    from config import settings
+from backend.models import (
+    UserCreate, UserLogin, Token, RefreshTokenRequest, UserResponse,
+    PasswordResetRequest, PasswordResetResponse,
+    EmailChangeRequest, EmailVerificationRequest,
+    QRCodeRequest, QRCodeResponse, VerifyQRCodeRequest, VerifyQRCodeResponse,
+    QRCodeSession, TokenData, ChangePasswordRequest
+)
+from backend.db_proxy import users_collection, refresh_tokens_collection, reset_tokens_collection
+from backend.config import settings
 
 import sys
 import os

@@ -14,7 +14,7 @@ import asyncio
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from models import MessageCreate
+from backend.models import MessageCreate
 
 # WhatsApp-Grade Cryptographic Imports
 try:
@@ -22,12 +22,12 @@ try:
 except ImportError:
     print("[WARNING] Redis not available - using fallback cache")
     redis = None
-from crypto.signal_protocol import SignalProtocol
-from crypto.multi_device import MultiDeviceManager
-from crypto.delivery_semantics import DeliveryManager
-from crypto.media_encryption import MediaEncryptionService
-from workers.fan_out_worker import MessageFanOutWorker
-from websocket.delivery_handler import create_websocket_server
+from backend.crypto.signal_protocol import SignalProtocol
+from backend.crypto.multi_device import MultiDeviceManager
+from backend.crypto.delivery_semantics import DeliveryManager
+from backend.crypto.media_encryption import MediaEncryptionService
+from backend.workers.fan_out_worker import MessageFanOutWorker
+from backend.websocket.delivery_handler import create_websocket_server
 
 # Load environment variables FIRST before importing config
 # Docker requirement: only load from /app/backend/.env and /app/.env inside container.
@@ -52,9 +52,9 @@ try:
     if not os.getenv("SECRET_KEY") and not debug_mode:
         raise RuntimeError("PRODUCTION SAFETY: SECRET_KEY must be set in production")
 
-    from config import settings
+    from backend.config import settings
 
-    from routes import (
+    from backend.routes import (
         auth,
         files,
         chats,
@@ -72,33 +72,33 @@ try:
 except Exception as e:
     raise
 
-from auth.utils import get_current_user
+from backend.auth.utils import get_current_user
 
 try:
-    from config import settings
+    from backend.config import settings
 except Exception as e:
     raise
 
 try:
-    from mongo_init import ensure_mongodb_ready
+    from backend.mongo_init import ensure_mongodb_ready
 except Exception as e:
     raise
 
 # Import database initialization function
-from database import init_database
+from backend.database import init_database
 
 try:
-    from security import SecurityConfig
+    from backend.security import SecurityConfig
 except Exception as e:
     raise
 
 try:
-    from error_handlers import register_exception_handlers
+    from backend.error_handlers import register_exception_handlers
 except Exception as e:
     raise
 
 try:
-    from redis_cache import init_cache, cleanup_cache
+    from backend.redis_cache import init_cache, cleanup_cache
 except Exception as e:
     raise
 

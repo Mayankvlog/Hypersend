@@ -369,6 +369,40 @@ class WhatsAppDeliveryEngine:
         
         # Await Redis publish to ensure delivery
         await cache.publish(update_key, json.dumps(update_data))
+    
+    async def _broadcast_to_websockets(self, message: Dict[str, Any]):
+        """Broadcast message to WebSocket clients after all persistence"""
+        # WebSocket broadcast is handled by the WebSocket manager
+        # This is a placeholder for the broadcast operation
+        try:
+            # Signal to WebSocket manager that message is ready for broadcast
+            broadcast_key = f"websocket_broadcast:{message['chat_id']}"
+            await cache.publish(broadcast_key, json.dumps({
+                "type": "message_ready_for_broadcast",
+                "message_id": message["message_id"],
+                "timestamp": message.get("created_at", datetime.now(timezone.utc).isoformat())
+            }))
+        except Exception as e:
+            logger.warning(f"WebSocket broadcast failed for message {message.get('message_id')}: {e}")
+    
+    async def _store_message(self, message: Dict[str, Any]):
+        """Store message in database"""
+        from ..db_proxy import messages_collection
+        
+        # Convert ISO timestamps back to datetime for MongoDB storage
+        message_doc = message.copy()
+        if isinstance(message_doc.get("created_at"), str):
+            message_doc["created_at"] = datetime.fromisoformat(message_doc["created_at"].replace('Z', '+00:00'))
+        if isinstance(message_doc.get("sent_at"), str):
+            message_doc["sent_at"] = datetime.fromisoformat(message_doc["sent_at"].replace('Z', '+00:00'))
+        if isinstance(message_doc.get("delivered_at"), str):
+            message_doc["delivered_at"] = datetime.fromisoformat(message_doc["delivered_at"].replace('Z', '+00:00'))
+        
+        # Update the message in the database
+        await messages_collection().update_one(
+            {"message_id": message["message_id"]},
+            {"$set": message_doc}
+        )
 
 
 # WhatsApp Metadata Minimization
