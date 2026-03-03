@@ -38,7 +38,7 @@ class ApiConstants {
     }
   }
   
-  // WhatsApp Storage Model URLs (Relay-only - files are not stored on server)
+  // Storage Model URLs (Relay-only - files are not stored on server)
   static String get filesUrl => '$serverBaseUrl/files';  // Temporary relay URLs
   static String get mediaUrl => '$serverBaseUrl/media';  // Temporary relay URLs
   static String get imagesUrl => '$serverBaseUrl/images';  // Temporary relay URLs
@@ -50,9 +50,9 @@ class ApiConstants {
   static String get thumbnailsUrl => '$serverBaseUrl/thumbnails';  // Temporary relay URLs
   static String get uploadsUrl => '$serverBaseUrl/uploads';  // Temporary relay URLs
   
-  // WhatsApp Storage Model File URL Generators (Relay-only)
+  // Storage Model File URL Generators (Relay-only)
   static String getFileUrl(String filePath, [String fileType = 'files']) {
-    // In WhatsApp model, files are relayed directly and not stored permanently
+    // In  model, files are relayed directly and not stored permanently
     // URLs are temporary and will expire after relay
     switch (fileType.toLowerCase()) {
       case 'image':
@@ -78,7 +78,7 @@ class ApiConstants {
     }
   }
   
-  // WhatsApp Storage Model Configuration
+  // Storage Model Configuration
   static const bool isUserDeviceStorage = true;  // Files permanent on user device
   static const bool isS3TempStorage = true;  // 24h temp S3 storage
   static const int fileTtlHours = 24;  // 24h temp only like WhatsApp
@@ -97,12 +97,12 @@ class ApiConstants {
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
   
-  // WhatsApp Storage Model File size limits (15GB Support - matching backend)
+  // Storage Model File size limits (15GB Support - matching backend)
   static const int maxFileSizeBytes = 15 * 1024 * 1024 * 1024; // 15GB in bytes
   static const int maxFileSizeMB = 15 * 1024; // 15GB in MB
   static const Duration uploadTimeout = Duration(hours: 2); // 2 hours for 15GB files
   
-  // WhatsApp Storage Model File type limits (15GB Support)
+  // Storage Model File type limits (15GB Support)
   static const int maxImageSizeMB = 4096; // 4GB for high-res images
   static const int maxVideoSizeMB = 15360; // 15GB for videos
   static const int maxAudioSizeMB = 2048; // 2GB for audio
@@ -118,7 +118,7 @@ class ApiConstants {
   static const int largeFileThresholdMB = 1024;
   static const int largeFileThresholdBytes = largeFileThresholdMB * 1024 * 1024;
   
-  // WhatsApp Storage Model Supported file types
+  // Storage Model Supported file types
   static const List<String> allowedImageTypes = [
     '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'
   ];
