@@ -23,7 +23,7 @@ if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
 from db_proxy import users_collection
-from datetime import datetime
+from datetime import datetime, timezone
 
 async def cleanup_avatar_fields():
     """Clear all avatar fields in the database to prevent text-based avatars"""
@@ -52,7 +52,7 @@ async def cleanup_avatar_fields():
         # Clear avatar field for all users
         result = await users_collection().update_many(
             {},  # Update all users
-            {"$set": {"avatar": "", "updated_at": datetime.now()}}
+            {"$set": {"avatar": "", "updated_at": datetime.now(timezone.utc)}}
         )
         
         print(f"✅ Updated {result.modified_count} users")
