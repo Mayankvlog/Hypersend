@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Query
 from typing import Optional
 from datetime import datetime, timezone
 from bson import ObjectId
@@ -389,6 +389,208 @@ async def unpin_chat(chat_id: str, current_user: str = Depends(get_current_user)
     return {"status": "unpinned", "chat_id": str(chat_oid)}
 
 
+# ==================== Emoji Picker Endpoints ====================
+# WhatsApp-style emoji categories with lazy loading support
+
+@router.get("/emoji/categories")
+async def get_emoji_categories(current_user: Optional[str] = Depends(get_current_user)):
+    """Get 8 WhatsApp-style emoji categories for the emoji picker.
+    
+    Returns category metadata including icons and names for tab selection.
+    Each category supports lazy loading of emoji data.
+    """
+    return {
+        "categories": [
+            {
+                "id": "smileys",
+                "name": "Smileys & People",
+                "icon": "😀",
+                "description": "Smileys, people, activities, and gestures"
+            },
+            {
+                "id": "animals",
+                "name": "Animals & Nature",
+                "icon": "🐶",
+                "description": "Animals, plants, and nature"
+            },
+            {
+                "id": "food",
+                "name": "Food & Drink",
+                "icon": "🍕",
+                "description": "Food and beverages"
+            },
+            {
+                "id": "activity",
+                "name": "Activity",
+                "icon": "⚽",
+                "description": "Sports and activities"
+            },
+            {
+                "id": "travel",
+                "name": "Travel & Places",
+                "icon": "✈️",
+                "description": "Travel, places, and landmarks"
+            },
+            {
+                "id": "objects",
+                "name": "Objects",
+                "icon": "💡",
+                "description": "Objects and things"
+            },
+            {
+                "id": "symbols",
+                "name": "Symbols",
+                "icon": "❤️",
+                "description": "Symbols and hearts"
+            },
+            {
+                "id": "flags",
+                "name": "Flags",
+                "icon": "🇺🇸",
+                "description": "Country flags"
+            }
+        ]
+    }
+
+
+@router.get("/emoji/search")
+async def search_emoji(
+    q: str = Query(..., min_length=1, max_length=50),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: Optional[str] = Depends(get_current_user)
+):
+    """Search emojis by name or description.
+    
+    Returns matching emoji results with lazy loading support.
+    Frontend should cache results to minimize backend calls.
+    """
+    search_query = q.lower().strip()
+    
+    # Emoji search database (lazy loaded as needed)
+    emoji_search_results = {
+        "smile": [{"emoji": "😊", "name": "smiling face", "category": "smileys"}],
+        "heart": [{"emoji": "❤️", "name": "red heart", "category": "symbols"}],
+        "animal": [
+            {"emoji": "🐶", "name": "dog", "category": "animals"},
+            {"emoji": "🐱", "name": "cat", "category": "animals"},
+            {"emoji": "🐻", "name": "bear", "category": "animals"}
+        ],
+        "food": [
+            {"emoji": "🍕", "name": "pizza", "category": "food"},
+            {"emoji": "🍔", "name": "hamburger", "category": "food"}
+        ],
+        "travel": [{"emoji": "✈️", "name": "airplane", "category": "travel"}],
+        "sport": [{"emoji": "⚽", "name": "soccer ball", "category": "activity"}],
+        "love": [{"emoji": "❤️", "name": "red heart", "category": "symbols"}],
+    }
+    
+    # Perform case-insensitive substring/prefix matching
+    matched_emojis = []
+    seen_emojis = set()  # For deduplication
+    
+    for key, emoji_list in emoji_search_results.items():
+        # Check if search_query matches the key or any emoji name
+        if search_query in key or any(search_query in emoji["name"].lower() for emoji in emoji_list):
+            for emoji_data in emoji_list:
+                # Deduplicate by emoji character
+                if emoji_data["emoji"] not in seen_emojis:
+                    matched_emojis.append(emoji_data)
+                    seen_emojis.add(emoji_data["emoji"])
+    
+    results = matched_emojis[:limit]
+    return {
+        "query": search_query,
+        "results": results
+    }
+
+
+# ==================== Attachment Options Endpoints ====================
+# WhatsApp-style attachment popup with 6 options
+
+@router.get("/attachments/options")
+async def get_attachment_options(
+    chat_id: str = Query(...),
+    current_user: Optional[str] = Depends(get_current_user)
+):
+    """Get WhatsApp-style 6 attachment options for chat.
+    
+    Returns available attachment types:
+    1. Camera
+    2. Photos & Videos
+    3. Documents
+    4. Audio
+    5. Files
+    6. Location
+    """
+    # Validate chat_id format
+    chat_oid = _parse_object_id(chat_id, "chat_id")
+    
+    # Verify chat exists and user is a member
+    chat = await chats_collection().find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
+    if not chat:
+        # Backward compatibility: older data stored chats._id as a string.
+        chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat not found or access denied"
+        )
+    
+    # Base options available for all chats
+    base_options = [
+        {
+            "id": "camera",
+            "label": "Camera",
+            "icon": "📷",
+            "action": "capture",
+            "description": "Take photo or video"
+        },
+        {
+            "id": "gallery",
+            "label": "Photos & Videos",
+            "icon": "🎬",
+            "action": "select_media",
+            "file_types": [".jpg", ".jpeg", ".png", ".gif", ".mp4", ".mov", ".m4v", ".webm"],
+            "description": "Select from gallery"
+        },
+        {
+            "id": "documents",
+            "label": "Documents",
+            "icon": "📄",
+            "action": "select_document",
+            "file_types": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt"],
+            "description": "Share document"
+        },
+        {
+            "id": "audio",
+            "label": "Audio",
+            "icon": "🎧",
+            "action": "select_audio",
+            "file_types": [".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac"],
+            "description": "Send audio file"
+        },
+        {
+            "id": "files",
+            "label": "Files",
+            "icon": "📁",
+            "action": "select_file",
+            "file_types": ["*"],  # All files
+            "description": "Select any file"
+        },
+        {
+            "id": "location",
+            "label": "Location",
+            "icon": "📍",
+            "action": "share_location",
+            "description": "Share your location"
+        }
+    ]
+    
+    # Could tailor options based on chat properties here if needed
+    # For now, return all options for all chats
+    return {"options": base_options}
+
+
 @router.get("/{chat_id}")
 async def get_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     """Get chat details"""
@@ -622,7 +824,7 @@ async def send_message(
     if redis_published:
         try:
             # Import WebSocket manager if available
-            from ..websocket_manager import websocket_manager
+            from backend.websocket.websocket_manager import websocket_manager
             if websocket_manager:
                 # Get all participants in the chat
                 participants = chat.get("members", [])
@@ -1001,3 +1203,5 @@ async def get_banned_users(
         "chat_id": chat_id,
         "banned_users": chat.get("banned_users", [])
     }
+
+

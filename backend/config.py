@@ -13,15 +13,28 @@ logger.setLevel(logging.INFO)
 
 # ============================================================================
 # CENTRALIZED ENVIRONMENT LOADING - Single source of truth
+# CRITICAL: Only load once to prevent duplicate initialization
 # ============================================================================
 
+_env_already_loaded = False
+
 def _load_env_files():
-    """Load environment files in production order"""
-    _env_paths = [Path("/app/backend/.env"), Path("/app/.env")]
+    """Load environment files in production order (single load only)"""
+    global _env_already_loaded
+    
+    if _env_already_loaded:
+        return  # Already loaded, prevent duplicate
+    
+    _env_paths = [Path("/app/backend/.env"), Path("/app/.env"), Path("/app/backend/.env.production")]
     for env_path in _env_paths:
         if env_path.exists():
+            logger.info(f"[CONFIG] Loading environment from {env_path}")
             load_dotenv(dotenv_path=env_path, override=False)
+            _env_already_loaded = True
             return
+    
+    logger.debug("[CONFIG] No .env files found, using environment variables only")
+    _env_already_loaded = True
 
 _load_env_files()
 

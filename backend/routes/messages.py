@@ -91,9 +91,16 @@ class WhatsAppDeliveryEngine:
     async def send_message(self, chat_id: str, sender_user_id: str, sender_device_id: str,
                           recipient_user_id: str, content_hash: str, message_type: str,
                           recipient_devices: List[str]) -> Dict[str, Any]:
-        """Send WhatsApp message with delivery tracking"""
-        # CRITICAL: Generate timestamp once and preserve throughout pipeline
-        message_timestamp = datetime.now(timezone.utc)
+        """Send WhatsApp message with delivery tracking (UTC timestamps only).
+        
+        CRITICAL TIMESTAMP FIX:
+        - Use datetime.utcnow().isoformat() + 'Z' for all timestamps
+        - Never use datetime.now() - always use datetime.utcnow()
+        - Return ISO 8601 UTC format with Z suffix
+        - NO timezone conversion on backend
+        """
+        # CRITICAL: Generate timestamp ONCE using UTC, never use datetime.now()
+        message_timestamp_utc = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         
         # Get next sequence number
         sequence_number = await self._get_next_sequence_number(chat_id)
@@ -101,7 +108,7 @@ class WhatsAppDeliveryEngine:
         # Generate message ID
         message_id = f"msg_{chat_id}_{sequence_number}_{uuid.uuid4().hex[:8]}"
         
-        # Create message with preserved timestamp
+        # Create message with preserved UTC timestamp (ISO 8601 with Z suffix)
         message = {
             "message_id": message_id,
             "chat_id": chat_id,
@@ -111,9 +118,9 @@ class WhatsAppDeliveryEngine:
             "content_hash": content_hash,
             "message_type": message_type,
             "sequence_number": sequence_number,
-            "state": "sent",
-            "created_at": message_timestamp.isoformat(),  # Use preserved timestamp
-            "sent_at": message_timestamp.isoformat(),  # Same timestamp
+            "state": MessageState.PENDING,  # Start in pending state
+            "created_at": message_timestamp_utc,  # UTC ISO 8601 with Z
+            "sent_at": message_timestamp_utc,    # Same UTC timestamp
             "retry_count": 0,
             "max_retries": self.max_retry_attempts,
             "device_states": {

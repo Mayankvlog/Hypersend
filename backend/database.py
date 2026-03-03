@@ -43,10 +43,11 @@ def _is_pytest_running() -> bool:
         return False
 
 async def init_database():
-    """Initialize MongoDB Atlas database connection.
+    """Initialize MongoDB Atlas database connection (ASYNC ONLY).
 
     This function is designed to be called exactly once during FastAPI startup.
     It is async-safe and will not create duplicate clients under concurrent calls.
+    CRITICAL: Uses UTC timestamps only via datetime.utcnow()
     """
     global client, db, _database_initialized, _init_lock
 
@@ -55,6 +56,11 @@ async def init_database():
 
     async with _init_lock:
         if _database_initialized and client is not None and db is not None:
+            return
+        
+        # Prevent duplicate initialization
+        if _database_initialized:
+            logger.info("[DATABASE] Already initialized, returning existing connection")
             return
 
         # Import settings to get centralized config (already validated by config.py)
@@ -79,23 +85,51 @@ async def init_database():
             raise RuntimeError('DATABASE_NAME is required for Atlas-only operation')
 
         if client is None:
-            logger.info(f"[DATABASE] Initializing MongoDB Atlas connection...")
-            client = AsyncIOMotorClient(
-                mongodb_uri,
-                serverSelectionTimeoutMS=10000,
-                connectTimeoutMS=10000,
-            )
+            logger.info(f"[DATABASE] Initializing MongoDB Atlas connection (ASYNC ONLY)...")
+            temp_client = None
+            try:
+                temp_client = AsyncIOMotorClient(
+                    mongodb_uri,
+                    serverSelectionTimeoutMS=10000,
+                    connectTimeoutMS=10000,
+                    maxPoolSize=50,
+                    minPoolSize=10,
+                )
+                # Verify connection is working
+                await asyncio.wait_for(temp_client.admin.command("ping"), timeout=10.0)
+                logger.info(f"[DATABASE] MongoDB Atlas connected successfully (db={database_name})")
+                # Only assign to module variable after successful connection
+                client = temp_client
+            except asyncio.TimeoutError:
+                logger.error("[DATABASE] Connection timeout - MongoDB Atlas unreachable")
+                # Clean up temp client on failure
+                if temp_client:
+                    temp_client.close()
+                raise RuntimeError("Failed to connect to MongoDB Atlas")
+            except asyncio.CancelledError:
+                logger.error("[DATABASE] Connection cancelled")
+                # Clean up temp client on cancellation
+                if temp_client:
+                    temp_client.close()
+                raise
+            except Exception as e:
+                logger.error(f"[DATABASE] Connection error: {e}")
+                # Clean up temp client on any error
+                if temp_client:
+                    temp_client.close()
+                raise
+        
         if db is None:
             db = client[database_name]
 
-        await client.admin.command("ping")
-        logger.info(f"[DATABASE] MongoDB Atlas connected successfully (db={database_name})")
-
-        # Create/update indexes used by hot-path queries (idempotent)
+        # Create/update indexes used by hot-path queries (idempotent) - ASYNC ONLY
         try:
+            # Create all necessary indexes for hot-path queries
             await db["messages"].create_index([("chat_id", 1), ("created_at", 1)])
+            await db["messages"].create_index([("status", 1), ("created_at", 1)])
             await db["users"].create_index([("email", 1)], unique=True)
-            logger.info("[DATABASE] Indexes created/verified")
+            await db["chats"].create_index([("members", 1), ("updated_at", 1)])
+            logger.info("[DATABASE] Async indexes created/verified (UTC timestamps used)")
         except Exception as e:
             # Index creation should not prevent startup; Atlas may restrict permissions.
             logger.warning(f"[DATABASE] Index creation skipped: {type(e).__name__}")

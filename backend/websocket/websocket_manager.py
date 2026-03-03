@@ -16,9 +16,10 @@ Key Features:
 
 import asyncio
 import json
-import time
 import logging
 import secrets
+import threading
+import time
 from typing import Dict, List, Optional, Set, Any, Union
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -90,16 +91,25 @@ class WebSocketManager:
     """WhatsApp-grade singleton WebSocket manager"""
     
     _instance = None
-    _lock = asyncio.Lock()
+    _new_lock = threading.Lock()
+    _init_lock = threading.Lock()  # For lock creation
+    _lock = None  # Will be created lazily
     
     def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
+        with cls._new_lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._initialized = False
         return cls._instance
     
     async def initialize(self, redis_client: Optional[Any] = None):
         """Initialize the singleton manager (async-safe)"""
+        # Create asyncio lock with double-checked pattern
+        if self._lock is None:
+            with self._init_lock:
+                if self._lock is None:
+                    self._lock = asyncio.Lock()
+        
         async with self._lock:
             if self._initialized:
                 return
@@ -207,12 +217,16 @@ class WebSocketManager:
             
             # Update device connection status
             if self.delivery_manager:
+                # Safely extract IP address
+                remote = getattr(websocket, "remote_address", None)
+                ip_address = remote[0] if (remote and isinstance(remote, (list, tuple)) and len(remote) > 0) else ""
+                
                 await self.delivery_manager.update_device_connection(
                     device_id=device_id,
                     user_id=user_id,
-                    state="online",  # Use string instead of enum
+                    state=DeviceState.ONLINE,  # Use enum instead of string
                     websocket_id=id(websocket),
-                    ip_address=websocket.remote_address[0],
+                    ip_address=ip_address,
                     user_agent=websocket.request_headers.get('User-Agent', '')
                 )
             
@@ -262,46 +276,55 @@ class WebSocketManager:
     ) -> bool:
         """Authenticate WebSocket connection"""
         try:
+            # Fail-secure: require device_manager for authentication
+            if not self.device_manager:
+                logger.error("Device manager not available - authentication failed")
+                return False
+            
             # Verify device belongs to user
-            if self.device_manager:
-                user_devices = await self.device_manager.get_user_devices(user_id)
-                
-                if not any(device.device_id == device_id for device in user_devices):
-                    logger.warning(f"Device {device_id} not found for user {user_id}")
-                    return False
-                
-                # Check device session
-                device_session = await self.device_manager.get_device_session(user_id, device_id)
-                
-                if not device_session:
-                    logger.warning(f"No session found for device {device_id}")
-                    return False
-                
-                # Send authentication challenge
-                challenge = secrets.token_urlsafe(32)
-                await websocket.send(json.dumps({
-                    'type': 'auth_challenge',
-                    'challenge': challenge,
-                    'timestamp': time.time()
-                }))
-                
-                # Wait for response
-                response = await asyncio.wait_for(
-                    websocket.recv(),
-                    timeout=10.0
-                )
-                
-                auth_data = json.loads(response)
-                
-                # Verify challenge response
-                expected_response = self._calculate_challenge_response(
-                    challenge,
-                    device_session.session_key
-                )
-                
-                if auth_data.get('response') != expected_response:
-                    logger.warning(f"Invalid auth response for device {device_id}")
-                    return False
+            user_devices = await self.device_manager.get_user_devices(user_id)
+            
+            if not any(device.device_id == device_id for device in user_devices):
+                logger.warning(f"Device {device_id} not found for user {user_id}")
+                return False
+            
+            # Check device session
+            device_session = await self.device_manager.get_device_session(user_id, device_id)
+            
+            if not device_session:
+                logger.warning(f"No session found for device {device_id}")
+                return False
+            
+            # Send authentication challenge
+            challenge = secrets.token_urlsafe(32)
+            await websocket.send(json.dumps({
+                'type': 'auth_challenge',
+                'challenge': challenge,
+                'timestamp': time.time()
+            }))
+            
+            # Wait for response
+            response = await asyncio.wait_for(
+                websocket.recv(),
+                timeout=10.0
+            )
+            
+            auth_data = json.loads(response)
+            
+            # Verify device session has session_key
+            if not hasattr(device_session, 'session_key') or device_session.session_key is None:
+                logger.error(f"Device {device_id} missing session_key")
+                return False
+            
+            # Verify challenge response
+            expected_response = self._calculate_challenge_response(
+                challenge,
+                device_session.session_key
+            )
+            
+            if auth_data.get('response') != expected_response:
+                logger.warning(f"Invalid auth response for device {device_id}")
+                return False
             
             return True
             
@@ -536,31 +559,40 @@ class WebSocketManager:
             )
     
     async def _process_offline_messages(self, connection: WebSocketConnection):
-        """Process messages that arrived while device was offline"""
+        """Process messages that arrived while device was offline with atomic processing"""
         try:
             if not self.redis:
                 return
                 
-            # Get offline messages queue
-            offline_messages = await self.redis.lrange(
-                f"device_offline_queue:{connection.device_id}",
-                0,
-                -1
-            )
+            processing_queue = f"device_offline_processing:{connection.device_id}"
+            main_queue = f"device_offline_queue:{connection.device_id}"
             
-            if offline_messages:
-                logger.info(f"Processing {len(offline_messages)} offline messages for device {connection.device_id}")
+            # Process messages atomically
+            while True:
+                # Move one message from main queue to processing queue atomically
+                message_data = await self.redis.brpoplpush(main_queue, processing_queue, timeout=1)
                 
-                # Send messages to device
-                for message_data in offline_messages:
-                    try:
-                        await connection.websocket.send(message_data)
-                        await asyncio.sleep(0.01)  # Small delay to prevent overwhelming
-                    except Exception as e:
-                        logger.error(f"Failed to send offline message: {e}")
+                if not message_data:
+                    # No more messages
+                    break
                 
-                # Clear offline queue
-                await self.redis.delete(f"device_offline_queue:{connection.device_id}")
+                try:
+                    # Send message to device
+                    await connection.websocket.send(message_data)
+                    logger.debug(f"Sent offline message to device {connection.device_id}")
+                except Exception as e:
+                    logger.error(f"Failed to send offline message: {e}")
+                    # Re-queue failed message back to main queue for retry
+                    await self.redis.lpush(main_queue, message_data)
+                    # Remove from processing queue
+                    await self.redis.lrem(processing_queue, 1, message_data)
+                    continue
+                
+                # Remove from processing queue on successful send
+                await self.redis.lrem(processing_queue, 1, message_data)
+            
+            # Clean up any remaining messages in processing queue
+            await self.redis.delete(processing_queue)
                 
         except Exception as e:
             logger.error(f"Error processing offline messages: {e}")
@@ -576,13 +608,7 @@ class WebSocketManager:
                     logger.debug(f"Device {device_id} not in active connections")
                     break
                 
-                # Check if connection is still alive
-                if time.time() - connection.last_pong > self.pong_timeout:
-                    logger.warning(f"Pong timeout for device {device_id}")
-                    await connection.websocket.close(4000, "Pong timeout")
-                    break
-                
-                # Send ping (UTC ISO format)
+                # Send ping first, then check for pong
                 ping_data = {
                     'type': 'ping',
                     'timestamp': datetime.utcnow().isoformat() + 'Z',
@@ -591,6 +617,17 @@ class WebSocketManager:
                 
                 await connection.websocket.send(json.dumps(ping_data))
                 connection.last_ping = time.time()
+                
+                # Wait for pong timeout
+                await asyncio.sleep(self.pong_timeout)
+                
+                # Check if pong was received
+                if (connection.last_pong and 
+                    connection.last_pong < connection.last_ping and
+                    time.time() - connection.last_ping > self.pong_timeout):
+                    logger.warning(f"Pong timeout for device {device_id}")
+                    await connection.websocket.close(4000, "Pong timeout")
+                    break
                 
             except websockets.exceptions.ConnectionClosed:
                 logger.debug(f"Heartbeat: Connection closed for device {device_id}")
@@ -638,7 +675,19 @@ class WebSocketManager:
         if not chat_data:
             return
         
-        members = json.loads(chat_data.get('members', '[]'))
+        # Handle bytes keys/values from Redis (handle both bytes and string keys)
+        members_bytes = chat_data.get(b'members')
+        members_str = chat_data.get('members')
+        
+        # Use whichever key exists and decode if needed
+        if members_bytes is not None:
+            members_data = members_bytes.decode() if isinstance(members_bytes, bytes) else members_bytes
+        elif members_str is not None:
+            members_data = members_str
+        else:
+            members_data = '[]'  # Default to empty array
+        
+        members = json.loads(members_data)
         
         for user_id in members:
             if user_id == exclude_user_id:
@@ -658,7 +707,7 @@ class WebSocketManager:
                         await self.delivery_manager.update_device_connection(
                             device_id=device_id,
                             user_id=connection.user_id,
-                            state="offline"
+                            state=DeviceState.OFFLINE
                         )
                 except Exception as e:
                     logger.warning(f"Failed to update device status to offline: {e}")
@@ -781,18 +830,24 @@ class WebSocketManager:
     
     async def get_connection_stats(self) -> Dict[str, Any]:
         """Get WebSocket connection statistics"""
-        total_connections = len(self.connections)
-        authenticated_connections = sum(
-            1 for conn in self.connections.values() if conn.is_authenticated
-        )
-        
-        # Calculate connection duration stats
-        now = time.time()
-        durations = [
-            now - conn.connected_at for conn in self.connections.values()
-        ]
-        
-        avg_duration = sum(durations) / len(durations) if durations else 0
+        async with self.connection_lock:
+            total_connections = len(self.connections)
+            authenticated_connections = sum(
+                1 for conn in self.connections.values() if conn.is_authenticated
+            )
+            
+            # Calculate connection duration stats
+            now = time.time()
+            durations = [
+                now - conn.connected_at for conn in self.connections.values()
+            ]
+            
+            avg_duration = sum(durations) / len(durations) if durations else 0
+            
+            # Copy connections list for safe iteration outside lock
+            connections_list = [
+                conn.to_dict() for conn in self.connections.values()
+            ]
         
         # Get message state stats
         async with self.state_lock:
@@ -805,9 +860,7 @@ class WebSocketManager:
             'authenticated_connections': authenticated_connections,
             'average_connection_duration': avg_duration,
             'total_message_states': total_message_states,
-            'connections': [
-                conn.to_dict() for conn in self.connections.values()
-            ]
+            'connections': connections_list
         }
     
     async def _redis_pubsub_listener(self, device_id: str, user_id: str, connection: WebSocketConnection):
@@ -867,7 +920,7 @@ class WebSocketManager:
             pubsub = None
             try:
                 logger.info("[REDIS] Starting global Redis Pub/Sub subscriber...")
-                pubsub = await self.redis.pubsub()
+                pubsub = self.redis.pubsub()
                 
                 # Subscribe to all chat channels (pattern matching)
                 await pubsub.psubscribe("chat:*")

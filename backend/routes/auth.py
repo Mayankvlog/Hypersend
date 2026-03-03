@@ -6,7 +6,7 @@ ARCHITECTURAL COMPARISON: WHATSAPP vs HYPerSend
 ====================================================
 
 WHATSAPP ARCHITECTURE (LEFT SIDE):
-📱 User Devices → 📱 WhatsApp Servers → 🔐 Encrypted Storage → ☁️ Cloud Backup
+📱 User Devices → 📱 WhatsApp Servers → 🔐 Encrypted Storage → 💾 Server Backup
 - Phone Number Authentication (FORBIDDEN in our system)
 - Limited Multi-Device Support (1 primary + 4 companion)
 - Proprietary Protocol Implementation

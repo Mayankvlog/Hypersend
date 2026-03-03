@@ -13,6 +13,7 @@ import sys
 import asyncio
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
+from datetime import datetime, timedelta, timezone
 
 # Setup logger EARLY - before any other imports that might need logging
 logger = logging.getLogger("zaply")
@@ -197,122 +198,97 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"[STARTUP] Mock cache initialization failed: {e}")
     
-    # CRITICAL: Start global Redis Pub/Sub subscriber for multi-container communication
-    # This listens to all chat channels and broadcasts to connected WebSocket clients
-    redis_subscriber_task = None
+    # NOTE: Redis Pub/Sub subscriber is now managed by WebSocket manager singleton
+    # No need for separate subscriber - WebSocket manager handles it
+    
+    # CRITICAL: Initialize WebSocket manager singleton (AFTER Redis is ready)
+    websocket_manager_initialized = False
     if not is_test_mode:
         try:
+            from websocket.websocket_manager import websocket_manager
             from redis_cache import cache
             
-            if cache and cache.is_connected and cache.redis_client:
-                async def global_redis_subscriber():
-                    """Listen to Redis channels and broadcast to WebSocket clients"""
-                    pubsub = None
-                    try:
-                        logger.info("[REDIS] Starting global Redis Pub/Sub subscriber...")
-                        pubsub = await cache.redis_client.pubsub()
-                        
-                        # Subscribe to all chat channels (pattern matching)
-                        await pubsub.psubscribe("chat:*")
-                        logger.info("[REDIS] Subscribed to chat:* channels")
-                        
-                        async for message in pubsub.listen():
-                            try:
-                                if message['type'] in ['message', 'pmessage']:
-                                    channel = message.get('channel', '').decode() if isinstance(message.get('channel'), bytes) else message.get('channel', '')
-                                    data_raw = message.get('data')
-                                    
-                                    # Parse data (could be bytes or str depending on decode_responses setting)
-                                    if isinstance(data_raw, bytes):
-                                        data_str = data_raw.decode('utf-8')
-                                    else:
-                                        data_str = data_raw
-                                    
-                                    try:
-                                        data = json.loads(data_str)
-                                        
-                                        # Log publish/subscribe activity
-                                        logger.debug(f"[REDIS] Received {message['type']} on {channel}: {data.get('type', 'unknown')}")
-                                        
-                                        # For now, just log - actual WebSocket broadcasting happens in the WebSocket endpoint
-                                        # This is here for cross-container communication
-                                    except json.JSONDecodeError as e:
-                                        logger.error(f"[REDIS] Failed to parse message from {channel}: {e}")
-                            
-                            except Exception as e:
-                                logger.error(f"[REDIS] Error processing Redis message: {type(e).__name__}: {e}")
-                    
-                    except asyncio.CancelledError:
-                        logger.info("[REDIS] Redis subscriber cancelled")
-                    except Exception as e:
-                        logger.error(f"[REDIS] Global Redis subscriber error: {type(e).__name__}: {e}")
-                    finally:
-                        if pubsub:
-                            try:
-                                await pubsub.close()
-                            except Exception as e:
-                                logger.error(f"[REDIS] Failed to close pubsub: {e}")
-                        logger.info("[REDIS] Global Pub/Sub subscriber stopped")
-                
-                # Start Redis subscriber as background task
-                redis_subscriber_task = asyncio.create_task(global_redis_subscriber())
-                app.state.redis_subscriber_task = redis_subscriber_task
-                logger.info("[REDIS] Global Pub/Sub subscriber started in background")
-            else:
-                logger.info("[REDIS] Redis not connected - Pub/Sub subscriber not started")
-        
+            # Get Redis client if available
+            redis_client = getattr(cache, 'redis_client', None) if cache and cache.is_connected else None
+            
+            # Initialize WebSocket manager with Redis
+            await asyncio.wait_for(
+                websocket_manager.initialize(redis_client),
+                timeout=10.0
+            )
+            websocket_manager_initialized = True
+            
+            # Start global Pub/Sub subscriber
+            await websocket_manager.start_global_pubsub()
+            
+            logger.info("[STARTUP] WebSocket manager initialized and ready for connections")
+        except asyncio.TimeoutError:
+            logger.warning("[STARTUP] WebSocket manager initialization timed out")
         except Exception as e:
-            logger.error(f"[REDIS] Failed to start Redis Pub/Sub subscriber: {type(e).__name__}: {e}")
-    else:
-        logger.info("[STARTUP] Test mode - Pub/Sub subscriber not started")
-
+            logger.error(f"[STARTUP] WebSocket manager initialization failed: {e}")
+            # Cleanup if initialization failed after it started
+            if websocket_manager_initialized:
+                try:
+                    await websocket_manager.shutdown()
+                except Exception as cleanup_e:
+                    logger.error(f"[STARTUP] Failed to cleanup WebSocket manager: {cleanup_e}")
+    
     logger.info("[STARTUP] Application startup complete")
     
     yield
     
-    # Shutdown - Cancel Redis subscriber task first
-    if redis_subscriber_task:
-        try:
-            redis_subscriber_task.cancel()
-            # Wait for task to finish cancellation
-            await asyncio.wait_for(redis_subscriber_task, timeout=5)
-        except asyncio.CancelledError:
-            logger.info("[SHUTDOWN] Redis subscriber task cancelled")
-        except asyncio.TimeoutError:
-            logger.warning("[SHUTDOWN] Redis subscriber task did not cancel within timeout")
-        except Exception as e:
-            logger.error(f"[SHUTDOWN] Error cancelling Redis subscriber task: {e}")
+    # Graceful shutdown sequence - CRITICAL ORDER
+    # 1. Stop accepting new connections
+    # 2. Shutdown WebSocket manager
+    # 3. Cleanup Redis
+    # 4. Close database
     
-    # Shutdown database connection
-    from database import client
-    if client:
-        try:
-            client.close()
-        except Exception:
-            pass
-        logger.info("[SHUTDOWN] Database connection closed")
+    # Shutdown WebSocket manager (singleton instance)
+    try:
+        from websocket.websocket_manager import websocket_manager
+        await asyncio.wait_for(websocket_manager.shutdown(), timeout=10.0)
+        logger.info("[SHUTDOWN] WebSocket manager shut down gracefully")
+    except asyncio.TimeoutError:
+        logger.warning("[SHUTDOWN] WebSocket manager shutdown timed out")
+    except Exception as e:
+        logger.debug(f"[SHUTDOWN] Error shutting down WebSocket manager: {e}")
+    
+    # Cleanup Redis cache (must happen before DB)
+    try:
+        from redis_cache import cache
+        if cache:
+            try:
+                await asyncio.wait_for(cache.disconnect(), timeout=5.0)
+            except (AttributeError, Exception):
+                # disconnect() may not exist, ignore
+                pass
+            logger.info("[SHUTDOWN] Redis cache disconnected")
+    except asyncio.TimeoutError:
+        logger.warning("[SHUTDOWN] Redis cache disconnect timed out")
+    except Exception as e:
+        logger.debug(f"[SHUTDOWN] Redis cache cleanup: {e}")
+    
+    # Shutdown database connection (last)
+    try:
+        from database import client
+        if client:
+            try:
+                client.close()
+            except Exception:
+                pass
+            logger.info("[SHUTDOWN] Database connection closed")
+        
+        # Reset database module state
         try:
             import database as _database
             _database.client = None
             _database.db = None
-            try:
-                _database._database_initialized = False
-            except Exception:
-                pass
-            try:
-                _database._init_lock = None
-            except Exception:
-                pass
+            _database._database_initialized = False
         except Exception:
             pass
-
-    # Cleanup Redis cache
-    try:
-        await cleanup_cache()
-        logger.info("[SHUTDOWN] Redis cache cleaned up")
     except Exception as e:
-        logger.warning(f"[SHUTDOWN] Redis cache cleanup failed: {e}")
-
+        logger.error(f"[SHUTDOWN] Error closing database: {e}")
+    
     logger.info("[SHUTDOWN] Application shutdown complete")
 
 
@@ -321,14 +297,31 @@ import json
 from bson import ObjectId
 
 class CustomJSONEncoder(json.JSONEncoder):
-    """Custom JSON encoder to handle MongoDB ObjectId serialization"""
+    """Custom JSON encoder to handle MongoDB ObjectId serialization and UTC timestamps.
+    
+    CRITICAL FIXES:
+    - All timestamps returned as ISO 8601 with Z suffix (UTC only)
+    - No timezone conversion on backend
+    - ObjectId converted to string
+    """
     def default(self, obj):
         if isinstance(obj, ObjectId):
             return str(obj)
-        # Handle datetime objects
-        if hasattr(obj, 'isoformat'):
+        # Handle datetime objects - always return Z suffix for UTC
+        if isinstance(obj, datetime):
             iso_str = obj.isoformat()
-            # Convert UTC timezone (+00:00) to Z suffix for consistency
+            # Ensure Z suffix for UTC timestamps
+            if iso_str.endswith('+00:00'):
+                return iso_str.replace('+00:00', 'Z')
+            elif not iso_str.endswith('Z') and obj.tzinfo:
+                # Check if UTC timestamp without Z suffix
+                offset = obj.tzinfo.utcoffset(obj)
+                if offset is not None and offset == timedelta(0):
+                    return iso_str + 'Z'
+            return iso_str
+        # Handle timezone-aware datetime with isoformat
+        if hasattr(obj, 'isoformat') and callable(obj.isoformat):
+            iso_str = obj.isoformat()
             if iso_str.endswith('+00:00'):
                 return iso_str.replace('+00:00', 'Z')
             return iso_str
@@ -601,7 +594,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                             "status_code": 400,
                             "error": "Bad Request - Malicious request detected",
                             "detail": "Request contains potentially malicious content",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
                             "path": "/api/v1/files/invalid_path",  # Don't echo malicious path
                             "method": request.method,
                             "hints": [
@@ -670,7 +663,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 "status_code": 400,
                                 "error": "Bad Request - Invalid host",
                                 "detail": "Request contains invalid host header",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                                 "path": "/api/v1/files/invalid_path",
                                 "method": request.method,
                                 "hints": [
@@ -703,7 +696,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 "status_code": 400,
                                 "error": "Bad Request - Malicious header detected",
                                 "detail": "Request header contains potentially malicious content",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                                 "path": url_path,
                                 "method": request.method,
                                 "hints": [
@@ -736,7 +729,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                     "status_code": 413,
                                     "error": "Payload Too Large - Request body is too big",
                                     "detail": f"Request size {content_length} bytes exceeds maximum {max_size} bytes",
-                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "path": url_path,
                                     "method": request.method,
                                     "hints": [
@@ -753,7 +746,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                 "status_code": 411,
                                 "error": "Length Required - Content-Length header is invalid",
                                 "detail": "Content-Length header must be a valid integer",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                                 "path": url_path,
                                 "method": request.method,
                                 "hints": [
@@ -772,7 +765,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "status_code": 414,
                         "error": "URI Too Long - The requested URL is too long",
                         "detail": f"URL length {url_length} exceeds maximum 8000 characters",
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "path": url_path,
                         "method": request.method,
                         "hints": ["Shorten the URL", "Use POST for complex queries"],
@@ -811,7 +804,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                                     "status_code": 415,
                                     "error": "Unsupported Media Type - Content type not allowed",
                                     "detail": f"Content type '{content_type}' is not permitted for security reasons",
-                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "path": str(request.url.path),
                                     "method": request.method,
                                     "hints": [
@@ -986,7 +979,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "status_code": 422,
                         "error": "Unprocessable Entity - Invalid input data",
                         "detail": str(e) if settings.DEBUG else "Invalid input data",
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": [
@@ -1006,7 +999,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "status_code": 504,
                         "error": "Gateway Timeout - Request took too long",
                         "detail": str(e) if settings.DEBUG else "Request timeout",
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": [
@@ -1028,7 +1021,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "detail": str(e)
                         if settings.DEBUG
                         else "Service temporarily unavailable",
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": [
@@ -1047,7 +1040,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                         "detail": "Server error processing request"
                         if not settings.DEBUG
                         else str(e),
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "path": str(request.url.path),
                         "method": request.method,
                         "hints": [
@@ -1387,7 +1380,7 @@ async def general_exception_handler(request: Request, exc: Exception):
         "status_code": status_code,
         "error": type(exc).__name__ if settings.DEBUG else error_msg.title(),
         "detail": error_msg if not settings.DEBUG else str(exc),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "path": safe_path,
         "method": request.method,
         "hints": hints,
@@ -1508,7 +1501,7 @@ async def not_found_handler(request: Request, exc: HTTPException):
                 "status_code": 404,
                 "error": "Not Found",
                 "detail": detail_msg,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "path": safe_path,
                 "method": method,
                 "hints": [
@@ -1525,7 +1518,7 @@ async def not_found_handler(request: Request, exc: HTTPException):
             "status_code": 404,
             "error": "Not Found",
             "detail": "The requested resource doesn't exist. Check the URL path.",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "path": safe_path,
             "method": method,
             "hints": [
@@ -1559,7 +1552,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
                 "status_code": 404,
                 "error": "Not Found",
                 "detail": "Invalid path format - the requested resource doesn't exist.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "path": path,
                 "method": method,
                 "hints": [
@@ -1586,7 +1579,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
                 "status_code": 404,
                 "error": "Not Found",
                 "detail": "The requested endpoint doesn't exist.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "path": path,
                 "method": method,
                 "hints": [
@@ -1612,7 +1605,7 @@ async def method_not_allowed_handler(request: Request, exc: HTTPException):
             "status_code": 405,
             "error": "Method Not Allowed",
             "detail": f"The HTTP {method} method is not supported for this endpoint.",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "path": path,
             "method": method,
             "allowed_methods": sorted(list(allowed_methods)),
@@ -1738,7 +1731,7 @@ async def api_status(request: Request):
             "status": "operational",
             "service": "zaply-api",
             "version": "1.0.0",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     # In debug mode, return detailed information
@@ -1746,7 +1739,7 @@ async def api_status(request: Request):
         "status": "operational",
         "service": "zaply-api",
         "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "api": {
             "base_url": settings.API_BASE_URL,
             "host": settings.API_HOST,
@@ -1906,7 +1899,7 @@ async def health_check():
 
         response_data = {
             "status": overall_status,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "services": {
                 "storage": {"status": storage_status, "error": storage_error},
                 "database": {"status": db_status, "error": db_error},
@@ -1923,7 +1916,7 @@ async def health_check():
             content={
                 "status": "degraded",
                 "error": str(e)[:50],
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
 
@@ -2206,14 +2199,14 @@ async def sync_message_history(
             "total_batches": 0,  # Calculated by sync worker
             "progress_percent": 0,
             "has_more": False,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"[HISTORY-SYNC] Error: {e}")
         return {
             "sync_state": "failed",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -2266,7 +2259,7 @@ async def get_conversation_metadata(
             "is_muted": False,
             "is_archived": False,
             "active_devices": [],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"[METADATA-QUERY] Error: {e}")
@@ -2300,7 +2293,7 @@ async def sync_device_state(
             "device_id": device_id,
             "sync_state": "synced",
             "pending_messages": 0,
-            "last_sync_at": datetime.utcnow().isoformat(),
+            "last_sync_at": datetime.now(timezone.utc).isoformat(),
             "active_devices": [device_id],
             "primary_device": device_id,
         }
@@ -2349,7 +2342,7 @@ async def get_relationship_graph(
             "total_count": 0,
             "score_min": score_min,
             "limit": limit,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"[RELATIONSHIP-GRAPH] Error: {e}")
@@ -2404,7 +2397,7 @@ async def get_retention_policy(current_user: str = Depends(get_current_user)):
                 "ENABLE_MULTI_DEVICE_SYNC", "true"
             ).lower()
             == "true",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"[RETENTION-POLICY] Error: {e}")

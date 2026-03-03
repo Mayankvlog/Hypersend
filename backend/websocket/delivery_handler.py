@@ -35,11 +35,20 @@ class WebSocketDeliveryHandler:
     
     def __init__(self, redis_client: Optional[Any]):
         self.redis = redis_client
-        # Initialize the singleton manager
-        asyncio.create_task(websocket_manager.initialize(redis_client))
+        self._initialized = False
+    
+    @classmethod
+    async def create(cls, redis_client: Optional[Any]):
+        """Async factory to properly initialize the singleton manager"""
+        instance = cls(redis_client)
+        await websocket_manager.initialize(redis_client)
+        instance._initialized = True
+        return instance
     
     async def handle_connection(self, websocket: WebSocketServerProtocol, path: str):
         """Handle new WebSocket connection using singleton manager"""
+        if not self._initialized:
+            raise RuntimeError("WebSocketDeliveryHandler not properly initialized. Use create() method.")
         await websocket_manager.handle_connection(websocket, path)
     
     async def send_message_to_device(self, device_id: str, message: Dict[str, Any]) -> bool:

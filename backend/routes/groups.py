@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, Uplo
 
 from fastapi.encoders import jsonable_encoder
 
+from fastapi.responses import FileResponse
+
 from typing import List, Optional, Any, Dict
 
 from datetime import datetime, timezone, timedelta
@@ -17,12 +19,13 @@ import logging
 
 import os
 
+import time
+
 import uuid
 
 import re
-
 import base64
-
+import mimetypes
 from pathlib import Path
 
 
@@ -176,6 +179,16 @@ def _id_query(id_value: str) -> dict:
         pass
 
     return {"_id": id_value}
+
+
+def _chat_id_query(chat_id: str) -> dict:
+    """Helper to create chat_id query that handles both ObjectId and string IDs"""
+    try:
+        if ObjectId.is_valid(chat_id):
+            return {"$or": [{"chat_id": ObjectId(chat_id)}, {"chat_id": chat_id}]}
+    except Exception:
+        pass
+    return {"chat_id": chat_id}
 
 
 
@@ -672,7 +685,7 @@ async def upload_group_avatar(
         # Update group in database with new avatar URL
         await chats_collection().update_one(
             {"_id": ObjectId(group_id)},
-            {"$set": {"avatar_url": avatar_url, "updated_at": datetime.utcnow()}}
+            {"$set": {"avatar_url": avatar_url, "updated_at": _now()}}
         )
         
         # Broadcast to all group members
@@ -681,7 +694,7 @@ async def upload_group_avatar(
             'group_id': group_id,
             'avatar_url': avatar_url,
             'updated_by': current_user,
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
+            'timestamp': _now().isoformat().replace('+00:00', 'Z')
         }
         
         # Send to all group members
@@ -999,7 +1012,7 @@ async def create_group(payload: GroupCreate, current_user: str = Depends(get_cur
 
     
 
-    return {"group_id": group_id, "chat_id": group_id, "group": chat_doc}
+    return {"group_id": group_id, "chat_id": group_id, "group": _encode_doc(chat_doc)}
 
 
 
@@ -1071,36 +1084,37 @@ async def list_groups(current_user: str = Depends(get_current_user)):
 
     
 
+    # Batch fetch last messages for all chats to avoid N+1 queries
+    chat_ids = [chat["_id"] for chat in chats]
+    last_messages = {}
+    
+    if chat_ids:
+        # Use aggregation to get last message for each chat in one query
+        pipeline = [
+            {"$match": {"chat_id": {"$in": chat_ids}, "is_deleted": {"$ne": True}}},
+            {"$sort": {"created_at": -1}},
+            {"$group": {
+                "_id": "$chat_id",
+                "last_message": {"$first": "$$ROOT"}
+            }}
+        ]
+        
+        cursor = messages_collection().aggregate(pipeline)
+        
+        async for doc in cursor:
+            last_messages[doc["_id"]] = doc["last_message"]
+
     for chat in chats:
-
-        # Attach the last message
-
-        last_message = await messages_collection().find_one(
-
-            {"chat_id": chat["_id"], "is_deleted": {"$ne": True}},
-
-            sort=[("created_at", -1)],
-
-        )
-
-        chat["last_message"] = last_message
-
+        # Attach the last message from batched result
+        chat["last_message"] = last_messages.get(chat["_id"])
         
-
         # Add member count for frontend
-
         members = chat.get("members", [])
-
         chat["member_count"] = len(members)
-
         chat["members"] = members  # Ensure members array is included
-
         
-
         print(f"[LIST_GROUPS] Group {chat['_id']}: {len(members)} members")
-
         
-
         groups.append(chat)
 
     return {"groups": groups}
@@ -1260,12 +1274,14 @@ async def get_member_suggestions(
                 if q:
 
                     q_lower = q.lower()
-
-                    if (q_lower in contact_data["name"].lower() or 
-
-                        q_lower in (contact_data["username"] or "").lower() or
-
-                        q_lower in contact_data.get("email", "").lower()):
+                    
+                    name_lower = (contact_data.get("name") or "").lower()
+                    username_lower = (contact_data.get("username") or "").lower()
+                    email_lower = (contact_data.get("email", "")).lower()
+                    
+                    if (q_lower in name_lower or 
+                        q_lower in username_lower or
+                        q_lower in email_lower):
 
                         suggestions.append(contact_data)
 
@@ -1295,7 +1311,7 @@ async def get_member_suggestions(
 
             
 
-            cursor = await users_collection().find(
+            cursor = users_collection().find(
 
                 {"_id": {"$nin": list(exclude_ids)}},
 
@@ -1955,7 +1971,7 @@ async def update_group_permissions(
 
     await chats_collection().update_one(
 
-        {"_id": group_id},
+        _id_query(group_id),
 
         {"$set": {"permissions": merged_permissions}}
 
@@ -2025,7 +2041,7 @@ async def restrict_member(
 
     await chats_collection().update_one(
 
-        {"_id": group_id},
+        _id_query(group_id),
 
         {"$set": {f"restrictions.{member_id}": restriction_data}}
 
@@ -2081,7 +2097,7 @@ async def toggle_member_add_permission(
 
     await chats_collection().update_one(
 
-        {"_id": group_id},
+        _id_query(group_id),
 
         {"$set": {"permissions.allow_member_add": effective_enabled}}
 
@@ -2739,7 +2755,7 @@ async def add_multiple_participants(
 
         update_result = await chats_collection().update_one(
 
-            {"_id": group_id},
+            _id_query(group_id),
 
             {"$addToSet": {"members": {"$each": final_participants}}}
 
@@ -2881,41 +2897,270 @@ async def get_add_participants_info(
 
     max_group_size = 256  # WhatsApp-like limit
 
-    
-
     return {
-
         "group_id": group_id,
-
         "group_name": group.get("name", ""),
-
         "group_description": group.get("description", ""),
-
         "member_count": member_count,
-
         "max_group_size": max_group_size,
-
         "can_add_more": member_count < max_group_size,
-
         "can_add_members": can_add_members,
-
         "current_user_is_admin": is_admin,
-
         "permissions": {
-
             "allow_member_add": allow_member_add
-
         },
-
         "add_participants_button": {
-
             "visible": can_add_members and member_count < max_group_size,
-
             "text": f"+ Add Participants ({max_group_size - member_count} remaining)",
-
             "enabled": can_add_members
-
         }
-
     }
+
+
+# ==================== Group Photo Update Endpoint ====================
+
+@router.put("/{group_id}/photo", response_model=dict)
+async def update_group_photo(
+    group_id: str,
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user)
+):
+    """Update group profile photo (WhatsApp-style real-time broadcast).
+    
+    CRITICAL:
+    - Validates file size (max 5MB)
+    - Validates MIME type (image/* only)
+    - Broadcasts update via WebSocket to all group members in real-time
+    - Uses UTC timestamps only
+    - Returns ISO 8601 timestamps with Z suffix
+    """
+    try:
+        # Parse group ID
+        if not ObjectId.is_valid(group_id):
+            raise HTTPException(status_code=400, detail="Invalid group ID")
+        
+        group_id_obj = ObjectId(group_id)
+        
+        # Get group
+        group = await chats_collection().find_one({"_id": group_id_obj})
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        # Check if current user is admin
+        is_admin = current_user in group.get("admins", []) or current_user == group.get("created_by")
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only group admins can update photo")
+        
+        # Validate file size (max 5MB)
+        file_content = await file.read()
+        if len(file_content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 5MB)")
+        
+        # Validate MIME type
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Only image files allowed")
+        
+        # Store photo with proper extension
+        photo_id = uuid.uuid4().hex
+        
+        # Determine file extension
+        extension = None
+        if file.filename:
+            # Extract from original filename
+            ext = Path(file.filename).suffix.lower()
+            if ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                extension = ext
+                # Normalize .jpeg to .jpg
+                if extension == '.jpeg':
+                    extension = '.jpg'
+        
+        if not extension:
+            # Derive from Content-Type
+            extension = mimetypes.guess_extension(file.content_type)
+            if extension:
+                extension = extension.lower()
+                # Normalize common extensions
+                if extension == '.jpeg':
+                    extension = '.jpg'
+            else:
+                # Default to .jpg for image/* if we can't determine
+                extension = '.jpg'
+        
+        photo_path = Path(settings.DATA_ROOT) / "group_photos" / f"{photo_id}{extension}"
+        photo_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save asynchronously
+        async with aiofiles.open(photo_path, "wb") as f:
+            await f.write(file_content)
+        
+        # Update group document with UTC timestamp - use single timestamp
+        ts = _now()
+        update_data = {
+            "photo_id": photo_id,
+            "photo_extension": extension,  # Store the extension
+            "photo_url": f"/api/groups/{group_id}/photo/{photo_id}",
+            "photo_updated_at": ts.isoformat().replace('+00:00', 'Z'),  # UTC with Z suffix
+            "photo_updated_by": current_user
+        }
+        
+        await chats_collection().update_one(
+            {"_id": group_id_obj},
+            {"$set": update_data}
+        )
+        
+        # Broadcast update to all group members via WebSocket
+        try:
+            from websocket.websocket_manager import websocket_manager
+            
+            # Get all group members' active devices
+            members = group.get("members", [])
+            for member_id in members:
+                # Broadcast to each member's devices using same timestamp
+                broadcast_message = {
+                    "type": "group_photo_updated",
+                    "group_id": group_id,
+                    "photo_id": photo_id,
+                    "photo_url": f"/api/groups/{group_id}/photo/{photo_id}",
+                    "updated_by": current_user,
+                    "timestamp": ts.isoformat().replace('+00:00', 'Z')  # Same timestamp
+                }
+                
+                # Use public API method
+                await websocket_manager.send_message_to_user(member_id, broadcast_message)
+        except Exception as e:
+            logger.warning(f"Failed to broadcast group photo update to WebSocket: {e}")
+            # Continue - photo was updated even if broadcast failed
+        
+        return {
+            "status": "success",
+            "group_id": group_id,
+            "photo_id": photo_id,
+            "photo_url": f"/api/groups/{group_id}/photo/{photo_id}",
+            "updated_at": ts.isoformat().replace('+00:00', 'Z'),  # Same timestamp
+            "updated_by": current_user
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating group photo: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update group photo")
+
+
+@router.get("/{group_id}/photo/{photo_id}")
+async def get_group_photo(
+    group_id: str,
+    photo_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get group photo by ID with validation and authorization."""
+    try:
+        # Validate photo_id format (UUID hex)
+        if not re.match(r'^[a-f0-9]{32}$', photo_id):
+            raise HTTPException(status_code=400, detail="Invalid photo ID format")
+        
+        # Validate group_id format
+        if not ObjectId.is_valid(group_id):
+            raise HTTPException(status_code=400, detail="Invalid group ID")
+        
+        # Try to find the photo with different extensions
+        possible_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+        photo_path = None
+        
+        # First, check if we have the extension stored in the database
+        group = await chats_collection().find_one({"_id": ObjectId(group_id)})
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        # Verify user is member of the group
+        if current_user not in group.get("members", []):
+            raise HTTPException(status_code=403, detail="Not authorized to view this group's photo")
+        
+        if group.get("photo_id") == photo_id and group.get("photo_extension"):
+            # Use the stored extension
+            photo_path = Path(settings.DATA_ROOT) / "group_photos" / f"{photo_id}{group['photo_extension']}"
+        else:
+            # Try common extensions
+            for ext in possible_extensions:
+                test_path = Path(settings.DATA_ROOT) / "group_photos" / f"{photo_id}{ext}"
+                if test_path.exists():
+                    photo_path = test_path
+                    break
+        
+        if not photo_path:
+            raise HTTPException(status_code=404, detail="Photo not found")
+        
+        # Return file response with caching headers
+        return FileResponse(
+            photo_path,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"}  # Cache for 1 day
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving group photo: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve group photo")
+
+
+@router.delete("/{group_id}")
+async def delete_group(group_id: str, current_user: str = Depends(get_current_user)):
+    """Delete a group (only admins or creators can delete)"""
+    group = await _require_group(group_id, current_user)
+    
+    # Check if user is admin or creator
+    is_admin = current_user in group.get("admins", [])
+    is_creator = group.get("created_by") == current_user
+    
+    if not (is_admin or is_creator):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can delete groups"
+        )
+    
+    # Delete the group
+    await chats_collection().delete_one(_id_query(group_id))
+    
+    # Delete all messages in the group
+    await messages_collection().delete_many(_chat_id_query(group_id))
+    
+    await _log_activity(group_id, current_user, "group_deleted", {"group_name": group.get("name")})
+    
+    return {"status": "deleted", "group_id": group_id}
+
+
+@router.post("/{group_id}/leave")
+async def leave_group(group_id: str, current_user: str = Depends(get_current_user)):
+    """Leave a group"""
+    group = await _require_group(group_id, current_user)
+    
+    # Check if user is creator
+    is_creator = group.get("created_by") == current_user
+    if is_creator:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Creator must delete the group instead of leaving"
+        )
+    
+    # Check if user is the last admin
+    admins = group.get("admins", [])
+    if current_user in admins and len(admins) == 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assign another admin before leaving the group"
+        )
+    
+    # Remove user from members
+    await chats_collection().update_one(
+        {"_id": ObjectId(group_id)},
+        {
+            "$pull": {"members": current_user, "admins": current_user},
+            "$set": {"updated_at": _now()}
+        }
+    )
+    
+    await _log_activity(group_id, current_user, "member_left", {"user_id": current_user})
+    
+    return {"status": "left", "group_id": group_id}
 

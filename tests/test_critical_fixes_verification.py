@@ -37,17 +37,23 @@ class TestGroupCreationObjectIdFix:
     @pytest.mark.asyncio
     async def test_create_group_returns_json_serializable_response(self):
         """Test that create group endpoint returns properly encoded response"""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            test_user_id = str(ObjectId())
-            test_payload = {
-                "name": "Test Group",
-                "description": "Test Description",
-                "member_ids": [str(ObjectId()), str(ObjectId())]
-            }
-            
-            # Mock authentication
-            with patch("backend.routes.groups.get_current_user") as mock_get_user:
-                mock_get_user.return_value = test_user_id
+        from backend.main import app
+        from backend.routes.groups import get_current_user
+        
+        # Override get_current_user dependency with async function
+        async def fake_get_current_user():
+            return "test_user_123"
+        
+        app.dependency_overrides[get_current_user] = fake_get_current_user
+        
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                test_user_id = "test_user_123"
+                test_payload = {
+                    "name": "Test Group",
+                    "description": "Test Description",
+                    "member_ids": [str(ObjectId()), str(ObjectId())]
+                }
                 
                 # Mock database operations
                 with patch("backend.routes.groups.chats_collection") as mock_chats:
@@ -85,6 +91,9 @@ class TestGroupCreationObjectIdFix:
                             assert all(isinstance(m, str) for m in group["members"])
                             
                             print("✅ Group creation response properly serialized")
+        finally:
+            # Clean up dependency override
+            app.dependency_overrides.clear()
 
 
 class TestForgotPasswordTokenFix:

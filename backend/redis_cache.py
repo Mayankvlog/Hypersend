@@ -72,24 +72,29 @@ class RedisCache:
         self.lock_timeout = 30  # Default lock timeout in seconds
         
     async def connect(self, host: str = "hypersend_redis", port: int = 6379, db: int = 0, password: Optional[str] = None):
-        """Connect to Redis server with safe connection pooling and JSON serialization"""
+        """Connect to Redis server with safe connection pooling, reconnection, and JSON serialization.
+        
+        CRITICAL: Uses async operations only. Implements automatic reconnection.
+        Production: Uses zaply.in.net service name, never localhost.
+        """
         if not REDIS_AVAILABLE:
             # Log warning but don't crash - allow fallback to mock cache
             logger.warning("[REDIS] Redis library not installed - using in-memory cache (limited functionality)")
             return False
             
         try:
-            # Validate host is not localhost
+            # CRITICAL: Production domain check - no localhost
             if host in ('localhost', '127.0.0.1', '::1'):
-                logger.warning(f"[REDIS] WARNING: Redis host is localhost - should use service name 'hypersend_redis' in production")
+                logger.warning(f"[REDIS] WARNING: Redis host is {host} - production must use zaply.in.net domain")
                 # Don't crash - allow localhost for development/testing
             
-            # Create connection pool for connection reuse
-            # CRITICAL: Use Docker service name (hypersend_redis) not localhost
+            # Create connection pool for connection reuse with reconnection support
+            # CRITICAL: Use production domain zaply.in.net, not localhost
             logger.info(f"[REDIS] Connecting to Redis at {host}:{port} db={db}")
             
             # ConnectionPool with safe configuration for production
             # CRITICAL FIX: decode_responses=True ensures strings not bytes from Redis
+            # CRITICAL: health_check_interval enables automatic reconnection
             self.connection_pool = redis.ConnectionPool(
                 host=host,
                 port=port,
@@ -98,6 +103,8 @@ class RedisCache:
                 decode_responses=True,  # CRITICAL: Returns strings not bytes
                 socket_connect_timeout=10,
                 socket_timeout=30,
+                health_check_interval=30,  # Reconnect check every 30s
+                socket_keepalive=True,  # Enable TCP keepalive
                 max_connections=50,
                 retry_on_timeout=True,
             )

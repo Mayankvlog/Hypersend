@@ -1542,13 +1542,30 @@ async def upload_chunk(
 
     await _save_chunk_to_disk(chunk_path, chunk_data, int(chunk_index), current_user)
 
-    # Update upload progress and broadcast via WebSocket
-    total_chunks = upload.get("total_chunks", 1)
-    uploaded_chunks = upload.get("uploaded_chunks", [])
-    uploaded_chunks.append(int(chunk_index))
-    progress_percent = (len(uploaded_chunks) / total_chunks) * 100
+    # Update database first
+    await _maybe_await(
+        uploads_collection().update_one(
+            {"upload_id": upload_id},
+            {
+                "$addToSet": {"uploaded_chunks": int(chunk_index)},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+        )
+    )
+
+    # Get updated upload data from DB for accurate progress
+    updated_upload = await _maybe_await(
+        uploads_collection().find_one({"upload_id": upload_id})
+    )
     
-    # Broadcast upload progress via WebSocket
+    # Calculate progress from persisted data
+    total_chunks = updated_upload.get("total_chunks", 1)
+    uploaded_chunks = updated_upload.get("uploaded_chunks", [])
+    # Deduplicate chunks to prevent inflation on retries
+    unique_uploaded_chunks = list(set(uploaded_chunks))
+    progress_percent = (len(unique_uploaded_chunks) / total_chunks) * 100
+    
+    # Broadcast upload progress via WebSocket after DB update
     try:
         from websocket.websocket_manager import websocket_manager
         progress_message = {
@@ -1557,19 +1574,20 @@ async def upload_chunk(
             'user_id': current_user,
             'chunk_index': int(chunk_index),
             'total_chunks': total_chunks,
-            'uploaded_chunks': len(uploaded_chunks),
+            'uploaded_chunks': len(unique_uploaded_chunks),
             'progress_percent': round(progress_percent, 2),
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }
         
         # Send to all user devices
-        await websocket_manager.send_message_to_device(current_user, progress_message)
+        await websocket_manager.send_message_to_user(current_user, progress_message)
         
         _log("info", f"Upload progress broadcast: {progress_percent}%", {
             "upload_id": upload_id,
             "user_id": current_user,
             "chunk_index": int(chunk_index),
-            "progress_percent": progress_percent
+            "progress_percent": progress_percent,
+            "unique_uploaded_chunks": len(unique_uploaded_chunks)
         })
         
     except Exception as e:
@@ -1577,16 +1595,6 @@ async def upload_chunk(
             "upload_id": upload_id,
             "user_id": current_user
         })
-
-    await _maybe_await(
-        uploads_collection().update_one(
-            {"upload_id": upload_id},
-            {
-                "$addToSet": {"uploaded_chunks": int(chunk_index)},
-                "$set": {"updated_at": datetime.utcnow().replace(tzinfo=timezone.utc)},
-            },
-        )
-    )
 
     return ChunkUploadResponse(upload_id=upload_id, chunk_index=int(chunk_index), status="received")
 
@@ -2503,11 +2511,12 @@ async def acknowledge_file_delivery(
                     "status": "delivered",
                     "delivery_status": "delivered",
                     "delivered_at": datetime.now(timezone.utc),
-                    "deleted_from_cloud": deleted,
+                    "deleted_from_server": deleted,
+                    "deleted_from_cloud": deleted,  # Set both keys for consistency
                     "ack_timestamp": datetime.now(
                         timezone.utc
                     ),  # Track ACK time for audit
-                    "ephemeral_storage_destroyed": True,  # WhatsApp: Confirm cloud copy destroyed
+                    "ephemeral_storage_destroyed": True,  # Confirm server copy destroyed
                 }
             },
         )
