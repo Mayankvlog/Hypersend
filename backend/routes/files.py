@@ -1330,13 +1330,13 @@ async def initialize_upload(
             upload_user_id = ObjectId(current_user)
 
         upload_id = str(uuid.uuid4())
-        now = dt.now(timezone.utc)
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
         file_oid = ObjectId()
         storage_key_owner = str(upload_user_id) if upload_user_id is not None else "anonymous"
         storage_key = f"files/{storage_key_owner}/{upload_id}/{filename}"
         
         # CRITICAL: 72-hour expiry for WhatsApp compliance (UTC only)
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
         expires_at = now + timedelta(hours=72)
         
         upload_doc = {
@@ -1547,7 +1547,7 @@ async def upload_chunk(
             {"upload_id": upload_id},
             {
                 "$addToSet": {"uploaded_chunks": int(chunk_index)},
-                "$set": {"updated_at": dt.now(timezone.utc)},
+                "$set": {"updated_at": datetime.utcnow().replace(tzinfo=timezone.utc)},
             },
         )
     )
@@ -1671,7 +1671,7 @@ async def complete_upload(
                 detail="Temporary storage unavailable",
             ) from e
 
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
         await _maybe_await(
             uploads_col.update_one(
                 {"upload_id": upload_id},
@@ -2302,7 +2302,7 @@ async def download_file(
                     {
                         "$set": {
                             "delivery_status": "downloading",
-                            "download_requested_at": datetime.now(timezone.utc),
+                            "download_requested_at": datetime.utcnow().replace(tzinfo=timezone.utc),
                         }
                     },
                 )
@@ -2535,10 +2535,26 @@ async def upload_media_chunk(
     chunk_index: int = Query(..., description="Chunk index"),
     current_user: str = Depends(get_current_user),
 ):
-    """Upload encrypted media chunk"""
+    """Upload encrypted media chunk with real-time progress tracking"""
+    media_id = None
+    chunk_count = None
+    
     try:
         # Get media lifecycle service
         media_service = get_media_lifecycle()
+
+        # Get token metadata to track progress
+        token_key = f"upload_token:{token}"
+        token_data = await cache.get(token_key) if cache else None
+        
+        if token_data:
+            media_id = token_data.get("media_id")
+            # Get media metadata for chunk count
+            if media_id:
+                metadata_key = f"media_metadata:{media_id}"
+                metadata = await cache.get(metadata_key) if cache else None
+                if metadata:
+                    chunk_count = metadata.get("chunk_count", 1)
 
         # Upload chunk
         result = await media_service.upload_media_chunk(
@@ -2547,6 +2563,43 @@ async def upload_media_chunk(
             media_key=media_key,
             chunk_index=chunk_index,
         )
+
+        # CRITICAL: Emit progress event via Redis pub/sub for real-time WebSocket delivery
+        if cache and media_id and chunk_count:
+            progress_percentage = int(((chunk_index + 1) / chunk_count) * 100)
+            
+            # Emit progress event to Redis channel
+            progress_event = {
+                "type": "file_upload_progress",
+                "media_id": media_id,
+                "chunk_index": chunk_index + 1,  # 1-indexed for user display
+                "total_chunks": chunk_count,
+                "progress_percent": progress_percentage,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "uploader_user_id": current_user,
+            }
+            
+            try:
+                await cache.publish(
+                    f"upload_progress:{media_id}",
+                    json.dumps(progress_event)
+                )
+                _log(
+                    "info",
+                    f"Progress event emitted for upload {media_id}",
+                    {
+                        "chunk": chunk_index + 1,
+                        "total": chunk_count,
+                        "percent": progress_percentage,
+                        "user_id": current_user
+                    }
+                )
+            except Exception as e:
+                _log(
+                    "warning",
+                    f"Failed to emit progress event: {str(e)}",
+                    {"media_id": media_id, "user_id": current_user}
+                )
 
         return result
 
@@ -3168,7 +3221,142 @@ async def revoke_file_access(
     return {"message": f"Access revoked for user {user_id}"}
 
 
-@router.post("/{upload_id}/refresh-token")
+@router.get("/{upload_id}/progress")
+async def get_upload_progress(
+    upload_id: str,
+    current_user: str = Depends(get_current_user),
+):
+    """Get real-time file upload progress via Server-Sent Events"""
+    from bson import ObjectId
+    
+    if not ObjectId.is_valid(current_user):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
+    
+    upload = await _maybe_await(uploads_collection().find_one({"upload_id": upload_id}))
+    if not upload:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found")
+    
+    if upload.get("user_id") != ObjectId(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to check progress for this upload",
+        )
+    
+    total_chunks = upload.get("total_chunks", 0)
+    uploaded_chunks = len(upload.get("uploaded_chunks", []))
+    progress_percent = int((uploaded_chunks / total_chunks * 100)) if total_chunks > 0 else 0
+    
+    return {
+        "upload_id": upload_id,
+        "total_chunks": total_chunks,
+        "uploaded_chunks": uploaded_chunks,
+        "progress_percent": progress_percent,
+        "status": upload.get("status", "uploading"),
+    }
+
+
+# WHATSAPP-STYLE ATTACHMENT ENDPOINTS
+@router.post("/attach/photos-videos/init")
+async def init_photo_video_upload(
+    request: Request,
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Initialize photo/video upload - Uses /init endpoint under the hood"""
+    body = await request.json()
+    body["file_type"] = "photo_video"
+    
+    # Delegate to main init endpoint
+    return await initialize_upload(request=request, current_user=current_user)
+
+
+@router.post("/attach/documents/init")  
+async def init_document_upload(
+    request: Request,
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Initialize document upload"""
+    body = await request.json()
+    body["file_type"] = "document"
+    
+    return await initialize_upload(request=request, current_user=current_user)
+
+
+@router.post("/attach/camera/capture")
+async def capture_camera_image(
+    request: Request,
+    current_user: str = Depends(get_current_user),
+):
+    """Capture image from camera and upload"""
+    body = await request.json()
+    body["filename"] = body.get("filename", f"camera_{datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()}.jpg")
+    body["mime_type"] = "image/jpeg"
+    body["file_type"] = "camera"
+    
+    return await initialize_upload(request=request, current_user=current_user)
+
+
+@router.post("/attach/audio/init")
+async def init_audio_upload(
+    request: Request,
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Initialize audio/voice message upload"""
+    body = await request.json()
+    body["file_type"] = "audio"
+    
+    return await initialize_upload(request=request, current_user=current_user)
+
+
+@router.post("/attach/files/init")
+async def init_file_upload(
+    request: Request,
+    current_user: Optional[str] = Depends(get_current_user_for_upload)
+):
+    """Initialize generic file upload"""
+    body = await request.json()
+    body["file_type"] = "file"
+    
+    return await initialize_upload(request=request, current_user=current_user)
+
+
+@router.post("/attach/location/share")
+async def share_location(
+    request: Request,
+    current_user: str = Depends(get_current_user),
+):
+    """Share location - creates synthetic message without file upload"""
+    from datetime import datetime as dt
+    
+    body = await request.json()
+    chat_id = body.get("chat_id")
+    latitude = body.get("latitude")
+    longitude = body.get("longitude")
+    accuracy = body.get("accuracy", 0)
+    
+    if not all([chat_id, latitude, longitude]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required fields: chat_id, latitude, longitude"
+        )
+    
+    # Create location message metadata
+    location_data = {
+        "type": "location",
+        "latitude": latitude,
+        "longitude": longitude, 
+        "accuracy": accuracy,
+        "shared_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+    }
+    
+    return {
+        "status": "success",
+        "type": "location",
+        "data": location_data,
+        "message": "Location shared successfully"
+    }
+
+
+
 async def refresh_upload_token(
     upload_id: str, current_user: str = Depends(get_current_user)
 ):

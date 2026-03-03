@@ -1542,10 +1542,12 @@ Future<void> postToChannel(String channelId, String text) async {
     required String mime,  // Parameter name stays 'mime' for compatibility
     required String chatId,
     String? checksum,
+    String? endpoint,  // Optional: use specific attachment endpoint (e.g., /attach/photos-videos/init)
   }) async {
     try {
+      final uploadEndpoint = endpoint ?? '${ApiConstants.filesEndpoint}/init';
       final response = await _dio.post(
-        '${ApiConstants.filesEndpoint}/init',
+        uploadEndpoint,
         data: {
           'filename': filename,
           'size': size,
@@ -1564,7 +1566,7 @@ Future<void> postToChannel(String channelId, String text) async {
           e.type == DioExceptionType.sendTimeout) {
         // Retry for timeout errors (504 Gateway Timeout)
         _log('[API_INIT_RETRY] Timeout error detected, attempting retry...');
-        return await _retryUpload(filename, size, mime, chatId, checksum);
+        return await _retryUpload(filename, size, mime, chatId, checksum, endpoint);
       }
       
       // Enhanced status code checking
@@ -1573,11 +1575,11 @@ Future<void> postToChannel(String channelId, String text) async {
         if (statusCode >= 500 && statusCode < 600) {
           // Server errors - should be retried
           _log('[API_INIT_RETRY] Server error $statusCode detected, attempting retry...');
-          return await _retryUpload(filename, size, mime, chatId, checksum);
+          return await _retryUpload(filename, size, mime, chatId, checksum, endpoint);
         } else if (statusCode == 408 || statusCode == 429) {
           // Request timeout and rate limit - should be retried
           _log('[API_INIT_RETRY] Retryable error $statusCode detected, attempting retry...');
-          return await _retryUpload(filename, size, mime, chatId, checksum);
+          return await _retryUpload(filename, size, mime, chatId, checksum, endpoint);
         }
         // 4xx client errors (except 408, 429) - should NOT be retried
       }
@@ -1596,14 +1598,16 @@ Future<void> postToChannel(String channelId, String text) async {
     String mime,
     String chatId,
     String? checksum,
+    String? endpoint,
   ) async {
     int retryCount = 0;
     const maxRetries = 3;
     
     while (retryCount < maxRetries) {
       try {
+        final uploadEndpoint = endpoint ?? '${ApiConstants.filesEndpoint}/init';
         final response = await _dio.post(
-          '${ApiConstants.filesEndpoint}/init',
+          uploadEndpoint,
           data: {
             'filename': filename,
             'size': size,

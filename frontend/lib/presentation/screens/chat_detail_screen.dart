@@ -423,66 +423,314 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   void _showEmojiPicker() {
-    final List<String> emojis = EmojiUtils.getEmojiList();
+    int selectedCategoryIndex = 0;
+    final TextEditingController searchController = TextEditingController();
     
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.backgroundDark,
       isScrollControlled: true,
-      builder: (context) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.6,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(left: 16),
-                    child: Text('Emojis', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          final categories = EmojiUtils.categories;
+          final searchQuery = searchController.text.trim();
+          final List<String> displayedEmojis = searchQuery.isEmpty
+              ? categories[selectedCategoryIndex].emojis
+              : EmojiUtils.searchEmojis(searchQuery);
+          
+          return SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: Column(
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(left: 16),
+                        child: Text('Emojis', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Done', style: TextStyle(color: AppTheme.primaryCyan)),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Done', style: TextStyle(color: AppTheme.primaryCyan)),
+                ),
+                
+                // Search bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: TextField(
+                    controller: searchController,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Search emojis (smile, animal, food...)',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 20),
+                              onPressed: () {
+                                searchController.clear();
+                                setState(() {});
+                              },
+                            )
+                          : null,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // Category tabs (visible only when not searching)
+                if (searchQuery.isEmpty)
+                  SizedBox(
+                    height: 50,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      itemCount: categories.length,
+                      itemBuilder: (context, index) {
+                        final isSelected = index == selectedCategoryIndex;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: InkWell(
+                            onTap: () => setState(() => selectedCategoryIndex = index),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: isSelected ? AppTheme.primaryCyan.withValues(alpha: 0.2) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected ? AppTheme.primaryCyan : Colors.transparent,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  categories[index].icon,
+                                  style: const TextStyle(fontSize: 24),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                
+                // Emoji grid
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: displayedEmojis.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No emojis found',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: AppTheme.textSecondary,
+                                  ),
+                            ),
+                          )
+                        : GridView.builder(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 8,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                            ),
+                            itemCount: displayedEmojis.length,
+                            itemBuilder: (context, index) => InkWell(
+                              onTap: () {
+                                final emoji = displayedEmojis[index];
+                                final text = _messageController.text;
+                                final selection = _messageController.selection;
+                                final start = selection.start >= 0 ? selection.start : text.length;
+                                final end = selection.end >= 0 ? selection.end : text.length;
+                                final newText = text.replaceRange(start, end, emoji);
+                                _messageController.value = TextEditingValue(
+                                  text: newText,
+                                  selection: TextSelection.collapsed(offset: start + emoji.length),
+                                );
+                              },
+                              child: Center(
+                                child: Text(
+                                  displayedEmojis[index],
+                                  style: const TextStyle(fontSize: 24),
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _uploadFile() async {
+    _showAttachmentMenu();
+  }
+
+  void _showAttachmentMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.backgroundDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Title
+              const Text(
+                'Select attachment',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              const SizedBox(height: 24),
+              
+              // First row: Camera, Photos/Videos, Documents
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildAttachmentButton(
+                    icon: Icons.camera_alt,
+                    label: 'Camera',
+                    color: Colors.blue,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _captureFromCamera();
+                    },
+                  ),
+                  _buildAttachmentButton(
+                    icon: Icons.image,
+                    label: 'Photos/Videos',
+                    color: Colors.green,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _uploadFromMediaPicker('photo_video');
+                    },
+                  ),
+                  _buildAttachmentButton(
+                    icon: Icons.description,
+                    label: 'Documents',
+                    color: Colors.orange,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _uploadFromMediaPicker('document');
+                    },
                   ),
                 ],
               ),
-            ),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: GridView.builder(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 8,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                  ),
-                  itemCount: emojis.length,
-                  itemBuilder: (context, index) => InkWell(
+              const SizedBox(height: 24),
+              
+              // Second row: Audio, Files, Location
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildAttachmentButton(
+                    icon: Icons.mic,
+                    label: 'Audio',
+                    color: Colors.purple,
                     onTap: () {
-                      final text = _messageController.text;
-                      final selection = _messageController.selection;
-                      final start = selection.start >= 0 ? selection.start : text.length;
-                      final end = selection.end >= 0 ? selection.end : text.length;
-                      final newText = text.replaceRange(start, end, emojis[index]);
-                      _messageController.value = TextEditingValue(
-                        text: newText,
-                        selection: TextSelection.collapsed(offset: start + emojis[index].length),
-                      );
+                      Navigator.pop(context);
+                      _uploadFromMediaPicker('audio');
                     },
-                    child: Center(child: Text(emojis[index], style: const TextStyle(fontSize: 24))),
                   ),
-                ),
+                  _buildAttachmentButton(
+                    icon: Icons.folder,
+                    label: 'Files',
+                    color: Colors.red,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _uploadFromMediaPicker('file');
+                    },
+                  ),
+                  _buildAttachmentButton(
+                    icon: Icons.location_on,
+                    label: 'Location',
+                    color: Colors.teal,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _shareLocation();
+                    },
+                  ),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _pickAndUploadFile() async {
+  Widget _buildAttachmentButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
+            ),
+            child: Icon(icon, color: color, size: 32),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _captureFromCamera() async {
+    try {
+      // For now, we'll use file picker which supports camera capture on mobile
+      // In production, use image_picker or camera plugin for direct camera access
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Camera capture feature coming soon...')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadFromMediaPicker(String attachmentType) async {
     try {
       final result = await serviceProvider.apiService.pickFile();
       if (result == null) return;
@@ -490,40 +738,42 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final bytes = result.files.first.bytes;
       final name = result.files.first.name;
       final size = result.files.first.size;
-      final mime = 'application/octet-stream'; // Default or lookup
+      final mime = 'application/octet-stream';
 
-      if (bytes == null) {
-        // Handle path-based pick for non-web if needed
-        return;
-      }
+      if (bytes == null) return;
 
-      // Show progress
+      // Show initial upload notification
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Uploading $name...'), duration: const Duration(seconds: 1)),
       );
 
-      // Resumable upload logic
+      // Initialize upload with attachment endpoint
+      final initEndpoint = _getAttachmentInitEndpoint(attachmentType);
       final init = await serviceProvider.apiService.initUpload(
         filename: name,
         size: size,
-        mime: mime,  // API service converts this to mime_type
+        mime: mime,
         chatId: widget.chatId,
+        endpoint: initEndpoint, // Use specific attachment endpoint
       );
 
-      final uploadId = init['uploadId'] ?? init['upload_id'];  // Support both camelCase and snake_case
-      final chunkSize = (init['chunk_size'] as num).toInt(); // Use server-provided chunk size (4MB default)
+      final uploadId = init['uploadId'] ?? init['upload_id'];
+      final chunkSize = (init['chunk_size'] as num).toInt();
       int offset = 0;
       int chunkIndex = 0;
-      
+      final totalChunks = (bytes.length / chunkSize).ceil();
+
+      // Upload chunks with progress tracking
       while (offset < bytes.length) {
         final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
         final chunk = bytes.sublist(offset, end);
-        
+
         if (!mounted) return;
+        final progressPercent = ((chunkIndex + 1) / totalChunks * 100).toStringAsFixed(1);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Uploading $name: chunk ${chunkIndex + 1}/${(bytes.length / chunkSize).ceil()}'),
+            content: Text('Uploading $name: $progressPercent%'),
             duration: const Duration(milliseconds: 500),
           ),
         );
@@ -533,28 +783,73 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           chunkIndex: chunkIndex,
           bytes: chunk,
         );
-        
+
         offset = end;
         chunkIndex++;
       }
 
+      // Complete upload
       final completed = await serviceProvider.apiService.completeUpload(uploadId: uploadId);
       final remoteFileId = completed['file_id'];
 
-      // Send the file message
+      // Send the attachment message
       if (!mounted) return;
       await serviceProvider.apiService.sendMessage(
         chatId: widget.chatId,
-        content: name, // Use filename as fallback text
+        content: name,
         fileId: remoteFileId,
       );
 
+      // Reload messages to show the new attachment
       await _loadMessages();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$name sent successfully'),
+            backgroundColor: AppTheme.successGreen,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
+        SnackBar(
+          content: Text('Upload failed: ${e.toString()}'),
+          backgroundColor: AppTheme.errorRed,
+        ),
       );
+    }
+  }
+
+  String _getAttachmentInitEndpoint(String attachmentType) {
+    switch (attachmentType) {
+      case 'photo_video':
+        return '/attach/photos-videos/init';
+      case 'document':
+        return '/attach/documents/init';
+      case 'audio':
+        return '/attach/audio/init';
+      case 'file':
+        return '/attach/files/init';
+      default:
+        return '/files/init';
+    }
+  }
+
+  Future<void> _shareLocation() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location sharing coming soon...')),
+      );
+      // TODO: Implement location picker and send to /attach/location/share endpoint
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Location sharing failed: $e')),
+        );
+      }
     }
   }
 
@@ -562,22 +857,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (_messageController.text.trim().isEmpty) return;
     _sendMessageApi(_messageController.text.trim());
     _messageController.clear();
-  }
-
-  Future<void> _uploadFile() async {
-    try {
-      // Trigger file picker and upload
-      await _pickAndUploadFile();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload failed: ${e.toString()}'),
-            backgroundColor: AppTheme.errorRed,
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _sendMessageApi(String text) async {
@@ -637,7 +916,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         _meId = me['id']?.toString() ?? me['_id']?.toString() ?? '';
       }
       final currentUserId = _meId;
-      final msgs = raw.map((m) => Message.fromApi(m, currentUserId: currentUserId)).toList();
+      
+      // Convert UTC timestamps to local time when creating messages
+      final msgs = raw.map((m) {
+        final msg = Message.fromApi(m, currentUserId: currentUserId);
+        // Convert UTC timestamp to local time for display
+        if (msg.timestamp.isUtc) {
+          return msg.copyWith(timestamp: msg.timestamp.toLocal());
+        }
+        return msg;
+      }).toList();
+      
       if (!mounted) return;
       setState(() {
         _chat = chat;
