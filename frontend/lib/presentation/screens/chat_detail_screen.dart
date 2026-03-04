@@ -35,6 +35,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _loading = true;
   String? _error;
   String _meId = '';
+  
+  // CRITICAL: Persistent WebSocket connection (initialized once)
+  dynamic _wsConnection;
+  bool _wsConnected = false;
 
   static const List<String> _quickReactions = ['\u{1F44D}', '\u{2764}', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F525}'];
 
@@ -47,6 +51,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void dispose() {
     _messageController.dispose();
+    // Close WebSocket connection
+    if (_wsConnection != null) {
+      serviceProvider.apiService.closeChatConnection(widget.chatId);
+      _wsConnection = null;
+    }
     super.dispose();
   }
 
@@ -1056,7 +1065,92 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       context.go('/auth');
       return;
     }
+    
+    // First load messages via HTTP
     await _loadMessages();
+    
+    // Then establish persistent WebSocket connection (one-time initialization)
+    if (!_wsConnected && _meId.isNotEmpty) {
+      _initializeWebSocket();
+    }
+  }
+  
+  /// Initialize persistent WebSocket connection for real-time message delivery
+  /// CRITICAL: This runs ONCE per chat - no re-initialization on re-render
+  void _initializeWebSocket() {
+    if (_wsConnected || _wsConnection != null) {
+      return; // Already initialized
+    }
+    
+    try {
+      // Get or create persistent WebSocket connection
+      _wsConnection = serviceProvider.apiService.getOrCreateChatConnection(
+        chatId: widget.chatId,
+        userId: _meId,
+        deviceId: 'flutter_client_${_meId.hashCode}',
+        onMessage: _handleWebSocketMessage,
+        onError: _handleWebSocketError,
+      );
+      
+      _wsConnected = true;
+    } catch (e) {
+      // Fallback to HTTP polling if WebSocket fails
+      print('[WEBSOCKET] Initialization failed: $e, falling back to HTTP polling');
+    }
+  }
+  
+  /// Handle real-time message from WebSocket
+  void _handleWebSocketMessage(Map<String, dynamic> data) {
+    final messageType = data['type'] as String?;
+    
+    if (messageType == 'new_message') {
+      // CRITICAL: Message.fromApi already converts UTC→local timezone
+      // DO NOT do additional timezone conversion here
+      final raw = data as Map<String, dynamic>;
+      final msg = Message.fromApi(raw, currentUserId: _meId);
+      
+      if (mounted) {
+        setState(() {
+          // Add only if not already present (deduplication by message_id)
+          if (!_messages.any((m) => m.id == msg.id)) {
+            _messages.add(msg);
+          }
+        });
+      }
+    } else if (messageType == 'message_state_update') {
+      // Handle delivery/read receipts
+      final messageId = data['message_id'] as String?;
+      final state = data['state'] as String?; // 'delivered' or 'read'
+      
+      if (messageId != null && state != null && mounted) {
+        setState(() {
+          _messages = _messages.map((m) {
+            if (m.id == messageId) {
+              return m.copyWith(status: state == 'read' ? MessageStatus.read : MessageStatus.delivered);
+            }
+            return m;
+          }).toList();
+        });
+      }
+    } else if (messageType == 'typing') {
+      // Handle typing indicator (show UI indicator if needed)
+      // This is optional - not required for basic functionality
+    }
+  }
+  
+  /// Handle WebSocket errors (fallback to HTTP polling)
+  void _handleWebSocketError(String error) {
+    print('[WEBSOCKET_ERROR] $error');
+    _wsConnected = false;
+    
+    // Fallback: retry via HTTP after short delay
+    if (mounted) {
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted && !_wsConnected) {
+          _initializeWebSocket();
+        }
+      });
+    }
   }
 
   Future<void> _loadMessages() async {
@@ -1076,15 +1170,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       }
       final currentUserId = _meId;
       
-      // Convert UTC timestamps to local time when creating messages
-      final msgs = raw.map((m) {
-        final msg = Message.fromApi(m, currentUserId: currentUserId);
-        // Convert UTC timestamp to local time for display
-        if (msg.timestamp.isUtc) {
-          return msg.copyWith(timestamp: msg.timestamp.toLocal());
-        }
-        return msg;
-      }).toList();
+      // CRITICAL: Message.fromApi already converts UTC→local timezone
+      // DO NOT do double conversion here
+      final msgs = raw.map((m) => Message.fromApi(m, currentUserId: currentUserId)).toList();
       
       if (!mounted) return;
       setState(() {

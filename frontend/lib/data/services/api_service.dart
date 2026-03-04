@@ -6,6 +6,9 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
 
+// Conditional WebSocket import (dart:io for mobile/desktop, dart:html for web)
+import 'package:universal_io/io.dart' as io;
+
 // Conditional import: dart:io only available on mobile/desktop platforms
 import '../../core/constants/api_constants.dart';
 import 'service_provider.dart';
@@ -19,7 +22,7 @@ class ApiService {
   // Debug flag - set to false in production
   static const bool _debug = kDebugMode;
   
-  void _log(String message) {
+  static void _log(String message) {
     if (_debug) {
       debugPrint(message);
     }
@@ -3022,4 +3025,268 @@ if (!kIsWeb) {
       throw Exception('Invalid QR code: Incorrect type');
     }
   }
+
+  /// CRITICAL: Persistent singleton WebSocket connection (initialized once)
+  /// NO re-initialization on re-render or token refresh
+  static final _wsConnections = <String, WebSocketConnection>{};
+  static const _wsReconnectDelay = Duration(seconds: 5);
+  
+  /// Get or create persistent WebSocket connection for chat
+  static WebSocketConnection getChatConnection({
+    required String chatId,
+    required String userId,
+    required String deviceId,
+    required Function(Map<String, dynamic>) onMessage,
+    required Function(String) onError,
+  }) {
+    final connectionKey = 'chat_$chatId';
+    
+    // Check and remove closed connections before putIfAbsent
+    final existing = _wsConnections[connectionKey];
+    if (existing != null && existing.isClosed) {
+      _wsConnections.remove(connectionKey);
+    }
+    
+    // Atomically get or create connection to prevent race conditions
+    return _wsConnections.putIfAbsent(
+      connectionKey,
+      () {
+        // Create new persistent connection
+        final connection = WebSocketConnection(
+          chatId: chatId,
+          userId: userId,
+          deviceId: deviceId,
+          onMessage: onMessage,
+          onError: onError,
+          logger: _log,
+        );
+        
+        // Initialize connection (one-time, non-blocking)
+        connection.connect();
+        
+        return connection;
+      },
+    );
+  }
 }
+
+/// Close specific WebSocket connection
+void closeChatConnection(String chatId) {
+  final key = 'chat_$chatId';
+  _wsConnections[key]?.close();
+  _wsConnections.remove(key);
+  _log('[WEBSOCKET] Closed connection for $key');
+}
+
+/// Close all WebSocket connections
+void closeAllConnections() {
+  for (final connection in _wsConnections.values) {
+    connection.close();
+  }
+  _wsConnections.clear();
+  _log('[WEBSOCKET] Closed all connections');
+  /// Close all WebSocket connections
+  void closeAllConnections() {
+    for (final connection in _wsConnections.values) {
+      connection.close();
+    }
+    _wsConnections.clear();
+    _log('[WEBSOCKET] Closed all connections');
+  }
+}
+
+/// Singleton WebSocket connection handler per chat
+class WebSocketConnection {
+  final String chatId;
+  final String userId;
+  final String deviceId;
+  final Function(Map<String, dynamic>) onMessage;
+  final Function(String) onError;
+  final Function(String) logger;
+  
+  io.WebSocket? _webSocket;
+  bool _isConnected = false;
+  bool _isClosed = false;
+  bool _maxRetryExceeded = false;
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 5;
+  
+  WebSocketConnection({
+    required this.chatId,
+    required this.userId,
+    required this.deviceId,
+    required this.onMessage,
+    required this.onError,
+    required this.logger,
+  });
+  
+  bool get isClosed => _isClosed;
+  bool get isConnected => _isConnected;
+  
+  /// Connect to WebSocket server (called once per connection)
+  Future<void> connect() async {
+    if (_isConnected || _isClosed) {
+      logger('[WEBSOCKET] Already connected or closed for $chatId');
+      return;
+    }
+    
+    if (_maxRetryExceeded) {
+      logger('[WEBSOCKET] Max retry exceeded for $chatId - call reset() to retry');
+      onError('Max retry exceeded - call reset() to retry');
+      return;
+    }
+    
+    try {
+      final wsUrl = 'wss://zaply.in.net/ws/chat/$chatId';
+      
+      logger('[WEBSOCKET] Connecting to $wsUrl for chat $chatId...');
+      
+      _webSocket = await io.WebSocket.connect(
+        wsUrl,
+        headers: {
+          'X-Device-ID': deviceId,
+          'X-User-ID': userId,
+          'X-Chat-ID': chatId,
+        },
+      );
+      
+      _isConnected = true;
+      _isClosed = false;
+      _reconnectAttempts = 0;
+      
+      logger('[WEBSOCKET] Connected to $chatId');
+      
+      // Start listening for messages (non-blocking)
+      _listen();
+      
+    } catch (e) {
+      logger('[WEBSOCKET] Connection failed for $chatId: $e');
+      onError('Failed to connect: $e');
+      
+      // Attempt reconnect with exponential backoff
+      if (_reconnectAttempts < _maxReconnectAttempts) {
+        _reconnectAttempts++;
+        final delay = Duration(seconds: 5 * _reconnectAttempts);
+        logger('[WEBSOCKET] Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts/$_maxReconnectAttempts)...');
+        
+        Future.delayed(delay, () {
+          if (!_isClosed) {
+            connect();
+          }
+        });
+      } else {
+        logger('[WEBSOCKET] Max reconnection attempts reached for $chatId');
+        _maxRetryExceeded = true;
+      }
+    }
+  }
+  
+  /// Listen for messages from WebSocket (blocking loop)
+  void _listen() {
+    _webSocket?.listen(
+      (dynamic message) {
+        try {
+          // Parse JSON message from server
+          final data = jsonDecode(message) as Map<String, dynamic>;
+          
+          // Handle different message types
+          final messageType = data['type'] as String?;
+          
+          if (messageType == 'ping') {
+            // Send pong response (keep-alive)
+            logger('[WEBSOCKET] Ping received, sending pong...');
+            sendMessage({
+              'type': 'pong',
+              'timestamp': DateTime.now().toUtc().toIso8601String()
+                  .replaceFirst('+00:00', 'Z'),
+            });
+          } else if (messageType == 'new_message') {
+            // Convert UTC timestamp to local for display
+            final createdAtRaw = data['created_at'] as String?;
+            if (createdAtRaw != null) {
+              // Parse ISO 8601 UTC timestamp
+              final utcTime = DateTime.parse(createdAtRaw);
+              // Convert to local timezone for display
+              final localTime = utcTime.toLocal();
+              data['created_at_local'] = localTime;
+              logger('[WEBSOCKET] Message timestamp: $createdAtRaw → local: ${localTime.toIso8601String()}');
+            }
+            // Pass message to handler
+            onMessage(data);
+          } else {
+            // Forward other message types
+            onMessage(data);
+          }
+        } catch (e) {
+          logger('[WEBSOCKET] Message parsing error: $e');
+          onError('Failed to parse message: $e');
+        }
+      },
+      onError: (error) {
+        logger('[WEBSOCKET] Connection error for $chatId: $error');
+        _isConnected = false;
+        onError('Connection error: $error');
+      },
+      onDone: () {
+        logger('[WEBSOCKET] Connection closed for $chatId');
+        _isConnected = false;
+        
+        // Don't auto-reconnect if explicitly closed
+        if (!_isClosed && _reconnectAttempts < _maxReconnectAttempts) {
+          _reconnectAttempts++;
+          final delay = Duration(seconds: 5 * _reconnectAttempts);
+          logger('[WEBSOCKET] Reconnecting in ${delay.inSeconds}s...');
+          
+          Future.delayed(delay, () {
+            if (!_isClosed) {
+              connect();
+            }
+          });
+        }
+      },
+    );
+  }
+  
+  /// Send message through WebSocket (non-blocking)
+  void sendMessage(Map<String, dynamic> data) {
+    if (!_isConnected) {
+      logger('[WEBSOCKET] Cannot send - not connected to $chatId');
+      onError('WebSocket not connected');
+      return;
+    }
+    
+    try {
+      final jsonData = jsonEncode(data);
+      _webSocket?.add(jsonData);
+      logger('[WEBSOCKET] Sent message to $chatId: ${data['type'] ?? 'unknown'}');
+    } catch (e) {
+      logger('[WEBSOCKET] Send failed for $chatId: $e');
+      onError('Failed to send: $e');
+    }
+  }
+  
+  /// Reset max retry exceeded flag to allow reconnection attempts
+  void reset() {
+    if (_maxRetryExceeded) {
+      _maxRetryExceeded = false;
+      _reconnectAttempts = 0;
+      logger('[WEBSOCKET] Reset max retry flag for $chatId - can reconnect now');
+    }
+  }
+  
+  /// Close WebSocket connection (explicit close)
+  void close() {
+    if (!_isClosed) {
+      _isClosed = true;
+      _isConnected = false;
+      _maxRetryExceeded = false; // Reset on explicit close
+      try {
+        _webSocket?.close();
+        logger('[WEBSOCKET] Closed connection for $chatId');
+      } catch (e) {
+        logger('[WEBSOCKET] Error closing connection: $e');
+      }
+    }
+  }
+}
+

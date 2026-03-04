@@ -88,7 +88,33 @@ class WebSocketConnection:
         }
 
 class WebSocketManager:
-    """WhatsApp-grade singleton WebSocket manager"""
+    """
+    WhatsApp-grade singleton WebSocket manager with guaranteed single instance.
+    
+    CRITICAL PROPERTIES:
+    1. ONE persistent WebSocket connection per device (stored globally)
+    2. NO re-initialization on re-render or token refresh
+    3. Per-device Redis Pub/Sub subscription (not shared)
+    4. Global Redis Pub/Sub subscriber runs ONCE per server (not per connection)
+    5. TIMESTAMP FORMATS: 
+       - Broadcast messages use UTC ISO 8601 with Z suffix (datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'))
+       - Internal fields (connected_at, last_ping, last_pong) use Unix epoch seconds from time.time()
+    6. Message deduplication prevents duplicate broadcasts
+    7. Async-only DB operations and non-blocking file I/O
+    
+    Connection Lifecycle:
+    - Device connects → authenticate → store in self.connections[device_id]
+    - Old connection for same device_id is closed (deduplication)
+    - Start heartbeat loop (sends ping every 30s, no reconnect loop)
+    - Start per-device Redis Pub/Sub listener
+    - On disconnect → cleanup connection and subscriptions
+    
+    Timestamp Usage:
+    - connected_at, last_ping, last_pong: Unix epoch seconds (time.time()) for internal connection state
+    - Broadcast helper methods: UTC ISO 8601 with Z suffix for client-facing messages
+    
+    No polling, no 10-second refresh, no reconnect interval in WebSocket code.
+    """
     
     _instance = None
     _new_lock = threading.Lock()
@@ -523,14 +549,15 @@ class WebSocketManager:
         connection: WebSocketConnection,
         data: Dict[str, Any]
     ):
-        """Handle typing indicator"""
+        """Handle typing indicator with UTC timestamp (Z suffix)"""
         chat_id = data.get('chat_id')
         is_typing = data.get('is_typing', False)
         
         if not chat_id:
             return
         
-        # Broadcast to chat participants
+        # Broadcast to chat participants with UTC timestamp
+        utc_now = datetime.now(timezone.utc)
         await self._broadcast_to_chat_participants(
             chat_id,
             connection.user_id,
@@ -540,7 +567,7 @@ class WebSocketManager:
                 'device_id': connection.device_id,
                 'chat_id': chat_id,
                 'is_typing': is_typing,
-                'timestamp': time.time()
+                'timestamp': utc_now.isoformat().replace('+00:00', 'Z')
             }
         )
     
@@ -549,16 +576,18 @@ class WebSocketManager:
         connection: WebSocketConnection,
         data: Dict[str, Any]
     ):
-        """Handle presence update"""
+        """Handle presence update with UTC timestamp"""
         presence = data.get('presence', 'online')
         
-        # Update device presence
+        # Update device presence with UTC timestamp
         if self.delivery_manager:
             state = DeviceState.ONLINE if presence == 'online' else DeviceState.OFFLINE
+            utc_now = datetime.now(timezone.utc)
             await self.delivery_manager.update_device_connection(
                 device_id=connection.device_id,
                 user_id=connection.user_id,
-                state=state
+                state=state,
+                timestamp=utc_now.isoformat().replace('+00:00', 'Z')
             )
     
     async def _process_offline_messages(self, connection: WebSocketConnection):
