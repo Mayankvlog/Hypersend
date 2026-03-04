@@ -494,7 +494,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown WebSocket manager (singleton instance)
     try:
-        from websocket.websocket_manager import websocket_manager
+        # Use the module-level websocket_manager imported at top
         await asyncio.wait_for(websocket_manager.shutdown(), timeout=10.0)
         logger.info("[SHUTDOWN] WebSocket manager shut down gracefully")
     except asyncio.TimeoutError:
