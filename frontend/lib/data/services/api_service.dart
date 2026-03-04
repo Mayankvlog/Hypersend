@@ -3229,7 +3229,6 @@ class WebSocketConnection {
         // Do not auto-reconnect on connection loss
         // Connection is persistent; user must manually reconnect if needed
       },
-      },
     );
   }
   
