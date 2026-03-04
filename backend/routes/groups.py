@@ -1237,7 +1237,11 @@ async def get_member_suggestions(
 
                 cursor = await cursor
 
+                cursor = cursor.limit(limit)  # Apply limit after awaiting
 
+            else:
+
+                cursor = cursor.limit(limit)  # Apply limit to real cursor
 
             for contact in await _collect_cursor(cursor, limit=limit):
 
@@ -1309,39 +1313,29 @@ async def get_member_suggestions(
 
             exclude_ids.add(current_user)  # Exclude current user
 
-            
-
-            cursor = users_collection().find(
-
+            find_result = users_collection().find(
                 {"_id": {"$nin": list(exclude_ids)}},
-
                 {
-
                     "_id": 1,
-
                     "name": 1,
-
                     "email": 1,
-
                     "username": 1,
-
                     "avatar_url": 1,
-
                     "is_online": 1,
-
                     "last_seen": 1,
-
                     "status": 1
-
                 }
-
             )
+            
+            # Check if find_result is a coroutine (mock DB) or cursor (real MongoDB)
+            if hasattr(find_result, '__await__') and not hasattr(find_result, '__aiter__'):
+                cursor = await find_result
+            else:
+                cursor = find_result
 
             cursor = cursor.limit(limit * 2)  # Get more to account for filtering
 
             
-
-            # Check if cursor is a coroutine (mock DB) or cursor (real MongoDB)
 
             if hasattr(cursor, '__await__') and not hasattr(cursor, '__aiter__'):
 

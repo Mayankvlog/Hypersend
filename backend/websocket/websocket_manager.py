@@ -94,6 +94,7 @@ class WebSocketManager:
     _new_lock = threading.Lock()
     _init_lock = threading.Lock()  # For lock creation
     _lock = None  # Will be created lazily
+    _global_pubsub_lock = None  # Will be created lazily
     
     def __new__(cls):
         with cls._new_lock:
@@ -109,6 +110,8 @@ class WebSocketManager:
             with self._init_lock:
                 if self._lock is None:
                     self._lock = asyncio.Lock()
+                if self._global_pubsub_lock is None:
+                    self._global_pubsub_lock = asyncio.Lock()
         
         async with self._lock:
             if self._initialized:
@@ -598,52 +601,83 @@ class WebSocketManager:
             logger.error(f"Error processing offline messages: {e}")
     
     async def _heartbeat_loop(self, device_id: str, connection: WebSocketConnection):
-        """Send periodic heartbeat pings (keep connection persistent - NO RECONNECT LOOP)"""
+        """
+        Send periodic heartbeat pings to keep connection persistent.
+        CRITICAL: NO reconnect loop - exits on connection loss.
+        CRITICAL: Uses UTC timestamps with Z suffix.
+        """
+        heartbeat_count = 0
+        
         try:
             while True:
                 try:
+                    # Wait for next heartbeat interval
                     await asyncio.sleep(self.heartbeat_interval)
                     
-                    # Verify connection still exists and is active
+                    # Check connection still exists
                     if device_id not in self.connections:
-                        logger.debug(f"Device {device_id} not in active connections")
+                        logger.debug(f"[HEARTBEAT] Device {device_id} no longer in connections")
                         break
                     
-                    # CRITICAL: Use datetime.now(timezone.utc) for UTC timestamps ONLY
-                    # Always return ISO 8601 with Z suffix (never +00:00)
+                    # Verify WebSocket is still open
+                    if connection.websocket.closed:
+                        logger.debug(f"[HEARTBEAT] WebSocket closed for device {device_id}")
+                        break
+                    
+                    # Send ping with UTC timestamp (Z suffix)
+                    heartbeat_count += 1
                     utc_now = datetime.now(timezone.utc)
                     ping_data = {
                         'type': 'ping',
                         'timestamp': utc_now.isoformat().replace('+00:00', 'Z'),
-                        'sequence': int(time.time() * 1000)
+                        'sequence': heartbeat_count,
+                        'id': f"{device_id}_{heartbeat_count}"
                     }
                     
-                    await connection.websocket.send(json.dumps(ping_data))
-                    connection.last_ping = time.time()
-                    
-                    # Wait for pong timeout
-                    await asyncio.sleep(self.pong_timeout)
-                    
-                    # Check if pong was received
-                    if (connection.last_pong and 
-                        connection.last_pong < connection.last_ping and
-                        time.time() - connection.last_ping > self.pong_timeout):
-                        logger.warning(f"Pong timeout for device {device_id}")
-                        await connection.websocket.close(4000, "Pong timeout")
+                    try:
+                        await asyncio.wait_for(
+                            connection.websocket.send(json.dumps(ping_data)),
+                            timeout=5.0  # Send timeout
+                        )
+                        connection.last_ping = time.time()
+                        logger.debug(f"[HEARTBEAT] Sent ping #{heartbeat_count} to device {device_id}")
+                        
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[HEARTBEAT] Timeout sending ping to device {device_id}")
                         break
                     
+                    # Wait for pong (with timeout)
+                    pong_deadline = time.time() + self.pong_timeout
+                    
+                    # Check for pong in the background while waiting
+                    await asyncio.sleep(self.pong_timeout)
+                    
+                    # Check if pong was received within timeout
+                    if connection.last_pong < connection.last_ping:
+                        # Pong not received
+                        time_since_ping = time.time() - connection.last_ping
+                        if time_since_ping > self.pong_timeout:
+                            logger.warning(f"[HEARTBEAT] No pong from device {device_id} (waited {time_since_ping:.1f}s)")
+                            # Close the connection - this will trigger cleanup
+                            try:
+                                await connection.websocket.close(4000, "Heartbeat timeout")
+                            except Exception as e:
+                                logger.debug(f"[HEARTBEAT] Error closing socket: {e}")
+                            break
+                
                 except websockets.exceptions.ConnectionClosed:
-                    logger.debug(f"Heartbeat: Connection closed for device {device_id}")
+                    logger.debug(f"[HEARTBEAT] Connection closed for device {device_id}")
                     break
                 except asyncio.CancelledError:
-                    logger.debug(f"Heartbeat: Cancelled for device {device_id}")
+                    logger.debug(f"[HEARTBEAT] Heartbeat cancelled for device {device_id}")
                     break
                 except Exception as e:
-                    logger.error(f"Heartbeat error for device {device_id}: {e}")
+                    logger.error(f"[HEARTBEAT] Unexpected error for device {device_id}: {type(e).__name__}: {e}")
                     break
+        
         finally:
-            # Ensure cleanup on exit
-            pass
+            logger.debug(f"[HEARTBEAT] Exiting heartbeat loop for device {device_id} (sent {heartbeat_count} pings)")
+            # Cleanup happens in handle_connection's finally block
     
     async def _broadcast_to_user_devices(
         self,
@@ -870,110 +904,193 @@ class WebSocketManager:
         }
     
     async def _redis_pubsub_listener(self, device_id: str, user_id: str, connection: WebSocketConnection):
-        """Listen to Redis Pub/Sub for broadcast messages"""
+        """
+        Listen to Redis Pub/Sub for broadcast messages.
+        CRITICAL: One pubsub per connection (per device), not shared.
+        """
         if not self.redis:
             return
         
+        pubsub = None
         try:
-            pubsub = self.redis.pubsub()
-            self.pubsub_subscriptions[device_id] = pubsub
+            # CRITICAL: Check connection still exists (prevent zombie subscriptions)
+            if device_id not in self.connections:
+                logger.debug(f"Device {device_id} disconnected before pubsub started")
+                return
             
-            # Subscribe to broadcast channels
+            # Create pubsub only for this connection
+            pubsub = self.redis.pubsub()
+            
+            # Store pubsub reference (for cleanup if connection is replaced)
+            async with self.connection_lock:
+                if device_id in self.pubsub_subscriptions:
+                    # Old pubsub exists - close it first
+                    try:
+                        await self.pubsub_subscriptions[device_id].close()
+                    except Exception as e:
+                        logger.debug(f"Failed to close old pubsub: {e}")
+                
+                self.pubsub_subscriptions[device_id] = pubsub
+            
+            # Subscribe to broadcast channels (one per device)
             channels = [
-                f"broadcast:user:{user_id}",  # Messages to user
-                f"broadcast:device:{device_id}",  # Messages to device
+                f"broadcast:user:{user_id}",      # All messages to this user
+                f"broadcast:device:{device_id}",  # Messages to this specific device
             ]
             
             await pubsub.subscribe(*channels)
-            logger.info(f"Device {device_id} subscribed to {len(channels)} channels")
+            logger.info(f"[WS-PUBSUB] Device {device_id} subscribed to {len(channels)} Redis channels")
             
-            # Listen for messages (Redis Pub/Sub)
+            # Listen for messages (blocking call - yields messages as they arrive)
             async for message in pubsub.listen():
+                # Check connection still exists (prevent sending to dead connections)
+                if device_id not in self.connections:
+                    logger.debug(f"Device {device_id} disconnected during pubsub listen")
+                    break
+                
                 if message['type'] == 'message':
                     try:
-                        # Verify connection still exists
-                        if device_id not in self.connections:
-                            break
-                        
-                        # Send message via WebSocket
+                        # Send broadcast to WebSocket
                         await connection.websocket.send(message['data'])
-                        logger.debug(f"Broadcast to device {device_id}")
+                        logger.debug(f"[WS-PUBSUB] Broadcast to device {device_id}")
                         
                     except Exception as e:
-                        logger.warning(f"Failed to send broadcast to device {device_id}: {e}")
-                        break
+                        logger.warning(f"[WS-PUBSUB] Failed to send to device {device_id}: {e}")
+                        break  # Exit if connection is broken
                 
                 elif message['type'] == 'subscribe':
-                    logger.debug(f"Subscribed to {message['channel']}")
+                    logger.debug(f"[WS-PUBSUB] Subscribed to {message['channel']}")
         
+        except asyncio.CancelledError:
+            logger.debug(f"[WS-PUBSUB] Pub/Sub listening cancelled for device {device_id}")
         except Exception as e:
-            logger.error(f"Pub/Sub error for device {device_id}: {e}")
+            logger.error(f"[WS-PUBSUB] Error for device {device_id}: {type(e).__name__}: {e}")
         finally:
+            # Cleanup: close pubsub and remove reference
             try:
-                if device_id in self.pubsub_subscriptions:
+                if pubsub:
                     await pubsub.close()
-                    del self.pubsub_subscriptions[device_id]
+                    logger.debug(f"[WS-PUBSUB] Closed pubsub for device {device_id}")
+                
+                # Remove from subscriptions dict (only if it's still ours)
+                async with self.connection_lock:
+                    if self.pubsub_subscriptions.get(device_id) is pubsub:
+                        del self.pubsub_subscriptions[device_id]
             except Exception:
                 pass
     
     async def start_global_pubsub(self):
-        """Start global Redis Pub/Sub subscriber for cross-container communication"""
-        if not self.redis or self.global_pubsub_task:
+        """
+        Start global Redis Pub/Sub subscriber for cross-container communication.
+        CRITICAL: Only create ONE global subscriber, not one per connection.
+        Handles reconnection WITHOUT recreating subscriptions.
+        """
+        # CRITICAL: Check if already started (prevent duplicate)
+        if not self.redis:
+            logger.warning("[REDIS-GLOBAL] Redis not available - skipping global pubsub")
             return
         
+        # CRITICAL: Use lock to prevent race condition
+        async with self._global_pubsub_lock:
+            if self.global_pubsub_task:
+                logger.debug("[REDIS-GLOBAL] Global pubsub already started")
+                return
+        
         async def global_redis_subscriber():
-            """Listen to Redis channels and broadcast to WebSocket clients"""
+            """
+            Listen to Redis channels and broadcast to WebSocket clients.
+            CRITICAL: This runs ONCE per server, not once per connection.
+            """
             pubsub = None
+            reconnect_count = 0
+            max_reconnect_attempts = 5
+            reconnect_delay = 5  # seconds
+            
             try:
-                logger.info("[REDIS] Starting global Redis Pub/Sub subscriber...")
-                pubsub = self.redis.pubsub()
+                logger.info("[REDIS-GLOBAL] Starting global Redis Pub/Sub subscriber...")
                 
-                # Subscribe to all chat channels (pattern matching)
-                await pubsub.psubscribe("chat:*")
-                logger.info("[REDIS] Subscribed to chat:* channels")
-                
-                async for message in pubsub.listen():
+                while reconnect_count < max_reconnect_attempts:
+                    pubsub = None
                     try:
-                        if message['type'] in ['message', 'pmessage']:
-                            channel = message.get('channel', '').decode() if isinstance(message.get('channel'), bytes) else message.get('channel', '')
-                            data_raw = message.get('data')
-                            
-                            # Parse data (could be bytes or str depending on decode_responses setting)
-                            if isinstance(data_raw, bytes):
-                                data_str = data_raw.decode('utf-8')
-                            else:
-                                data_str = data_raw
-                            
+                        # Create pubsub object
+                        pubsub = self.redis.pubsub()
+                        
+                        # Subscribe to all chat channels (pattern matching)
+                        # CRITICAL: Only subscribe ONCE, not on every reconnection
+                        await pubsub.psubscribe("chat:*")
+                        logger.info("[REDIS-GLOBAL] Subscribed to chat:* channels")
+                        
+                        # Reset reconnect count on successful subscription
+                        reconnect_count = 0
+                        
+                        # Listen for messages (blocking)
+                        async for message in pubsub.listen():
                             try:
-                                data = json.loads(data_str)
-                                
-                                # Log publish/subscribe activity
-                                logger.debug(f"[REDIS] Received {message['type']} on {channel}: {data.get('type', 'unknown')}")
-                                
-                                # Broadcast to relevant WebSocket connections
-                                await self._broadcast_redis_message(data, channel)
-                                
-                            except json.JSONDecodeError as e:
-                                logger.error(f"[REDIS] Failed to parse message from {channel}: {e}")
+                                if message['type'] in ['message', 'pmessage']:
+                                    channel = message.get('channel', '').decode() if isinstance(message.get('channel'), bytes) else message.get('channel', '')
+                                    data_raw = message.get('data')
+                                    
+                                    # Parse data (could be bytes or str)
+                                    if isinstance(data_raw, bytes):
+                                        data_str = data_raw.decode('utf-8')
+                                    else:
+                                        data_str = data_raw
+                                    
+                                    try:
+                                        data = json.loads(data_str)
+                                        
+                                        # Log activity (rate-limited)
+                                        logger.debug(f"[REDIS-GLOBAL] {message['type']} on {channel}: {data.get('type', 'unknown')}")
+                                        
+                                        # Broadcast to relevant WebSocket connections
+                                        await self._broadcast_redis_message(data, channel)
+                                        
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"[REDIS-GLOBAL] JSON parse error: {e}")
+                            
+                            except asyncio.CancelledError:
+                                raise  # Re-raise to exit outer loop
+                            except Exception as e:
+                                logger.error(f"[REDIS-GLOBAL] Message processing error: {type(e).__name__}: {e}")
+                    
+                    except asyncio.CancelledError:
+                        logger.info("[REDIS-GLOBAL] Global subscriber cancelled")
+                        raise
+                    except (ConnectionError, TimeoutError, EOFError) as e:
+                        # Connection lost - try to reconnect
+                        reconnect_count += 1
+                        logger.warning(f"[REDIS-GLOBAL] Connection error (attempt {reconnect_count}/{max_reconnect_attempts}): {e}")
+                        
+                        if reconnect_count < max_reconnect_attempts:
+                            # Wait before reconnecting (exponential backoff)
+                            delay = reconnect_delay * (2 ** (reconnect_count - 1))
+                            logger.info(f"[REDIS-GLOBAL] Reconnecting in {delay}s...")
+                            await asyncio.sleep(delay)
+                        else:
+                            logger.error("[REDIS-GLOBAL] Max reconnection attempts reached - stopping")
+                            break
                     
                     except Exception as e:
-                        logger.error(f"[REDIS] Error processing Redis message: {type(e).__name__}: {e}")
-            
-            except asyncio.CancelledError:
-                logger.info("[REDIS] Redis subscriber cancelled")
-            except Exception as e:
-                logger.error(f"[REDIS] Global Redis subscriber error: {type(e).__name__}: {e}")
+                        logger.error(f"[REDIS-GLOBAL] Unexpected error: {type(e).__name__}: {e}")
+                        reconnect_count += 1
+                        if reconnect_count < max_reconnect_attempts:
+                            await asyncio.sleep(reconnect_delay)
+                        else:
+                            break
+                
             finally:
+                # Final cleanup
                 if pubsub:
                     try:
                         await pubsub.close()
+                        logger.debug("[REDIS-GLOBAL] Pubsub closed")
                     except Exception as e:
-                        logger.error(f"[REDIS] Failed to close pubsub: {e}")
-                logger.info("[REDIS] Global Pub/Sub subscriber stopped")
+                        logger.error(f"[REDIS-GLOBAL] Error closing pubsub: {e}")
+                logger.info("[REDIS-GLOBAL] Global Pub/Sub subscriber stopped")
         
-        # Start Redis subscriber as background task
-        self.global_pubsub_task = asyncio.create_task(global_redis_subscriber())
-        logger.info("[REDIS] Global Pub/Sub subscriber started in background")
+            # CRITICAL: Create task only once, inside the lock
+            self.global_pubsub_task = asyncio.create_task(global_redis_subscriber())
+            logger.info("[REDIS-GLOBAL] Global Pub/Sub subscriber task created")
     
     async def _broadcast_redis_message(self, data: Dict[str, Any], channel: str):
         """Broadcast Redis message to relevant WebSocket connections"""

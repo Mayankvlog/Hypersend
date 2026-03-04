@@ -296,7 +296,7 @@ class WhatsAppDeliveryEngine:
         }
         
         # STEP 1: Always publish to chat messages channel (delivery)
-        await cache.publish(f"chat_messages:{message['chat_id']}", json.dumps(message_payload))
+        await self.redis.publish(f"chat_messages:{message['chat_id']}", json.dumps(message_payload))
         
         # STEP 2: Check mute status before publishing to notifications channel
         await self._publish_notifications_if_not_muted(message_payload)
@@ -311,8 +311,8 @@ class WhatsAppDeliveryEngine:
         chat = await chats_collection().find_one({"_id": chat_id})
         if not chat or not chat.get("mute_config"):
             # No mute config, publish to both channels normally
-            await cache.publish(f"chat_messages:{chat_id}", json.dumps(message_payload))
-            await cache.publish(f"chat_notifications:{chat_id}", json.dumps(message_payload))
+            await self.redis.publish(f"chat_messages:{chat_id}", json.dumps(message_payload))
+            await self.redis.publish(f"chat_notifications:{chat_id}", json.dumps(message_payload))
             return
         
         # Check each user's mute status
@@ -320,7 +320,7 @@ class WhatsAppDeliveryEngine:
         current_time = datetime.utcnow().replace(tzinfo=timezone.utc)
         
         # STEP 1: Always publish to chat messages channel (delivery regardless of mute)
-        await cache.publish(f"chat_messages:{chat_id}", json.dumps(message_payload))
+        await self.redis.publish(f"chat_messages:{chat_id}", json.dumps(message_payload))
         
         # STEP 2: Publish to chat notifications channel only for unmuted users
         for user_id, mute_info in mute_config.items():
@@ -329,7 +329,7 @@ class WhatsAppDeliveryEngine:
                 mute_until_str = mute_info.get("mute_until")
                 if not mute_until_str:
                     # No mute_until, user receives notifications
-                    await cache.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
+                    await self.redis.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
                     continue
                 
                 mute_until = datetime.fromisoformat(mute_until_str.replace('Z', '+00:00'))
@@ -337,16 +337,16 @@ class WhatsAppDeliveryEngine:
                 # Check if mute is still active
                 if current_time >= mute_until:
                     # Mute expired, user receives notifications
-                    await cache.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
+                    await self.redis.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
                 # else: User is still muted, do NOT send notification
                 
             except Exception as e:
                 # Error parsing mute time, err on side of sending notification
-                await cache.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
-        
-        # STEP 3: Also publish to general chat notifications channel for users without mute config
-        await cache.publish(f"chat_notifications:{chat_id}", json.dumps(message_payload))
+                await self.redis.publish(f"user_notifications:{user_id}", json.dumps(message_payload))
 
+        # STEP 3: Also publish to general chat notifications channel for users without mute config
+        await self.redis.publish(f"chat_notifications:{chat_id}", json.dumps(message_payload))
+    
     async def _update_message_state(self, message: Dict[str, Any]):
         """Update message state based on device states"""
         device_states = message.get("device_states", {}).values()

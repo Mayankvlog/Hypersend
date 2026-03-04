@@ -274,11 +274,18 @@ class TestObjectIdSerializationIntegration:
     @pytest.mark.asyncio
     async def test_list_groups_returns_serialized_groups(self):
         """Test that list groups endpoint properly encodes all ObjectId objects"""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            test_user_id = str(ObjectId())
-            
-            with patch("backend.routes.groups.get_current_user") as mock_get_user:
-                mock_get_user.return_value = test_user_id
+        from backend.main import app
+        from backend.routes.groups import get_current_user
+        
+        # Override get_current_user dependency with async function
+        async def fake_get_current_user(request=MagicMock(), credentials=MagicMock()):
+            return "test_user_123"
+        
+        app.dependency_overrides[get_current_user] = fake_get_current_user
+        
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                test_user_id = "test_user_123"
                 
                 with patch("backend.routes.groups.chats_collection") as mock_chats:
                     mock_group_doc = {
@@ -320,6 +327,9 @@ class TestObjectIdSerializationIntegration:
                             assert all(isinstance(m, str) for m in group["members"])
                         
                         print("✅ List groups returns properly serialized response")
+        finally:
+            # Clean up dependency override
+            app.dependency_overrides.clear()
 
 
 class TestErrorHandling:
@@ -343,22 +353,32 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_group_creation_validation(self):
         """Test group creation validation"""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            test_user_id = str(ObjectId())
-            
-            # Test with invalid payload
-            with patch("backend.routes.groups.get_current_user") as mock_get_user:
-                mock_get_user.return_value = test_user_id
+        from backend.main import app
+        from backend.routes.groups import get_current_user
+        
+        # Override get_current_user dependency with async function
+        async def fake_get_current_user(request=MagicMock(), credentials=MagicMock()):
+            return "test_user_123"
+        
+        app.dependency_overrides[get_current_user] = fake_get_current_user
+        
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                test_user_id = str(ObjectId())
                 
+                # Test with invalid payload
                 response = await client.post(
                     "/api/v1/groups",
                     json={"name": ""}  # Empty name
                 )
                 
-                # Should return 400
+                # Should return 400 or 422
                 assert response.status_code in [400, 422]
                 
                 print("✅ Group creation validates input properly")
+        finally:
+            # Clean up dependency override
+            app.dependency_overrides.clear()
 
 
 # Test utilities

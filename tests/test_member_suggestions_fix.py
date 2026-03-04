@@ -139,8 +139,13 @@ class TestMemberSuggestionsFix:
                 mock_users_instance.insert_one = AsyncMock()
                 mock_users_collection.return_value = mock_users_instance
                 
-                # Use the actual database find method instead of mocked cursor
-                mock_users_collection.return_value.find = AsyncMock(return_value=mock_contacts)
+                # Create a mock cursor that behaves like a real MongoDB cursor
+                mock_cursor = AsyncMock()
+                mock_cursor.__aiter__ = lambda self: mock_cursor
+                mock_cursor.__anext__ = AsyncMock(side_effect=[*mock_contacts, StopAsyncIteration])
+                mock_cursor.limit = MagicMock(return_value=mock_cursor)
+                
+                mock_users_collection.return_value.find = MagicMock(return_value=mock_cursor)
                 
                 with patch('backend.routes.groups.chats_collection') as mock_chats_collection:
                     # Mock group lookup - create async mock collection
@@ -570,8 +575,10 @@ class TestMemberSuggestionsFix:
                     mock_users_collection.return_value.insert_one = AsyncMock(return_value=MagicMock(inserted_id="test_user_id"))
                     mock_users_collection.return_value.clear = MagicMock()
                     mock_cursor = AsyncMock()
-                    mock_cursor.__aiter__ = AsyncMock(return_value=iter(mock_contacts))
-                    mock_users_collection.return_value.find = AsyncMock(return_value=mock_cursor)
+                    mock_cursor.__aiter__ = lambda self: mock_cursor
+                    mock_cursor.__anext__ = AsyncMock(side_effect=[*mock_contacts, StopAsyncIteration])
+                    mock_cursor.limit = MagicMock(return_value=mock_cursor)
+                    mock_users_collection.return_value.find = MagicMock(return_value=mock_cursor)
                     
                     # Mock group lookup
                     mock_chats_collection_instance = AsyncMock()

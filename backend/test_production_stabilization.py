@@ -36,12 +36,15 @@ class TestRedisConnection:
         mock_redis = AsyncMock()
         mock_redis.ping.return_value = True
         
-        # Mock pubsub properly - use MagicMock for pubsub, not AsyncMock
-        mock_pubsub = MagicMock()
-        mock_pubsub.subscribe = MagicMock(return_value=None)
-        mock_pubsub.close = MagicMock(return_value=None)
-        mock_pubsub.get_message = MagicMock(return_value=None)
-        mock_redis.pubsub.return_value = mock_pubsub
+        # Mock pubsub properly - create a mock that handles both pubsub() call and subscribe()
+        mock_pubsub = AsyncMock()
+        mock_pubsub.subscribe = AsyncMock(return_value=None)
+        mock_pubsub.close = AsyncMock(return_value=None)
+        mock_pubsub.get_message = AsyncMock(return_value=None)
+        mock_pubsub.unsubscribe = AsyncMock(return_value=None)
+        
+        # Make pubsub() return the mock_pubsub (not a coroutine)
+        mock_redis.pubsub = MagicMock(return_value=mock_pubsub)
         
         with patch('redis_cache.redis.Redis', return_value=mock_redis):
             with patch('redis_cache.redis.ConnectionPool'):
@@ -214,6 +217,7 @@ class TestGroupMuteFunctionality:
         
         # Mock cache
         mock_cache = AsyncMock()
+        mock_cache.publish = AsyncMock(return_value=1)  # Mock publish to return success
         engine = WhatsAppDeliveryEngine(mock_cache)
         
         # Create test message payload
@@ -245,7 +249,15 @@ class TestGroupMuteFunctionality:
             await engine._publish_notifications_if_not_muted(message_payload)
             
             # Verify that the method executed without error
-            mock_cache.publish.assert_called()
+            # Since user is muted, publish should be called for chat channels but NOT user notifications
+            all_calls = mock_cache.publish.call_args_list
+            chat_message_calls = [call for call in all_calls if 'chat_messages:test_chat' in call[0][0]]
+            chat_notification_calls = [call for call in all_calls if 'chat_notifications:test_chat' in call[0][0]]
+            user_notification_calls = [call for call in all_calls if call[0][0].startswith('user_notifications:user2')]
+            
+            assert len(chat_message_calls) >= 1, f"Expected chat messages publish, got {len(chat_message_calls)}"
+            assert len(chat_notification_calls) >= 1, f"Expected chat notifications publish, got {len(chat_notification_calls)}"
+            assert len(user_notification_calls) == 0, f"Expected no user notifications (muted), got {len(user_notification_calls)}"
     
     @pytest.mark.asyncio
     async def test_expired_mute_allows_notifications(self):
@@ -258,6 +270,7 @@ class TestGroupMuteFunctionality:
         
         # Mock cache
         mock_cache = AsyncMock()
+        mock_cache.publish = AsyncMock(return_value=1)  # Mock publish to return success
         engine = WhatsAppDeliveryEngine(mock_cache)
         
         # Create test message payload
@@ -288,9 +301,16 @@ class TestGroupMuteFunctionality:
             # Test notification publishing
             await engine._publish_notifications_if_not_muted(message_payload)
             
-            # Verify that the method executed without error
-            actual_calls = mock_cache.publish.call_args_list
-            assert len(actual_calls) >= 1, "Should have made publish calls"
+            # Verify that publish was called since mute is expired
+            # The method publishes to multiple channels, so check that user_notifications was called
+            user_notification_calls = [call for call in mock_cache.publish.call_args_list 
+                                   if call[0][0].startswith('user_notifications:user2')]
+            assert len(user_notification_calls) >= 1, f"Expected at least 1 user notification call, got {len(user_notification_calls)}"
+            
+            # Verify the publish call arguments
+            call_args = mock_cache.publish.call_args
+            assert call_args is not None
+            assert len(call_args[0]) >= 2  # Should have channel and message
 
 
 class TestRealTimeOrdering:
