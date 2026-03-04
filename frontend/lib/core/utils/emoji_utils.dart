@@ -518,8 +518,8 @@ class EmojiUtils {
         else if (keyword.contains(searchTerm)) {
           score += 5;
         }
-        // Partial match at word start = 3 points
-        else if (searchTerm.startsWith(keyword.substring(0, min(3, keyword.length)))) {
+        // Partial match at word start = 3 points (only for non-empty keywords)
+        else if (keyword.isNotEmpty && keyword.length > 0 && searchTerm.startsWith(keyword.substring(0, min(3, keyword.length)))) {
           score += 3;
         }
       }
@@ -535,15 +535,6 @@ class EmojiUtils {
         ..sort((a, b) => b.value.compareTo(a.value));
       results = sortedEntries.map((e) => e.key).toList();
       return results;
-    }
-    
-    // Strategy 3: Fuzzy search (search term contained in keywords)
-    for (var entry in emojiKeywords.entries) {
-      for (var keyword in entry.value) {
-        if (keyword.contains(searchTerm) && !results.contains(entry.key)) {
-          results.add(entry.key);
-        }
-      }
     }
     
     return results;
