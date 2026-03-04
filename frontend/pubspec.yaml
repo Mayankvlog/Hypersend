@@ -25,6 +25,7 @@ dependencies:
   
   # API & Network
   dio: ^5.7.0
+  universal_io: ^2.2.0
   
   # Utilities
   intl: ^0.20.2

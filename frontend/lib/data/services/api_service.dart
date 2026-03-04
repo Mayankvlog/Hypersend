@@ -2444,7 +2444,7 @@ if (!kIsWeb) {
     try {
       _log('[LOCAL_STORAGE] Clearing all files from: $localStoragePath');
       
-if (!kIsWeb) {
+      if (!kIsWeb) {
         // Mobile platform
         final directory = io.Directory(localStoragePath);
         
@@ -3032,7 +3032,7 @@ if (!kIsWeb) {
   static const _wsReconnectDelay = Duration(seconds: 5);
   
   /// Get or create persistent WebSocket connection for chat
-  static WebSocketConnection getChatConnection({
+  WebSocketConnection getOrCreateChatConnection({
     required String chatId,
     required String userId,
     required String deviceId,
@@ -3068,23 +3068,15 @@ if (!kIsWeb) {
       },
     );
   }
-}
 
-/// Close specific WebSocket connection
-void closeChatConnection(String chatId) {
-  final key = 'chat_$chatId';
-  _wsConnections[key]?.close();
-  _wsConnections.remove(key);
-  _log('[WEBSOCKET] Closed connection for $key');
-}
-
-/// Close all WebSocket connections
-void closeAllConnections() {
-  for (final connection in _wsConnections.values) {
-    connection.close();
+  /// Close specific WebSocket connection
+  void closeChatConnection(String chatId) {
+    final key = 'chat_$chatId';
+    _wsConnections[key]?.close();
+    _wsConnections.remove(key);
+    _log('[WEBSOCKET] Closed connection for $key');
   }
-  _wsConnections.clear();
-  _log('[WEBSOCKET] Closed all connections');
+
   /// Close all WebSocket connections
   void closeAllConnections() {
     for (final connection in _wsConnections.values) {
@@ -3092,6 +3084,19 @@ void closeAllConnections() {
     }
     _wsConnections.clear();
     _log('[WEBSOCKET] Closed all connections');
+  }
+
+  /// Dispose all WebSocket connections on app exit
+  void disposeAllConnections() {
+    try {
+      for (final connection in _wsConnections.values) {
+        connection.close();
+      }
+      _wsConnections.clear();
+      _log('[WEBSOCKET] Closed all connections');
+    } catch (e) {
+      _log('[WEBSOCKET] Error closing connections: $e');
+    }
   }
 }
 
