@@ -108,7 +108,7 @@ async def main():
             sys.exit(1)
         
         # Connect to Redis
-        redis_host = os.getenv("REDIS_HOST", "hypersend_redis")
+        redis_host = os.getenv("REDIS_HOST", "redis")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
         redis_password = os.getenv("REDIS_PASSWORD", "")
         

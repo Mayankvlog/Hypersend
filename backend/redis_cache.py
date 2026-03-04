@@ -71,11 +71,11 @@ class RedisCache:
         self.pubsub = None
         self.lock_timeout = 30  # Default lock timeout in seconds
         
-    async def connect(self, host: str = "hypersend_redis", port: int = 6379, db: int = 0, password: Optional[str] = None):
+    async def connect(self, host: str = "redis", port: int = 6379, db: int = 0, password: Optional[str] = None):
         """Connect to Redis server with safe connection pooling, reconnection, and JSON serialization.
         
         CRITICAL: Uses async operations only. Implements automatic reconnection.
-        Production: Uses zaply.in.net service name, never localhost.
+        Production: Uses docker service name "redis", never localhost.
         """
         if not REDIS_AVAILABLE:
             # Log warning but don't crash - allow fallback to mock cache
@@ -83,13 +83,14 @@ class RedisCache:
             return False
             
         try:
-            # CRITICAL: Production domain check - no localhost
+            # CRITICAL: Production domain check - must use docker service name
             if host in ('localhost', '127.0.0.1', '::1'):
-                logger.warning(f"[REDIS] WARNING: Redis host is {host} - production must use zaply.in.net domain")
-                # Don't crash - allow localhost for development/testing
+                logger.error(f"[REDIS] CRITICAL: Redis host is {host} - production must use docker service name 'redis'")
+                # Force to docker service name for production
+                host = "redis"
             
             # Create connection pool for connection reuse with reconnection support
-            # CRITICAL: Use production domain zaply.in.net, not localhost
+            # CRITICAL: Use production docker service name, not localhost
             logger.info(f"[REDIS] Connecting to Redis at {host}:{port} db={db}")
             
             # ConnectionPool with safe configuration for production
@@ -1308,20 +1309,20 @@ async def init_cache():
         try:
             from urllib.parse import urlparse
             parsed = urlparse(redis_url)
-            redis_host = parsed.hostname or 'hypersend_redis'
+            redis_host = parsed.hostname or 'redis'
             redis_port = parsed.port or 6379
             redis_password = parsed.password
             redis_db = int(parsed.path.lstrip('/')) if parsed.path else 0
             logger.info(f"[REDIS] Parsed REDIS_URL configuration")
         except Exception as e:
             logger.error(f"[REDIS] Failed to parse REDIS_URL, falling back to components: {e}")
-            redis_host = getattr(settings, 'REDIS_HOST', 'hypersend_redis')
+            redis_host = getattr(settings, 'REDIS_HOST', 'redis')
             redis_port = getattr(settings, 'REDIS_PORT', 6379)
             redis_password = getattr(settings, 'REDIS_PASSWORD', None)
             redis_db = getattr(settings, 'REDIS_DB', 0)
     else:
         # Build from individual components (Docker service name preferred)
-        redis_host = getattr(settings, 'REDIS_HOST', 'hypersend_redis')
+        redis_host = getattr(settings, 'REDIS_HOST', 'redis')
         redis_port = getattr(settings, 'REDIS_PORT', 6379)
         redis_password = getattr(settings, 'REDIS_PASSWORD', None)
         redis_db = getattr(settings, 'REDIS_DB', 0)
@@ -1329,7 +1330,7 @@ async def init_cache():
     
     # CRITICAL: Warn if host is localhost (acceptable for dev, not production)
     if redis_host in ('localhost', '127.0.0.1', '::1'):
-        logger.warning(f"[REDIS] WARNING: Redis host is localhost - acceptable for development only, must use service name 'hypersend_redis' in production")
+        logger.warning(f"[REDIS] WARNING: Redis host is localhost - acceptable for development only, must use service name 'redis' in production")
     
     # Clean up empty password
     if redis_password == '':

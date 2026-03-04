@@ -220,7 +220,7 @@ class WhatsAppDeliveryEngine:
         from backend.db_proxy import messages_collection
         
         # Check by content hash within time window
-        time_window = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(minutes=5)
+        time_window = datetime.now(timezone.utc) - timedelta(minutes=5)
         
         existing = await messages_collection().find_one({
             "chat_id": message["chat_id"],
@@ -243,14 +243,14 @@ class WhatsAppDeliveryEngine:
         
         if existing_hash:
             existing_time = existing_hash["timestamp"]
-            current_time = datetime.utcnow().replace(tzinfo=timezone.utc).timestamp()
+            current_time = datetime.now(timezone.utc).timestamp()
             if current_time - existing_time < 300:  # 5 minutes
                 return True
         
         # Store hash for duplicate detection
         await cache.set(hash_key, {
             "message_id": message["message_id"],
-            "timestamp": datetime.utcnow().replace(tzinfo=timezone.utc).timestamp()
+            "timestamp": datetime.now(timezone.utc).timestamp()
         }, expire_seconds=300)
         
         return False
@@ -269,7 +269,7 @@ class WhatsAppDeliveryEngine:
                     "content_hash": message["content_hash"],
                     "sequence_number": message["sequence_number"],
                     "created_at": message["created_at"],  # Use original timestamp
-                    "queued_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+                    "queued_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                 }
                 
                 # CRITICAL: Use exact DB timestamp, never regenerate
@@ -317,7 +317,7 @@ class WhatsAppDeliveryEngine:
         
         # Check each user's mute status
         mute_config = chat["mute_config"]
-        current_time = datetime.utcnow().replace(tzinfo=timezone.utc)
+        current_time = datetime.now(timezone.utc)
         
         # STEP 1: Always publish to chat messages channel (delivery regardless of mute)
         await self.redis.publish(f"chat_messages:{chat_id}", json.dumps(message_payload))
@@ -360,7 +360,7 @@ class WhatsAppDeliveryEngine:
         elif any(state == "delivered" for state in device_states):
             if message["state"] != "delivered":
                 message["state"] = "delivered"
-                message["delivered_at"] = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()  # UTC only
+                message["delivered_at"] = datetime.now(timezone.utc).isoformat()  # UTC only
         
         # Check if all devices are sent
         elif all(state in ["sent", "delivered", "read"] for state in device_states):
@@ -376,7 +376,7 @@ class WhatsAppDeliveryEngine:
             "device_id": device_id,
             "receipt_type": receipt_type,
             "message_state": message["state"],
-            "timestamp": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()  # UTC only
+            "timestamp": datetime.now(timezone.utc).isoformat()  # UTC only
         }
         
         # CRITICAL FIX: Ensure we send JSON string, not tuple to Redis
@@ -393,7 +393,7 @@ class WhatsAppDeliveryEngine:
             broadcast_data = {
                 "type": "message_ready_for_broadcast",
                 "message_id": message["message_id"],
-                "timestamp": message.get("created_at", datetime.utcnow().replace(tzinfo=timezone.utc).isoformat())
+                "timestamp": message.get("created_at", datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'))
             }
             # CRITICAL FIX: Ensure we send JSON string, not tuple to Redis
             await cache.publish(broadcast_key, json.dumps(broadcast_data))
@@ -447,7 +447,7 @@ class WhatsAppMetadataMinimizer:
             "message_type": message_type,
             "timing_padding_applied": True,
             "metadata_minimized": True,
-            "created_at": datetime.now(timezone.utc).isoformat()  # UTC only
+            "created_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')  # UTC only
         }
     
     def _obfuscate_ip(self, ip: str) -> str:
@@ -797,7 +797,7 @@ async def get_user_e2ee_bundle(
                 }
                 for key in bundle.one_time_pre_keys[:10]  # Return first 10
             ],
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }
         
     except Exception as e:
@@ -830,7 +830,7 @@ async def receive_e2ee_message(
             "message_id": message_id,
             "plaintext": plaintext,
             "decrypted": True,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "message": "✓ Message decrypted successfully"
         }
         
@@ -895,7 +895,7 @@ async def get_e2ee_message_state(
         return {
             "message_id": message_id,
             "state": state,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "message": "✓ Message state retrieved"
         }
         
@@ -2207,8 +2207,8 @@ async def confirm_device_linking(
             platform=request.platform,
             user_agent=request.user_agent,
             capabilities=request.device_info.get("capabilities", []),
-            created_at=datetime.now(timezone.utc).isoformat(),  # UTC only
-            last_active=datetime.now(timezone.utc).isoformat(),  # UTC only
+            created_at=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),  # UTC only
+            last_active=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),  # UTC only
             is_active=True,
             is_primary=False
         )
@@ -2299,7 +2299,7 @@ async def send_encrypted_message(
             chat_id=request.chat_id,
             message_type=request.message_type,
             metadata=request.metadata,
-            timestamp=datetime.now(timezone.utc).isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         )
         
         if spam_score > 0.8:  # High spam threshold
@@ -2336,7 +2336,7 @@ async def send_encrypted_message(
             "auth_tag": request.auth_tag,
             "message_type": request.message_type,
             "sequence_number": sequence_number,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "metadata": request.metadata or {},
             # WhatsApp-grade privacy features
             "disappearing_timer": request.metadata.get("disappearing_timer") if request.metadata else None,
@@ -2356,7 +2356,7 @@ async def send_encrypted_message(
         return EncryptedMessageResponse(
             message_id=message_id,
             sequence_number=sequence_number,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(timezone.utc).timestamp(),
             delivery_receipts=[device_id for device_id in receipts.keys()]
         )
         
@@ -2741,7 +2741,7 @@ async def get_conversations_metadata(
             "conversations": conversations,
             "total_count": len(conversations),
             "device_id": device_id,
-            "synced_at": datetime.now(timezone.utc).isoformat()
+            "synced_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }
         
     except Exception as e:
@@ -2828,7 +2828,7 @@ async def get_relationship_graph(
             "relationships": user_relationships,
             "contact_suggestions": contact_suggestions,
             "total_contacts": len(user_relationships),
-            "generated_at": datetime.now(timezone.utc).isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }
         
     except Exception as e:
@@ -2848,7 +2848,7 @@ async def _update_device_sync_state(user_id: str, device_id: str, chat_id: str,
         "chat_id": chat_id,
         "last_message_id": last_message_id,
         "messages_count": messages_count,
-        "last_sync_timestamp": datetime.now(timezone.utc).isoformat(),
+        "last_sync_timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "sync_progress": 1.0
     }
     
@@ -2919,7 +2919,7 @@ async def update_privacy_settings(
         if request.read_receipts_enabled is not None:
             settings["read_receipts_enabled"] = request.read_receipts_enabled
         
-        settings["updated_at"] = datetime.now(timezone.utc).isoformat()  # UTC only
+        settings["updated_at"] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')  # UTC only
         
         # Store in cache with 1 year expiration
         try:
@@ -3127,7 +3127,7 @@ async def delete_message(
         return {
             "message_id": message_id,
             "deleted": True,
-            "deleted_at": datetime.now(timezone.utc).isoformat()
+            "deleted_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }
         
     except HTTPException:
@@ -3170,7 +3170,7 @@ async def cleanup_expired_messages(
         
         return {
             "deleted_messages": deleted_count,
-            "cleanup_at": datetime.now(timezone.utc).isoformat()
+            "cleanup_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }
         
     except HTTPException:
@@ -3482,7 +3482,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
                         await websocket.send_json({
                             "type": "upload_progress_subscribed",
                             "media_id": media_id,
-                            "timestamp": datetime.now(timezone.utc).isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                         })
                         logger.info(f"[WEBSOCKET] Device {device_id} subscribed to upload progress for {media_id}")
                     except Exception as e:
@@ -3491,7 +3491,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
                             "type": "error",
                             "code": "upload_progress_subscription_failed",
                             "detail": str(e),
-                            "timestamp": datetime.now(timezone.utc).isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                         })
                 continue
             
@@ -3502,7 +3502,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
                     "type": "error",
                     "code": "message_not_allowed_over_websocket",
                     "detail": "Send messages via REST endpoint so DB created_at is authoritative and preserved in real-time delivery.",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                 })
                 continue
 
@@ -3514,7 +3514,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
                 "sender_id": user_id,
                 "device_id": device_id,
                 "chat_id": chat_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),  # UTC ONLY
+                "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),  # UTC ONLY
                 "content": data.get("content", {}),
             }
 
@@ -3524,7 +3524,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
                     "type": "error",
                     "code": "invalid_event",
                     "detail": "Event type is required",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                 })
                 continue
 

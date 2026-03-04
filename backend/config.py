@@ -267,10 +267,10 @@ class Settings:
     # REDIS CONFIGURATION - Docker service name only, NO localhost
     # ============================================================================
     
-    _raw_redis_host = os.getenv("REDIS_HOST", "hypersend_redis").strip()
+    _raw_redis_host = os.getenv("REDIS_HOST", "redis").strip()
     if _raw_redis_host in ('localhost', '127.0.0.1', '::1'):
-        logger.error("[CONFIG] CRITICAL: REDIS_HOST cannot be localhost in production")
-        _raw_redis_host = "hypersend_redis"
+        logger.error("[CONFIG] CRITICAL: REDIS_HOST cannot be localhost in production - forcing to 'redis'")
+        _raw_redis_host = "redis"
     
     REDIS_HOST: str = _raw_redis_host
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))

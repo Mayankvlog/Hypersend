@@ -1149,6 +1149,62 @@ class WebSocketManager:
         except Exception as e:
             logger.error(f"Error broadcasting Redis message: {e}")
     
+    async def send_to_user(self, user_id: str, message: Dict[str, Any]) -> int:
+        """Send message to all devices for a user, returns count of successful sends"""
+        if not self.device_manager:
+            logger.warning("Device manager not available for send_to_user")
+            return 0
+        
+        try:
+            # Get all active devices for user
+            user_devices = await self.device_manager.get_active_devices(user_id)
+            success_count = 0
+            
+            for device in user_devices:
+                if await self.send_message_to_device(device.device_id, message):
+                    success_count += 1
+            
+            logger.debug(f"Sent message to {success_count}/{len(user_devices)} devices for user {user_id}")
+            return success_count
+        except Exception as e:
+            logger.error(f"Error in send_to_user for user {user_id}: {e}")
+            return 0
+    
+    async def broadcast(self, message: Dict[str, Any]) -> int:
+        """Broadcast message to all connected clients, returns count of successful sends"""
+        success_count = 0
+        failed_connections = []
+        
+        async with self.connection_lock:
+            # Copy connections to avoid modification during iteration
+            connections_copy = list(self.connections.items())
+        
+        for device_id, connection in connections_copy:
+            try:
+                # Verify connection is still active
+                if device_id not in self.connections:
+                    continue
+                if connection.websocket.closed:
+                    failed_connections.append(device_id)
+                    continue
+                
+                await connection.websocket.send(json.dumps(message))
+                success_count += 1
+            except Exception as e:
+                logger.warning(f"Broadcast failed to device {device_id}: {e}")
+                failed_connections.append(device_id)
+        
+        # Clean up failed connections
+        if failed_connections:
+            for device_id in failed_connections:
+                try:
+                    await self._cleanup_connection(device_id)
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup connection {device_id}: {e}")
+            logger.debug(f"Cleaned up {len(failed_connections)} failed connections during broadcast")
+        
+        return success_count
+    
     async def shutdown(self):
         """Graceful shutdown of WebSocket manager"""
         logger.info("[WS-MANAGER] Shutting down WebSocket manager")
