@@ -62,13 +62,27 @@ os.environ.setdefault('DATABASE_NAME', 'Hypersend')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
 os.environ['DEBUG'] = 'True'  # Enable debug mode for tests
 
-# Configure Redis for tests (use Docker service name in test environment)
-# CRITICAL: Use hypersend_redis service name, not localhost
-os.environ.setdefault('REDIS_HOST', 'hypersend_redis')  # Docker service name
+# Configure Redis for tests (use Docker service name in production, localhost for local testing)
+# CRITICAL: Docker environment uses 'redis' service name (from docker-compose.yml)
+# Local testing uses localhost:6379
+import socket
+def _get_redis_host():
+    """Get Redis host: 'redis' for Docker, 'localhost' for local testing"""
+    # Check if we're running in Docker container (simple heuristic)
+    try:
+        socket.gethostbyname('redis')
+        # If we can resolve 'redis' DNS, we're in Docker
+        return 'redis'
+    except socket.gaierror:
+        # Cannot resolve 'redis', use localhost for local testing
+        return 'localhost'
+
+_redis_host = _get_redis_host()
+os.environ.setdefault('REDIS_HOST', _redis_host)
 os.environ.setdefault('REDIS_PORT', '6379')
 os.environ.setdefault('REDIS_DB', '0')
 os.environ.setdefault('REDIS_PASSWORD', '')  # No password in development
-os.environ.setdefault('REDIS_URL', 'redis://hypersend_redis:6379/0')
+os.environ.setdefault('REDIS_URL', f'redis://{_redis_host}:6379/0')
 
 # Add backend to sys.modules to fix relative imports
 import importlib.util
@@ -188,3 +202,26 @@ def _init_atlas_db_for_tests(event_loop):
     except Exception as e:
         # Atlas-only test suite requirement: fail fast if Atlas cannot be initialized.
         raise RuntimeError(f"[CONFTEST] Atlas DB initialization failed: {e}")
+
+
+@pytest.fixture
+def require_redis():
+    """
+    Fixture that skips test if Redis is not available.
+    Reusable socket check for tests that require Redis.
+    """
+    redis_available = False
+    try:
+        socket.create_connection(('redis', 6379), timeout=2)
+        redis_available = True
+    except (socket.timeout, ConnectionRefusedError, socket.gaierror):
+        try:
+            socket.create_connection(('localhost', 6379), timeout=2)
+            redis_available = True
+        except (socket.timeout, ConnectionRefusedError, socket.gaierror):
+            pass
+    
+    if not redis_available:
+        pytest.skip("Redis server is not available")
+    
+    return redis_available

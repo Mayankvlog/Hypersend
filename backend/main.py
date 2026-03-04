@@ -1,3 +1,4 @@
+import json
 from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import FastAPI, Request, status, HTTPException, Depends
@@ -84,6 +85,255 @@ except Exception as e:
     raise
 
 
+async def _wait_for_redis_with_retry():
+    """Wait for Redis to be reachable with retry mechanism and health verification.
+    
+    CRITICAL: This function ensures Redis is fully operational before
+    the application continues startup. Implements 5 retries with exponential backoff.
+    
+    Returns:
+        Redis client instance that is guaranteed to be connected and healthy
+        
+    Raises:
+        RuntimeError: If Redis cannot be connected to after all retries
+    """
+    from backend.config import settings
+    import time
+    
+    max_retries = 5
+    base_delay = 2  # Base delay in seconds
+    
+    # CRITICAL: Use docker service name only, never localhost
+    redis_host = getattr(settings, 'REDIS_HOST', 'redis')
+    redis_port = getattr(settings, 'REDIS_PORT', 6379)
+    redis_password = getattr(settings, 'REDIS_PASSWORD', None)
+    redis_db = getattr(settings, 'REDIS_DB', 0)
+    
+    # Enforce docker service name in production
+    if redis_host in ('localhost', '127.0.0.1', '::1'):
+        logger.error(f"[REDIS-HEALTH] CRITICAL: Redis host is {redis_host} - forcing to 'redis'")
+        redis_host = "redis"
+        logger.info(f"[REDIS-HEALTH] Forced Redis host to docker service name: {redis_host}")
+    
+    # Clean up empty password
+    if redis_password == '':
+        redis_password = None
+    
+    logger.info(f"[REDIS-HEALTH] Starting Redis connection attempts to {redis_host}:{redis_port}/{redis_db}")
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"[REDIS-HEALTH] Connection attempt {attempt + 1}/{max_retries} to {redis_host}:{redis_port}")
+            
+            # Import Redis here to avoid import issues
+            try:
+                import redis.asyncio as redis
+            except ImportError:
+                raise RuntimeError("Redis library not available - install redis package")
+            
+            # Create Redis client with production-safe configuration
+            redis_client = redis.Redis(
+                host=redis_host,
+                port=redis_port,
+                password=redis_password,
+                db=redis_db,
+                decode_responses=True,  # CRITICAL: Returns strings not bytes
+                socket_connect_timeout=10,
+                socket_timeout=30,
+                health_check_interval=30,  # Reconnect check every 30s
+                socket_keepalive=True,
+                retry_on_timeout=True,
+            )
+            
+            try:
+                # CRITICAL: Test connection with timeout
+                ping_result = await asyncio.wait_for(redis_client.ping(), timeout=15.0)
+                
+                if ping_result:
+                    logger.info(f"[REDIS-HEALTH] Successfully connected to {redis_host}:{redis_port}/{redis_db}")
+                    
+                    # Verify Redis server info
+                    try:
+                        info = await asyncio.wait_for(redis_client.info('server'), timeout=5.0)
+                        logger.info(f"[REDIS-HEALTH] Redis server version: {info.get('redis_version', 'unknown')}")
+                    except Exception as e:
+                        logger.warning(f"[REDIS-HEALTH] Could not fetch server info: {e}")
+                    
+                    # CRITICAL: Test Redis functionality with actual operations
+                    await _verify_redis_functionality(redis_client)
+                    
+                    logger.info(f"[REDIS-HEALTH] Redis fully verified and ready")
+                    return redis_client
+                else:
+                    raise RuntimeError(f"Redis ping returned False for {redis_host}:{redis_port}")
+            
+            except (asyncio.TimeoutError, Exception) as e:
+                # CRITICAL: Cleanup redis_client if initialization fails
+                try:
+                    await redis_client.aclose()
+                except Exception:
+                    try:
+                        redis_client.close()
+                    except Exception:
+                        pass
+                
+                if isinstance(e, asyncio.TimeoutError):
+                    logger.error(f"[REDIS-HEALTH] Connection timeout attempt {attempt + 1}: {e}")
+                else:
+                    logger.error(f"[REDIS-HEALTH] Connection error attempt {attempt + 1}: {type(e).__name__}: {e}")
+                
+                # Re-raise to go to outer exception handler
+                raise
+            
+        except asyncio.TimeoutError as e:
+            logger.error(f"[REDIS-HEALTH] Connection timeout attempt {attempt + 1}: {e}")
+        except Exception as e:
+            logger.error(f"[REDIS-HEALTH] Connection error attempt {attempt + 1}: {type(e).__name__}: {e}")
+        
+        # Retry logic with exponential backoff
+        if attempt < max_retries - 1:
+            delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s, 16s
+            logger.warning(f"[REDIS-HEALTH] Retrying in {delay} seconds...")
+            await asyncio.sleep(delay)
+    
+    # All retries failed
+    error_msg = f"Redis connection failed after {max_retries} attempts to {redis_host}:{redis_port}/{redis_db}"
+    logger.error(f"[REDIS-HEALTH] CRITICAL: {error_msg}")
+    raise RuntimeError(error_msg)
+
+
+async def _verify_redis_functionality(redis_client):
+    """Verify Redis functionality with test operations.
+    
+    CRITICAL: This function ensures Redis is not just connected but fully operational.
+    Tests basic operations, pub/sub, and memory usage.
+    
+    Args:
+        redis_client: Connected Redis client instance
+        
+    Raises:
+        RuntimeError: If any Redis functionality test fails
+    """
+    import time
+    import uuid
+    
+    test_key = f"__redis_functionality_test__{int(time.time())}__{uuid.uuid4().hex[:8]}"
+    test_value = {"test": True, "timestamp": time.time(), "data": "verification"}
+    
+    try:
+        # Test 1: Basic SET/GET operation
+        await asyncio.wait_for(
+            redis_client.setex(test_key, 60, json.dumps(test_value)),
+            timeout=5.0
+        )
+        
+        retrieved = await asyncio.wait_for(
+            redis_client.get(test_key),
+            timeout=5.0
+        )
+        
+        if not retrieved:
+            raise RuntimeError("Redis GET returned None for test key")
+        
+        # Verify JSON serialization
+        retrieved_data = json.loads(retrieved)
+        if retrieved_data.get("test") != True:
+            raise RuntimeError("Redis data corruption detected")
+        
+        logger.info(f"[REDIS-HEALTH] ✓ Basic SET/GET operations verified")
+        
+        # Test 2: Pub/Sub functionality
+        test_channel = f"__test_channel__{uuid.uuid4().hex[:8]}"
+        test_message = {"type": "test", "data": "pubsub_verification"}
+        
+        pubsub = redis_client.pubsub()
+        await asyncio.wait_for(pubsub.subscribe(test_channel), timeout=5.0)
+        
+        # Publish test message
+        await asyncio.wait_for(
+            redis_client.publish(test_channel, json.dumps(test_message)),
+            timeout=5.0
+        )
+        
+        # Helper coroutine to consume pubsub messages with timeout protection
+        async def _consume_pubsub(pubsub_obj):
+            """Consume pubsub messages and wait for test message."""
+            async for message in pubsub_obj.listen():
+                if message['type'] == 'message':
+                    data = json.loads(message['data'])
+                    if data.get("type") == "test":
+                        return True
+            return False
+        
+        # Listen for message with timeout
+        message_received = False
+        try:
+            message_received = await asyncio.wait_for(_consume_pubsub(pubsub), timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.warning(f"[REDIS-HEALTH] Pub/Sub message receive timed out")
+            message_received = False
+        finally:
+            await pubsub.close()
+        
+        if not message_received:
+            raise RuntimeError("Redis Pub/Sub functionality test failed")
+        
+        logger.info(f"[REDIS-HEALTH] ✓ Pub/Sub functionality verified")
+        
+        # Test 3: Memory usage check
+        try:
+            memory_info = await asyncio.wait_for(
+                redis_client.info('memory'),
+                timeout=5.0
+            )
+            used_memory = memory_info.get('used_memory', 0)
+            logger.info(f"[REDIS-HEALTH] ✓ Memory usage: {used_memory} bytes")
+        except Exception as e:
+            logger.warning(f"[REDIS-HEALTH] Memory info check failed: {e}")
+        
+        # Cleanup test key
+        await asyncio.wait_for(redis_client.delete(test_key), timeout=5.0)
+        
+        logger.info(f"[REDIS-HEALTH] ✓ All Redis functionality tests passed")
+        
+    except asyncio.TimeoutError as e:
+        raise RuntimeError(f"Redis functionality test timeout: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Redis functionality test failed: {type(e).__name__}: {e}")
+
+
+async def _cleanup_redis_cache(app):
+    """Cleanup Redis cache on shutdown with proper error handling"""
+    try:
+        redis_client = getattr(app.state, 'redis_client', None)
+        if redis_client:
+            try:
+                await asyncio.wait_for(redis_client.aclose(), timeout=5.0)
+                logger.info("[SHUTDOWN] Redis client closed gracefully")
+            except asyncio.TimeoutError:
+                logger.warning("[SHUTDOWN] Redis client close timed out")
+            except Exception as e:
+                logger.debug(f"[SHUTDOWN] Error closing Redis client: {e}")
+        
+        # Also cleanup cache module if available
+        try:
+            from redis_cache import cache
+            if cache:
+                try:
+                    await asyncio.wait_for(cache.disconnect(), timeout=5.0)
+                except (AttributeError, Exception):
+                    # disconnect() may not exist, ignore
+                    pass
+                logger.info("[SHUTDOWN] Redis cache disconnected")
+        except Exception as e:
+            logger.debug(f"[SHUTDOWN] Redis cache cleanup: {e}")
+    except asyncio.TimeoutError:
+        logger.warning("[SHUTDOWN] Redis cleanup timed out")
+    except Exception as e:
+        logger.error(f"[SHUTDOWN] Error during Redis cleanup: {e}")
+
+
+
 def init_storage():
     """Initialize and validate storage system - must run before routes load"""
     logger.info("[STARTUP] Initializing storage system...")
@@ -162,17 +412,27 @@ async def lifespan(app: FastAPI):
     
     # Initialize Redis cache (CRITICAL for production - fail if not available)
     if not is_test_mode:
+        redis_client = None
         try:
-            await init_cache()
+            # CRITICAL: Wait for Redis to be reachable with retry mechanism
+            redis_client = await _wait_for_redis_with_retry()
+            
+            # Store Redis client in app state for reliable access
+            app.state.redis_client = redis_client
+            logger.info("[STARTUP] Redis client initialized and stored in app.state")
+            
+            # Store cache instance in app state for reliable access
             try:
                 from redis_cache import cache
                 app.state.cache = cache
                 logger.info("[STARTUP] Redis cache initialized successfully")
             except Exception:
                 # Cache module-level instance not available; continue without state exposure
+                logger.warning("[STARTUP] Cache module not available for app.state")
                 pass
+                
         except Exception as e:
-            logger.error(f"[STARTUP] CRITICAL: Redis cache initialization failed - cannot start without Redis: {e}")
+            logger.error(f"[STARTUP] CRITICAL: Redis initialization failed - cannot start without Redis: {e}")
             raise RuntimeError(f"Redis is required for production: {e}")
     else:
         # In test mode, initialize mock cache only
@@ -180,6 +440,7 @@ async def lifespan(app: FastAPI):
             from redis_cache import cache
             await cache.clear_mock_cache()
             app.state.cache = cache
+            app.state.redis_client = None  # Explicitly None in test mode
             logger.info("[STARTUP] Mock cache initialized for test mode")
         except Exception as e:
             logger.warning(f"[STARTUP] Mock cache initialization failed: {e}")
@@ -191,16 +452,13 @@ async def lifespan(app: FastAPI):
     websocket_manager_initialized = False
     if not is_test_mode:
         try:
-            from websocket.websocket_manager import websocket_manager
-            from redis_cache import cache
-            
-            # Get Redis client if available
-            redis_client = getattr(cache, 'redis_client', None) if cache and cache.is_connected else None
+            # Get Redis client from app.state (guaranteed to be available)
+            redis_client = getattr(app.state, 'redis_client', None)
             
             if not redis_client:
-                raise RuntimeError("Redis client not available - WebSocket manager requires Redis")
+                raise RuntimeError("Redis client not available in app.state - WebSocket manager requires Redis")
             
-            # Initialize WebSocket manager with Redis
+            # Initialize WebSocket manager with Redis client
             await asyncio.wait_for(
                 websocket_manager.initialize(redis_client),
                 timeout=10.0
@@ -246,18 +504,32 @@ async def lifespan(app: FastAPI):
     
     # Cleanup Redis cache (must happen before DB)
     try:
-        from redis_cache import cache
-        if cache:
+        redis_client = getattr(app.state, 'redis_client', None)
+        if redis_client:
             try:
-                await asyncio.wait_for(cache.disconnect(), timeout=5.0)
-            except (AttributeError, Exception):
-                # disconnect() may not exist, ignore
-                pass
-            logger.info("[SHUTDOWN] Redis cache disconnected")
+                await asyncio.wait_for(redis_client.aclose(), timeout=5.0)
+                logger.info("[SHUTDOWN] Redis client closed gracefully")
+            except asyncio.TimeoutError:
+                logger.warning("[SHUTDOWN] Redis client close timed out")
+            except Exception as e:
+                logger.debug(f"[SHUTDOWN] Error closing Redis client: {e}")
+        
+        # Also cleanup cache module if available
+        try:
+            from redis_cache import cache
+            if cache:
+                try:
+                    await asyncio.wait_for(cache.disconnect(), timeout=5.0)
+                except (AttributeError, Exception):
+                    # disconnect() may not exist, ignore
+                    pass
+                logger.info("[SHUTDOWN] Redis cache disconnected")
+        except Exception as e:
+            logger.debug(f"[SHUTDOWN] Redis cache cleanup: {e}")
     except asyncio.TimeoutError:
-        logger.warning("[SHUTDOWN] Redis cache disconnect timed out")
+        logger.warning("[SHUTDOWN] Redis cleanup timed out")
     except Exception as e:
-        logger.debug(f"[SHUTDOWN] Redis cache cleanup: {e}")
+        logger.error(f"[SHUTDOWN] Error during Redis cleanup: {e}")
     
     # Shutdown database connection (last)
     try:
@@ -347,6 +619,35 @@ app = FastAPI(
 
 # Register custom exception handlers
 register_exception_handlers(app)
+
+
+# ============================================================================
+# GLOBAL REDIS CLIENT ACCESSOR - CRITICAL FOR ASYNC OPERATIONS
+# ============================================================================
+
+def get_redis_client():
+    """
+    Get the global Redis client instance from app state.
+    
+    CRITICAL: This function provides safe access to Redis client after startup.
+    Returns None if Redis is not available (test mode).
+    
+    Returns:
+        Redis client instance or None if not initialized
+        
+    Raises:
+        RuntimeError: If called during startup before Redis is initialized
+    """
+    try:
+        redis_client = getattr(app.state, 'redis_client', None)
+        if redis_client is None:
+            logger.debug("[REDIS-ACCESSOR] Redis client not available (test mode or not yet initialized)")
+        return redis_client
+    except AttributeError:
+        # app.state not available (shouldn't happen in normal operation)
+        logger.warning("[REDIS-ACCESSOR] app.state not available - Redis client cannot be accessed")
+        return None
+
 
 # Add validation middleware for 4XX error handling (DISABLED FOR PRODUCTION)
 # ===== VALIDATION MIDDLEWARE FOR 4XX ERROR HANDLING (DISABLED) =====

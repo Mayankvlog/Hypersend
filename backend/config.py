@@ -107,10 +107,17 @@ class Settings:
     # MONGODB ATLAS CONFIGURATION - Production only, no local fallback
     # ============================================================================
     
-    # Load raw values
+    # Load raw values with validation
     _raw_mongodb_uri = os.getenv("MONGODB_URI")
     _raw_database_name = os.getenv("DATABASE_NAME")
+    
+    # CRITICAL: Only check MONGODB_ATLAS_ENABLED once to prevent duplicates
     _raw_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() == "true"
+    
+    # Log environment loading order for debugging
+    logger.debug(f"[CONFIG] Environment loading: MONGODB_URI={'SET' if _raw_mongodb_uri else 'NOT_SET'}, "
+                f"DATABASE_NAME={'SET' if _raw_database_name else 'NOT_SET'}, "
+                f"MONGODB_ATLAS_ENABLED={'SET' if os.getenv('MONGODB_ATLAS_ENABLED') else 'NOT_SET'}")
     
     # Validation and auto-fixing
     if not _raw_mongodb_uri:
