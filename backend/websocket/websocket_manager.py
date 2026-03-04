@@ -22,7 +22,7 @@ import threading
 import time
 from typing import Dict, List, Optional, Set, Any, Union
 from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import websockets
 from websockets.server import WebSocketServerProtocol
 
@@ -598,46 +598,52 @@ class WebSocketManager:
             logger.error(f"Error processing offline messages: {e}")
     
     async def _heartbeat_loop(self, device_id: str, connection: WebSocketConnection):
-        """Send periodic heartbeat pings (keep connection persistent)"""
-        while True:
-            try:
-                await asyncio.sleep(self.heartbeat_interval)
-                
-                # Verify connection still exists and is active
-                if device_id not in self.connections:
-                    logger.debug(f"Device {device_id} not in active connections")
+        """Send periodic heartbeat pings (keep connection persistent - NO RECONNECT LOOP)"""
+        try:
+            while True:
+                try:
+                    await asyncio.sleep(self.heartbeat_interval)
+                    
+                    # Verify connection still exists and is active
+                    if device_id not in self.connections:
+                        logger.debug(f"Device {device_id} not in active connections")
+                        break
+                    
+                    # CRITICAL: Use datetime.now(timezone.utc) for UTC timestamps ONLY
+                    # Always return ISO 8601 with Z suffix (never +00:00)
+                    utc_now = datetime.now(timezone.utc)
+                    ping_data = {
+                        'type': 'ping',
+                        'timestamp': utc_now.isoformat().replace('+00:00', 'Z'),
+                        'sequence': int(time.time() * 1000)
+                    }
+                    
+                    await connection.websocket.send(json.dumps(ping_data))
+                    connection.last_ping = time.time()
+                    
+                    # Wait for pong timeout
+                    await asyncio.sleep(self.pong_timeout)
+                    
+                    # Check if pong was received
+                    if (connection.last_pong and 
+                        connection.last_pong < connection.last_ping and
+                        time.time() - connection.last_ping > self.pong_timeout):
+                        logger.warning(f"Pong timeout for device {device_id}")
+                        await connection.websocket.close(4000, "Pong timeout")
+                        break
+                    
+                except websockets.exceptions.ConnectionClosed:
+                    logger.debug(f"Heartbeat: Connection closed for device {device_id}")
                     break
-                
-                # Send ping first, then check for pong
-                ping_data = {
-                    'type': 'ping',
-                    'timestamp': datetime.utcnow().isoformat() + 'Z',
-                    'sequence': int(time.time() * 1000)  # Millisecond sequence
-                }
-                
-                await connection.websocket.send(json.dumps(ping_data))
-                connection.last_ping = time.time()
-                
-                # Wait for pong timeout
-                await asyncio.sleep(self.pong_timeout)
-                
-                # Check if pong was received
-                if (connection.last_pong and 
-                    connection.last_pong < connection.last_ping and
-                    time.time() - connection.last_ping > self.pong_timeout):
-                    logger.warning(f"Pong timeout for device {device_id}")
-                    await connection.websocket.close(4000, "Pong timeout")
+                except asyncio.CancelledError:
+                    logger.debug(f"Heartbeat: Cancelled for device {device_id}")
                     break
-                
-            except websockets.exceptions.ConnectionClosed:
-                logger.debug(f"Heartbeat: Connection closed for device {device_id}")
-                break
-            except asyncio.CancelledError:
-                logger.debug(f"Heartbeat: Cancelled for device {device_id}")
-                break
-            except Exception as e:
-                logger.error(f"Heartbeat error for device {device_id}: {e}")
-                break
+                except Exception as e:
+                    logger.error(f"Heartbeat error for device {device_id}: {e}")
+                    break
+        finally:
+            # Ensure cleanup on exit
+            pass
     
     async def _broadcast_to_user_devices(
         self,

@@ -16,6 +16,7 @@ import json
 from datetime import datetime, timezone
 
 from backend.auth.utils import get_current_user
+from backend.utils.datetime_utils import utc_timestamp
 
 router = APIRouter(prefix="/emojis", tags=["emoji"])
 
@@ -171,7 +172,7 @@ async def get_emoji_categories(current_user: str = Depends(get_current_user)):
             "success": True,
             "categories": categories,
             "category_count": len(categories),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": utc_timestamp()
         }
     except Exception as e:
         raise HTTPException(
@@ -217,7 +218,7 @@ async def get_category_emojis(
                 "returned": len(paginated_emojis),
                 "has_more": (skip + limit) < total
             },
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": utc_timestamp()
         }
     except HTTPException:
         raise
@@ -264,7 +265,7 @@ async def search_emoji_picker(
             "query": q,
             "results": list(results_by_category.values()),
             "total_results": len(search_results),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": utc_timestamp()
         }
         
     except Exception as e:
@@ -293,7 +294,7 @@ async def get_popular_emojis(
             "emojis": popular,
             "type": "popular",
             "total": len(popular),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": utc_timestamp()
         }
         
     except Exception as e:

@@ -34,50 +34,36 @@ from backend.crypto.media_encryption import MediaEncryptionService
 from backend.workers.fan_out_worker import MessageFanOutWorker
 from websocket.websocket_manager import websocket_manager
 
-# Load environment variables FIRST before importing config
-# Docker requirement: only load from /app/backend/.env and /app/.env inside container.
-# NOTE: config.py module already handles environment loading - do NOT reload here
-# This prevents duplicate config initialization
+# Add current directory to Python path for Docker
+# CRITICAL: Do NOT reload .env files - config.py handles initialization only once!
+sys.path.insert(0, str(Path(__file__).parent))
 
-try:
-    # Add current directory to Python path for Docker
-    import sys
-    from pathlib import Path
+# SECURITY: Prevent importing config with missing secrets in production
+debug_mode = os.getenv("DEBUG", "false").lower() in ("true", "1")
+if not os.getenv("SECRET_KEY") and not debug_mode:
+    raise RuntimeError("PRODUCTION SAFETY: SECRET_KEY must be set in production")
 
-    sys.path.insert(0, str(Path(__file__).parent))
-    from datetime import datetime, timezone
+# CRITICAL: Import config ONCE - module handles .env loading internally
+from backend.config import settings
 
-    # SECURITY: Prevent importing config with missing secrets in production
-    debug_mode = os.getenv("DEBUG", "false").lower() in ("true", "1")
-    if not os.getenv("SECRET_KEY") and not debug_mode:
-        raise RuntimeError("PRODUCTION SAFETY: SECRET_KEY must be set in production")
-
-    from backend.config import settings
-
-    from backend.routes import (
-        auth,
-        files,
-        chats,
-        users,
-        updates,
-        p2p_transfer,
-        groups,
-        messages,
-        channels,
-        debug,
-        devices,
-        e2ee_messages,
-        presence,
-    )
-except Exception as e:
-    raise
+# Import routes
+from backend.routes import (
+    auth,
+    files,
+    chats,
+    users,
+    updates,
+    p2p_transfer,
+    groups,
+    messages,
+    channels,
+    debug,
+    devices,
+    e2ee_messages,
+    presence,
+)
 
 from backend.auth.utils import get_current_user
-
-try:
-    from backend.config import settings
-except Exception as e:
-    raise
 
 # Import database initialization function
 from backend.database import init_database
