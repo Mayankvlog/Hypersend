@@ -1,7 +1,11 @@
 import 'package:intl/intl.dart';
 
 class TimeFormatter {
-  /// Ensure DateTime is properly converted from UTC to local time
+  /// Safety helper: if we accidentally receive a UTC DateTime, convert it.
+  ///
+  /// Message.fromApi now performs `.toLocal()` immediately after parsing
+  /// incoming ISO strings, so this function mostly guards against any
+  /// remaining UTC values that slipped through.
   static DateTime _ensureLocalTime(DateTime date) {
     if (date.isUtc) {
       return date.toLocal();

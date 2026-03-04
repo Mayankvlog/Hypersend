@@ -360,7 +360,7 @@ class WhatsAppDeliveryEngine:
         elif any(state == "delivered" for state in device_states):
             if message["state"] != "delivered":
                 message["state"] = "delivered"
-                message["delivered_at"] = datetime.now(timezone.utc).isoformat()  # UTC only
+                message["delivered_at"] = _format_utc(datetime.now(timezone.utc))  # UTC only
         
         # Check if all devices are sent
         elif all(state in ["sent", "delivered", "read"] for state in device_states):
@@ -376,7 +376,7 @@ class WhatsAppDeliveryEngine:
             "device_id": device_id,
             "receipt_type": receipt_type,
             "message_state": message["state"],
-            "timestamp": datetime.now(timezone.utc).isoformat()  # UTC only
+            "timestamp": _format_utc(datetime.now(timezone.utc))  # UTC only
         }
         
         # CRITICAL FIX: Ensure we send JSON string, not tuple to Redis
@@ -393,7 +393,7 @@ class WhatsAppDeliveryEngine:
             broadcast_data = {
                 "type": "message_ready_for_broadcast",
                 "message_id": message["message_id"],
-                "timestamp": message.get("created_at", datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'))
+                "timestamp": message.get("created_at", _format_utc(datetime.now(timezone.utc)))
             }
             # CRITICAL FIX: Ensure we send JSON string, not tuple to Redis
             await cache.publish(broadcast_key, json.dumps(broadcast_data))
@@ -1329,7 +1329,7 @@ async def update_delivery_status(
                 "device_id": receipt.device_id,
                 "status": receipt.status,
                 "all_devices_read": all_read,
-                "timestamp": receipt.timestamp.isoformat()
+                "timestamp": _format_utc(receipt.timestamp)
             }
     
     return {"message_id": message_id, "status": "updated"}
@@ -1384,7 +1384,7 @@ async def delivery_receipt(
         "recipient_id": current_user,
         "device_id": receipt.device_id,
         "status": receipt.status,
-        "timestamp": receipt.timestamp.isoformat()
+        "timestamp": _format_utc(receipt.timestamp)
     }
     
     try:
@@ -1465,9 +1465,37 @@ async def acknowledge_message(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to acknowledge message")
 
 
+
+# ---------------------------------------------------------------------------
+# Time utilities
+# ---------------------------------------------------------------------------
+
+def _format_utc(dt: datetime) -> str:
+    """Convert a datetime to an ISO8601 string with trailing Z (UTC).
+
+    Accepts naive or aware datetimes. Naive values are assumed to be UTC.
+    """
+    if not isinstance(dt, datetime):
+        raise TypeError("_format_utc expects a datetime object")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def _utcnow():
-    """Helper function to get current UTC time"""
+    """Helper returning a timezone-aware UTC datetime object"""
     return datetime.now(timezone.utc)
+
+
+def _serialize_datetimes(obj):
+    """Recursively convert datetimes within data structures to ISO Z strings."""
+    if isinstance(obj, datetime):
+        return _format_utc(obj)
+    if isinstance(obj, dict):
+        return {k: _serialize_datetimes(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_serialize_datetimes(v) for v in obj]
+    return obj
 
 
 async def _get_message_or_404(message_id: str) -> dict:
@@ -1494,7 +1522,7 @@ async def _get_message_or_404(message_id: str) -> dict:
             msg = await msg_collection.find_one({"_id": obj_id})
             if msg:
                 msg["_id"] = str(msg["_id"])  # Convert ObjectId back to string for JSON response
-                return msg
+                return _serialize_datetimes(msg)
         except Exception:
             pass
         
@@ -1503,7 +1531,7 @@ async def _get_message_or_404(message_id: str) -> dict:
         if msg:
             if "_id" in msg:
                 msg["_id"] = str(msg["_id"])
-            return msg
+            return _serialize_datetimes(msg)
         
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
     except HTTPException:
@@ -1556,7 +1584,7 @@ async def edit_message(
     try:
         msg["text"] = new_text
         msg["is_edited"] = True
-        msg["edited_at"] = _utcnow().isoformat()
+        msg["edited_at"] = _format_utc(_utcnow())
         msg["edited_by"] = current_user
         
         # Update TTL to remaining time or minimum 5 minutes
@@ -1728,7 +1756,7 @@ async def delete_message(
     update_doc = {
         "$set": {
             "is_deleted": True,
-            "deleted_at": _utcnow().isoformat(),
+            "deleted_at": _format_utc(_utcnow()),
             "deleted_by": current_user_str,
         }
     }
@@ -1855,7 +1883,7 @@ async def pin_message(message_id: str, current_user: str = Depends(get_current_u
         raise HTTPException(status_code=404, detail="Message not found")
     
     message_data["is_pinned"] = True
-    message_data["pinned_at"] = _utcnow().isoformat()
+    message_data["pinned_at"] = _format_utc(_utcnow())
     message_data["pinned_by"] = current_user
     
     # Update message in Redis
@@ -1905,7 +1933,7 @@ async def mark_read(message_id: str, current_user: str = Depends(get_current_use
         if not already_read:
             msg["read_by"].append({
                 "user_id": current_user,
-                "read_at": _utcnow().isoformat()
+                "read_at": _format_utc(_utcnow())
             })
             
             # Update delivery status based on receivers
@@ -2790,7 +2818,7 @@ async def track_delivery_receipt(
             "message_id": receipt.message_id,
             "device_id": receipt.recipient_device_id,
             "receipt_type": receipt.receipt_type,
-            "timestamp": receipt.timestamp.isoformat()
+            "timestamp": _format_utc(receipt.timestamp)
         }
         await cache.publish(update_key, json.dumps(update_data))
         
@@ -2798,7 +2826,7 @@ async def track_delivery_receipt(
             "status": "tracked",
             "message_id": receipt.message_id,
             "receipt_type": receipt.receipt_type,
-            "timestamp": receipt.timestamp.isoformat()
+            "timestamp": _format_utc(receipt.timestamp)
         }
         
     except Exception as e:

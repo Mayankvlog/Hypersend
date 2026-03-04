@@ -15,11 +15,21 @@ Run with: pytest backend/test_all_fixes.py -v -s
 import pytest
 import json
 import asyncio
+import time
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from unittest.mock import AsyncMock, MagicMock, patch
 import sys
 import os
+
+# ensure configuration loads without crashing during tests
+os.environ.setdefault(
+    "MONGODB_URI",
+    "mongodb+srv://user:pass@cluster.mongodb.net/test?retryWrites=true&w=majority",
+)
+# Although we provide a dummy Atlas URI, mark Atlas enabled so config
+# initialization does not raise a RuntimeError during test imports.
+os.environ.setdefault("MONGODB_ATLAS_ENABLED", "true")
 
 # Add backend to path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -82,6 +92,55 @@ class TestUTCTimestampHandling:
         
         # Should NOT manually add/subtract 5:30 hours
         assert (utc_time.hour + 5) % 24 != utc_time.hour  # IST would shift hour
+
+    @pytest.mark.asyncio
+    async def test_whatsapp_engine_timestamps_end_with_z(self):
+        """Sending a message via delivery engine must give Z‑terminated timestamps"""
+        from routes.messages import WhatsAppDeliveryEngine
+
+        engine = WhatsAppDeliveryEngine(redis_client=None)
+        engine._get_next_sequence_number = AsyncMock(return_value=1)
+        engine._store_message_in_db = AsyncMock()
+        engine._is_duplicate_message_in_db = AsyncMock(return_value=False)
+        # attach a dummy redis client so publish calls don't fail
+        engine.redis = AsyncMock()
+        # skip any notification/mute logic which touches the database
+        engine._publish_notifications_if_not_muted = AsyncMock()
+
+        msg = await engine.send_message(
+            chat_id="chat",
+            sender_user_id="u1",
+            sender_device_id="d1",
+            recipient_user_id="u2",
+            content_hash="h",
+            message_type="text",
+            recipient_devices=[],
+        )
+        assert msg["created_at"].endswith("Z")
+        assert msg["sent_at"].endswith("Z")
+        # No +00:00 should appear because we replaced with Z
+        assert "+00:00" not in msg["created_at"]
+
+    def test_utc_offset_zero(self):
+        """UTCOFFSET should be zero regardless of environment"""
+        now = datetime.now(timezone.utc)
+        assert now.utcoffset().total_seconds() == 0
+
+    def test_tz_env_does_not_affect_utc(self, monkeypatch):
+        """Even if TZ env variable is changed, our helper still returns UTC"""
+        monkeypatch.setenv("TZ", "Asia/Kolkata")
+        try:
+            time.tzset()
+        except AttributeError:
+            # Windows may not support tzset; that's fine
+            pass
+        from routes.messages import _utcnow, _format_utc
+
+        dt = _utcnow()
+        assert dt.tzinfo == timezone.utc
+        formatted = _format_utc(dt)
+        assert formatted.endswith("Z")
+        assert "+00:00" not in formatted
 
 
 class TestTimestampStorageAndRetrieval:

@@ -38,6 +38,13 @@ def _load_env_files():
 
 _load_env_files()
 
+# simple flag used throughout Settings to relax strict production requirements
+# when running under pytest or in a testing environment. Checking for the
+# presence of the pytest module is reliable because pytest imports itself
+# before it begins collecting test modules (including backend.*), so this
+# variable will be True at import time when tests are executing.
+TESTING = bool(os.getenv("PYTEST_CURRENT_TEST")) or "pytest" in sys.modules
+
 def _strip_quotes(value: str) -> str:
     """Safely strip quotes from environment variable values"""
     if not value:
@@ -120,18 +127,21 @@ class Settings:
                 f"MONGODB_ATLAS_ENABLED={'SET' if os.getenv('MONGODB_ATLAS_ENABLED') else 'NOT_SET'}")
     
     # Validation and auto-fixing
-    if not _raw_mongodb_uri:
+    # During unit tests we may not have a valid Atlas URI; allow the
+    # configuration to proceed if TESTING is True. This prevents import-time
+    # failures when pytest loads modules from the backend package.
+    if not _raw_mongodb_uri and not TESTING:
         raise RuntimeError(
             "CRITICAL: MONGODB_URI is required for MongoDB Atlas production deployment. "
             "Format: mongodb+srv://user:password@cluster.mongodb.net/db?retryWrites=true&w=majority"
         )
     
-    if not _raw_database_name:
+    if not _raw_database_name and not TESTING:
         raise RuntimeError(
             "CRITICAL: DATABASE_NAME is required for MongoDB Atlas."
         )
     
-    if not _raw_atlas_enabled and not os.getenv("PYTEST_CURRENT_TEST"):
+    if not _raw_atlas_enabled and not TESTING:
         raise RuntimeError(
             "CRITICAL: MONGODB_ATLAS_ENABLED must be 'true' for production (no local MongoDB allowed)."
         )
@@ -151,7 +161,7 @@ class Settings:
     _env_jwt_secret = _strip_quotes(os.getenv("JWT_SECRET_KEY", "")).strip()
     _env_secret = _strip_quotes(os.getenv("SECRET_KEY", "")).strip()
     
-    if not (_env_jwt_secret or _env_secret):
+    if not (_env_jwt_secret or _env_secret) and not TESTING:
         raise ValueError(
             "CRITICAL: JWT_SECRET_KEY or SECRET_KEY must be set in production"
         )

@@ -535,9 +535,21 @@ class MessageInDB(BaseModel):
     WhatsApp-style metadata-only message model.
     Server stores ONLY metadata, never message content.
     Message bodies and files are stored on user devices only.
+
+    All datetime fields are required to be timezone-aware UTC and are
+    serialized to ISO8601 strings with a trailing Z. Validators enforce
+    timezone awareness and convert naive values to UTC. JSON encoders
+    ensure consistent formatting when returning data via API.
     """
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={
+            datetime: lambda v: v.astimezone(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
+        },
+    )
 
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
     chat_id: str
@@ -593,6 +605,17 @@ class MessageInDB(BaseModel):
 
     # WhatsApp compliance: TTL for automatic cleanup
     expires_at: Optional[datetime] = None  # Auto-expiration time
+
+    # validator ensures any datetime field passed to MessageInDB is
+    # timezone-aware and normalized to UTC (prevents naive timestamps)
+    @field_validator("*")
+    @classmethod
+    def _ensure_utc(cls, v):
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                return v.replace(tzinfo=timezone.utc)
+            return v.astimezone(timezone.utc)
+        return v
 
 
 # ============================================================================
@@ -2139,7 +2162,9 @@ class UserPresence(BaseModel):
     # Presence State
     status: str = Field(..., pattern="^(online|offline|away)$")
     last_seen_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Last activity time"
+        # Always store timezone-aware UTC (avoid naive datetime.utcnow())
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Last activity time (UTC aware)"
     )
 
     # Privacy Controls
@@ -2405,7 +2430,9 @@ class PersistentMessageHistory(BaseModel):
 
     # Timestamps for Each State
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Message creation time"
+        # Use timezone-aware UTC timestamp; keep tzinfo to guarantee storage in UTC
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Message creation time (UTC aware)"
     )
     sent_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
