@@ -139,7 +139,7 @@ class MediaEncryptionClient {
 
   /// Generate unique file ID
   String _generateFileId() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch;
     final random = Random.secure().nextInt(1000000);
     return 'media_${timestamp}_$random';
   }

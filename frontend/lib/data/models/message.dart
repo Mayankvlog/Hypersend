@@ -44,12 +44,11 @@ class Message extends Equatable {
     
     if (createdAtRaw is String) {
       createdAt = DateTime.tryParse(createdAtRaw);
-      // If parsed timestamp is UTC, convert to local time for display
-      if (createdAt != null && createdAt.isUtc) {
-        createdAt = createdAt.toLocal();
-      }
+      // CRITICAL: Keep timestamp in UTC - frontend displays in local time via Intl.DateTimeFormat
+      // DO NOT convert to local time here - let UI layer handle display formatting
     } else if (createdAtRaw is DateTime) {
-      createdAt = createdAtRaw.isUtc ? createdAtRaw.toLocal() : createdAtRaw;
+      // Keep as-is, do not convert timezone
+      createdAt = createdAtRaw;
     }
 
     final reactionsRaw = (json['reactions'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};

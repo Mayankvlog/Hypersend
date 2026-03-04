@@ -2614,7 +2614,7 @@ if (!kIsWeb) {
         '${ApiConstants.usersEndpoint}/sync',
         data: {
           'data_type': dataType,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'timestamp': DateTime.now().toUtc().millisecondsSinceEpoch,
           ...?additionalData,
         },
       );
@@ -2731,7 +2731,7 @@ if (!kIsWeb) {
         'devices': devices,
         'sync_status': syncStatus,
         'total_devices': devices.length,
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': DateTime.now().toUtc().toIso8601String().replaceFirst('+00:00', 'Z'),
       };
     } catch (e) {
       _log('[QR_CODE_ACCOUNT_INFO_ERROR] Failed to get account connection info: $e');
@@ -2753,7 +2753,7 @@ if (!kIsWeb) {
       // Generate unique pairing session token
       final pairingToken = _generatePairingToken();
       final sessionId = _generateSessionId();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch;
       
       // Create pairing data object
       final pairingData = {
@@ -2801,7 +2801,7 @@ if (!kIsWeb) {
       _validateQRCodeFields(pairingData);
       
       // Check expiry
-      final currentTime = DateTime.now().millisecondsSinceEpoch;
+      final currentTime = DateTime.now().toUtc().millisecondsSinceEpoch;
       final expiryTime = pairingData['expiry'] as int;
       
       if (currentTime > expiryTime) {
@@ -2838,7 +2838,7 @@ if (!kIsWeb) {
           'session_id': sessionId,
           'device_type': targetDeviceType,
           'device_name': targetDeviceName,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'timestamp': DateTime.now().toUtc().millisecondsSinceEpoch,
         },
       );
       
@@ -2905,7 +2905,7 @@ if (!kIsWeb) {
         '${ApiConstants.usersEndpoint}/sync',
         data: {
           'data_type': dataType,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'timestamp': DateTime.now().toUtc().millisecondsSinceEpoch,
           ...?additionalData,
         },
       );
@@ -2955,7 +2955,7 @@ if (!kIsWeb) {
           'pairing_token': pairingToken,
           'device_id': deviceId,
           'device_type': deviceType,
-          'verification_time': DateTime.now().millisecondsSinceEpoch,
+          'verification_time': DateTime.now().toUtc().millisecondsSinceEpoch,
         },
       );
       
@@ -2980,7 +2980,7 @@ if (!kIsWeb) {
   
   /// Generates a unique session ID for pairing
   String _generateSessionId() {
-    return 'session_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}';
+    return 'session_${DateTime.now().toUtc().millisecondsSinceEpoch}_${Random().nextInt(10000)}';
   }
   
 /// Gets device name based on platform
@@ -3206,17 +3206,8 @@ class WebSocketConnection {
                   .replaceFirst('+00:00', 'Z'),
             });
           } else if (messageType == 'new_message') {
-            // Convert UTC timestamp to local for display
-            final createdAtRaw = data['created_at'] as String?;
-            if (createdAtRaw != null) {
-              // Parse ISO 8601 UTC timestamp
-              final utcTime = DateTime.parse(createdAtRaw);
-              // Convert to local timezone for display
-              final localTime = utcTime.toLocal();
-              data['created_at_local'] = localTime;
-              logger('[WEBSOCKET] Message timestamp: $createdAtRaw → local: ${localTime.toIso8601String()}');
-            }
-            // Pass message to handler
+            // CRITICAL: Keep timestamp in UTC as received from backend
+            // UI layer (Intl.DateTimeFormat) handles timezone display ONLY
             onMessage(data);
           } else {
             // Forward other message types
@@ -3235,19 +3226,9 @@ class WebSocketConnection {
       onDone: () {
         logger('[WEBSOCKET] Connection closed for $chatId');
         _isConnected = false;
-        
-        // Don't auto-reconnect if explicitly closed
-        if (!_isClosed && _reconnectAttempts < _maxReconnectAttempts) {
-          _reconnectAttempts++;
-          final delay = Duration(seconds: 5 * _reconnectAttempts);
-          logger('[WEBSOCKET] Reconnecting in ${delay.inSeconds}s...');
-          
-          Future.delayed(delay, () {
-            if (!_isClosed) {
-              connect();
-            }
-          });
-        }
+        // Do not auto-reconnect on connection loss
+        // Connection is persistent; user must manually reconnect if needed
+      },
       },
     );
   }

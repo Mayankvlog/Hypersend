@@ -63,7 +63,7 @@ class ClientSecurityManager {
       authTag: encrypted.authTag,
       chatId: chatId,
       messageType: messageType,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: DateTime.now().toUtc().millisecondsSinceEpoch,
       mediaKey: mediaKey,
       thumbnailKey: thumbnailKey,
     );
@@ -128,7 +128,7 @@ class ClientSecurityManager {
   /// Handle authentication failure
   Future<bool> handleAuthFailure() async {
     _authFailureCount++;
-    _lastAuthTime = DateTime.now().millisecondsSinceEpoch;
+    _lastAuthTime = DateTime.now().toUtc().millisecondsSinceEpoch;
     
     _recordSecurityEvent(
       SecurityEventType.authFailure,
@@ -148,7 +148,7 @@ class ClientSecurityManager {
   /// Handle successful authentication
   Future<void> handleAuthSuccess() async {
     _authFailureCount = 0;
-    _lastAuthTime = DateTime.now().millisecondsSinceEpoch;
+    _lastAuthTime = DateTime.now().toUtc().millisecondsSinceEpoch;
     
     _recordSecurityEvent(
       SecurityEventType.authSuccess,
@@ -240,7 +240,7 @@ class ClientSecurityManager {
 
   /// Generate message ID
   String _generateMessageId() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch;
     final random = Random.secure().nextInt(1 << 16);
     return '$timestamp-$random';
   }
@@ -531,7 +531,7 @@ class ClientSecurityManager {
       type: type,
       message: message,
       severity: severity,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: DateTime.now().toUtc().millisecondsSinceEpoch,
     );
     
     _securityEvents.insert(0, event);

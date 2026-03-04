@@ -99,7 +99,7 @@ class FileTransferService {
     }
 
     final transfer = FileTransfer(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: DateTime.now().toUtc().millisecondsSinceEpoch.toString(),
       fileName: fileName,
       fileSize: fileSize,
       filePath: '',
@@ -225,7 +225,7 @@ class FileTransferService {
          }
          
          // CRITICAL FIX: Test write permissions more robustly
-         final testFile = File('${parentDir.path}/.download_test_${DateTime.now().millisecondsSinceEpoch}');
+         final testFile = File('${parentDir.path}/.download_test_${DateTime.now().toUtc().millisecondsSinceEpoch}');
          try {
            await testFile.writeAsString('test');
            final writtenContent = await testFile.readAsString();
@@ -398,7 +398,7 @@ class FileTransferService {
     
     // Ensure filename is not empty
     if (sanitized.isEmpty) {
-      sanitized = 'download_${DateTime.now().millisecondsSinceEpoch}';
+      sanitized = 'download_${DateTime.now().toUtc().millisecondsSinceEpoch}';
     }
     
     // Limit filename length

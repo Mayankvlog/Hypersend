@@ -151,7 +151,7 @@ class SignalProtocolClient {
       final linkingData = {
         'userId': _userId,
         'deviceId': _deviceId,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'timestamp': DateTime.now().toUtc().millisecondsSinceEpoch,
         'publicKey': 'base64_encoded_public_key',
       };
       

@@ -1094,8 +1094,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       
       _wsConnected = true;
     } catch (e) {
-      // Fallback to HTTP polling if WebSocket fails
-      print('[WEBSOCKET] Initialization failed: $e, falling back to HTTP polling');
+      // WebSocket connection failed - log error
+      print('[WEBSOCKET] Connection failed for chat ${widget.chatId}: $e');
     }
   }
   
@@ -1104,8 +1104,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final messageType = data['type'] as String?;
     
     if (messageType == 'new_message') {
-      // CRITICAL: Message.fromApi already converts UTC→local timezone
-      // DO NOT do additional timezone conversion here
+      // CRITICAL: Keep timestamp as UTC from backend
+      // Frontend UI layer (Intl.DateTimeFormat) handles timezone display ONLY
       final raw = data as Map<String, dynamic>;
       final msg = Message.fromApi(raw, currentUserId: _meId);
       
@@ -1138,19 +1138,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
   
-  /// Handle WebSocket errors (fallback to HTTP polling)
+  /// Handle WebSocket errors
   void _handleWebSocketError(String error) {
-    print('[WEBSOCKET_ERROR] $error');
+    print('[WEBSOCKET_ERROR] Connection error for chat ${widget.chatId}: $error');
     _wsConnected = false;
-    
-    // Fallback: retry via HTTP after short delay
-    if (mounted) {
-      Future.delayed(const Duration(seconds: 5), () {
-        if (mounted && !_wsConnected) {
-          _initializeWebSocket();
-        }
-      });
-    }
+    // Do not attempt auto-reconnect - connection is persistent per chat
   }
 
   Future<void> _loadMessages() async {

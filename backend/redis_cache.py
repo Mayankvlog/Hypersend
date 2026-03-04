@@ -1,5 +1,5 @@
 """
-Redis Cache Module for Hypersend Backend
+Redis Cache Module for zaply Backend
 Provides caching functionality for user data, contacts, and group members
 """
 
