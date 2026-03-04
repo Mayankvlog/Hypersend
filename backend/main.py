@@ -160,20 +160,20 @@ async def lifespan(app: FastAPI):
     app.state.client = client
     logger.info(f"[STARTUP] Database available in app.state")
     
-    # Initialize Redis cache (non-critical, continue if fails, skip in test mode)
+    # Initialize Redis cache (CRITICAL for production - fail if not available)
     if not is_test_mode:
         try:
             await init_cache()
             try:
                 from redis_cache import cache
                 app.state.cache = cache
+                logger.info("[STARTUP] Redis cache initialized successfully")
             except Exception:
                 # Cache module-level instance not available; continue without state exposure
                 pass
-            logger.info("[STARTUP] Redis cache initialized")
         except Exception as e:
-            logger.warning(f"[STARTUP] Redis cache initialization failed (non-critical, continuing): {e}")
-            # Continue without Redis - use fallback cache
+            logger.error(f"[STARTUP] CRITICAL: Redis cache initialization failed - cannot start without Redis: {e}")
+            raise RuntimeError(f"Redis is required for production: {e}")
     else:
         # In test mode, initialize mock cache only
         try:
@@ -197,6 +197,9 @@ async def lifespan(app: FastAPI):
             # Get Redis client if available
             redis_client = getattr(cache, 'redis_client', None) if cache and cache.is_connected else None
             
+            if not redis_client:
+                raise RuntimeError("Redis client not available - WebSocket manager requires Redis")
+            
             # Initialize WebSocket manager with Redis
             await asyncio.wait_for(
                 websocket_manager.initialize(redis_client),
@@ -209,9 +212,11 @@ async def lifespan(app: FastAPI):
             
             logger.info("[STARTUP] WebSocket manager initialized and ready for connections")
         except asyncio.TimeoutError:
-            logger.warning("[STARTUP] WebSocket manager initialization timed out")
+            logger.error("[STARTUP] WebSocket manager initialization timed out")
+            raise RuntimeError("WebSocket manager initialization failed: timeout")
         except Exception as e:
             logger.error(f"[STARTUP] WebSocket manager initialization failed: {e}")
+            raise RuntimeError(f"WebSocket manager requires Redis: {e}")
             # Cleanup if initialization failed after it started
             if websocket_manager_initialized:
                 try:
@@ -1861,27 +1866,35 @@ async def health_check():
             db_status = "unhealthy"
             db_error = str(e)[:100]
 
-        # Check Redis connectivity if available
+        # Check Redis connectivity (CRITICAL for production)
         redis_status = "healthy"
         redis_error = None
 
         try:
             from redis_cache import cache
 
-            if getattr(cache, "is_connected", False) and getattr(cache, "redis_client", None) is not None:
-                await cache.redis_client.ping()
+            if not hasattr(cache, "is_connected") or not cache.is_connected:
+                redis_status = "unhealthy"
+                redis_error = "Redis not connected"
+            elif not hasattr(cache, "redis_client") or cache.redis_client is None:
+                redis_status = "unhealthy"
+                redis_error = "Redis client not available"
             else:
-                redis_status = "disabled"  # Using in-memory fallback
+                # Test Redis connectivity with ping
+                await asyncio.wait_for(cache.redis_client.ping(), timeout=5.0)
+                redis_status = "healthy"
+                redis_error = None
+        except asyncio.TimeoutError:
+            redis_status = "unhealthy"
+            redis_error = "Redis ping timeout"
         except Exception as e:
             redis_status = "unhealthy"
             redis_error = str(e)[:100]
 
-        # Determine overall status - fail if storage or database is unhealthy
+        # Determine overall status - fail if storage, database, or Redis is unhealthy
         overall_status = "healthy"
-        if storage_status == "unhealthy" or db_status == "unhealthy":
+        if storage_status == "unhealthy" or db_status == "unhealthy" or redis_status == "unhealthy":
             overall_status = "unhealthy"
-        elif redis_status == "unhealthy":
-            overall_status = "degraded"
 
         response_data = {
             "status": overall_status,

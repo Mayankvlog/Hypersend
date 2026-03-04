@@ -8,6 +8,7 @@ import logging
 import hashlib
 import pickle
 import uuid
+import time
 from typing import Optional, List, Dict, Any, Union, Callable
 from datetime import datetime, timezone, timedelta
 import asyncio
@@ -149,11 +150,11 @@ class RedisCache:
                 raise RuntimeError(f"Redis connection failed: ping returned False")
             
         except asyncio.TimeoutError as e:
-            logger.error(f"[REDIS] Connection timeout to {host}:{port}: {e}")
+            logger.error(f"[REDIS] CRITICAL: Connection timeout to {host}:{port}: {e}")
             self.is_connected = False
             raise RuntimeError(f"Redis connection timeout: {e}")
         except Exception as e:
-            logger.error(f"[REDIS] Failed to connect to {host}:{port}: {type(e).__name__}: {e}")
+            logger.error(f"[REDIS] CRITICAL: Failed to connect to {host}:{port}: {type(e).__name__}: {e}")
             self.is_connected = False
             raise RuntimeError(f"Redis connection failed: {e}")
 
@@ -1277,7 +1278,7 @@ class CacheUtils:
         return stats
 
 async def init_cache():
-    """Initialize Redis cache connection with pytest detection and safe retry logic"""
+    """Initialize Redis cache singleton with retry mechanism and critical error handling"""
     from config import settings
     import os
     import sys
@@ -1299,6 +1300,10 @@ async def init_cache():
         # Initialize mock cache without Redis connection
         await cache.clear_mock_cache()
         return True
+    
+    # CRITICAL: Redis is required for production - no fallback
+    max_retries = 5
+    base_delay = 2  # Base delay in seconds
     
     # Try REDIS_URL first (supports password, auth, etc.)
     redis_url = getattr(settings, 'REDIS_URL', None)
@@ -1328,40 +1333,68 @@ async def init_cache():
         redis_db = getattr(settings, 'REDIS_DB', 0)
         logger.info(f"[REDIS] Using configured components: {redis_host}:{redis_port}/{redis_db}")
     
-    # CRITICAL: Warn if host is localhost (acceptable for dev, not production)
+    # CRITICAL: Enforce docker service name in production
     if redis_host in ('localhost', '127.0.0.1', '::1'):
-        logger.warning(f"[REDIS] WARNING: Redis host is localhost - acceptable for development only, must use service name 'redis' in production")
+        logger.error(f"[REDIS] CRITICAL: Redis host is localhost - must use docker service name 'redis'")
+        redis_host = "redis"
+        logger.info(f"[REDIS] Forced Redis host to docker service name: {redis_host}")
     
     # Clean up empty password
     if redis_password == '':
         redis_password = None
     
-    # CRITICAL FIX: Non-blocking connection with single attempt (no retry loop)
-    # Redis connection failure is non-critical - app continues with fallback cache
-    try:
-        logger.info(f"[REDIS] Attempting connection to {redis_host}:{redis_port}")
-        connected = await asyncio.wait_for(
-            cache.connect(
-                host=redis_host,
-                port=redis_port,
-                password=redis_password,
-                db=redis_db
-            ),
-            timeout=10.0  # 10-second timeout for connection attempt
-        )
+    # CRITICAL: Retry mechanism with exponential backoff
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"[REDIS] Connection attempt {attempt + 1}/{max_retries} to {redis_host}:{redis_port}")
+            
+            connected = await asyncio.wait_for(
+                cache.connect(
+                    host=redis_host,
+                    port=redis_port,
+                    password=redis_password,
+                    db=redis_db
+                ),
+                timeout=15.0  # Longer timeout for production stability
+            )
+            
+            if connected:
+                logger.info(f"[REDIS] Successfully connected to {redis_host}:{redis_port}/{redis_db}")
+                
+                # Verify Redis is working with a test operation
+                test_key = f"__redis_test__{int(time.time())}"
+                await cache.set(test_key, "test", expire_seconds=10)
+                test_result = await cache.get(test_key)
+                await cache.delete(test_key)
+                
+                if test_result == "test":
+                    logger.info(f"[REDIS] Redis functionality verified - cache ready")
+                    return True
+                else:
+                    raise RuntimeError("Redis functionality test failed")
+            
+        except asyncio.TimeoutError as e:
+            logger.error(f"[REDIS] Connection timeout attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)  # Exponential backoff
+                logger.warning(f"[REDIS] Retrying in {delay} seconds...")
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"[REDIS] CRITICAL: All connection attempts failed - Redis required for production")
+                raise RuntimeError(f"Redis connection failed after {max_retries} attempts: {e}")
         
-        if connected:
-            logger.info(f"[REDIS] Successfully connected to {redis_host}:{redis_port}/{redis_db}")
-            return True
-    except asyncio.TimeoutError:
-        logger.warning(f"[REDIS] Connection timeout to {redis_host}:{redis_port} - using fallback cache")
-    except Exception as e:
-        logger.warning(f"[REDIS] Connection failed: {type(e).__name__}: {e} - using fallback cache")
+        except Exception as e:
+            logger.error(f"[REDIS] Connection error attempt {attempt + 1}: {type(e).__name__}: {e}")
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)  # Exponential backoff
+                logger.warning(f"[REDIS] Retrying in {delay} seconds...")
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"[REDIS] CRITICAL: All connection attempts failed - Redis required for production")
+                raise RuntimeError(f"Redis connection failed after {max_retries} attempts: {e}")
     
-    # CRITICAL: Don't crash app if Redis unavailable - use mock cache silently
-    logger.info("[REDIS] Falling back to in-memory cache")
-    await cache.clear_mock_cache()
-    return True  # Return True to allow app to start with degraded functionality
+    # This should never be reached due to the loop logic
+    raise RuntimeError("Redis initialization failed unexpectedly")
 
 async def cleanup_cache():
     """Cleanup cache connection with proper error handling"""

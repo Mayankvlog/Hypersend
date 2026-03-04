@@ -1013,11 +1013,12 @@ class WebSocketManager:
         Start global Redis Pub/Sub subscriber for cross-container communication.
         CRITICAL: Only create ONE global subscriber, not one per connection.
         Handles reconnection WITHOUT recreating subscriptions.
+        CRITICAL: Redis is required - no fallback behavior.
         """
-        # CRITICAL: Check if already started (prevent duplicate)
+        # CRITICAL: Redis is required for production - fail if not available
         if not self.redis:
-            logger.warning("[REDIS-GLOBAL] Redis not available - skipping global pubsub")
-            return
+            logger.error("[REDIS-GLOBAL] CRITICAL: Redis not available - cannot start global pubsub")
+            raise RuntimeError("Redis is required for global pubsub functionality")
         
         # CRITICAL: Use lock to prevent race condition
         async with self._global_pubsub_lock:

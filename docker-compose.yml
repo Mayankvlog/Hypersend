@@ -53,7 +53,7 @@ services:
 
   redis:
     image: redis:7.2-alpine
-    container_name: hypersend_redis
+    container_name: redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
@@ -119,8 +119,8 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
 
       # ===== REDIS CONFIGURATION =====
-      REDIS_URL: redis://hypersend_redis:6379/0
-      REDIS_HOST: hypersend_redis
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
 
@@ -167,7 +167,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -s http://hypersend_backend:8000/api/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f -s http://backend:8000/api/v1/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -198,7 +198,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://hypersend_frontend/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://frontend/health"]
       interval: 30s
       timeout: 10s
       start_period: 5s

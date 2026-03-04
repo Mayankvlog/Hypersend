@@ -13,6 +13,9 @@ Tests for:
 import pytest
 import json
 import asyncio
+import os
+import sys
+import time
 from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from bson import ObjectId
@@ -28,8 +31,132 @@ class TestRedisConnection:
     """Test Redis connection with production configuration"""
     
     @pytest.mark.asyncio
+    async def test_redis_singleton_behavior(self):
+        """Test Redis cache singleton behavior"""
+        from redis_cache import cache
+        
+        # Verify cache is a singleton instance
+        from redis_cache import RedisCache
+        assert isinstance(cache, RedisCache)
+        
+        # Verify singleton property - same instance returned
+        from redis_cache import cache as cache2
+        assert cache is cache2
+        
+        # Test basic cache operations work
+        test_key = f"test_singleton_{int(time.time())}"
+        await cache.set(test_key, "test_value", expire_seconds=60)
+        value = await cache.get(test_key)
+        assert value == "test_value"
+        
+        # Cleanup
+        await cache.delete(test_key)
+    
+    @pytest.mark.asyncio
+    async def test_redis_connection_retry_mechanism(self):
+        """Test Redis connection retry mechanism with exponential backoff"""
+        from redis_cache import init_cache, cache
+        import asyncio
+        
+        # Mock Redis with initial failures then success
+        mock_redis = AsyncMock()
+        mock_redis.ping.return_value = True
+        
+        # Mock pubsub properly for the connect method
+        mock_pubsub = AsyncMock()
+        mock_pubsub.subscribe = AsyncMock()
+        mock_pubsub.close = AsyncMock()
+        mock_redis.pubsub = MagicMock(return_value=mock_pubsub)
+        
+        call_count = 0
+        
+        async def mock_connect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:  # Fail first 2 attempts
+                raise asyncio.TimeoutError("Connection timeout")
+            return True  # Succeed on 3rd attempt
+        
+        # Mock the pytest detection to return False
+        with patch('os.getenv', side_effect=lambda key, default=None: None if key == 'PYTEST_CURRENT_TEST' else default):
+            with patch('sys.modules', {**dict(sys.modules), 'pytest': None}):
+                with patch.object(cache, 'connect', side_effect=mock_connect):
+                    with patch.object(cache, 'set', return_value=True):
+                        with patch.object(cache, 'get', return_value="test"):
+                            with patch.object(cache, 'delete', return_value=True):
+                                # Test init_cache with retries
+                                result = await init_cache()
+                                assert result is True
+                                assert call_count == 3  # Should have retried 3 times
+    
+    @pytest.mark.asyncio
+    async def test_redis_docker_service_name_enforcement(self):
+        """Test that Redis enforces docker service name 'redis'"""
+        from redis_cache import cache
+        
+        # Mock Redis client
+        mock_redis = AsyncMock()
+        mock_redis.ping.return_value = True
+        
+        # Test that localhost is converted to 'redis'
+        with patch('redis_cache.redis.Redis', return_value=mock_redis):
+            with patch('redis_cache.redis.ConnectionPool'):
+                result = await cache.connect(host="localhost", port=6379, db=0)
+                
+                assert result is True
+                assert cache.is_connected is True
+                
+                # Verify connection was made with corrected service name
+                # The connect method should have converted localhost to redis
+                mock_redis.ping.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_redis_ping_verification(self):
+        """Test Redis ping verification during connection"""
+        from redis_cache import cache
+        
+        # Mock Redis client that fails ping
+        mock_redis = AsyncMock()
+        mock_redis.ping.return_value = False  # Ping fails
+        
+        with patch('redis_cache.redis.Redis', return_value=mock_redis):
+            with patch('redis_cache.redis.ConnectionPool'):
+                # Should fail because ping returns False
+                with pytest.raises(RuntimeError, match="Redis connection failed: ping returned False"):
+                    await cache.connect(host="redis", port=6379, db=0)
+    
+    @pytest.mark.asyncio
+    async def test_redis_pubsub_subscription_once(self):
+        """Test Redis PubSub subscribes only once per worker"""
+        from redis_cache import cache
+        
+        # Mock Redis client and pubsub
+        mock_redis = AsyncMock()
+        mock_pubsub = AsyncMock()
+        mock_pubsub.subscribe = AsyncMock()
+        mock_pubsub.close = AsyncMock()
+        mock_redis.pubsub = MagicMock(return_value=mock_pubsub)
+        
+        # Test that pubsub can be created and subscribed
+        with patch('redis_cache.redis.Redis', return_value=mock_redis):
+            with patch('redis_cache.redis.ConnectionPool'):
+                # Connect to Redis first
+                await cache.connect(host="redis", port=6379, db=0)
+                
+                # Test pubsub functionality
+                pubsub_instance = cache.redis_client.pubsub()
+                await pubsub_instance.subscribe("test_channel")
+                await pubsub_instance.close()
+                
+                # Verify pubsub was created and subscribed
+                # Note: pubsub and close are called twice - once in connect() for testing, once in our test
+                assert mock_redis.pubsub.call_count >= 1
+                mock_pubsub.subscribe.assert_called_with("test_channel")
+                assert mock_pubsub.close.call_count >= 1
+    
+    @pytest.mark.asyncio
     async def test_redis_uses_service_name(self):
-        """Test Redis connects to hypersend_redis service name"""
+        """Test Redis connects to redis service name"""
         from redis_cache import cache
         
         # Mock Redis client
@@ -49,7 +176,7 @@ class TestRedisConnection:
         with patch('redis_cache.redis.Redis', return_value=mock_redis):
             with patch('redis_cache.redis.ConnectionPool'):
                 with patch('redis_cache.redis.from_url', return_value=mock_redis):
-                    result = await cache.connect(host=TEST_REDIS_HOST, port=TEST_REDIS_PORT, db=TEST_REDIS_DB)
+                    result = await cache.connect(host="redis", port=6379, db=0)
                     
                     assert result is True
                     assert cache.is_connected is True

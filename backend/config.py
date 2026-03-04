@@ -276,9 +276,17 @@ class Settings:
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    
+    # CRITICAL: Always use docker service name format, never localhost
     REDIS_URL: str = os.getenv(
         "REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
     )
+    
+    # Validate Redis URL format for production
+    if 'localhost' in REDIS_URL or '127.0.0.1' in REDIS_URL:
+        logger.error("[CONFIG] CRITICAL: REDIS_URL contains localhost - forcing to docker service name")
+        REDIS_URL = REDIS_URL.replace('localhost', 'redis').replace('127.0.0.1', 'redis')
+        logger.info(f"[CONFIG] Fixed REDIS_URL: {REDIS_URL}")
     # WHATSAPP MESSAGE STORAGE: Redis is ONLY temporary store
     MESSAGE_STORAGE: str = os.getenv(
         "MESSAGE_STORAGE", "redis_only"
