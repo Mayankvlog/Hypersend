@@ -469,63 +469,86 @@ class EmojiUtils {
     '🚫': ['prohibited', 'forbidden', 'no', 'entry', 'stop'],
   };  
 
-  /// Search emojis by name pattern with flexible matching
+  /// Enhanced search emojis with multiple matching strategies
   static List<String> searchEmojis(String query) {
     if (query.isEmpty) return [];
     
     final searchTerm = query.toLowerCase().trim();
     List<String> results = [];
+    Map<String, int> scoreMap = {}; // For ranking results
     
-    // First, check for category keyword matches
+    // Extended category keyword maps
     final categoryMap = {
       'smile': 0, 'smiley': 0, 'happy': 0, 'face': 0, 'grin': 0,
-      'laugh': 0, 'lol': 0, 'funny': 0,
-      'animal': 1, 'nature': 1, 'dog': 1, 'cat': 1, 'pet': 1,
+      'laugh': 0, 'lol': 0, 'funny': 0, 'joy': 0, 'cheerful': 0,
+      'animal': 1, 'nature': 1, 'dog': 1, 'cat': 1, 'pet': 1, 'wildlife': 1,
       'food': 2, 'drink': 2, 'pizza': 2, 'eat': 2, 'burger': 2, 
-      'hamburger': 2,
+      'hamburger': 2, 'meal': 2, 'beverage': 2, 'cake': 2, 'dessert': 2,
       'sport': 3, 'activity': 3, 'ball': 3, 'game': 3, 'soccer': 3,
-      'football': 3, 'basketball': 3,
+      'football': 3, 'basketball': 3, 'play': 3, 'exercise': 3,
       'travel': 4, 'place': 4, 'map': 4, 'airplane': 4, 'plane': 4,
-      'object': 5, 'lamp': 5, 'computer': 5, 'phone': 5,
-      'symbol': 6, 'heart': 6, 'love': 6, 'check': 6,
-      'flag': 7, 'country': 7,
+      'vehicle': 4, 'car': 4, 'train': 4, 'adventure': 4,
+      'object': 5, 'thing': 5, 'lamp': 5, 'computer': 5, 'phone': 5,
+      'tech': 5, 'device': 5, 'technology': 5,
+      'symbol': 6, 'heart': 6, 'love': 6, 'check': 6, 'mark': 6,
+      'flag': 7, 'country': 7, 'world': 7,
     };
     
-    // Check for exact category matches
+    // Strategy 1: Check for category keyword matches (highest priority)
     for (var entry in categoryMap.entries) {
-      if (searchTerm.contains(entry.key) || entry.key.contains(searchTerm)) {
+      if (searchTerm == entry.key || 
+          (searchTerm.length > 2 && entry.key.startsWith(searchTerm))) {
         return categories[entry.value].emojis;
       }
     }
     
-    // Check emoji keyword mappings for more flexible search
+    // Strategy 2: Direct emoji keyword matching with scoring
     for (var entry in emojiKeywords.entries) {
+      int score = 0;
       for (var keyword in entry.value) {
-        if (keyword.contains(searchTerm) || searchTerm.contains(keyword)) {
-          if (!results.contains(entry.key)) {
-            results.add(entry.key);
-          }
+        // Exact keyword match = 10 points
+        if (keyword == searchTerm) {
+          score += 10;
         }
+        // Keyword starts with search term = 7 points
+        else if (keyword.startsWith(searchTerm)) {
+          score += 7;
+        }
+        // Search term is substring of keyword = 5 points
+        else if (keyword.contains(searchTerm)) {
+          score += 5;
+        }
+        // Partial match at word start = 3 points
+        else if (searchTerm.startsWith(keyword.substring(0, min(3, keyword.length)))) {
+          score += 3;
+        }
+      }
+      
+      if (score > 0) {
+        scoreMap[entry.key] = (scoreMap[entry.key] ?? 0) + score;
       }
     }
     
-    // If we found specific emoji matches, return them
-    if (results.isNotEmpty) {
+    // Convert scored results to sorted list
+    if (scoreMap.isNotEmpty) {
+      final sortedEntries = scoreMap.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      results = sortedEntries.map((e) => e.key).toList();
       return results;
     }
     
-    // Fallback: Search for partial matches in keywords (more flexible search)
+    // Strategy 3: Fuzzy search (search term contained in keywords)
     for (var entry in emojiKeywords.entries) {
       for (var keyword in entry.value) {
-        // Check if search term is a substring of keyword
-        if (keyword.startsWith(searchTerm) || keyword.contains(searchTerm)) {
-          if (!results.contains(entry.key)) {
-            results.add(entry.key);
-          }
+        if (keyword.contains(searchTerm) && !results.contains(entry.key)) {
+          results.add(entry.key);
         }
       }
     }
     
     return results;
   }
+  
+  /// Helper function for minimum value
+  static int min(int a, int b) => a < b ? a : b;
 }

@@ -425,7 +425,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void _showEmojiPicker() {
     int selectedCategoryIndex = 0;
     final TextEditingController searchController = TextEditingController();
-    final List<String> _searchSuggestions = ['smile', 'love', 'animal', 'food', 'sport', 'travel'];
+    final List<String> _searchSuggestions = [
+      'smile', 'love', 'animal', 'food', 'sport', 'travel', 
+      'happy', 'sad', 'celebrate', 'fire', 'star', 'thumbsup'
+    ];
     
     showModalBottomSheet(
       context: context,
@@ -547,31 +550,50 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 if (searchQuery.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    child: Wrap(
-                      spacing: 8,
-                      children: _searchSuggestions.map((suggestion) {
-                        return GestureDetector(
-                          onTap: () {
-                            searchController.text = suggestion;
-                            setState(() {});
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: AppTheme.dividerColor.withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              suggestion,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.primaryCyan,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Quick search:',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppTheme.textSecondary.withValues(alpha: 0.6),
+                                fontSize: 11,
                                 fontWeight: FontWeight.w500,
                               ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: _searchSuggestions.map((suggestion) {
+                            return GestureDetector(
+                              onTap: () {
+                                searchController.text = suggestion;
+                                setState(() {});
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.dividerColor.withValues(alpha: 0.4),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: AppTheme.primaryCyan.withValues(alpha: 0.3),
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  suggestion,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.primaryCyan,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
                     ),
                   ),
                 
