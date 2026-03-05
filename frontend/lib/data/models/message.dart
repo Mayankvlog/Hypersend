@@ -18,12 +18,27 @@ class MessageLocation extends Equatable {
   });
 
   factory MessageLocation.fromApi(Map<String, dynamic> json) {
+    // CRITICAL: Convert UTC timestamp to device local timezone
+    DateTime? sharedAt;
+    final sharedAtRaw = json['shared_at'];
+    if (sharedAtRaw is String) {
+      sharedAt = DateTime.tryParse(sharedAtRaw);
+      if (sharedAt != null && sharedAt.isUtc) {
+        sharedAt = sharedAt.toLocal();
+      }
+    } else if (sharedAtRaw is DateTime) {
+      sharedAt = sharedAtRaw;
+      if (sharedAtRaw.isUtc) {
+        sharedAt = sharedAtRaw.toLocal();
+      }
+    }
+
     return MessageLocation(
       latitude: (json['latitude'] ?? 0.0).toDouble(),
       longitude: (json['longitude'] ?? 0.0).toDouble(),
       accuracy: (json['accuracy'] ?? 0.0).toDouble(),
       address: json['address']?.toString(),
-      sharedAt: json['shared_at'] != null ? DateTime.tryParse(json['shared_at']) : null,
+      sharedAt: sharedAt,
     );
   }
 
@@ -135,13 +150,33 @@ class Message extends Equatable {
       isPinned: json['is_pinned'] == true,
       isEdited: json['is_edited'] == true,
       isDeleted: isDeleted,
-      editedAt: (json['edited_at'] is String) ? DateTime.tryParse(json['edited_at']) : null,
-      deletedAt: (json['deleted_at'] is String) ? DateTime.tryParse(json['deleted_at']) : null,
+      editedAt: _parseDateTime(json['edited_at']),
+      deletedAt: _parseDateTime(json['deleted_at']),
       reactions: reactions,
       readBy: readBy,
       fileId: fileId,
       location: location,
     );
+  }
+
+  /// Parse and convert datetime from API response to local timezone
+  /// CRITICAL: Converts UTC timestamps to device local timezone
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is String) {
+      final parsed = DateTime.tryParse(value);
+      if (parsed != null && parsed.isUtc) {
+        return parsed.toLocal();
+      }
+      return parsed;
+    }
+    if (value is DateTime) {
+      if (value.isUtc) {
+        return value.toLocal();
+      }
+      return value;
+    }
+    return null;
   }
 
   // Helper function to parse message status from API response

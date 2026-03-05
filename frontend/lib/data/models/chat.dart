@@ -57,7 +57,17 @@ class Chat extends Equatable {
     final last = json['last_message'] as Map<String, dynamic>?;
     final lastText = (last?['text'] ?? last?['content'] ?? '').toString();
     final lastAtRaw = last?['created_at'];
-    final lastAt = lastAtRaw is String ? DateTime.tryParse(lastAtRaw) : null;
+    
+    // CRITICAL: Convert UTC timestamp to device local timezone
+    DateTime? lastAt;
+    if (lastAtRaw is String) {
+      final parsed = DateTime.tryParse(lastAtRaw);
+      if (parsed != null && parsed.isUtc) {
+        lastAt = parsed.toLocal();
+      } else {
+        lastAt = parsed;
+      }
+    }
 
     final displayName = (json['display_name'] ?? json['name'] ?? (chatType == ChatType.group ? 'Group' : 'Chat')).toString();
     final senderName = json['last_message_sender_name']?.toString();
@@ -76,7 +86,11 @@ class Chat extends Equatable {
     DateTime fallbackTime() {
       final raw = json['created_at'];
       if (raw is String) {
-        return DateTime.tryParse(raw) ?? DateTime.now();
+        final parsed = DateTime.tryParse(raw);
+        if (parsed != null && parsed.isUtc) {
+          return parsed.toLocal();
+        }
+        return parsed ?? DateTime.now();
       }
       return DateTime.now();
     }

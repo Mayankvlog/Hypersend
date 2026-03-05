@@ -36,8 +36,21 @@ def _parse_object_id(value: str, field_name: str) -> ObjectId:
 
 
 def _to_json_safe(value):
+    """Recursively convert all datetime objects to ISO8601 UTC strings.
+    
+    CRITICAL FIX: Ensure all datetime objects are converted to ISO8601 format
+    for JSON serialization. This keeps all timestamps in UTC and properly
+    formatted for the frontend to parse and convert to local timezone.
+    """
     if isinstance(value, ObjectId):
         return str(value)
+    if isinstance(value, datetime):
+        # Ensure datetime is timezone-aware (should be UTC)
+        if value.tzinfo is None:
+            # Naive datetime - treat as UTC
+            value = value.replace(tzinfo=timezone.utc)
+        # Return ISO8601 string: "YYYY-MM-DDTHH:MM:SS+00:00"
+        return value.isoformat()
     if isinstance(value, dict):
         return {k: _to_json_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -787,6 +800,10 @@ async def send_message(
     # CRITICAL: STEP 1 - Ensure message is persisted in DB before any broadcast
     # This prevents message loss if Redis/WebSocket fails
     
+    # CRITICAL FIX: Convert created_at to ISO8601 UTC string for API response
+    # The frontend expects this format: "2025-01-01T00:45:00+00:00" or "2025-01-01T00:45:00Z"
+    created_at_iso = now.isoformat()  # Will return "YYYY-MM-DDTHH:MM:SS+00:00" format (UTC-aware)
+    
     # STEP 2 - Publish to Redis for real-time delivery across all containers
     redis_published = False
     try:
@@ -801,7 +818,7 @@ async def send_message(
                 "content": message.text,
                 "file_id": message.file_id,
                 "message_type": msg_type,
-                "created_at": now.isoformat(),
+                "created_at": created_at_iso,  # ISO8601 UTC string
                 "timestamp": int(now.timestamp()),
                 # Deduplication key - subscribers use this to avoid re-inserting
                 "db_inserted": True,
@@ -836,7 +853,7 @@ async def send_message(
                     "content": message.text,
                     "file_id": message.file_id,
                     "message_type": msg_type,
-                    "created_at": now.isoformat(),
+                    "created_at": created_at_iso,  # ISO8601 UTC string
                     # Prevent duplicate processing in WebSocket handler
                     "skip_db_insert": True
                 }
@@ -850,7 +867,8 @@ async def send_message(
         except Exception as e:
             logger.error(f"[WEBSOCKET] Failed to broadcast message: {type(e).__name__}: {e}")
     
-    return {"message_id": str(inserted_id), "created_at": msg_doc["created_at"]}
+    # Return created_at as ISO8601 UTC string to frontend
+    return {"message_id": str(inserted_id), "created_at": created_at_iso}
 
 
 @router.post("/messages/{message_id}/save", status_code=status.HTTP_200_OK)
