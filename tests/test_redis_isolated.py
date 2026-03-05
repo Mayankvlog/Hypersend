@@ -139,17 +139,13 @@ async def _wait_for_redis_with_retry():
             mock_pubsub.subscribe = AsyncMock()
             mock_pubsub.close = AsyncMock()
             mock_pubsub.listen = AsyncMock()
-            # Configure listen to yield an async generator for async compatibility
+            # Configure listen to yield a test message
             test_message = {
                 'type': 'message',
                 'channel': 'test_channel',
                 'data': json.dumps({"type": "test", "data": "pubsub_verification"})
             }
-            
-            async def async_message_generator():
-                yield test_message
-            
-            mock_pubsub.listen.return_value = async_message_generator()
+            mock_pubsub.listen.return_value = iter([test_message])
             
             mock_redis_client.pubsub.return_value = mock_pubsub
             mock_redis_client.publish.return_value = 1

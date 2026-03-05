@@ -84,16 +84,20 @@ class Message extends Equatable {
     DateTime? createdAt;
     
     if (createdAtRaw is String) {
+      // Parse ISO8601 UTC string directly (keep 'Z' suffix) and convert to local if parsed DateTime.isUtc
       createdAt = DateTime.tryParse(createdAtRaw);
-      // incoming string should be ISO8601 UTC (Z suffix or +00:00)
-      // immediately convert to local device timezone so that downstream
-      // UI components can assume `timestamp` is already local.
-      if (createdAt != null) {
+      
+      // Convert UTC timestamp to local timezone for UI components
+      if (createdAt != null && createdAt.isUtc) {
         createdAt = createdAt.toLocal();
       }
     } else if (createdAtRaw is DateTime) {
       // If somehow a DateTime object is provided, convert to local as well
-      createdAt = createdAtRaw.toLocal();
+      if (createdAtRaw.isUtc) {
+        createdAt = createdAtRaw.toLocal();
+      } else {
+        createdAt = createdAtRaw;
+      }
     }
 
     final reactionsRaw = (json['reactions'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};

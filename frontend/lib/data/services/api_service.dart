@@ -22,6 +22,10 @@ class ApiService {
   // Debug flag - set to false in production
   static const bool _debug = kDebugMode;
   
+  // Single-flight refresh guard to prevent duplicate refresh requests
+  Completer<bool>? _refreshCompleter;
+  bool _isRefreshing = false;
+  
   static void _log(String message) {
     if (_debug) {
       debugPrint(message);
@@ -172,6 +176,88 @@ class ApiService {
           return handler.next(options);
         },
         onError: (error, handler) async {
+          // CRITICAL FIX: Auto-refresh on 401 with single-flight guard and reentry protection
+          if (error.response?.statusCode == 401) {
+            _log('[API_401] Detected 401 Unauthorized - attempting automatic token refresh');
+            
+            // Skip refresh logic for refresh-related requests to prevent infinite loops
+            // Robustly handle header values that can be boolean, string, or other forms
+            final skipHeader = error.requestOptions.headers['X-Skip-Auth-Interceptor'];
+            String skipHeaderStr = '';
+            if (skipHeader != null) {
+              skipHeaderStr = skipHeader.toString().trim().toLowerCase();
+            }
+            final isRefreshRequest = skipHeaderStr == 'true' || 
+                                   skipHeaderStr == '1' || 
+                                   skipHeader == true;
+            if (isRefreshRequest) {
+              _log('[API_401] Skipping refresh for refresh request to prevent infinite loop');
+              return handler.next(error);
+            }
+            
+            // Get auth service instance
+            try {
+              final authService = ServiceProvider.instance.authService;
+              final hasRefreshToken = authService.refreshToken != null && authService.refreshToken!.isNotEmpty;
+              
+              if (hasRefreshToken) {
+                _log('[API_401] Refresh token available, attempting refresh');
+                
+                // Single-flight refresh: await existing refresh or start new one
+                bool refreshed;
+                if (_isRefreshing && _refreshCompleter != null) {
+                  _log('[API_401] Refresh already in progress, awaiting completion');
+                  refreshed = await _refreshCompleter!.future;
+                } else {
+                  _log('[API_401] Starting new refresh process');
+                  _isRefreshing = true;
+                  _refreshCompleter = Completer<bool>();
+                  
+                  try {
+                    refreshed = await authService.refreshTokens();
+                    _refreshCompleter!.complete(refreshed);
+                  } catch (e) {
+                    _log('[API_401] Refresh process failed: $e');
+                    _refreshCompleter!.completeError(e);
+                    rethrow;
+                  } finally {
+                    _isRefreshing = false;
+                    _refreshCompleter = null;
+                  }
+                }
+                
+                if (refreshed) {
+                  _log('[API_401] Token refreshed successfully, retrying request');
+                  // Get new access token from auth service
+                  final newToken = authService.accessToken;
+                  if (newToken != null) {
+                    // Update authorization header with new token
+                    error.requestOptions.headers['Authorization'] = 'Bearer $newToken';
+                    // Retry the request with all original options preserved
+                    return handler.resolve(await _dio.request(
+                      error.requestOptions.path,
+                      options: Options(
+                        method: error.requestOptions.method,
+                        headers: error.requestOptions.headers,
+                        contentType: error.requestOptions.contentType,
+                      ),
+                      data: error.requestOptions.data,
+                      queryParameters: error.requestOptions.queryParameters,
+                      cancelToken: error.requestOptions.cancelToken,
+                      onSendProgress: error.requestOptions.onSendProgress,
+                      onReceiveProgress: error.requestOptions.onReceiveProgress,
+                    ));
+                  }
+                } else {
+                  _log('[API_401] Token refresh failed, user must re-login');
+                }
+              } else {
+                _log('[API_401] No refresh token available, user must re-login');
+              }
+            } catch (e) {
+              _log('[API_401] Error during auto-refresh: $e');
+            }
+          }
           // PERMANENT FIX: Implement automatic retry with exponential backoff for connection errors
           // This ensures transient errors (server starting up, temporary network issues) don't cause permanent failures
           
@@ -843,6 +929,9 @@ class ApiService {
       final response = await _dio.post(
         '${ApiConstants.authEndpoint}/refresh',
         data: {'refresh_token': refreshToken},
+        options: Options(
+          headers: {'X-Skip-Auth-Interceptor': true},
+        ),
       );
       return response.data ?? {};
     } on DioException catch (e) {

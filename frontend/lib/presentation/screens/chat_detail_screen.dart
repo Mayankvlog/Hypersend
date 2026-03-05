@@ -1364,7 +1364,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
     
     try {
-      // Get or create persistent WebSocket connection
+      // Get or create persistent WebSocket connection (with automatic reconnection)
       _wsConnection = serviceProvider.apiService.getOrCreateChatConnection(
         chatId: widget.chatId,
         userId: _meId,
@@ -1373,10 +1373,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         onError: _handleWebSocketError,
       );
       
-      _wsConnected = true;
+      // Start the WebSocket connection only if _wsConnection is non-null
+      if (_wsConnection != null) {
+        await _wsConnection!.connect();
+        _wsConnected = true;
+        debugPrint('[WEBSOCKET] Persistent WebSocket connection established for chat ${widget.chatId}');
+      } else {
+        _wsConnected = false;
+        debugPrint('[WEBSOCKET] Connection object is null for chat ${widget.chatId}');
+      }
     } catch (e) {
       // WebSocket connection failed - log error
       debugPrint('[WEBSOCKET] Connection failed for chat ${widget.chatId}: $e');
+      _wsConnected = false;
     }
   }
   

@@ -36,8 +36,11 @@ class TimeFormatter {
   }
 
   static String formatMessageTime(DateTime date) {
+    // CRITICAL: Ensure this is already local time (Message.fromApi should have done this)
     final localDate = _ensureLocalTime(date);
-    return DateFormat('h:mm a').format(localDate);
+    // Format as h:mm a (e.g., "3:07 PM") with proper timezone awareness
+    final formatter = DateFormat('h:mm a');
+    return formatter.format(localDate);
   }
 
   static String formatDateDivider(DateTime date) {
