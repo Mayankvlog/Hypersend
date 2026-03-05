@@ -197,7 +197,7 @@ class ApiService {
             
             // Get auth service instance
             try {
-              final authService = ServiceProvider.instance.authService;
+              final authService = serviceProvider.authService;
               final hasRefreshToken = authService.refreshToken != null && authService.refreshToken!.isNotEmpty;
               
               if (hasRefreshToken) {

@@ -1352,13 +1352,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     
     // Then establish persistent WebSocket connection (one-time initialization)
     if (!_wsConnected && _meId.isNotEmpty) {
-      _initializeWebSocket();
+      await _initializeWebSocket();
     }
   }
   
   /// Initialize persistent WebSocket connection for real-time message delivery
   /// CRITICAL: This runs ONCE per chat - no re-initialization on re-render
-  void _initializeWebSocket() {
+  Future<void> _initializeWebSocket() async {
     if (_wsConnected || _wsConnection != null) {
       return; // Already initialized
     }
