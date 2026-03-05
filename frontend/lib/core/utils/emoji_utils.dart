@@ -662,27 +662,26 @@ class EmojiUtils {
     List<String> results = [];
     Map<String, int> scoreMap = {}; // For ranking results
     
-    // Extended category keyword maps
+    // Extended category keyword maps (including plural forms)
     final categoryMap = {
       'smile': 0, 'smiley': 0, 'happy': 0, 'face': 0, 'grin': 0,
       'laugh': 0, 'lol': 0, 'funny': 0, 'joy': 0, 'cheerful': 0,
-      'animal': 1, 'nature': 1, 'dog': 1, 'cat': 1, 'pet': 1, 'wildlife': 1,
-      'food': 2, 'drink': 2, 'pizza': 2, 'eat': 2, 'burger': 2, 
-      'hamburger': 2, 'meal': 2, 'beverage': 2, 'cake': 2, 'dessert': 2,
-      'sport': 3, 'activity': 3, 'ball': 3, 'game': 3, 'soccer': 3,
-      'football': 3, 'basketball': 3, 'play': 3, 'exercise': 3,
-      'travel': 4, 'place': 4, 'map': 4, 'airplane': 4, 'plane': 4,
-      'vehicle': 4, 'car': 4, 'train': 4, 'adventure': 4,
-      'object': 5, 'thing': 5, 'lamp': 5, 'computer': 5, 'phone': 5,
-      'tech': 5, 'device': 5, 'technology': 5,
-      'symbol': 6, 'heart': 6, 'love': 6, 'check': 6, 'mark': 6,
-      'flag': 7, 'country': 7, 'world': 7,
+      'animal': 1, 'animals': 1, 'nature': 1, 'dog': 1, 'cat': 1, 'pet': 1, 'wildlife': 1,
+      'food': 2, 'foods': 2, 'drink': 2, 'drinks': 2, 'pizza': 2, 'eat': 2, 'burger': 2, 
+      'hamburger': 2, 'meal': 2, 'meals': 2, 'beverage': 2, 'beverages': 2, 'cake': 2, 'dessert': 2, 'desserts': 2,
+      'sport': 3, 'sports': 3, 'activity': 3, 'activities': 3, 'ball': 3, 'game': 3, 'games': 3, 'soccer': 3,
+      'football': 3, 'basketball': 3, 'play': 3, 'exercise': 3, 'exercises': 3,
+      'travel': 4, 'place': 4, 'places': 4, 'map': 4, 'airplane': 4, 'plane': 4,
+      'vehicle': 4, 'vehicles': 4, 'car': 4, 'train': 4, 'adventure': 4, 'adventures': 4,
+      'object': 5, 'objects': 5, 'thing': 5, 'things': 5, 'lamp': 5, 'computer': 5, 'computers': 5, 'phone': 5, 'phones': 5,
+      'tech': 5, 'device': 5, 'devices': 5, 'technology': 5,
+      'symbol': 6, 'symbols': 6, 'heart': 6, 'hearts': 6, 'love': 6, 'check': 6, 'mark': 6, 'marks': 6,
+      'flag': 7, 'flags': 7, 'country': 7, 'countries': 7, 'world': 7,
     };
     
     // Strategy 1: Check for category keyword matches (highest priority)
     for (var entry in categoryMap.entries) {
-      if (searchTerm == entry.key || 
-          (searchTerm.length > 2 && entry.key.startsWith(searchTerm))) {
+      if (searchTerm == entry.key || searchTerm == entry.key + 's') {
         return categories[entry.value].emojis;
       }
     }

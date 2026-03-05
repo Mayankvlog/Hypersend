@@ -390,18 +390,64 @@ def search_emojis(query: str, limit: int = 50) -> List[Dict]:
     if len(query_lower) > 50:
         query_lower = query_lower[:50]
     
+    # Category keyword mapping (including plural forms)
+    category_keywords = {
+        "smileys_people": ["smile", "smiley", "people", "face", "emotion", "emotional"],
+        "animals_nature": ["animal", "animals", "nature", "pet", "wildlife", "dog", "cat"],
+        "food_drinks": ["food", "foods", "drink", "drinks", "eat", "eating", "meal", "meals"],
+        "activity": ["activity", "activities", "sport", "sports", "game", "games", "play", "exercise"],
+        "travel_places": ["travel", "place", "places", "map", "vehicle", "vehicles", "airplane", "plane"],
+        "objects": ["object", "objects", "thing", "things", "phone", "computer", "tech"],
+        "symbols": ["symbol", "symbols", "heart", "hearts", "love", "check"],
+        "flags": ["flag", "flags", "country", "countries", "world"],
+    }
+    
     results = []
+    matched_categories = set()
     
-    # Emoji matches (by emoji character itself)
-    for item in EMOJI_SEARCH_INDEX:
-        if query_lower in item["emoji"]:
-            results.append(item)
+    # Strategy 1: Check category keyword matches (highest priority)
+    for category_id, keywords in category_keywords.items():
+        for keyword in keywords:
+            if query_lower == keyword or query_lower.startswith(keyword) or keyword.startswith(query_lower):
+                matched_categories.add(category_id)
+                break
     
-    # Category name matches
-    for item in EMOJI_SEARCH_INDEX:
-        if query_lower in item["category_name"].lower():
-            if item not in results:
+    # Strategy 2: Check category name substring matches (fallback)
+    if not matched_categories:
+        for item in EMOJI_SEARCH_INDEX:
+            category_name_lower = item["category_name"].lower()
+            if query_lower in category_name_lower or category_name_lower.startswith(query_lower):
+                matched_categories.add(item["category"])
+    
+    # Return all emojis from matching categories
+    if matched_categories:
+        for item in EMOJI_SEARCH_INDEX:
+            if item["category"] in matched_categories:
+                if item not in results:
+                    results.append(item)
+    
+    # Strategy 3: Fallback - direct emoji name matching if no categories matched
+    if not matched_categories:
+        seen_emojis = set()
+        for item in EMOJI_SEARCH_INDEX:
+            # Check if query matches emoji character or keywords
+            emoji_matches = False
+            
+            # Check if query matches the emoji character itself
+            if query_lower in item["emoji"]:
+                emoji_matches = True
+            
+            # Check if query matches any keywords
+            for keyword in item["keywords"]:
+                if (query_lower == keyword.lower() or 
+                    keyword.lower().startswith(query_lower) or 
+                    query_lower in keyword.lower()):
+                    emoji_matches = True
+                    break
+            
+            if emoji_matches and item["emoji"] not in seen_emojis:
                 results.append(item)
+                seen_emojis.add(item["emoji"])
     
     return results[:limit]
 
