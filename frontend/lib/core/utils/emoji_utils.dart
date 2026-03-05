@@ -665,7 +665,7 @@ class EmojiUtils {
     // Extended category keyword maps (including plural forms)
     final categoryMap = {
       'smile': 0, 'smiley': 0, 'happy': 0, 'face': 0, 'grin': 0,
-      'laugh': 0, 'lol': 0, 'funny': 0, 'joy': 0, 'cheerful': 0,
+      'laugh': 0, 'lol': 0, 'funny': 0, 'joy': 0, 'cheerful': 0, 'emotion': 0, 'emotions': 0,
       'animal': 1, 'animals': 1, 'nature': 1, 'dog': 1, 'cat': 1, 'pet': 1, 'wildlife': 1,
       'food': 2, 'foods': 2, 'drink': 2, 'drinks': 2, 'pizza': 2, 'eat': 2, 'burger': 2, 
       'hamburger': 2, 'meal': 2, 'meals': 2, 'beverage': 2, 'beverages': 2, 'cake': 2, 'dessert': 2, 'desserts': 2,
@@ -684,6 +684,19 @@ class EmojiUtils {
       if (searchTerm == entry.key || searchTerm == entry.key + 's') {
         return categories[entry.value].emojis;
       }
+    }
+    
+    // Strategy 1.5: Handle multi-keyword searches (e.g., "smileys & emotions")
+    final keywords = searchTerm.split(RegExp(r'[&\s]+'));
+    final matchedCategories = <int>{};
+    for (var keyword in keywords) {
+      if (keyword.isNotEmpty && categoryMap.containsKey(keyword)) {
+        matchedCategories.add(categoryMap[keyword]!);
+      }
+    }
+    if (matchedCategories.isNotEmpty) {
+      // Return emojis from the first matched category
+      return categories[matchedCategories.first].emojis;
     }
     
     // Strategy 2: Direct emoji keyword matching with scoring

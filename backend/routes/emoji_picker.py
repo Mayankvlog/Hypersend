@@ -697,35 +697,101 @@ async def search_emojis(
     limit: int = Query(100, ge=1, le=1000, description="Max results"),
     current_user: str = Depends(get_current_user)
 ):
-    """Search emojis by name or description (case-insensitive)"""
+    """Search emojis by category keywords including multi-keyword queries like 'smileys & emotions'"""
     try:
         query_lower = query.lower().strip()
         
+        # Category keyword mappings
+        category_keywords = {
+            "smile": "smileys_people", "smiley": "smileys_people", "happy": "smileys_people", 
+            "face": "smileys_people", "grin": "smileys_people", "laugh": "smileys_people", 
+            "lol": "smileys_people", "funny": "smileys_people", "joy": "smileys_people", 
+            "cheerful": "smileys_people", "emotion": "smileys_people", "emotions": "smileys_people",
+            "animal": "animals_nature", "animals": "animals_nature", "nature": "animals_nature",
+            "food": "food_drinks", "foods": "food_drinks", "drink": "food_drinks", "drinks": "food_drinks",
+            "sport": "activity", "sports": "activity", "activity": "activity", "activities": "activity",
+            "travel": "travel_places", "place": "travel_places", "places": "travel_places",
+            "object": "objects", "objects": "objects", "symbol": "symbols", "symbols": "symbols",
+            "flag": "flags", "flags": "flags",
+        }
+        
+        # Create reverse mapping (category_id → [keywords]) for efficient lookup
+        category_to_keywords = {}
+        for keyword, cat_id in category_keywords.items():
+            if cat_id not in category_to_keywords:
+                category_to_keywords[cat_id] = []
+            category_to_keywords[cat_id].append(keyword)
+        
         # Search emoji descriptions and names
         results = []
+        matched_category = None
         search_categories = []
         
         # Filter by category if provided
         if category:
             if category not in EMOJI_CATEGORIES:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid category: {category}"
-                )
+                # Try to normalize category ID
+                normalized_cat = category.replace(" & ", "_").replace("&", "_").lower().replace(" ", "_")
+                if normalized_cat not in EMOJI_CATEGORIES:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid category: {category}"
+                    )
+                category = normalized_cat
             search_categories = [category]
         else:
-            search_categories = list(EMOJI_CATEGORIES.keys())
+            # Check if query matches any category keyword(s)
+            query_words = query_lower.split()
+            for word in query_words:
+                # Remove punctuation
+                word_clean = word.strip('&,')
+                if word_clean in category_keywords:
+                    cat = category_keywords[word_clean]
+                    if cat not in search_categories:
+                        search_categories.append(cat)
+            
+            # If query matches category keywords, use those categories
+            if search_categories:
+                # Use the matched categories
+                pass
+            else:
+                # Search all categories
+                search_categories = list(EMOJI_CATEGORIES.keys())
         
         # Search across categories
         for cat_id in search_categories:
+            if cat_id not in EMOJI_CATEGORIES:
+                continue
             cat_data = EMOJI_CATEGORIES[cat_id]
-            cat_name = cat_data["name"].lower()
             
-            # Match category name or specific emojis
+            # Filter per-emoji using search_emojis helper
             for emoji in cat_data.get("emojis", []):
-                # For now, support searching by category name
-                # In production, maintain a searchable emoji database
-                if query_lower in cat_name:
+                # Check if this emoji matches the query using search_emojis logic
+                emoji_matches = False
+                
+                # Check if query matches the emoji character itself
+                if query_lower in emoji:
+                    emoji_matches = True
+                
+                # Check if query matches category keywords for this emoji's category
+                if not emoji_matches and cat_id in category_to_keywords:
+                    cat_keywords = category_to_keywords[cat_id]
+                    
+                    for keyword in cat_keywords:
+                        if (query_lower == keyword or 
+                            query_lower.startswith(keyword) or 
+                            keyword.startswith(query_lower)):
+                            emoji_matches = True
+                            break
+                
+                # Check if query matches category name
+                if not emoji_matches:
+                    category_name_lower = cat_data["name"].lower()
+                    if (query_lower in category_name_lower or 
+                        category_name_lower.startswith(query_lower)):
+                        emoji_matches = True
+                
+                if emoji_matches:
                     results.append({
                         "emoji": emoji,
                         "category": cat_id,
@@ -736,19 +802,6 @@ async def search_emojis(
             
             if len(results) >= limit:
                 break
-        
-        # If no results from name search, return first limit emojis
-        if not results:
-            for cat_id in search_categories:
-                cat_data = EMOJI_CATEGORIES[cat_id]
-                for emoji in cat_data.get("emojis", [])[:limit]:
-                    results.append({
-                        "emoji": emoji,
-                        "category": cat_id,
-                        "category_name": cat_data["name"]
-                    })
-                if len(results) >= limit:
-                    break
         
         return {
             "success": True,
