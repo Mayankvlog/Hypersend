@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:camera/camera.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
@@ -13,6 +16,8 @@ import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/camera_preview_screen.dart';
+import '../widgets/location_picker_screen.dart';
 import '../../core/utils/emoji_utils.dart';
 
 
@@ -39,6 +44,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // CRITICAL: Persistent WebSocket connection (initialized once)
   dynamic _wsConnection;
   bool _wsConnected = false;
+  
+  // Camera controller for capture functionality
+  CameraController? _cameraController;
 
   static const List<String> _quickReactions = ['\u{1F44D}', '\u{2764}', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F525}'];
 
@@ -56,6 +64,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       serviceProvider.apiService.closeChatConnection(widget.chatId);
       _wsConnection = null;
     }
+    // Dispose camera controller
+    _cameraController?.dispose();
     super.dispose();
   }
 
@@ -434,9 +444,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void _showEmojiPicker() {
     int selectedCategoryIndex = 0;
     final TextEditingController searchController = TextEditingController();
-    final List<String> _searchSuggestions = [
-      'smile', 'love', 'animal', 'food', 'sport', 'travel', 
-      'happy', 'sad', 'celebrate', 'fire', 'star', 'thumbsup'
+    final List<String> searchSuggestions = [
+      'smileys & emotions', 'animal', 'food', 'sport', 'travel',
+      'flags','activities' , 'objects' 
     ];
     
     showModalBottomSheet(
@@ -574,7 +584,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         Wrap(
                           spacing: 6,
                           runSpacing: 6,
-                          children: _searchSuggestions.map((suggestion) {
+                          children: searchSuggestions.map((suggestion) {
                             return GestureDetector(
                               onTap: () {
                                 searchController.text = suggestion;
@@ -884,15 +894,186 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _captureFromCamera() async {
     try {
-      // For now, we'll use file picker which supports camera capture on mobile
-      // In production, use image_picker or camera plugin for direct camera access
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Camera capture feature coming soon...')),
-      );
+      // Request camera permission
+      final status = await _requestCameraPermission();
+      if (!status) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Camera permission is required to take photos')),
+          );
+        }
+        return;
+      }
+
+      // Show camera options dialog
+      final cameraOption = await _showCameraOptions();
+      if (cameraOption == null) return;
+
+      // Initialize camera
+      await _initializeCamera(cameraOption);
+      
+      // Show camera preview and capture
+      final imageFile = await _showCameraPreview();
+      if (imageFile == null) return;
+
+      // Upload the captured image
+      await _uploadCameraImage(imageFile);
+      
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Camera failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<bool> _requestCameraPermission() async {
+    try {
+      // Import permission_handler
+      final status = await Permission.camera.request();
+      return status.isGranted;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<String?> _showCameraOptions() async {
+    return await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Camera Options'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Back Camera'),
+              onTap: () => Navigator.pop(context, 'back'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_front),
+              title: const Text('Front Camera'),
+              onTap: () => Navigator.pop(context, 'front'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _initializeCamera(String cameraOption) async {
+    try {
+      // Get available cameras
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        throw Exception('No cameras available');
+      }
+
+      // Select camera based on user preference
+      CameraDescription camera;
+      if (cameraOption == 'front') {
+        camera = cameras.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.front,
+          orElse: () => cameras.first,
+        );
+      } else {
+        camera = cameras.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.back,
+          orElse: () => cameras.first,
+        );
+      }
+
+      // Initialize controller
+      _cameraController = CameraController(
+        camera,
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
+
+      await _cameraController!.initialize();
+    } catch (e) {
+      throw Exception('Failed to initialize camera: $e');
+    }
+  }
+
+  Future<File?> _showCameraPreview() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return null;
+    }
+
+    return await Navigator.of(context).push<File>(
+      MaterialPageRoute(
+        builder: (context) => CameraPreviewScreen(
+          cameraController: _cameraController!,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _uploadCameraImage(File imageFile) async {
+    try {
+      if (!mounted) return;
+
+      // Show upload notification
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Uploading ${imageFile.path.split('/').last}...'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+
+      // Read image bytes
+      final bytes = await imageFile.readAsBytes();
+      final name = imageFile.path.split('/').last;
+      final size = bytes.length;
+      final mime = 'image/jpeg';
+
+      // Initialize upload with image endpoint
+      final init = await serviceProvider.apiService.initUpload(
+        filename: name,
+        size: size,
+        mime: mime,
+        chatId: widget.chatId,
+        endpoint: 'image',
+      );
+
+      final uploadId = init['uploadId'] ?? init['upload_id'];
+      if (uploadId == null) {
+        throw Exception('Failed to initialize upload');
+      }
+
+      // Upload the image data
+      await serviceProvider.apiService.uploadChunk(
+        uploadId: uploadId,
+        chunkIndex: 0,
+        bytes: bytes,
+      );
+
+      // Complete the upload
+      await serviceProvider.apiService.completeUpload(
+        uploadId: uploadId,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo uploaded successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Refresh messages to show the uploaded image
+      await _loadMessages();
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload photo: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1008,10 +1189,110 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _shareLocation() async {
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location sharing coming soon...')),
+      // Request location permission first
+      final status = await Permission.location.request();
+      if (status != PermissionStatus.granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission is required to share your location')),
+          );
+        }
+        return;
+      }
+
+      // Get current location as default
+      Position? currentPosition;
+      try {
+        currentPosition = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+      } catch (e) {
+        debugPrint('Could not get current location: $e');
+        // Continue without current location - user will pick manually
+      }
+
+      // Open location picker
+      final result = await Navigator.push<Map<String, dynamic>>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LocationPickerScreen(
+            initialLatitude: currentPosition?.latitude,
+            initialLongitude: currentPosition?.longitude,
+          ),
+        ),
       );
-      // TODO: Implement location picker and send to /attach/location/share endpoint
+
+      if (result != null && mounted) {
+        final latitude = result['latitude'] as double;
+        final longitude = result['longitude'] as double;
+        final address = result['address'] as String?;
+
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Sharing location...'),
+              ],
+            ),
+          ),
+        );
+
+        try {
+          // Send location to backend
+          await serviceProvider.apiService.shareLocation(
+            chatId: widget.chatId,
+            latitude: latitude,
+            longitude: longitude,
+            accuracy: currentPosition?.accuracy ?? 0,
+            address: address,
+          );
+
+          // Create optimistic location message
+          final locationMessage = Message(
+            id: 'tmp_loc_${DateTime.now().millisecondsSinceEpoch}',
+            chatId: widget.chatId,
+            senderId: 'me',
+            content: '📍 Location shared',
+            timestamp: DateTime.now(),
+            status: MessageStatus.sent,
+            isOwn: true,
+            location: MessageLocation(
+              latitude: latitude,
+              longitude: longitude,
+              accuracy: currentPosition?.accuracy ?? 0,
+              address: address,
+              sharedAt: DateTime.now(),
+            ),
+          );
+
+          setState(() => _messages.add(locationMessage));
+
+          if (mounted) {
+            Navigator.pop(context); // Close loading dialog
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(address != null ? 'Location shared: $address' : 'Location shared successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            Navigator.pop(context); // Close loading dialog
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to share location: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1095,7 +1376,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       _wsConnected = true;
     } catch (e) {
       // WebSocket connection failed - log error
-      print('[WEBSOCKET] Connection failed for chat ${widget.chatId}: $e');
+      debugPrint('[WEBSOCKET] Connection failed for chat ${widget.chatId}: $e');
     }
   }
   
@@ -1106,8 +1387,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (messageType == 'new_message') {
       // CRITICAL: Keep timestamp as UTC from backend
       // Frontend UI layer (Intl.DateTimeFormat) handles timezone display ONLY
-      final raw = data as Map<String, dynamic>;
-      final msg = Message.fromApi(raw, currentUserId: _meId);
+      final msg = Message.fromApi(data, currentUserId: _meId);
       
       if (mounted) {
         setState(() {
@@ -1140,7 +1420,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   
   /// Handle WebSocket errors
   void _handleWebSocketError(String error) {
-    print('[WEBSOCKET_ERROR] Connection error for chat ${widget.chatId}: $error');
+    debugPrint('[WEBSOCKET_ERROR] Connection error for chat ${widget.chatId}: $error');
     _wsConnected = false;
     // Do not attempt auto-reconnect - connection is persistent per chat
   }

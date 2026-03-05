@@ -48,7 +48,8 @@ def test_chunk_size_error_handling():
     # Check that the enhanced error message is implemented
     files_py_path = Path(__file__).parent.parent / "backend" / "routes" / "files.py"
     if files_py_path.exists():
-        content = files_py_path.read_text()
+        with open(files_py_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
         
         # Verify enhanced error handling
         assert "actual_size_mb" in content, "Error should include actual_size_mb"

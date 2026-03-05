@@ -49,7 +49,8 @@ def test_file_download_error_handling():
     # Verify the error handling structure exists
     files_py_path = Path(__file__).parent.parent / "backend" / "routes" / "files.py"
     if files_py_path.exists():
-        content = files_py_path.read_text()
+        with open(files_py_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
         
         # Check that AttributeError is handled
         assert "AttributeError" in content, "AttributeError handling should be present"

@@ -2251,6 +2251,31 @@ Future<void> postToChannel(String channelId, String text) async {
     }
   }
 
+  Future<Map<String, dynamic>> shareLocation({
+    required String chatId,
+    required double latitude,
+    required double longitude,
+    double accuracy = 0,
+    String? address,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '${ApiConstants.attachEndpoint}/location/share',
+        data: {
+          'chat_id': chatId,
+          'latitude': latitude,
+          'longitude': longitude,
+          'accuracy': accuracy,
+          if (address != null) 'address': address,
+        },
+      );
+      return response.data ?? {};
+    } catch (e) {
+      debugPrint('[API_SERVICE] Error sharing location: $e');
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> getNearbyUsers({
     required double latitude,
     required double longitude,
@@ -3029,7 +3054,6 @@ if (!kIsWeb) {
   /// CRITICAL: Persistent singleton WebSocket connection (initialized once)
   /// NO re-initialization on re-render or token refresh
   static final _wsConnections = <String, WebSocketConnection>{};
-  static const _wsReconnectDelay = Duration(seconds: 5);
   
   /// Get or create persistent WebSocket connection for chat
   WebSocketConnection getOrCreateChatConnection({
@@ -3226,8 +3250,22 @@ class WebSocketConnection {
       onDone: () {
         logger('[WEBSOCKET] Connection closed for $chatId');
         _isConnected = false;
-        // Do not auto-reconnect on connection loss
-        // Connection is persistent; user must manually reconnect if needed
+        
+        // Attempt reconnect with exponential backoff (same as error path)
+        if (_reconnectAttempts < _maxReconnectAttempts) {
+          _reconnectAttempts++;
+          final delay = Duration(seconds: 5 * _reconnectAttempts);
+          logger('[WEBSOCKET] Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts/$_maxReconnectAttempts)...');
+          
+          Future.delayed(delay, () {
+            if (!_isClosed) {
+              connect();
+            }
+          });
+        } else {
+          logger('[WEBSOCKET] Max reconnection attempts reached for $chatId');
+          _maxRetryExceeded = true;
+        }
       },
     );
   }

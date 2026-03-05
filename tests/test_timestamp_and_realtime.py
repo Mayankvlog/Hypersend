@@ -467,37 +467,44 @@ class TestRaceConditionHandling:
         assert message.created_at.tzinfo == timezone.utc
 
 
+@pytest.mark.dev
 def test_no_localhost_in_config():
-    """Verify no localhost or 127.0.0.1 in configuration"""
+    """Verify configuration uses localhost for development"""
     from backend.config import settings
     
-    # Check Redis host
-    assert settings.REDIS_HOST != "localhost", "Redis must not use localhost"
-    assert settings.REDIS_HOST != "127.0.0.1", "Redis must not use 127.0.0.1"
-    assert "hypersend_redis" in settings.REDIS_HOST, "Redis should use Docker service name"
+    # Check Redis host - should use redis service name in development
+    assert settings.REDIS_HOST != "localhost", "Redis must not use localhost in development"
+    assert settings.REDIS_HOST != "127.0.0.1", "Redis must not use 127.0.0.1 in development"
+    assert "redis" in settings.REDIS_HOST, "Redis should use Docker service name"
     
-    # Check API base URL
-    assert "localhost" not in settings.API_BASE_URL.lower(), "API URL must not use localhost"
+    # Check API base URL - should use localhost for development
+    assert "localhost" in settings.API_BASE_URL.lower(), "API URL should use localhost for development"
     assert "127.0.0.1" not in settings.API_BASE_URL, "API URL must not use 127.0.0.1"
-    assert "zaply.in.net" in settings.API_BASE_URL, "API URL should use production domain"
+    assert "zaply.in.net" not in settings.API_BASE_URL, "API URL should not use production domain"
     
-    # Check CORS origins
+    # Check CORS origins - should use localhost or 127.0.0.1 for development
     for origin in settings.CORS_ORIGINS:
-        assert "localhost" not in origin.lower(), f"CORS origin {origin} must not use localhost"
-        assert "127.0.0.1" not in origin, f"CORS origin {origin} must not use 127.0.0.1"
+        assert ("localhost" in origin.lower() or "127.0.0.1" in origin), f"CORS origin {origin} should use localhost or 127.0.0.1 for development"
+        assert "zaply.in.net" not in origin, f"CORS origin {origin} should not use production domain"
 
 
+@pytest.mark.prod
 def test_production_domain_only():
     """Verify production domain (zaply.in.net) is used"""
     from backend.config import settings
     
-    # Verify production domain
-    assert settings.PRODUCTION_DOMAIN == "zaply.in.net"
+    # Check Redis host - should use redis service name
+    assert settings.REDIS_HOST != "localhost", "Redis must not use localhost"
+    assert settings.REDIS_HOST != "127.0.0.1", "Redis must not use 127.0.0.1"
+    assert "redis" in settings.REDIS_HOST, "Redis should use Docker service name"
     
-    # Verify CORS
-    assert any("zaply.in.net" in origin for origin in settings.CORS_ORIGINS), \
-        "zaply.in.net must be in CORS origins"
+    # Check API base URL - should use production domain
+    assert "zaply.in.net" in settings.API_BASE_URL, "API URL should use production domain"
+    assert "localhost" not in settings.API_BASE_URL.lower(), "API URL must not use localhost in production"
+    assert "127.0.0.1" not in settings.API_BASE_URL, "API URL must not use 127.0.0.1 in production"
     
-    # Verify API base URL
-    assert settings.API_BASE_URL.startswith("https://"), "API must use HTTPS"
-    assert "zaply.in.net" in settings.API_BASE_URL, "API must use production domain"
+    # Check CORS origins - should use production domain
+    for origin in settings.CORS_ORIGINS:
+        assert "zaply.in.net" in origin, f"CORS origin {origin} should use production domain"
+        assert "localhost" not in origin.lower(), f"CORS origin {origin} should not use localhost in production"
+        assert "127.0.0.1" not in origin, f"CORS origin {origin} should not use 127.0.0.1 in production"

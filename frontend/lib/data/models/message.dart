@@ -2,6 +2,45 @@ import 'package:equatable/equatable.dart';
 
 enum MessageStatus { sending, sent, delivered, read }
 
+class MessageLocation extends Equatable {
+  final double latitude;
+  final double longitude;
+  final double accuracy;
+  final String? address;
+  final DateTime? sharedAt;
+
+  const MessageLocation({
+    required this.latitude,
+    required this.longitude,
+    this.accuracy = 0,
+    this.address,
+    this.sharedAt,
+  });
+
+  factory MessageLocation.fromApi(Map<String, dynamic> json) {
+    return MessageLocation(
+      latitude: (json['latitude'] ?? 0.0).toDouble(),
+      longitude: (json['longitude'] ?? 0.0).toDouble(),
+      accuracy: (json['accuracy'] ?? 0.0).toDouble(),
+      address: json['address']?.toString(),
+      sharedAt: json['shared_at'] != null ? DateTime.tryParse(json['shared_at']) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'latitude': latitude,
+      'longitude': longitude,
+      'accuracy': accuracy,
+      'address': address,
+      'shared_at': sharedAt?.toIso8601String(),
+    };
+  }
+
+  @override
+  List<Object?> get props => [latitude, longitude, accuracy, address, sharedAt];
+}
+
 class Message extends Equatable {
   final String id;
   final String chatId;
@@ -18,6 +57,7 @@ class Message extends Equatable {
   final Map<String, List<String>> reactions; // emoji -> userIds
   final List<String> readBy; // userIds
   final String? fileId;
+  final MessageLocation? location; // Location data for location messages
 
   const Message({
     required this.id,
@@ -35,6 +75,7 @@ class Message extends Equatable {
     this.reactions = const {},
     this.readBy = const [],
     this.fileId,
+    this.location,
   });
 
   factory Message.fromApi(Map<String, dynamic> json, {required String currentUserId}) {
@@ -72,6 +113,13 @@ class Message extends Equatable {
     final text = (json['text'] ?? '').toString().trim();
     final fileId = (json['file_id'] ?? json['fileId'])?.toString().trim();
 
+    // Parse location data if present
+    MessageLocation? location;
+    final locationData = json['location'];
+    if (locationData is Map<String, dynamic>) {
+      location = MessageLocation.fromApi(locationData);
+    }
+
     return Message(
       id: (json['_id'] ?? json['id'] ?? '').toString().trim(),
       chatId: (json['chat_id'] ?? json['chatId'] ?? '').toString().trim(),
@@ -88,6 +136,7 @@ class Message extends Equatable {
       reactions: reactions,
       readBy: readBy,
       fileId: fileId,
+      location: location,
     );
   }
 
@@ -132,6 +181,8 @@ class Message extends Equatable {
     DateTime? deletedAt,
     Map<String, List<String>>? reactions,
     List<String>? readBy,
+    String? fileId,
+    MessageLocation? location,
   }) {
     return Message(
       id: id ?? this.id,
@@ -149,8 +200,8 @@ class Message extends Equatable {
       reactions: reactions ?? this.reactions,
       // ignore: unnecessary_this (false positive - this.readBy is needed for null coalescing)
       readBy: readBy ?? this.readBy,
-      // ignore: unnecessary_this (false positive - this.fileId is needed for null coalescing)
       fileId: fileId ?? this.fileId,
+      location: location ?? this.location,
     );
   }
 
@@ -171,5 +222,6 @@ class Message extends Equatable {
         reactions,
         readBy,
         fileId,
+        location,
       ];
 }

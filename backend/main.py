@@ -2265,11 +2265,15 @@ app.include_router(chats.router, prefix="/api/v1/chats")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
 app.include_router(e2ee_messages.router, prefix="/api/v1")  # E2EE encrypted messages
-app.include_router(files.router, prefix="/api/v1/files")
+app.include_router(files.router, prefix="/api/v1/files")  # Standard file operations: /api/v1/files/*
+app.include_router(files.attach_router, prefix="/api/v1")  # Attachment operations: /api/v1/attach/*
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")  # E2EE Device Management
+
+# Log router registration for troubleshooting
+logger.info("[ROUTING] All routers registered. Files: /api/v1/files/*, Attachments: /api/v1/attach/photos-videos/init, /api/v1/attach/documents/init, etc.")
 
 
 # Add swagger.json endpoint for compatibility

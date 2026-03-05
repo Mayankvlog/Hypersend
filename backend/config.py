@@ -474,7 +474,7 @@ class Settings:
     # Remove duplicate assignments to avoid conflicts
 
     # CORS Configuration
-    # PRODUCTION: Only allow specific production domains
+    # DEVELOPMENT: Use localhost for local testing
     cors_origins_default = [
         "https://zaply.in.net",
         "https://www.zaply.in.net",

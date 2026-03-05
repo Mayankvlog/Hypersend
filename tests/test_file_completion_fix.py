@@ -19,7 +19,13 @@ def test_file_completion_error_handling():
     # Check that the _handle_file_error function call is removed
     files_py_path = Path(__file__).parent.parent / "backend" / "routes" / "files.py"
     if files_py_path.exists():
-        content = files_py_path.read_text()
+        try:
+            with open(files_py_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            # Fallback to reading with latin-1 encoding if UTF-8 fails
+            with open(files_py_path, 'r', encoding='latin-1') as f:
+                content = f.read()
         
         # Verify the problematic function call is removed
         assert "_handle_file_error(" not in content, "_handle_file_error function call should be removed"
@@ -40,7 +46,8 @@ def test_file_completion_function_structure():
     
     files_py_path = Path(__file__).parent.parent / "backend" / "routes" / "files.py"
     if files_py_path.exists():
-        content = files_py_path.read_text()
+        with open(files_py_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
         
         # Verify function exists and has proper structure
         assert "async def complete_upload(" in content, "complete_upload function should exist"
@@ -60,7 +67,8 @@ def test_error_logging_consistency():
     
     files_py_path = Path(__file__).parent.parent / "backend" / "routes" / "files.py"
     if files_py_path.exists():
-        content = files_py_path.read_text()
+        with open(files_py_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
         
         # Verify consistent error logging pattern
         assert '_log("error"' in content, "Should have error logging"

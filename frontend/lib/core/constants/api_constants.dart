@@ -92,6 +92,7 @@ class ApiConstants {
   static const String messagesEndpoint = 'messages';
   static const String usersEndpoint = 'users';
   static const String filesEndpoint = 'files';
+  static const String attachEndpoint = 'attach';
   
   // Timeouts
   static const Duration connectTimeout = Duration(seconds: 30);

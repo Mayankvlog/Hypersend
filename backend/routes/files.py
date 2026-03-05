@@ -48,6 +48,9 @@ from fastapi.responses import (
     RedirectResponse,
 )
 from fastapi.encoders import jsonable_encoder
+
+# Import collections and logging
+logger = logging.getLogger(__name__)
 from typing import Optional, List, Dict, Any, Tuple
 import inspect
 
@@ -957,6 +960,7 @@ def detect_binary_content(content: bytes) -> dict:
 
 
 router = APIRouter(prefix="", tags=["Files"])
+attach_router = APIRouter(prefix="/attach", tags=["Attachments"])
 
 
 def get_secure_cors_origin(request_origin: Optional[str]) -> str:
@@ -3301,7 +3305,7 @@ async def get_upload_progress(
 
 
 # WHATSAPP-STYLE ATTACHMENT ENDPOINTS
-@router.post("/attach/photos-videos/init")
+@attach_router.post("/photos-videos/init")
 async def init_photo_video_upload(
     request: Request,
     current_user: Optional[str] = Depends(get_current_user_for_upload)
@@ -3314,7 +3318,7 @@ async def init_photo_video_upload(
     return await initialize_upload(request=request, current_user=current_user)
 
 
-@router.post("/attach/documents/init")  
+@attach_router.post("/documents/init")
 async def init_document_upload(
     request: Request,
     current_user: Optional[str] = Depends(get_current_user_for_upload)
@@ -3326,7 +3330,7 @@ async def init_document_upload(
     return await initialize_upload(request=request, current_user=current_user)
 
 
-@router.post("/attach/camera/capture")
+@attach_router.post("/camera/capture")
 async def capture_camera_image(
     request: Request,
     current_user: str = Depends(get_current_user),
@@ -3340,7 +3344,7 @@ async def capture_camera_image(
     return await initialize_upload(request=request, current_user=current_user)
 
 
-@router.post("/attach/audio/init")
+@attach_router.post("/audio/init")
 async def init_audio_upload(
     request: Request,
     current_user: Optional[str] = Depends(get_current_user_for_upload)
@@ -3352,7 +3356,7 @@ async def init_audio_upload(
     return await initialize_upload(request=request, current_user=current_user)
 
 
-@router.post("/attach/files/init")
+@attach_router.post("/files/init")
 async def init_file_upload(
     request: Request,
     current_user: Optional[str] = Depends(get_current_user_for_upload)
@@ -3364,12 +3368,12 @@ async def init_file_upload(
     return await initialize_upload(request=request, current_user=current_user)
 
 
-@router.post("/attach/location/share")
+@attach_router.post("/location/share")
 async def share_location(
     request: Request,
     current_user: str = Depends(get_current_user),
 ):
-    """Share location - creates synthetic message without file upload"""
+    """Share location - creates location message in chat"""
     from datetime import datetime as dt
     
     body = await request.json()
@@ -3377,6 +3381,7 @@ async def share_location(
     latitude = body.get("latitude")
     longitude = body.get("longitude")
     accuracy = body.get("accuracy", 0)
+    address = body.get("address")
     
     if not all([chat_id, latitude, longitude]):
         raise HTTPException(
@@ -3384,18 +3389,110 @@ async def share_location(
             detail="Missing required fields: chat_id, latitude, longitude"
         )
     
-    # Create location message metadata
+    # Verify user is member of chat
+    from db_proxy import chats_collection
+    from ..routes.chats import _parse_object_id
+    from bson import ObjectId
+    
+    chat_oid = _parse_object_id(chat_id, "chat_id")
+    chat = await chats_collection().find_one({"_id": chat_oid, "members": {"$in": [current_user]}})
+    chat_key = chat_oid
+    if not chat:
+        # Backward compatibility: older data stored chats._id as a string.
+        chat = await chats_collection().find_one({"_id": chat_id, "members": {"$in": [current_user]}})
+        chat_key = chat_id
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat not found"
+        )
+    
+    if not ObjectId.is_valid(current_user):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
+
+    # Create location message document
+    now = datetime.now(timezone.utc)
     location_data = {
         "type": "location",
         "latitude": latitude,
         "longitude": longitude, 
         "accuracy": accuracy,
-        "shared_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+        "address": address,
+        "shared_at": now.isoformat(),
     }
+    
+    msg_doc = {
+        # Support legacy string chat ids as well.
+        "chat_id": chat_key,
+        "sender_id": ObjectId(current_user),
+        "content": "📍 Location shared",
+        "type": "location",
+        "created_at": now,
+        # Backward compatibility fields
+        "text": "📍 Location shared",
+        "location": location_data,
+        "language": None,
+        "reply_to_message_id": None,
+        "scheduled_at": None,
+        "reactions": {},
+        "read_by": [{"user_id": ObjectId(current_user), "read_at": now}],
+        "is_pinned": False,
+        "is_edited": False,
+        "edit_history": [],
+        "is_deleted": False,
+    }
+    
+    # If this is a saved chat, automatically mark as saved by user
+    if chat.get("type") == "saved":
+        msg_doc["saved_by"] = [ObjectId(current_user)]
+        logger.info(f"Location message sent to saved chat, marking as saved for user: {current_user}")
+    
+    # Insert message into database
+    from ..routes.chats import messages_collection
+    result = await messages_collection().insert_one(msg_doc)
+    inserted_id = result.inserted_id
+    logger.info(f"Location message inserted with ID: {inserted_id}")
+
+    # Update chat last_message and updated_at
+    await chats_collection().update_one(
+        {"_id": chat_key},
+        {
+            "$set": {
+                "last_message": {
+                    "message_id": inserted_id,
+                    "sender_id": ObjectId(current_user),
+                    "type": "location",
+                    "content": "📍 Location shared",
+                    "created_at": now,
+                },
+                "updated_at": now,
+            }
+        },
+    )
+    
+    # Publish to Redis for real-time delivery
+    try:
+        from ..redis_cache import cache
+        if cache and cache.is_connected:
+            redis_payload = {
+                "type": "new_message",
+                "message_id": str(inserted_id),
+                "chat_id": str(chat_key),
+                "sender_id": current_user,
+                "content": "📍 Location shared",
+                "location": location_data,
+                "message_type": "location",
+                "created_at": now.isoformat(),
+            }
+            await cache.publish(f"chat:{chat_key}", redis_payload)
+            logger.info(f"Location message published to Redis for chat: {chat_key}")
+    except Exception as e:
+        logger.warning(f"Failed to publish location message to Redis: {e}")
     
     return {
         "status": "success",
         "type": "location",
+        "message_id": str(inserted_id),
         "data": location_data,
         "message": "Location shared successfully"
     }

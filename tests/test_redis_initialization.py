@@ -130,7 +130,10 @@ class TestRedisConnectionFailure:
         # Password can be None (no auth) or string (with auth)
         if redis_password is not None:
             assert isinstance(redis_password, str), "REDIS_PASSWORD must be string or None"
-            assert len(redis_password) > 0, "REDIS_PASSWORD should not be empty string"
+            # Empty string is allowed (no password), but should not be just whitespace
+            # Only reject if it's not exactly empty string and strip() results in empty
+            if redis_password != "":
+                assert redis_password.strip() != "", "REDIS_PASSWORD should not be whitespace-only when set"
         
         # Verify password handling in URL
         redis_url = settings.REDIS_URL

@@ -13,8 +13,13 @@ def test_datetime_fix():
     try:
         # Read files.py - fix the path
         files_py_path = os.path.join(os.path.dirname(__file__), '..', 'backend', 'routes', 'files.py')
-        with open(files_py_path, 'r') as f:
-            content = f.read()
+        try:
+            with open(files_py_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            # Fallback to reading with latin-1 encoding if UTF-8 fails
+            with open(files_py_path, 'r', encoding='latin-1') as f:
+                content = f.read()
         
         # Check for the fix
         fix_indicators = [

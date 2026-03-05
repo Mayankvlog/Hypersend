@@ -17,7 +17,11 @@ def test_file_download_fix():
     
     # Read the files.py to check if fix is applied
     try:
-        with open(os.path.join(os.path.dirname(__file__), '..', 'backend', 'routes', 'files.py'), 'r') as f:
+        with open(os.path.join(os.path.dirname(__file__), '..', 'backend', 'routes', 'files.py'), 'r', encoding='utf-8') as f:
+            content = f.read()
+    except UnicodeDecodeError:
+        # Fallback to reading with latin-1 encoding if UTF-8 fails
+        with open(os.path.join(os.path.dirname(__file__), '..', 'backend', 'routes', 'files.py'), 'r', encoding='latin-1') as f:
             content = f.read()
         
         # Check for the old problematic pattern

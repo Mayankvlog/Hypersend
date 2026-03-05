@@ -519,7 +519,7 @@ class EmojiUtils {
           score += 5;
         }
         // Partial match at word start = 3 points (only for non-empty keywords)
-        else if (keyword.isNotEmpty && keyword.length > 0 && searchTerm.startsWith(keyword.substring(0, min(3, keyword.length)))) {
+        else if (keyword.isNotEmpty && searchTerm.startsWith(keyword.substring(0, min(3, keyword.length)))) {
           score += 3;
         }
       }
