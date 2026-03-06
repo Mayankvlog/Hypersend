@@ -9,10 +9,6 @@ ARG API_BASE_URL=https://zaply.in.net/api/v1
 # Production default: true (enforce valid SSL certificates)
 # Development: set to false to allow self-signed certs
 ARG VALIDATE_CERTIFICATES=true
-
-# SECURITY: Add GOOGLE_MAPS_API_KEY build arg for secure API key injection
-# Must be provided during build: --build-arg GOOGLE_MAPS_API_KEY=your_actual_key
-ARG GOOGLE_MAPS_API_KEY
 # dist-upgrade ensures all security patches including critical/high severity CVEs are applied
 # This ensures all CVEs in the base image layers are remediated before Flutter installation
 RUN apt-get update && \
@@ -37,26 +33,8 @@ RUN rm -rf .pub-cache && flutter pub get
 
 COPY . .
 
-# ✅ CRITICAL FIX: Clean + Build with PROPER dart-define and API key injection
+# ✅ CRITICAL FIX: Clean + Build with PROPER dart-define
 RUN rm -rf build/ && flutter clean
-
-# SECURITY: Validate Google Maps API key is provided
-RUN if [ -z "$GOOGLE_MAPS_API_KEY" ]; then \
-        echo "❌ ERROR: GOOGLE_MAPS_API_KEY build argument is required"; \
-        echo "   Provide it with: --build-arg GOOGLE_MAPS_API_KEY=your_actual_key"; \
-        exit 1; \
-    else \
-        echo "✅ Google Maps API key provided"; \
-    fi
-
-# SECURITY: Inject Google Maps API key into index.html (replace placeholder)
-RUN sed -i "s|GOOGLE_MAPS_API_KEY|$GOOGLE_MAPS_API_KEY|g" web/index.html && \
-    if grep -q "GOOGLE_MAPS_API_KEY" web/index.html; then \
-        echo "❌ ERROR: Failed to replace Google Maps API key placeholder"; \
-        exit 1; \
-    else \
-        echo "✅ Google Maps API key injected successfully"; \
-    fi
 
 # CRITICAL FIX: Build without source maps for production (reduces bundle size and 404 errors)
 # Source maps are only needed for development debugging
