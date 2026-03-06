@@ -1,12 +1,12 @@
 {
-    "name": "Zaply - Fast. Secure. Chat.",
-    "short_name": "Zaply",
+    "name": "zaply - Fast. Secure. Chat.",
+    "short_name": "zaply",
     "start_url": "/",
     "scope": "/",
     "display": "standalone",
     "background_color": "#1a2332",
     "theme_color": "#00b4ff",
-    "description": "Zaply - Secure P2P Chat and File Transfer Application",
+    "description": "zaply - Secure P2P Chat and File Transfer Application",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
