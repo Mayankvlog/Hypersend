@@ -200,7 +200,6 @@ class UserInDB(BaseModel):
     status: Optional[str] = None  # User custom status
     permissions: dict = Field(
         default_factory=lambda: {
-            "location": False,
             "camera": False,
             "microphone": False,
             "storage": False,
@@ -208,9 +207,6 @@ class UserInDB(BaseModel):
     )
     pinned_chats: List[str] = Field(default_factory=list)
     blocked_users: List[str] = Field(default_factory=list)  # List of blocked user IDs
-    location: Optional[
-        dict
-    ] = None  # {'lat': float, 'lng': float, 'updated_at': datetime}
 
 
 class UserResponse(BaseModel):

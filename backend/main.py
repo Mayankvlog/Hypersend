@@ -1235,7 +1235,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 "X-XSS-Protection": "1; mode=block",
                 "Referrer-Policy": "strict-origin-when-cross-origin",
                 "X-Permitted-Cross-Domain-Policies": "none",
-                "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+                "Permissions-Policy": "microphone=(), camera=()",
             }
 
             # Add security headers to response
