@@ -525,7 +525,7 @@ async def get_attachment_options(
     chat_id: str = Query(...),
     current_user: Optional[str] = Depends(get_current_user)
 ):
-    """Get WhatsApp-style 6 attachment options for chat.
+    """Get WhatsApp-style 5 attachment options for chat.
     
     Returns available attachment types:
     1. Camera

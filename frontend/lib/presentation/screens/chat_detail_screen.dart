@@ -816,10 +816,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               const SizedBox(height: 24),
               
-              // Second row: Audio, Files
+              // Second row: Audio, Files (Location intentionally excluded)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  const SizedBox(width: 40), // Spacer for alignment
                   _buildAttachmentButton(
                     icon: Icons.mic,
                     label: 'Audio',
@@ -838,6 +839,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       _uploadFromMediaPicker('file');
                     },
                   ),
+                  const SizedBox(width: 40), // Spacer for alignment
                 ],
               ),
               const SizedBox(height: 12),

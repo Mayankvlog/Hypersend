@@ -1,6 +1,6 @@
 """
 WhatsApp-Style Attachment Menu API
-Provides 6 attachment categories matching WhatsApp UX
+Provides 5 attachment categories
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends
@@ -12,7 +12,7 @@ from backend.auth.utils import get_current_user
 router = APIRouter(prefix="/attachments", tags=["attachments"])
 
 
-# 6 WhatsApp-style attachment categories
+# 5 WhatsApp-style attachment categories (Location removed)
 ATTACHMENT_CATEGORIES: Dict[str, Dict] = {
     "photos_videos": {
         "id": "photos_videos",

@@ -235,17 +235,16 @@ class TestAttachmentOptions:
     """Test that all 6 attachment options are available"""
     
     def test_attachment_types_available(self):
-        """Test all 6 WhatsApp-style attachment types are present"""
+        """Test all 5 WhatsApp-style attachment types are present"""
         attachment_types = [
             'Camera',
             'Photos & Videos',
             'Documents',
             'Audio',
-            'Files',
-            'Location'
+            'Files'
         ]
         
-        assert len(attachment_types) == 6
+        assert len(attachment_types) == 5
         for attachment in attachment_types:
             assert len(attachment) > 0
     
