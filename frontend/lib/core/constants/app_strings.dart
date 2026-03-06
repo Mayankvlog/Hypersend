@@ -43,8 +43,6 @@ class AppStrings {
   static const String enableAccess = 'Enable Access';
   static const String permissionsDescription =
       'To provide the best messaging experience, zaply needs access to a few things. You can update these later in Settings.';
-  static const String locationPermission = 'Location';
-  static const String locationDescription = 'To share your live location';
   static const String cameraPermission = 'Camera';
   static const String cameraDescription = 'To take photos and videos';
   static const String microphonePermission = 'Microphone';

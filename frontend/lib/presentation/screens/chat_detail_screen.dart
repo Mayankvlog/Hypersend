@@ -8,7 +8,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
@@ -17,7 +16,6 @@ import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/camera_preview_screen.dart';
-import '../widgets/location_picker_screen.dart';
 import '../../core/utils/time_formatter.dart';
 import '../../core/utils/emoji_utils.dart';
 
@@ -818,7 +816,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               const SizedBox(height: 24),
               
-              // Second row: Audio, Files, Location
+              // Second row: Audio, Files
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -838,15 +836,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     onTap: () {
                       Navigator.pop(context);
                       _uploadFromMediaPicker('file');
-                    },
-                  ),
-                  _buildAttachmentButton(
-                    icon: Icons.location_on,
-                    label: 'Location',
-                    color: Colors.teal,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _shareLocation();
                     },
                   ),
                 ],
@@ -1192,120 +1181,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  Future<void> _shareLocation() async {
-    try {
-      // Request location permission first
-      final status = await Permission.location.request();
-      if (status != PermissionStatus.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location permission is required to share your location')),
-          );
-        }
-        return;
-      }
-
-      // Get current location as default
-      Position? currentPosition;
-      try {
-        currentPosition = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-      } catch (e) {
-        debugPrint('Could not get current location: $e');
-        // Continue without current location - user will pick manually
-      }
-
-      // Open location picker
-      final result = await Navigator.push<Map<String, dynamic>>(
-        context,
-        MaterialPageRoute(
-          builder: (context) => LocationPickerScreen(
-            initialLatitude: currentPosition?.latitude,
-            initialLongitude: currentPosition?.longitude,
-          ),
-        ),
-      );
-
-      if (result != null && mounted) {
-        final latitude = result['latitude'] as double;
-        final longitude = result['longitude'] as double;
-        final address = result['address'] as String?;
-
-        // Show loading indicator
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const AlertDialog(
-            content: Row(
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(width: 16),
-                Text('Sharing location...'),
-              ],
-            ),
-          ),
-        );
-
-        try {
-          // Send location to backend
-          await serviceProvider.apiService.shareLocation(
-            chatId: widget.chatId,
-            latitude: latitude,
-            longitude: longitude,
-            accuracy: currentPosition?.accuracy ?? 0,
-            address: address,
-          );
-
-          // Create optimistic location message
-          final locationMessage = Message(
-            id: 'tmp_loc_${DateTime.now().millisecondsSinceEpoch}',
-            chatId: widget.chatId,
-            senderId: 'me',
-            content: '📍 Location shared',
-            timestamp: DateTime.now(),
-            status: MessageStatus.sent,
-            isOwn: true,
-            location: MessageLocation(
-              latitude: latitude,
-              longitude: longitude,
-              accuracy: currentPosition?.accuracy ?? 0,
-              address: address,
-              sharedAt: DateTime.now(),
-            ),
-          );
-
-          setState(() => _messages.add(locationMessage));
-
-          if (mounted) {
-            Navigator.pop(context); // Close loading dialog
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(address != null ? 'Location shared: $address' : 'Location shared successfully'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        } catch (e) {
-          if (mounted) {
-            Navigator.pop(context); // Close loading dialog
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Failed to share location: $e'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Location sharing failed: $e')),
-        );
-      }
-    }
-  }
 
   void _sendMessage() {
     if (_messageController.text.trim().isEmpty) return;

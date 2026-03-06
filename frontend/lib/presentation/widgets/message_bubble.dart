@@ -24,30 +24,6 @@ class MessageBubble extends StatelessWidget {
     this.onFileTap,
   });
 
-  Future<void> _openLocationInMaps(BuildContext context, MessageLocation location) async {
-    final url = 'https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}';
-    final uri = Uri.parse(url);
-    
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open maps application')),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Error opening maps: $e'); // Log full error for developers
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open maps')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -161,86 +137,6 @@ class MessageBubble extends StatelessWidget {
                                   decoration: TextDecoration.underline,
                                 ),
                                 overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (message.location != null) ...[
-                    GestureDetector(
-                      onTap: () => _openLocationInMaps(context, message.location!),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: message.isOwn 
-                                ? Colors.white.withValues(alpha: 0.3)
-                                : Colors.cyan.withValues(alpha: 0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on,
-                                  color: message.isOwn 
-                                      ? Colors.white
-                                      : Colors.cyan,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    '📍 Location',
-                                    style: TextStyle(
-                                      color: message.isOwn 
-                                          ? Colors.white
-                                          : Colors.cyan,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                Icon(
-                                  Icons.open_in_new,
-                                  color: message.isOwn 
-                                      ? Colors.white.withValues(alpha: 0.7)
-                                      : Colors.cyan.withValues(alpha: 0.7),
-                                  size: 16,
-                                ),
-                              ],
-                            ),
-                            if (message.location!.address != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                message.location!.address!,
-                                style: TextStyle(
-                                  color: message.isOwn 
-                                      ? Colors.white.withValues(alpha: 0.9)
-                                      : AppTheme.textPrimary,
-                                  fontSize: 13,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                            const SizedBox(height: 8),
-                            Text(
-                              'Lat: ${message.location!.latitude.toStringAsFixed(6)}, Lng: ${message.location!.longitude.toStringAsFixed(6)}',
-                              style: TextStyle(
-                                color: message.isOwn 
-                                    ? Colors.white.withValues(alpha: 0.6)
-                                    : AppTheme.textSecondary,
-                                fontSize: 11,
-                                fontFamily: 'monospace',
                               ),
                             ),
                           ],

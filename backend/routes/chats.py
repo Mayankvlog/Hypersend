@@ -533,7 +533,6 @@ async def get_attachment_options(
     3. Documents
     4. Audio
     5. Files
-    6. Location
     """
     # Validate chat_id format
     chat_oid = _parse_object_id(chat_id, "chat_id")
@@ -589,13 +588,6 @@ async def get_attachment_options(
             "action": "select_file",
             "file_types": ["*"],  # All files
             "description": "Select any file"
-        },
-        {
-            "id": "location",
-            "label": "Location",
-            "icon": "📍",
-            "action": "share_location",
-            "description": "Share your location"
         }
     ]
     

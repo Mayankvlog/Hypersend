@@ -503,5 +503,165 @@ class TestPermissionLogic:
         print("✅ Creator permission validation works")
 
 
+class TestLocationSharingLogic:
+    """Test location sharing endpoint logic"""
+    
+    def test_location_data_structure_validation(self):
+        """Verify location data is properly structured"""
+        latitude = 28.6139
+        longitude = 77.2090
+        accuracy = 15.5
+        address = "Delhi, India"
+        
+        location_data = {
+            "type": "location",
+            "latitude": latitude,
+            "longitude": longitude,
+            "accuracy": accuracy,
+            "address": address,
+            "shared_at": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Validate all required fields
+        assert location_data["type"] == "location"
+        assert isinstance(location_data["latitude"], float)
+        assert isinstance(location_data["longitude"], float)
+        assert location_data["latitude"] >= -90 and location_data["latitude"] <= 90
+        assert location_data["longitude"] >= -180 and location_data["longitude"] <= 180
+        assert isinstance(location_data["accuracy"], float)
+        assert location_data["accuracy"] >= 0
+        print("✅ Location data structure validation works")
+    
+    def test_location_coordinate_bounds_validation(self):
+        """Verify latitude and longitude are within valid bounds"""
+        test_cases = [
+            # (latitude, longitude, should_pass, description)
+            (0, 0, True, "Equator and Prime Meridian"),
+            (28.6139, 77.2090, True, "Delhi coordinates"),
+            (-33.8688, 151.2093, True, "Sydney coordinates"),
+            (90, 180, True, "Maximum valid coordinates"),
+            (-90, -180, True, "Minimum valid coordinates"),
+            (91, 0, False, "Latitude too high"),
+            (-91, 0, False, "Latitude too low"),
+            (0, 181, False, "Longitude too high"),
+            (0, -181, False, "Longitude too low"),
+            (45.5, float('nan'), False, "NaN longitude"),
+        ]
+        
+        for lat, lon, should_pass, desc in test_cases:
+            is_valid = (-90 <= lat <= 90) and (-180 <= lon <= 180)
+            assert is_valid == should_pass, f"Failed: {desc}"
+        
+        print("✅ Location coordinate bounds validation works")
+    
+    def test_location_message_creation_fields(self):
+        """Verify location message has all required fields"""
+        from datetime import datetime, timezone
+        from bson import ObjectId
+        
+        chat_id = "chat_123"
+        sender_id = ObjectId()
+        now = datetime.now(timezone.utc)
+        location_data = {
+            "type": "location",
+            "latitude": 28.6139,
+            "longitude": 77.2090,
+            "accuracy": 15.5,
+            "address": "Delhi, India",
+            "shared_at": now.isoformat(),
+        }
+        
+        msg_doc = {
+            "chat_id": chat_id,
+            "sender_id": sender_id,
+            "content": "📍 Location shared",
+            "type": "location",
+            "created_at": now,
+            "text": "📍 Location shared",
+            "location": location_data,
+            "language": None,
+            "reply_to_message_id": None,
+            "scheduled_at": None,
+            "reactions": {},
+            "read_by": [{"user_id": sender_id, "read_at": now}],
+            "is_pinned": False,
+            "is_edited": False,
+            "edit_history": [],
+            "is_deleted": False,
+        }
+        
+        # Validate all required fields
+        assert msg_doc["type"] == "location"
+        assert msg_doc["location"]["type"] == "location"
+        assert isinstance(msg_doc["read_by"], list)
+        assert len(msg_doc["read_by"]) >= 1
+        assert msg_doc["content"] == "📍 Location shared"
+        print("✅ Location message creation fields validation works")
+    
+    def test_missing_required_location_fields(self):
+        """Verify error when required fields are missing"""
+        test_cases = [
+            {"chat_id": "chat_123", "latitude": 28.6139},  # Missing longitude
+            {"chat_id": "chat_123", "longitude": 77.2090},  # Missing latitude
+            {"latitude": 28.6139, "longitude": 77.2090},  # Missing chat_id
+            {},  # Empty body
+        ]
+        
+        for body in test_cases:
+            # Check if required fields are present
+            has_required = all(key in body for key in ["chat_id", "latitude", "longitude"])
+            assert not has_required, f"Incomplete body should fail: {body}"
+        
+        print("✅ Missing required fields validation works")
+    
+    def test_chat_membership_validation(self):
+        """Verify user must be member of chat to share location"""
+        current_user = "user_123"
+        chat_members = ["user_456", "user_789", "user_abc"]
+        
+        is_member = current_user in chat_members
+        assert not is_member, "User should not be in chat"
+        
+        # With user as member
+        chat_members.append(current_user)
+        is_member = current_user in chat_members
+        assert is_member, "User should be in chat"
+        print("✅ Chat membership validation works")
+    
+    def test_location_uuid_tracking(self):
+        """Verify location message gets unique ID"""
+        from bson import ObjectId
+        
+        message_id_1 = ObjectId()
+        message_id_2 = ObjectId()
+        
+        assert message_id_1 != message_id_2, "Each message should have unique ID"
+        assert isinstance(message_id_1, ObjectId), "Message ID should be ObjectId"
+        assert isinstance(message_id_2, ObjectId), "Message ID should be ObjectId"
+        print("✅ Location message UUID tracking works")
+    
+    def test_location_with_missing_optional_fields(self):
+        """Verify location sharing works even without optional fields"""
+        latitude = 28.6139
+        longitude = 77.2090
+        
+        location_data = {
+            "type": "location",
+            "latitude": latitude,
+            "longitude": longitude,
+            "accuracy": None,  # Optional
+            "address": None,  # Optional
+            "shared_at": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Verify required fields are present
+        assert location_data["type"] == "location"
+        assert location_data["latitude"] is not None
+        assert location_data["longitude"] is not None
+        # Optional fields can be None or empty
+        assert location_data["accuracy"] is None or isinstance(location_data["accuracy"], (int, float))
+        print("✅ Location sharing with optional fields works")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

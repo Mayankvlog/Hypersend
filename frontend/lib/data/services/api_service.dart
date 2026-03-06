@@ -2340,52 +2340,6 @@ Future<void> postToChannel(String channelId, String text) async {
     }
   }
 
-  Future<Map<String, dynamic>> shareLocation({
-    required String chatId,
-    required double latitude,
-    required double longitude,
-    double accuracy = 0,
-    String? address,
-  }) async {
-    try {
-      final response = await _dio.post(
-        '${ApiConstants.attachEndpoint}/location/share',
-        data: {
-          'chat_id': chatId,
-          'latitude': latitude,
-          'longitude': longitude,
-          'accuracy': accuracy,
-          if (address != null) 'address': address,
-        },
-      );
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error sharing location: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> getNearbyUsers({
-    required double latitude,
-    required double longitude,
-    double radiusMeters = 1000,
-  }) async {
-    try {
-      final response = await _dio.get(
-        '${ApiConstants.usersEndpoint}/nearby',
-        queryParameters: {
-          'lat': latitude,
-          'lng': longitude,
-          'radius': radiusMeters,
-        },
-      );
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error fetching nearby users: $e');
-      rethrow;
-    }
-  }
-
   // ============ LOCAL FILE STORAGE FUNCTIONS ============
   
   // Maximum file size: 40GB

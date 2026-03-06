@@ -466,7 +466,6 @@ async def register(user: UserCreate) -> UserResponse:
             "is_online": False,
             "status": None,
             "permissions": {
-                "location": False,
                 "camera": False,
                 "microphone": False,
                 "storage": False
@@ -1103,13 +1102,38 @@ async def refresh_session_token(request: RefreshTokenRequest) -> Token:
         # SECURITY FIX: Enforce absolute max lifetime for refresh tokens
         # Don't allow indefinite session extension - enforce max_lifetime from creation
         REFRESH_TOKEN_MAX_LIFETIME_DAYS = 30  # Absolute maximum token lifetime
-        token_created_at = refresh_doc.get("created_at", datetime.now(timezone.utc))
+        
+        # Check if created_at exists - if not, reject the refresh (don't default to now)
+        if "created_at" not in refresh_doc:
+            auth_log(f"SECURITY WARNING: Refresh token missing created_at field - rejecting refresh for user: {token_data.user_id}, token_jti: {token_data.jti}")
+            # Invalidate the token with missing created_at
+            await refresh_tokens_collection().update_one(
+                {"_id": refresh_doc["_id"]},
+                {"$set": {"invalidated": True}}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token is invalid - missing creation timestamp"
+            )
+        
+        # Normalize created_at to aware UTC datetime
+        token_created_at = refresh_doc["created_at"]
+        if token_created_at.tzinfo is None:
+            # Naive datetime - assume UTC and make it aware
+            token_created_at = token_created_at.replace(tzinfo=timezone.utc)
+            auth_log(f"SECURITY INFO: Normalized naive created_at to UTC for user: {token_data.user_id}, token_jti: {token_data.jti}, original: {refresh_doc['created_at']}, normalized: {token_created_at}")
+        elif token_created_at.tzinfo is not None and token_created_at.utcoffset() != timedelta(0):
+            # Convert to UTC if it's in a different timezone
+            token_created_at = token_created_at.astimezone(timezone.utc)
+            auth_log(f"SECURITY INFO: Converted created_at to UTC for user: {token_data.user_id}, token_jti: {token_data.jti}, original: {refresh_doc['created_at']}, converted: {token_created_at}")
+        
         token_max_expiry = token_created_at + timedelta(days=REFRESH_TOKEN_MAX_LIFETIME_DAYS)
         current_time = datetime.now(timezone.utc)
         
         # If token has exceeded absolute max lifetime, reject refresh
         if current_time >= token_max_expiry:
-            auth_log(f"Token refresh rejected - absolute max lifetime exceeded for user: {token_data.user_id}")
+            token_age_days = (current_time - token_created_at).days
+            auth_log(f"Token refresh rejected - absolute max lifetime exceeded for user: {token_data.user_id}, token_age: {token_age_days} days, max_lifetime: {REFRESH_TOKEN_MAX_LIFETIME_DAYS} days, token_jti: {token_data.jti}")
             # Invalidate the expired token
             await refresh_tokens_collection().update_one(
                 {"_id": refresh_doc["_id"]},
