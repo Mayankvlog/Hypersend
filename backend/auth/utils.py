@@ -599,32 +599,40 @@ async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> str:
-    """Dependency to get current user from token in Authorization header
+    """Dependency to get current user from HTTPOnly cookies or Authorization header
     
-    SECURITY: Validates JWT token from Authorization Bearer header, verifies user exists
-    in MongoDB Atlas, and handles all error cases with proper HTTP status codes.
+    SECURITY: 
+    - First tries to read access token from HTTPOnly cookie (preferred method)
+    - Falls back to Authorization Bearer header for backward compatibility
+    - Validates JWT token, verifies user exists in MongoDB Atlas
+    - Handles all error cases with proper HTTP status codes
     
     Returns:
-        user_id (string) from the validated JWT token
+        user_id (string) from validated JWT token
         
     Raises:
         HTTPException(401): If credentials missing, token invalid/expired, or user not found
         HTTPException(503): If database unavailable
     """
-    # Check if credentials are missing
-    if not credentials:
+    # PRIORITY 1: Try to get access token from HTTPOnly cookie (secure method)
+    access_token = request.cookies.get("access_token")
+    
+    # PRIORITY 2: Fallback to Authorization header if no cookie found
+    if not access_token and credentials:
+        access_token = credentials.credentials
+    
+    # Check if any authentication method is available
+    if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing authentication credentials",
+            detail="Missing authentication credentials - please login",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    token = credentials.credentials
     
     # CRITICAL FIX: Decode and validate token with proper expiration handling
     # This will raise HTTPException(401) for expired tokens
     try:
-        token_data = decode_token(token)
+        token_data = decode_token(access_token)
     except HTTPException as e:
         # Re-raise auth exceptions with proper headers
         if e.status_code == status.HTTP_401_UNAUTHORIZED:
@@ -707,25 +715,23 @@ async def get_current_user(
 
 
 async def get_current_user_optional(request: Request) -> Optional[str]:
-    """Dependency to get current user from token - returns None if auth fails or missing"""
+    """Dependency to get current user from HTTPOnly cookies or Authorization header - returns None if auth fails or missing"""
     try:
-        # Try to get authorization header
-        auth_header = request.headers.get("authorization", "")
-        if not auth_header:
-            logger.debug("No auth header provided, allowing guest access")
-            return None
+        # PRIORITY 1: Try to get access token from HTTPOnly cookie (secure method)
+        access_token = request.cookies.get("access_token")
         
-        # Extract token from "Bearer <token>"
-        if not auth_header.startswith("Bearer "):
-            logger.debug("Invalid auth header format, allowing guest access")
-            return None
+        # PRIORITY 2: Fallback to Authorization header if no cookie found
+        if not access_token:
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                access_token = auth_header.replace("Bearer ", "").strip()
         
-        token = auth_header.replace("Bearer ", "").strip()
-        if not token:
-            logger.debug("Empty token, allowing guest access")
+        # Check if any authentication method is available
+        if not access_token:
+            logger.debug("No authentication credentials found, allowing guest access")
             return None
             
-        token_data = decode_token(token)
+        token_data = decode_token(access_token)
         
         if token_data.token_type != "access":
             logger.debug("Wrong token type, allowing guest access")
@@ -744,7 +750,7 @@ async def get_current_user_or_query(
     """ENHANCED DEPENDENCY WITH AUTOMATIC TOKEN REFRESH FOR SESSION PERSISTENCE.
     
     SECURITY: QUERY PARAMETER AUTHENTICATION HAS BEEN DISABLED.
-    ONLY HEADER AUTHENTICATION IS ALLOWED FOR SECURITY REASONS.
+    ONLY COOKIE-FIRST AUTHENTICATION IS ALLOWED FOR SECURITY REASONS.
     
     ENHANCEMENTS:
     - Automatic token refresh for expired access tokens
@@ -752,38 +758,43 @@ async def get_current_user_or_query(
     - Graceful handling of token expiration during refresh
     
     Args:
-        request: The request object (for header auth)
+        request: The request object (for cookie and header auth)
         token: IGNORED - query parameter authentication disabled
         
     Returns:
-        The user_id from the Authorization header token
+        The user_id from the HTTPOnly cookie or Authorization header token
         
     Raises:
-        HTTPException: If header token is missing or invalid
+        HTTPException: If both cookie and header token are missing or invalid
     """
     # SECURITY: Log any query parameter attempts for monitoring
     if token is not None:
         logger.warning("SECURITY VIOLATION: Query parameter authentication attempted - ignored for security")
     
-    # Only try header auth - query parameter auth disabled
-    auth_header = request.headers.get("authorization", "")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required - use Authorization header with Bearer token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # PRIORITY 1: Try to get access token from HTTPOnly cookie (secure method)
+    access_token = request.cookies.get("access_token")
     
-    header_token = auth_header.replace("Bearer ", "").strip()
-    if not header_token:
+    # PRIORITY 2: Fallback to Authorization header if no cookie found
+    if not access_token:
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required - use HTTPOnly cookie or Authorization header with Bearer token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        access_token = auth_header.replace("Bearer ", "").strip()
+    
+    # Check if any authentication method is available
+    if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Authorization header format",
+            detail="Missing authentication credentials - please login",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     # Strict JWT validation: expired tokens MUST be rejected with HTTP 401.
-    token_data = decode_token(header_token)
+    token_data = decode_token(access_token)
     if token_data.token_type != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -830,28 +841,30 @@ async def get_current_user_for_upload(
 ) -> Optional[str]:
     """
     Enhanced dependency for file upload endpoints with 480-hour token validation.
-    Extracts and validates JWT token from Authorization header.
+    Extracts and validates JWT token from HTTPOnly cookie or Authorization header.
     Returns user_id if valid, None if missing/invalid.
     Implements special 480-hour validation for upload operations.
     """
-    # Consolidate header parsing to a single canonical variable
-    auth_header = request.headers.get("authorization", "").strip() or request.headers.get("Authorization", "").strip()
+    # PRIORITY 1: Try to get access token from HTTPOnly cookie (secure method)
+    access_token = request.cookies.get("access_token")
     
-    # Initialize token_str to None before conditional block
-    token_str = None
-    
-    # Try Authorization header first
-    if auth_header and auth_header.startswith("Bearer "):
-        token_str = auth_header[7:].strip()
-        logger.debug(f"Extracted Bearer token: {token_str[:20]}...")
-    # Fall back to query parameter if provided
-    elif token:
-        token_str = token
-        logger.debug(f"Using query token: {token_str[:20]}...")
+    # PRIORITY 2: Fallback to Authorization header if no cookie found
+    if not access_token:
+        # Consolidate header parsing to a single canonical variable
+        auth_header = request.headers.get("authorization", "").strip() or request.headers.get("Authorization", "").strip()
+        
+        # Try Authorization header
+        if auth_header and auth_header.startswith("Bearer "):
+            access_token = auth_header[7:].strip()
+            logger.debug(f"Extracted Bearer token: {access_token[:20]}...")
+        # SECURITY: Reject query parameter tokens as security violation (consistent with get_current_user)
+        elif token:
+            logger.warning("SECURITY VIOLATION: Query parameter authentication attempted in get_current_user_or_query - ignored for security")
+            # Do not use query token - proceed without authentication
     
     # No token provided - CRITICAL FIX: Return None immediately for anonymous uploads
-    if not token_str:
-        logger.debug("No token string extracted from auth header - allowing anonymous access")
+    if not access_token:
+        logger.debug("No token string extracted from cookie or auth header - allowing anonymous access")
         return None
     
     # Check if this is an upload operation that should use 480-hour validation
@@ -867,8 +880,8 @@ async def get_current_user_for_upload(
     # For upload operations, try 480-hour validation first
     if is_upload_operation:
         try:
-            # Try to decode token with extended validation
-            user_id = _decode_token_with_480_hour_validation(token_str)
+            # Decode token with 480-hour validation if this is an upload operation
+            user_id = _decode_token_with_480_hour_validation(access_token)
             if user_id:
                 return user_id
         except HTTPException:
@@ -878,13 +891,13 @@ async def get_current_user_for_upload(
     
     # Normal JWT validation for non-upload operations or fallback
     try:
-        token_data = decode_token(token_str)
+        token_data = decode_token(access_token)
     except HTTPException as e:
         if e.status_code == status.HTTP_401_UNAUTHORIZED:
             # For upload operations, check if this is an expired token within 480 hours
             if is_upload_operation:
                 try:
-                    user_id = _decode_token_with_480_hour_validation(token_str)
+                    user_id = _decode_token_with_480_hour_validation(access_token)
                     if user_id:
                         return user_id
                 except HTTPException:

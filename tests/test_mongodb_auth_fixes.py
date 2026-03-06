@@ -387,11 +387,41 @@ class TestAuthenticationFixes:
             plain_database._database_initialized = True
 
             result = await login(credentials, mock_request)
-
-            assert result.access_token == "test_access_token"
-            assert result.refresh_token == "test_refresh_token"
-
-        print("✓ User login successful")
+            
+            # With HTTPOnly cookies, the response format changes
+            # The server now returns JSONResponse with cookies, not Token object
+            assert result is not None
+            assert hasattr(result, 'status_code'), "Result should be a JSONResponse with status_code"
+            assert result.status_code == 200, f"Expected status_code 200, got {result.status_code}"
+            
+            # Parse the JSON body from the response with safe fallback
+            import json
+            body = {}
+            try:
+                if hasattr(result, 'body'):
+                    # Handle body attribute (bytes or string)
+                    if isinstance(result.body, bytes):
+                        body = json.loads(result.body.decode('utf-8'))
+                    else:
+                        body = json.loads(result.body)
+                elif hasattr(result, 'json'):
+                    body = result.json()
+                elif hasattr(result, 'content'):
+                    # Handle content attribute (bytes or string)
+                    if isinstance(result.content, bytes):
+                        body = json.loads(result.content.decode('utf-8'))
+                    else:
+                        body = json.loads(result.content)
+            except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+                # If all parsing attempts fail, use empty dict
+                body = {}
+                
+            assert body.get("message") == "Login successful"
+            assert body.get("token_type") == "bearer"
+            assert body.get("access_token") is None  # No longer returned in body
+            assert body.get("refresh_token") is None  # No longer returned in body
+            
+            print("✓ User login successful")
 
     @pytest.mark.asyncio
     async def test_login_invalid_credentials(

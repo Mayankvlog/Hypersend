@@ -2,12 +2,12 @@
 Type=Application
 Version=1.0
 Name=Zaply
-Comment=Zaply - Fast. Secure. Chat.
+Comment=zaply - Fast. Secure. Chat.
 Exec=zaply
 Icon=zaply
 Terminal=false
 Categories=Communication;Network;Chat;
 StartupNotify=true
 
-# Zaply Lightning Bolt Icon - Displayed in application launcher
+# zaply Lightning Bolt Icon - Displayed in application launcher
 # Place your icon at: ~/.local/share/pixmaps/zaply.png or /usr/share/pixmaps/zaply.png

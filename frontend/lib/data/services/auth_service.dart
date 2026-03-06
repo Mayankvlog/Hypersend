@@ -4,22 +4,19 @@ import 'api_service.dart';
 import 'dart:async';
 
 class AuthService {
-  static const _kAccessTokenKey = 'auth.accessToken';
-  static const _kRefreshTokenKey = 'auth.refreshToken';
   static const _kLastLoginAttemptKey = 'auth.lastLoginAttempt';
   static const _kFailedAttemptsKey = 'auth.failedAttempts';
 
   final ApiService _api;
 
-  String? _accessToken;
-  String? _refreshToken;
-  Timer? _loginCooldownTimer;
   int _failedAttempts = 0;
   DateTime? _lastLoginAttempt;
+  Timer? _loginCooldownTimer;
+  bool _isAuthenticated = false;
 
   AuthService(this._api);
 
-  bool get isLoggedIn => _isTokenValid(_accessToken);
+  bool get isLoggedIn => _isAuthenticated;
   bool get isLoginBlocked => _loginCooldownTimer?.isActive ?? false;
   Duration? get loginBlockTimeRemaining {
     if (!isLoginBlocked || _lastLoginAttempt == null) return null;
@@ -109,55 +106,27 @@ class AuthService {
     }
   }
 
-  bool _isTokenValid(String? token) {
-    if (token == null || token.isEmpty) return false;
-    
-    // Basic JWT token validation (should have 3 parts separated by dots)
-    final parts = token.split('.');
-    if (parts.length != 3) {
-      debugPrint('[AUTH_TOKEN] Invalid token format: expected 3 parts, got ${parts.length}');
-      return false;
-    }
-    
-    // Check if token seems reasonable length
-    if (token.length < 50) {
-      debugPrint('[AUTH_TOKEN] Token too short: ${token.length} characters');
-      return false;
-    }
-    
-    return true;
-  }
-  String? get accessToken => _accessToken;
-  String? get refreshToken => _refreshToken;
+  // DEPRECATED: _isCookieValid() is no longer used - use _isAuthenticated instead
+  // bool _isCookieValid() {
+  //   // In a cookie-based auth system, we can't directly validate tokens from JavaScript
+  //   // We rely on the server to validate cookies and return appropriate errors
+  //   // This is a security feature of HTTPOnly cookies
+  //   return true; // Assume valid if server hasn't rejected
+  // }
 
   Future<void> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _accessToken = prefs.getString(_kAccessTokenKey);
-      _refreshToken = prefs.getString(_kRefreshTokenKey);
       
-      // Load failure tracking data
+      // Load failure tracking data (keep existing functionality)
       _failedAttempts = prefs.getInt(_kFailedAttemptsKey) ?? 0;
       final lastAttemptStr = prefs.getString(_kLastLoginAttemptKey);
       if (lastAttemptStr != null) {
         _lastLoginAttempt = DateTime.tryParse(lastAttemptStr);
       }
       
-      debugPrint('[AUTH_INIT] Access token: ${_accessToken != null ? '${_accessToken!.substring(0, 20)}...' : 'null'}');
-      debugPrint('[AUTH_INIT] Refresh token: ${_refreshToken != null ? '${_refreshToken!.substring(0, 20)}...' : 'null'}');
       debugPrint('[AUTH_INIT] Failed attempts: $_failedAttempts');
       debugPrint('[AUTH_INIT] Last attempt: $_lastLoginAttempt');
-      
-      // Validate token formats
-      if (!_isTokenValid(_accessToken)) {
-        debugPrint('[AUTH_INIT] Invalid access token format, clearing');
-        _accessToken = null;
-      }
-      
-      if (!_isTokenValid(_refreshToken)) {
-        debugPrint('[AUTH_INIT] Invalid refresh token format, clearing');
-        _refreshToken = null;
-      }
       
       // Check if cooldown period is still active
       if (_lastLoginAttempt != null && _failedAttempts > 0) {
@@ -179,23 +148,14 @@ class AuthService {
         }
       }
       
-      if (_isTokenValid(_accessToken)) {
-        _api.setAuthToken(_accessToken!);
-        debugPrint('[AUTH_INIT] Valid token loaded from SharedPreferences and set in API service');
-      } else {
-        debugPrint('[AUTH_INIT] No valid stored token found, user not logged in');
-        _api.clearAuthToken();
-        // Clear corrupted tokens from storage
-        if (_accessToken == null || _refreshToken == null) {
-          await _clearTokens();
-        }
-      }
+      // With HTTPOnly cookies, we don't need to validate tokens here
+      // The server will validate cookies and return errors if needed
+      debugPrint('[AUTH_INIT] HTTPOnly cookie-based authentication initialized');
     } catch (e) {
       debugPrint('[AUTH_INIT_ERROR] Failed to initialize auth: $e');
-      _accessToken = null;
-      _refreshToken = null;
-      _api.clearAuthToken();
-      await _clearTokens();
+      _failedAttempts = 0;
+      _lastLoginAttempt = null;
+      _loginCooldownTimer?.cancel();
     }
   }
 
@@ -207,8 +167,18 @@ class AuthService {
     _failedAttempts = 0;
     _lastLoginAttempt = null;
     _loginCooldownTimer?.cancel();
+    _isAuthenticated = false; // Set authentication state to false
     _api.clearAuthToken();
     await _clearTokens();
+  }
+
+  // Method to handle authentication failure (401 responses when refresh fails)
+  void handleAuthenticationFailure() {
+    debugPrint('[AUTH_FAILURE] Handling authentication failure - clearing auth state');
+    _isAuthenticated = false;
+    _accessToken = null;
+    _refreshToken = null;
+    _api.clearAuthToken();
   }
 
   Future<void> login({
@@ -216,8 +186,6 @@ class AuthService {
     required String password,
   }) async {
     debugPrint('[AUTH_LOGIN] Attempting login for: $email');
-    
-
     
     // Check if login is currently blocked
     if (isLoginBlocked) {
@@ -244,20 +212,12 @@ class AuthService {
         throw Exception(errorDetail);
       }
       
-      final access = result['access_token'] as String?;
-      final refresh = result['refresh_token'] as String?;
-      if ((access ?? '').isEmpty || (refresh ?? '').isEmpty) {
-        await _handleLoginFailure();
-        debugPrint('[AUTH_LOGIN_ERROR] Invalid response - missing tokens');
-        debugPrint('[AUTH_LOGIN_ERROR] Response keys: ${result.keys.toList()}');
-        debugPrint('[AUTH_LOGIN_ERROR] Full response: $result');
-        throw Exception('Invalid login response - missing authentication tokens');
-      }
+      // With HTTPOnly cookies, we don't need to handle tokens manually
+      // The server sets cookies automatically and they're sent with subsequent requests
+      debugPrint('[AUTH_LOGIN] Login successful - HTTPOnly cookies set by server');
       
-      // Success - reset failure tracking and persist tokens
+      // Reset failure tracking on successful login
       await _handleLoginSuccess();
-      await _persistTokens(accessToken: access!, refreshToken: refresh!);
-      debugPrint('[AUTH_LOGIN] Login successful - tokens persisted');
     } catch (e) {
       debugPrint('[AUTH_LOGIN_ERROR] Login failed: $e');
       rethrow;
@@ -270,6 +230,7 @@ class AuthService {
     _failedAttempts = 0;
     _lastLoginAttempt = null;
     _loginCooldownTimer?.cancel();
+    _isAuthenticated = true; // Set authentication state to true
     
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kFailedAttemptsKey);
@@ -348,13 +309,17 @@ class AuthService {
 
   Future<void> logout() async {
     try {
-      final refresh = _refreshToken;
-      if ((refresh ?? '').isNotEmpty) {
-        await _api.logout(refreshToken: refresh!);
-      }
-    } finally {
-      await _clearTokens();
+      // Call logout endpoint - server will clear HTTPOnly cookies
+      await _api.logout();
+      debugPrint('[AUTH_LOGOUT] Logout successful - HTTPOnly cookies cleared by server');
+    } catch (e) {
+      debugPrint('[AUTH_LOGOUT_ERROR] Logout failed: $e');
+      rethrow;
     }
+    
+    // Reset local auth state
+    _isAuthenticated = false; // Set authentication state to false
+    await _handleLoginSuccess();
   }
 
   Future<void> _persistTokens({
@@ -376,35 +341,23 @@ class AuthService {
     }
   }
 
-  // New method to refresh tokens using refresh token
-  Future<bool> refreshTokens() async {
+  // New method to refresh session using HTTPOnly cookies
+  Future<bool> refreshSession() async {
     try {
-      debugPrint('[AUTH_REFRESH] Attempting to refresh tokens...');
+      debugPrint('[AUTH_REFRESH] Attempting to refresh session...');
       
-      if ((_refreshToken ?? '').isEmpty) {
-        debugPrint('[AUTH_REFRESH] No refresh token available');
-        return false;
-      }
+      // Call session refresh endpoint - server will read refresh token cookie and set new access token cookie
+      final response = await _api.refreshSession();
       
-      // Call refresh endpoint
-      final response = await _api.refreshToken(refreshToken: _refreshToken!);
-      
-      if (response['access'] != null && response['refresh'] != null) {
-        await _persistTokens(
-          accessToken: response['access'],
-          refreshToken: response['refresh'],
-        );
-        debugPrint('[AUTH_REFRESH] Tokens refreshed successfully');
+      if (response.containsKey('message') && response['message'] == 'Session refreshed') {
+        debugPrint('[AUTH_REFRESH] Session refreshed successfully');
         return true;
       } else {
-        debugPrint('[AUTH_REFRESH] Token refresh failed: $response');
-        // Clear invalid tokens
-        await _clearTokens();
+        debugPrint('[AUTH_REFRESH] Session refresh failed: $response');
         return false;
       }
     } catch (e) {
-      debugPrint('[AUTH_REFRESH] Token refresh error: $e');
-      await _clearTokens();
+      debugPrint('[AUTH_REFRESH] Session refresh error: $e');
       return false;
     }
   }

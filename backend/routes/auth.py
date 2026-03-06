@@ -565,9 +565,9 @@ async def register(user: UserCreate) -> UserResponse:
             detail=f"Registration failed: {type(e).__name__} - {str(e)[:100]}"
         )
 
-@router.post("/login", response_model=Token)
-async def login(credentials: UserLogin, request: Request) -> Token:
-    """Login user and return access/refresh tokens with rate limiting"""
+@router.post("/login")
+async def login(credentials: UserLogin, request: Request) -> JSONResponse:
+    """Login user and set secure HTTPOnly session cookies"""
     try:
         # Username validation is now handled in the model validator
         
@@ -929,11 +929,54 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         
         auth_log(f"SUCCESS: Login successful: {credentials.email}")
         
-        return Token(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            token_type="bearer"
+        # Create response with secure HTTPOnly cookies
+        response = JSONResponse(
+            content={"message": "Login successful", "token_type": "bearer"},
+            status_code=status.HTTP_200_OK
         )
+        
+        # Set secure HTTPOnly cookies with conditional domain
+        cookie_secure = not settings.DEBUG  # Secure flag for HTTPS in production
+        cookie_same_site = "None" if not settings.DEBUG else "Lax"  # None for cross-site in production
+        cookie_domain = None if settings.DEBUG else "zaply.in.net"  # Conditional domain based on DEBUG
+        
+        # Build cookie kwargs for cleaner code
+        cookie_kwargs = {
+            "secure": cookie_secure,
+            "httponly": True,
+            "samesite": cookie_same_site,
+            "path": "/",
+        }
+        
+        # Only add domain if it's truthy (not None/empty)
+        if cookie_domain:
+            cookie_kwargs["domain"] = cookie_domain
+        
+        # Calculate cookie expiration times
+        access_expires = int((datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp())
+        refresh_expires = int((datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)).timestamp())
+        
+        # Set access token cookie (short-lived, 15 minutes)
+        access_cookie_kwargs = cookie_kwargs.copy()
+        access_cookie_kwargs.update({
+            "key": "access_token",
+            "value": access_token,
+            "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert minutes to seconds
+            "expires": access_expires,
+        })
+        response.set_cookie(**access_cookie_kwargs)
+        
+        # Set refresh token cookie (long-lived, 30 days)
+        refresh_cookie_kwargs = cookie_kwargs.copy()
+        refresh_cookie_kwargs.update({
+            "key": "refresh_token",
+            "value": refresh_token,
+            "max_age": settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,  # Convert days to seconds
+            "expires": refresh_expires,
+        })
+        response.set_cookie(**refresh_cookie_kwargs)
+        
+        return response
         
     except HTTPException:
         raise
@@ -975,33 +1018,36 @@ async def login(credentials: UserLogin, request: Request) -> Token:
         )
 
 # Enhanced Token Refresh Endpoint for Session Persistence
-@router.post("/refresh-session", response_model=Token)
-async def refresh_session_token(request: RefreshTokenRequest) -> Token:
+@router.post("/refresh-session")
+async def refresh_session_token(request: Request) -> JSONResponse:
     """
-    Enhanced refresh endpoint that maintains session persistence across page refreshes.
+    Enhanced refresh endpoint that reads refresh token from HTTPOnly cookie and sets new access token cookie.
     
     This endpoint:
+    - Reads refresh token from secure HTTPOnly cookie
     - Extends session duration automatically
-    - Provides new access token without requiring re-login
+    - Provides new access token via HTTPOnly cookie
     - Maintains refresh token validity for long-running sessions
     - Handles expired access tokens gracefully
     
-    ENHANCEMENT: This prevents session expiration on page refresh by extending
-    the session automatically when the frontend detects an expired token.
+    SECURITY: Prevents token leakage via JavaScript by using HTTPOnly cookies.
     """
     try:
         auth_log(f"Session refresh request")
         
+        # Read refresh token from HTTPOnly cookie
+        refresh_token = request.cookies.get("refresh_token")
+        
         # Validate refresh token format
-        if not request.refresh_token or not isinstance(request.refresh_token, str):
+        if not refresh_token or not isinstance(refresh_token, str):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Refresh token is required and must be a string"
+                detail="Refresh token is required and must be provided via HTTPOnly cookie"
             )
         
         # Decode refresh token
         try:
-            token_data = decode_token(request.refresh_token)
+            token_data = decode_token(refresh_token)
         except HTTPException as e:
             # Re-raise HTTP exceptions from token decoding
             raise e
@@ -1163,12 +1209,34 @@ async def refresh_session_token(request: RefreshTokenRequest) -> Token:
         
         auth_log(f"Session refreshed successfully for user: {token_data.user_id}")
         
-        return Token(
-            access_token=access_token,
-            token_type="bearer",
-            expires_in=int(access_token_expires.total_seconds()),
-            refresh_token=request.refresh_token  # Return same refresh token
+        # Create response with new access token cookie
+        response = JSONResponse(
+            content={"message": "Session refreshed", "token_type": "bearer"},
+            status_code=status.HTTP_200_OK
         )
+        
+        # Set new access token cookie (refresh token stays the same)
+        cookie_secure = not settings.DEBUG  # Secure flag for HTTPS in production
+        cookie_same_site = "None" if not settings.DEBUG else "Lax"  # None for cross-site in production
+        cookie_domain = None if settings.DEBUG else "zaply.in.net"  # Conditional domain based on DEBUG
+        
+        # Calculate access token expiration
+        access_expires_timestamp = int((datetime.now(timezone.utc) + access_token_expires).timestamp())
+        
+        # Set new access token cookie (short-lived, 15 minutes)
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            max_age=15 * 60,  # 15 minutes in seconds
+            expires=access_expires_timestamp,
+            path="/",
+            domain=cookie_domain,
+            secure=cookie_secure,
+            httponly=True,
+            samesite=cookie_same_site
+        )
+        
+        return response
         
     except HTTPException:
         raise
@@ -1342,8 +1410,8 @@ async def refresh_access_token(request: RefreshTokenRequest) -> Token:
         )
 
 @router.post("/logout")
-async def logout(current_user: str = Depends(get_current_user)):
-    """Logout user by invalidating refresh tokens"""
+async def logout(request: Request, current_user: str = Depends(get_current_user)):
+    """Logout user by invalidating refresh tokens and clearing HTTPOnly cookies"""
     try:
         auth_log(f"Logout request for user: {current_user}")
         
@@ -1370,7 +1438,43 @@ async def logout(current_user: str = Depends(get_current_user)):
         
         auth_log(f"SUCCESS: Logout successful for user: {current_user}")
         
-        return {"message": "Logged out successfully"}
+        # Create response that clears HTTPOnly cookies
+        response = JSONResponse(
+            content={"message": "Logged out successfully"},
+            status_code=status.HTTP_200_OK
+        )
+        
+        # Clear HTTPOnly cookies by setting them to expire immediately
+        # Use conditional cookie domain based on DEBUG flag
+        cookie_domain = None if settings.DEBUG else "zaply.in.net"
+        
+        # Clear access token cookie
+        response.set_cookie(
+            key="access_token",
+            value="",
+            max_age=0,  # Expire immediately
+            expires=0,  # Unix epoch start
+            path="/",
+            domain=cookie_domain,
+            secure=not settings.DEBUG,  # Secure flag for HTTPS in production
+            httponly=True,
+            samesite="None" if not settings.DEBUG else "Lax"
+        )
+        
+        # Clear refresh token cookie
+        response.set_cookie(
+            key="refresh_token",
+            value="",
+            max_age=0,  # Expire immediately
+            expires=0,  # Unix epoch start
+            path="/",
+            domain=cookie_domain,
+            secure=not settings.DEBUG,  # Secure flag for HTTPS in production
+            httponly=True,
+            samesite="None" if not settings.DEBUG else "Lax"
+        )
+        
+        return response
         
     except Exception as e:
         auth_log(f"Logout error: {type(e).__name__}: {str(e)}")

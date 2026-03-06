@@ -44,6 +44,54 @@ class ApiService {
 
   // Token refresh will be handled by error interceptor
 
+  // Session refresh for HTTPOnly cookie support
+  Future<Map<String, dynamic>> refreshSession() async {
+    _log('[API_REFRESH_SESSION] Calling session refresh endpoint');
+    
+    try {
+      final response = await _dio.post(
+        '/auth/refresh-session',
+        data: {},  // No body needed - server reads from cookies
+        options: Options(
+          method: 'POST',
+        ),
+      );
+      
+      _log('[API_REFRESH_SESSION] Response: ${response.data}');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      _log('[API_REFRESH_SESSION] Error: $e');
+      return {
+        'detail': e.toString(),
+        'error': 'Session refresh failed'
+      };
+    }
+  }
+
+  // Logout with HTTPOnly cookie support
+  Future<Map<String, dynamic>> logout() async {
+    _log('[API_LOGOUT] Calling logout endpoint');
+    
+    try {
+      final response = await _dio.post(
+        '/auth/logout',
+        data: {},  // No body needed - server reads from cookies
+        options: Options(
+          method: 'POST',
+        ),
+      );
+      
+      _log('[API_LOGOUT] Response: ${response.data}');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      _log('[API_LOGOUT] Error: $e');
+      return {
+        'detail': e.toString(),
+        'error': 'Logout failed'
+      };
+    }
+  }
+
   // Intelligent base URL selection with fallback logic
   String _getOptimalBaseUrl() {
     final urls = [
@@ -98,26 +146,25 @@ class ApiService {
       _log('[API_INIT] Base URL: $url');
       _log('[API_INIT] Server Base URL: ${ApiConstants.serverBaseUrl}');
       _log('[API_INIT] Auth endpoint: ${ApiConstants.authEndpoint}');
-      _log('[API_INIT] Users endpoint: ${ApiConstants.usersEndpoint}');
-      _log('[API_INIT] Full avatar URL: $url${ApiConstants.usersEndpoint}/avatar');
-      _log('[API_INIT] SSL validation: ${ApiConstants.validateCertificates}');
-
-      _dio = Dio(
-      BaseOptions(
+      
+      // Configure Dio with credentials for HTTPOnly cookie support
+      _dio = Dio(BaseOptions(
         baseUrl: url,
         // CRITICAL FIX: Adaptive timeouts for large file operations
         connectTimeout: const Duration(minutes: 10),  // Increased for 40GB files
         receiveTimeout: const Duration(hours: 2),    // Decreased for faster networks
         sendTimeout: const Duration(minutes: 5),     // Decreased for smaller uploads
-          contentType: 'application/json',
-          validateStatus: (status) => status != null && (status >= 200 && status < 300),
+        contentType: 'application/json',
+        validateStatus: (status) => status != null && (status >= 200 && status < 300),
         headers: {
           'User-Agent': 'zaply-Flutter-Web/1.0',
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-      ),
-    );
+      ));
+      
+      // Enable credentials for HTTPOnly cookie support
+      _dio.options.extra = {'withCredentials': true};
 
     // SSL validation - platform-specific handling
     // SECURITY: SSL validation enabled by default to prevent MITM attacks
