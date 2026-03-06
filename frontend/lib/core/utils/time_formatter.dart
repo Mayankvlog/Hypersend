@@ -53,8 +53,16 @@ class TimeFormatter {
     } else if (difference.inDays == 1) {
       return 'Yesterday';
     } else {
-      return DateFormat('MMMM d, yyyy').format(localDate);
+      // Return format: "6 March 2026"
+      return formatCalendarDate(localDate);
     }
+  }
+
+  /// Format date as calendar date: "DD Month YYYY" (e.g., "6 March 2026")
+  /// This is used for chat history date separators
+  static String formatCalendarDate(DateTime date) {
+    final localDate = _ensureLocalTime(date);
+    return DateFormat('d MMMM yyyy').format(localDate);
   }
 
   /// Format file transfer time duration (e.g., "2.5 MB/s", "00:45 remaining")

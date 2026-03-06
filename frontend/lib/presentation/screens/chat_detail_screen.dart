@@ -18,6 +18,7 @@ import '../../data/services/service_provider.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/camera_preview_screen.dart';
 import '../widgets/location_picker_screen.dart';
+import '../../core/utils/time_formatter.dart';
 import '../../core/utils/emoji_utils.dart';
 
 
@@ -41,6 +42,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   String? _error;
   String _meId = '';
   
+  // Precomputed list items for lazy loading
+  late List<dynamic> _listItems;
+  
   // CRITICAL: Persistent WebSocket connection (initialized once)
   dynamic _wsConnection;
   bool _wsConnected = false;
@@ -53,6 +57,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _listItems = <dynamic>[]; // Initialize empty list items
     _load();
   }
 
@@ -1403,6 +1408,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           // Add only if not already present (deduplication by message_id)
           if (!_messages.any((m) => m.id == msg.id)) {
             _messages.add(msg);
+            // Refresh derived _listItems to include new message
+            _precomputeListItems();
           }
         });
       }
@@ -1419,6 +1426,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             }
             return m;
           }).toList();
+          // Refresh derived _listItems to reflect message status updates
+          _precomputeListItems();
         });
       }
     } else if (messageType == 'typing') {
@@ -1461,6 +1470,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         _messages = msgs;
         _loading = false;
       });
+      // Precompute list items for lazy loading after messages are loaded
+      _precomputeListItems();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2028,6 +2039,77 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
+  /// Precompute list items that includes both messages and date separators.
+  /// Messages are grouped by date (calendar date) with proper separators.
+  /// This ensures proper WhatsApp-style date grouping.
+  void _precomputeListItems() {
+    final items = <dynamic>[];
+    DateTime? previousMessageDate;
+
+    for (final message in _messages) {
+      // Get calendar date (year, month, day) only
+      final messageDate = DateTime(
+        message.timestamp.year,
+        message.timestamp.month,
+        message.timestamp.day,
+      );
+
+      // Check if date changed from previous message
+      if (previousMessageDate == null || previousMessageDate != messageDate) {
+        // Insert date separator for new date
+        items.add({
+          'type': 'date_separator',
+          'date': messageDate,
+          'timestamp': message.timestamp,
+        });
+        previousMessageDate = messageDate;
+      }
+
+      // Add message
+      items.add({
+        'type': 'message',
+        'message': message,
+      });
+    }
+
+    _listItems = items;
+  }
+
+  /// Build a single list item based on its type
+  Widget _buildListItem(dynamic item) {
+    if (item['type'] == 'date_separator') {
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: AppTheme.cardDark,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            TimeFormatter.formatDateDivider(item['timestamp']),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      );
+    } else if (item['type'] == 'message') {
+      final message = item['message'] as Message;
+      return MessageBubble(
+        message: message,
+        avatarUrl: null,
+        onLongPress: () => _showMessageActions(message),
+        onToggleReaction: (emoji) => _toggleReaction(message, emoji),
+        onAddReaction: () => _showReactionPicker(message),
+        onFileTap: (msg) => _downloadFile(msg),
+      );
+    }
+    
+    return const SizedBox.shrink();
+  }
+
   @override
   Widget build(BuildContext context) {
     final pinned = _messages.where((m) => m.isPinned && !m.isDeleted).toList();
@@ -2193,37 +2275,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        itemCount: _messages.length + 1, // +1 for date divider
+                        itemCount: _listItems.length,
                         itemBuilder: (context, index) {
-                          if (index == 0) {
-                            return Center(
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(vertical: 16),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.cardDark,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  AppStrings.today,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ),
-                            );
-                          }
-
-                          final message = _messages[index - 1];
-                          return MessageBubble(
-                            message: message,
-                            avatarUrl: null,
-                            onLongPress: () => _showMessageActions(message),
-                            onToggleReaction: (emoji) => _toggleReaction(message, emoji),
-                            onAddReaction: () => _showReactionPicker(message),
-                            onFileTap: (msg) => _downloadFile(msg),
-                          );
+                          return _buildListItem(_listItems[index]);
                         },
                       ),
           ),

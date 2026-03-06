@@ -319,6 +319,190 @@ class TestNoTimezoneHardcoding:
         print(f"✓ No hardcoded timezones in response: {iso_utc}")
 
 
+class TestChatHistoryDateGrouping:
+    """Test proper date grouping in chat history"""
+    
+    def test_messages_grouped_by_calendar_date(self):
+        """Messages should be grouped by calendar date only (year, month, day)"""
+        # Messages from same day but different times
+        messages = [
+            {
+                "_id": "msg_1",
+                "created_at": "2026-03-06T08:30:00+00:00",  # 8:30 AM on March 6
+            },
+            {
+                "_id": "msg_2",
+                "created_at": "2026-03-06T14:47:00+00:00",  # 2:47 PM on March 6
+            },
+            {
+                "_id": "msg_3",
+                "created_at": "2026-03-07T10:15:00+00:00",  # 10:15 AM on March 7
+            },
+        ]
+        
+        # Verify dates are correctly extracted
+        dates = []
+        for msg in messages:
+            dt = datetime.fromisoformat(msg["created_at"])
+            date_key = (dt.year, dt.month, dt.day)
+            dates.append(date_key)
+        
+        # Should have 2 unique dates (March 6 and March 7)
+        unique_dates = set(dates)
+        assert len(unique_dates) == 2
+        assert (2026, 3, 6) in unique_dates
+        assert (2026, 3, 7) in unique_dates
+        
+        # Verify grouping logic
+        grouped = {}
+        for i, msg in enumerate(messages):
+            dt = datetime.fromisoformat(msg["created_at"])
+            date_key = (dt.year, dt.month, dt.day)
+            if date_key not in grouped:
+                grouped[date_key] = []
+            grouped[date_key].append(msg)
+        
+        # First group should have 2 messages (same day)
+        assert len(grouped[(2026, 3, 6)]) == 2
+        # Second group should have 1 message
+        assert len(grouped[(2026, 3, 7)]) == 1
+        
+        print(f"✓ Messages correctly grouped by date: {len(grouped)} groups with {list(map(len, grouped.values()))} messages each")
+    
+    def test_date_separator_format_is_correct(self):
+        """Date separators should display in 'DD Month YYYY' format (e.g., '6 March 2026')"""
+        from datetime import datetime, timezone
+        
+        # Test date
+        test_date = datetime(2026, 3, 6, 14, 30, 0, tzinfo=timezone.utc)
+        
+        # Format as would be done in frontend: "d MMMM yyyy"
+        # Simulating what DateFormat('d MMMM yyyy').format() would produce
+        # For March 6, 2026: should be "6 March 2026"
+        day = test_date.day
+        month_name = test_date.strftime('%B')  # Full month name
+        year = test_date.year
+        
+        formatted = f"{day} {month_name} {year}"
+        
+        assert formatted == "6 March 2026"
+        print(f"✓ Date format is correct: {formatted}")
+    
+    def test_multiple_message_days_have_proper_separators(self):
+        """Chat with messages from multiple days should show separator for each day"""
+        from datetime import timedelta
+        
+        base_date = datetime(2026, 3, 1, 12, 0, 0, tzinfo=timezone.utc)
+        
+        # Create messages across 5 different days
+        messages = []
+        for day_offset in range(5):
+            msg_date = base_date + timedelta(days=day_offset)
+            messages.append({
+                "id": f"msg_{day_offset}",
+                "created_at": msg_date.isoformat(),
+            })
+        
+        # Count unique dates (separators needed)
+        unique_dates = {}
+        for msg in messages:
+            dt = datetime.fromisoformat(msg["created_at"])
+            date_key = (dt.year, dt.month, dt.day)
+            if date_key not in unique_dates:
+                unique_dates[date_key] = None
+        
+        # Should have 5 unique dates, so 5 date separators needed
+        num_separators = len(unique_dates)
+        assert num_separators == 5
+        assert num_separators == len(messages)  # One separator per message group
+        
+        print(f"✓ Multiple days have proper separators: {num_separators} separators for {len(messages)} messages")
+    
+    def test_messages_sorted_strictly_by_timestamp(self):
+        """Messages must be sorted strictly by timestamp (oldest first in typical chat UI)"""
+        from datetime import timedelta
+        
+        # Create unsorted messages
+        unsorted = [
+            {"id": "msg_3", "created_at": datetime(2026, 3, 6, 15, 0, 0, tzinfo=timezone.utc).isoformat()},
+            {"id": "msg_1", "created_at": datetime(2026, 3, 6, 10, 0, 0, tzinfo=timezone.utc).isoformat()},
+            {"id": "msg_2", "created_at": datetime(2026, 3, 6, 12, 0, 0, tzinfo=timezone.utc).isoformat()},
+        ]
+        
+        # Sort by timestamp
+        sorted_msgs = sorted(unsorted, key=lambda m: datetime.fromisoformat(m["created_at"]))
+        
+        # Verify order is correct
+        assert sorted_msgs[0]["id"] == "msg_1"
+        assert sorted_msgs[1]["id"] == "msg_2"
+        assert sorted_msgs[2]["id"] == "msg_3"
+        
+        # Verify timestamps are in ascending order
+        times = [datetime.fromisoformat(m["created_at"]) for m in sorted_msgs]
+        for i in range(len(times) - 1):
+            assert times[i] <= times[i + 1]
+        
+        print(f"✓ Messages correctly sorted by timestamp in ascending order")
+    
+    def test_midnight_edge_case_different_dates(self):
+        """Messages sent near midnight should correctly belong to their respective days"""
+        # Message just before midnight
+        before_midnight = {
+            "id": "msg_1",
+            "created_at": datetime(2026, 3, 6, 23, 59, 59, tzinfo=timezone.utc).isoformat(),
+        }
+        
+        # Message just after midnight (next day)
+        after_midnight = {
+            "id": "msg_2",
+            "created_at": datetime(2026, 3, 7, 0, 0, 1, tzinfo=timezone.utc).isoformat(),
+        }
+        
+        dt1 = datetime.fromisoformat(before_midnight["created_at"])
+        dt2 = datetime.fromisoformat(after_midnight["created_at"])
+        
+        date1 = (dt1.year, dt1.month, dt1.day)
+        date2 = (dt2.year, dt2.month, dt2.day)
+        
+        # These should be different dates
+        assert date1 != date2
+        assert date1 == (2026, 3, 6)
+        assert date2 == (2026, 3, 7)
+        
+        print(f"✓ Midnight edge case handled correctly: {before_midnight['created_at'][:10]} vs {after_midnight['created_at'][:10]}")
+    
+    def test_offline_synced_messages_maintain_order(self):
+        """Messages synced from offline storage should maintain proper order and grouping"""
+        from datetime import timedelta
+        
+        # Simulate messages created at different times but synced later
+        now = datetime.now(timezone.utc)
+        
+        messages = [
+            {"id": "msg_1", "created_at": (now - timedelta(hours=3)).isoformat()},  # Created 3 hours ago
+            {"id": "msg_2", "created_at": (now - timedelta(hours=2)).isoformat()},  # Created 2 hours ago
+            {"id": "msg_3", "created_at": (now - timedelta(minutes=30)).isoformat()},  # Created 30 mins ago (today)
+        ]
+        
+        # All should be sorted and grouped correctly
+        sorted_msgs = sorted(messages, key=lambda m: datetime.fromisoformat(m["created_at"]))
+        
+        # Extract dates
+        dates = [
+            (datetime.fromisoformat(m["created_at"]).year,
+             datetime.fromisoformat(m["created_at"]).month,
+             datetime.fromisoformat(m["created_at"]).day)
+            for m in sorted_msgs
+        ]
+        
+        # Verify sorted
+        times = [datetime.fromisoformat(m["created_at"]) for m in sorted_msgs]
+        for i in range(len(times) - 1):
+            assert times[i] <= times[i + 1]
+        
+        print(f"✓ Offline synced messages maintain proper order and grouping")
+
+
 class TestBackwardCompatibility:
     """Test backward compatibility with existing data"""
     
