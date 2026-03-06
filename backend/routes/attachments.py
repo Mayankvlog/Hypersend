@@ -53,14 +53,6 @@ ATTACHMENT_CATEGORIES: Dict[str, Dict] = {
         "material_icon": "📁",
         "description": "Send any file from your device",
         "mime_types": ["*/*"]  # Any file type
-    },
-    "location": {
-        "id": "location",
-        "label": "Location",
-        "icon": "location_on",
-        "material_icon": "📍",
-        "description": "Share your location",
-        "mime_types": ["application/vnd.google-earth.kmz", "application/vnd.google-earth.kml+xml"]
     }
 }
 

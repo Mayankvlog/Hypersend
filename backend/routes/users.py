@@ -359,8 +359,6 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
 
             permissions=user.get("permissions", {
 
-                "location": False,
-
                 "camera": False,
 
                 "microphone": False,
@@ -1464,8 +1462,6 @@ async def get_permissions(current_user: str = Depends(get_current_user)):
         # Get permissions or return default (all denied)
 
         permissions = user.get("permissions", {
-
-            "location": False,
 
             "camera": False,
 

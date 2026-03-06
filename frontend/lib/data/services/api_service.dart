@@ -2311,34 +2311,7 @@ Future<void> postToChannel(String channelId, String text) async {
   
 
 
-  // Location and People Nearby endpoints
-  Future<Map<String, dynamic>> updateLocation({
-    required double latitude,
-    required double longitude,
-  }) async {
-    try {
-      final response = await _dio.post(
-        '${ApiConstants.usersEndpoint}/location/update',
-        queryParameters: {
-          'lat': latitude,
-          'lng': longitude,
-        },
-      );
-      return response.data ?? {};
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error updating location: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> clearLocation() async {
-    try {
-      await _dio.post('${ApiConstants.usersEndpoint}/location/clear');
-    } catch (e) {
-      debugPrint('[API_SERVICE] Error clearing location: $e');
-      rethrow;
-    }
-  }
+  // Contact Management Methods
 
   // ============ LOCAL FILE STORAGE FUNCTIONS ============
   
