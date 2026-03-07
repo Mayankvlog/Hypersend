@@ -558,6 +558,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               width: 32,
               height: 32,
               decoration: const BoxDecoration(
+                color: Colors.blue,
                 shape: BoxShape.circle,
               ),
               child: ClipOval(
@@ -568,7 +569,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   fit: BoxFit.cover,
                   cacheHeight: (32 * MediaQuery.of(context).devicePixelRatio).toInt(),
                   cacheWidth: (32 * MediaQuery.of(context).devicePixelRatio).toInt(),
+                  // Show loading placeholder while image loads
+                  frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                    if (wasSynchronouslyLoaded) return child;
+                    return AnimatedOpacity(
+                      opacity: frame == null ? 0 : 1,
+                      duration: const Duration(milliseconds: 300),
+                      child: child,
+                    );
+                  },
+                  // Fallback to icon when image fails to load
                   errorBuilder: (context, error, stackTrace) {
+                    debugPrint('[CHAT_LIST] Icon.png load failed: $error');
                     return Container(
                       width: 32,
                       height: 32,

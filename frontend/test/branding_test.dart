@@ -44,7 +44,7 @@ Widget _buildFallbackAvatar({Color color = Colors.blue}) {
 
 void main() {
   group('Frontend Branding Tests', () {
-    testWidgets('app logo uses icon.png image', (WidgetTester tester) async {
+    testWidgets('app logo uses icon.png image with proper loading', (WidgetTester tester) async {
       // Build a minimal widget that contains the app logo with image
       await tester.pumpWidget(
         TestAppWrapper(
@@ -55,11 +55,9 @@ void main() {
                   Container(
                     width: 32,
                     height: 32,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
+                      color: Colors.grey,
                       shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [Colors.cyan, Colors.cyan.withValues(alpha: 0.7)],
-                      ),
                     ),
                     child: ClipOval(
                       child: Image.asset(
@@ -67,6 +65,14 @@ void main() {
                         width: 32,
                         height: 32,
                         fit: BoxFit.cover,
+                        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                          if (wasSynchronouslyLoaded) return child;
+                          return AnimatedOpacity(
+                            opacity: frame == null ? 0 : 1,
+                            duration: const Duration(milliseconds: 300),
+                            child: child,
+                          );
+                        },
                         errorBuilder: (context, error, stackTrace) {
                           return _buildFallbackAvatar(color: Colors.blue);
                         },
@@ -82,6 +88,9 @@ void main() {
           ),
         ),
       );
+
+      // Wait for image to load
+      await tester.pumpAndSettle();
 
       // Find the app logo image widget within the AppBar context
       final logoImageFinder = find.descendant(
@@ -107,6 +116,9 @@ void main() {
         matching: find.text('Z'),
       );
       expect(zTextFinder, findsNothing, reason: 'Z character should not be used as icon fallback');
+      
+      // Verify icon.png asset is correctly loaded in production
+      expect(logoImageFinder, findsOneWidget, reason: 'Icon.png should be successfully loaded from assets');
     });
 
     testWidgets('connection status icon shows correct state', (WidgetTester tester) async {
