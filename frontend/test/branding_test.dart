@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hypersend/core/constants/app_strings.dart';
-import 'package:hypersend/presentation/screens/chat_list_screen.dart';
-import 'package:hypersend/presentation/screens/splash_screen.dart';
-import 'package:hypersend/presentation/screens/auth_screen.dart';
 
 /// Test wrapper widget that provides necessary dependencies for testing
 class TestAppWrapper extends StatelessWidget {
@@ -30,33 +27,75 @@ class TestAppWrapper extends StatelessWidget {
 
 void main() {
   group('Frontend Branding Tests', () {
-    testWidgets('app logo returns lightning bolt emoji', (WidgetTester tester) async {
-      // Build a minimal widget that contains the app logo logic
-      // This avoids triggering the full ChatListScreen with its network dependencies
+    testWidgets('app logo uses icon.png image', (WidgetTester tester) async {
+      // Build a minimal widget that contains the app logo with image
       await tester.pumpWidget(
         TestAppWrapper(
           child: Scaffold(
             appBar: AppBar(
-              title: const Text('⚡', style: TextStyle(color: Colors.white)),
+              title: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [Colors.cyan, Colors.cyan.withValues(alpha: 0.7)],
+                      ),
+                    ),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/icons/icon.png',
+                        width: 32,
+                        height: 32,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Text(
+                              'Z',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('zaply'),
+                ],
+              ),
               backgroundColor: Colors.blue,
             ),
           ),
         ),
       );
 
-      // Find the app logo text widget within the AppBar context
-      final logoFinder = find.descendant(
+      // Find the app logo image widget within the AppBar context
+      final logoImageFinder = find.descendant(
         of: find.byType(AppBar),
-        matching: find.text('⚡'),
+        matching: find.byType(Image),
       );
-      expect(logoFinder, findsOneWidget, reason: 'App logo should display lightning bolt emoji in AppBar');
       
-      // Verify no 'Z' character is displayed as logo in the AppBar
-      final zLogoFinder = find.descendant(
+      // Check for either the image or fallback text
+      final logoTextFinder = find.descendant(
         of: find.byType(AppBar),
         matching: find.text('Z'),
       );
-      expect(zLogoFinder, findsNothing, reason: 'Z character should not be used as app logo in AppBar');
+      
+      expect(logoImageFinder, findsOneWidget, reason: 'App logo should display icon.png image (or fallback) in AppBar');
+      // The fallback 'Z' text may or may not be present depending on image loading
+      
+      // Verify no lightning bolt emoji is displayed as logo in the AppBar
+      final lightningLogoFinder = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text('⚡'),
+      );
+      expect(lightningLogoFinder, findsNothing, reason: 'Lightning bolt emoji should not be used as app logo in AppBar');
     });
 
     testWidgets('connection status icon shows correct state', (WidgetTester tester) async {
@@ -124,24 +163,59 @@ void main() {
     });
 
     testWidgets('branding elements are consistent across screens', (WidgetTester tester) async {
-      // Test app bar logo consistency with a minimal widget
+      // Test app bar logo consistency with image-based logo
       await tester.pumpWidget(
         TestAppWrapper(
           child: Scaffold(
             appBar: AppBar(
-              title: const Text('⚡', style: TextStyle(color: Colors.white)),
+              title: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [Colors.cyan, Colors.cyan.withValues(alpha: 0.7)],
+                      ),
+                    ),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/icons/icon.png',
+                        width: 32,
+                        height: 32,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Text(
+                              'Z',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('zaply'),
+                ],
+              ),
               backgroundColor: Colors.blue,
             ),
           ),
         ),
       );
 
-      // Check for lightning bolt logo in AppBar
+      // Check for image logo in AppBar
       final logoInAppBar = find.descendant(
         of: find.byType(AppBar),
-        matching: find.text('⚡'),
+        matching: find.byType(Image),
       );
-      expect(logoInAppBar, findsOneWidget, reason: 'AppBar should show lightning bolt logo');
+      expect(logoInAppBar, findsOneWidget, reason: 'AppBar should show icon.png image logo (or fallback)');
       
       // Test icon consistency with another minimal widget
       await tester.pumpWidget(

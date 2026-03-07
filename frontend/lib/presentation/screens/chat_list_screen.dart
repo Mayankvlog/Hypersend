@@ -395,19 +395,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  /// Get app logo icon based on app state
-  /// Logic: Show lightning bolt emoji for connection/power
-  /// Could be extended to show different icons based on app state/features
-  String _getAppLogo() {
-    // Default: Show lightning bolt for fast/secure messaging
-    // You can extend this logic to show different icons based on:
-    // - Current tab/page
-    // - User status
-    // - Unread messages count
-    // - Connection status
-    return '⚡'; // Lightning bolt for speed and power
-  }
-
+  
   void _onBottomNavTap(int index) {
     setState(() {
       _selectedIndex = index;
@@ -575,14 +563,25 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   colors: [AppTheme.primaryCyan, AppTheme.primaryCyan.withValues(alpha: 0.7)],
                 ),
               ),
-              child: Center(
-                child: Text(
-                  _getAppLogo(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                  ),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/icons/icon.png',
+                  width: 32,
+                  height: 32,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    // Fallback to text if image fails to load
+                    return Center(
+                      child: Text(
+                        'Z',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
