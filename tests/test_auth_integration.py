@@ -142,9 +142,11 @@ class TestAuthenticationIntegration:
             
             assert response.status_code == 200
             data = response.json()
-            assert data["access_token"] == "access_token_123"
-            assert data["refresh_token"] == "refresh_token_123"
+            assert data["message"] == "Login successful"
             assert data["token_type"] == "bearer"
+            # Tokens are stored in HTTP-only cookies, not in JSON response
+            assert "access_token" in response.cookies
+            assert "refresh_token" in response.cookies
         
         print("✓ Login after registration successful")
     

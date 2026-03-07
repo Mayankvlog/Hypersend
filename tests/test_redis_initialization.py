@@ -13,6 +13,7 @@ import pytest
 import asyncio
 import logging
 import os
+import redis
 from unittest import mock
 from typing import Optional
 import sys
@@ -104,10 +105,11 @@ class TestRedisConnectionFailure:
         from backend.main import _wait_for_redis_with_retry
         from backend.config import settings
         
-        # Temporarily override REDIS_HOST to an unreachable address
-        original_host = settings.REDIS_HOST
-        
-        with mock.patch.object(settings, 'REDIS_HOST', '192.0.2.1'):  # Non-routable IP
+        # Mock the entire redis.asyncio module to fail connection
+        with mock.patch('backend.main.redis') as mock_redis_module:
+            # Configure mock to raise connection error on Redis client creation
+            mock_redis_module.Redis.side_effect = redis.ConnectionError("Connection failed")
+            
             try:
                 # This should raise RuntimeError after max retries
                 with pytest.raises(RuntimeError, match="Redis connection failed"):
@@ -116,8 +118,9 @@ class TestRedisConnectionFailure:
                         timeout=30.0  # Allow enough time for retries
                     )
                 logger.info("[TEST] ✓ Redis timeout error handling works correctly")
-            finally:
-                settings.REDIS_HOST = original_host
+            except asyncio.TimeoutError:
+                # If it times out, that's also a failure of the test
+                pytest.fail("Redis connection test timed out - should have raised RuntimeError quickly")
     
     @pytest.mark.asyncio
     async def test_redis_password_validation(self):

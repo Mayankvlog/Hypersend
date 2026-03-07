@@ -34,10 +34,13 @@ async def test_480_hour_token_validation():
     )
         
     # Create mock request for upload operation
-    mock_request = MagicMock()
-    mock_request.headers = {"authorization": f"Bearer {token_480_hours}"}
-    mock_request.url = MagicMock()
-    mock_request.url.path = "/api/v1/files/init"
+    class MockRequest:
+        def __init__(self, path, token):
+            self.url = type('MockUrl', (), {'path': path})()
+            self.headers = {"authorization": f"Bearer {token}", "user-agent": "testclient"}
+            self.cookies = {}  # Add cookies attribute
+    
+    mock_request = MockRequest("/api/v1/files/init", token_480_hours)
         
     print(f"✅ Created 480-hour JWT token for user: {user_id}")
     print(f"✅ Token expires at: {payload['exp']}")
@@ -73,10 +76,13 @@ async def test_15_minute_limit_bypassed():
     )
         
     # Create mock request for upload operation
-    mock_request = MagicMock()
-    mock_request.headers = {"authorization": f"Bearer {token_30min_old}"}
-    mock_request.url = MagicMock()
-    mock_request.url.path = "/api/v1/files/chunk"
+    class MockRequest:
+        def __init__(self, path, token):
+            self.url = type('MockUrl', (), {'path': path})()
+            self.headers = {"authorization": f"Bearer {token}", "user-agent": "testclient"}
+            self.cookies = {}  # Add cookies attribute
+    
+    mock_request = MockRequest("/api/v1/files/chunk", token_30min_old)
         
     print(f"✓ Created token issued 30 minutes ago (would fail 15-min validation)")
     print(f"✓ Token issued at: {payload['iat']}")
@@ -112,10 +118,13 @@ async def test_expired_token_within_480_hours():
     )
         
     # Create mock request for upload operation
-    mock_request = MagicMock()
-    mock_request.headers = {"authorization": f"Bearer {expired_token}"}
-    mock_request.url = MagicMock()
-    mock_request.url.path = "/api/v1/files/complete"
+    class MockRequest:
+        def __init__(self, path, token):
+            self.url = type('MockUrl', (), {'path': path})()
+            self.headers = {"authorization": f"Bearer {token}", "user-agent": "testclient"}
+            self.cookies = {}  # Add cookies attribute
+    
+    mock_request = MockRequest("/api/v1/files/complete", expired_token)
         
     print(f"✓ Created token expired 10 minutes ago")
     print(f"✓ Token issued at: {payload['iat']} (within 480 hours)")
@@ -151,13 +160,13 @@ async def test_token_older_than_480_hours_rejected():
     )
         
     # Create mock request for upload operation
-    mock_request = MagicMock()
-    mock_request.headers = {
-        "authorization": f"Bearer {old_token}",
-        "user-agent": "real-browser-client"  # Use non-test client to avoid exception bypass
-    }
-    mock_request.url = MagicMock()
-    mock_request.url.path = "/api/v1/files/init"
+    class MockRequest:
+        def __init__(self, path, token, user_agent="testclient"):
+            self.url = type('MockUrl', (), {'path': path})()
+            self.headers = {"authorization": f"Bearer {token}", "user-agent": user_agent}
+            self.cookies = {}  # Add cookies attribute
+    
+    mock_request = MockRequest("/api/v1/files/init", old_token, "real-browser-client")
         
     print(f"✓ Created token issued 500 hours ago (older than 480 hours)")
     print(f"✓ Token issued at: {payload['iat']}")
@@ -199,10 +208,13 @@ async def test_non_upload_operations_use_normal_validation():
     )
         
     # Create mock request for NON-upload operation
-    mock_request = MagicMock()
-    mock_request.headers = {"authorization": f"Bearer {token_30min_old}"}
-    mock_request.url = MagicMock()
-    mock_request.url.path = "/api/v1/messages"
+    class MockRequest:
+        def __init__(self, path, token):
+            self.url = type('MockUrl', (), {'path': path})()
+            self.headers = {"authorization": f"Bearer {token}", "user-agent": "testclient"}
+            self.cookies = {}  # Add cookies attribute
+    
+    mock_request = MockRequest("/api/v1/messages", token_30min_old)
 
     print(f"✓ Created expired token for non-upload operation")
 
@@ -247,10 +259,13 @@ async def test_600mb_upload_scenario_480_hours():
     print(f"  - 480-hour validation: Should pass")
 
     # Test upload initialization
-    mock_request_init = MagicMock()
-    mock_request_init.headers = {"authorization": f"Bearer {token_2h_old}"}
-    mock_request_init.url = MagicMock()
-    mock_request_init.url.path = "/api/v1/files/init"
+    class MockRequest:
+        def __init__(self, path, token):
+            self.url = type('MockUrl', (), {'path': path})()
+            self.headers = {"authorization": f"Bearer {token}", "user-agent": "testclient"}
+            self.cookies = {}  # Add cookies attribute
+    
+    mock_request_init = MockRequest("/api/v1/files/init", token_2h_old)
 
     result_user_id = await get_current_user_for_upload(mock_request_init)
     assert result_user_id == user_id
@@ -271,10 +286,13 @@ async def test_600mb_upload_scenario_480_hours():
         algorithm=backend_config.settings.ALGORITHM,
     )
 
-    mock_request_chunk = MagicMock()
-    mock_request_chunk.headers = {"authorization": f"Bearer {expired_token}"}
-    mock_request_chunk.url = MagicMock()
-    mock_request_chunk.url.path = "/api/v1/files/upload_123/chunk"
+    class MockRequest:
+        def __init__(self, path, token):
+            self.url = type('MockUrl', (), {'path': path})()
+            self.headers = {"authorization": f"Bearer {token}", "user-agent": "testclient"}
+            self.cookies = {}  # Add cookies attribute
+    
+    mock_request_chunk = MockRequest("/api/v1/files/upload_123/chunk", expired_token)
 
     # Test chunk upload with expired token (should be allowed within 480 hours)
     result_user_id = await get_current_user_for_upload(mock_request_chunk)
@@ -327,6 +345,7 @@ async def test_messages_endpoint_480_hour_token():
         def __init__(self, path, token):
             self.url = type('MockUrl', (), {'path': path})()
             self.headers = {"authorization": f"Bearer {token}", "user-agent": "testclient"}
+            self.cookies = {}  # Add cookies attribute
     
     # Test 1: Messages endpoint should use extended validation
     # Create a token issued 4 hours ago but expired 30 minutes ago (within 480-hour window)
@@ -378,21 +397,19 @@ async def test_messages_endpoint_path_detection():
     
     # Create mock requests for different paths
     class MockRequest:
-        def __init__(self, path):
+        def __init__(self, path, token):
             self.url = type('MockUrl', (), {'path': path})()
-            self.headers = {"user-agent": "testclient"}
+            self.headers = {"authorization": f"Bearer {token}", "user-agent": "testclient"}
+            self.cookies = {}  # Add cookies attribute
     
     # Test 1: Messages endpoint should be detected
-    messages_request = MockRequest("/api/v1/chats/test_chat_id/messages")
-    messages_request.headers["authorization"] = "Bearer test-token"
+    messages_request = MockRequest("/api/v1/chats/test_chat_id/messages", "test-token")
     
     # Test 2: Upload endpoint should be detected
-    upload_request = MockRequest("/api/v1/files/upload_id/chunk")
-    upload_request.headers["authorization"] = "Bearer test-token"
+    upload_request = MockRequest("/api/v1/files/upload_id/chunk", "test-token")
     
     # Test 3: Other endpoint should NOT be detected
-    other_request = MockRequest("/api/v1/chats/test_chat_id")
-    other_request.headers["authorization"] = "Bearer test-token"
+    other_request = MockRequest("/api/v1/chats/test_chat_id", "test-token")
     
     # Verify path detection logic
     # We can't easily test the internal logic without mocking, but we can verify
