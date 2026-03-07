@@ -25,6 +25,23 @@ class TestAppWrapper extends StatelessWidget {
   }
 }
 
+// Shared helper widget for fallback avatar to ensure consistency across tests
+Widget _buildFallbackAvatar({Color color = Colors.blue}) {
+  return Container(
+    width: 32,
+    height: 32,
+    decoration: BoxDecoration(
+      color: color,
+      shape: BoxShape.circle,
+    ),
+    child: const Icon(
+      Icons.person,
+      size: 20,
+      color: Colors.white,
+    ),
+  );
+}
+
 void main() {
   group('Frontend Branding Tests', () {
     testWidgets('app logo uses icon.png image', (WidgetTester tester) async {
@@ -51,16 +68,7 @@ void main() {
                         height: 32,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
-                          return Center(
-                            child: Text(
-                              'Z',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                          );
+                          return _buildFallbackAvatar(color: Colors.blue);
                         },
                       ),
                     ),
@@ -81,21 +89,24 @@ void main() {
         matching: find.byType(Image),
       );
       
-      // Check for either the image or fallback text
-      final logoTextFinder = find.descendant(
+      // Assert the main logo image is present
+      expect(logoImageFinder, findsOneWidget, reason: 'App logo should display icon.png image in AppBar');
+      
+      // Check for fallback icon when image fails to load
+      final fallbackIconFinder = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byIcon(Icons.person),
+      );
+      
+      // Assert fallback icon is NOT present since image asset is available
+      expect(fallbackIconFinder, findsNothing, reason: 'Fallback icon should not be present when image loads successfully');
+      
+      // Verify no 'Z' text is displayed as fallback in the AppBar
+      final zTextFinder = find.descendant(
         of: find.byType(AppBar),
         matching: find.text('Z'),
       );
-      
-      expect(logoImageFinder, findsOneWidget, reason: 'App logo should display icon.png image (or fallback) in AppBar');
-      // The fallback 'Z' text may or may not be present depending on image loading
-      
-      // Verify no lightning bolt emoji is displayed as logo in the AppBar
-      final lightningLogoFinder = find.descendant(
-        of: find.byType(AppBar),
-        matching: find.text('⚡'),
-      );
-      expect(lightningLogoFinder, findsNothing, reason: 'Lightning bolt emoji should not be used as app logo in AppBar');
+      expect(zTextFinder, findsNothing, reason: 'Z character should not be used as icon fallback');
     });
 
     testWidgets('connection status icon shows correct state', (WidgetTester tester) async {
@@ -186,16 +197,7 @@ void main() {
                         height: 32,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
-                          return Center(
-                            child: Text(
-                              'Z',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                          );
+                          return _buildFallbackAvatar(color: Colors.grey);
                         },
                       ),
                     ),
