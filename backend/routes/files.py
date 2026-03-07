@@ -640,16 +640,17 @@ async def get_current_user_for_download(
     request: Request, token: Optional[str] = Query(None)
 ) -> str:
     """
-    Get current user from Authorization header OR query parameter token.
+    Get current user from secure session cookie, Authorization header, or query parameter token.
 
-    RATIONALE: Downloads triggered directly from URLs may not have the token
-    in the Authorization header (browser downloads, proxied requests, etc).
-    Accepts token in both places for maximum compatibility while maintaining
-    security through JWT validation.
+    PRODUCTION FIX: Downloads must support multiple authentication methods for reliability:
+    - HTTPOnly session cookie (most secure, used by modern browsers)
+    - Authorization header (for API clients and programmatic access)
+    - Query parameter token (fallback for legacy/proxied requests)
 
     Priority:
-    1. Authorization header (Bearer <token>)
-    2. Query parameter (?token=<token>)
+    1. HTTPOnly session cookie (secure, preferred)
+    2. Authorization header (Bearer <token>)
+    3. Query parameter (?token=<token>)
 
     Args:
         request: The request object
@@ -659,13 +660,31 @@ async def get_current_user_for_download(
         The user_id from the validated token
 
     Raises:
-        HTTPException: If no valid token found in either location
+        HTTPException: If no valid token found in any location
     """
     import logging
 
     logger = logging.getLogger(__name__)
 
-    # Try Authorization header first
+    # PRIORITY 1: Try to get access token from HTTPOnly cookie (secure method - production standard)
+    access_token = request.cookies.get("access_token")
+    if access_token:
+        try:
+            token_data = decode_token(access_token)
+            if token_data.token_type == "access":
+                logger.debug(
+                    f"Download authenticated via HTTPOnly cookie for user {token_data.user_id}"
+                )
+                return token_data.user_id
+            else:
+                logger.warning(
+                    f"Invalid token type in HTTPOnly cookie: {token_data.token_type}"
+                )
+        except Exception as e:
+            logger.warning(f"Invalid token in HTTPOnly cookie: {e}")
+            # Fall through to try other methods
+
+    # PRIORITY 2: Try Authorization header
     auth_header = request.headers.get("authorization", "")
     if auth_header and auth_header.startswith("Bearer "):
         header_token = auth_header.replace("Bearer ", "").strip()
@@ -681,7 +700,7 @@ async def get_current_user_for_download(
                 logger.warning(f"Invalid token in Authorization header: {e}")
                 # Fall through to try query parameter
 
-    # Try query parameter as fallback
+    # PRIORITY 3: Try query parameter as fallback (for legacy/special cases)
     if token:
         try:
             token_data = decode_token(token)
@@ -697,10 +716,10 @@ async def get_current_user_for_download(
         except Exception as e:
             logger.warning(f"Invalid token in query parameter: {e}")
 
-    # No valid token found
+    # No valid token found in any location
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Missing or invalid authentication token. Provide token via Authorization header or query parameter.",
+        detail="Missing or invalid authentication token. Provide token via secure session cookie, Authorization header, or query parameter.",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -1584,18 +1603,34 @@ async def upload_chunk(
         }
         
         # Send to all user devices
-        await websocket_manager.send_message_to_user(current_user, progress_message)
-        
-        _log("info", f"Upload progress broadcast: {progress_percent}%", {
-            "upload_id": upload_id,
-            "user_id": current_user,
-            "chunk_index": int(chunk_index),
-            "progress_percent": progress_percent,
-            "unique_uploaded_chunks": len(unique_uploaded_chunks)
-        })
+        try:
+            devices_notified = await websocket_manager.send_message_to_user(current_user, progress_message)
+            
+            _log("info", f"Upload progress broadcast: {progress_percent}%", {
+                "upload_id": upload_id,
+                "user_id": current_user,
+                "chunk_index": int(chunk_index),
+                "progress_percent": progress_percent,
+                "unique_uploaded_chunks": len(unique_uploaded_chunks),
+                "devices_notified": devices_notified
+            })
+        except AttributeError as ae:
+            # WebSocketManager method missing - log but continue (non-fatal)
+            _log("error", f"WebSocket send_message_to_user not available: {ae}", {
+                "upload_id": upload_id,
+                "user_id": current_user,
+                "error_type": "AttributeError"
+            })
+        except Exception as e:
+            # Any other broadcast error - log but continue upload (non-fatal)
+            _log("warning", f"Failed to broadcast upload progress: {type(e).__name__}: {e}", {
+                "upload_id": upload_id,
+                "user_id": current_user,
+                "error_type": type(e).__name__
+            })
         
     except Exception as e:
-        _log("warning", f"Failed to broadcast upload progress: {e}", {
+        _log("warning", f"Failed to broadcast upload progress (outer): {type(e).__name__}: {e}", {
             "upload_id": upload_id,
             "user_id": current_user
         })

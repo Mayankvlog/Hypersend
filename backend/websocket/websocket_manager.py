@@ -1171,6 +1171,21 @@ class WebSocketManager:
             logger.error(f"Error in send_to_user for user {user_id}: {e}")
             return 0
     
+    async def send_message_to_user(self, user_id: str, message: Dict[str, Any]) -> int:
+        """Alias method for send_to_user for backward compatibility and upload progress broadcasting.
+        
+        This method provides the same functionality as send_to_user but with a different name
+        to match the call signature expected in upload progress broadcasting code.
+        
+        Args:
+            user_id: The user ID to send message to
+            message: The message dictionary to send
+            
+        Returns:
+            Number of devices the message was successfully sent to
+        """
+        return await self.send_to_user(user_id, message)
+    
     async def broadcast(self, message: Dict[str, Any]) -> int:
         """Broadcast message to all connected clients, returns count of successful sends"""
         success_count = 0

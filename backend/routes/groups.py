@@ -3019,8 +3019,14 @@ async def update_group_photo(
                     "timestamp": ts.isoformat().replace('+00:00', 'Z')  # Same timestamp
                 }
                 
-                # Use public API method
-                await websocket_manager.send_message_to_user(member_id, broadcast_message)
+                # Use public API method - with safe error handling
+                try:
+                    await websocket_manager.send_message_to_user(member_id, broadcast_message)
+                except AttributeError as ae:
+                    logger.error(f"WebSocket send_message_to_user not available for {member_id}: {ae}")
+                except Exception as e:
+                    logger.warning(f"Failed to notify {member_id} of group photo update: {type(e).__name__}: {e}")
+                    # Continue notifying other members
         except Exception as e:
             logger.warning(f"Failed to broadcast group photo update to WebSocket: {e}")
             # Continue - photo was updated even if broadcast failed
