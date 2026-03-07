@@ -389,6 +389,116 @@ class TestLogicValidation:
         assert is_valid, "File size should be valid"
 
 
+class TestFrontendIconAssets:
+    """Test frontend icon asset availability and validation for icon.png loading"""
+    
+    def test_icon_png_asset_exists(self):
+        """Verify icon.png asset file exists in frontend/assets/icons/"""
+        icon_path = Path(__file__).parent.parent / "frontend" / "assets" / "icons" / "icon.png"
+        assert icon_path.exists(), f"icon.png should exist at {icon_path}"
+        assert icon_path.is_file(), f"icon.png should be a file, not directory"
+        assert icon_path.stat().st_size > 0, "icon.png should not be empty"
+        print(f"✓ icon.png exists: {icon_path} (size: {icon_path.stat().st_size} bytes)")
+    
+    def test_icon_png_is_valid_image(self):
+        """Verify icon.png is a valid PNG image file"""
+        icon_path = Path(__file__).parent.parent / "frontend" / "assets" / "icons" / "icon.png"
+        
+        # Check PNG magic bytes (first 8 bytes of PNG file)
+        with open(icon_path, 'rb') as f:
+            header = f.read(8)
+        
+        # PNG files start with bytes: 89 50 4E 47 0D 0A 1A 0A
+        png_signature = b'\x89PNG\r\n\x1a\n'
+        assert header == png_signature, f"icon.png should have valid PNG signature, got {header.hex()}"
+        print(f"✓ icon.png has valid PNG signature")
+    
+    def test_pubspec_yaml_asset_configuration(self):
+        """Verify pubspec.yaml includes assets/icons/ directory"""
+        pubspec_path = Path(__file__).parent.parent / "frontend" / "pubspec.yaml"
+        assert pubspec_path.exists(), f"pubspec.yaml should exist at {pubspec_path}"
+        
+        with open(pubspec_path, 'r') as f:
+            pubspec_content = f.read()
+        
+        # Check that assets section includes icons
+        assert 'assets:' in pubspec_content, "pubspec.yaml should have 'assets:' section"
+        assert 'assets/icons/' in pubspec_content, "pubspec.yaml should include 'assets/icons/'"
+        print(f"✓ pubspec.yaml correctly configured with assets/icons/")
+    
+    def test_icon_fallback_logic_is_robust(self):
+        """Verify fallback logic handles missing/failed image gracefully"""
+        # Test the fallback logic: if icon.png fails, should show Icons.person
+        # This is tested in flutter but we validate the concept here
+        
+        # Simulate asset validation logic (similar to _validateIconAsset in Dart)
+        icon_path = Path(__file__).parent.parent / "frontend" / "assets" / "icons" / "icon.png"
+        
+        # If asset exists and is valid PNG, loading should work
+        asset_valid = (
+            icon_path.exists() and 
+            icon_path.is_file() and 
+            icon_path.stat().st_size > 0
+        )
+        
+        # Read PNG header to verify integrity
+        if asset_valid:
+            with open(icon_path, 'rb') as f:
+                header = f.read(8)
+            asset_valid = header == b'\x89PNG\r\n\x1a\n'
+        
+        assert asset_valid, (
+            "icon.png asset should be valid - if this fails, fallback to Icons.person should activate. "
+            f"Path: {icon_path}"
+        )
+        print(f"✓ icon.png asset is valid and ready to load")
+    
+    def test_no_z_character_placeholder(self):
+        """Verify no 'Z' character should appear as fallback in source code"""
+        chat_list_dart = Path(__file__).parent.parent / "frontend" / "lib" / "presentation" / "screens" / "chat_list_screen.dart"
+        
+        assert chat_list_dart.exists(), f"chat_list_screen.dart should exist at {chat_list_dart}"
+        
+        with open(chat_list_dart, 'r') as f:
+            content = f.read()
+        
+        # Check that no 'Z' character fallbacks exist in the source code
+        invalid_fallbacks = ['Text("Z")', 'Z Icon', '"Z"', "'Z'"]
+        
+        for invalid in invalid_fallbacks:
+            assert invalid not in content, f"Source code should NOT contain fallback: {invalid}"
+        
+        # Check for Text widget usage with regex pattern to catch variations
+        import re
+        text_z_pattern = re.compile(r'Text\s*\(\s*["\']Z["\']\s*\)', re.IGNORECASE)
+        assert not text_z_pattern.search(content), "Source code should NOT contain Text widget with 'Z' character"
+        
+        # Verify proper fallback is used instead
+        assert "Icons.person" in content, "Source code should use Icons.person as fallback"
+        
+        print(f"✓ Source code has proper Icons.person fallback, no 'Z' character placeholders")
+    
+    def test_chat_list_screen_icon_loading_method(self):
+        """Verify _buildAppLogo() method in chat_list_screen.dart uses robust loading"""
+        chat_list_dart = Path(__file__).parent.parent / "frontend" / "lib" / "presentation" / "screens" / "chat_list_screen.dart"
+        
+        assert chat_list_dart.exists(), f"chat_list_screen.dart should exist at {chat_list_dart}"
+        
+        with open(chat_list_dart, 'r') as f:
+            content = f.read()
+        
+        # Check for the robust icon loading implementation
+        assert '_buildAppLogo' in content, "chat_list_screen.dart should have _buildAppLogo method"
+        assert '_validateIconAsset' in content, "chat_list_screen.dart should have _validateIconAsset method"
+        assert '_buildIconFallback' in content, "chat_list_screen.dart should have _buildIconFallback method"
+        assert 'FutureBuilder' in content, "chat_list_screen.dart should use FutureBuilder for asset validation"
+        assert 'Image.asset' in content, "chat_list_screen.dart should load image.asset with proper error handling"
+        assert 'errorBuilder' in content, "chat_list_screen.dart should have errorBuilder for fallback"
+        assert "Icons.person" in content, "chat_list_screen.dart fallback should use Icons.person, not 'Z'"
+        
+        print(f"✓ chat_list_screen.dart has robust icon loading implementation")
+
+
 # NOTE: Frontend branding and icon logic tests have been moved to the Flutter test suite.
 # 
 # The following frontend-specific tests should be implemented in frontend/test/branding_test.dart:

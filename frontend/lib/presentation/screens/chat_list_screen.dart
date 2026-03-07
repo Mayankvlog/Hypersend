@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_strings.dart';
@@ -544,6 +545,93 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
+  // Build app logo with robust icon.png loading and fallback chain
+  Widget _buildAppLogo() {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: const BoxDecoration(
+        color: Colors.blue,
+        shape: BoxShape.circle,
+      ),
+      child: ClipOval(
+        child: FutureBuilder<bool>(
+          // Pre-validate asset exists and can load
+          future: _validateIconAsset(),
+          builder: (context, snapshot) {
+            // If asset validation fails or throws error, show fallback immediately
+            if (snapshot.hasError || (snapshot.hasData && !snapshot.data!)) {
+              debugPrint('[CHAT_LIST] Icon.png validation failed, using fallback');
+              return _buildIconFallback();
+            }
+
+            // If still loading validation, show fallback
+            if (!snapshot.hasData) {
+              return _buildIconFallback();
+            }
+
+            // Asset exists - load it with robust error handling
+            return Image.asset(
+              'assets/icons/icon.png',
+              width: 32,
+              height: 32,
+              fit: BoxFit.cover,
+              cacheHeight: (32 * MediaQuery.of(context).devicePixelRatio).toInt(),
+              cacheWidth: (32 * MediaQuery.of(context).devicePixelRatio).toInt(),
+              // Show loading placeholder while image loads
+              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                if (wasSynchronouslyLoaded) return child;
+                return AnimatedOpacity(
+                  opacity: frame == null ? 0 : 1,
+                  duration: const Duration(milliseconds: 300),
+                  child: child,
+                );
+              },
+              // Fallback to icon when image fails to load
+              errorBuilder: (context, error, stackTrace) {
+                debugPrint('[CHAT_LIST] Icon.png load failed: $error - using fallback');
+                return _buildIconFallback();
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // Fallback icon widget - guaranteed to work
+  Widget _buildIconFallback() {
+    return const Icon(
+      Icons.person,
+      size: 20,
+      color: Colors.white,
+    );
+  }
+
+  // Validate icon asset synchronously
+  Future<bool> _validateIconAsset() async {
+    try {
+      // Try to load the asset - this will cache it if successful
+      final imageProvider = AssetImage('assets/icons/icon.png');
+      final imageStream = imageProvider.resolve(ImageConfiguration.empty);
+      
+      // Use a completer to convert the image loading to a Future
+      final completer = Completer<void>();
+      
+      void listener(ImageInfo image, bool synchronousCall) {
+        completer.complete();
+      }
+      
+      imageStream.addListener(ImageStreamListener(listener));
+      await completer.future;
+      debugPrint('[CHAT_LIST] Icon.png asset validated and cached');
+      return true;
+    } catch (e) {
+      debugPrint('[CHAT_LIST] Icon.png validation error: $e');
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -554,50 +642,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
         title: Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: const BoxDecoration(
-                color: Colors.blue,
-                shape: BoxShape.circle,
-              ),
-              child: ClipOval(
-                child: Image.asset(
-                  'assets/icons/icon.png',
-                  width: 32,
-                  height: 32,
-                  fit: BoxFit.cover,
-                  cacheHeight: (32 * MediaQuery.of(context).devicePixelRatio).toInt(),
-                  cacheWidth: (32 * MediaQuery.of(context).devicePixelRatio).toInt(),
-                  // Show loading placeholder while image loads
-                  frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                    if (wasSynchronouslyLoaded) return child;
-                    return AnimatedOpacity(
-                      opacity: frame == null ? 0 : 1,
-                      duration: const Duration(milliseconds: 300),
-                      child: child,
-                    );
-                  },
-                  // Fallback to icon when image fails to load
-                  errorBuilder: (context, error, stackTrace) {
-                    debugPrint('[CHAT_LIST] Icon.png load failed: $error');
-                    return Container(
-                      width: 32,
-                      height: 32,
-                      decoration: const BoxDecoration(
-                        color: Colors.grey,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.person,
-                        size: 20,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
+            _buildAppLogo(),
             const SizedBox(width: 12),
             const Text(AppStrings.appName),
           ],
