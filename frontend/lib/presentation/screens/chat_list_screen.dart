@@ -557,11 +557,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
             Container(
               width: 32,
               height: 32,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [AppTheme.primaryCyan, AppTheme.primaryCyan.withValues(alpha: 0.7)],
-                ),
               ),
               child: ClipOval(
                 child: Image.asset(
@@ -569,16 +566,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   width: 32,
                   height: 32,
                   fit: BoxFit.cover,
+                  cacheHeight: (32 * MediaQuery.of(context).devicePixelRatio).toInt(),
+                  cacheWidth: (32 * MediaQuery.of(context).devicePixelRatio).toInt(),
                   errorBuilder: (context, error, stackTrace) {
-                    // Fallback to text if image fails to load
-                    return Center(
-                      child: Text(
-                        'Z',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
+                    return Container(
+                      width: 32,
+                      height: 32,
+                      decoration: const BoxDecoration(
+                        color: Colors.grey,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.person,
+                        size: 20,
+                        color: Colors.white,
                       ),
                     );
                   },
