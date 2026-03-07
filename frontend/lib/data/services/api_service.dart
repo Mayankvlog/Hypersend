@@ -68,29 +68,7 @@ class ApiService {
     }
   }
 
-  // Logout with HTTPOnly cookie support
-  Future<Map<String, dynamic>> logout() async {
-    _log('[API_LOGOUT] Calling logout endpoint');
-    
-    try {
-      final response = await _dio.post(
-        '/auth/logout',
-        data: {},  // No body needed - server reads from cookies
-        options: Options(
-          method: 'POST',
-        ),
-      );
-      
-      _log('[API_LOGOUT] Response: ${response.data}');
-      return response.data as Map<String, dynamic>;
-    } catch (e) {
-      _log('[API_LOGOUT] Error: $e');
-      return {
-        'detail': e.toString(),
-        'error': 'Logout failed'
-      };
-    }
-  }
+
 
   // Intelligent base URL selection with fallback logic
   String _getOptimalBaseUrl() {
@@ -261,7 +239,7 @@ class ApiService {
                   _refreshCompleter = Completer<bool>();
                   
                   try {
-                    refreshed = await authService.refreshTokens();
+                    refreshed = await authService.refreshSession();
                     _refreshCompleter!.complete(refreshed);
                   } catch (e) {
                     _log('[API_401] Refresh process failed: $e');
@@ -930,17 +908,29 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> logout({required String refreshToken}) async {
+  Future<Map<String, dynamic>> logout() async {
+    _log('[API_LOGOUT] Calling logout endpoint');
+    
     try {
       final response = await _dio.post(
-        '${ApiConstants.authEndpoint}/logout',
-        data: {'refresh_token': refreshToken},
+        '/auth/logout',
+        data: {},  // No body needed - server reads from HTTPOnly cookies
+        options: Options(
+          method: 'POST',
+        ),
       );
       
-      // Handle all HTTP status codes for logout
+      _log('[API_LOGOUT] Response: ${response.data}');
+      
+      // Validate response.data before processing
+      if (response.data == null) {
+        throw Exception('Logout response is null');
+      }
+      
       return _handleLogoutResponse(response);
     } catch (e) {
-      _log('[API_LOGOUT] Logout error: $e');
+      _log('[API_LOGOUT] Error: $e');
+      // Re-throw the exception instead of returning error map
       rethrow;
     }
   }

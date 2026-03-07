@@ -6,6 +6,8 @@ import 'dart:async';
 class AuthService {
   static const _kLastLoginAttemptKey = 'auth.lastLoginAttempt';
   static const _kFailedAttemptsKey = 'auth.failedAttempts';
+  static const _kAccessTokenKey = 'auth.accessToken';
+  static const _kRefreshTokenKey = 'auth.refreshToken';
 
   final ApiService _api;
 
@@ -13,10 +15,14 @@ class AuthService {
   DateTime? _lastLoginAttempt;
   Timer? _loginCooldownTimer;
   bool _isAuthenticated = false;
+  String? _accessToken;
+  String? _refreshToken;
 
   AuthService(this._api);
 
   bool get isLoggedIn => _isAuthenticated;
+  String? get accessToken => _accessToken;
+  String? get refreshToken => _refreshToken;
   bool get isLoginBlocked => _loginCooldownTimer?.isActive ?? false;
   Duration? get loginBlockTimeRemaining {
     if (!isLoginBlocked || _lastLoginAttempt == null) return null;
@@ -117,6 +123,25 @@ class AuthService {
   Future<void> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      
+      // Restore saved tokens (same keys used by _persistTokens)
+      final savedAccessToken = prefs.getString(_kAccessTokenKey);
+      final savedRefreshToken = prefs.getString(_kRefreshTokenKey);
+      
+      if (savedAccessToken != null && savedRefreshToken != null) {
+        _accessToken = savedAccessToken;
+        _refreshToken = savedRefreshToken;
+        _api.setAuthToken(_accessToken!);
+        _isAuthenticated = true;
+        // Log non-sensitive metadata only - token lengths and restoration status
+        final accessTokenLength = _accessToken?.length ?? 0;
+        final refreshTokenLength = _refreshToken?.length ?? 0;
+        debugPrint('[AUTH_INIT] Tokens restored - access token length: $accessTokenLength, refresh token length: $refreshTokenLength');
+        
+        // TODO: Add any post-load logic here (e.g., schedule refresh, notify listeners)
+      } else {
+        debugPrint('[AUTH_INIT] No saved tokens found');
+      }
       
       // Load failure tracking data (keep existing functionality)
       _failedAttempts = prefs.getInt(_kFailedAttemptsKey) ?? 0;
@@ -333,7 +358,10 @@ class AuthService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kAccessTokenKey, accessToken);
       await prefs.setString(_kRefreshTokenKey, refreshToken);
-      debugPrint('[AUTH_TOKENS] Tokens persisted - access: ${accessToken.substring(0, 20)}..., refresh: ${refreshToken.substring(0, 20)}...');
+      // Log non-sensitive metadata only - token lengths and persistence status
+      final accessTokenLength = accessToken.length;
+      final refreshTokenLength = refreshToken.length;
+      debugPrint('[AUTH_TOKENS] Tokens persisted - access token length: $accessTokenLength, refresh token length: $refreshTokenLength');
     } catch (e) {
       debugPrint('[AUTH_TOKENS] Error persisting tokens: $e');
       // Re-throw as auth exception to maintain error type consistency
