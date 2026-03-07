@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/constants/app_strings.dart';
 import '../../data/services/service_provider.dart';
 import '../../data/services/api_service.dart';
 import '../../data/models/user.dart';
@@ -135,7 +136,7 @@ class _AuthScreenState extends State<AuthScreen> {
             children: [
               const SizedBox(height: 24),
               Text(
-                'zaply',
+                AppStrings.appName,
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),

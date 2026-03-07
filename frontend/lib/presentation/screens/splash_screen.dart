@@ -60,6 +60,21 @@ class _SplashScreenState extends State<SplashScreen>
     debugPrint('[SplashScreen] Splash screen initialization complete');
   }
 
+  /// Get connection status icon based on current connection
+  /// Returns appropriate icon to represent system status
+  IconData _getConnectionStatusIcon() {
+    try {
+      // Check if we have a valid connection to the backend
+      final isLoggedIn = serviceProvider.authService.isLoggedIn;
+      // Show bolt (connected) or warning (disconnected)
+      return isLoggedIn ? Icons.bolt : Icons.cloud_off_outlined;
+    } catch (e) {
+      // Fallback to bolt icon on error
+      debugPrint('[SplashScreen] Connection check error: $e');
+      return Icons.bolt;
+    }
+  }
+
   @override
   void dispose() {
     _navigationTimer?.cancel(); // Cancel the timer to prevent test issues
@@ -86,7 +101,7 @@ class _SplashScreenState extends State<SplashScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Spacer(),
-            // Logo with glow effect
+            // Logo with glow effect - shows connection status
             Container(
               width: 160,
               height: 160,
@@ -105,8 +120,8 @@ class _SplashScreenState extends State<SplashScreen>
                   color: AppTheme.primaryCyan,
                   borderRadius: BorderRadius.circular(32),
                 ),
-                child: const Icon(
-                  Icons.bolt,
+                child: Icon(
+                  _getConnectionStatusIcon(),
                   size: 80,
                   color: Colors.white,
                 ),

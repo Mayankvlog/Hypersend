@@ -389,5 +389,16 @@ class TestLogicValidation:
         assert is_valid, "File size should be valid"
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+# NOTE: Frontend branding and icon logic tests have been moved to the Flutter test suite.
+# 
+# The following frontend-specific tests should be implemented in frontend/test/branding_test.dart:
+# - test_app_logo_returns_lightning_bolt: Tests _getAppLogo() in chat_list_screen.dart
+# - test_connection_status_icon_logic: Tests _getConnectionStatusIcon() in splash_screen.dart  
+# - test_auth_screen_uses_app_strings: Tests AppStrings.appName usage in auth screens
+# - test_branding_z_character_removed: Verifies no 'Z' character in branding
+# - test_icon_error_handling: Tests fallback behavior in icon functions
+#
+# See docs/ADR_frontend_branding.md for detailed branding specifications.
+# Frontend tests should use Flutter's widget testing framework to test actual UI components.
+
+

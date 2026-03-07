@@ -395,17 +395,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  /// Get app logo letter based on app state
-  /// Logic: Show 'Z' by default (zaply)
-  /// Could be extended to show different letters based on app state/features
+  /// Get app logo icon based on app state
+  /// Logic: Show lightning bolt emoji for connection/power
+  /// Could be extended to show different icons based on app state/features
   String _getAppLogo() {
-    // Default: Show 'Z' for zaply
-    // You can extend this logic to show different letters based on:
+    // Default: Show lightning bolt for fast/secure messaging
+    // You can extend this logic to show different icons based on:
     // - Current tab/page
     // - User status
     // - Unread messages count
-    // - Other app states
-    return 'Z'; // Z for zaply
+    // - Connection status
+    return '⚡'; // Lightning bolt for speed and power
   }
 
   void _onBottomNavTap(int index) {
