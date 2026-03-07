@@ -25,100 +25,57 @@ class TestAppWrapper extends StatelessWidget {
   }
 }
 
-// Shared helper widget for fallback avatar to ensure consistency across tests
-Widget _buildFallbackAvatar({Color color = Colors.blue}) {
-  return Container(
-    width: 32,
-    height: 32,
-    decoration: BoxDecoration(
-      color: color,
-      shape: BoxShape.circle,
-    ),
-    child: const Icon(
-      Icons.person,
-      size: 20,
-      color: Colors.white,
-    ),
-  );
-}
-
 void main() {
   group('Frontend Branding Tests', () {
-    testWidgets('app logo uses icon.png image with proper loading', (WidgetTester tester) async {
-      // Build a minimal widget that contains the app logo with image
+    testWidgets('app displays appName only without logo icon in header', (WidgetTester tester) async {
+      // Build a minimal widget that contains the app name without logo
       await tester.pumpWidget(
         TestAppWrapper(
           child: Scaffold(
             appBar: AppBar(
-              title: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
-                      color: Colors.grey,
-                      shape: BoxShape.circle,
-                    ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/icons/icon.png',
-                        width: 32,
-                        height: 32,
-                        fit: BoxFit.cover,
-                        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                          if (wasSynchronouslyLoaded) return child;
-                          return AnimatedOpacity(
-                            opacity: frame == null ? 0 : 1,
-                            duration: const Duration(milliseconds: 300),
-                            child: child,
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return _buildFallbackAvatar(color: Colors.blue);
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text('zaply'),
-                ],
-              ),
+              title: const Text(AppStrings.appName),
               backgroundColor: Colors.blue,
             ),
           ),
         ),
       );
 
-      // Wait for image to load
+      // Wait for rendering
       await tester.pumpAndSettle();
 
-      // Find the app logo image widget within the AppBar context
+      // Find the app name text in AppBar
+      final appNameFinder = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text('zaply'),
+      );
+      
+      // Assert app name is present
+      expect(appNameFinder, findsOneWidget, reason: 'AppBar should display zaply text only without avatar icon');
+      
+      // Ensure NO image icon is present in the AppBar
       final logoImageFinder = find.descendant(
         of: find.byType(AppBar),
         matching: find.byType(Image),
       );
       
-      // Assert the main logo image is present
-      expect(logoImageFinder, findsOneWidget, reason: 'App logo should display icon.png image in AppBar');
+      // Assert image logo is NOT present
+      expect(logoImageFinder, findsNothing, reason: 'App logo icon should not be present in AppBar');
       
-      // Check for fallback icon when image fails to load
+      // Verify icon fallback is NOT present in AppBar
       final fallbackIconFinder = find.descendant(
         of: find.byType(AppBar),
         matching: find.byIcon(Icons.person),
       );
       
-      // Assert fallback icon is NOT present since image asset is available
-      expect(fallbackIconFinder, findsNothing, reason: 'Fallback icon should not be present when image loads successfully');
+      // Assert fallback icon is NOT present
+      expect(fallbackIconFinder, findsNothing, reason: 'Fallback icon should not be present - only text zaply');
       
-      // Verify no 'Z' text is displayed as fallback in the AppBar
+      // Verify NO 'Z' text is displayed as letter-based avatar
       final zTextFinder = find.descendant(
         of: find.byType(AppBar),
         matching: find.text('Z'),
       );
-      expect(zTextFinder, findsNothing, reason: 'Z character should not be used as icon fallback');
-      
-      // Verify icon.png asset is correctly loaded in production
-      expect(logoImageFinder, findsOneWidget, reason: 'Icon.png should be successfully loaded from assets');
+      expect(zTextFinder, findsNothing, reason: 'Z character should not appear as letter-based avatar');
     });
 
     testWidgets('connection status icon shows correct state', (WidgetTester tester) async {
@@ -185,70 +142,45 @@ void main() {
       expect(AppStrings.appTagline.isNotEmpty, isTrue, reason: 'App tagline should not be empty');
     });
 
-    testWidgets('branding elements are consistent across screens', (WidgetTester tester) async {
-      // Test app bar logo consistency with image-based logo
+    testWidgets('branding elements are consistent - zaply text only', (WidgetTester tester) async {
+      // Test app bar with only zaply text (no avatar icon)
       await tester.pumpWidget(
         TestAppWrapper(
           child: Scaffold(
             appBar: AppBar(
-              title: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [Colors.cyan, Colors.cyan.withValues(alpha: 0.7)],
-                      ),
-                    ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/icons/icon.png',
-                        width: 32,
-                        height: 32,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return _buildFallbackAvatar(color: Colors.grey);
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text('zaply'),
-                ],
-              ),
+              title: const Text(AppStrings.appName),
               backgroundColor: Colors.blue,
             ),
           ),
         ),
       );
 
-      // Check for image logo in AppBar
+      // Wait for rendering
+      await tester.pumpAndSettle();
+
+      // Check for zaply text in AppBar
+      final zaplyTextInAppBar = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text('zaply'),
+      );
+      expect(zaplyTextInAppBar, findsOneWidget, reason: 'AppBar should show zaply text only');
+      
+      // Verify no logo icon in AppBar
       final logoInAppBar = find.descendant(
         of: find.byType(AppBar),
         matching: find.byType(Image),
       );
-      expect(logoInAppBar, findsOneWidget, reason: 'AppBar should show icon.png image logo (or fallback)');
+      expect(logoInAppBar, findsNothing, reason: 'AppBar should not show icon.png image logo');
       
-      // Test icon consistency with another minimal widget
-      await tester.pumpWidget(
-        TestAppWrapper(
-          child: Scaffold(
-            body: Center(
-              child: Icon(
-                Icons.bolt,
-                size: 48,
-                color: Colors.blue,
-              ),
-            ),
-          ),
-        ),
+      // Verify no letter-based avatar (Z) in header
+      final avatarZFinder = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text('Z'),
       );
-
-      // Check for consistent icon usage
-      final iconFinder = find.byType(Icon);
-      expect(iconFinder, findsOneWidget, reason: 'App should show connection status icon');
+      expect(avatarZFinder, findsNothing, reason: 'AppBar should not display Z letter avatar');
+      
+      // Test that app name constant is correct
+      expect(AppStrings.appName, equals('zaply'), reason: 'App name should be zaply');
     });
   });
 }

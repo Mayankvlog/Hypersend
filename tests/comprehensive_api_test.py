@@ -478,8 +478,8 @@ class TestFrontendIconAssets:
         
         print(f"✓ Source code has proper Icons.person fallback, no 'Z' character placeholders")
     
-    def test_chat_list_screen_icon_loading_method(self):
-        """Verify _buildAppLogo() method in chat_list_screen.dart uses robust loading"""
+    def test_chat_list_screen_header_displays_only_zaply_text(self):
+        """Verify chat_list_screen.dart header displays only zaply text without avatar icon"""
         chat_list_dart = Path(__file__).parent.parent / "frontend" / "lib" / "presentation" / "screens" / "chat_list_screen.dart"
         
         assert chat_list_dart.exists(), f"chat_list_screen.dart should exist at {chat_list_dart}"
@@ -487,16 +487,23 @@ class TestFrontendIconAssets:
         with open(chat_list_dart, 'r') as f:
             content = f.read()
         
-        # Check for the robust icon loading implementation
-        assert '_buildAppLogo' in content, "chat_list_screen.dart should have _buildAppLogo method"
-        assert '_validateIconAsset' in content, "chat_list_screen.dart should have _validateIconAsset method"
-        assert '_buildIconFallback' in content, "chat_list_screen.dart should have _buildIconFallback method"
-        assert 'FutureBuilder' in content, "chat_list_screen.dart should use FutureBuilder for asset validation"
-        assert 'Image.asset' in content, "chat_list_screen.dart should load image.asset with proper error handling"
-        assert 'errorBuilder' in content, "chat_list_screen.dart should have errorBuilder for fallback"
-        assert "Icons.person" in content, "chat_list_screen.dart fallback should use Icons.person, not 'Z'"
+        # Check that avatar building methods have been removed
+        assert '_buildAppLogo' not in content, "chat_list_screen.dart should not have _buildAppLogo method (avatar icon removed)"
+        assert '_validateIconAsset' not in content, "chat_list_screen.dart should not have _validateIconAsset method (avatar icon removed)"
+        assert '_buildIconFallback' not in content, "chat_list_screen.dart should not have _buildIconFallback method (avatar icon removed)"
         
-        print(f"✓ chat_list_screen.dart has robust icon loading implementation")
+        # Check that header displays only zaply text
+        assert 'const Text(AppStrings.appName)' in content, "chat_list_screen.dart should display zaply text in AppBar title"
+        
+        # Verify no image loading code in header section only
+        # Extract AppBar/SliverAppBar section to check for Image.asset usage in header context
+        import re
+        header_matches = re.findall(r'(SliverAppBar|AppBar).*?title:.*?(?=,|\n)', content, re.DOTALL)
+        header_content = ''.join(header_matches)
+        assert 'Image.asset' not in header_content, "Image.asset should not be used in header section (AppBar title)"
+        
+        print(f"✓ chat_list_screen.dart header now displays only zaply text without avatar icon")
+
 
 
 # NOTE: Frontend branding and icon logic tests have been moved to the Flutter test suite.
