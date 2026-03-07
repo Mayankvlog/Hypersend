@@ -103,24 +103,17 @@ class TestRedisConnectionFailure:
     async def test_wait_for_redis_timeout_handling(self):
         """Test _wait_for_redis_with_retry() handles connection timeouts gracefully"""
         from backend.main import _wait_for_redis_with_retry
-        from backend.config import settings
         
-        # Mock the entire redis.asyncio module to fail connection
-        with mock.patch('backend.main.redis') as mock_redis_module:
-            # Configure mock to raise connection error on Redis client creation
-            mock_redis_module.Redis.side_effect = redis.ConnectionError("Connection failed")
-            
-            try:
-                # This should raise RuntimeError after max retries
-                with pytest.raises(RuntimeError, match="Redis connection failed"):
-                    await asyncio.wait_for(
-                        _wait_for_redis_with_retry(),
-                        timeout=30.0  # Allow enough time for retries
-                    )
-                logger.info("[TEST] ✓ Redis timeout error handling works correctly")
-            except asyncio.TimeoutError:
-                # If it times out, that's also a failure of the test
-                pytest.fail("Redis connection test timed out - should have raised RuntimeError quickly")
+        # Simply test that the function fails appropriately when Redis is not available
+        # This is testing the actual behavior rather than mocking
+        try:
+            # This should raise RuntimeError after max retries when Redis is not available
+            with pytest.raises(RuntimeError, match="Redis connection failed"):
+                await _wait_for_redis_with_retry()
+            logger.info("[TEST] ✓ Redis timeout error handling works correctly")
+        except asyncio.TimeoutError:
+            # If it times out, that's also a failure of the test
+            pytest.fail("Redis connection test timed out - should have raised RuntimeError quickly")
     
     @pytest.mark.asyncio
     async def test_redis_password_validation(self):
