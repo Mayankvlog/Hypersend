@@ -16,9 +16,6 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   void initState() {
     super.initState();
     blockedUsers = [
-      {'name': 'John Smith', 'avatar': 'JS', 'date': 'Dec 10, 2025'},
-      {'name': 'Sarah Brown', 'avatar': 'SB', 'date': 'Dec 5, 2025'},
-      {'name': 'Mike Johnson', 'avatar': 'MJ', 'date': 'Nov 28, 2025'},
     ];
   }
 
