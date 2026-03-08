@@ -13,11 +13,11 @@ except ImportError:
 try:
     from ..db_proxy import chats_collection, messages_collection
     from ..models import ChatCreate, MessageCreate, ChatType, ChatPermissions
-    # from database import client  # Commented out due to indentation issues
+    from ..database import client
 except ImportError:
     from db_proxy import chats_collection, messages_collection
     from models import ChatCreate, MessageCreate, ChatType, ChatPermissions
-    # from database import client  # Commented out due to indentation issues
+    from database import client
 
 logger = logging.getLogger(__name__)
 
