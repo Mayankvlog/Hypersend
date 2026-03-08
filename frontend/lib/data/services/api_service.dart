@@ -1444,6 +1444,35 @@ Future<List<Map<String, dynamic>>> searchUsers(String query) async {
     return List<Map<String, dynamic>>.from(response.data?['users'] ?? []);
   }
 
+  // Block/Unblock user endpoints
+  Future<Map<String, dynamic>> blockUser(String userId) async {
+    final response = await _dio.post(
+      '${ApiConstants.usersEndpoint}/$userId/block',
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> unblockUser(String userId) async {
+    final response = await _dio.post(
+      '${ApiConstants.usersEndpoint}/$userId/unblock',
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> getBlockedUsers() async {
+    final response = await _dio.get(
+      '${ApiConstants.usersEndpoint}/blocked/list',
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> checkIfBlocked(String userId) async {
+    final response = await _dio.get(
+      '${ApiConstants.usersEndpoint}/$userId/is-blocked',
+    );
+    return response.data ?? {};
+  }
+
   Future<Map<String, dynamic>> sendMessage({
     required String chatId,
     String? content,

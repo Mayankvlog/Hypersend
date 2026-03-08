@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/services/service_provider.dart';
 
 class BlockedUsersScreen extends StatefulWidget {
   const BlockedUsersScreen({super.key});
@@ -10,22 +11,26 @@ class BlockedUsersScreen extends StatefulWidget {
 }
 
 class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
-  late List<Map<String, String>> blockedUsers;
+  late Future<Map<String, dynamic>> _blockedUsersFuture;
 
   @override
   void initState() {
     super.initState();
-    blockedUsers = [
-    ];
+    _blockedUsersFuture = serviceProvider.apiService.getBlockedUsers();
   }
 
-  void _unblockUser(int index) {
+  void _unblockUser(Map<String, dynamic> user) {
+    final userId = user['id'] as String?;
+    final userName = user['name'] as String? ?? 'User';
+    
+    if (userId == null) return;
+    
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Unblock User'),
         content: Text(
-          'Are you sure you want to unblock ${blockedUsers[index]['name']}?',
+          'Are you sure you want to unblock $userName?',
         ),
         actions: [
           TextButton(
@@ -33,18 +38,30 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(dialogContext).pop();
-              setState(() {
-                blockedUsers.removeAt(index);
-              });
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('User unblocked'),
-                  backgroundColor: AppTheme.successGreen,
-                ),
-              );
+              try {
+                await serviceProvider.apiService.unblockUser(userId);
+                if (!mounted) return;
+                setState(() {
+                  _blockedUsersFuture = serviceProvider.apiService.getBlockedUsers();
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('User unblocked'),
+                    backgroundColor: AppTheme.successGreen,
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                print('Error unblocking user: $e'); // Log the actual exception
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Could not unblock user. Please try again.'),
+                    backgroundColor: AppTheme.errorRed,
+                  ),
+                );
+              }
             },
             child: const Text('Unblock'),
           ),
@@ -63,8 +80,43 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         ),
         title: const Text('Blocked Users'),
       ),
-      body: blockedUsers.isEmpty
-          ? Center(
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _blockedUsersFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: AppTheme.errorRed,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error loading blocked users',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    snapshot.error.toString(),
+                    style: Theme.of(context).textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final blockedUsers = (snapshot.data?['data']?['blocked_users'] as List?) ?? [];
+
+          if (blockedUsers.isEmpty) {
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -85,62 +137,82 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                   ),
                 ],
               ),
-            )
-          : ListView.builder(
-              itemCount: blockedUsers.length,
-              itemBuilder: (context, index) {
-                final user = blockedUsers[index];
-                return Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppTheme.cardDark,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          // FIXED: Never show initials to prevent 2 words avatar
-                          CircleAvatar(
-                            radius: 24,
-                            backgroundColor: AppTheme.primaryCyan,
-                            child: null, // No initials - just empty circle
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  user['name']!,
+            );
+          }
+
+          return ListView.builder(
+            itemCount: blockedUsers.length,
+            itemBuilder: (context, index) {
+              final item = blockedUsers[index];
+              if (item is! Map<String, dynamic>) {
+                print('Invalid user data at index $index: $item');
+                return const SizedBox.shrink(); // Skip invalid entries
+              }
+              
+              final user = item;
+              final userName = user['name'] as String? ?? 'Unknown';
+
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardDark,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        // Avatar with initials
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundColor: AppTheme.primaryCyan,
+                          child: (userName.isNotEmpty)
+                              ? Text(
+                                  userName[0].toUpperCase(),
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
                                   ),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Blocked on ${user['date']!}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                user['username'] as String? ?? 'No username',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => _unblockUser(index),
-                            color: AppTheme.errorRed,
-                            tooltip: 'Unblock',
-                          ),
-                        ],
-                      ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => _unblockUser(user),
+                          color: AppTheme.errorRed,
+                          tooltip: 'Unblock',
+                        ),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

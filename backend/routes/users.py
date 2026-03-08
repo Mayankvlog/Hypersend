@@ -3127,7 +3127,280 @@ async def remove_contact_alias(
     return await remove_contact(contact_id=contact_id, current_user=current_user)
 
 
+# ========== BLOCK/UNBLOCK USER ENDPOINTS ==========
 
+@router.post("/{user_id}/block")
+async def block_user(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Block a user - prevent them from contacting you"""
+    try:
+        from bson import ObjectId
+        
+        # Validation: Cannot block yourself
+        if user_id == current_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot block yourself"
+            )
+        
+        # Validate that target user exists
+        target_user_oid = ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id
+        target_user = await users_collection().find_one({"_id": target_user_oid})
+        
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get current user data
+        current_user_oid = ObjectId(current_user) if ObjectId.is_valid(current_user) else current_user
+        current_user_data = await users_collection().find_one({"_id": current_user_oid})
+        
+        if not current_user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current user not found"
+            )
+        
+        # Get blocked_users list (or empty list if it doesn't exist)
+        blocked_users = current_user_data.get("blocked_users", [])
+        
+        # Validation: Check if already blocked
+        if user_id in blocked_users:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is already blocked"
+            )
+        
+        # Add user to blocked list
+        blocked_users.append(user_id)
+        
+        # Update database
+        result = await users_collection().update_one(
+            {"_id": current_user_oid},
+            {"$set": {"blocked_users": blocked_users, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to block user"
+            )
+        
+        logger.info(f"User {current_user} blocked user {user_id}")
+        
+        return {
+            "status": "SUCCESS",
+            "message": f"User {target_user.get('name', user_id)} blocked successfully",
+            "data": {
+                "blocked_user_id": user_id,
+                "blocked_user_name": target_user.get("name"),
+                "total_blocked": len(blocked_users)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to block user: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to block user: {str(e)}"
+        )
+
+
+@router.post("/{user_id}/unblock")
+async def unblock_user(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Unblock a user - allow them to contact you again"""
+    try:
+        from bson import ObjectId
+        
+        # Get current user data
+        current_user_oid = ObjectId(current_user) if ObjectId.is_valid(current_user) else current_user
+        current_user_data = await users_collection().find_one({"_id": current_user_oid})
+        
+        if not current_user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current user not found"
+            )
+        
+        # Get blocked_users list
+        blocked_users = current_user_data.get("blocked_users", [])
+        
+        # Validation: Check if user is actually blocked
+        if user_id not in blocked_users:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User is not in your blocked list"
+            )
+        
+        # Remove user from blocked list
+        blocked_users.remove(user_id)
+        
+        # Update database
+        result = await users_collection().update_one(
+            {"_id": current_user_oid},
+            {"$set": {"blocked_users": blocked_users, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to unblock user"
+            )
+        
+        logger.info(f"User {current_user} unblocked user {user_id}")
+        
+        # Get unblocked user's name for response
+        target_user_oid = ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id
+        target_user = await users_collection().find_one({"_id": target_user_oid})
+        target_name = target_user.get("name") if target_user else user_id
+        
+        return {
+            "status": "SUCCESS",
+            "message": f"User {target_name} unblocked successfully",
+            "data": {
+                "unblocked_user_id": user_id,
+                "unblocked_user_name": target_name,
+                "total_blocked": len(blocked_users)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to unblock user: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unblock user: {str(e)}"
+        )
+
+
+@router.get("/blocked/list")
+async def get_blocked_users(
+    current_user: str = Depends(get_current_user)
+):
+    """Get list of users blocked by current user"""
+    try:
+        from bson import ObjectId
+        
+        # Get current user data
+        current_user_oid = ObjectId(current_user) if ObjectId.is_valid(current_user) else current_user
+        current_user_data = await users_collection().find_one({"_id": current_user_oid})
+        
+        if not current_user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current user not found"
+            )
+        
+        # Get blocked_users list
+        blocked_user_ids = current_user_data.get("blocked_users", [])
+        
+        # If no blocked users, return empty list
+        if not blocked_user_ids:
+            return {
+                "status": "SUCCESS",
+                "message": "No blocked users",
+                "data": {
+                    "blocked_users": [],
+                    "total_count": 0
+                }
+            }
+        
+        # Fetch actual user documents for blocked users with single batch query
+        blocked_users_list = []
+        
+        # Convert valid string IDs to ObjectId objects
+        valid_oids = []
+        for blocked_id in blocked_user_ids:
+            if ObjectId.is_valid(blocked_id):
+                valid_oids.append(ObjectId(blocked_id))
+        
+        if valid_oids:
+            # Single batch query to fetch all blocked users
+            blocked_users_cursor = users_collection().find(
+                {"_id": {"$in": valid_oids}},
+                {"name": 1, "username": 1, "email": 1, "avatar_url": 1, "status": 1, "_id": 1}
+            )
+            
+            async for blocked_user in blocked_users_cursor:
+                blocked_users_list.append({
+                    "id": str(blocked_user["_id"]),
+                    "name": blocked_user.get("name"),
+                    "username": blocked_user.get("username"),
+                    "email": blocked_user.get("email"),
+                    "avatar_url": blocked_user.get("avatar_url"),
+                    "status": blocked_user.get("status")
+                })
+        
+        return {
+            "status": "SUCCESS",
+            "message": f"Retrieved {len(blocked_users_list)} blocked users",
+            "data": {
+                "blocked_users": blocked_users_list,
+                "total_count": len(blocked_users_list)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get blocked users: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get blocked users: {str(e)}"
+        )
+
+
+@router.get("/{user_id}/is-blocked")
+async def check_if_blocked(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Check if a specific user is blocked by current user"""
+    try:
+        from bson import ObjectId
+        
+        # Get current user data
+        current_user_oid = ObjectId(current_user) if ObjectId.is_valid(current_user) else current_user
+        current_user_data = await users_collection().find_one({"_id": current_user_oid})
+        
+        if not current_user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current user not found"
+            )
+        
+        # Get blocked_users list
+        blocked_user_ids = current_user_data.get("blocked_users", [])
+        
+        # Check if user is blocked
+        is_blocked = user_id in blocked_user_ids
+        
+        return {
+            "status": "SUCCESS",
+            "data": {
+                "user_id": user_id,
+                "is_blocked": is_blocked
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to check if user is blocked: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check if user is blocked: {str(e)}"
+        )
 
 
 

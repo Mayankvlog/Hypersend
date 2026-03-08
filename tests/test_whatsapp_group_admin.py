@@ -604,15 +604,16 @@ class TestGroupDeletionAndLeave:
     def client(self):
         """Create test client"""
         from backend.main import app
+        from backend.auth.utils import get_current_user
         from fastapi.testclient import TestClient
-        from unittest.mock import patch
-        from auth.utils import get_current_user
         
-        # Override get_current_user to return a test user ID
+        # Override dependency
         app.dependency_overrides[get_current_user] = lambda: "user123"
         
         yield TestClient(app)
-        app.dependency_overrides.clear()
+        
+        # Clean up dependency override
+        app.dependency_overrides.pop(get_current_user, None)
     
     def test_delete_group_as_admin(self, client):
         """Test DELETE /groups/{group_id} - admin can delete"""

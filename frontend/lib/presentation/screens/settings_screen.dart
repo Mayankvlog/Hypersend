@@ -15,6 +15,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late AppLanguage _selectedLanguage;
   late bool _notificationsEnabled;
+  late Future<Map<String, dynamic>> _blockedUsersFuture;
 
   @override
   void initState() {
@@ -22,6 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = serviceProvider.settingsService;
     _selectedLanguage = settings.currentLanguage;
     _notificationsEnabled = settings.notificationsEnabled;
+    _blockedUsersFuture = serviceProvider.apiService.getBlockedUsers();
   }
 
   Future<void> _changeLanguage(AppLanguage language) async {
@@ -182,12 +184,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context.push('/privacy-settings');
               },
             ),
-            _buildSettingsTile(
-              icon: Icons.block_outlined,
-              title: 'Blocked Users',
-              subtitle: '3 users blocked',
-              onTap: () {
-                context.push('/blocked-users');
+            FutureBuilder<Map<String, dynamic>>(
+              future: _blockedUsersFuture,
+              builder: (context, snapshot) {
+                int blockedCount = 0;
+                if (snapshot.hasData) {
+                  final data = snapshot.data?['data'] as Map<String, dynamic>?;
+                  blockedCount = data?['total_count'] as int? ?? 0;
+                }
+                
+                final subtitle = blockedCount == 0 
+                    ? 'No users blocked'
+                    : blockedCount == 1
+                        ? '1 user blocked'
+                        : '$blockedCount users blocked';
+                
+                return _buildSettingsTile(
+                  icon: Icons.block_outlined,
+                  title: 'Blocked Users',
+                  subtitle: subtitle,
+                  onTap: () {
+                    context.push('/blocked-users');
+                  },
+                );
               },
             ),
             const SizedBox(height: 24),

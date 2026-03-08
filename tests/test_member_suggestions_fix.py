@@ -39,14 +39,23 @@ class TestMemberSuggestionsFix:
         """Create test client"""
         try:
             from backend.main import app
-            from auth.utils import get_current_user
+            from backend.auth.utils import get_current_user
             from fastapi.testclient import TestClient
             
             # Override dependency
             app.dependency_overrides[get_current_user] = lambda: "current_user"
             return TestClient(app)
         except ImportError:
-            pytest.skip("Backend modules not available")
+            try:
+                from auth.utils import get_current_user
+                from main import app
+                from fastapi.testclient import TestClient
+                
+                # Override dependency
+                app.dependency_overrides[get_current_user] = lambda: "current_user"
+                return TestClient(app)
+            except ImportError:
+                pytest.skip("Backend modules not available")
     
     def setup_method(self):
         """Clean up mock database before each test"""
@@ -69,10 +78,15 @@ class TestMemberSuggestionsFix:
         """Clean up dependency overrides and mock database"""
         try:
             from backend.main import app
-            from auth.utils import get_current_user
+            from backend.auth.utils import get_current_user
             app.dependency_overrides.pop(get_current_user, None)
-        except ImportError:
-            pass  # Backend not available
+        except (ImportError, KeyError):
+            try:
+                from main import app
+                from auth.utils import get_current_user
+                app.dependency_overrides.pop(get_current_user, None)
+            except (ImportError, KeyError):
+                pass  # Backend not available or no override set
         
         # Clean up mock database
         try:
