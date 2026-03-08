@@ -49,7 +49,7 @@ def add_members_example():
     
     try:
         suggestions_response = requests.get(
-            f"http://localhost:8000/api/v1/groups/{group_id}/member-suggestions",
+            f"https://zaply.in.net/api/v1/groups/{group_id}/member-suggestions",
             headers={"Authorization": f"Bearer {token}"}
         )
         
@@ -83,7 +83,7 @@ def add_members_example():
     
     try:
         add_response = requests.post(
-            f"http://localhost:8000/api/v1/groups/{group_id}/members",
+            f"https://zaply.in.net/api/v1/groups/{group_id}/members",
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
@@ -129,7 +129,7 @@ def add_members_example():
     try:
         # Get group info to check members
         group_response = requests.get(
-            f"http://localhost:8000/api/v1/groups/{group_id}",
+            f"https://zaply.in.net/api/v1/groups/{group_id}",
             headers={"Authorization": f"Bearer {token}"}
         )
         
