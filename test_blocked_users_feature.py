@@ -16,12 +16,8 @@ from datetime import datetime, timezone
 from bson import ObjectId
 
 # Import the models and database
-try:
-    from backend.models import UserInDB
-    from backend.db_proxy import users_collection
-except ImportError:
-    from models import UserInDB
-    from db_proxy import users_collection
+from backend.models import UserInDB
+from backend.db_proxy import users_collection
 
 
 @pytest.mark.asyncio
