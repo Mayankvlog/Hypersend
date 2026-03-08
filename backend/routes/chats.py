@@ -11,7 +11,7 @@ except ImportError:
     from models import ChatCreate, MessageCreate, ChatType
     from db_proxy import chats_collection, messages_collection, users_collection
 
-from auth.utils import get_current_user, get_current_user_for_upload
+from auth.utils import get_current_user, get_current_user_optional, get_current_user_for_upload
 import logging
 
 import sys
@@ -95,7 +95,7 @@ async def chats_options():
 
 
 @router.get("/saved", response_model=dict)
-async def get_or_create_saved_chat(current_user: Optional[str] = Depends(get_current_user)):
+async def get_or_create_saved_chat(current_user: Optional[str] = Depends(get_current_user_optional)):
     """Get or create personal Saved Messages chat for current user"""
     if current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication credentials")

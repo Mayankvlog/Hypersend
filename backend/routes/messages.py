@@ -1800,7 +1800,7 @@ async def get_message_versions(message_id: str, current_user: str = Depends(get_
     return {"message_id": message_id, "versions": msg.get("edit_history") or []}
 
 
-# @router.post("/{message_id}/reactions")
+@router.post("/{message_id}/reactions")
 async def toggle_reaction(
     message_id: str,
     payload: MessageReactionRequest,
@@ -1864,7 +1864,9 @@ async def toggle_reaction(
 async def get_reactions(message_id: str, current_user: str = Depends(get_current_user)):
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
-    return {"message_id": message_id, "reactions": msg.get("reactions") or {}}
+    # Get reactions from message document, fallback to empty dict
+    reactions = msg.get("reactions") or {}
+    return {"message_id": message_id, "reactions": reactions}
 
 
 @router.post("/{message_id}/pin")
@@ -1882,12 +1884,19 @@ async def pin_message(message_id: str, current_user: str = Depends(get_current_u
     if not message_data:
         raise HTTPException(status_code=404, detail="Message not found")
     
+    # Convert to dict if needed
+    if isinstance(message_data, str):
+        message_data = json.loads(message_data)
+    
     message_data["is_pinned"] = True
     message_data["pinned_at"] = _format_utc(_utcnow())
     message_data["pinned_by"] = current_user
     
     # Update message in Redis
-    await cache.set(message_key, message_data, expire_seconds=24*60*60)
+    try:
+        await cache.set(message_key, json.dumps(message_data), expire_seconds=24*60*60)
+    except Exception as e:
+        logger.debug(f"Failed to update pin status in Redis: {e}")
     
     return {"status": "pinned", "message_id": message_id}
 
@@ -1906,13 +1915,20 @@ async def unpin_message(message_id: str, current_user: str = Depends(get_current
     if not message_data:
         raise HTTPException(status_code=404, detail="Message not found")
     
+    # Convert to dict if needed
+    if isinstance(message_data, str):
+        message_data = json.loads(message_data)
+    
     message_data["is_pinned"] = False
     # Remove pin-related fields
     message_data.pop("pinned_at", None)
     message_data.pop("pinned_by", None)
     
     # Update message in Redis
-    await cache.set(message_key, message_data, expire_seconds=24*60*60)
+    try:
+        await cache.set(message_key, json.dumps(message_data), expire_seconds=24*60*60)
+    except Exception as e:
+        logger.debug(f"Failed to update unpin status in Redis: {e}")
     
     return {"status": "unpinned", "message_id": message_id}
 
