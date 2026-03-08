@@ -14,9 +14,15 @@ from pydantic import BaseModel, Field
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 from bson import ObjectId
-
-from auth.utils import get_current_user
 from fastapi import Query
+
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user
+    from backend.auth.utils import decode_token
+except ImportError:
+    from auth.utils import get_current_user
+    from auth.utils import decode_token
 
 # WhatsApp-Grade Cryptographic Imports
 try:
@@ -1411,7 +1417,7 @@ async def get_device_messages(
     if messages:
         for message_json, sequence in messages:
             try:
-                message_data = json.loads(message_json) if isinstance(message_json, str) else message_json
+                message_data = json.loads(message_json) if isinstance(message_json, str) else message_data
                 result.append(message_data)
             except Exception as e:
                 logger.debug(f"Failed to parse message from queue: {e}")
@@ -1814,15 +1820,9 @@ async def toggle_reaction(
     msg = await _get_message_or_404(message_id)
     await _get_chat_for_message_or_403(msg, current_user)
 
-    # WhatsApp-style: Store reactions in Redis
+    # WhatsApp-style: Get reactions from message (already validated and loaded)
     message_key = f"message:{message_id}"
-    message_data = await cache.get(message_key)
-    if not message_data:
-        raise HTTPException(status_code=404, detail="Message not found")
-    
-    # Convert to dict if needed
-    if isinstance(message_data, str):
-        message_data = json.loads(message_data)
+    message_data = msg.copy()  # Use already-loaded message instead of querying Redis again
     
     reactions = message_data.get("reactions", {})
     emoji_reactions = reactions.get(emoji, [])
@@ -1878,15 +1878,9 @@ async def pin_message(message_id: str, current_user: str = Depends(get_current_u
     if chat.get("type") == "group" and not _is_group_admin(chat, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can pin messages")
 
-    # WhatsApp-style: Store pinned status in Redis
+    # WhatsApp-style: Update pinned status (use already-loaded message)
     message_key = f"message:{message_id}"
-    message_data = await cache.get(message_key)
-    if not message_data:
-        raise HTTPException(status_code=404, detail="Message not found")
-    
-    # Convert to dict if needed
-    if isinstance(message_data, str):
-        message_data = json.loads(message_data)
+    message_data = msg.copy()  # Use already-loaded message instead of querying Redis again
     
     message_data["is_pinned"] = True
     message_data["pinned_at"] = _format_utc(_utcnow())
@@ -1896,7 +1890,28 @@ async def pin_message(message_id: str, current_user: str = Depends(get_current_u
     try:
         await cache.set(message_key, json.dumps(message_data), expire_seconds=24*60*60)
     except Exception as e:
-        logger.debug(f"Failed to update pin status in Redis: {e}")
+        logger.warning(f"Failed to update pin status in Redis: {e} - message_id: {message_id}, user: {current_user}")
+    
+    # Update in MongoDB if available
+    try:
+        from bson import ObjectId
+        msg_collection = messages_collection()
+        try:
+            obj_id = ObjectId(message_id)
+            await msg_collection.update_one({"_id": obj_id}, {"$set": {"is_pinned": True, "pinned_at": message_data["pinned_at"], "pinned_by": current_user}})
+        except Exception:
+            await msg_collection.update_one({"_id": message_id}, {"$set": {"is_pinned": True, "pinned_at": message_data["pinned_at"], "pinned_by": current_user}})
+    except Exception as e:
+        logger.warning(f"Failed to update pin status in MongoDB: {e} - message_id: {message_id}, user: {current_user}")
+        # Rollback Redis pin to maintain consistency
+        try:
+            message_data["is_pinned"] = False
+            message_data.pop("pinned_at", None)
+            message_data.pop("pinned_by", None)
+            await cache.set(message_key, json.dumps(message_data), expire_seconds=24*60*60)
+            logger.warning(f"Rolled back Redis pin for message_id: {message_id} due to MongoDB failure")
+        except Exception as rollback_e:
+            logger.error(f"Failed to rollback Redis pin: {rollback_e} - message_id: {message_id}")
     
     return {"status": "pinned", "message_id": message_id}
 
@@ -1909,15 +1924,9 @@ async def unpin_message(message_id: str, current_user: str = Depends(get_current
     if chat.get("type") == "group" and not _is_group_admin(chat, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can unpin messages")
 
-    # WhatsApp-style: Store unpinned status in Redis
+    # WhatsApp-style: Update unpinned status (use already-loaded message)
     message_key = f"message:{message_id}"
-    message_data = await cache.get(message_key)
-    if not message_data:
-        raise HTTPException(status_code=404, detail="Message not found")
-    
-    # Convert to dict if needed
-    if isinstance(message_data, str):
-        message_data = json.loads(message_data)
+    message_data = msg.copy()  # Use already-loaded message instead of querying Redis again
     
     message_data["is_pinned"] = False
     # Remove pin-related fields
@@ -1928,7 +1937,19 @@ async def unpin_message(message_id: str, current_user: str = Depends(get_current
     try:
         await cache.set(message_key, json.dumps(message_data), expire_seconds=24*60*60)
     except Exception as e:
-        logger.debug(f"Failed to update unpin status in Redis: {e}")
+        logger.warning(f"Failed to update unpin status in Redis: {e}")
+    
+    # Update in MongoDB if available
+    try:
+        from bson import ObjectId
+        msg_collection = messages_collection()
+        try:
+            obj_id = ObjectId(message_id)
+            await msg_collection.update_one({"_id": obj_id}, {"$set": {"is_pinned": False}, "$unset": {"pinned_at": 1, "pinned_by": 1}})
+        except Exception:
+            await msg_collection.update_one({"_id": message_id}, {"$set": {"is_pinned": False}, "$unset": {"pinned_at": 1, "pinned_by": 1}})
+    except Exception as e:
+        logger.warning(f"Failed to update unpin status in MongoDB: {e}")
     
     return {"status": "unpinned", "message_id": message_id}
 

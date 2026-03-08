@@ -11,7 +11,12 @@ except ImportError:
     from models import ChatCreate, MessageCreate, ChatType
     from db_proxy import chats_collection, messages_collection, users_collection
 
-from auth.utils import get_current_user, get_current_user_optional, get_current_user_for_upload
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user, get_current_user_optional, get_current_user_for_upload
+except ImportError:
+    from auth.utils import get_current_user, get_current_user_optional, get_current_user_for_upload
+
 import logging
 
 import sys

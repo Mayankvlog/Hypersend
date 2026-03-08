@@ -5,7 +5,12 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from pydantic import BaseModel, Field
 
-from auth.utils import get_current_user
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user
+except ImportError:
+    from auth.utils import get_current_user
+
 from e2ee_service import E2EEService, AbuseAndSpamScoringService, EncryptionError, DecryptionError, E2EECryptoError
 
 # Import message history service

@@ -18,7 +18,17 @@ try:
 except ImportError:
     from db_proxy import files_collection, chats_collection
 
-from auth.utils import get_current_user
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user
+except ImportError:
+    from auth.utils import get_current_user
+
+# Import decode_token with the same fallback pattern
+try:
+    from backend.auth.utils import decode_token
+except ImportError:
+    from auth.utils import decode_token
 
 def decode_token_safely(token: str) -> Optional[dict]:
     """Safely decode JWT token with proper error handling and validation"""
@@ -27,7 +37,6 @@ def decode_token_safely(token: str) -> Optional[dict]:
             print(f"[P2P_TRANSFER] Invalid token format: {type(token)}")
             return None
         
-        from auth.utils import decode_token
         token_data = decode_token(token)
         
         # Convert to dictionary for consistency

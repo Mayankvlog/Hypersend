@@ -138,7 +138,12 @@ USER_ONLINE_STATUS = {}  # {user_id: {"last_seen": datetime, "is_online": bool}}
 
 
 from fastapi import Depends
-from auth.utils import get_current_user
+
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user
+except ImportError:
+    from auth.utils import get_current_user
 
 
 @router.post("/typing")

@@ -44,7 +44,11 @@ except ImportError:
 
 
 
-from auth.utils import get_current_user, get_current_user_optional, get_current_user_or_query
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user, get_current_user_optional, get_current_user_or_query
+except ImportError:
+    from auth.utils import get_current_user, get_current_user_optional, get_current_user_or_query
 
 import asyncio
 

@@ -109,13 +109,23 @@ except ImportError:
     from rate_limiter import RateLimiter
     from redis_cache import cache
 
-from auth.utils import (
-    get_current_user,
-    get_current_user_or_query,
-    get_current_user_for_upload,
-    get_current_user_optional,
-    decode_token,
-)
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import (
+        get_current_user,
+        get_current_user_or_query,
+        get_current_user_for_upload,
+        get_current_user_optional,
+        decode_token,
+    )
+except ImportError:
+    from auth.utils import (
+        get_current_user,
+        get_current_user_or_query,
+        get_current_user_for_upload,
+        get_current_user_optional,
+        decode_token,
+    )
 
 
 async def _maybe_await(value):

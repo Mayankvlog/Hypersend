@@ -12,7 +12,11 @@ except ImportError:
     from config import settings
     from models import ProfileUpdate, PasswordChangeRequest
 
-from auth.utils import get_current_user
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user
+except ImportError:
+    from auth.utils import get_current_user
 from pydantic import BaseModel
 from typing import Dict, Any
 import json

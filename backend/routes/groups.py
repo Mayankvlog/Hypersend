@@ -30,7 +30,11 @@ from pathlib import Path
 
 
 
-from auth.utils import get_current_user, get_current_user_optional
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user, get_current_user_optional
+except ImportError:
+    from auth.utils import get_current_user, get_current_user_optional
 
 from pydantic import BaseModel, Field
 

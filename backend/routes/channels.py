@@ -4,7 +4,11 @@ from datetime import datetime, timezone
 from bson import ObjectId
 import logging
 
-from auth.utils import get_current_user
+# Auth utilities with fallback for different import paths
+try:
+    from backend.auth.utils import get_current_user
+except ImportError:
+    from auth.utils import get_current_user
 
 try:
     from ..db_proxy import chats_collection, messages_collection
