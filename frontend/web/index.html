@@ -117,24 +117,6 @@
   </div>
 
   <script>
-    // Force clear any cached images before loading
-    if ('caches' in window) {
-      caches.keys().then(function(names) {
-        names.forEach(function(name) {
-          if (name.includes('flutter') || name.includes('assets')) {
-            caches.delete(name);
-          }
-        });
-      });
-    }
-    
-    // Clear any cached images
-    const images = document.querySelectorAll('img');
-    images.forEach(function(img) {
-      const separator = img.src.includes('?') ? '&' : '?';
-      img.src = img.src + separator + 'clear=' + Date.now();
-    });
-    
     // Production Flutter Configuration with CanvasKit optimization
     window.flutterConfiguration = {
       // Explicitly set CanvasKit CDN URL for production
