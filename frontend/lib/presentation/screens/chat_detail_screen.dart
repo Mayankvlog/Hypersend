@@ -1,5 +1,4 @@
 // ignore_for_file: deprecated_member_use
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -8,6 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+// Platform-specific imports: dart:io is conditionally imported only for non-web platforms
+import 'dart:io' if (dart.library.html) 'dart:async' as io;
 
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
@@ -909,11 +911,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       await _initializeCamera(cameraOption);
       
       // Show camera preview and capture
-      final imageFile = await _showCameraPreview();
-      if (imageFile == null) return;
+      final imageBytes = await _showCameraPreview();
+      if (imageBytes == null) return;
 
       // Upload the captured image
-      await _uploadCameraImage(imageFile);
+      await _uploadCameraImage(imageBytes);
       
     } catch (e) {
       if (mounted) {
@@ -993,12 +995,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  Future<File?> _showCameraPreview() async {
+  Future<Uint8List?> _showCameraPreview() async {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
       return null;
     }
 
-    return await Navigator.of(context).push<File>(
+    return await Navigator.of(context).push<Uint8List>(
       MaterialPageRoute(
         builder: (context) => CameraPreviewScreen(
           cameraController: _cameraController!,
@@ -1007,22 +1009,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  Future<void> _uploadCameraImage(File imageFile) async {
+  Future<void> _uploadCameraImage(Uint8List imageBytes) async {
     try {
       if (!mounted) return;
 
       // Show upload notification
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Uploading ${imageFile.path.split('/').last}...'),
-          duration: const Duration(seconds: 1),
+        const SnackBar(
+          content: Text('Uploading photo...'),
+          duration: Duration(seconds: 1),
         ),
       );
 
-      // Read image bytes
-      final bytes = await imageFile.readAsBytes();
-      final name = imageFile.path.split('/').last;
-      final size = bytes.length;
+      final name = 'captured_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final size = imageBytes.length;
       final mime = 'image/jpeg';
 
       // Initialize upload with image endpoint
@@ -1031,7 +1031,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         size: size,
         mime: mime,
         chatId: widget.chatId,
-        endpoint: 'image',
+        endpoint: 'attach/photos-videos/init',
       );
 
       final uploadId = init['uploadId'] ?? init['upload_id'];
@@ -1043,7 +1043,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       await serviceProvider.apiService.uploadChunk(
         uploadId: uploadId,
         chunkIndex: 0,
-        bytes: bytes,
+        bytes: imageBytes,
       );
 
       // Complete the upload
@@ -1171,15 +1171,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   String _getAttachmentInitEndpoint(String attachmentType) {
     switch (attachmentType) {
       case 'photo_video':
-        return '/attach/photos-videos/init';
+        return 'attach/photos-videos/init';
       case 'document':
-        return '/attach/documents/init';
+        return 'attach/documents/init';
       case 'audio':
-        return '/attach/audio/init';
+        return 'attach/audio/init';
       case 'file':
-        return '/attach/files/init';
+        return 'attach/files/init';
       default:
-        return '/files/init';
+        return 'files/init';
     }
   }
 
@@ -1633,7 +1633,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         debugPrint('[FILE_NATIVE] Download completed, attempting to open file');
         
         // Verify file exists and open it
-        final file = File(savePath);
+        final file = io.File(savePath);
         if (await file.exists()) {
           await _openDownloadedFile(savePath, contentType);
         } else {
@@ -1648,11 +1648,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Future<void> _openDownloadedFile(String filePath, String contentType) async {
+    if (kIsWeb) {
+      throw Exception('File operations not supported on web platform');
+    }
+
     try {
       debugPrint('[FILE_OPEN] Attempting to open file: $filePath');
       debugPrint('[FILE_OPEN] File exists check starting...');
       
-      final file = File(filePath);
+      final file = io.File(filePath);
       final fileExists = await file.exists();
       debugPrint('[FILE_OPEN] File exists: $fileExists');
       
@@ -1661,10 +1665,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         throw Exception('Downloaded file not found at: $filePath');
       }
 
-      debugPrint('[FILE_OPEN] Platform: ${Platform.operatingSystem}');
+      debugPrint('[FILE_OPEN] Platform: ${io.Platform.operatingSystem}');
       debugPrint('[FILE_OPEN] File size: ${await file.length()} bytes');
 
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (io.Platform.isAndroid || io.Platform.isIOS) {
         // For mobile platforms, use url_launcher to open file
         debugPrint('[FILE_OPEN] Using mobile platform file opening');
         final uri = Uri.file(filePath);
@@ -1677,25 +1681,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           debugPrint('[FILE_OPEN] Failed to launch file via url_launcher');
           throw Exception('Cannot open file: $filePath');
         }
-      } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      } else if (io.Platform.isWindows || io.Platform.isLinux || io.Platform.isMacOS) {
         // For desktop platforms, use Process.run to open file with default application
         debugPrint('[FILE_OPEN] Using desktop platform file opening');
         
-        if (Platform.isWindows) {
+        if (io.Platform.isWindows) {
           debugPrint('[FILE_OPEN] Opening with Windows start command');
-          await Process.run('start', [filePath], runInShell: true);
-        } else if (Platform.isMacOS) {
+          await io.Process.run('start', [filePath], runInShell: true);
+        } else if (io.Platform.isMacOS) {
           debugPrint('[FILE_OPEN] Opening with macOS open command');
-          await Process.run('open', [filePath]);
-        } else if (Platform.isLinux) {
+          await io.Process.run('open', [filePath]);
+        } else if (io.Platform.isLinux) {
           debugPrint('[FILE_OPEN] Opening with Linux xdg-open command');
-          await Process.run('xdg-open', [filePath]);
+          await io.Process.run('xdg-open', [filePath]);
         }
         
         debugPrint('[FILE_OPEN] Desktop file opening command executed');
       } else {
-        debugPrint('[FILE_OPEN] Unsupported platform: ${Platform.operatingSystem}');
-        throw Exception('Unsupported platform for file opening: ${Platform.operatingSystem}');
+        debugPrint('[FILE_OPEN] Unsupported platform: ${io.Platform.operatingSystem}');
+        throw Exception('Unsupported platform for file opening: ${io.Platform.operatingSystem}');
       }
       
       debugPrint('[FILE_OPEN] Successfully opened file: $filePath');

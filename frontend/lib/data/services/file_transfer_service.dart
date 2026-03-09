@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' if (dart.library.html) 'dart:async' as io;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:path_provider/path_provider.dart';
@@ -210,7 +210,7 @@ class FileTransferService {
       actualSavePath = '${directory.path}/$sanitizedSavePath';
       
        // Enhanced path validation
-       final file = File(actualSavePath);
+       final file = io.File(actualSavePath);
        final parentDir = file.parent;
        
        debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
@@ -225,7 +225,7 @@ class FileTransferService {
          }
          
          // CRITICAL FIX: Test write permissions more robustly
-         final testFile = File('${parentDir.path}/.download_test_${DateTime.now().toUtc().millisecondsSinceEpoch}');
+         final testFile = io.File('${parentDir.path}/.download_test_${DateTime.now().toUtc().millisecondsSinceEpoch}');
          try {
            await testFile.writeAsString('test');
            final writtenContent = await testFile.readAsString();
@@ -267,7 +267,7 @@ class FileTransferService {
       debugPrint('[FILE_TRANSFER] File size: $fileSize bytes');
       
        // CRITICAL FIX: Ensure directory exists with proper error handling
-       final directory = File(actualSavePath).parent;
+       final directory = io.File(actualSavePath).parent;
        try {
          if (!await directory.exists()) {
            debugPrint('[FILE_TRANSFER] Creating directory: ${directory.path}');

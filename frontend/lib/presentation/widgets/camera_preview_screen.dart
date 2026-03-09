@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
@@ -264,8 +265,10 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
       final image = await widget.cameraController.takePicture();
       
       if (mounted) {
-        // Return the captured image file
-        Navigator.pop(context, File(image.path));
+        // Read image bytes and return them instead of File object
+        // This ensures compatibility with web platform
+        final imageBytes = await image.readAsBytes();
+        Navigator.pop(context, imageBytes);
       }
     } catch (e) {
       if (mounted) {

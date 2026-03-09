@@ -6,15 +6,11 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
 
-// Conditional WebSocket import (dart:io for mobile/desktop, dart:html for web)
+// Cross-platform IO imports
 import 'package:universal_io/io.dart' as io;
 
-// Conditional import: dart:io only available on mobile/desktop platforms
 import '../../core/constants/api_constants.dart';
 import 'service_provider.dart';
-
-// Platform-specific imports (dart:io is only used when not running on web)
-import 'dart:io' as io;
 
 class ApiService {
   late final Dio _dio;

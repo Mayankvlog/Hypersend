@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, kDebugMode;
 import 'dart:async';
-import 'dart:io' as io;
+import 'dart:io' if (dart.library.html) 'dart:async' as io;
 
 class ApiService {
   late final Dio _dio;
