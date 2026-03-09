@@ -112,13 +112,7 @@ class _SplashScreenState extends State<SplashScreen>
                     width: 80,
                     height: 80,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(
-                        Icons.bolt,
-                        size: 80,
-                        color: Colors.white,
-                      );
-                    },
+                    gaplessPlayback: true,
                   ),
                 ),
               ),
