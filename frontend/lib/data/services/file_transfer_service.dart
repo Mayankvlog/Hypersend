@@ -156,7 +156,7 @@ class FileTransferService {
         final client = io.HttpClient();
         try {
           final request = await client.putUrl(Uri.parse(uploadUrl));
-          request.headers.contentType = io.ContentType.parse(mime);
+          request.contentType = mime;
           request.add(fileBytes);
           
           // Upload to S3
@@ -429,7 +429,7 @@ class FileTransferService {
         } else {
           // Fallback to application documents when external storage is unavailable
           final fallbackBase = await getApplicationDocumentsDirectory();
-          directory = io.Directory(path.join(fallbackBase.path, 'karo'));
+        directory = io.Directory(path.join((await getApplicationDocumentsDirectory()).path, 'karo'));
         }
       } else {
         // For iOS, macOS, Windows, Linux - use application documents
@@ -447,7 +447,8 @@ class FileTransferService {
     // Fallback to application documents if downloads directory fails
     if (directory == null) {
       try {
-        directory = await getApplicationDocumentsDirectory();
+        final appDocsDir = await getApplicationDocumentsDirectory();
+        directory = io.Directory(path.join(appDocsDir.path, 'karo'));
         debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory?.path}');
       } catch (e) {
         debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
@@ -455,7 +456,8 @@ class FileTransferService {
       }
       if (directory == null) {
         try {
-          directory = await getApplicationDocumentsDirectory();
+        final appDocsDir2 = await getApplicationDocumentsDirectory();
+        directory = io.Directory(path.join(appDocsDir2.path, 'karo'));
           debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory?.path}');
         } catch (e) {
           debugPrint('[FILE_TRANSFER] Could not get application directory: $e');

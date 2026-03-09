@@ -36,6 +36,7 @@ class File {
   Future<String> readAsString() async => '';
   String get name => path.split('/').last;
   Future<void> delete() async {}
+  Future<int> length() async => 0;
 }
 
 // Stub Platform class
@@ -78,12 +79,15 @@ class HttpClientRequest {
     headers['content-type'] = type;
   }
   
+  void add(List<int> data) {}
+  
   Future<HttpClientResponse> addStream(Stream<List<int>> stream) async => HttpClientResponse();
   Future<HttpClientResponse> close() async => HttpClientResponse();
 }
 
 class HttpClientResponse {
   Stream<List<int>> get stream => Stream.empty();
+  int get statusCode => 200;
 }
 
 // Stub ContentType class

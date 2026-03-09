@@ -1624,13 +1624,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           debugPrint('[FILE_NATIVE] Could not create karo directory: $e');
           // Fallback to default downloads directory
           try {
-            downloadsDir = await getDownloadsDirectory();
+            final downloadsDirResult = await getDownloadsDirectory();
+            if (downloadsDirResult != null) {
+              downloadsDir = io.Directory(path.join(downloadsDirResult.path, 'karo'));
+            }
           } catch (fallbackError) {
             debugPrint('[FILE_NATIVE] Could not get fallback downloads directory: $fallbackError');
           }
         }
         
-        downloadsDir ??= await getApplicationDocumentsDirectory();
+        final appDocsDir = await getApplicationDocumentsDirectory();
+        downloadsDir ??= io.Directory(path.join(appDocsDir.path, 'karo'));
         final savePath = '${downloadsDir.path}/$safeFileName';
         
         debugPrint('[FILE_NATIVE] Download path: $savePath');
