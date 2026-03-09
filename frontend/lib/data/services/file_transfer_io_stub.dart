@@ -1,25 +1,41 @@
 // Stub implementation for web platform
 // This file provides web-compatible stubs for dart:io functionality
 
+@pragma('dart:html')
 import 'dart:html' as html;
 import 'dart:typed_data';
+import 'dart:async';
+
+// Re-export path for compatibility
+import 'package:path/path.dart' as path;
 
 // Stub Directory class
-class StubDirectory {
-  final String path;
-  StubDirectory(this.path);
+class Directory {
+  final String _path;
+  Directory(this._path);
   
-  static StubDirectory(String path) => StubDirectory(path);
+  String get path => _path;
+  Directory get parent => Directory(path.substring(0, path.lastIndexOf('/')));
+  
+  Future<bool> exists() async => false;
+  Future<void> create({bool recursive = false}) async {}
+  String get name => path.split('/').last;
 }
 
 // Stub File class
-class StubFile {
+class File {
   final String path;
-  StubFile(this.path);
+  File(this.path);
   
-  static StubFile(String path) => StubFile(path);
+  Directory get parent => Directory(path.substring(0, path.lastIndexOf('/')));
   
-  StubDirectory get parent => StubDirectory(path.substring(0, path.lastIndexOf('/')));
+  Future<bool> exists() async => false;
+  Future<void> writeAsBytes(List<int> bytes) async {}
+  Future<void> writeAsString(String content) async {}
+  Future<Uint8List> readAsBytes() async => Uint8List(0);
+  Future<String> readAsString() async => '';
+  String get name => path.split('/').last;
+  Future<void> delete() async {}
 }
 
 // Stub Platform class
@@ -36,6 +52,8 @@ class Platform {
 class HttpClient {
   HttpClientRequest get(Uri url, {Map<String, String>? headers}) => HttpClientRequest();
   HttpClientRequest post(Uri url, {Map<String, String>? headers}) => HttpClientRequest();
+  Future<HttpClientRequest> putUrl(Uri url) async => HttpClientRequest();
+  void close() {}
 }
 
 class HttpClientRequest {
@@ -59,15 +77,15 @@ class ContentType {
 }
 
 // Stub path functions
-StubDirectory getApplicationDocumentsDirectory() {
+Directory getApplicationDocumentsDirectory() {
   throw UnsupportedError('getApplicationDocumentsDirectory is not supported on web platform');
 }
 
-StubDirectory getDownloadsDirectory() {
+Directory getDownloadsDirectory() {
   throw UnsupportedError('getDownloadsDirectory is not supported on web platform');
 }
 
-StubDirectory getExternalStorageDirectory() {
+Directory getExternalStorageDirectory() {
   throw UnsupportedError('getExternalStorageDirectory is not supported on web platform');
 }
 

@@ -197,95 +197,42 @@ class FileTransferService {
       throw Exception('File download not supported on web platform');
     } else {
       // For native platforms, use platform-appropriate directory
-      io.Directory? directory;
-      try {
-        // Use path_provider to get appropriate base directory
-        if (io.Platform.isAndroid) {
-          final baseDir = await getExternalStorageDirectory();
-          if (baseDir != null) {
-            directory = io.Directory(path.join(baseDir.path, 'karo'));
-          } else {
-            // Fallback to application documents when external storage is unavailable
-            final fallbackBase = await getApplicationDocumentsDirectory();
-            directory = io.Directory(path.join(fallbackBase.path, 'karo'));
-          }
-        } else {
-          // For iOS, macOS, Windows, Linux - use application documents
-          final baseDir = await getApplicationDocumentsDirectory();
-          directory = io.Directory(path.join(baseDir.path, 'karo'));
-        }
-        
-        if (directory != null && !await directory.exists()) {
-          await directory.create(recursive: true);
-        }
-        debugPrint('[FILE_TRANSFER] Using karo directory: ${directory.path}');
-      } catch (e) {
-        debugPrint('[FILE_TRANSFER] Could not create karo directory: $e');
-        // Fallback to downloads directory
-        try {
-          directory = await getDownloadsDirectory();
-          debugPrint('[FILE_TRANSFER] Primary downloads directory: ${directory?.path}');
-        } catch (e) {
-          debugPrint('[FILE_TRANSFER] Could not get downloads directory: $e');
-        }
-        
-        // Fallback to application documents if downloads directory fails
-        if (directory == null) {
-          try {
-            directory = await getApplicationDocumentsDirectory();
-            debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory.path}');
-          } catch (e) {
-            debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
-            throw Exception('Unable to determine save location for downloaded file');
-          }
-        }
-      }
-      
-      // Sanitize and construct final path
-      final sanitizedSavePath = _sanitizeFileName(savePath);
-      
-      // Ensure directory is not null before constructing path
-      if (directory == null) {
-        throw Exception('Download directory is null - unable to determine save location');
-      }
-      
-      // Use path.join for cross-platform path construction
-      actualSavePath = path.join(directory.path, sanitizedSavePath);
-      
-       // Enhanced path validation
-       final file = io.File(actualSavePath);
-       final parentDir = file.parent;
-       
-       debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
-       debugPrint('[FILE_TRANSFER] Parent directory exists: ${await parentDir.exists()}');
-       debugPrint('[FILE_TRANSFER] Parent directory path: ${parentDir.path}');
-       
-       // CRITICAL FIX: Ensure parent directory exists with proper error handling
-       try {
-         if (!await parentDir.exists()) {
-           debugPrint('[FILE_TRANSFER] Creating parent directory: ${parentDir.path}');
-           await parentDir.create(recursive: true);
-         }
-         
-         // CRITICAL FIX: Test write permissions more robustly
-         final testFile = io.File('${parentDir.path}/.download_test_${DateTime.now().toUtc().millisecondsSinceEpoch}');
-         try {
-           await testFile.writeAsString('test');
-           final writtenContent = await testFile.readAsString();
-           if (writtenContent != 'test') {
-             throw Exception('Directory write test failed - content mismatch');
-           }
-           await testFile.delete();
-           debugPrint('[FILE_TRANSFER] Directory is writable: ✅');
-         } catch (writeError) {
-           debugPrint('[FILE_TRANSFER] Write permission test failed: $writeError');
-           throw Exception('Directory is not writable: $writeError');
-         }
-       } catch (e) {
-         debugPrint('[FILE_TRANSFER] Directory creation/writability failed: $e');
-         throw Exception('Cannot create or write to download directory: $e');
-       }
+      actualSavePath = await _getNativeSavePath(fileName, savePath);
     }
+      
+      // Enhanced path validation
+      final file = io.File(actualSavePath);
+      final parentDir = file.parent;
+      
+      debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
+      debugPrint('[FILE_TRANSFER] Parent directory exists: ${await parentDir.exists()}');
+      debugPrint('[FILE_TRANSFER] Parent directory path: ${parentDir.path}');
+      
+      // CRITICAL FIX: Ensure parent directory exists with proper error handling
+      try {
+        if (!await parentDir.exists()) {
+          debugPrint('[FILE_TRANSFER] Creating parent directory: ${parentDir.path}');
+          await parentDir.create(recursive: true);
+        }
+        
+        // CRITICAL FIX: Test write permissions more robustly
+        final testFile = io.File('${parentDir.path}/.download_test_${DateTime.now().toUtc().millisecondsSinceEpoch}');
+        try {
+          await testFile.writeAsString('test');
+          final writtenContent = await testFile.readAsString();
+          if (writtenContent != 'test') {
+            throw Exception('Directory write test failed - content mismatch');
+          }
+          await testFile.delete();
+          debugPrint('[FILE_TRANSFER] Directory is writable: ✅');
+        } catch (writeError) {
+          debugPrint('[FILE_TRANSFER] Write permission test failed: $writeError');
+          throw Exception('Directory is not writable: $writeError');
+        }
+      } catch (e) {
+        debugPrint('[FILE_TRANSFER] Directory creation/writability failed: $e');
+        throw Exception('Cannot create or write to download directory: $e');
+      }
 
     final transfer = FileTransfer(
       id: fileId,
@@ -468,6 +415,63 @@ class FileTransferService {
     if (index != -1) {
       _transfers[index] = _transfers[index].copyWith(status: TransferStatus.failed);
     }
+  }
+
+  Future<String> _getNativeSavePath(String fileName, String savePath) async {
+    // For native platforms, use platform-appropriate directory
+    io.Directory? directory;
+    try {
+      // Use path_provider to get appropriate base directory
+      if (io.Platform.isAndroid) {
+        final baseDir = await getExternalStorageDirectory();
+        if (baseDir != null) {
+          directory = io.Directory(path.join(baseDir.path, 'karo'));
+        } else {
+          // Fallback to application documents when external storage is unavailable
+          final fallbackBase = await getApplicationDocumentsDirectory();
+          directory = io.Directory(path.join(fallbackBase.path, 'karo'));
+        }
+      } else {
+        // For iOS, macOS, Windows, Linux - use application documents
+        final baseDir = await getApplicationDocumentsDirectory();
+        directory = io.Directory(path.join(baseDir.path, 'karo'));
+      }
+      
+      if (directory != null && !await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+    } catch (e) {
+      debugPrint('[FILE_TRANSFER] Could not get downloads directory: $e');
+    }
+    
+    // Fallback to application documents if downloads directory fails
+    if (directory == null) {
+      try {
+        directory = await getApplicationDocumentsDirectory();
+        debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory?.path}');
+      } catch (e) {
+        debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
+        throw Exception('Unable to determine save location for downloaded file');
+      }
+      if (directory == null) {
+        try {
+          directory = await getApplicationDocumentsDirectory();
+          debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory?.path}');
+        } catch (e) {
+          debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
+          throw Exception('Unable to determine save location for downloaded file');
+        }
+      }
+    }
+    
+    // Ensure directory is not null before constructing path
+    if (directory == null) {
+      throw Exception('Download directory is null - unable to determine save location');
+    }
+    
+    // Use path.join for cross-platform path construction
+    final sanitizedSavePath = _sanitizeFileName(savePath);
+    return path.join(directory.path, sanitizedSavePath);
   }
 }
 
