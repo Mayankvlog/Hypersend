@@ -88,13 +88,18 @@ class HttpHeaders {
   void operator[]=(String name, String value) {
     _headers[name] = value;
   }
+  
+  // Add direct assignment method for web compatibility
+  void assign(String name, String value) {
+    _headers[name] = value;
+  }
 }
 
 class HttpClientRequest {
   HttpHeaders headers = HttpHeaders();
   
   set contentType(String type) {
-    headers.set('content-type', type);
+    headers['content-type'] = type;
   }
   
   void add(List<int> data) {}

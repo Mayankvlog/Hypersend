@@ -156,7 +156,7 @@ class FileTransferService {
         final client = io.HttpClient();
         try {
           final request = await client.putUrl(Uri.parse(uploadUrl));
-          request.headers.set('Content-Type', mime);
+          request.headers.set('content-type', mime);
           request.add(fileBytes);
           
           // Upload to S3
