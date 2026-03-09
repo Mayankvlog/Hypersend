@@ -73,14 +73,19 @@ class ApiService {
           return [];
         }
         
-        final files = await directory.list().toList();
-        final fileNames = files
-            .whereType<io.File>()
-            .map((file) => file.path.split('/').last)
-            .toList();
-        
-        _log('[LOCAL_STORAGE] Found ${fileNames.length} files');
-        return fileNames;
+        try {
+          final files = await directory.list().toList();
+          final fileNames = files
+              .whereType<io.File>()
+              .map((file) => file.path.split('/').last)
+              .toList();
+          
+          _log('[LOCAL_STORAGE] Found ${fileNames.length} files');
+          return fileNames;
+        } catch (e) {
+          _log('[LOCAL_STORAGE] Error listing files: $e');
+          return [];
+        }
       } else {
         return [];
       }

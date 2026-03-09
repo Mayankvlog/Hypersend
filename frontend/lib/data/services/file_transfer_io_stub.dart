@@ -26,10 +26,22 @@ class Directory {
   Future<bool> exists() async => false;
   Future<void> create({bool recursive = false}) async {}
   String get name => _path.split('/').last;
+  
+  // Add list() method for web compatibility
+  Stream<FileSystemEntity> list({bool recursive = false}) async* {
+    // Return empty stream for web platform
+    return;
+  }
 }
 
-// Stub File class
-class File {
+// Stub FileSystemEntity for list() method return type
+abstract class FileSystemEntity {
+  String get path;
+}
+
+// Stub File class extending FileSystemEntity for list() method
+class File extends FileSystemEntity {
+  @override
   final String path;
   File(this.path);
   
@@ -63,11 +75,26 @@ class HttpClient {
   void close() {}
 }
 
+// Stub HttpHeaders class
+class HttpHeaders {
+  final Map<String, String> _headers = {};
+  
+  void set(String name, String value) {
+    _headers[name] = value;
+  }
+  
+  String? operator[](String name) => _headers[name];
+  
+  void operator[]=(String name, String value) {
+    _headers[name] = value;
+  }
+}
+
 class HttpClientRequest {
-  Map<String, String> headers = {};
+  HttpHeaders headers = HttpHeaders();
   
   set contentType(String type) {
-    headers['content-type'] = type;
+    headers.set('content-type', type);
   }
   
   void add(List<int> data) {}

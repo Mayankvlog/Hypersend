@@ -184,55 +184,55 @@ class FileTransferService {
     }
   }
 
-  /// Download file to a local path (desktop/mobile).
+  /// Download file to a local path (desktop/mobile only).
+  /// On web platform, this throws an exception as downloads are handled differently.
   Future<void> downloadFile({
     required String fileId,
     required String fileName,
     required String savePath,
     required Function(double) onProgress,
   }) async {
-    // Enhanced download path generation with proper validation
-    String actualSavePath;
+    // Web platform doesn't support direct file downloads to filesystem
     if (kIsWeb) {
-      throw Exception('File download not supported on web platform');
-    } else {
-      // For native platforms, use platform-appropriate directory
-      actualSavePath = await _getNativeSavePath(fileName, savePath);
+      throw UnsupportedError('File download to local filesystem is not supported on web platform. Use browser download instead.');
     }
+
+    // Enhanced download path generation with proper validation for native platforms
+    String actualSavePath = await _getNativeSavePath(fileName, savePath);
       
-      // Enhanced path validation
-      final file = io.File(actualSavePath);
-      final parentDir = file.parent;
-      
-      debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
-      debugPrint('[FILE_TRANSFER] Parent directory exists: ${await parentDir.exists()}');
-      debugPrint('[FILE_TRANSFER] Parent directory path: ${parentDir.path}');
-      
-      // CRITICAL FIX: Ensure parent directory exists with proper error handling
-      try {
-        if (!await parentDir.exists()) {
-          debugPrint('[FILE_TRANSFER] Creating parent directory: ${parentDir.path}');
-          await parentDir.create(recursive: true);
-        }
-        
-        // CRITICAL FIX: Test write permissions more robustly
-        final testFile = io.File('${parentDir.path}/.download_test_${DateTime.now().toUtc().millisecondsSinceEpoch}');
-        try {
-          await testFile.writeAsString('test');
-          final writtenContent = await testFile.readAsString();
-          if (writtenContent != 'test') {
-            throw Exception('Directory write test failed - content mismatch');
-          }
-          await testFile.delete();
-          debugPrint('[FILE_TRANSFER] Directory is writable: ✅');
-        } catch (writeError) {
-          debugPrint('[FILE_TRANSFER] Write permission test failed: $writeError');
-          throw Exception('Directory is not writable: $writeError');
-        }
-      } catch (e) {
-        debugPrint('[FILE_TRANSFER] Directory creation/writability failed: $e');
-        throw Exception('Cannot create or write to download directory: $e');
+    // Enhanced path validation
+    final file = io.File(actualSavePath);
+    final parentDir = file.parent;
+    
+    debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
+    debugPrint('[FILE_TRANSFER] Parent directory exists: ${await parentDir.exists()}');
+    debugPrint('[FILE_TRANSFER] Parent directory path: ${parentDir.path}');
+    
+    // CRITICAL FIX: Ensure parent directory exists with proper error handling
+    try {
+      if (!await parentDir.exists()) {
+        debugPrint('[FILE_TRANSFER] Creating parent directory: ${parentDir.path}');
+        await parentDir.create(recursive: true);
       }
+      
+      // CRITICAL FIX: Test write permissions more robustly
+      final testFile = io.File('${parentDir.path}/.download_test_${DateTime.now().toUtc().millisecondsSinceEpoch}');
+      try {
+        await testFile.writeAsString('test');
+        final writtenContent = await testFile.readAsString();
+        if (writtenContent != 'test') {
+          throw Exception('Directory write test failed - content mismatch');
+        }
+        await testFile.delete();
+        debugPrint('[FILE_TRANSFER] Directory is writable: ✅');
+      } catch (writeError) {
+        debugPrint('[FILE_TRANSFER] Write permission test failed: $writeError');
+        throw Exception('Directory is not writable: $writeError');
+      }
+    } catch (e) {
+      debugPrint('[FILE_TRANSFER] Directory creation/writability failed: $e');
+      throw Exception('Cannot create or write to download directory: $e');
+    }
 
     final transfer = FileTransfer(
       id: fileId,

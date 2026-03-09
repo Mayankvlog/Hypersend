@@ -2167,7 +2167,7 @@ Future<void> postToChannel(String channelId, String text) async {
       
       // Create/clear file with proper error handling
       try {
-        if (file.existsSync()) {
+        if (await file.exists()) {
           await file.delete();
         }
         // CRITICAL FIX: Use writeAsBytes for more reliable file writing
@@ -2178,7 +2178,8 @@ Future<void> postToChannel(String channelId, String text) async {
         throw Exception('Failed to initialize download file: $e');
       }
       
-      final sink = file.openWrite();
+      // Use byte-based approach for web compatibility
+      final List<Uint8List> chunks = [];
       
       try {
         while (downloadedBytes < totalSize) {
@@ -2211,19 +2212,20 @@ Future<void> postToChannel(String channelId, String text) async {
             throw Exception('HTTP ${response.statusCode}: Failed to download chunk $downloadedBytes-$endByte');
           }
           
-          // CRITICAL FIX: Write data with proper flushing
-          sink.add(chunkData);
-          await sink.flush(); // Ensure data is written to disk
+          // Store chunk for later writing
+          chunks.add(chunkData);
           
           downloadedBytes = endByte + 1;
           
           // Update progress
           onReceiveProgress?.call(downloadedBytes, totalSize);
           
-          _log('[DOWNLOAD_LARGE] Chunk written: ${chunkData.length} bytes, Total: $downloadedBytes/$totalSize');
+          _log('[DOWNLOAD_LARGE] Chunk downloaded: ${chunkData.length} bytes, Total: $downloadedBytes/$totalSize');
         }
         
-        await sink.close();
+        // Write all chunks at once (web-compatible)
+        final totalBytes = Uint8List.fromList(chunks.expand((chunk) => chunk).toList());
+        await file.writeAsBytes(totalBytes);
         
         // CRITICAL FIX: Verify file was written correctly
         if (await file.exists()) {
@@ -2234,14 +2236,10 @@ Future<void> postToChannel(String channelId, String text) async {
             throw Exception('File size mismatch: expected $totalSize, got $actualSize');
           }
         } else {
-          throw Exception('File was not created after download: $savePath');
+          throw Exception('File was not created: $savePath');
         }
         
       } catch (e) {
-        try {
-          sink.close();
-        } catch (_) {} // Ignore close errors
-        
         // Cleanup on error
         try {
           if (await file.exists()) {
@@ -2582,18 +2580,25 @@ if (!kIsWeb) {
         }
         
         int deletedCount = 0;
-        final files = await directory.list().toList();
-        
-        for (var file in files) {
-          if (file is io.File) {
-            await file.delete();
-            deletedCount++;
+        try {
+          final files = await directory.list().toList();
+          
+          for (var file in files) {
+            if (file is io.File) {
+              await file.delete();
+              deletedCount++;
+            }
           }
+        } catch (e) {
+          _log('[LOCAL_STORAGE] Error listing files: $e');
+          return 0;
         }
         
         _log('[LOCAL_STORAGE] Cleared $deletedCount files');
         return deletedCount;
       } else {
+        // Web platform - local storage clearing not applicable
+        _log('[LOCAL_STORAGE] Local storage clearing not supported on web platform');
         return 0;
       }
     } catch (e) {
