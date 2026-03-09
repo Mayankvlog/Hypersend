@@ -1,11 +1,15 @@
 import 'dart:typed_data';
 import 'dart:async';
-import 'dart:io' if (dart.library.html) 'dart:async' as io;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
+import 'package:http/http.dart' as http;
 import 'api_service.dart';
 import '../../core/constants/api_constants.dart';
+
+// Conditional imports for platform-specific implementations
+import 'file_transfer_io.dart' if (dart.library.html) 'file_transfer_io_stub.dart' as io;
 
 class FileTransferService {
   final ApiService _api;
@@ -136,17 +140,35 @@ class FileTransferService {
       final fileBytes = bytesBuilder.takeBytes();
       
       // Create HTTP request for S3 upload
-      final client = HttpClient();
-      final request = await client.putUrl(Uri.parse(uploadUrl));
-      request.headers.contentType = ContentType.parse(mime);
-      request.add(fileBytes);
-      
-      // Upload to S3
-      final response = await request.close();
-      
-      // Check response status code
-      if (response.statusCode != 200) {
-        throw Exception('S3 upload failed: ${response.statusCode}');
+      if (kIsWeb) {
+        // For web, use http package instead of HttpClient
+        final response = await http.put(
+          Uri.parse(uploadUrl),
+          body: fileBytes,
+          headers: {'Content-Type': mime},
+        );
+        
+        if (response.statusCode != 200 && response.statusCode != 204) {
+          throw Exception('S3 upload failed: ${response.statusCode}');
+        }
+      } else {
+        // For native platforms, use HttpClient
+        final client = io.HttpClient();
+        try {
+          final request = await client.putUrl(Uri.parse(uploadUrl));
+          request.headers.contentType = io.ContentType.parse(mime);
+          request.add(fileBytes);
+          
+          // Upload to S3
+          final response = await request.close();
+          
+          // Check response status code
+          if (response.statusCode != 200 && response.statusCode != 204) {
+            throw Exception('S3 upload failed: ${response.statusCode}');
+          }
+        } finally {
+          client.close();
+        }
       }
       
       // WHATSAPP ARCHITECTURE: Notify server of successful upload
@@ -174,12 +196,26 @@ class FileTransferService {
     if (kIsWeb) {
       throw Exception('File download not supported on web platform');
     } else {
-      // For native platforms, use karo directory as specified
-      Directory? directory;
+      // For native platforms, use platform-appropriate directory
+      io.Directory? directory;
       try {
-        // Try to use karo directory first
-        directory = Directory('/karo');
-        if (!await directory.exists()) {
+        // Use path_provider to get appropriate base directory
+        if (io.Platform.isAndroid) {
+          final baseDir = await getExternalStorageDirectory();
+          if (baseDir != null) {
+            directory = io.Directory(path.join(baseDir.path, 'karo'));
+          } else {
+            // Fallback to application documents when external storage is unavailable
+            final fallbackBase = await getApplicationDocumentsDirectory();
+            directory = io.Directory(path.join(fallbackBase.path, 'karo'));
+          }
+        } else {
+          // For iOS, macOS, Windows, Linux - use application documents
+          final baseDir = await getApplicationDocumentsDirectory();
+          directory = io.Directory(path.join(baseDir.path, 'karo'));
+        }
+        
+        if (directory != null && !await directory.exists()) {
           await directory.create(recursive: true);
         }
         debugPrint('[FILE_TRANSFER] Using karo directory: ${directory.path}');
@@ -207,7 +243,14 @@ class FileTransferService {
       
       // Sanitize and construct final path
       final sanitizedSavePath = _sanitizeFileName(savePath);
-      actualSavePath = '${directory.path}/$sanitizedSavePath';
+      
+      // Ensure directory is not null before constructing path
+      if (directory == null) {
+        throw Exception('Download directory is null - unable to determine save location');
+      }
+      
+      // Use path.join for cross-platform path construction
+      actualSavePath = path.join(directory.path, sanitizedSavePath);
       
        // Enhanced path validation
        final file = io.File(actualSavePath);
@@ -333,7 +376,7 @@ class FileTransferService {
       onProgress(1);
       
       // Verify file was downloaded successfully
-      final file = File(actualSavePath);
+      final file = io.File(actualSavePath);
       if (!await file.exists()) {
         throw Exception('File download completed but file not found at path: $actualSavePath');
       }

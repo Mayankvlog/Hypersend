@@ -7,9 +7,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:path/path.dart' as path;
 
 // Platform-specific imports: dart:io is conditionally imported only for non-web platforms
-import 'dart:io' if (dart.library.html) 'dart:async' as io;
+// import 'dart:io' if (dart.library.html) 'dart:html'; // Removed to avoid VoidCallback conflict
+
+// Conditional imports for platform-specific implementations
+import 'chat_io.dart' if (dart.library.html) 'chat_io_stub.dart' as io;
 
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_theme.dart';
@@ -1598,11 +1602,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         // Generate a safe filename and path
         final safeFileName = fileName.replaceAll(RegExp(r'[^\w\-_.]'), '_');
         
-        // Get downloads directory - use karo directory as specified
-        Directory? downloadsDir;
+        // Get downloads directory - use platform-appropriate directory
+        io.Directory? downloadsDir;
         try {
-          downloadsDir = Directory('/karo');
-          if (!await downloadsDir.exists()) {
+          // Use path_provider to get appropriate base directory
+          if (io.Platform.isAndroid) {
+            final baseDir = await getExternalStorageDirectory();
+            if (baseDir != null) {
+              downloadsDir = io.Directory(path.join(baseDir.path, 'karo'));
+            }
+          } else {
+            // For iOS, macOS, Windows, Linux - use application documents
+            final baseDir = await getApplicationDocumentsDirectory();
+            downloadsDir = io.Directory(path.join(baseDir.path, 'karo'));
+          }
+          
+          if (downloadsDir != null && !await downloadsDir.exists()) {
             await downloadsDir.create(recursive: true);
           }
         } catch (e) {
