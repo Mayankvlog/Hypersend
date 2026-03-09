@@ -48,6 +48,8 @@ from fastapi.responses import (
     RedirectResponse,
 )
 from fastapi.encoders import jsonable_encoder
+from typing import Any
+from bson import ObjectId
 
 # Import collections and logging
 logger = logging.getLogger(__name__)
@@ -1368,7 +1370,7 @@ async def initialize_upload(
         storage_key_owner = str(upload_user_id) if upload_user_id is not None else "anonymous"
         storage_key = f"files/{storage_key_owner}/{upload_id}/{filename}"
         
-        # CRITICAL: 72-hour expiry for WhatsApp compliance (UTC only)
+        # CRITICAL: 72-hour expiry for compliance (UTC only)
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
         expires_at = now + timedelta(hours=72)
         
@@ -1408,8 +1410,8 @@ async def initialize_upload(
             },
         )
 
-        # Return upload initialization response
-        return FileInitResponse(
+        # Return upload initialization response with proper serialization
+        response_data = FileInitResponse(
             uploadId=upload_id,
             upload_id=upload_id,
             chunk_size=int(chunk_size),
@@ -1417,6 +1419,12 @@ async def initialize_upload(
             expires_in=3600,
             max_parallel=1,
             upload_url=None,
+        )
+        
+        # Ensure proper JSON serialization to prevent namespace errors
+        return JSONResponse(
+            content=jsonable_encoder(response_data),
+            status_code=status.HTTP_200_OK
         )
 
     except HTTPException:
@@ -1645,7 +1653,12 @@ async def upload_chunk(
             "user_id": current_user
         })
 
-    return ChunkUploadResponse(upload_id=upload_id, chunk_index=int(chunk_index), status="received")
+    # Ensure proper JSON serialization to prevent namespace errors
+    response_data = ChunkUploadResponse(upload_id=upload_id, chunk_index=int(chunk_index), status="received")
+    return JSONResponse(
+        content=jsonable_encoder(response_data),
+        status_code=status.HTTP_200_OK
+    )
 
 
 @router.post("/{upload_id}/complete", response_model=dict)
