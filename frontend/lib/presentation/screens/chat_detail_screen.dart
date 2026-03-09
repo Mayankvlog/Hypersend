@@ -1025,7 +1025,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         ),
       );
 
-      final name = 'captured_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      // Generate filename safely without filesystem dependencies
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final name = 'captured_$timestamp.jpg';
       final size = imageBytes.length;
       final mime = 'image/jpeg';
 
@@ -1043,7 +1045,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         throw Exception('Failed to initialize upload');
       }
 
-      // Upload the image data
+      // Upload the image data using bytes directly
       await serviceProvider.apiService.uploadChunk(
         uploadId: uploadId,
         chunkIndex: 0,
@@ -1087,7 +1089,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final bytes = result.files.first.bytes;
       final name = result.files.first.name;
       final size = result.files.first.size;
-      final mime = 'application/octet-stream';
+      
+      // Determine MIME type safely without filesystem operations
+      String mime = 'application/octet-stream';
+      if (name.toLowerCase().endsWith('.jpg') || name.toLowerCase().endsWith('.jpeg')) {
+        mime = 'image/jpeg';
+      } else if (name.toLowerCase().endsWith('.png')) {
+        mime = 'image/png';
+      } else if (name.toLowerCase().endsWith('.gif')) {
+        mime = 'image/gif';
+      } else if (name.toLowerCase().endsWith('.mp4')) {
+        mime = 'video/mp4';
+      } else if (name.toLowerCase().endsWith('.pdf')) {
+        mime = 'application/pdf';
+      } else if (name.toLowerCase().endsWith('.txt')) {
+        mime = 'text/plain';
+      }
 
       if (bytes == null) return;
 
@@ -1605,7 +1622,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         // Get downloads directory - use platform-appropriate directory
         io.Directory? downloadsDir;
         try {
-          // Use path_provider to get appropriate base directory
+          // Use path_provider to get appropriate base directory (native only)
           if (io.Platform.isAndroid) {
             final baseDir = await getExternalStorageDirectory();
             if (baseDir != null) {
@@ -1624,7 +1641,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           debugPrint('[FILE_NATIVE] Could not create karo directory: $e');
           // Fallback to default downloads directory
           try {
-            final downloadsDirResult = await getDownloadsDirectory();
+            // Use chat_io helper function for downloads directory
+            final downloadsDirResult = await io.getDownloadsDirectory();
             if (downloadsDirResult != null) {
               downloadsDir = io.Directory(path.join(downloadsDirResult.path, 'karo'));
             }
@@ -1633,8 +1651,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           }
         }
         
-        final appDocsDir = await getApplicationDocumentsDirectory();
-        downloadsDir ??= io.Directory(path.join(appDocsDir.path, 'karo'));
+        // Final fallback to application documents (native only)
+        try {
+          final appDocsDir = await getApplicationDocumentsDirectory();
+          downloadsDir ??= io.Directory(path.join(appDocsDir.path, 'karo'));
+        } catch (e) {
+          debugPrint('[FILE_NATIVE] Could not get application documents directory: $e');
+          throw Exception('Unable to determine download directory');
+        }
+        
         final savePath = '${downloadsDir.path}/$safeFileName';
         
         debugPrint('[FILE_NATIVE] Download path: $savePath');

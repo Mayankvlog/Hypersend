@@ -347,28 +347,7 @@ class AuthService {
     await _handleLoginSuccess();
   }
 
-  Future<void> _persistTokens({
-    required String accessToken,
-    required String refreshToken,
-  }) async {
-    try {
-      _accessToken = accessToken;
-      _refreshToken = refreshToken;
-      _api.setAuthToken(accessToken);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kAccessTokenKey, accessToken);
-      await prefs.setString(_kRefreshTokenKey, refreshToken);
-      // Log non-sensitive metadata only - token lengths and persistence status
-      final accessTokenLength = accessToken.length;
-      final refreshTokenLength = refreshToken.length;
-      debugPrint('[AUTH_TOKENS] Tokens persisted - access token length: $accessTokenLength, refresh token length: $refreshTokenLength');
-    } catch (e) {
-      debugPrint('[AUTH_TOKENS] Error persisting tokens: $e');
-      // Re-throw as auth exception to maintain error type consistency
-      throw Exception('Failed to save authentication tokens: ${e.toString()}');
-    }
-  }
-
+  
   // New method to refresh session using HTTPOnly cookies
   Future<bool> refreshSession() async {
     try {

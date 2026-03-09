@@ -156,7 +156,7 @@ class FileTransferService {
         final client = io.HttpClient();
         try {
           final request = await client.putUrl(Uri.parse(uploadUrl));
-          request.contentType = mime;
+          request.headers.set('Content-Type', mime);
           request.add(fileBytes);
           
           // Upload to S3
@@ -428,8 +428,8 @@ class FileTransferService {
           directory = io.Directory(path.join(baseDir.path, 'karo'));
         } else {
           // Fallback to application documents when external storage is unavailable
-          final fallbackBase = await getApplicationDocumentsDirectory();
-        directory = io.Directory(path.join((await getApplicationDocumentsDirectory()).path, 'karo'));
+          final appDocsDir = await getApplicationDocumentsDirectory();
+          directory = io.Directory(path.join(appDocsDir.path, 'karo'));
         }
       } else {
         // For iOS, macOS, Windows, Linux - use application documents
@@ -437,7 +437,7 @@ class FileTransferService {
         directory = io.Directory(path.join(baseDir.path, 'karo'));
       }
       
-      if (directory != null && !await directory.exists()) {
+      if (!await directory.exists()) {
         await directory.create(recursive: true);
       }
     } catch (e) {
@@ -449,27 +449,14 @@ class FileTransferService {
       try {
         final appDocsDir = await getApplicationDocumentsDirectory();
         directory = io.Directory(path.join(appDocsDir.path, 'karo'));
-        debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory?.path}');
+        debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory.path}');
       } catch (e) {
         debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
         throw Exception('Unable to determine save location for downloaded file');
       }
-      if (directory == null) {
-        try {
-        final appDocsDir2 = await getApplicationDocumentsDirectory();
-        directory = io.Directory(path.join(appDocsDir2.path, 'karo'));
-          debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory?.path}');
-        } catch (e) {
-          debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
-          throw Exception('Unable to determine save location for downloaded file');
-        }
-      }
     }
     
-    // Ensure directory is not null before constructing path
-    if (directory == null) {
-      throw Exception('Download directory is null - unable to determine save location');
-    }
+    // directory cannot be null here due to the fallback logic above
     
     // Use path.join for cross-platform path construction
     final sanitizedSavePath = _sanitizeFileName(savePath);

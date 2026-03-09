@@ -13,7 +13,7 @@
 // - Streaming downloads only
 
 import 'dart:convert';
-import 'dart:io' if (dart.library.html) 'dart:async' as io;
+import 'dart:async';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;

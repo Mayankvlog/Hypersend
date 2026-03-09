@@ -54,7 +54,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                 );
               } catch (e) {
                 if (!mounted) return;
-                print('Error unblocking user: $e'); // Log the actual exception
+                debugPrint('Error unblocking user: $e'); // Log the actual exception
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Could not unblock user. Please try again.'),
@@ -145,7 +145,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             itemBuilder: (context, index) {
               final item = blockedUsers[index];
               if (item is! Map<String, dynamic>) {
-                print('Invalid user data at index $index: $item');
+                debugPrint('Invalid user data at index $index: $item');
                 return const SizedBox.shrink(); // Skip invalid entries
               }
               

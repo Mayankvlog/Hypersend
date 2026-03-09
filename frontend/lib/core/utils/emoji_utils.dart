@@ -681,7 +681,7 @@ class EmojiUtils {
     
     // Strategy 1: Check for category keyword matches (highest priority)
     for (var entry in categoryMap.entries) {
-      if (searchTerm == entry.key || searchTerm == entry.key + 's') {
+      if (searchTerm == entry.key || searchTerm == '${entry.key}s') {
         return categories[entry.value].emojis;
       }
     }

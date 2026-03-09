@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
@@ -262,19 +261,28 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
     });
 
     try {
-      final image = await widget.cameraController.takePicture();
+      // Take picture using camera controller
+      final XFile image = await widget.cameraController.takePicture();
       
       if (mounted) {
-        // Read image bytes and return them instead of File object
-        // This ensures compatibility with web platform
-        final imageBytes = await image.readAsBytes();
-        Navigator.pop(context, imageBytes);
+        // Read image bytes safely for web compatibility
+        // XFile.readAsBytes() works on both web and native platforms
+        final Uint8List imageBytes = await image.readAsBytes();
+        
+        // Check mounted again after async operation
+        if (mounted) {
+          // Return the bytes directly instead of File object
+          // This ensures compatibility with Flutter Web
+          Navigator.pop(context, imageBytes);
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to capture photo: $e')),
         );
+        // Also return null on error to prevent issues
+        Navigator.pop(context, null);
       }
     } finally {
       if (mounted) {

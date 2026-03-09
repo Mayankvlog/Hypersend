@@ -5,9 +5,11 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
+import 'package:http_parser/http_parser.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
-// Cross-platform IO imports
-import 'package:universal_io/io.dart' as io;
+// Conditional IO imports: dart:io for native, stub for web
+import 'file_transfer_io.dart' if (dart.library.html) 'file_transfer_io_stub.dart' as io;
 
 import '../../core/constants/api_constants.dart';
 import 'service_provider.dart';
@@ -1821,16 +1823,24 @@ Future<void> postToChannel(String channelId, String text) async {
     
     while (retryCount < maxRetries) {
       try {
+        // Create multipart request using bytes directly (web-compatible)
+        final formData = FormData.fromMap({
+          'chunk': MultipartFile.fromBytes(
+            bytes,
+            filename: 'chunk_$chunkIndex.bin', // Safe filename for web
+            contentType: MediaType('application', 'octet-stream'),
+          ),
+        });
+        
         final response = await _dio.put(
           url,
-          data: bytes,
+          data: formData,
           options: Options(
-            contentType: 'application/octet-stream',
+            contentType: 'multipart/form-data',
             sendTimeout: const Duration(minutes: 30),
             receiveTimeout: const Duration(minutes: 30),
             headers: {
               if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
-              'Content-Length': bytes.length.toString(),
             },
             followRedirects: false,
             validateStatus: (status) => status != null && status < 500,
@@ -2033,6 +2043,9 @@ Future<void> postToChannel(String channelId, String text) async {
     if (kIsWeb) {
       throw UnsupportedError('File system downloads are not supported on Flutter Web. Use downloadFileBytes() instead.');
     }
+    
+    // Ensure we're not on web before using io APIs
+    assert(!kIsWeb, 'Web platform should not reach io.File operations');
     
     // CRITICAL FIX: Ensure parent directory exists
     final file = io.File(savePath);
@@ -3224,7 +3237,7 @@ class WebSocketConnection {
   final Function(String) onError;
   final Function(String) logger;
   
-  io.WebSocket? _webSocket;
+  WebSocketChannel? _webSocket;
   bool _isConnected = false;
   bool _isClosed = false;
   bool _maxRetryExceeded = false;
@@ -3261,13 +3274,10 @@ class WebSocketConnection {
       
       logger('[WEBSOCKET] Connecting to $wsUrl for chat $chatId...');
       
-      _webSocket = await io.WebSocket.connect(
-        wsUrl,
-        headers: {
-          'X-Device-ID': deviceId,
-          'X-User-ID': userId,
-          'X-Chat-ID': chatId,
-        },
+      // Use web_socket_channel for cross-platform compatibility
+      _webSocket = WebSocketChannel.connect(
+        Uri.parse(wsUrl),
+        protocols: ['chat'],
       );
       
       _isConnected = true;
@@ -3303,7 +3313,7 @@ class WebSocketConnection {
   
   /// Listen for messages from WebSocket (blocking loop)
   void _listen() {
-    _webSocket?.listen(
+    _webSocket?.stream.listen(
       (dynamic message) {
         try {
           // Parse JSON message from server
@@ -3371,7 +3381,7 @@ class WebSocketConnection {
     
     try {
       final jsonData = jsonEncode(data);
-      _webSocket?.add(jsonData);
+      _webSocket?.sink.add(jsonData);
       logger('[WEBSOCKET] Sent message to $chatId: ${data['type'] ?? 'unknown'}');
     } catch (e) {
       logger('[WEBSOCKET] Send failed for $chatId: $e');
@@ -3395,7 +3405,7 @@ class WebSocketConnection {
       _isConnected = false;
       _maxRetryExceeded = false; // Reset on explicit close
       try {
-        _webSocket?.close();
+        _webSocket?.sink.close();
         logger('[WEBSOCKET] Closed connection for $chatId');
       } catch (e) {
         logger('[WEBSOCKET] Error closing connection: $e');
