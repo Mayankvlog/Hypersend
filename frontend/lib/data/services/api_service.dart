@@ -2029,6 +2029,11 @@ Future<void> postToChannel(String channelId, String text) async {
     required String savePath,
     required Function(double) onProgress,
   }) async {
+    // Web platform does not support file downloads to filesystem
+    if (kIsWeb) {
+      throw UnsupportedError('File system downloads are not supported on Flutter Web. Use downloadFileBytes() instead.');
+    }
+    
     // CRITICAL FIX: Ensure parent directory exists
     final file = io.File(savePath);
     final parentDir = file.parent;
@@ -2106,6 +2111,11 @@ Future<void> postToChannel(String channelId, String text) async {
     void Function(int, int)? onReceiveProgress,
   }) async {
     try {
+      // Web platform does not support file downloads to filesystem
+      if (kIsWeb) {
+        throw UnsupportedError('File system downloads are not supported on Flutter Web. Use downloadFileBytes() instead.');
+      }
+      
       _log('[DOWNLOAD_LARGE] Starting chunked download for file: $fileId');
       
       // Get file info first
@@ -2411,6 +2421,11 @@ Future<void> postToChannel(String channelId, String text) async {
     }
     
     try {
+      // CRITICAL: Prevent dart:io File access on web
+      if (kIsWeb) {
+        throw UnsupportedError('File storage is not supported on Flutter Web');
+      }
+      
       _log('[LOCAL_STORAGE] Saving file: $fileName');
       
       // Validate file size
@@ -2418,9 +2433,7 @@ Future<void> postToChannel(String channelId, String text) async {
         throw Exception('File size exceeds 40GB limit');
       }
       
-// Ensure directory exists (web: uses IndexedDB/LocalStorage, mobile: uses file system)
-      // Mobile platform - use actual file system
-      // Use complete file path for native platforms
+      // Ensure directory exists (mobile platform - use file system)
       final directory = io.Directory(localStoragePath);
       if (!await directory.exists()) {
         await directory.create(recursive: true);

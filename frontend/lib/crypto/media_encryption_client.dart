@@ -13,12 +13,13 @@
 // - Streaming downloads only
 
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' if (dart.library.html) 'dart:async' as io;
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:encrypt/encrypt.dart';
 import 'package:flutter/foundation.dart' hide Key;
+import 'package:universal_io/io.dart' as uio;
 import 'signal_protocol_client.dart';
 
 class MediaEncryptionClient {
@@ -30,7 +31,7 @@ class MediaEncryptionClient {
 
   /// Encrypt media file for upload
   Future<EncryptedMediaFile> encryptMediaFile(
-    File mediaFile,
+    dynamic mediaFile, // Can be File (native) or accept bytes directly on web
     List<String> recipientDeviceIds,
     String chatId
   ) async {
@@ -38,6 +39,7 @@ class MediaEncryptionClient {
     final mediaKey = _generateMediaKey();
     
     // Encrypt media file with media key
+    // For web platform, convert to bytes if needed
     final encryptedData = await _encryptFile(mediaFile, mediaKey);
     
     // Encrypt media key for each recipient device
@@ -97,9 +99,20 @@ class MediaEncryptionClient {
     return Uint8List.fromList(List.generate(32, (_) => Random.secure().nextInt(256)));
   }
 
-  /// Encrypt file with media key
-  Future<Uint8List> _encryptFile(File file, Uint8List key) async {
+  /// Encrypt file with media keydynamic file, Uint8List key) async {
     try {
+      // Handle both File objects (native) and Uint8List (web)
+      final Uint8List fileData;
+      if (file is Uint8List) {
+        fileData = file;
+      } else if (kIsWeb) {
+        // Web platform - cannot use File objects
+        throw UnsupportedError('File encryption on web must use bytes, not File objects');
+      } else {
+        // Native platform - read bytes from File
+        final nativeFile = file as uio.File;
+        fileData = await nativeFile.readAsBytes();
+      }
       final fileData = await file.readAsBytes();
       
       // Use AES-256-GCM for encryption
