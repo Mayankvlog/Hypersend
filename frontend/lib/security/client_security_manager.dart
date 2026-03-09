@@ -85,6 +85,11 @@ class ClientSecurityManager {
 
   /// Check if device is compromised
   Future<bool> isDeviceCompromised() async {
+    // Web platform doesn't support security checks
+    if (kIsWeb) {
+      return false;
+    }
+    
     final checks = await Future.wait([
       _checkRootJailbreak(),
       _checkDeveloperMode(),
@@ -164,12 +169,14 @@ class ClientSecurityManager {
     final deviceInfoPlugin = DeviceInfoPlugin();
     Map<String, dynamic> deviceInfo = {};
     
-    if (Platform.isAndroid) {
-      final androidInfo = await deviceInfoPlugin.androidInfo;
-      deviceInfo = androidInfo.data;
-    } else if (Platform.isIOS) {
-      final iosInfo = await deviceInfoPlugin.iosInfo;
-      deviceInfo = iosInfo.data;
+    if (!kIsWeb) {
+      if (Platform.isAndroid) {
+        final androidInfo = await deviceInfoPlugin.androidInfo;
+        deviceInfo = androidInfo.data;
+      } else if (Platform.isIOS) {
+        final iosInfo = await deviceInfoPlugin.iosInfo;
+        deviceInfo = iosInfo.data;
+      }
     }
     
     return SecurityStatus(

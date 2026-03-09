@@ -33,7 +33,8 @@ class MediaEncryptionClient {
   Future<EncryptedMediaFile> encryptMediaFile(
     dynamic mediaFile, // Can be File (native) or accept bytes directly on web
     List<String> recipientDeviceIds,
-    String chatId
+    String chatId,
+    {String? mimeType} // Optional mime type for web/bytes-based uploads
   ) async {
     // Generate media key (NEVER stored server-side)
     final mediaKey = _generateMediaKey();
@@ -59,8 +60,8 @@ class MediaEncryptionClient {
       fileId: _generateFileId(),
       encryptedData: encryptedData,
       encryptedKeys: encryptedKeys,
-      originalSize: await mediaFile.length(),
-      mimeType: _getMimeType(mediaFile),
+      originalSize: mediaFile is uio.File ? await mediaFile.length() : (mediaFile is Uint8List ? mediaFile.length : 0),
+      mimeType: mimeType ?? _getMimeType(mediaFile),
       chatId: chatId,
       createdAt: DateTime.now(),
       expiresAt: DateTime.now().add(const Duration(hours: 24)),
@@ -99,7 +100,8 @@ class MediaEncryptionClient {
     return Uint8List.fromList(List.generate(32, (_) => Random.secure().nextInt(256)));
   }
 
-  /// Encrypt file with media keydynamic file, Uint8List key) async {
+  /// Encrypt file with media key
+  Future<Uint8List> _encryptFile(dynamic file, Uint8List key) async {
     try {
       // Handle both File objects (native) and Uint8List (web)
       final Uint8List fileData;
@@ -113,7 +115,6 @@ class MediaEncryptionClient {
         final nativeFile = file as uio.File;
         fileData = await nativeFile.readAsBytes();
       }
-      final fileData = await file.readAsBytes();
       
       // Use AES-256-GCM for encryption
       final encrypter = Encrypter(AES(Key.fromLength(32)));
@@ -157,9 +158,25 @@ class MediaEncryptionClient {
     return 'media_${timestamp}_$random';
   }
 
-  /// Get MIME type from file
-  String _getMimeType(File file) {
-    final extension = path.extension(file.path).toLowerCase();
+  /// Get MIME type from file or infer from type
+  String _getMimeType(dynamic file) {
+    // If it's a File object, extract from path
+    if (file is uio.File) {
+      final extension = path.extension(file.path).toLowerCase();
+      return _getMimeTypeFromExtension(extension);
+    }
+    
+    // If it's Uint8List on web, return default
+    if (kIsWeb || file is Uint8List) {
+      return 'application/octet-stream';
+    }
+    
+    // Default fallback
+    return 'application/octet-stream';
+  }
+  
+  /// Get MIME type from file extension
+  String _getMimeTypeFromExtension(String extension) {
     switch (extension) {
       case '.jpg':
       case '.jpeg':
