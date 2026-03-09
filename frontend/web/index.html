@@ -36,7 +36,11 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="cache-buster" content="2025-03-09-005">
+  <meta name="cache-buster" content="2025-03-09-006">
+  
+  <!-- Additional cache busting for maximum freshness -->
+  <meta name="build-timestamp" content="20250309163000">
+  <!-- Note: Last-Modified and ETag headers should be configured in HTTP server/CDN -->
   
 <style>
     /* Custom loading container to show icon before Flutter loads */
@@ -103,8 +107,8 @@
   <!-- Custom loading container shown before Flutter loads -->
   <div id="flutter-loading">
     <div class="icon-container">
-      <img src="assets/assets/icons/icon.png" alt="zaply Icon" class="icon" 
-           onerror="this.onerror=null; this.src='assets/assets/icons/app_icon.png'; console.error('Primary icon failed, trying fallback');"
+      <img src="assets/assets/icons/icon.png?v=20250309163000" alt="zaply Icon" class="icon" 
+           onerror="this.onerror=null; this.src='assets/assets/icons/app_icon.png?v=20250309163000'; console.error('Primary icon failed, trying fallback');"
            onload="console.log('Icon loaded successfully');">
     </div>
     <div class="title">zaply</div>
@@ -113,6 +117,24 @@
   </div>
 
   <script>
+    // Force clear any cached images before loading
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        names.forEach(function(name) {
+          if (name.includes('flutter') || name.includes('assets')) {
+            caches.delete(name);
+          }
+        });
+      });
+    }
+    
+    // Clear any cached images
+    const images = document.querySelectorAll('img');
+    images.forEach(function(img) {
+      const separator = img.src.includes('?') ? '&' : '?';
+      img.src = img.src + separator + 'clear=' + Date.now();
+    });
+    
     // Production Flutter Configuration with CanvasKit optimization
     window.flutterConfiguration = {
       // Explicitly set CanvasKit CDN URL for production
