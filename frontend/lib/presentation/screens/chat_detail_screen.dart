@@ -787,67 +787,122 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               const SizedBox(height: 24),
               
-              // First row: Camera, Photos/Videos, Documents
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildAttachmentButton(
-                    icon: Icons.camera_alt,
-                    label: 'Camera',
-                    color: Colors.blue,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _captureFromCamera();
-                    },
-                  ),
-                  _buildAttachmentButton(
-                    icon: Icons.image,
-                    label: 'Photos/Videos',
-                    color: Colors.green,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _uploadFromMediaPicker('photo_video');
-                    },
-                  ),
-                  _buildAttachmentButton(
-                    icon: Icons.description,
-                    label: 'Documents',
-                    color: Colors.orange,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _uploadFromMediaPicker('document');
-                    },
-                  ),
-                ],
-              ),
+              // First row: Camera (only on non-web), Photos/Videos, Documents
+              if (!kIsWeb)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildAttachmentButton(
+                      icon: Icons.camera_alt,
+                      label: 'Camera',
+                      color: Colors.blue,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _captureFromCamera();
+                      },
+                    ),
+                    _buildAttachmentButton(
+                      icon: Icons.image,
+                      label: 'Photos/Videos',
+                      color: Colors.green,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _uploadFromMediaPicker('photo_video');
+                      },
+                    ),
+                    _buildAttachmentButton(
+                      icon: Icons.description,
+                      label: 'Documents',
+                      color: Colors.orange,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _uploadFromMediaPicker('document');
+                      },
+                    ),
+                  ],
+                )
+              else
+                // On web: show 3 buttons without camera
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildAttachmentButton(
+                      icon: Icons.image,
+                      label: 'Photos/Videos',
+                      color: Colors.green,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _uploadFromMediaPicker('photo_video');
+                      },
+                    ),
+                    _buildAttachmentButton(
+                      icon: Icons.description,
+                      label: 'Documents',
+                      color: Colors.orange,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _uploadFromMediaPicker('document');
+                      },
+                    ),
+                    _buildAttachmentButton(
+                      icon: Icons.folder,
+                      label: 'Files',
+                      color: Colors.red,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _uploadFromMediaPicker('file');
+                      },
+                    ),
+                  ],
+                ),
               const SizedBox(height: 24),
               
-              // Second row: Audio, Files (Location intentionally excluded)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  const SizedBox(width: 40), // Spacer for alignment
-                  _buildAttachmentButton(
-                    icon: Icons.mic,
-                    label: 'Audio',
-                    color: Colors.purple,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _uploadFromMediaPicker('audio');
-                    },
-                  ),
-                  _buildAttachmentButton(
-                    icon: Icons.folder,
-                    label: 'Files',
-                    color: Colors.red,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _uploadFromMediaPicker('file');
-                    },
-                  ),
-                  const SizedBox(width: 40), // Spacer for alignment
-                ],
-              ),
+              // Second row: Audio, Files (only on non-web)
+              if (!kIsWeb)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    const SizedBox(width: 40), // Spacer for alignment
+                    _buildAttachmentButton(
+                      icon: Icons.mic,
+                      label: 'Audio',
+                      color: Colors.purple,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _uploadFromMediaPicker('audio');
+                      },
+                    ),
+                    _buildAttachmentButton(
+                      icon: Icons.folder,
+                      label: 'Files',
+                      color: Colors.red,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _uploadFromMediaPicker('file');
+                      },
+                    ),
+                    const SizedBox(width: 40), // Spacer for alignment
+                  ],
+                )
+              else
+                // On web: show audio option in second row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    const SizedBox(width: 40),
+                    _buildAttachmentButton(
+                      icon: Icons.mic,
+                      label: 'Audio',
+                      color: Colors.purple,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _uploadFromMediaPicker('audio');
+                      },
+                    ),
+                    const SizedBox(width: 40),
+                    const SizedBox(width: 40),
+                  ],
+                ),
               const SizedBox(height: 12),
             ],
           ),
@@ -895,6 +950,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Future<void> _captureFromCamera() async {
+    // Camera is not supported on Flutter Web
+    if (kIsWeb) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Camera is not supported on web. Please use the gallery or file picker.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       // Request camera permission
       final status = await _requestCameraPermission();

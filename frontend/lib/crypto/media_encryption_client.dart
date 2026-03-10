@@ -18,7 +18,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:encrypt/encrypt.dart';
-import 'package:flutter/foundation.dart' hide Key;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:universal_io/io.dart' as uio;
 import 'signal_protocol_client.dart';
 
@@ -160,14 +160,19 @@ class MediaEncryptionClient {
 
   /// Get MIME type from file or infer from type
   String _getMimeType(dynamic file) {
+    // Always return default on web - file operations not supported
+    if (kIsWeb) {
+      return 'application/octet-stream';
+    }
+
     // If it's a File object, extract from path
     if (file is uio.File) {
       final extension = path.extension(file.path).toLowerCase();
       return _getMimeTypeFromExtension(extension);
     }
     
-    // If it's Uint8List on web, return default
-    if (kIsWeb || file is Uint8List) {
+    // If it's Uint8List, return default
+    if (file is Uint8List) {
       return 'application/octet-stream';
     }
     

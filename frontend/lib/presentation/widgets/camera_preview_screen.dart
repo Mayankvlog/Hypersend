@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:camera/camera.dart';
 
 class CameraPreviewScreen extends StatefulWidget {
@@ -46,6 +47,32 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Camera is not supported on Flutter Web
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.black87,
+          leading: IconButton(
+            icon: const Icon(Icons.close, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: const Text('Camera Not Available', style: TextStyle(color: Colors.white)),
+        ),
+        backgroundColor: Colors.black,
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Camera is not currently supported on the web platform.\n\n'
+              'Please use the gallery or file picker to upload photos on web.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          ),
+        ),
+      );
+    }
+
     if (!widget.cameraController.value.isInitialized) {
       return const Scaffold(
         backgroundColor: Colors.black,
