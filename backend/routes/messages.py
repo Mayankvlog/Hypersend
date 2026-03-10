@@ -3388,8 +3388,6 @@ class ChatConnectionManager:
         if len(self._broadcast_tokens[chat_id]) > 100:
             self._broadcast_tokens[chat_id].clear()
 
-
-# Global connection manager instance
 manager = ChatConnectionManager()
 
 
@@ -3406,7 +3404,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
     5) Proper reconnection handling (replaces stale connections)
     
     Query parameters:
-    - token: JWT authentication token
+    - token: JWT authentication token (REQUIRED)
     - device_id: Optional device identifier (defaults to "primary")
     
     Message format:
@@ -3426,10 +3424,29 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
     pubsub = None
     
     try:
-        # Extract and validate JWT token from query params
+        # ENHANCED: Extract token from query parameters with comprehensive logging
+        logger.info(f"[WEBSOCKET] New connection request for chat {chat_id}")
+        
+        # Redact sensitive query parameters before logging
+        sensitive_keys = ["token", "access_token", "auth", "jwt", "password", "secret"]
+        redacted_params = {}
+        for key, value in websocket.query_params.items():
+            if any(sensitive in key.lower() for sensitive in sensitive_keys):
+                redacted_params[key] = "<REDACTED>"
+            else:
+                redacted_params[key] = value
+        
+        if redacted_params:
+            logger.debug(f"[WEBSOCKET] Query params: {redacted_params}")
+        else:
+            logger.debug(f"[WEBSOCKET] No query parameters provided")
+        
         if not token:
+            logger.error(f"[WEBSOCKET] No token provided in query params for chat {chat_id}")
             await websocket.close(code=4001, reason="Token required")
             return
+        
+        logger.debug(f"[WEBSOCKET] Token provided for chat {chat_id}: <REDACTED>")
         
         # Decode JWT token
         try:
