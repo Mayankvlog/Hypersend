@@ -787,122 +787,73 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               const SizedBox(height: 24),
               
-              // First row: Camera (only on non-web), Photos/Videos, Documents
-              if (!kIsWeb)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildAttachmentButton(
-                      icon: Icons.camera_alt,
-                      label: 'Camera',
-                      color: Colors.blue,
-                      onTap: () {
-                        Navigator.pop(context);
+              // First row: Camera (native on mobile, web-enabled on web via FilePicker), Photos/Videos, Documents
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildAttachmentButton(
+                    icon: Icons.camera_alt,
+                    label: 'Camera',
+                    color: Colors.blue,
+                    onTap: () {
+                      Navigator.pop(context);
+                      if (kIsWeb) {
+                        // On web: use FilePicker with camera support
+                        _captureFromWebCamera();
+                      } else {
+                        // On mobile: use native camera
                         _captureFromCamera();
-                      },
-                    ),
-                    _buildAttachmentButton(
-                      icon: Icons.image,
-                      label: 'Photos/Videos',
-                      color: Colors.green,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _uploadFromMediaPicker('photo_video');
-                      },
-                    ),
-                    _buildAttachmentButton(
-                      icon: Icons.description,
-                      label: 'Documents',
-                      color: Colors.orange,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _uploadFromMediaPicker('document');
-                      },
-                    ),
-                  ],
-                )
-              else
-                // On web: show 3 buttons without camera
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildAttachmentButton(
-                      icon: Icons.image,
-                      label: 'Photos/Videos',
-                      color: Colors.green,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _uploadFromMediaPicker('photo_video');
-                      },
-                    ),
-                    _buildAttachmentButton(
-                      icon: Icons.description,
-                      label: 'Documents',
-                      color: Colors.orange,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _uploadFromMediaPicker('document');
-                      },
-                    ),
-                    _buildAttachmentButton(
-                      icon: Icons.folder,
-                      label: 'Files',
-                      color: Colors.red,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _uploadFromMediaPicker('file');
-                      },
-                    ),
-                  ],
-                ),
+                      }
+                    },
+                  ),
+                  _buildAttachmentButton(
+                    icon: Icons.image,
+                    label: 'Photos/Videos',
+                    color: Colors.green,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _uploadFromMediaPicker('photo_video');
+                    },
+                  ),
+                  _buildAttachmentButton(
+                    icon: Icons.description,
+                    label: 'Documents',
+                    color: Colors.orange,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _uploadFromMediaPicker('document');
+                    },
+                  ),
+                ],
+              ),
               const SizedBox(height: 24),
               
-              // Second row: Audio, Files (only on non-web)
-              if (!kIsWeb)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    const SizedBox(width: 40), // Spacer for alignment
-                    _buildAttachmentButton(
-                      icon: Icons.mic,
-                      label: 'Audio',
-                      color: Colors.purple,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _uploadFromMediaPicker('audio');
-                      },
-                    ),
-                    _buildAttachmentButton(
-                      icon: Icons.folder,
-                      label: 'Files',
-                      color: Colors.red,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _uploadFromMediaPicker('file');
-                      },
-                    ),
-                    const SizedBox(width: 40), // Spacer for alignment
-                  ],
-                )
-              else
-                // On web: show audio option in second row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    const SizedBox(width: 40),
-                    _buildAttachmentButton(
-                      icon: Icons.mic,
-                      label: 'Audio',
-                      color: Colors.purple,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _uploadFromMediaPicker('audio');
-                      },
-                    ),
-                    const SizedBox(width: 40),
-                    const SizedBox(width: 40),
-                  ],
-                ),
+              // Second row: Audio, Files
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  const SizedBox(width: 40), // Spacer for alignment
+                  _buildAttachmentButton(
+                    icon: Icons.mic,
+                    label: 'Audio',
+                    color: Colors.purple,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _uploadFromMediaPicker('audio');
+                    },
+                  ),
+                  _buildAttachmentButton(
+                    icon: Icons.folder,
+                    label: 'Files',
+                    color: Colors.red,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _uploadFromMediaPicker('file');
+                    },
+                  ),
+                  const SizedBox(width: 40), // Spacer for alignment
+                ],
+              ),
               const SizedBox(height: 12),
             ],
           ),
@@ -1006,6 +957,174 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       return status.isGranted;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Web-compatible camera capture using FilePicker
+  /// On web: Opens browser's file picker with camera option
+  /// Browser automatically shows "Take a photo" if camera-enabled accept attribute is used
+  Future<void> _captureFromWebCamera() async {
+    if (!kIsWeb) {
+      // Should not reach here on non-web platforms, but defensive check
+      debugPrint('[CAMERA_WEB_ERROR] _captureFromWebCamera called on non-web platform');
+      return;
+    }
+
+    try {
+      if (!mounted) return;
+      
+      // Show loading notification
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Opening camera...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Use FilePicker with image type - on web, this shows file picker with camera option
+      // The browser's file picker will include "Take a photo" when accept="image/*"
+      final result = await serviceProvider.apiService.pickImageWithCamera(
+        allowCamera: true,
+        allowGallery: true,
+      );
+
+      if (result == null || result.files.isEmpty) {
+        debugPrint('[CAMERA_WEB] User cancelled camera/gallery picker or no file selected');
+        return;
+      }
+
+      final file = result.files.first;
+      
+      // Get bytes from FilePicker result
+      final imageBytes = file.bytes;
+      if (imageBytes == null || imageBytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to read image data'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      debugPrint('[CAMERA_WEB] Captured image from browser: ${file.name} (${imageBytes.length} bytes)');
+
+      if (!mounted) return;
+
+      // Show upload notification
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Uploading ${file.name}...'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+
+      // Use the web camera image directly - it's already in bytes
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      // Preserve original filename or use capture timestamp
+      final name = file.name.isNotEmpty ? file.name : 'captured_$timestamp.jpg';
+      final size = imageBytes.length;
+      
+      // Determine MIME type from filename
+      String mime = 'image/jpeg';
+      if (name.toLowerCase().endsWith('.png')) {
+        mime = 'image/png';
+      } else if (name.toLowerCase().endsWith('.gif')) {
+        mime = 'image/gif';
+      } else if (name.toLowerCase().endsWith('.webp')) {
+        mime = 'image/webp';
+      }
+
+      // Initialize upload with image endpoint
+      final init = await serviceProvider.apiService.initUpload(
+        filename: name,
+        size: size,
+        mime: mime,
+        chatId: widget.chatId,
+        endpoint: 'attach/photos-videos/init',
+      );
+
+      final uploadId = init['uploadId'] ?? init['upload_id'];
+      if (uploadId == null) {
+        throw Exception('Failed to initialize upload: ${init['detail'] ?? 'Unknown error'}');
+      }
+
+      // Get server-provided chunk size and upload in chunks
+      final int chunkSize;
+      if (init['chunk_size'] != null && init['chunk_size'] is num) {
+        chunkSize = (init['chunk_size'] as num).toInt();
+      } else if (init['chunk_size'] != null) {
+        throw ArgumentError('chunk_size must be a numeric value, got ${init['chunk_size'].runtimeType}');
+      } else {
+        chunkSize = 64 * 1024; // Default 64KB chunk size
+      }
+      int offset = 0;
+      int chunkIndex = 0;
+      final totalChunks = (imageBytes.length / chunkSize).ceil();
+
+      // Upload chunks with progress tracking
+      while (offset < imageBytes.length) {
+        final end = (offset + chunkSize < imageBytes.length) ? offset + chunkSize : imageBytes.length;
+        final chunk = imageBytes.sublist(offset, end);
+
+        if (!mounted) return;
+        final progressPercent = ((chunkIndex + 1) / totalChunks * 100).toStringAsFixed(1);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Uploading $name: $progressPercent%'),
+            duration: const Duration(milliseconds: 500),
+          ),
+        );
+
+        await serviceProvider.apiService.uploadChunk(
+          uploadId: uploadId,
+          chunkIndex: chunkIndex,
+          bytes: chunk,
+        );
+
+        offset = end;
+        chunkIndex++;
+      }
+
+      // Complete the upload
+      final completed = await serviceProvider.apiService.completeUpload(
+        uploadId: uploadId,
+      );
+      final remoteFileId = completed['file_id'];
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$name uploaded successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Send the attachment message
+      if (!mounted) return;
+      await serviceProvider.apiService.sendMessage(
+        chatId: widget.chatId,
+        content: name,
+        fileId: remoteFileId,
+      );
+
+      // Reload messages to show the new attachment
+      await _loadMessages();
+
+    } catch (e) {
+      debugPrint('[CAMERA_WEB_ERROR] Web camera capture failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload photo: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 

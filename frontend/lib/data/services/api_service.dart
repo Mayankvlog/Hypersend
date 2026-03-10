@@ -2361,6 +2361,76 @@ Future<void> postToChannel(String channelId, String text) async {
     );
   }
 
+  /// Pick image with camera support for web
+  /// On web: Shows file picker with camera capture option  
+  /// On mobile: Uses platform file picker
+  /// Note: allowCamera parameter is advisory only - camera access depends on platform implementation
+  Future<FilePickerResult?> pickImageWithCamera({
+    bool allowCamera = true,
+    bool allowGallery = true,
+  }) async {
+    // Use FilePicker with image type - allowedExtensions are ignored for FileType.image
+    // FilePicker on web uses accept="image/*" which may trigger camera option on some platforms
+    return await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+      allowMultiple: false,
+    );
+  }
+
+  /// Pick video with camera support for web
+  /// On web: Shows file picker with camera capture option
+  /// On mobile: Uses platform file picker
+  /// Note: allowCamera parameter is advisory only - camera access depends on platform implementation
+  Future<FilePickerResult?> pickVideoWithCamera({
+    bool allowCamera = true,
+    bool allowGallery = true,
+  }) async {
+    // Use FilePicker with video type - allowedExtensions are ignored for FileType.video
+    return await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      withData: true,
+      allowMultiple: false,
+    );
+  }
+
+  /// Combined camera/gallery picker that works on web and mobile
+  /// Returns: FilePickerResult with selected media
+  /// Note: allowCamera parameter is advisory only - camera access cannot be forced via FilePicker
+  Future<FilePickerResult?> pickMediaWithCamera({
+    bool allowCamera = true,
+    bool allowGallery = true,
+    bool allowImages = true,
+    bool allowVideos = true,
+  }) async {
+    // On web: pick both images and videos since browser handles it
+    // On mobile: native platform handles mixed picker
+    
+    // For simplicity, use custom file type selection
+    // FilePicker.custom can handle both image/* and video/*
+    return await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: _getAllowedMediaExtensions(allowImages, allowVideos),
+      withData: true,
+      allowMultiple: false,
+    );
+  }
+
+  /// Get allowed media extensions for file picker
+  List<String> _getAllowedMediaExtensions(bool allowImages, bool allowVideos) {
+    final extensions = <String>[];
+    
+    if (allowImages) {
+      extensions.addAll(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic']);
+    }
+    
+    if (allowVideos) {
+      extensions.addAll(['mp4', 'mov', 'avi', 'mkv', 'webm', '3gp', 'm4v']);
+    }
+    
+    return extensions.isEmpty ? ['jpg', 'jpeg', 'png', 'mp4', 'mov'] : extensions;
+  }
+
   // Test connectivity to API endpoints
   Future<Map<String, dynamic>> testConnectivity() async {
     try {
