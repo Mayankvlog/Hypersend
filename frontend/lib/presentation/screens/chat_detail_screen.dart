@@ -1,7 +1,7 @@
 // ignore_for_file: deprecated_member_use
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -53,7 +53,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   dynamic _wsConnection;
   bool _wsConnected = false;
   
-  // Camera controller for capture functionality
+  // Camera controller for capture functionality (native platforms only)
   CameraController? _cameraController;
 
   static const List<String> _quickReactions = ['\u{1F44D}', '\u{2764}', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F525}'];
@@ -74,7 +74,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       _wsConnection = null;
     }
     // Dispose camera controller
-    _cameraController?.dispose();
+    _disposeCameraController();
     super.dispose();
   }
 
@@ -901,52 +901,76 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Future<void> _captureFromCamera() async {
-    // Camera is not supported on Flutter Web
-    if (kIsWeb) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Camera is not supported on web. Please use the gallery or file picker.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-      return;
-    }
-
+    // Camera is now supported on Flutter Web via FilePicker
     try {
-      // Request camera permission
-      final status = await _requestCameraPermission();
-      if (!status) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Camera permission is required to take photos')),
-          );
-        }
-        return;
+      if (!kIsWeb) {
+        // On mobile: use native camera
+        await _captureFromNativeCamera();
+      } else {
+        // On web: use FilePicker with camera support
+        await _captureFromWebCamera();
       }
-
-      // Show camera options dialog
-      final cameraOption = await _showCameraOptions();
-      if (cameraOption == null) return;
-
-      // Initialize camera
-      await _initializeCamera(cameraOption);
-      
-      // Show camera preview and capture
-      final imageBytes = await _showCameraPreview();
-      if (imageBytes == null) return;
-
-      // Upload the captured image
-      await _uploadCameraImage(imageBytes);
-      
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Camera failed: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _captureFromNativeCamera() async {
+    // Request camera permission
+    final status = await _requestCameraPermission();
+    if (!status) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera permission is required to take photos')),
+        );
+      }
+      return;
+    }
+
+    // Show camera options dialog
+    final cameraOption = await _showCameraOptions();
+    if (cameraOption == null) return;
+
+    try {
+      // Initialize camera
+      await _initializeCamera(cameraOption);
+      
+      // Show camera preview and capture
+      final imageBytes = await _showCameraPreview();
+      if (imageBytes == null) {
+        // User cancelled or capture failed - dispose camera
+        await _disposeCameraController();
+        return;
+      }
+
+      // Upload the captured image
+      await _uploadCameraImage(imageBytes);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera failed: $e')),
+        );
+      }
+    } finally {
+      // Always dispose camera controller after capture completes
+      await _disposeCameraController();
+    }
+  }
+
+  /// Helper method to safely dispose camera controller
+  Future<void> _disposeCameraController() async {
+    try {
+      if (_cameraController != null) {
+        await _cameraController!.dispose();
+        _cameraController = null;
+        debugPrint('[CAMERA] Camera controller disposed');
+      }
+    } catch (e) {
+      debugPrint('[CAMERA] Error disposing camera controller: $e');
     }
   }
 
