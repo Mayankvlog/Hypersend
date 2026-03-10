@@ -256,23 +256,25 @@ class FileTransferService {
       
       debugPrint('[FILE_TRANSFER] File size: $fileSize bytes');
       
-       // CRITICAL FIX: Ensure directory exists with proper error handling
-       final directory = io.File(actualSavePath).parent;
-       try {
-         if (!await directory.exists()) {
-           debugPrint('[FILE_TRANSFER] Creating directory: ${directory.path}');
-           await directory.create(recursive: true);
+       // CRITICAL FIX: Ensure directory exists with proper error handling (native only)
+       if (!kIsWeb) {
+         final directory = io.File(actualSavePath).parent;
+         try {
+           if (!await directory.exists()) {
+             debugPrint('[FILE_TRANSFER] Creating directory: ${directory.path}');
+             await directory.create(recursive: true);
+           }
+           
+           // Verify directory is writable
+           if (!await directory.exists()) {
+             throw Exception('Failed to create download directory: ${directory.path}');
+           }
+           
+           debugPrint('[FILE_TRANSFER] Directory ready: ${directory.path}');
+         } catch (e) {
+           debugPrint('[FILE_TRANSFER] Directory setup failed: $e');
+           throw Exception('Cannot setup download directory: $e');
          }
-         
-         // Verify directory is writable
-         if (!await directory.exists()) {
-           throw Exception('Failed to create download directory: ${directory.path}');
-         }
-         
-         debugPrint('[FILE_TRANSFER] Directory ready: ${directory.path}');
-       } catch (e) {
-         debugPrint('[FILE_TRANSFER] Directory setup failed: $e');
-         throw Exception('Cannot setup download directory: $e');
        }
       
       // Use chunked download for large files (>100MB)
@@ -322,13 +324,15 @@ class FileTransferService {
       _markCompleted(fileId);
       onProgress(1);
       
-      // Verify file was downloaded successfully
-      final file = io.File(actualSavePath);
-      if (!await file.exists()) {
-        throw Exception('File download completed but file not found at path: $actualSavePath');
+      // Verify file was downloaded successfully (native only)
+      if (!kIsWeb) {
+        final file = io.File(actualSavePath);
+        if (!await file.exists()) {
+          throw Exception('File download completed but file not found at path: $actualSavePath');
+        }
+        
+        debugPrint('[FILE_TRANSFER] Download completed successfully: $actualSavePath');
       }
-      
-      debugPrint('[FILE_TRANSFER] Download completed successfully: $actualSavePath');
     } catch (e) {
       debugPrint('[FILE_TRANSFER] Download failed: $e');
       _markFailed(fileId);
@@ -418,6 +422,11 @@ class FileTransferService {
   }
 
   Future<String> _getNativeSavePath(String fileName, String savePath) async {
+    // Web platform does not support native downloads
+    if (kIsWeb) {
+      throw UnsupportedError('Native file paths are not supported on Flutter Web');
+    }
+    
     // For native platforms, use platform-appropriate directory
     io.Directory? directory;
     try {

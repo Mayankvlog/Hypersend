@@ -1983,6 +1983,11 @@ Future<void> postToChannel(String channelId, String text) async {
     required String savePath,
     void Function(int, int)? onReceiveProgress,
   }) async {
+    // Web platform does not support filesystem downloads
+    if (kIsWeb) {
+      throw UnsupportedError('File system downloads are not supported on Flutter Web. Use downloadFileBytes() instead.');
+    }
+    
     try {
       // Get current access token for query parameter authentication
       final accessToken = serviceProvider.authService.accessToken;
@@ -2444,7 +2449,11 @@ Future<void> postToChannel(String channelId, String text) async {
         throw Exception('File size exceeds 40GB limit');
       }
       
-      // Ensure directory exists (mobile platform - use file system)
+      // Ensure directory exists (mobile platform - use file system - native only)
+      if (kIsWeb) {
+        throw UnsupportedError('File storage is not supported on Flutter Web');
+      }
+      
       final directory = io.Directory(localStoragePath);
       if (!await directory.exists()) {
         await directory.create(recursive: true);

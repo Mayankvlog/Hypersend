@@ -1084,6 +1084,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _uploadCameraImage(Uint8List imageBytes) async {
     try {
+      // Web platform camera upload - ensure bytes are handled directly
+      if (kIsWeb) {
+        debugPrint('[CAMERA_WEB] Web platform camera upload detected');
+      }
+      
       if (!mounted) return;
 
       // Show upload notification
