@@ -1,0 +1,1446 @@
+# =============================================================================
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hypersend
+  labels:
+    name: hypersend
+    security: e2ee-enabled
+  annotations:
+    description: "E2EE Multi-Device Messaging Platform"
+    backend-version: "1.1.0"
+    fixes-applied: "Rate limiting optimization, middleware improvements, error handling enhancements"
+
+
+---
+# Document 2: ConfigMap - hypersend-config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypersend-config
+  namespace: hypersend
+data:
+  # SECRET_KEY removed - use hypersend-secrets Secret instead
+  ALGORITHM: HS256
+  ACCESS_TOKEN_EXPIRE_MINUTES: '28800'
+  REFRESH_TOKEN_EXPIRE_DAYS: '20'
+  UPLOAD_TOKEN_EXPIRE_HOURS: '480'
+  
+  # E2EE Configuration
+  E2EE_ENABLED: 'true'
+  E2EE_ALGORITHM: signal_protocol
+  E2EE_KEY_ROTATION_DAYS: '7'
+  E2EE_PREKEY_EXPIRATION_DAYS: '30'
+  E2EE_MESSAGE_COUNTER_WINDOW: '1024'
+  E2EE_FORWARD_SECRECY_ENABLED: 'true'
+  E2EE_POST_COMPROMISE_SECURITY: 'true'
+  
+  # Device Management
+  DEVICE_VERIFICATION_REQUIRED: 'true'
+  DEVICE_LINKING_TIMEOUT_MINUTES: '5'
+  DEVICE_SESSION_EXPIRATION_DAYS: '30'
+  MAX_DEVICES_PER_USER: '4'
+  
+  # Message Storage (Zero-Knowledge)
+  MESSAGE_STORAGE: redis_only
+  MESSAGE_TTL_MINUTES: '60'
+  SERVER_STORAGE_BYTES: '0'
+  SERVER_TEMP_BYTES: '100000000'
+  USER_DEVICE_PRIMARY: 'true'
+  
+  # Media Configuration
+  S3_BUCKET: hypersend-temp
+  # AWS credentials removed - use hypersend-secrets Secret instead
+  AWS_REGION: us-east-1
+  FILE_TTL_HOURS: '24'
+  FILE_TTL_SECONDS: '86400'
+  DIRECT_S3_UPLOADS: 'true'
+  DELETE_ON_ACK: 'true'
+  S3_LIFECYCLE_ENABLED: 'true'
+  S3_ENCRYPTION: client
+  COST_MODEL: free
+  MAX_FILE_SIZE_MB: '15360'
+  LARGE_FILE_THRESHOLD_GB: '1'
+  MAX_IMAGE_SIZE_MB: '4096'
+  MAX_VIDEO_SIZE_MB: '15360'
+  MAX_AUDIO_SIZE_MB: '2048'
+  MAX_DOCUMENT_SIZE_MB: '15360'
+  DATA_ROOT: /tmp
+  UPLOADS_PATH: /tmp/uploads
+  DEBUG: 'False'
+  API_HOST: 0.0.0.0
+  API_PORT: '8000'
+  API_BASE_URL: https://zaply.in.net/api/v1
+  ALLOWED_ORIGINS: https://zaply.in.net,http://zaply.in.net
+  RATE_LIMIT_PER_USER: '1000'  # Updated: Increased from 100 to 1000 for production
+  RATE_LIMIT_WINDOW_SECONDS: '3600'  # Updated: 1 hour window matches backend LOGIN_ATTEMPT_WINDOW
+  USE_MOCK_DB: 'False'
+  ENABLE_EMAIL: 'true'
+  ENABLE_PASSWORD_RESET: 'true'
+  SMTP_HOST: smtp.gmail.com
+  SMTP_PORT: '587'
+  SMTP_USERNAME: noreply@zaply.in.net
+  SMTP_USE_TLS: 'true'
+  EMAIL_FROM: noreply@zaply.in.net
+  SENDER_NAME: Zaply Support
+  MONGODB_ATLAS_ENABLED: 'true'
+  # MongoDB URI removed - use hypersend-secrets Secret instead
+  REDIS_HOST: redis
+  REDIS_PORT: '6379'
+  REDIS_DB: '0'
+  REDIS_MAX_CONNECTIONS: '100'
+  REDIS_SOCKET_TIMEOUT: '5'
+  REDIS_SOCKET_CONNECT_TIMEOUT: '5'
+  REDIS_MAX_MEMORY: 2gb
+  REDIS_KEYSPACE_ISOLATION: 'true'
+  REDIS_ENCRYPTION_IN_TRANSIT: 'true'
+  ABUSE_SCORING_ENABLED: 'true'
+  ABUSE_SCORE_INITIAL: '0.0'
+  MESSAGE_VELOCITY_LIMIT_PER_MINUTE: '100'
+  MESSAGE_VELOCITY_LIMIT_PER_HOUR: '1000'
+  UNIQUE_RECIPIENTS_DAILY_LIMIT: '1000'
+  UNIQUE_RECIPIENTS_HOURLY_LIMIT: '100'
+  SPAM_KEYWORD_SCORE_INCREMENT: '0.1'
+  VELOCITY_VIOLATION_SCORE_INCREMENT: '0.15'
+  REPORT_SCORE_INCREMENT: '0.2'
+  SHADOW_BAN_THRESHOLD: '0.6'
+  SUSPENSION_THRESHOLD: '0.85'
+  SHADOW_BAN_DURATION_HOURS: '24'
+  SUSPENSION_DURATION_HOURS: '168'
+  SCORE_DECAY_PER_DAY: '0.1'
+  MODERATION_ENABLED: 'true'
+  AUTO_REPORT_THRESHOLD: '0.5'
+  EXPLICIT_CONTENT_DETECTION: 'true'
+  PHISHING_DETECTION: 'true'
+  NGINX_ALLOW_UNSAFE_SSL: 'false'
+  NGINX_API_BASE_URL: https://zaply.in.net/api/v1
+  NGINX_API_HOST: backend-service
+  NGINX_API_KEY: hypersend_secure_api_key
+  NGINX_API_SECRET: hypersend_secure_api_secret
+  NGINX_PROXY_READ_TIMEOUT: '7200'
+  NGINX_PROXY_SEND_TIMEOUT: '7200'
+  NGINX_PROXY_CONNECT_TIMEOUT: '600'
+  NGINX_CLIENT_BODY_TIMEOUT: '7200'
+  NGINX_CLIENT_MAX_BODY_SIZE: 15G
+  NGINX_ERROR_PAGE_TIMEOUT: '30'
+  NGINX_MAX_RETRIES: '7'
+  NGINX_RETRY_DELAY: '5'
+  DOMAIN_NAME: zaply.in.net
+  SSL_CERT_PATH: /etc/letsencrypt/live/zaply.in.net/fullchain.pem
+  SSL_KEY_PATH: /etc/letsencrypt/live/zaply.in.net/privkey.pem
+
+
+---
+# Document 3: Secret - hypersend-secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hypersend-secrets
+  namespace: hypersend
+type: Opaque
+stringData:
+   # Database Secrets
+  MONGO_USER: bWF5YW5sbHIwMzExX2RiX3VzZXI=
+  MONGO_PASSWORD: PGRiX3Bhc3N3b3JkPg==
+  MONGO_INITDB_DATABASE: aHlwZXJzZW5k
+  MONGODB_ATLAS_ENABLED: dHJ1ZQ==
+  MONGODB_URI: bW9uZ29kYitzcnY6Ly9tYXlhbmxscjAzMTFfZGJfdXNlcjpKQmtBWmluOGx5dFRLNnZnQGNsdXN0ZXIwLnJuajN2ZmQubW9uZ29kYi5uZXQvaHlwZXJzZW5kP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eQ==
+  
+  # Application Secrets
+  SECRET_KEY: UHJvZF9TZWNyZXRfS2V5X0Zvcl9IeXBlcnNlbmRfMjAyNV9TZWN1cmVfRml4ZWQ=
+  
+  # Email Service
+  SMTP_PASSWORD: ZHVtbXlfYXBwX3Bhc3N3b3JkX2NvbmZpZ3VyZV9pbl9lbnY=
+  
+  # AWS S3
+  AWS_ACCESS_KEY_ID: QUtJQTI0NjAxMjM0NTZ4eHh4eHh4eHg=
+  AWS_SECRET_ACCESS_KEY: d0phbHI5UmlVTW5pdHMxMjM0NTY3c3R1YnhiZFBjUXhTeA==
+  
+  # Redis
+  REDIS_PASSWORD: secure32charpasswordplaceholder
+  
+  # E2EE Secrets
+  E2EE_MASTER_KEY: c2VjdXJlX2UyZWVfbWFzdGVyX2tleV8yMDI1X2ZpeGVk
+  E2EE_SIGNAL_IDENTITY_KEY: c2lnbmFsX2lkZW50aXR5X2tleV9iYXNlNjRfZW5jb2RlZA==
+  E2EE_SIGNAL_SIGNED_PREKEY: c2lnbmFsX3NpZ25lZF9wcmVrZXlfYmFzZTY0X2VuY29kZWQ=
+  E2EE_HMAC_SECRET: aG1hY19zZWNyZXRfZm9yX2UyZWVfc2lnbmF0dXJlcw==
+  E2EE_KDF_SALT: a2RmX3NhbHRfZm9yX2tleV9kZXJpdmF0aW9u
+  
+  # TURN Server for Voice/Video Calls
+  TURN_USERNAME: dHVybnVzZXI=
+  TURN_PASSWORD: secure32charpasswordplaceholder
+  
+  # TLS Certificates (base64 encoded)
+  TLS_CERTIFICATE: <valid_pem_certificate>
+  TLS_PRIVATE_KEY: <valid_pem_private_key>
+  
+  # Monitoring
+  GRAFANA_PASSWORD: secure32charpasswordplaceholder
+  PROMETHEUS_ADMIN_PASSWORD: cHJvbWV0aGV1c19hZG1pbl9wYXNzd29yZA==
+
+
+---
+# Document 4: ConfigMap - nginx-configmap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-configmap
+  namespace: hypersend
+data:
+  nginx.conf: |
+    # NGINX Configuration for Hypersend - Multi-Device E2EE Optimized
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    
+    # Multi-Device Scaling Configuration
+    events {
+        worker_connections 8192;  # Enhanced for multi-device WebSocket scaling
+        use epoll;
+        multi_accept on;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        proxy_cache_path /var/cache/nginx/client_temp levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m use_temp_path=off;
+        
+        # Enhanced Logging for Multi-Device Operations
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for" '
+                        'rt=$request_time uct="$upstream_connect_time" '
+                        'uht="$upstream_header_time" urt="$upstream_response_time" '
+                        'device_id="$http_x_device_id" session="$http_x_e2ee_session"';
+        
+        access_log /var/log/nginx/access.log main buffer=64k flush=2s;
+        
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 120;  # Enhanced for multi-device connections
+        keepalive_requests 1000;  # Increased for device fan-out
+        
+        # Multi-Device File Upload Support
+        client_max_body_size 20G;
+        client_body_buffer_size 16m;
+        client_header_buffer_size 8k;
+        large_client_header_buffers 8 32k;
+        
+        # Enhanced Timeouts for E2EE Operations
+        send_timeout 7200s;
+        proxy_connect_timeout 600s;
+        proxy_send_timeout 7200s;
+        proxy_read_timeout 7200s;
+        
+        types_hash_max_size 4096;
+        server_names_hash_bucket_size 256;
+        
+        # Enhanced Compression for Multi-Device Traffic
+        gzip on;
+        gzip_vary on;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_min_length 1000;
+        gzip_disable "msie6";
+        gzip_types text/plain text/css text/xml text/javascript 
+                   application/javascript application/json application/xml+rss;
+        
+        # Multi-Device Security Headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Device-Support "multi-device-e2ee" always;
+        add_header X-Scaling-Mode "horizontal-multi-device" always;
+        
+        # Rate Limiting Zones for Multi-Device Operations
+        limit_req_zone $binary_remote_addr zone=device_linking_limit:10m rate=5r/m;
+        limit_req_zone $binary_remote_addr zone=e2ee_session_limit:10m rate=20r/s;
+        limit_req_zone $binary_remote_addr zone=multi_device_fanout:10m rate=100r/s;
+        limit_req_zone $binary_remote_addr zone=redis_websocket_limit:10m rate=50r/s;
+        
+        # Upstream Configuration - Multi-Device Backend
+        upstream hypersend_backend {
+            least_conn;
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 2048;  # Enhanced for multi-device connections
+        }
+        
+        # Redis Ephemeral Cache Upstream - Removed: Redis speaks RESP, not HTTP
+        # Use HTTP gateway service instead or remove this upstream block
+        
+        # WebSocket Upstream for Multi-Device Real-time Operations
+        upstream hypersend_websocket {
+            ip_hash;  # Ensures device consistency for WebSocket connections
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 1024;
+        }
+        
+        # Multi-Device Media Upload Upstream
+        upstream hypersend_media {
+            least_conn;
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 512;
+        }
+        
+        # E2EE Session Management Upstream
+        upstream e2ee_sessions {
+            least_conn;
+            server backend-service:8000 max_fails=2 fail_timeout=15s;
+            keepalive 256;
+        }
+        
+        # Multi-Device Fan-out Upstream
+        upstream multi_device_fanout {
+            least_conn;
+            server backend-service:8000 max_fails=3 fail_timeout=30s;
+            keepalive 1024;
+        }
+        
+        # Main Server Block - Multi-Device E2EE Optimized
+        server {
+            listen 80;
+            server_name _;
+            
+            # Multi-Device Security Headers
+            add_header X-Device-Count "4" always;
+            add_header X-E2EE-Status "enabled" always;
+            add_header X-Redis-Cache "ephemeral-realtime" always;
+            add_header X-WebSocket-Support "multi-device" always;
+            add_header X-Scaling-Indicators "cloud-multi-device" always;
+            
+            
+            # Multi-Device Device Linking
+            location /api/v1/devices/link {
+                proxy_pass http://hypersend_backend;
+                proxy_http_version 1.1;
+                
+                # Enhanced device linking support
+                client_max_body_size 10m;
+                proxy_set_header X-Device-Linking "qr-based";
+                proxy_set_header X-Multi-Device "enabled";
+                proxy_set_header X-Device-Limit "4";
+                
+                # Device linking rate limiting
+                limit_req zone=device_linking_limit burst=5 nodelay;
+                
+                proxy_connect_timeout 300s;
+                proxy_send_timeout 300s;
+                proxy_read_timeout 300s;
+            }
+            
+            # E2EE Session Management - Multi-Device Optimized
+            location /api/v1/e2ee/sessions {
+                proxy_pass http://e2ee_sessions;
+                proxy_http_version 1.1;
+                
+                # E2EE session support
+                client_max_body_size 5m;
+                proxy_set_header X-E2EE-Session $http_x_e2ee_session;
+                proxy_set_header X-Device-ID $http_x_device_id;
+                proxy_set_header X-Multi-Device "session-sync";
+                
+                # E2EE rate limiting
+                limit_req zone=e2ee_session_limit burst=20 nodelay;
+                
+                proxy_connect_timeout 60s;
+                proxy_send_timeout 60s;
+                proxy_read_timeout 60s;
+            }
+            
+            # Redis Cache Operations - Removed: Redis speaks RESP, not HTTP
+            # Implement HTTP gateway service or remove this location block
+            
+            # WebSocket Multi-Device Real-time Operations
+            location /api/v1/ws {
+                proxy_pass http://hypersend_websocket;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                
+                # WebSocket multi-device support
+                proxy_set_header X-WebSocket-Type "multi-device-realtime";
+                proxy_set_header X-Device-ID $http_x_device_id;
+                proxy_set_header X-Session-ID $http_x_session_id;
+                proxy_set_header X-Redis-Cache "required";
+                
+                # WebSocket rate limiting
+                limit_req zone=redis_websocket_limit burst=50 nodelay;
+                
+                # WebSocket timeouts (reduced from 7d to prevent resource exhaustion)
+                proxy_connect_timeout 1h;
+                proxy_send_timeout 1h;
+                proxy_read_timeout 1h;
+                
+                # WebSocket optimizations
+                proxy_buffering off;
+                proxy_cache off;
+            }
+            
+            # Multi-Device Message Fan-out
+            location /api/v1/messages/fanout {
+                proxy_pass http://multi_device_fanout;
+                proxy_http_version 1.1;
+                
+                # Fan-out specific settings
+                client_max_body_size 50m;
+                proxy_set_header X-Fanout-Type "multi-device";
+                proxy_set_header X-Device-Count "$http_x_device_count";
+                proxy_set_header X-Redis-Sync "required";
+                
+                # Fan-out rate limiting
+                limit_req zone=multi_device_fanout burst=200 nodelay;
+                
+                proxy_connect_timeout 120s;
+                proxy_send_timeout 120s;
+                proxy_read_timeout 120s;
+            }
+            
+            # Default location with multi-device support
+            location / {
+                proxy_pass http://hypersend_backend;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                
+                proxy_cache hypersend_cache;
+                
+                # Multi-device headers
+                proxy_set_header X-Device-ID $http_x_device_id;
+                proxy_set_header X-E2EE-Session $http_x_e2ee_session;
+                proxy_set_header X-Multi-Device "enabled";
+                proxy_set_header X-Redis-Cache "available";
+                
+                # Connection settings
+                proxy_connect_timeout 600s;
+                proxy_send_timeout 7200s;
+                proxy_read_timeout 7200s;
+            }
+        }
+    }
+
+
+---
+# Document 5: StatefulSet - redis-cluster
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cluster
+  namespace: hypersend
+spec:
+  serviceName: redis-cluster
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis-cluster
+  template:
+    metadata:
+      labels:
+        app: redis-cluster
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+          limits:
+            memory: 2Gi
+            cpu: 1000m
+        command:
+        - /bin/sh
+        - -c
+        - redis-server --appendonly no --save "" --maxmemory 1gb --maxmemory-policy allkeys-lru --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --cluster-announce-ip $POD_IP
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+
+
+---
+# Document 6: Deployment - backend-api
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  namespace: hypersend
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: backend-api
+  template:
+    metadata:
+      labels:
+        app: backend-api
+    spec:
+      containers:
+      - name: backend
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 250m
+          limits:
+            memory: 1Gi
+            cpu: 500m
+        env:
+        - name: REDIS_HOST
+          value: redis-cluster
+        - name: REDIS_PORT
+          value: '6379'
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: SECRET_KEY
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: AWS_SECRET_ACCESS_KEY
+        - name: S3_BUCKET
+          value: hypersend-temp
+        - name: MAX_FILE_SIZE_BYTES
+          value: '16106127360'
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+
+
+---
+# Document 7: Deployment - websocket-service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: websocket-service
+  namespace: hypersend
+spec:
+  replicas: 20
+  selector:
+    matchLabels:
+      app: websocket-service
+  template:
+    metadata:
+      labels:
+        app: websocket-service
+    spec:
+      containers:
+      - name: websocket
+        image: hypersend/websocket:latest
+        ports:
+        - containerPort: 8001
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 512Mi
+            cpu: 250m
+        env:
+        - name: REDIS_HOST
+          value: redis-cluster
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: BACKEND_URL
+          value: http://backend-api:8000
+        - name: MAX_CONNECTIONS
+          value: '10000'
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+
+---
+# Document 8: Deployment - nginx-lb
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-lb
+  namespace: hypersend
+spec:
+  replicas: 1 # Reduced from 5 to match ReadWriteOnce PVC
+  selector:
+    matchLabels:
+      app: nginx-lb
+  template:
+    metadata:
+      labels:
+        app: nginx-lb
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25-alpine
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 512Mi
+            cpu: 250m
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: ssl-certs
+          mountPath: /etc/ssl/certs
+          readOnly: true
+        - name: nginx-cache
+          mountPath: /var/cache/nginx/client_temp
+          readOnly: false
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-configmap
+      - name: ssl-certs
+        secret:
+          secretName: hypersend-secrets
+      - name: nginx-cache
+        persistentVolumeClaim:
+          claimName: nginx-cache
+
+
+---
+# Document 9: Deployment - frontend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: hypersend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: ghcr.io/mayankvlog/hypersend-frontend:latest
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 50m
+          limits:
+            memory: 512Mi
+            cpu: 200m
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+
+---
+# Document 10: PersistentVolumeClaim - nginx-cache
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nginx-cache
+  namespace: hypersend
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+
+---
+# Document 11: Service - backend-api
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-api
+  namespace: hypersend
+spec:
+  selector:
+    app: backend-api
+  ports:
+  - port: 8000
+    targetPort: "8000"
+  type: ClusterIP
+
+
+---
+# Document 13: Service - websocket-service
+apiVersion: v1
+kind: Service
+metadata:
+  name: websocket-service
+  namespace: hypersend
+spec:
+  selector:
+    app: websocket-service
+  ports:
+  - port: 8001
+    targetPort: "8001"
+  type: ClusterIP
+
+
+---
+# Document 17: Service - nginx-lb
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-lb
+  namespace: hypersend
+spec:
+  selector:
+    app: nginx-lb
+  ports:
+  - port: 80
+    targetPort: "80"
+  - port: 443
+    targetPort: "443"
+  type: LoadBalancer
+
+
+---
+# Document 18: Service - redis-cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster
+  namespace: hypersend
+spec:
+  selector:
+    app: redis-cluster
+  ports:
+  - port: 6379
+    targetPort: "6379"
+  type: ClusterIP
+
+
+---
+# Document 31: Service - e2ee-service
+apiVersion: v1
+kind: Service
+metadata:
+  name: e2ee-service
+  namespace: hypersend
+spec:
+  selector:
+    app: e2ee-service
+  ports:
+  - port: 8002
+    targetPort: "8002"
+  type: ClusterIP
+
+
+---
+# Document 37: Service - turn-server
+apiVersion: v1
+kind: Service
+metadata:
+  name: turn-server
+  namespace: hypersend
+  labels:
+    app: turn-server
+spec:
+  selector:
+    app: turn-server
+  ports:
+  - name: turn-udp
+    port: 3478
+    targetPort: "3478"
+    protocol: UDP
+  - name: turn-tcp
+    port: 3478
+    targetPort: "3478"
+    protocol: TCP
+  - name: turn-tls
+    port: 5349
+    targetPort: "5349"
+    protocol: TCP
+  type: LoadBalancer
+
+---
+# Document 38: HorizontalPodAutoscaler - nginx-lb-hpa
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nginx-lb-hpa
+  namespace: hypersend
+  labels:
+    app: turn-server
+    component: hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nginx-lb
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 2
+        periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+      selectPolicy: Min
+
+
+---
+# Document 39: PersistentVolumeClaim - e2ee-storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: e2ee-storage-pvc
+  namespace: hypersend
+  labels:
+    app: e2ee-service
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+
+
+---
+# Document 39: HorizontalPodAutoscaler - backend-api-hpa
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-api-hpa
+  namespace: hypersend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+# Document 40: NetworkPolicy - e2ee-security-policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: e2ee-security-policy
+  namespace: hypersend
+spec:
+  podSelector:
+    matchLabels:
+      app: e2ee-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+    - podSelector:
+        matchLabels:
+          app: backend-api
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+    - podSelector:
+        matchLabels:
+          app: redis-cluster
+    - podSelector:
+        matchLabels:
+          app: backend-api
+    ports:
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
+      port: 27017
+
+---
+# Document 41: NetworkPolicy - hypersend-backend-policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-backend-policy
+  namespace: hypersend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+    - podSelector:
+        matchLabels:
+          app: websocket-service
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+    - podSelector:
+        matchLabels:
+          app: redis-cluster
+
+---
+# Document 42: NetworkPolicy - hypersend-default-policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-default-policy
+  namespace: hypersend
+spec:
+  podSelector: {}  # Matches ALL pods in hypersend namespace
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+  egress:
+  # Allow external services
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 587
+    - protocol: TCP
+      port: 27017
+  # Allow cluster-internal services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: hypersend
+
+---
+# Document 43: UpdatedConfigMap - message-retention-policy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: message-retention-policy
+  namespace: hypersend
+data:
+  MESSAGE_RETENTION_DAYS: "90"
+  METADATA_RETENTION_DAYS: "365"
+  DELIVERY_EVENT_RETENTION_DAYS: "30"
+  SOFT_DELETE_GRACE_PERIOD_DAYS: "7"
+  ENABLE_MESSAGE_HISTORY: "true"
+  ENABLE_METADATA_COLLECTION: "true"
+  ENABLE_RELATIONSHIP_GRAPH: "true"
+  ENABLE_MULTI_DEVICE_SYNC: "true"
+  MAX_DEVICES_PER_USER: "4"
+  SYNC_BATCH_SIZE: "100"
+  SYNC_MAX_WORKERS: "4"
+
+
+---
+# Document 45: Deployment - message-history-sync-worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: message-history-sync-worker
+  namespace: hypersend
+  labels:
+    app: message-history-sync-worker
+    component: background-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: message-history-sync-worker
+  template:
+    metadata:
+      labels:
+        app: message-history-sync-worker
+        component: background-worker
+    spec:
+      serviceAccountName: default
+      restartPolicy: Always
+      containers:
+      - name: sync-worker
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "workers.message_history_sync_worker"]
+        env:
+        - name: WORKER_TYPE
+          value: "message_history_sync"
+        - name: REDIS_HOST
+          value: redis-cluster
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: MESSAGE_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: MESSAGE_RETENTION_DAYS
+        - name: MAX_DEVICES_PER_USER
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: MAX_DEVICES_PER_USER
+        - name: SYNC_BATCH_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: SYNC_BATCH_SIZE
+        - name: SYNC_MAX_WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: SYNC_MAX_WORKERS
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "import os, redis; redis.Redis(host='redis-cluster', port=6379, password=os.environ.get('REDIS_PASSWORD')).ping()"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["python", "-c", "import os, redis; redis.Redis(host='redis-cluster', port=6379, password=os.environ.get('REDIS_PASSWORD')).ping()"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+
+---
+# Document 46: Deployment - metadata-aggregation-worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metadata-aggregation-worker
+  namespace: hypersend
+  labels:
+    app: metadata-aggregation-worker
+    component: background-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metadata-aggregation-worker
+  template:
+    metadata:
+      labels:
+        app: metadata-aggregation-worker
+        component: background-worker
+    spec:
+      serviceAccountName: default
+      restartPolicy: Always
+      containers:
+      - name: metadata-worker
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "workers.metadata_aggregation_worker"]
+        env:
+        - name: WORKER_TYPE
+          value: "metadata_aggregation"
+        - name: REDIS_HOST
+          value: redis-cluster
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: METADATA_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: METADATA_RETENTION_DAYS
+        - name: DELIVERY_EVENT_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: DELIVERY_EVENT_RETENTION_DAYS
+        - name: AGGREGATION_INTERVAL_SECONDS
+          value: "300"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "import os, redis; redis.Redis(host='redis-cluster', port=6379, password=os.environ.get('REDIS_PASSWORD')).ping()"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["python", "-c", "import os, redis; redis.Redis(host='redis-cluster', port=6379, password=os.environ.get('REDIS_PASSWORD')).ping()"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+
+---
+# Document 47: Deployment - relationship-graph-worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relationship-graph-worker
+  namespace: hypersend
+  labels:
+    app: relationship-graph-worker
+    component: background-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: relationship-graph-worker
+  template:
+    metadata:
+      labels:
+        app: relationship-graph-worker
+        component: background-worker
+    spec:
+      serviceAccountName: default
+      restartPolicy: Always
+      containers:
+      - name: relationship-worker
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "workers.relationship_graph_worker"]
+        env:
+        - name: WORKER_TYPE
+          value: "relationship_graph"
+        - name: REDIS_HOST
+          value: redis-cluster
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: SCORE_CALCULATION_INTERVAL_SECONDS
+          value: "3600"
+        - name: RECENCY_WEIGHT
+          value: "0.6"
+        - name: FREQUENCY_WEIGHT
+          value: "0.4"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "import os, redis; redis.Redis(host='redis-cluster', port=6379, password=os.environ.get('REDIS_PASSWORD')).ping()"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["python", "-c", "import os, redis; redis.Redis(host='redis-cluster', port=6379, password=os.environ.get('REDIS_PASSWORD')).ping()"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+
+---
+# Document 48: Deployment - background-job-coordinator
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: background-job-coordinator
+  namespace: hypersend
+  labels:
+    app: background-job-coordinator
+    component: background-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: background-job-coordinator
+  template:
+    metadata:
+      labels:
+        app: background-job-coordinator
+        component: background-worker
+    spec:
+      serviceAccountName: default
+      restartPolicy: Always
+      containers:
+      - name: coordinator
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
+        imagePullPolicy: Always
+        command: ["python", "-m", "workers.job_coordinator"]
+        env:
+        - name: WORKER_TYPE
+          value: "job_coordinator"
+        - name: REDIS_HOST
+          value: redis-cluster
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: REDIS_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: MONGODB_URI
+        - name: MESSAGE_RETENTION_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: MESSAGE_RETENTION_DAYS
+        - name: SOFT_DELETE_GRACE_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: message-retention-policy
+              key: SOFT_DELETE_GRACE_PERIOD_DAYS
+        - name: CLEANUP_INTERVAL_SECONDS
+          value: "86400"
+        - name: ENABLE_AUTO_CLEANUP
+          value: "true"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "import os, redis; redis.Redis(host='redis-cluster', port=6379, password=os.environ.get('REDIS_PASSWORD')).ping()"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["python", "-c", "import os, redis; redis.Redis(host='redis-cluster', port=6379, password=os.environ.get('REDIS_PASSWORD')).ping()"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+
+---
+# Document 49: HPA - message-history-sync-worker-hpa
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: message-history-sync-worker-hpa
+  namespace: hypersend
+  labels:
+    app: message-history-sync-worker
+    component: hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: message-history-sync-worker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+
