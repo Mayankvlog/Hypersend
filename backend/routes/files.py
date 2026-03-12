@@ -599,12 +599,11 @@ def _delete_s3_object(object_key: str) -> bool:
 def _get_file_ttl_seconds() -> int:
     """
     Get file TTL in seconds for WhatsApp-style ephemeral storage.
-    FIXED: Now returns exactly 72 hours (259200 seconds).
+    Reads settings.FILE_TTL_SECONDS with a fallback of 432000 (120 hours).
     """
-    ttl_hours = getattr(settings, "FILE_TTL_HOURS", 72)
-    ttl_seconds = ttl_hours * 3600
-    # FIXED: Always return exactly 72 hours (259200 seconds)
-    return 72 * 3600  # 259200 seconds
+    # Use configured TTL from settings (reads FILE_TTL_SECONDS with fallback to 432000)
+    ttl_seconds = getattr(settings, "FILE_TTL_SECONDS", 432000)  # Fallback to 120 hours
+    return ttl_seconds
 
 
 def _check_and_enforce_file_ttl(upload_timestamp: datetime, file_id: str) -> bool:
@@ -1370,9 +1369,9 @@ async def initialize_upload(
         storage_key_owner = str(upload_user_id) if upload_user_id is not None else "anonymous"
         storage_key = f"files/{storage_key_owner}/{upload_id}/{filename}"
         
-        # CRITICAL: 72-hour expiry for compliance (UTC only)
+        # CRITICAL: Configurable TTL expiry for compliance (UTC only)
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        expires_at = now + timedelta(hours=72)
+        expires_at = now + timedelta(seconds=_get_file_ttl_seconds())
         
         upload_doc = {
             "upload_id": upload_id,
@@ -1801,7 +1800,7 @@ async def complete_upload(
         file_id = str(file_oid)
         storage_key = upload_doc.get("storage_key") or f"files/{upload_user_id}/{upload_id}/{filename}"
         
-        expires_at = now + timedelta(hours=72)  # 72-hour file expiry (UTC only)
+        expires_at = now + timedelta(seconds=_get_file_ttl_seconds())  # Configurable TTL file expiry (UTC only)
         file_doc = {
             "_id": file_oid,
             "file_id": file_oid,
@@ -2312,7 +2311,7 @@ async def download_file(
                     )
                     raise HTTPException(
                         status_code=status.HTTP_410_GONE,
-                        detail="File has expired (72-hour limit reached) and was deleted",
+                        detail=f"File has expired ({_get_file_ttl_seconds()//3600}-hour limit reached) and was deleted",
                     )
 
             object_key = file_doc.get("object_key")

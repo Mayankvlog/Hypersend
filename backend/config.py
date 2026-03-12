@@ -208,28 +208,30 @@ class Settings:
     )  # 10 GB default
     MAX_PARALLEL_CHUNKS: int = int(os.getenv("MAX_PARALLEL_CHUNKS", "4"))
     _raw_file_retention = int(
-        os.getenv("FILE_RETENTION_HOURS", "72")
-    )  # 72 hours - 3 days
-    # CRITICAL FIX: Prevent FILE_RETENTION_HOURS<=0 from causing immediate deletion
-    # If set to 0 or negative, silently default to 72 hours (WhatsApp compliance)
-    FILE_RETENTION_HOURS: int = 72 if _raw_file_retention <= 0 else _raw_file_retention
+        os.getenv("FILE_RETENTION_HOURS", "120")
+    )  # 120 hours - 5 days default
+    # CRITICAL: Allow FILE_RETENTION_HOURS to be set via environment
+    # If set to 0 or negative, default to 120 hours
+    FILE_RETENTION_HOURS: int = 120 if _raw_file_retention <= 0 else _raw_file_retention
     
-    # CENTRALIZED FILE TTL - Single source of truth (72 hours)
-    # CRITICAL: All file expiry uses this value, not multiple conflicting definitions
-    FILE_TTL_SECONDS: int = 259200  # Exactly 72 hours in seconds - hardcoded for consistency
-    FILE_TTL_HOURS: int = 72  # Exactly 72 hours - hardcoded for consistency
+    # CENTRALIZED FILE TTL - Single source of truth based on FILE_RETENTION_HOURS
+    # CRITICAL: All file expiry uses this dynamically calculated value
+    FILE_TTL_SECONDS: int = FILE_RETENTION_HOURS * 3600  # Convert hours to seconds
+    FILE_TTL_HOURS: int = FILE_RETENTION_HOURS  # Use configured value directly
     
-    # Validate FILE_TTL matches FILE_RETENTION
-    _calculated_retention_seconds = FILE_RETENTION_HOURS * 3600
-    if _calculated_retention_seconds != FILE_TTL_SECONDS:
-        logger.warning(
-            f"[CONFIG] FILE_RETENTION_HOURS ({FILE_RETENTION_HOURS}h = {_calculated_retention_seconds}s) "
-            f"differs from FILE_TTL_SECONDS ({FILE_TTL_SECONDS}s) - using FILE_TTL_SECONDS as source of truth"
-        )
-        FILE_RETENTION_HOURS = 72  # Force consistency
+    # Automatic file cleanup configuration
+    AUTO_CLEANUP_ENABLED: bool = os.getenv("AUTO_CLEANUP_ENABLED", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    FILE_CLEANUP_INTERVAL_MINUTES: int = int(
+        os.getenv("FILE_CLEANUP_INTERVAL_MINUTES", "60")
+    )  # Run cleanup every 60 minutes
     
+    logger.info(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours")
     logger.info(f"[CONFIG] Centralized File TTL: {FILE_TTL_SECONDS} seconds ({FILE_TTL_HOURS} hours)")
-    logger.info(f"[CONFIG] File Retention: {FILE_RETENTION_HOURS} hours (aligned with TTL)")
+    logger.info(f"[CONFIG] Auto Cleanup: {'Enabled' if AUTO_CLEANUP_ENABLED else 'Disabled'} (interval: {FILE_CLEANUP_INTERVAL_MINUTES}min)")
 
     # Enhanced timeout settings for large file transfers
     CHUNK_UPLOAD_TIMEOUT_SECONDS: int = int(
@@ -239,7 +241,7 @@ class Settings:
         os.getenv("FILE_ASSEMBLY_TIMEOUT_MINUTES", "30")
     )  # 30 minutes for assembly (15GB)
     MAX_UPLOAD_RETRY_ATTEMPTS: int = int(
-        os.getenv("MAX_UPLOAD_RETRY_ATTEMPTS", "5")
+        os.getenv("MAX_UPLOAD_RETRY_ATTEMPTS", "7")
     )  # More retries for large files
 
     # Large file handling optimizations

@@ -8,6 +8,58 @@ metadata:
     name: hypersend
 
 ---
+# Secret for backend and application configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secrets
+  namespace: hypersend
+type: Opaque
+data:
+  # Base64 encoded placeholder values - replace with actual encoded secrets via secure pipeline
+  mongodb-uri: bW9uZ29kYitzcnY6Ly9tYXlhbmtsbHIwMzExX2RiX3VzZXI6SkJrQVppbjhseVRLNnZAY2x1c3RlcjAucm5qM3ZmLm1vbmdvZGIubmV0L0h5cGVyc2VuZA==
+  api-key: c2VjdXJlLWFwaS1rZXktZm9yLWh5cGVyc2VuZA==
+  api-secret: c2VjdXJlLWFwaS1zZWNyZXQtZm9yLWh5cGVyc2VuZA==
+  secret-key: c3VwZXItc2VjdXJlLXNlY3JldC1rZXktZm9yLWp3dC10b2tlbnM=
+  jwt-secret-key: c3VwZXItc2VjdXJlLWp3dC1zZWNyZXQta2V5LWZvci1hY2Nlc3MtdG9rZW5z
+  jwt-refresh-secret-key: c3VwZXItc2VjdXJlLWp3dC1yZWZyZXNoLXNlY3JldC1rZXktZm9yLXJlZnJlc2gtdG9rZW5z
+  smtp-username: aHlwZXJzZW5kLXN1cHBvcnRAemFwbHkuaW4ubmV0
+  smtp-password: c3VwZXItc2VjdXJlLXNtdHAtcGFzc3dvcmQtZm9yLWh5cGVyc2VuZA==
+  email-from: aHlwZXJzZW5kLXN1cHBvcnRAemFwbHkuaW4ubmV0
+  # AWS credentials - replace with actual base64 encoded credentials via secure pipeline
+  AWS_ACCESS_KEY_ID: QUtJQUlPU0ZPUlRBVFlQTEVURVhBTVBMRQ==
+  AWS_SECRET_ACCESS_KEY: dGVzdC1hd3Mtc2VjcmV0LWFjY2Vzcy1rZXktZm9yLWh5cGVyc2VuZA==
+
+---
+# ConfigMap for non-sensitive application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypersend-config
+  namespace: hypersend
+data:
+  API_BASE_URL: "https://zaply.in.net/api/v1"
+  AWS_REGION: "us-east-1"
+  ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
+  ENVIRONMENT: "production"
+  DEBUG: "false"
+
+---
+# PersistentVolumeClaim for nginx cache - using ReadWriteMany for multi-replica access
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nginx-cache-pvc
+  namespace: hypersend
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs-storage
+
+---
 # ConfigMap for nginx configuration
 apiVersion: v1
 kind: ConfigMap
@@ -29,6 +81,10 @@ data:
     http {
       include /etc/nginx/mime.types;
       default_type application/octet-stream;
+
+      # Cache configuration
+      proxy_cache_path /var/cache/nginx/client_temp levels=1:2 keys_zone=hypersend_cache:10m max_size=1g 
+                       inactive=60m use_temp_path=off;
 
       log_format main '$remote_addr - $remote_user [$time_local] "$request" '
                       '$status $body_bytes_sent "$http_referer" '
@@ -84,7 +140,7 @@ data:
         ssl_session_cache shared:SSL:10m;
         ssl_session_timeout 10m;
 
-        # API routes
+        # API routes with caching
         location /api/ {
           proxy_pass http://backend_service;
           proxy_http_version 1.1;
@@ -99,6 +155,10 @@ data:
           proxy_connect_timeout 300s;
           proxy_buffering off;
           proxy_request_buffering off;
+          proxy_cache hypersend_cache;
+          proxy_cache_valid 200 302 10m;
+          proxy_cache_valid 404 1m;
+          proxy_cache_key "$scheme$request_method$host$request_uri";
         }
 
         # WebSocket upgrade for backend
@@ -117,7 +177,7 @@ data:
           proxy_buffering off;
         }
 
-        # Frontend routes
+        # Frontend routes with caching
         location / {
           proxy_pass http://frontend_service;
           proxy_http_version 1.1;
@@ -126,6 +186,10 @@ data:
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_redirect off;
+          proxy_cache hypersend_cache;
+          proxy_cache_valid 200 302 5m;
+          proxy_cache_valid 404 1m;
+          proxy_cache_key "$scheme$request_method$host$request_uri";
         }
 
         # Health check endpoint
@@ -308,7 +372,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: mayank035/hypersend-backend:latest
+        image: ghcr.io/mayankvlog/hypersend-backend:latest
         imagePullPolicy: Always
         ports:
         - name: http
@@ -392,7 +456,7 @@ spec:
         - name: CHUNK_SIZE
           value: "4194304"
         - name: FILE_RETENTION_HOURS
-          value: "0"
+          value: "120"
         - name: AUTO_CLEANUP_ENABLED
           value: "true"
         - name: ALLOWED_FILE_TYPES
@@ -543,7 +607,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: mayank035/hypersend-frontend:latest
+        image: ghcr.io/mayankvlog/hypersend-frontend:latest
         imagePullPolicy: Always
         ports:
         - name: http
@@ -626,7 +690,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: nginx:alpine
+        image: nginx:1.25-alpine
         imagePullPolicy: Always
         ports:
         - name: http
@@ -665,6 +729,8 @@ spec:
           mountPath: /etc/nginx/nginx.conf
           subPath: nginx.conf
           readOnly: true
+        - name: nginx-cache
+          mountPath: /var/cache/nginx/client_temp
         - name: letsencrypt
           mountPath: /etc/letsencrypt
           readOnly: true
@@ -676,6 +742,9 @@ spec:
           items:
           - key: nginx.conf
             path: nginx.conf
+      - name: nginx-cache
+        persistentVolumeClaim:
+          claimName: nginx-cache-pvc
       - name: letsencrypt
         secret:
           secretName: letsencrypt-tls
@@ -702,6 +771,12 @@ spec:
     name: https
   selector:
     app: nginx
+
+---
+# HorizontalPodAutoscaler for Backend Service (removed non-existent e2ee-service reference)
+# NOTE: e2ee-service deployment does not exist - removed HPA to prevent errors
+# To enable e2ee-service scaling, create the deployment first or update this HPA
+# to reference an existing deployment (e.g., backend or frontend)
 
 # NOTE: Secret management should be handled via secure pipeline
 # Example using sealed-secrets or external-secrets-operator:

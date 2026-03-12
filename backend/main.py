@@ -482,15 +482,50 @@ async def lifespan(app: FastAPI):
                 except Exception as cleanup_e:
                     logger.error(f"[STARTUP] Failed to cleanup WebSocket manager: {cleanup_e}")
     
+    # Initialize background file cleanup task (CRITICAL for production)
+    cleanup_task = None
+    if settings.AUTO_CLEANUP_ENABLED:
+        try:
+            from backend.services.file_cleanup_service import periodic_file_cleanup
+            
+            # Create cleanup task that runs periodically
+            cleanup_task = asyncio.create_task(
+                periodic_file_cleanup(interval_minutes=settings.FILE_CLEANUP_INTERVAL_MINUTES)
+            )
+            app.state.cleanup_task = cleanup_task
+            logger.info(
+                f"[STARTUP] File cleanup task initialized (interval={settings.FILE_CLEANUP_INTERVAL_MINUTES}min, "
+                f"retention={settings.FILE_RETENTION_HOURS}h)"
+            )
+        except Exception as e:
+            logger.error(f"[STARTUP] Failed to initialize file cleanup task: {e}")
+            # Continue even if cleanup fails - not critical for operation
+    else:
+        logger.info("[STARTUP] File cleanup is disabled (AUTO_CLEANUP_ENABLED=false)")
+    
     logger.info("[STARTUP] Application startup complete")
     
     yield
     
     # Graceful shutdown sequence - CRITICAL ORDER
-    # 1. Stop accepting new connections
+    # 1. Cancel background cleanup task
     # 2. Shutdown WebSocket manager
     # 3. Cleanup Redis
     # 4. Close database
+    
+    # Cancel background file cleanup task first
+    cleanup_task = getattr(app.state, 'cleanup_task', None)
+    if cleanup_task and not cleanup_task.done():
+        try:
+            logger.info("[SHUTDOWN] Cancelling file cleanup task...")
+            cleanup_task.cancel()
+            await asyncio.wait_for(cleanup_task, timeout=5.0)
+        except asyncio.CancelledError:
+            logger.info("[SHUTDOWN] File cleanup task cancelled")
+        except asyncio.TimeoutError:
+            logger.warning("[SHUTDOWN] File cleanup task cancellation timed out")
+        except Exception as e:
+            logger.debug(f"[SHUTDOWN] Error cancelling cleanup task: {e}")
     
     # Shutdown WebSocket manager (singleton instance)
     try:

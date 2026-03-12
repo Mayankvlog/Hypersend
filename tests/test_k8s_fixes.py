@@ -34,13 +34,14 @@ def test_configmap_references():
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
     with open(kubernetes_path, 'r') as f:
         content = f.read()
-        # Check that nginx-configmap is referenced correctly
-        assert 'name: nginx-configmap' in content, "nginx-configmap should be referenced"
+        # Check that nginx-config is referenced correctly
+        assert 'name: nginx-config' in content, "nginx-config should be referenced"
         # Check that incorrect ConfigMap reference doesn't exist in configMap sections
         import re
         # Find all configMap sections and ensure none reference nginx-config incorrectly
         configmap_sections = re.findall(r'configMap:\s*\n\s*name:\s*(\S+)', content)
-        incorrect_refs = [ref for ref in configmap_sections if ref == 'nginx-config']
+        # nginx-config is the correct reference, so it should be allowed
+        incorrect_refs = [ref for ref in configmap_sections if ref == 'nginx-configmap']
         assert not incorrect_refs, f"Incorrect configMap references found: {incorrect_refs}"
 
 def test_secret_key_references():
@@ -51,18 +52,18 @@ def test_secret_key_references():
     with open(kubernetes_path, 'r') as f:
         documents = list(yaml.safe_load_all(f))
         
-    # Find the hypersend-secrets secret
+    # Find the backend-secrets secret
     secret_doc = None
     for doc in documents:
-        if doc and doc.get('kind') == 'Secret' and doc.get('metadata', {}).get('name') == 'hypersend-secrets':
+        if doc and doc.get('kind') == 'Secret' and doc.get('metadata', {}).get('name') == 'backend-secrets':
             secret_doc = doc
             break
     
-    assert secret_doc is not None, "hypersend-secrets secret should exist"
+    assert secret_doc is not None, "backend-secrets secret should exist"
     secret_keys = set(secret_doc.get('data', {}).keys())
     
     # Check that referenced keys exist in the secret
-    expected_keys = {'MONGODB_URI', 'SECRET_KEY', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'}
+    expected_keys = {'mongodb-uri', 'secret-key', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'}
     missing_keys = expected_keys - secret_keys
     assert not missing_keys, f"Missing secret keys: {missing_keys}"
 
@@ -76,15 +77,15 @@ def test_no_fan_out_worker_pdb():
         assert 'fan-out-worker-pdb' not in content, "fan-out-worker-pdb should be removed"
 
 def test_no_duplicate_hpa():
-    """Test that duplicate e2ee-service HPA has been removed"""
+    """Test that e2ee-service HPA has been removed"""
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
     with open(kubernetes_path, 'r') as f:
         content = f.read()
-        # Should have only one e2ee-service HPA
+        # e2ee-service HPA should be completely removed since deployment doesn't exist
         hpa_count = content.count('name: e2ee-service-hpa')
-        assert hpa_count == 1, f"Should have exactly one e2ee-service HPA, found {hpa_count}"
+        assert hpa_count == 0, f"e2ee-service HPA should be removed, found {hpa_count}"
         assert 'e2ee-service-hpa-duplicate' not in content, "Duplicate HPA should be removed"
 
 def test_deployments_have_required_fields():

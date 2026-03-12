@@ -132,7 +132,7 @@ services:
       UPLOAD_DIR: /app/uploads
       MAX_FILE_SIZE_BYTES: "16106127360"  # 15 GiB
       CHUNK_SIZE: "4194304"  # 4 MiB
-      FILE_RETENTION_HOURS: "0"
+      FILE_RETENTION_HOURS: "120"  # 120 hours = 5 days
       AUTO_CLEANUP_ENABLED: "true"
       ALLOWED_FILE_TYPES: "jpg,jpeg,png,gif,pdf,doc,docx,txt,mp4,mp3,zip,avi,wmv,flv,webm,mpg,wmf,wmv,exe,msi,deb,rar,7z,iso"
 
