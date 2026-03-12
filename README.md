@@ -1041,15 +1041,11 @@ MIT License means:
 ### Planned Features (v1.1.0+)
 - 🔄 Voice/Video calls
 - 🎙️ Voice messages
-- 🎨 Rich media support
 - 📍 Location sharing
-- 🎮 Emoji reactions
-- 📌 Message pinning
-- 🔍 Advanced search
-- 🌐 Multiple language support
 
 ---
 
 **Made with ❤️ by Mayank**
 
 Last Updated: March 2026 | Version: 1.0.0
+
