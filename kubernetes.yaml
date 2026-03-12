@@ -98,6 +98,9 @@ data:
       keepalive_timeout 65;
       types_hash_max_size 2048;
       client_max_body_size 15G;
+      
+      # Enable server tokens for Wappalyzer detection
+      server_tokens on;
 
       # Gzip compression
       gzip on;
@@ -198,6 +201,9 @@ data:
           add_header Content-Type text/plain;
           return 200 "healthy\n";
         }
+        
+        # Explicit Server header for Wappalyzer detection
+        add_header Server "nginx" always;
       }
     }
 
