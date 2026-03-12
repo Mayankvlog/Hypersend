@@ -73,10 +73,10 @@ class TestKubernetesFixes:
         secret = next(
             (doc for doc in k8s_config if doc and 
              doc.get('kind') == 'Secret' and 
-             doc.get('metadata', {}).get('name') == 'hypersend-secrets'),
+             doc.get('metadata', {}).get('name') == 'backend-secrets'),
             None
         )
-        assert secret is not None, "hypersend-secrets not found"
+        assert secret is not None, "backend-secrets not found"
         
         aws_access_key = secret.get('data', {}).get('AWS_ACCESS_KEY_ID', '')
         assert aws_access_key, "AWS_ACCESS_KEY_ID not found in secrets"
@@ -99,10 +99,10 @@ class TestKubernetesFixes:
         secret = next(
             (doc for doc in k8s_config if doc and 
              doc.get('kind') == 'Secret' and 
-             doc.get('metadata', {}).get('name') == 'hypersend-secrets'),
+             doc.get('metadata', {}).get('name') == 'backend-secrets'),
             None
         )
-        assert secret is not None, "hypersend-secrets not found"
+        assert secret is not None, "backend-secrets not found"
         
         aws_secret_key = secret.get('data', {}).get('AWS_SECRET_ACCESS_KEY', '')
         assert aws_secret_key, "AWS_SECRET_ACCESS_KEY not found in secrets"
@@ -202,23 +202,12 @@ class TestKubernetesFixes:
                 assert '${' not in value, f"ConfigMap key '{key}' contains shell variable syntax: {value}"
         
         # Verify specific keys have direct values (format-based, not hardcoded)
-        secret_key = data.get('SECRET_KEY', '')
-        assert secret_key, "SECRET_KEY must not be empty"
-        assert len(secret_key) > 10, "SECRET_KEY should be a meaningful secret (length > 10)"
-        assert '${' not in secret_key, "SECRET_KEY should not contain shell variable syntax"
-        
+        # Note: SECRET_KEY is stored in backend-secrets, not ConfigMap
         api_base_url = data.get('API_BASE_URL', '')
         assert api_base_url, "API_BASE_URL must not be empty"
         assert api_base_url.startswith('https://'), "API_BASE_URL must use HTTPS"
         assert 'zaply.in.net' in api_base_url, "API_BASE_URL should contain zaply.in.net domain"
         assert '/api/' in api_base_url, "API_BASE_URL should contain /api/ path"
-        
-        aws_access_key = data.get('AWS_ACCESS_KEY_ID', '')
-        assert aws_access_key, "AWS_ACCESS_KEY_ID must not be empty"
-        assert aws_access_key.startswith('AKIA'), "AWS_ACCESS_KEY_ID should start with AKIA"
-        assert len(aws_access_key) >= 20, "AWS_ACCESS_KEY_ID should be at least 20 characters"
-        # Validate it's alphanumeric after AKIA prefix
-        assert aws_access_key[4:].isalnum(), "AWS_ACCESS_KEY_ID should contain only alphanumeric characters after AKIA"
         
         aws_region = data.get('AWS_REGION', '')
         assert aws_region, "AWS_REGION must not be empty"
