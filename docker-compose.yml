@@ -115,8 +115,15 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
       JWT_REFRESH_SECRET_KEY: ${JWT_REFRESH_SECRET_KEY:-change-me-in-production}
-      ACCESS_TOKEN_EXPIRE_MINUTES: "30"
-      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      # CRITICAL FIX: Token expiration must be 20 days (1,728,000 seconds) for production zaply.in.net
+      # Access tokens: 28,800 minutes = 20 days = 1,728,000 seconds
+      ACCESS_TOKEN_EXPIRE_MINUTES: "28800"
+      # Refresh tokens: 20 days matches session requirement
+      REFRESH_TOKEN_EXPIRE_DAYS: "20"
+      # Upload tokens: 480 hours = 20 days for large file transfers
+      UPLOAD_TOKEN_EXPIRE_HOURS: "480"
+      # Password reset tokens: 30 minutes for security
+      PASSWORD_RESET_EXPIRE_MINUTES: "30"
 
       # ===== REDIS CONFIGURATION =====
       REDIS_URL: redis://redis:6379/0

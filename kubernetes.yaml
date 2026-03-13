@@ -437,10 +437,19 @@ spec:
             secretKeyRef:
               name: backend-secrets
               key: jwt-refresh-secret-key
+        # CRITICAL FIX: Token expiration must be 20 days (1,728,000 seconds) for production zaply.in.net
+        # Access tokens: 28,800 minutes = 20 days = 1,728,000 seconds
         - name: ACCESS_TOKEN_EXPIRE_MINUTES
-          value: "30"
+          value: "28800"
+        # Refresh tokens: 20 days matches session requirement
         - name: REFRESH_TOKEN_EXPIRE_DAYS
-          value: "7"
+          value: "20"
+        # Upload tokens: 480 hours = 20 days for large file transfers
+        - name: UPLOAD_TOKEN_EXPIRE_HOURS
+          value: "480"
+        # Password reset tokens: 30 minutes for security
+        - name: PASSWORD_RESET_EXPIRE_MINUTES
+          value: "30"
         - name: REDIS_URL
           value: "redis://redis:6379/0"
         - name: REDIS_HOST
