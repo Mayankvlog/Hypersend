@@ -173,13 +173,21 @@ class Settings:
     # Token expiration constants
     # SESSION_DURATION must equal exactly 20 days (1,728,000 seconds)
     SESSION_DURATION_DAYS: int = 20  # Production requirement: exactly 20 days
+    SESSION_DURATION_SECONDS: int = 1728000  # 20 days in seconds (86400 * 20)
     
+    # CRITICAL FIX: Access token must be valid for entire 20-day session
+    # Default to 20 days (28,800 minutes) to match session duration requirement
+    # This was incorrectly set to 15 minutes - now fixed to 20 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
-        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15")
+        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "28800")  # Changed from "15" to "28800" (20 days in minutes)
     )
+    # Convert to seconds for cookie Max-Age calculations
+    ACCESS_TOKEN_EXPIRE_SECONDS: int = ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Should equal 1,728,000 seconds
+    
     # CRITICAL: Refresh token expiration must be 20 days (production requirement)
     # Users must be able to maintain sessions for exactly 20 days before re-authentication
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "20"))
+    REFRESH_TOKEN_EXPIRE_SECONDS: int = REFRESH_TOKEN_EXPIRE_DAYS * 86400  # 1,728,000 seconds
     UPLOAD_TOKEN_EXPIRE_HOURS: int = int(
         os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "480")
     )  # Extended tokens for large uploads

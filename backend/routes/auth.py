@@ -944,12 +944,12 @@ async def login(credentials: UserLogin, request: Request) -> JSONResponse:
         access_expires = int((datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp())
         refresh_expires = int((datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)).timestamp())
         
-        # Set access token cookie (short-lived, 15 minutes)
+        # Set access token cookie (long-lived, 20 days matching session requirement)
         access_cookie_kwargs = cookie_kwargs.copy()
         access_cookie_kwargs.update({
             "key": "access_token",
             "value": access_token,
-            "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert minutes to seconds
+            "max_age": settings.ACCESS_TOKEN_EXPIRE_SECONDS,  # 1,728,000 seconds = 20 days
             "expires": access_expires,
         })
         response.set_cookie(**access_cookie_kwargs)
@@ -959,7 +959,7 @@ async def login(credentials: UserLogin, request: Request) -> JSONResponse:
         refresh_cookie_kwargs.update({
             "key": "refresh_token",
             "value": refresh_token,
-            "max_age": settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,  # Convert days to seconds (20 days = 1,728,000 seconds)
+            "max_age": settings.REFRESH_TOKEN_EXPIRE_SECONDS,  # 1,728,000 seconds = 20 days
             "expires": refresh_expires,
         })
         response.set_cookie(**refresh_cookie_kwargs)
@@ -1189,8 +1189,9 @@ async def refresh_session_token(request: Request) -> JSONResponse:
             {"$set": {"expires_at": new_expires_at, "last_used": current_time}}
         )
         
-        # SECURITY FIX: Reduce access token TTL to short-lived window (15 minutes)
-        access_token_expires = timedelta(minutes=15)  # Short-lived access token
+        # SECURITY FIX: Use configured access token lifetime, not hardcoded
+        # Access token should match the configured 20-day session duration
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": token_data.user_id},
             expires_delta=access_token_expires
@@ -1212,11 +1213,11 @@ async def refresh_session_token(request: Request) -> JSONResponse:
         # Calculate access token expiration
         access_expires_timestamp = int((datetime.now(timezone.utc) + access_token_expires).timestamp())
         
-        # Set new access token cookie (short-lived, 15 minutes)
+        # Set new access token cookie with correct 20-day expiration
         response.set_cookie(
             key="access_token",
             value=access_token,
-            max_age=15 * 60,  # 15 minutes in seconds
+            max_age=settings.ACCESS_TOKEN_EXPIRE_SECONDS,  # 1,728,000 seconds = 20 days
             expires=access_expires_timestamp,
             path="/",
             domain=cookie_domain,
