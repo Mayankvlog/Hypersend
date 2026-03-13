@@ -83,6 +83,8 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    env_file:
+      - .env
     environment:
       # ===== DATABASE CONFIGURATION =====
       # PROD: MongoDB Atlas cloud connection only - MUST EXACTLY MATCH USER REQUIREMENTS
@@ -116,14 +118,15 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
       JWT_REFRESH_SECRET_KEY: ${JWT_REFRESH_SECRET_KEY:-change-me-in-production}
       # CRITICAL FIX: Token expiration must be 20 days (1,728,000 seconds) for production zaply.in.net
+      # Values loaded from .env file to ensure consistency across environments
       # Access tokens: 28,800 minutes = 20 days = 1,728,000 seconds
-      ACCESS_TOKEN_EXPIRE_MINUTES: "28800"
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-28800}
       # Refresh tokens: 20 days matches session requirement
-      REFRESH_TOKEN_EXPIRE_DAYS: "20"
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-20}
       # Upload tokens: 480 hours = 20 days for large file transfers
-      UPLOAD_TOKEN_EXPIRE_HOURS: "480"
+      UPLOAD_TOKEN_EXPIRE_HOURS: ${UPLOAD_TOKEN_EXPIRE_HOURS:-480}
       # Password reset tokens: 30 minutes for security
-      PASSWORD_RESET_EXPIRE_MINUTES: "30"
+      PASSWORD_RESET_EXPIRE_MINUTES: ${PASSWORD_RESET_EXPIRE_MINUTES:-30}
 
       # ===== REDIS CONFIGURATION =====
       REDIS_URL: redis://redis:6379/0

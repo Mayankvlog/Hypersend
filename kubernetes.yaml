@@ -43,6 +43,12 @@ data:
   ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
   ENVIRONMENT: "production"
   DEBUG: "false"
+  # ===== TOKEN EXPIRATION (20-day session) =====
+  # CRITICAL: These values must match production requirements
+  ACCESS_TOKEN_EXPIRE_MINUTES: "28800"   # 20 days in minutes = 1,728,000 seconds
+  REFRESH_TOKEN_EXPIRE_DAYS: "20"        # 20 days
+  UPLOAD_TOKEN_EXPIRE_HOURS: "480"       # 20 days in hours
+  PASSWORD_RESET_EXPIRE_MINUTES: "30"    # 30 minutes for security
 
 ---
 # PersistentVolumeClaim for nginx cache - using ReadWriteMany for multi-replica access
