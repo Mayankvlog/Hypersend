@@ -954,12 +954,12 @@ async def login(credentials: UserLogin, request: Request) -> JSONResponse:
         })
         response.set_cookie(**access_cookie_kwargs)
         
-        # Set refresh token cookie (long-lived, 30 days)
+        # Set refresh token cookie (long-lived, 20 days as per production requirement)
         refresh_cookie_kwargs = cookie_kwargs.copy()
         refresh_cookie_kwargs.update({
             "key": "refresh_token",
             "value": refresh_token,
-            "max_age": settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,  # Convert days to seconds
+            "max_age": settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,  # Convert days to seconds (20 days = 1,728,000 seconds)
             "expires": refresh_expires,
         })
         response.set_cookie(**refresh_cookie_kwargs)
@@ -1135,7 +1135,8 @@ async def refresh_session_token(request: Request) -> JSONResponse:
         
         # SECURITY FIX: Enforce absolute max lifetime for refresh tokens
         # Don't allow indefinite session extension - enforce max_lifetime from creation
-        REFRESH_TOKEN_MAX_LIFETIME_DAYS = 30  # Absolute maximum token lifetime
+        # CRITICAL: Must be 20 days to match production requirement (1,728,000 seconds)
+        REFRESH_TOKEN_MAX_LIFETIME_DAYS = 20  # Production requirement: exactly 20 days
         
         # Check if created_at exists - if not, reject the refresh (don't default to now)
         if "created_at" not in refresh_doc:

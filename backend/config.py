@@ -171,10 +171,15 @@ class Settings:
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
 
     # Token expiration constants
+    # SESSION_DURATION must equal exactly 20 days (1,728,000 seconds)
+    SESSION_DURATION_DAYS: int = 20  # Production requirement: exactly 20 days
+    
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15")
     )
-    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+    # CRITICAL: Refresh token expiration must be 20 days (production requirement)
+    # Users must be able to maintain sessions for exactly 20 days before re-authentication
+    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "20"))
     UPLOAD_TOKEN_EXPIRE_HOURS: int = int(
         os.getenv("UPLOAD_TOKEN_EXPIRE_HOURS", "480")
     )  # Extended tokens for large uploads

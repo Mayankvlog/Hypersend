@@ -1,0 +1,14 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /api/
+Disallow: /private/
+Disallow: /backup/
+Disallow: /config/
+Disallow: /.env
+Disallow: /wp-admin/
+Allow: /
+Allow: /public/
+Allow: /static/
+Allow: /assets/
+
+Sitemap: https://zaply.in.net/sitemap.xml
