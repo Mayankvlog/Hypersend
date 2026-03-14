@@ -1,11 +1,10 @@
 User-agent: *
-Disallow: /admin/
 Disallow: /api/
 Disallow: /private/
 Disallow: /backup/
 Disallow: /config/
 Disallow: /.env
-Disallow: /wp-admin/
+
 Allow: /
 Allow: /public/
 Allow: /static/
