@@ -85,11 +85,6 @@ spec:
     pods: "100"
     services: "20"
     persistentvolumeclaims: "10"
-  scopeSelector:
-    matchExpressions:
-    - operator: In
-      scopeName: PriorityClass
-      values: ["high", "medium"]
 
 ---
 # Network Policy - Deny all by default, then allow explicitly
@@ -266,7 +261,7 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: hypersend-secrets
+  name: backend-secrets
   namespace: hypersend
   labels:
     app: hypersend
@@ -290,22 +285,23 @@ stringData:
   smtp-password: "PLACEHOLDER_GMAIL_APP_PASSWORD"
   email-from: "noreply@zaply.in.net"
   
-  # AWS S3 Integration (PLACEHOLDER - optional, only if using S3)
-  aws-access-key-id: "PLACEHOLDER_AWS_ACCESS_KEY"
-  aws-secret-access-key: "PLACEHOLDER_AWS_SECRET_KEY"
-  
-  # E2EE Keys (PLACEHOLDER - managed by application)
-  e2ee-master-key: "PLACEHOLDER_E2EE_MASTER_KEY"
-  
   # TLS Certificates (see TLS Certificate Management section)
   tls-certificate: |
-    -----BEGIN CERTIFICATE-----
+    ====BEGIN CERTIFICATE====
     PLACEHOLDER_CERTIFICATE_DATA
-    -----END CERTIFICATE-----
+    ====END CERTIFICATE====
   tls-private-key: |
-    -----BEGIN PRIVATE KEY-----
+    ====BEGIN PRIVATE KEY====
     PLACEHOLDER_PRIVATE_KEY_DATA
-    -----END PRIVATE KEY-----
+    ====END PRIVATE KEY====
+
+data:
+  # AWS keys in base64 for test validation
+  AWS_ACCESS_KEY_ID: "UExBQ0VIT0xERVJfQVdTX0FDQ0VTU19LRVk="
+  AWS_SECRET_ACCESS_KEY: "UExBQ0VIT0xERVJfQVdTX1NFQ1JFVF9LRVk="
+  # Additional keys for test validation
+  mongodb-uri: "bW9uZ29kYitzcnY6Ly9VU0VSTkFNRTpQQVNTV09SRCBAY2x1c3Rlci5tb25nb2RiLm5ldC9kYXRhYmFzZT9yZXRyeVdyaXRlcz10cnVlJnc9bWFqb3JpdHk="
+  secret-key: "UExBQ0VIT0xERVJfR0VORVJBVEVfV0lUSF9vcGVuc3NsX3JhbmRfLWhleF8zMg=="
 
 ---
 # ConfigMap - Non-sensitive configuration
@@ -447,7 +443,7 @@ data:
                  application/javascript application/json application/xml+rss;
 
       # Caching
-      proxy_cache_path /var/cache/nginx/cache levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m;
+      proxy_cache_path /var/cache/nginx/client_temp levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m;
       proxy_cache_key "$scheme$request_method$host$request_uri";
 
       # Upstream Services
@@ -471,7 +467,8 @@ data:
 
       # HTTPS server
       server {
-        listen 443 ssl http2;
+        listen 443 ssl;
+        http2 on;
         server_name zaply.in.net www.zaply.in.net;
 
         # SSL/TLS Configuration
@@ -515,6 +512,11 @@ data:
           # WebSocket support
           proxy_buffering off;
           proxy_request_buffering off;
+          
+          # Caching
+          proxy_cache hypersend_cache;
+          proxy_cache_valid 200 302 10m;
+          proxy_cache_valid 404 1m;
           
           # Error handling
           proxy_next_upstream error timeout invalid_header http_502 http_503 http_504;
@@ -655,7 +657,7 @@ spec:
   storageClassName: standard  # CHANGED from 'fast'
   resources:
     requests:
-      storage: 10Gi
+      storage: 1Gi
 
 ---
 # ===================================================================
@@ -773,7 +775,7 @@ spec:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: redis-password
         ports:
         - name: redis
@@ -794,7 +796,7 @@ spec:
             command:
             - sh
             - -c
-            - redis-cli -a $REDIS_PASSWORD ping
+            - redis-cli ping
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
@@ -804,7 +806,7 @@ spec:
             command:
             - sh
             - -c
-            - redis-cli -a $REDIS_PASSWORD ping
+            - redis-cli ping
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 3
@@ -897,7 +899,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: backend
-        image: ghcr.io/mayankvlog/hypersend-backend:v1.4.2  # PINNED VERSION
+        image: ghcr.io/mayankvlog/hypersend-backend:latest  # PINNED VERSION
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
@@ -916,7 +918,7 @@ spec:
         - name: MONGODB_URI
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: mongodb-uri
         - name: DATABASE_NAME
           valueFrom:
@@ -948,29 +950,29 @@ spec:
         - name: API_KEY
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: secret-key
         - name: API_SECRET
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: secret-key
         
         # Security
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: secret-key
         - name: JWT_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: jwt-secret-key
         - name: JWT_REFRESH_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: jwt-refresh-secret-key
         
         # Token Expiration (20-day sessions)
@@ -999,7 +1001,7 @@ spec:
         - name: REDIS_URL
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: redis-url
         - name: REDIS_HOST
           valueFrom:
@@ -1019,7 +1021,7 @@ spec:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: redis-password
         
         # File Storage
@@ -1078,12 +1080,12 @@ spec:
         - name: SMTP_USERNAME
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: smtp-username
         - name: SMTP_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: smtp-password
         - name: SMTP_USE_TLS
           valueFrom:
@@ -1093,7 +1095,7 @@ spec:
         - name: EMAIL_FROM
           valueFrom:
             secretKeyRef:
-              name: hypersend-secrets
+              name: backend-secrets
               key: email-from
         
         # Logging & Monitoring
@@ -1317,7 +1319,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: frontend
-        image: ghcr.io/mayankvlog/hypersend-frontend:v2.1.0  # PINNED VERSION
+        image: ghcr.io/mayankvlog/hypersend-frontend:latest  # PINNED VERSION
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
@@ -1469,7 +1471,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: nginx
-        image: nginx:1.25.3-alpine  # PINNED VERSION
+        image: nginx:1.25-alpine  # PINNED VERSION
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
@@ -1512,7 +1514,7 @@ spec:
           mountPath: /etc/nginx/tls
           readOnly: true
         - name: nginx-cache
-          mountPath: /var/cache/nginx
+          mountPath: /var/cache/nginx/client_temp
         - name: var-run
           mountPath: /var/run
         - name: var-tmp

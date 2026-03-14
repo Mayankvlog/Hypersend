@@ -15,7 +15,7 @@ class TestMapKeysUnique:
         yaml_path = Path(__file__).parent.parent / "kubernetes.yaml"
         
         # Read and parse YAML
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
         # Parse all YAML documents
@@ -65,7 +65,7 @@ class TestMapKeysUnique:
             print("⏭️  docker-compose.yml not found, skipping")
             return
         
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path, 'r', encoding='utf-8') as f:
             doc = yaml.safe_load(f)
         
         duplicates_found = []
@@ -170,7 +170,7 @@ class TestMapKeysUnique:
                 continue
             
             try:
-                with open(file_path, 'r') as f:
+                with open(file_path, 'r', encoding='utf-8') as f:
                     list(yaml.safe_load_all(f))
                 print(f"✅ {yaml_file}: Loads without errors")
             except yaml.YAMLError as e:

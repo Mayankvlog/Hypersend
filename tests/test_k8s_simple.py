@@ -24,7 +24,7 @@ def test_kubernetes_yaml_validation():
         assert False, "kubernetes.yaml not found"
     
     try:
-        with open(k8s_file, 'r') as f:
+        with open(k8s_file, 'r', encoding='utf-8') as f:
             content = f.read()
         
         # Split documents

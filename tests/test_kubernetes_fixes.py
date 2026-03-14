@@ -19,7 +19,7 @@ class TestKubernetesFixes:
     def k8s_config(self):
         """Load and parse kubernetes.yaml"""
         k8s_path = Path(__file__).parent.parent / 'kubernetes.yaml'
-        with open(k8s_path, 'r') as f:
+        with open(k8s_path, 'r', encoding='utf-8') as f:
             configs = list(yaml.safe_load_all(f))
         return configs
     
@@ -261,7 +261,7 @@ def test_docker_compose_unchanged():
     docker_compose_path = Path(__file__).parent.parent / 'docker-compose.yml'
     assert docker_compose_path.exists(), "docker-compose.yml not found"
     
-    with open(docker_compose_path, 'r') as f:
+    with open(docker_compose_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
     # Verify file hasn't been modified (basic check)

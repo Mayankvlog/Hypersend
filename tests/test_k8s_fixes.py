@@ -11,7 +11,7 @@ def test_kubernetes_yaml_syntax():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         try:
             documents = list(yaml.safe_load_all(f))
             assert len(documents) > 0, "YAML should contain at least one document"
@@ -23,7 +23,7 @@ def test_no_duplicate_separators():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         content = f.read()
         assert '---\n---' not in content, "Found duplicate document separators"
 
@@ -32,7 +32,7 @@ def test_configmap_references():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         content = f.read()
         # Check that nginx-config is referenced correctly
         assert 'name: nginx-config' in content, "nginx-config should be referenced"
@@ -49,7 +49,7 @@ def test_secret_key_references():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
         
     # Find the backend-secrets secret
@@ -72,7 +72,7 @@ def test_no_fan_out_worker_pdb():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         content = f.read()
         assert 'fan-out-worker-pdb' not in content, "fan-out-worker-pdb should be removed"
 
@@ -81,7 +81,7 @@ def test_no_duplicate_hpa():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         content = f.read()
         # e2ee-service HPA should be completely removed since deployment doesn't exist
         hpa_count = content.count('name: e2ee-service-hpa')
@@ -93,7 +93,7 @@ def test_deployments_have_required_fields():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
     
     for doc in documents:
@@ -107,7 +107,7 @@ def test_networkpolicies_have_podselector():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
     
     for doc in documents:
@@ -120,7 +120,7 @@ def test_limitranges_have_limits():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
     
     for doc in documents:
@@ -134,7 +134,7 @@ def test_all_deployments_complete():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
     
     deployments = [doc for doc in documents if doc and doc.get('kind') == 'Deployment']
@@ -156,7 +156,7 @@ def test_all_networkpolicies_complete():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
     
     networkpolicies = [doc for doc in documents if doc and doc.get('kind') == 'NetworkPolicy']
@@ -175,7 +175,7 @@ def test_all_limitranges_complete():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
     
     limitranges = [doc for doc in documents if doc and doc.get('kind') == 'LimitRange']
@@ -197,7 +197,7 @@ def test_no_invalid_service_types():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
     
     services = [doc for doc in documents if doc and doc.get('kind') == 'Service']
@@ -214,7 +214,7 @@ def test_document_structure():
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     kubernetes_path = os.path.join(current_dir, '..', 'kubernetes.yaml')
-    with open(kubernetes_path, 'r') as f:
+    with open(kubernetes_path, 'r', encoding='utf-8') as f:
         documents = list(yaml.safe_load_all(f))
     
     for i, doc in enumerate(documents):
