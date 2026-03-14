@@ -1,13 +1,33 @@
+# robots.txt for zaply.in.net
+# Allow search engines to crawl public content only
+
 User-agent: *
+Disallow: /admin/
 Disallow: /api/
+Disallow: /auth/
+Disallow: /dashboard/
 Disallow: /private/
-Disallow: /backup/
-Disallow: /config/
-Disallow: /.env
-
+Disallow: /uploads/temp/
+Disallow: /data/temp/
+Disallow: /*.json$
+Disallow: /*.backup$
+Disallow: /?*sort=
+Disallow: /?*filter=
+Disallow: /ws/
 Allow: /
-Allow: /public/
-Allow: /static/
-Allow: /assets/
 
+# Specific search engine rules
+User-agent: Googlebot
+Allow: /api/public/
+Disallow: /api/private/
+
+User-agent: Bingbot
+Allow: /api/public/
+Disallow: /api/private/
+
+# Crawl delay and request rate
+User-agent: *
+Crawl-delay: 1
+
+# Sitemap location
 Sitemap: https://zaply.in.net/sitemap.xml
