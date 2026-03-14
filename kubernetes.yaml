@@ -1,77 +1,316 @@
 ---
-# Namespace for Hypersend application
+# ===================================================================
+# NAMESPACE AND RBAC
+# ===================================================================
+
 apiVersion: v1
 kind: Namespace
 metadata:
   name: hypersend
   labels:
     name: hypersend
+    security: e2ee-enabled
+    monitoring: enabled
+  annotations:
+    description: "E2EE Multi-Device Messaging Platform - Production"
+    security-tier: "critical"
 
 ---
-# Secret for backend and application configuration
+# ServiceAccount for applications
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hypersend-app
+  namespace: hypersend
+  labels:
+    app: hypersend
+
+---
+# Role for reading ConfigMaps and Secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hypersend-deployment-role
+  namespace: hypersend
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hypersend-deployment-rolebinding
+  namespace: hypersend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hypersend-deployment-role
+subjects:
+- kind: ServiceAccount
+  name: hypersend-app
+  namespace: hypersend
+
+---
+# ResourceQuota to prevent resource exhaustion
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: hypersend-quota
+  namespace: hypersend
+spec:
+  hard:
+    requests.cpu: "30"
+    requests.memory: "60Gi"
+    limits.cpu: "60"
+    limits.memory: "120Gi"
+    pods: "100"
+    services: "20"
+    persistentvolumeclaims: "10"
+  scopeSelector:
+    matchExpressions:
+    - operator: In
+      scopeName: PriorityClass
+      values: ["high", "medium"]
+
+---
+# Network Policy - Deny all by default, then allow explicitly
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-default-deny
+  namespace: hypersend
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+# Network Policy - Allow DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-allow-dns
+  namespace: hypersend
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+
+---
+# Network Policy - Allow nginx to backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-allow-nginx-to-backend
+  namespace: hypersend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: nginx
+    ports:
+    - protocol: TCP
+      port: 8000
+
+---
+# Network Policy - Allow backend to redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-allow-backend-to-redis
+  namespace: hypersend
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+# Network Policy - Allow nginx ingress from internet
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-allow-nginx-ingress
+  namespace: hypersend
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+
+---
+# ===================================================================
+# SECRETS AND CONFIGMAPS
+# ===================================================================
+
+# IMPORTANT: Use this as a template only. Never commit actual secrets with real values.
+# See EXTERNAL SECRET MANAGEMENT section below for Vault/AWS Secrets Manager setup.
+
 apiVersion: v1
 kind: Secret
 metadata:
-  name: backend-secrets
+  name: hypersend-secrets
   namespace: hypersend
+  labels:
+    app: hypersend
+    security: critical
 type: Opaque
-data:
-  # Base64 encoded placeholder values - replace with actual encoded secrets via secure pipeline
-  mongodb-uri: bW9uZ29kYitzcnY6Ly9tYXlhbmtsbHIwMzExX2RiX3VzZXI6SkJrQVppbjhseVRLNnZAY2x1c3RlcjAucm5qM3ZmLm1vbmdvZGIubmV0L0h5cGVyc2VuZA==
-  api-key: c2VjdXJlLWFwaS1rZXktZm9yLWh5cGVyc2VuZA==
-  api-secret: c2VjdXJlLWFwaS1zZWNyZXQtZm9yLWh5cGVyc2VuZA==
-  secret-key: c3VwZXItc2VjdXJlLXNlY3JldC1rZXktZm9yLWp3dC10b2tlbnM=
-  jwt-secret-key: c3VwZXItc2VjdXJlLWp3dC1zZWNyZXQta2V5LWZvci1hY2Nlc3MtdG9rZW5z
-  jwt-refresh-secret-key: c3VwZXItc2VjdXJlLWp3dC1yZWZyZXNoLXNlY3JldC1rZXktZm9yLXJlZnJlc2gtdG9rZW5z
-  smtp-username: aHlwZXJzZW5kLXN1cHBvcnRAemFwbHkuaW4ubmV0
-  smtp-password: c3VwZXItc2VjdXJlLXNtdHAtcGFzc3dvcmQtZm9yLWh5cGVyc2VuZA==
-  email-from: aHlwZXJzZW5kLXN1cHBvcnRAemFwbHkuaW4ubmV0
-  # AWS credentials - replace with actual base64 encoded credentials via secure pipeline
-  AWS_ACCESS_KEY_ID: QUtJQUlPU0ZPUlRBVFlQTEVURVhBTVBMRQ==
-  AWS_SECRET_ACCESS_KEY: dGVzdC1hd3Mtc2VjcmV0LWFjY2Vzcy1rZXktZm9yLWh5cGVyc2VuZA==
+stringData:
+  # Database Credentials (PLACEHOLDER - replace with actual values)
+  mongodb-uri: "mongodb+srv://USERNAME:PASSWORD@cluster.mongodb.net/database?retryWrites=true&w=majority"
+  
+  # Application Secrets (PLACEHOLDER - generate with: openssl rand -hex 32)
+  secret-key: "PLACEHOLDER_GENERATE_WITH_openssl_rand_-hex_32"
+  jwt-secret-key: "PLACEHOLDER_GENERATE_WITH_openssl_rand_-hex_32"
+  jwt-refresh-secret-key: "PLACEHOLDER_GENERATE_WITH_openssl_rand_-hex_32"
+  
+  # Redis Authentication (PLACEHOLDER)
+  redis-password: "PLACEHOLDER_SECURE_32_CHAR_PASSWORD"
+  redis-url: "redis://:PLACEHOLDER_PASSWORD@redis:6379/0"
+  
+  # SMTP Credentials (PLACEHOLDER)
+  smtp-username: "noreply@zaply.in.net"
+  smtp-password: "PLACEHOLDER_GMAIL_APP_PASSWORD"
+  email-from: "noreply@zaply.in.net"
+  
+  # AWS S3 Integration (PLACEHOLDER - optional, only if using S3)
+  aws-access-key-id: "PLACEHOLDER_AWS_ACCESS_KEY"
+  aws-secret-access-key: "PLACEHOLDER_AWS_SECRET_KEY"
+  
+  # E2EE Keys (PLACEHOLDER - managed by application)
+  e2ee-master-key: "PLACEHOLDER_E2EE_MASTER_KEY"
+  
+  # TLS Certificates (see TLS Certificate Management section)
+  tls-certificate: |
+    -----BEGIN CERTIFICATE-----
+    PLACEHOLDER_CERTIFICATE_DATA
+    -----END CERTIFICATE-----
+  tls-private-key: |
+    -----BEGIN PRIVATE KEY-----
+    PLACEHOLDER_PRIVATE_KEY_DATA
+    -----END PRIVATE KEY-----
 
 ---
-# ConfigMap for non-sensitive application configuration
+# ConfigMap - Non-sensitive configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: hypersend-config
   namespace: hypersend
+  labels:
+    app: hypersend
 data:
-  API_BASE_URL: "https://zaply.in.net/api/v1"
-  AWS_REGION: "us-east-1"
-  ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
+  # Environment
   ENVIRONMENT: "production"
   DEBUG: "false"
-  # ===== TOKEN EXPIRATION (20-day session) =====
-  # CRITICAL: These values must match production requirements
-  ACCESS_TOKEN_EXPIRE_MINUTES: "28800"   # 20 days in minutes = 1,728,000 seconds
-  REFRESH_TOKEN_EXPIRE_DAYS: "20"        # 20 days
-  UPLOAD_TOKEN_EXPIRE_HOURS: "480"       # 20 days in hours
-  PASSWORD_RESET_EXPIRE_MINUTES: "30"    # 30 minutes for security
+  
+  # API Configuration
+  API_BASE_URL: "https://zaply.in.net/api/v1"
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  ALLOWED_ORIGINS: "https://zaply.in.net,https://www.zaply.in.net"
+  
+  # Database Configuration
+  MONGODB_ATLAS_ENABLED: "true"
+  DATABASE_NAME: "Hypersend"
+  USE_MOCK_DB: "false"
+  
+  # Rate Limiting
+  RATE_LIMIT_PER_USER: "1000"
+  RATE_LIMIT_WINDOW_SECONDS: "3600"
+  
+  # Token Expiration (20-day session requirement)
+  ACCESS_TOKEN_EXPIRE_MINUTES: "28800"      # 20 days
+  REFRESH_TOKEN_EXPIRE_DAYS: "20"
+  UPLOAD_TOKEN_EXPIRE_HOURS: "480"          # 20 days
+  PASSWORD_RESET_EXPIRE_MINUTES: "30"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_MAX_CONNECTIONS: "100"
+  
+  # File Upload Configuration
+  SERVER_STORAGE_ENABLED: "true"
+  STORAGE_PATH: "/app/storage"
+  TEMP_STORAGE_PATH: "/app/temp"
+  UPLOAD_DIR: "/app/uploads"
+  MAX_FILE_SIZE_BYTES: "16106127360"        # 15GB
+  CHUNK_SIZE: "4194304"                      # 4MB
+  FILE_RETENTION_HOURS: "120"                # 5 days
+  AUTO_CLEANUP_ENABLED: "true"
+  ALLOWED_FILE_TYPES: "jpg,jpeg,png,gif,pdf,doc,docx,txt,mp4,mp3,zip,avi,wmv,flv,webm,mpg,rar,7z,iso"
+  
+  # Email Configuration
+  ENABLE_EMAIL: "true"
+  ENABLE_PASSWORD_RESET: "true"
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_USE_TLS: "true"
+  SENDER_NAME: "Zaply Support"
+  
+  # AWS S3 Configuration (if using S3)
+  AWS_REGION: "us-east-1"
+  S3_BUCKET: "hypersend-prod"
+  
+  # Logging
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  
+  # Monitoring
+  ENABLE_METRICS: "true"
+  METRICS_PORT: "9090"
 
 ---
-# PersistentVolumeClaim for nginx cache - using ReadWriteMany for multi-replica access
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: nginx-cache-pvc
-  namespace: hypersend
-spec:
-  accessModes:
-    - ReadWriteMany
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: nfs-storage
-
----
-# ConfigMap for nginx configuration
+# ConfigMap - nginx configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nginx-config
   namespace: hypersend
+  labels:
+    app: nginx
 data:
   nginx.conf: |
     user nginx;
@@ -82,96 +321,132 @@ data:
     events {
       worker_connections 4096;
       use epoll;
+      multi_accept on;
     }
 
     http {
       include /etc/nginx/mime.types;
       default_type application/octet-stream;
 
-      # Cache configuration
-      proxy_cache_path /var/cache/nginx/client_temp levels=1:2 keys_zone=hypersend_cache:10m max_size=1g 
-                       inactive=60m use_temp_path=off;
-
+      # Logging
       log_format main '$remote_addr - $remote_user [$time_local] "$request" '
                       '$status $body_bytes_sent "$http_referer" '
-                      '"$http_user_agent" "$http_x_forwarded_for"';
+                      '"$http_user_agent" "$http_x_forwarded_for" '
+                      'rt=$request_time uct="$upstream_connect_time" '
+                      'uht="$upstream_header_time" urt="$upstream_response_time"';
 
-      access_log /var/log/nginx/access.log main;
+      access_log /var/log/nginx/access.log main buffer=64k flush=2s;
 
+      # Performance
       sendfile on;
       tcp_nopush on;
       tcp_nodelay on;
-      keepalive_timeout 65;
-      types_hash_max_size 2048;
-      client_max_body_size 15G;
-      
-      # Enable server tokens for Wappalyzer detection
-      server_tokens on;
+      keepalive_timeout 120;
+      keepalive_requests 1000;
+      types_hash_max_size 4096;
 
-      # Gzip compression
+      # Large File Support (15GB uploads)
+      client_max_body_size 15G;
+      client_body_buffer_size 16m;
+      client_header_buffer_size 8k;
+      large_client_header_buffers 8 32k;
+
+      # Timeouts for large file transfers
+      client_body_timeout 3600s;
+      client_header_timeout 60s;
+      send_timeout 3600s;
+      proxy_connect_timeout 300s;
+      proxy_send_timeout 3600s;
+      proxy_read_timeout 3600s;
+
+      # Compression
       gzip on;
       gzip_vary on;
       gzip_proxied any;
       gzip_comp_level 6;
-      gzip_types text/plain text/css text/xml text/javascript 
-                 application/json application/javascript application/xml+rss 
-                 application/rss+xml font/truetype font/opentype 
-                 application/vnd.ms-fontobject image/svg+xml;
+      gzip_min_length 1000;
+      gzip_disable "msie6";
+      gzip_types text/plain text/css text/xml text/javascript
+                 application/javascript application/json application/xml+rss;
 
-      # Upstream backend service
+      # Caching
+      proxy_cache_path /var/cache/nginx/cache levels=1:2 keys_zone=hypersend_cache:10m max_size=1g inactive=60m;
+      proxy_cache_key "$scheme$request_method$host$request_uri";
+
+      # Upstream Services
       upstream backend_service {
-        server backend:8000;
+        least_conn;
+        server backend:8000 max_fails=3 fail_timeout=30s;
+        keepalive 256;
       }
 
-      # Upstream frontend service
       upstream frontend_service {
         server frontend:80;
+        keepalive 64;
       }
 
+      # HTTP server - redirect to HTTPS
       server {
         listen 80;
         server_name zaply.in.net www.zaply.in.net;
-
-        # Redirect HTTP to HTTPS
         return 301 https://$server_name$request_uri;
       }
 
+      # HTTPS server
       server {
         listen 443 ssl http2;
         server_name zaply.in.net www.zaply.in.net;
 
-        # SSL configuration
-        ssl_certificate /etc/letsencrypt/tls.crt;
-        ssl_certificate_key /etc/letsencrypt/tls.key;
+        # SSL/TLS Configuration
+        ssl_certificate /etc/nginx/tls/tls.crt;
+        ssl_certificate_key /etc/nginx/tls/tls.key;
         ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256;
         ssl_prefer_server_ciphers on;
         ssl_session_cache shared:SSL:10m;
         ssl_session_timeout 10m;
+        ssl_session_tickets off;
 
-        # API routes with caching
+        # Security Headers
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+        # Health check endpoint
+        location /health {
+          access_log off;
+          add_header Content-Type text/plain;
+          return 200 "healthy\n";
+        }
+
+        # API routes
         location /api/ {
           proxy_pass http://backend_service;
           proxy_http_version 1.1;
-          proxy_set_header Upgrade $http_upgrade;
-          proxy_set_header Connection "upgrade";
+          
+          # Headers
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
-          proxy_read_timeout 3600s;
-          proxy_send_timeout 3600s;
-          proxy_connect_timeout 300s;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          
+          # WebSocket support
           proxy_buffering off;
           proxy_request_buffering off;
-          proxy_cache hypersend_cache;
-          proxy_cache_valid 200 302 10m;
-          proxy_cache_valid 404 1m;
-          proxy_cache_key "$scheme$request_method$host$request_uri";
+          
+          # Error handling
+          proxy_next_upstream error timeout invalid_header http_502 http_503 http_504;
+          proxy_next_upstream_tries 3;
+          proxy_next_upstream_timeout 30s;
         }
 
-        # WebSocket upgrade for backend
-        location ~ ^/ws/ {
+        # WebSocket routes
+        location ~ ^/ws {
           proxy_pass http://backend_service;
           proxy_http_version 1.1;
           proxy_set_header Upgrade $http_upgrade;
@@ -179,14 +454,10 @@ data:
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
-          proxy_read_timeout 3600s;
-          proxy_send_timeout 3600s;
-          proxy_connect_timeout 300s;
           proxy_buffering off;
         }
 
-        # Frontend routes with caching
+        # Frontend routes
         location / {
           proxy_pass http://frontend_service;
           proxy_http_version 1.1;
@@ -195,85 +466,167 @@ data:
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_redirect off;
-          proxy_cache hypersend_cache;
-          proxy_cache_valid 200 302 5m;
-          proxy_cache_valid 404 1m;
-          proxy_cache_key "$scheme$request_method$host$request_uri";
         }
 
-        # Health check endpoint
-        location /health {
+        # Disable source maps
+        location ~* \.map$ {
           access_log off;
-          add_header Content-Type text/plain;
-          return 200 "healthy\n";
+          return 204;
         }
-        
-        # Explicit Server header for Wappalyzer detection
-        add_header Server "nginx" always;
+
+        # SEO files
+        location = /robots.txt {
+          add_header Cache-Control "public, max-age=86400" always;
+          access_log off;
+        }
+
+        location = /sitemap.xml {
+          add_header Content-Type "application/xml" always;
+          add_header Cache-Control "public, max-age=604800" always;
+          access_log off;
+        }
       }
     }
 
 ---
-# PersistentVolumeClaim for backend storage
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: backend-storage-pvc
-  namespace: hypersend
-spec:
-  accessModes:
-    - ReadWriteMany
-  resources:
-    requests:
-      storage: 50Gi
-  storageClassName: nfs-storage
+# ===================================================================
+# PERSISTENT VOLUME CLAIMS
+# ===================================================================
 
----
-# PersistentVolumeClaim for backend uploads
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: backend-uploads-pvc
-  namespace: hypersend
-spec:
-  accessModes:
-    - ReadWriteMany
-  resources:
-    requests:
-      storage: 100Gi
-  storageClassName: nfs-storage
-
----
-# PersistentVolumeClaim for backend temp
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: backend-temp-pvc
-  namespace: hypersend
-spec:
-  accessModes:
-    - ReadWriteMany
-  resources:
-    requests:
-      storage: 20Gi
-  storageClassName: nfs-storage
-
----
-# PersistentVolumeClaim for Redis
+# Redis Storage
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: redis-pvc
   namespace: hypersend
+  labels:
+    app: redis
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: fast  # VERIFY THIS EXISTS: kubectl get storageclass
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+# Backend Storage (sensitive data)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-storage-pvc
+  namespace: hypersend
+  labels:
+    app: backend
+spec:
+  accessModes:
+    - ReadWriteMany  # For multi-replica sharing
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 200Gi
+
+---
+# Backend Uploads (15GB file support)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-uploads-pvc
+  namespace: hypersend
+  labels:
+    app: backend
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 500Gi
+
+---
+# Backend Temporary Storage (for transfer staging)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-temp-pvc
+  namespace: hypersend
+  labels:
+    app: backend
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 100Gi
+
+---
+# Nginx Cache Storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nginx-cache-pvc
+  namespace: hypersend
+  labels:
+    app: nginx
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: fast
   resources:
     requests:
       storage: 10Gi
 
 ---
-# Redis Deployment
+# ===================================================================
+# TRAY CERTIFICATE MANAGEMENT
+# ===================================================================
+# Option 1: Manual Secret creation (one-time)
+# kubectl create secret tls letsencrypt-tls \
+#   --cert=/path/to/fullchain.pem \
+#   --key=/path/to/privkey.pem \
+#   -n hypersend
+
+# Option 2: Using cert-manager (recommended for production)
+# Install cert-manager: helm install cert-manager jetstack/cert-manager
+# Then uncomment the ClusterIssuer and Certificate below:
+
+# apiVersion: cert-manager.io/v1
+# kind: ClusterIssuer
+# metadata:
+#   name: letsencrypt-prod
+# spec:
+#   acme:
+#     server: https://acme-v02.api.letsencrypt.org/directory
+#     email: admin@zaply.in.net
+#     privateKeySecretRef:
+#       name: letsencrypt-prod-key
+#     solvers:
+#     - http01:
+#         ingress:
+#           class: nginx
+#
+# ---
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: zaply-cert
+#   namespace: hypersend
+# spec:
+#   secretName: letsencrypt-tls
+#   issuerRef:
+#     name: letsencrypt-prod
+#     kind: ClusterIssuer
+#   commonName: zaply.in.net
+#   dnsNames:
+#   - zaply.in.net
+#   - www.zaply.in.net
+
+---
+# ===================================================================
+# REDIS DEPLOYMENT
+# ===================================================================
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -281,8 +634,13 @@ metadata:
   namespace: hypersend
   labels:
     app: redis
+  annotations:
+    deployment: redis-single-node
+    note: "Recommend Redis Sentinel or Cluster for HA"
 spec:
   replicas: 1
+  strategy:
+    type: Recreate  # No rolling update for stateful Redis
   selector:
     matchLabels:
       app: redis
@@ -290,50 +648,85 @@ spec:
     metadata:
       labels:
         app: redis
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
     spec:
+      serviceAccountName: hypersend-app
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+      restartPolicy: Always
       containers:
       - name: redis
-        image: redis:7.2-alpine
-        ports:
-        - containerPort: 6379
-          name: redis
+        image: redis:7.2.4-alpine  # PINNED VERSION
+        imagePullPolicy: IfNotPresent
         command:
           - redis-server
+          - "--requirepass"
+          - "$(REDIS_PASSWORD)"
           - "--appendonly"
           - "yes"
+          - "--appendfsync"
+          - "everysec"
           - "--maxmemory"
-          - "512mb"
+          - "8gb"
           - "--maxmemory-policy"
           - "allkeys-lru"
+          - "--save"
+          - "900 1"
+          - "--save"
+          - "300 10"
+          - "--save"
+          - "60 10000"
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: redis-password
+        ports:
+        - name: redis
+          containerPort: 6379
+          protocol: TCP
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
+            memory: "4Gi"
             cpu: "500m"
+          limits:
+            memory: "8Gi"
+            cpu: "2000m"
         volumeMounts:
         - name: redis-storage
           mountPath: /data
         livenessProbe:
           exec:
             command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 10
+            - sh
+            - -c
+            - redis-cli -a $REDIS_PASSWORD ping
+          initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           exec:
             command:
-            - redis-cli
-            - ping
+            - sh
+            - -c
+            - redis-cli -a $REDIS_PASSWORD ping
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 3
-          failureThreshold: 3
-      restartPolicy: Always
+          failureThreshold: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
       volumes:
       - name: redis-storage
         persistentVolumeClaim:
@@ -350,16 +743,20 @@ metadata:
     app: redis
 spec:
   type: ClusterIP
-  ports:
-  - port: 6379
-    targetPort: 6379
-    protocol: TCP
-    name: redis
+  clusterIP: None  # Headless service
   selector:
     app: redis
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
 
 ---
-# Backend Deployment
+# ===================================================================
+# BACKEND DEPLOYMENT
+# ===================================================================
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -367,181 +764,310 @@ metadata:
   namespace: hypersend
   labels:
     app: backend
+    tier: api
 spec:
-  replicas: 10
-  selector:
-    matchLabels:
-      app: backend
+  replicas: 2  # START SMALL - HPA will scale
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 2
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0  # Zero downtime deployment
+  selector:
+    matchLabels:
+      app: backend
   template:
     metadata:
       labels:
         app: backend
+        tier: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
+      serviceAccountName: hypersend-app
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 3000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - backend
+              topologyKey: kubernetes.io/hostname
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
       containers:
       - name: backend
-        image: ghcr.io/mayankvlog/hypersend-backend:latest
-        imagePullPolicy: Always
+        image: ghcr.io/mayankvlog/hypersend-backend:v1.4.2  # PINNED VERSION
+        imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: 8000
           protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
         env:
+        # Database
         - name: MONGODB_ATLAS_ENABLED
-          value: "true"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: MONGODB_ATLAS_ENABLED
         - name: MONGODB_URI
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
+              name: hypersend-secrets
               key: mongodb-uri
         - name: DATABASE_NAME
-          value: "Hypersend"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: DATABASE_NAME
         - name: USE_MOCK_DB
-          value: "false"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: USE_MOCK_DB
+        
+        # API Configuration
         - name: API_BASE_URL
-          value: "https://zaply.in.net/api/v1"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: API_BASE_URL
         - name: API_HOST
-          value: "0.0.0.0"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: API_HOST
         - name: API_PORT
-          value: "8000"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: API_PORT
         - name: API_KEY
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
-              key: api-key
+              name: hypersend-secrets
+              key: secret-key
         - name: API_SECRET
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
-              key: api-secret
-        - name: RATE_LIMIT_PER_USER
-          value: "100"
-        - name: RATE_LIMIT_WINDOW
-          value: "3600"
-        - name: ALLOWED_ORIGINS
-          value: "https://zaply.in.net,https://www.zaply.in.net"
-        - name: DEBUG
-          value: "false"
-        - name: ENVIRONMENT
-          value: "production"
+              name: hypersend-secrets
+              key: secret-key
+        
+        # Security
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
+              name: hypersend-secrets
               key: secret-key
         - name: JWT_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
+              name: hypersend-secrets
               key: jwt-secret-key
         - name: JWT_REFRESH_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
+              name: hypersend-secrets
               key: jwt-refresh-secret-key
-        # CRITICAL FIX: Token expiration must be 20 days (1,728,000 seconds) for production zaply.in.net
-        # Access tokens: 28,800 minutes = 20 days = 1,728,000 seconds
+        
+        # Token Expiration (20-day sessions)
         - name: ACCESS_TOKEN_EXPIRE_MINUTES
-          value: "28800"
-        # Refresh tokens: 20 days matches session requirement
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: ACCESS_TOKEN_EXPIRE_MINUTES
         - name: REFRESH_TOKEN_EXPIRE_DAYS
-          value: "20"
-        # Upload tokens: 480 hours = 20 days for large file transfers
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: REFRESH_TOKEN_EXPIRE_DAYS
         - name: UPLOAD_TOKEN_EXPIRE_HOURS
-          value: "480"
-        # Password reset tokens: 30 minutes for security
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: UPLOAD_TOKEN_EXPIRE_HOURS
         - name: PASSWORD_RESET_EXPIRE_MINUTES
-          value: "30"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: PASSWORD_RESET_EXPIRE_MINUTES
+        
+        # Redis (FIXED: includes password now)
         - name: REDIS_URL
-          value: "redis://redis:6379/0"
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: redis-url
         - name: REDIS_HOST
-          value: "redis"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: REDIS_HOST
         - name: REDIS_PORT
-          value: "6379"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: REDIS_PORT
         - name: REDIS_DB
-          value: "0"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: REDIS_DB
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hypersend-secrets
+              key: redis-password
+        
+        # File Storage
         - name: SERVER_STORAGE_ENABLED
-          value: "true"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: SERVER_STORAGE_ENABLED
         - name: STORAGE_PATH
-          value: "/app/storage"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: STORAGE_PATH
         - name: TEMP_STORAGE_PATH
-          value: "/app/temp"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: TEMP_STORAGE_PATH
         - name: UPLOAD_DIR
-          value: "/app/uploads"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: UPLOAD_DIR
         - name: MAX_FILE_SIZE_BYTES
-          value: "16106127360"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: MAX_FILE_SIZE_BYTES
         - name: CHUNK_SIZE
-          value: "4194304"
-        - name: FILE_RETENTION_HOURS
-          value: "120"
-        - name: AUTO_CLEANUP_ENABLED
-          value: "true"
-        - name: ALLOWED_FILE_TYPES
-          value: "jpg,jpeg,png,gif,pdf,doc,docx,txt,mp4,mp3,zip,avi,wmv,flv,webm,mpg,wmf,wmv,exe,msi,deb,rar,7z,iso"
-        - name: LOG_LEVEL
-          value: "INFO"
-        - name: LOG_FORMAT
-          value: "json"
-        - name: ENABLE_METRICS
-          value: "true"
-        - name: METRICS_PORT
-          value: "9090"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: CHUNK_SIZE
+        
+        # Email
         - name: ENABLE_EMAIL
-          value: "true"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: ENABLE_EMAIL
         - name: ENABLE_PASSWORD_RESET
-          value: "true"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: ENABLE_PASSWORD_RESET
         - name: SMTP_HOST
-          value: "smtp.gmail.com"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: SMTP_HOST
         - name: SMTP_PORT
-          value: "587"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: SMTP_PORT
         - name: SMTP_USERNAME
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
+              name: hypersend-secrets
               key: smtp-username
         - name: SMTP_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
+              name: hypersend-secrets
               key: smtp-password
         - name: SMTP_USE_TLS
-          value: "true"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: SMTP_USE_TLS
         - name: EMAIL_FROM
           valueFrom:
             secretKeyRef:
-              name: backend-secrets
+              name: hypersend-secrets
               key: email-from
-        - name: SENDER_NAME
-          value: "Hypersend Support"
+        
+        # Logging & Monitoring
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: LOG_LEVEL
+        - name: LOG_FORMAT
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: LOG_FORMAT
+        - name: ENABLE_METRICS
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: ENABLE_METRICS
+        - name: METRICS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: METRICS_PORT
+        
+        # Environment
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: ENVIRONMENT
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: DEBUG
+        
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
             memory: "1Gi"
-            cpu: "1000m"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        
         livenessProbe:
           httpGet:
             path: /api/v1/health
-            port: 8000
+            port: http
             scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+        
         readinessProbe:
           httpGet:
             path: /api/v1/health
-            port: 8000
+            port: http
             scheme: HTTP
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
+        
         volumeMounts:
         - name: storage
           mountPath: /app/storage
@@ -549,7 +1075,16 @@ spec:
           mountPath: /app/uploads
         - name: temp
           mountPath: /app/temp
-      restartPolicy: Always
+        - name: tmp
+          mountPath: /tmp
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false  # Needs write for uploads
+      
       volumes:
       - name: storage
         persistentVolumeClaim:
@@ -560,6 +1095,9 @@ spec:
       - name: temp
         persistentVolumeClaim:
           claimName: backend-temp-pvc
+      - name: tmp
+        emptyDir:
+          sizeLimit: 10Gi
 
 ---
 # Backend Service
@@ -572,16 +1110,20 @@ metadata:
     app: backend
 spec:
   type: ClusterIP
-  ports:
-  - port: 8000
-    targetPort: 8000
-    protocol: TCP
-    name: http
   selector:
     app: backend
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
 
 ---
-# HorizontalPodAutoscaler for Backend
+# Backend HPA (Horizontal Pod Autoscaler)
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -592,18 +1134,53 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: backend
-  minReplicas: 10
-  maxReplicas: 100
+  minReplicas: 2
+  maxReplicas: 20  # REDUCED from 100 for resource-constrained environments
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 70
+        averageUtilization: 80
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 85
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
 
 ---
-# Frontend Deployment
+# Backend Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: hypersend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
+
+---
+# ===================================================================
+# FRONTEND DEPLOYMENT
+# ===================================================================
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -611,25 +1188,47 @@ metadata:
   namespace: hypersend
   labels:
     app: frontend
+    tier: web
 spec:
-  replicas: 5
-  selector:
-    matchLabels:
-      app: frontend
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: frontend
   template:
     metadata:
       labels:
         app: frontend
+        tier: web
     spec:
+      serviceAccountName: hypersend-app
+      securityContext:
+        fsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - frontend
+              topologyKey: kubernetes.io/hostname
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
       containers:
       - name: frontend
-        image: ghcr.io/mayankvlog/hypersend-frontend:latest
-        imagePullPolicy: Always
+        image: ghcr.io/mayankvlog/hypersend-frontend:v2.1.0  # PINNED VERSION
+        imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: 80
@@ -638,18 +1237,21 @@ spec:
         - name: NODE_ENV
           value: "production"
         - name: API_BASE_URL
-          value: "https://zaply.in.net/api/v1"
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: API_BASE_URL
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
             memory: "512Mi"
-            cpu: "500m"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
         livenessProbe:
           httpGet:
             path: /health
-            port: 80
+            port: http
             scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 10
@@ -658,13 +1260,35 @@ spec:
         readinessProbe:
           httpGet:
             path: /health
-            port: 80
+            port: http
             scheme: HTTP
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
-      restartPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: var-run
+          mountPath: /var/run
+        - name: var-cache
+          mountPath: /var/cache/nginx
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 100Mi
+      - name: var-run
+        emptyDir:
+          sizeLimit: 100Mi
+      - name: var-cache
+        emptyDir:
+          sizeLimit: 500Mi
 
 ---
 # Frontend Service
@@ -677,16 +1301,41 @@ metadata:
     app: frontend
 spec:
   type: ClusterIP
-  ports:
-  - port: 80
-    targetPort: 80
-    protocol: TCP
-    name: http
   selector:
     app: frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
 
 ---
-# Nginx Deployment
+# Frontend HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: hypersend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# ===================================================================
+# NGINX REVERSE PROXY DEPLOYMENT
+# ===================================================================
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -694,25 +1343,44 @@ metadata:
   namespace: hypersend
   labels:
     app: nginx
+    tier: ingress
 spec:
   replicas: 3
-  selector:
-    matchLabels:
-      app: nginx
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: nginx
   template:
     metadata:
       labels:
         app: nginx
+        tier: ingress
     spec:
+      serviceAccountName: hypersend-app
+      securityContext:
+        fsGroup: 101
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - nginx
+              topologyKey: kubernetes.io/hostname
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
       containers:
       - name: nginx
-        image: nginx:1.25-alpine
-        imagePullPolicy: Always
+        image: nginx:1.25.3-alpine  # PINNED VERSION
+        imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: 80
@@ -722,11 +1390,11 @@ spec:
           protocol: TCP
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "512Mi"
+            cpu: "250m"
           limits:
-            memory: "256Mi"
-            cpu: "500m"
+            memory: "1Gi"
+            cpu: "1000m"
         livenessProbe:
           exec:
             command:
@@ -739,7 +1407,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /health
-            port: 80
+            port: http
             scheme: HTTP
           initialDelaySeconds: 5
           periodSeconds: 5
@@ -750,12 +1418,23 @@ spec:
           mountPath: /etc/nginx/nginx.conf
           subPath: nginx.conf
           readOnly: true
-        - name: nginx-cache
-          mountPath: /var/cache/nginx/client_temp
-        - name: letsencrypt
-          mountPath: /etc/letsencrypt
+        - name: tls-certs
+          mountPath: /etc/nginx/tls
           readOnly: true
-      restartPolicy: Always
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: var-run
+          mountPath: /var/run
+        - name: var-tmp
+          mountPath: /var/tmp
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+              - NET_BIND_SERVICE
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
       volumes:
       - name: nginx-config
         configMap:
@@ -763,60 +1442,158 @@ spec:
           items:
           - key: nginx.conf
             path: nginx.conf
-      - name: nginx-cache
-        persistentVolumeClaim:
-          claimName: nginx-cache-pvc
-      - name: letsencrypt
+      - name: tls-certs
         secret:
           secretName: letsencrypt-tls
+          defaultMode: 0400
+      -name: nginx-cache
+        persistentVolumeClaim:
+          claimName: nginx-cache-pvc
+      - name: var-run
+        emptyDir:
+          sizeLimit: 100Mi
+      - name: var-tmp
+        emptyDir:
+          sizeLimit: 1Gi
 
 ---
-# Nginx LoadBalancer Service
+# Nginx Service - ClusterIP (use Ingress for external access)
 apiVersion: v1
 kind: Service
 metadata:
-  name: nginx-lb
+  name: nginx
   namespace: hypersend
   labels:
     app: nginx
 spec:
-  type: LoadBalancer
-  ports:
-  - port: 80
-    targetPort: 80
-    protocol: TCP
-    name: http
-  - port: 443
-    targetPort: 443
-    protocol: TCP
-    name: https
+  type: ClusterIP
   selector:
     app: nginx
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: https
+    protocol: TCP
 
 ---
-# HorizontalPodAutoscaler for Backend Service (removed non-existent e2ee-service reference)
-# NOTE: e2ee-service deployment does not exist - removed HPA to prevent errors
-# To enable e2ee-service scaling, create the deployment first or update this HPA
-# to reference an existing deployment (e.g., backend or frontend)
+# Nginx Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nginx-pdb
+  namespace: hypersend
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: nginx
 
-# NOTE: Secret management should be handled via secure pipeline
-# Example using sealed-secrets or external-secrets-operator:
-# apiVersion: bitnami.com/v1alpha1
-# kind: SealedSecret
+---
+# ===================================================================
+# INGRESS CONFIGURATION (Recommended over LoadBalancer)
+# ===================================================================
+# Before deploying, ensure nginx-ingress-controller is installed:
+# helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+# helm install nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hypersend-ingress
+  namespace: hypersend
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # If using cert-manager
+    nginx.ingress.kubernetes.io/proxy-body-size: "15G"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "backend"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - zaply.in.net
+    - www.zaply.in.net
+    secretName: letsencrypt-tls
+  rules:
+  - host: zaply.in.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx
+            port:
+              number: 80
+  - host: www.zaply.in.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx
+            port:
+              number: 80
+
+---
+# ===================================================================
+# ALTERNATIVE: NodePort Service (if no cloud LoadBalancer)
+# ===================================================================
+# Use this if your cluster doesn't support LoadBalancer provisioning
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-nodeport
+  namespace: hypersend
+  labels:
+    app: nginx
+spec:
+  type: NodePort
+  selector:
+    app: nginx
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    nodePort: 30080
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: https
+    nodePort: 30443
+    protocol: TCP
+
+# NOTE: Access via: http://node-ip:30080 and https://node-ip:30443
+
+---
+# ===================================================================
+# EXTERNAL SECRET MANAGEMENT (Recommended for production)
+# ===================================================================
+# Option 1: Using External Secrets Operator with Hashicorp Vault
+#
+# apiVersion: external-secrets.io/v1beta1
+# kind: SecretStore
 # metadata:
-#   name: backend-secrets
+#   name: vault-secret-store
 #   namespace: hypersend
 # spec:
-#   encryptedData:
-#     mongodb-uri: AgBy3i4OJSWK+PiTySYZZA9rO43cGDEQAx...
-#     api-key: AgBy3i4OJSWK+PiTySYZZA9rO43cGDEQAx...
-#   template:
-#     metadata:
-#       name: backend-secrets
-#       namespace: hypersend
-#     type: Opaque
-#
-# Or using ExternalSecrets Operator:
+#   provider:
+#     vault:
+#       server: "https://vault.company.com:8200"
+#       path: "secret"
+#       version: "v2"
+#       auth:
+#         kubernetes:
+#           mountPath: "kubernetes"
+#           role: "hypersend"
+# ---
 # apiVersion: external-secrets.io/v1beta1
 # kind: ExternalSecret
 # metadata:
@@ -827,14 +1604,134 @@ spec:
 #     name: vault-secret-store
 #     kind: SecretStore
 #   target:
-#     name: backend-secrets
+#     name: hypersend-secrets
+#     creationPolicy: Owner
 #   data:
-#     - secretKey: mongodb-uri
-#       remoteRef:
-#         key: hypersend/production/mongodb-uri
-#     - secretKey: api-key
-#       remoteRef:
-#         key: hypersend/production/api-key
+#   - secretKey: mongodb-uri
+#     remoteRef:
+#       key: hypersend/prod/mongodb-uri
+#   - secretKey: redis-password
+#     remoteRef:
+#       key: hypersend/prod/redis-password
+#   - secretKey: jwt-secret-key
+#     remoteRef:
+#       key: hypersend/prod/jwt-secret-key
 #
-# INCIDENT NOTES: Credentials exposed in previous commit have been rotated.
-# Access audit completed and new secrets provisioned via secure pipeline.
+# Option 2: Using AWS Secrets Manager
+#
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: hypersend-secrets-irsa
+#   namespace: hypersend
+#   annotations:
+#     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/hypersend-secrets-role
+# ---
+# apiVersion: external-secrets.io/v1beta1
+# kind: SecretStore
+# metadata:
+#   name: aws-secrets
+#   namespace: hypersend
+# spec:
+#   provider:
+#     aws:
+#       service: SecretsManager
+#       region: us-east-1
+#       auth:
+#         jwt:
+#           serviceAccountRef:
+#             name: hypersend-secrets-irsa
+# ---
+# apiVersion: external-secrets.io/v1beta1
+# kind: ExternalSecret
+# metadata:
+#   name: hypersend-secrets-sync
+#   namespace: hypersend
+# spec:
+#   secretStoreRef:
+#     name: aws-secrets
+#     kind: SecretStore
+#   target:
+#     name: hypersend-secrets
+#     creationPolicy: Owner
+#   data:
+#   - secretKey: mongodb-uri
+#     remoteRef:
+#       key: hypersend/prod/mongodb-uri
+#   - secretKey: redis-password
+#     remoteRef:
+#       key: hypersend/prod/redis-password
+
+---
+# ===================================================================
+# MONITORING AND OBSERVABILITY (Optional but recommended)
+# ===================================================================
+# ServiceMonitor for Prometheus (requires prometheus-operator)
+#
+# apiVersion: monitoring.coreos.com/v1
+# kind: ServiceMonitor
+# metadata:
+#   name: hypersend-backend
+#   namespace: hypersend
+# spec:
+#   selector:
+#     matchLabels:
+#       app: backend
+#   endpoints:
+#   - port: metrics
+#     interval: 30s
+#     path: /metrics
+# ---
+# apiVersion: monitoring.coreos.com/v1
+# kind: PrometheusRule
+# metadata:
+#   name: hypersend-alerts
+#   namespace: hypersend
+# spec:
+#   groups:
+#   - name: hypersend
+#     rules:
+#     - alert: BackendDown
+#       expr: count(up{job="hypersend-backend"}) < 1
+#       for: 5m
+#       annotations:
+#         summary: "Backend pods are down"
+#     - alert: RedisDown
+#       expr: redis_up == 0
+#       for: 1m
+#       annotations:
+#         summary: "Redis is unreachable"
+#     - alert: HighFileUploadErrors
+#       expr: increase(file_upload_errors_total[5m]) > 10
+#       annotations:
+#         summary: "High file upload error rate"
+
+---
+# ===================================================================
+# END OF KUBERNETES PRODUCTION CONFIGURATION
+# ===================================================================
+#
+# DEPLOYMENT STEPS:
+# 1. Configure External Secret Management (Vault or AWS Secrets Manager)
+# 2. Generate strong secrets and store in vault
+# 3. Update placeholder values in Secrets section
+# 4. Verify StorageClass: kubectl get storageclass
+# 5. Deploy namespace: kubectl apply -f this-file.yaml -n hypersend (namespace auto-created)
+# 6. Create TLS Secret: kubectl create secret tls letsencrypt-tls --cert= --key=
+# 7. Install ingress-nginx if using Ingress
+# 8. Install cert-manager for automatic TLS certificate renewal
+# 9. Verify pods: kubectl get pods -n hypersend
+# 10. Test health endpoints:kubectl port-forward -n hypersend svc/backend 8000:8000
+#     curl http://localhost:8000/api/v1/health
+#
+# POST-DEPLOYMENT VALIDATION:
+# - [ ] All pods are Running
+# - [ ] Redis has persistent storage
+# - [ ] TLS certificates are valid
+# - [ ] Health endpoints return 200
+# - [ ] NetworkPolicies are enforced
+# - [ ] HPA scaling works
+# - [ ] Database connectivity verified
+# - [ ] S3/storage backend configured (if applicable)
+# - [ ] Backups are automated
+# - [ ] Monitoring is active
