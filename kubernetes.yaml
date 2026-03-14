@@ -58,6 +58,19 @@ subjects:
 
 ---
 # ResourceQuota to prevent resource exhaustion
+# ⚠️ SCALING WARNING: Current ResourceQuota supports baseline but HPA scaling could exceed limits
+#
+# Current setup:
+#   - Backend HPA: 2-20 replicas × 2Gi limit = 4-40Gi
+#   - Frontend HPA: 2-10 replicas × 1Gi limit = 2-10Gi
+#   - Redis + Nginx: ~9Gi
+#   - Potential peak: ~60Gi (within 120Gi quota, but leaving no buffer)
+#
+# RECOMMENDATIONS for production:
+#   1. Increase limits.memory to 200Gi (handle full HPA scaling with buffer)
+#   2. Reduce backend maxReplicas from 20 to 10 if quota must stay at 120Gi
+#   3. Implement pod eviction policies to prevent OOMKilled pods
+#   4. Monitor actual usage: kubectl top nodes, kubectl top pods -n hypersend
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -175,6 +188,70 @@ spec:
     ports:
     - protocol: TCP
       port: 80
+    - protocol: TCP
+      port: 443
+
+---
+# Network Policy - Allow backend to external APIs (MongoDB Atlas, SMTP, AWS S3)
+# ⚠️ CRITICAL: The default-deny policy blocks all egress. These rules restore connectivity.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-allow-backend-external-https
+  namespace: hypersend
+  annotations:
+    description: "Allows backend pods to reach MongoDB Atlas (TCP 443), AWS S3, and external HTTPS APIs"
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Egress
+  egress:
+  - ports:
+    - protocol: TCP
+      port: 443  # HTTPS for MongoDB Atlas, AWS S3, external APIs
+
+---
+# Network Policy - Allow backend to SMTP servers (Gmail, SendGrid, etc)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-allow-backend-smtp
+  namespace: hypersend
+  annotations:
+    description: "Allows backend pods to reach SMTP servers for email notifications"
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 587  # SMTP TLS (Gmail standard port)
+    - protocol: TCP
+      port: 465  # SMTP implicit TLS
+
+---
+# Network Policy - Allow nginx/frontend to external HTTPS (if calling external APIs)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypersend-allow-frontend-external-https
+  namespace: hypersend
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+  - Egress
+  egress:
+  - ports:
     - protocol: TCP
       port: 443
 
@@ -494,6 +571,9 @@ data:
 # ===================================================================
 
 # Redis Storage
+# ⚠️ STORAGE CLASS ALERT: 'fast' storage class likely doesn't exist in your cluster
+# Run: kubectl get storageclass
+# Replace 'fast' with: 'standard', 'gp3' (AWS), 'managed-premium' (Azure), 'local-path', or let it use cluster default
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -504,7 +584,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: fast  # VERIFY THIS EXISTS: kubectl get storageclass
+  storageClassName: standard  # CHANGED from 'fast' - update to match your infrastructure
   resources:
     requests:
       storage: 20Gi
@@ -521,7 +601,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany  # For multi-replica sharing
-  storageClassName: fast
+  storageClassName: standard  # CHANGED from 'fast' - verify this exists in your cluster
   resources:
     requests:
       storage: 200Gi
@@ -538,7 +618,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: fast
+  storageClassName: standard  # CHANGED from 'fast'
   resources:
     requests:
       storage: 500Gi
@@ -555,7 +635,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: fast
+  storageClassName: standard  # CHANGED from 'fast'
   resources:
     requests:
       storage: 100Gi
@@ -572,24 +652,32 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: fast
+  storageClassName: standard  # CHANGED from 'fast'
   resources:
     requests:
       storage: 10Gi
 
 ---
 # ===================================================================
-# TRAY CERTIFICATE MANAGEMENT
+# TLS CERTIFICATE MANAGEMENT
 # ===================================================================
-# Option 1: Manual Secret creation (one-time)
-# kubectl create secret tls letsencrypt-tls \
-#   --cert=/path/to/fullchain.pem \
-#   --key=/path/to/privkey.pem \
-#   -n hypersend
-
-# Option 2: Using cert-manager (recommended for production)
-# Install cert-manager: helm install cert-manager jetstack/cert-manager
-# Then uncomment the ClusterIssuer and Certificate below:
+# The nginx deployment expects TLS certificates in secret: letsencrypt-tls
+# This secret is mounted at: /etc/nginx/tls/tls.crt and tls.key
+#
+# SETUP STEPS:
+# 1. Obtain certs (Let's Encrypt, self-signed, or commercial)
+# 2. Create secret from certificate files (ONE-TIME setup):
+#    kubectl create secret tls letsencrypt-tls \
+#      --cert=/path/to/fullchain.pem \
+#      --key=/path/to/privkey.pem \
+#      -n hypersend
+#
+# 3. Verify secret created:
+#    kubectl get secrets -n hypersend | grep letsencrypt-tls
+#
+# 4. For auto-renewal in production:
+#    - Install cert-manager: helm install cert-manager jetstack/cert-manager
+#    - Uncomment the CertificateIssuer and Certificate resources below (optional)
 
 # apiVersion: cert-manager.io/v1
 # kind: ClusterIssuer
@@ -672,9 +760,9 @@ spec:
           - "--appendfsync"
           - "everysec"
           - "--maxmemory"
-          - "8gb"
+          - "8gb"          # ⚠️ WARNING: For small clusters (nodes < 16Gi), reduce to 4gb
           - "--maxmemory-policy"
-          - "allkeys-lru"
+          - "allkeys-lru"  # Safe LRU eviction for session cache
           - "--save"
           - "900 1"
           - "--save"
@@ -734,6 +822,9 @@ spec:
 
 ---
 # Redis Service
+# NOTE: Redis is deployed as a single-replica Deployment, not StatefulSet
+# Removed clusterIP: None (headless services are intended for StatefulSets with individual DNS)
+# Using regular ClusterIP ensures all backend replicas connect to same Redis instance
 apiVersion: v1
 kind: Service
 metadata:
@@ -743,7 +834,6 @@ metadata:
     app: redis
 spec:
   type: ClusterIP
-  clusterIP: None  # Headless service
   selector:
     app: redis
   ports:
@@ -1434,7 +1524,7 @@ spec:
               - NET_BIND_SERVICE
             drop:
               - ALL
-          readOnlyRootFilesystem: true
+          readOnlyRootFilesystem: false  # FIXED: nginx requires write access to /var/cache/nginx for proxy caching
       volumes:
       - name: nginx-config
         configMap:
@@ -1446,7 +1536,7 @@ spec:
         secret:
           secretName: letsencrypt-tls
           defaultMode: 0400
-      -name: nginx-cache
+      - name: nginx-cache
         persistentVolumeClaim:
           claimName: nginx-cache-pvc
       - name: var-run
@@ -1494,11 +1584,28 @@ spec:
 
 ---
 # ===================================================================
-# INGRESS CONFIGURATION (Recommended over LoadBalancer)
+# INGRESS CONFIGURATION (Production Recommended)
 # ===================================================================
-# Before deploying, ensure nginx-ingress-controller is installed:
-# helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-# helm install nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace
+# Architecture:
+#   Internet → Ingress Controller (nginx) → nginx pod (reverse proxy) → backend/frontend
+#
+# Why this two-layer nginx setup:
+#   1. K8s Ingress Controller: Manages external routing, TLS termination, host-based rules
+#   2. Application nginx pods: Custom large file support (15GB), fine-grained proxy caching,
+#                              WebSocket buffering, E2EE payload optimization
+#
+# Before deploying Ingress, install nginx-ingress-controller:
+#   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#   helm install nginx-ingress ingress-nginx/ingress-nginx \
+#     -n ingress-nginx --create-namespace
+#
+# Then apply this YAML. The Ingress will route traffic to the nginx Service (ClusterIP),
+# which load-balances across nginx deployment pods.
+#
+# IMPORTANT: 
+#   - NodePort service is NOT needed (commented out below)
+#   - The hypersend-ingress expects letsencrypt-tls secret to exist (create it first!)
+#   - TLS certs should be valid for zaply.in.net and www.zaply.in.net
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -1543,29 +1650,37 @@ spec:
 
 ---
 # ===================================================================
-# ALTERNATIVE: NodePort Service (if no cloud LoadBalancer)
+# ALTERNATIVE: NodePort Service (COMMENTED OUT - Use ONLY if no Ingress available)
 # ===================================================================
-# Use this if your cluster doesn't support LoadBalancer provisioning
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: nginx-nodeport
-  namespace: hypersend
-  labels:
-    app: nginx
-spec:
-  type: NodePort
-  selector:
-    app: nginx
-  ports:
-  - name: http
-    port: 80
-    targetPort: http
-    nodePort: 30080
-    protocol: TCP
-  - name: https
-    port: 443
-    targetPort: https
-    nodePort: 30443
-    protocol: TCP
+# This service is NOT needed if you've deployed an nginx-ingress-controller.
+# The Ingress resource above automatically handles external traffic routing.
+#
+# ONLY uncomment this if:
+#   1. You don't have nginx-ingress-controller installed
+#   2. You need direct node access without a load balancer
+#   3. Your cluster doesn't support Ingress resources
+#
+# For production with Ingress, keep this commented out to avoid service confusion.
+#
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: nginx-nodeport
+#   namespace: hypersend
+#   labels:
+#     app: nginx
+# spec:
+#   type: NodePort
+#   selector:
+#     app: nginx
+#   ports:
+#   - name: http
+#     port: 80
+#     targetPort: http
+#     nodePort: 30080
+#     protocol: TCP
+#   - name: https
+#     port: 443
+#     targetPort: https
+#     nodePort: 30443
+#     protocol: TCP
