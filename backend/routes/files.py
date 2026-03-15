@@ -109,7 +109,7 @@ except ImportError:
         sanitize_input,
     )
     from rate_limiter import RateLimiter
-    from redis_cache import cache
+    from backend.redis_cache import cache
 
 # Auth utilities with fallback for different import paths
 try:

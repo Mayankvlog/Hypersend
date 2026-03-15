@@ -61,7 +61,7 @@ except ImportError:
         DeviceSyncState, MessageDeliveryReceipt, MessageStatusUpdate,
         PersistentMessage, ConversationHistory
     )
-    from redis_cache import cache
+    from backend.redis_cache import cache
     from e2ee_service import EncryptionError, DecryptionError
     try:
         from services.relationship_graph_service import relationship_graph_service

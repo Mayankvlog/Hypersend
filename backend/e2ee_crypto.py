@@ -198,7 +198,7 @@ class WhatsAppCryptoManager:
         """Rotate signed prekeys (WhatsApp-style weekly rotation)"""
         try:
             try:
-                from redis_cache import redis_client
+                from backend.redis_cache import redis_client
             except ImportError:
                 # Fallback for testing
                 redis_client = None
@@ -250,7 +250,7 @@ class WhatsAppCryptoManager:
         """WhatsApp-style session reuse protection"""
         try:
             try:
-                from redis_cache import redis_client
+                from backend.redis_cache import redis_client
             except ImportError:
                 # Fallback for testing
                 redis_client = None
@@ -296,7 +296,7 @@ class WhatsAppCryptoManager:
             
             # Distribute encrypted sender key to all member devices
             try:
-                from redis_cache import redis_client
+                from backend.redis_cache import redis_client
             except ImportError:
                 # Fallback for testing
                 redis_client = None
@@ -345,7 +345,7 @@ class WhatsAppCryptoManager:
             
             # Update chain key in storage
             try:
-                from redis_cache import redis_client
+                from backend.redis_cache import redis_client
             except ImportError:
                 # Fallback for testing
                 redis_client = None

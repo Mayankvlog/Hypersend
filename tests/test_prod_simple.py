@@ -33,9 +33,9 @@ class TestProductionFixes:
             pytest.skip("Test requires real MongoDB connection")
 
         # Initialize database for testing with real MongoDB Atlas
-        from backend.database import initialize_database
+        from backend.database import init_database
 
-        asyncio.run(initialize_database())
+        asyncio.run(init_database())
 
         # Test 1: Database connection returns proper database, not Future
         db = get_database()

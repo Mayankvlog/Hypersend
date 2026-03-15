@@ -92,7 +92,7 @@ class RedisCache:
             
             # Create connection pool for connection reuse with reconnection support
             # CRITICAL: Use production docker service name, not localhost
-            logger.info(f"[REDIS] Connecting to Redis at {host}:{port} db={db}")
+            logger.info(f"[REDIS] Connecting to Redis at {host}:{port} db={db} with password={'REDACTED' if password else 'NONE'}")
             
             # ConnectionPool with safe configuration for production
             # CRITICAL FIX: decode_responses=True ensures strings not bytes from Redis
@@ -110,16 +110,29 @@ class RedisCache:
                 max_connections=50,
                 retry_on_timeout=True,
             )
+            logger.debug(f"[REDIS] Connection pool created for {host}:{port}")
             
             # Create async Redis client using the connection pool
             self.redis_client = redis.Redis(
                 connection_pool=self.connection_pool,
                 decode_responses=True,  # CRITICAL: Ensures strings from Redis
             )
+            logger.debug(f"[REDIS] Redis client instance created")
             
             # CRITICAL: Test connection with timeout - fail startup if Redis not available
             logger.info(f"[REDIS] Testing connection to {host}:{port}...")
-            ping_result = await asyncio.wait_for(self.redis_client.ping(), timeout=10)
+            try:
+                ping_result = await asyncio.wait_for(self.redis_client.ping(), timeout=10)
+                logger.debug(f"[REDIS] Ping result: {ping_result} (type: {type(ping_result).__name__})")
+            except asyncio.TimeoutError as timeout_e:
+                logger.error(f"[REDIS] CRITICAL: Ping timeout after 10s for {host}:{port}")
+                logger.error(f"[REDIS] This typically means: Redis is not responding, network issue, or firewall blocking")
+                raise RuntimeError(f"Redis ping timeout - server not responding: {timeout_e}")
+            except Exception as ping_e:
+                logger.error(f"[REDIS] CRITICAL: Ping failed: {type(ping_e).__name__}: {ping_e}")
+                if "authentication" in str(ping_e).lower() or "WRONGPASS" in str(ping_e):
+                    logger.error(f"[REDIS] AUTHENTICATION ERROR: Check REDIS_PASSWORD environment variable")
+                raise RuntimeError(f"Redis ping failed: {ping_e}")
             
             if ping_result:
                 self.is_connected = True
@@ -128,18 +141,22 @@ class RedisCache:
                 # Log Redis server info
                 try:
                     info = await asyncio.wait_for(self.redis_client.info('server'), timeout=5)
-                    logger.info(f"[REDIS] Server version: {info.get('redis_version', 'unknown')}")
+                    redis_version = info.get('redis_version', 'unknown')
+                    redis_mode = info.get('redis_mode', 'unknown')
+                    logger.info(f"[REDIS] Server version: {redis_version}, mode: {redis_mode}")
                 except Exception as e:
                     logger.warning(f"[REDIS] Could not fetch server info: {e}")
                 
                 # CRITICAL: Test pub/sub functionality before completing initialization
                 try:
                     test_pubsub = self.redis_client.pubsub()
+                    logger.debug(f"[REDIS] Created test pubsub instance")
                     await test_pubsub.subscribe("test_connection")
+                    logger.debug(f"[REDIS] Subscribed to test channel")
                     await test_pubsub.close()
                     logger.info(f"[REDIS] Pub/Sub functionality verified")
                 except Exception as e:
-                    logger.error(f"[REDIS] Pub/Sub test failed: {e}")
+                    logger.error(f"[REDIS] Pub/Sub test failed: {type(e).__name__}: {e}")
                     self.is_connected = False
                     raise RuntimeError(f"Redis Pub/Sub initialization failed: {e}")
                 
@@ -155,6 +172,8 @@ class RedisCache:
             raise RuntimeError(f"Redis connection timeout: {e}")
         except Exception as e:
             logger.error(f"[REDIS] CRITICAL: Failed to connect to {host}:{port}: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[REDIS] Traceback: {traceback.format_exc()}")
             self.is_connected = False
             raise RuntimeError(f"Redis connection failed: {e}")
 
@@ -1344,56 +1363,82 @@ async def init_cache():
         redis_password = None
     
     # CRITICAL: Retry mechanism with exponential backoff
+    last_error = None
     for attempt in range(max_retries):
         try:
-            logger.info(f"[REDIS] Connection attempt {attempt + 1}/{max_retries} to {redis_host}:{redis_port}")
+            logger.info(f"[REDIS] Connection attempt {attempt + 1}/{max_retries} to {redis_host}:{redis_port} db={redis_db}")
             
-            connected = await asyncio.wait_for(
-                cache.connect(
-                    host=redis_host,
-                    port=redis_port,
-                    password=redis_password,
-                    db=redis_db
-                ),
-                timeout=15.0  # Longer timeout for production stability
-            )
+            try:
+                connected = await asyncio.wait_for(
+                    cache.connect(
+                        host=redis_host,
+                        port=redis_port,
+                        password=redis_password,
+                        db=redis_db
+                    ),
+                    timeout=15.0  # Longer timeout for production stability
+                )
+            except Exception as connect_e:
+                logger.error(f"[REDIS] Connection attempt {attempt + 1} failed: {type(connect_e).__name__}: {connect_e}")
+                last_error = connect_e
+                raise
             
             if connected:
                 logger.info(f"[REDIS] Successfully connected to {redis_host}:{redis_port}/{redis_db}")
                 
                 # Verify Redis is working with a test operation
                 test_key = f"__redis_test__{int(time.time())}"
-                await cache.set(test_key, "test", expire_seconds=10)
-                test_result = await cache.get(test_key)
-                await cache.delete(test_key)
-                
-                if test_result == "test":
-                    logger.info(f"[REDIS] Redis functionality verified - cache ready")
-                    return True
-                else:
-                    raise RuntimeError("Redis functionality test failed")
+                try:
+                    await cache.set(test_key, "test", expire_seconds=10)
+                    test_result = await cache.get(test_key)
+                    await cache.delete(test_key)
+                    
+                    if test_result == "test":
+                        logger.info(f"[REDIS] Redis functionality verified - cache ready")
+                        return True
+                    else:
+                        logger.error(f"[REDIS] Redis test failed - expected 'test', got: {test_result}")
+                        raise RuntimeError(f"Redis functionality test returned unexpected value: {test_result}")
+                except Exception as test_e:
+                    logger.error(f"[REDIS] Functionality test failed: {type(test_e).__name__}: {test_e}")
+                    raise RuntimeError(f"Redis functionality test failed: {test_e}")
+            else:
+                # Handle case when cache.connect() returns False
+                error_msg = f"Redis connect() returned False for {redis_host}:{redis_port}/{redis_db}"
+                logger.error(f"[REDIS] {error_msg}")
+                last_error = RuntimeError(error_msg)
+                # Continue to retry logic - this will be surfaced when retries are exhausted
             
         except asyncio.TimeoutError as e:
-            logger.error(f"[REDIS] Connection timeout attempt {attempt + 1}: {e}")
+            logger.error(f"[REDIS] Connection timeout attempt {attempt + 1}/{max_retries}: {e}")
+            logger.error(f"[REDIS] Timeout typically means: Redis not responding, network latency, or connectivity issue")
+            last_error = e
             if attempt < max_retries - 1:
                 delay = base_delay * (2 ** attempt)  # Exponential backoff
-                logger.warning(f"[REDIS] Retrying in {delay} seconds...")
+                logger.warning(f"[REDIS] Retrying in {delay} seconds... (attempt {attempt + 1}/{max_retries})")
                 await asyncio.sleep(delay)
             else:
-                logger.error(f"[REDIS] CRITICAL: All connection attempts failed - Redis required for production")
-                raise RuntimeError(f"Redis connection failed after {max_retries} attempts: {e}")
+                logger.error(f"[REDIS] CRITICAL: All {max_retries} attempts exhausted - Redis required for production")
+                raise RuntimeError(f"Redis connection failed after {max_retries} attempts (timeout): {e}")
         
         except Exception as e:
-            logger.error(f"[REDIS] Connection error attempt {attempt + 1}: {type(e).__name__}: {e}")
+            logger.error(f"[REDIS] Connection error attempt {attempt + 1}/{max_retries}: {type(e).__name__}: {e}")
+            import traceback
+            logger.debug(f"[REDIS] Error traceback: {traceback.format_exc()}")
+            last_error = e
             if attempt < max_retries - 1:
                 delay = base_delay * (2 ** attempt)  # Exponential backoff
-                logger.warning(f"[REDIS] Retrying in {delay} seconds...")
+                logger.warning(f"[REDIS] Retrying in {delay} seconds... (attempt {attempt + 1}/{max_retries})")
                 await asyncio.sleep(delay)
             else:
-                logger.error(f"[REDIS] CRITICAL: All connection attempts failed - Redis required for production")
+                logger.error(f"[REDIS] CRITICAL: All {max_retries} attempts exhausted")
+                if "authentication" in str(e).lower() or "WRONGPASS" in str(e):
+                    logger.error(f"[REDIS] AUTHENTICATION FAILURE: Check REDIS_PASSWORD environment variable")
                 raise RuntimeError(f"Redis connection failed after {max_retries} attempts: {e}")
     
     # This should never be reached due to the loop logic
+    if last_error:
+        raise RuntimeError(f"Redis initialization failed unexpectedly: {last_error}")
     raise RuntimeError("Redis initialization failed unexpectedly")
 
 async def cleanup_cache():

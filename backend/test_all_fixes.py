@@ -35,7 +35,7 @@ os.environ.setdefault("MONGODB_ATLAS_ENABLED", "true")
 sys.path.insert(0, os.path.dirname(__file__))
 
 from models import MessageCreate
-from redis_cache import RedisCache, MessageCacheService
+from backend.redis_cache import RedisCache, MessageCacheService
 
 
 class TestUTCTimestampHandling:

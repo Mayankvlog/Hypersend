@@ -12,7 +12,7 @@ try:
     from ..database import get_database
 except ImportError:
     from db_proxy import users_collection, chats_collection, messages_collection
-    from redis_cache import cache
+    from backend.redis_cache import cache
     from models import RelationshipGraph, UserRelationship
     from database import get_database
 

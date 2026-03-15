@@ -154,6 +154,13 @@ class Settings:
     logger.info(f"[CONFIG] MongoDB Atlas configured: {_mask_mongodb_uri(MONGODB_URI)} -> {DATABASE_NAME}")
     
     # ============================================================================
+    # DEVELOPMENT CONFIGURATION
+    # ============================================================================
+    
+    # Mock database flag for testing (defaults to False for Atlas-only mode)
+    USE_MOCK_DB: bool = os.getenv("USE_MOCK_DB", "false").lower() == "true"
+    
+    # ============================================================================
     # SECURITY CONFIGURATION
     # ============================================================================
     

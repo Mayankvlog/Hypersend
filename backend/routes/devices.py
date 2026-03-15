@@ -40,7 +40,7 @@ try:
     from ..redis_cache import redis_client
 except Exception:
     try:
-        from redis_cache import redis_client
+        from backend.redis_cache import redis_client
     except Exception:
         redis_client = None
 

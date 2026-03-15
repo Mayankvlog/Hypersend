@@ -56,7 +56,7 @@ except ImportError:
 
     from models import GroupCreate, GroupUpdate, GroupMembersUpdate, GroupMemberRoleUpdate, ChatPermissions, UserPublic
 
-    from redis_cache import GroupCacheService, UserCacheService, SearchCacheService
+    from backend.redis_cache import GroupCacheService, UserCacheService, SearchCacheService
 
     from config import settings
 

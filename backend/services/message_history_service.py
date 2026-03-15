@@ -23,7 +23,7 @@ except ImportError:
         MessageHistoryRequest, MessageHistoryResponse, MessageDeliveryReceipt
     )
     from database import get_database
-    from redis_cache import cache
+    from backend.redis_cache import cache
 
 logger = logging.getLogger(__name__)
 

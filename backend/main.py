@@ -317,7 +317,7 @@ async def _cleanup_redis_cache(app):
         
         # Also cleanup cache module if available
         try:
-            from redis_cache import cache
+            from backend.redis_cache import cache
             if cache:
                 try:
                     await asyncio.wait_for(cache.disconnect(), timeout=5.0)
@@ -411,8 +411,10 @@ async def lifespan(app: FastAPI):
     logger.info(f"[STARTUP] Database available in app.state")
     
     # Initialize Redis cache (CRITICAL for production - fail if not available)
+    redis_client = None
+    cache = None
+    
     if not is_test_mode:
-        redis_client = None
         try:
             # CRITICAL: Initialize module-level cache with retry mechanism
             # This ensures all cache operations throughout the app use authenticated connection
@@ -420,68 +422,114 @@ async def lifespan(app: FastAPI):
             cache_initialized = await init_cache()
             
             if not cache_initialized:
+                logger.error("[STARTUP] CRITICAL: Cache initialization returned False")
                 raise RuntimeError("Cache initialization failed - returned False")
             
             # Store cache instance in app state for reliable access
             try:
-                from redis_cache import cache
+                from backend.redis_cache import cache as redis_cache_module
+                cache = redis_cache_module
                 app.state.cache = cache
-                app.state.redis_client = cache.redis_client
-                logger.info("[STARTUP] Redis cache initialized successfully and stored in app.state")
+                redis_client = cache.redis_client
+                app.state.redis_client = redis_client
+                
+                if redis_client and cache.is_connected:
+                    logger.info("[STARTUP] Redis cache initialized successfully and stored in app.state")
+                else:
+                    logger.error("[STARTUP] CRITICAL: Redis cache initialized but connection not verified")
+                    logger.error(f"[STARTUP] redis_client is None: {redis_client is None}, is_connected: {cache.is_connected if cache else 'NO_CACHE'}")
+                    raise RuntimeError(f"Redis connection not verified - client: {redis_client}, connected: {cache.is_connected if cache else False}")
+                    
             except Exception as e:
-                logger.error(f"[STARTUP] Failed to access cache module after initialization: {e}")
-                raise RuntimeError(f"Cache module access failed after initialization: {e}")
+                logger.error(f"[STARTUP] CRITICAL: Failed to access cache module after init: {type(e).__name__}: {e}")
+                import traceback
+                logger.error(f"[STARTUP] Traceback: {traceback.format_exc()}")
+                raise RuntimeError(f"Cache module access failed: {e}")
                 
         except Exception as e:
-            logger.error(f"[STARTUP] CRITICAL: Redis initialization failed - cannot start without Redis: {e}")
-            raise RuntimeError(f"Redis is required for production: {e}")
+            logger.error(f"[STARTUP] CRITICAL: Redis initialization failed - cannot start without Redis: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[STARTUP] Traceback: {traceback.format_exc()}")
+            # Ensure redis_client is still set in app.state, even if None, to prevent AttributeError later
+            app.state.redis_client = None
+            app.state.cache = None
+            raise RuntimeError(f"Redis initialization failed after retries: {e}")
     else:
         # In test mode, initialize mock cache only
         try:
-            from redis_cache import cache
+            from backend.redis_cache import cache as redis_cache_module
+            cache = redis_cache_module
             await cache.clear_mock_cache()
             app.state.cache = cache
             app.state.redis_client = None  # Explicitly None in test mode
             logger.info("[STARTUP] Mock cache initialized for test mode")
         except Exception as e:
-            logger.warning(f"[STARTUP] Mock cache initialization failed: {e}")
+            logger.error(f"[STARTUP] ERROR: Mock cache initialization failed: {type(e).__name__}: {e}")
+            # Still allow test mode to continue with empty cache
+            app.state.cache = None
+            app.state.redis_client = None
+    
+    # Verify redis_client is always set in app.state before WebSocket manager initialization
+    if not hasattr(app.state, 'redis_client'):
+        app.state.redis_client = None
+    if not hasattr(app.state, 'cache'):
+        app.state.cache = None
     
     # NOTE: Redis Pub/Sub subscriber is now managed by WebSocket manager singleton
     # No need for separate subscriber - WebSocket manager handles it
     
     # CRITICAL: Initialize WebSocket manager singleton (AFTER Redis is ready)
+    websocket_manager_initialization_started = False
     websocket_manager_initialized = False
     if not is_test_mode:
         try:
-            # Get Redis client from app.state (guaranteed to be available)
+            # Get Redis client from app.state (guaranteed to be available now)
             redis_client = getattr(app.state, 'redis_client', None)
             
             if not redis_client:
-                raise RuntimeError("Redis client not available in app.state - WebSocket manager requires Redis")
+                logger.error("[STARTUP] CRITICAL: Redis client is None - cannot initialize WebSocket manager")
+                logger.error(f"[STARTUP] app.state.redis_client: {redis_client}")
+                logger.error(f"[STARTUP] app.state.cache: {getattr(app.state, 'cache', 'MISSING')}")
+                if hasattr(app.state, 'cache') and app.state.cache:
+                    logger.error(f"[STARTUP] cache.redis_client: {app.state.cache.redis_client}")
+                    logger.error(f"[STARTUP] cache.is_connected: {app.state.cache.is_connected}")
+                raise RuntimeError("Redis client is None - WebSocket manager requires Redis to be connected")
             
+            logger.info("[STARTUP] Initializing WebSocket manager with Redis client...")
             # Initialize WebSocket manager with Redis client
+            websocket_manager_initialization_started = True
             await asyncio.wait_for(
                 websocket_manager.initialize(redis_client),
                 timeout=10.0
             )
             websocket_manager_initialized = True
+            logger.info("[STARTUP] WebSocket manager initialization completed")
             
             # Start global Pub/Sub subscriber
+            logger.info("[STARTUP] Starting global Pub/Sub subscriber...")
             await websocket_manager.start_global_pubsub()
             
             logger.info("[STARTUP] WebSocket manager initialized and ready for connections")
-        except asyncio.TimeoutError:
-            logger.error("[STARTUP] WebSocket manager initialization timed out")
-            raise RuntimeError("WebSocket manager initialization failed: timeout")
-        except Exception as e:
-            logger.error(f"[STARTUP] WebSocket manager initialization failed: {e}")
-            raise RuntimeError(f"WebSocket manager requires Redis: {e}")
-            # Cleanup if initialization failed after it started
-            if websocket_manager_initialized:
+        except asyncio.TimeoutError as e:
+            logger.error(f"[STARTUP] CRITICAL: WebSocket manager initialization timed out: {e}")
+            # Cleanup if initialization was started (even if not completed)
+            if websocket_manager_initialization_started:
                 try:
                     await websocket_manager.shutdown()
                 except Exception as cleanup_e:
                     logger.error(f"[STARTUP] Failed to cleanup WebSocket manager: {cleanup_e}")
+            raise RuntimeError(f"WebSocket manager initialization timeout: {e}")
+        except Exception as e:
+            logger.error(f"[STARTUP] CRITICAL: WebSocket manager initialization failed: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[STARTUP] Traceback: {traceback.format_exc()}")
+            # Cleanup if initialization was started (even if not completed)
+            if websocket_manager_initialization_started:
+                try:
+                    await websocket_manager.shutdown()
+                except Exception as cleanup_e:
+                    logger.error(f"[STARTUP] Failed to cleanup WebSocket manager: {cleanup_e}")
+            raise RuntimeError(f"WebSocket manager initialization failed: {e}")
     
     # Initialize background file cleanup task (CRITICAL for production)
     cleanup_task = None
@@ -552,7 +600,7 @@ async def lifespan(app: FastAPI):
         
         # Also cleanup cache module if available
         try:
-            from redis_cache import cache
+            from backend.redis_cache import cache
             if cache:
                 try:
                     await asyncio.wait_for(cache.disconnect(), timeout=5.0)
@@ -2208,7 +2256,7 @@ async def health_check():
         redis_error = None
 
         try:
-            from redis_cache import cache
+            from backend.redis_cache import cache
 
             if not hasattr(cache, "is_connected") or not cache.is_connected:
                 redis_status = "unhealthy"
