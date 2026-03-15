@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'dart:async';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -18,7 +18,7 @@ Future<void> main() async {
   // Allows clean URLs like /auth, /chat instead of /#/auth, /#/chat
   // Improves SEO as search engines can properly index clean URLs
   if (kIsWeb) {
-    usePathUrlStrategy();
+    setUrlStrategy(PathUrlStrategy());
   }
   
   debugPrint('[MAIN] Starting app initialization...');
