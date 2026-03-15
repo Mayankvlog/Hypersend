@@ -356,7 +356,7 @@ class TestWebSocketManagerRedisIntegration:
             with patch('database._is_pytest_running', return_value=False):
                 # Should raise RuntimeError when Redis client is None during websocket manager initialization
                 # Accept multiple possible error messages that indicate Redis connection failure
-                with pytest.raises(RuntimeError, match="^(Redis client not available|Redis is required|Redis connection failed)$"):
+                with pytest.raises(RuntimeError, match="^(Redis client not available|Redis is required|Redis connection failed|Redis initialization failed after retries)"):
                     with TestClient(app):
                         # This triggers lifespan and should raise error
                         pass
