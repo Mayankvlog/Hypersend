@@ -1,33 +1,47 @@
 # robots.txt for zaply.in.net
-# Allow search engines to crawl public content only
+# Allow search engines to crawl public SPA routes with clean URLs
+# IMPORTANT: With clean path-based routing, these are SPA routes, not actual directories
 
 User-agent: *
-Disallow: /admin/
+# ALLOW: Public SPA routes that are part of the Flutter SPA application
+Allow: /
+Allow: /auth
+Allow: /chats
+Allow: /profile-edit
+Allow: /settings
+
+# BLOCK: Sensitive backend resources
 Disallow: /api/
-Disallow: /auth/
+Disallow: /admin/
 Disallow: /dashboard/
 Disallow: /private/
 Disallow: /uploads/temp/
 Disallow: /data/temp/
+Disallow: /ws/
 Disallow: /*.json$
 Disallow: /*.backup$
 Disallow: /?*sort=
 Disallow: /?*filter=
-Disallow: /ws/
-Allow: /
 
-# Specific search engine rules
+# Specific search engine rules for public API endpoints
 User-agent: Googlebot
 Allow: /api/public/
 Disallow: /api/private/
+Disallow: /api/auth/
+Disallow: /api/users/
+Disallow: /api/messages/
 
 User-agent: Bingbot
 Allow: /api/public/
 Disallow: /api/private/
+Disallow: /api/auth/
+Disallow: /api/users/
+Disallow: /api/messages/
 
-# Crawl delay and request rate
+# Crawl-delay: 1 second between requests (respectful crawling)
+# This means crawlers should request no more than 1 request per second (3600 requests per hour)
 User-agent: *
 Crawl-delay: 1
 
-# Sitemap location
+# Sitemap location - absolute URL required for search engines
 Sitemap: https://zaply.in.net/sitemap.xml

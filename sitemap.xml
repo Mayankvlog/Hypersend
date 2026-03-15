@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
-  <!-- Homepage -->
+  <!-- Homepage - Entry point for all visitors -->
   <url>
     <loc>https://zaply.in.net/</loc>
     <lastmod>2026-03-15</lastmod>
@@ -9,7 +9,7 @@
     <priority>1.0</priority>
   </url>
 
-  <!-- Authentication page -->
+  <!-- Authentication page - Critical for SEO (login/register) -->
   <url>
     <loc>https://zaply.in.net/auth</loc>
     <lastmod>2026-03-15</lastmod>
@@ -17,15 +17,15 @@
     <priority>0.9</priority>
   </url>
 
-  <!-- Chat/Messaging page -->
+  <!-- Chat/Messaging page - Core feature -->
   <url>
-    <loc>https://zaply.in.net/chat</loc>
+    <loc>https://zaply.in.net/chats</loc>
     <lastmod>2026-03-15</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
 
-  <!-- Settings page -->
+  <!-- Settings page - User configuration -->
   <url>
     <loc>https://zaply.in.net/settings</loc>
     <lastmod>2026-03-15</lastmod>
@@ -33,12 +33,28 @@
     <priority>0.7</priority>
   </url>
 
-  <!-- Profile page -->
+  <!-- User Profile page - Personal information -->
   <url>
-    <loc>https://zaply.in.net/profile</loc>
+    <loc>https://zaply.in.net/profile-edit</loc>
     <lastmod>2026-03-15</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
+  </url>
+
+  <!-- Privacy Settings page -->
+  <url>
+    <loc>https://zaply.in.net/privacy-settings</loc>
+    <lastmod>2026-03-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <!-- Help & Support page -->
+  <url>
+    <loc>https://zaply.in.net/help-support</loc>
+    <lastmod>2026-03-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
   </url>
 
 </urlset>
