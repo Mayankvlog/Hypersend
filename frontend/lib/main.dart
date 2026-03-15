@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'dart:async';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -10,6 +11,10 @@ import 'l10n/app_localizations.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Enable clean URL routing by removing hash (#) from URLs
+  // This must be called before runApp() and is only effective on web platform
+  setPathUrlStrategy();
   
   debugPrint('[MAIN] Starting app initialization...');
   
