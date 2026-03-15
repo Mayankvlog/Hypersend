@@ -135,9 +135,10 @@ services:
 
       # ===== REDIS CONFIGURATION =====
       # CRITICAL FIX: Use authenticated Redis connection with password
-      # Format: redis://:PASSWORD@redis:PORT/DB
-      # REDIS_PASSWORD loaded from .env file automatically
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # REDIS_URL is constructed by backend/config.py from individual env vars
+      # This ensures proper password inclusion in the connection string
+      # Individual components are read from .env file automatically:
+      # REDIS_PASSWORD, REDIS_HOST, REDIS_PORT, REDIS_DB
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0

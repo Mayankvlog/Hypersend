@@ -306,19 +306,35 @@ class Settings:
     
     REDIS_HOST: str = _raw_redis_host
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
-    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "").strip()
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
     
-    # CRITICAL: Always use docker service name format, never localhost
-    REDIS_URL: str = os.getenv(
-        "REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-    )
+    # CRITICAL SECURITY FIX: Build REDIS_URL with password authentication
+    # Format: redis://:password@host:port/db (password is required in production)
+    # CRITICAL: Use docker service name 'redis', never localhost
+    if REDIS_PASSWORD:
+        # URL with authentication - CRITICAL for production
+        _redis_url_default = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+    else:
+        # URL without authentication (development only)
+        _redis_url_default = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
     
-    # Validate Redis URL format for production
+    # Get REDIS_URL from environment, falling back to constructed URL
+    REDIS_URL: str = os.getenv("REDIS_URL", _redis_url_default).strip()
+    
+    # CRITICAL: Validate and fix Redis URL format for production
     if 'localhost' in REDIS_URL or '127.0.0.1' in REDIS_URL:
         logger.error("[CONFIG] CRITICAL: REDIS_URL contains localhost - forcing to docker service name")
         REDIS_URL = REDIS_URL.replace('localhost', 'redis').replace('127.0.0.1', 'redis')
         logger.info(f"[CONFIG] Fixed REDIS_URL: {REDIS_URL}")
+    
+    # CRITICAL: Verify REDIS_URL includes password if REDIS_PASSWORD is set
+    if REDIS_PASSWORD and f":{REDIS_PASSWORD}@" not in REDIS_URL:
+        logger.error("[CONFIG] CRITICAL: REDIS_URL does not include password - reconstructing with auth")
+        REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+        logger.info(f"[CONFIG] Reconstructed REDIS_URL with authentication")
+    
+    logger.info(f"[CONFIG] Redis configured: {REDIS_HOST}:{REDIS_PORT}/db{REDIS_DB} (with password: {bool(REDIS_PASSWORD)})")
     # WHATSAPP MESSAGE STORAGE: Redis is ONLY temporary store
     MESSAGE_STORAGE: str = os.getenv(
         "MESSAGE_STORAGE", "redis_only"

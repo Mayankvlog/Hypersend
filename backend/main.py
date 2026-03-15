@@ -414,22 +414,23 @@ async def lifespan(app: FastAPI):
     if not is_test_mode:
         redis_client = None
         try:
-            # CRITICAL: Wait for Redis to be reachable with retry mechanism
-            redis_client = await _wait_for_redis_with_retry()
+            # CRITICAL: Initialize module-level cache with retry mechanism
+            # This ensures all cache operations throughout the app use authenticated connection
+            logger.info("[STARTUP] Initializing Redis cache module with retry mechanism")
+            cache_initialized = await init_cache()
             
-            # Store Redis client in app state for reliable access
-            app.state.redis_client = redis_client
-            logger.info("[STARTUP] Redis client initialized and stored in app.state")
+            if not cache_initialized:
+                raise RuntimeError("Cache initialization failed - returned False")
             
             # Store cache instance in app state for reliable access
             try:
                 from redis_cache import cache
                 app.state.cache = cache
-                logger.info("[STARTUP] Redis cache initialized successfully")
-            except Exception:
-                # Cache module-level instance not available; continue without state exposure
-                logger.warning("[STARTUP] Cache module not available for app.state")
-                pass
+                app.state.redis_client = cache.redis_client
+                logger.info("[STARTUP] Redis cache initialized successfully and stored in app.state")
+            except Exception as e:
+                logger.error(f"[STARTUP] Failed to access cache module after initialization: {e}")
+                raise RuntimeError(f"Cache module access failed after initialization: {e}")
                 
         except Exception as e:
             logger.error(f"[STARTUP] CRITICAL: Redis initialization failed - cannot start without Redis: {e}")
