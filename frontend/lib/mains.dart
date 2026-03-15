@@ -1,0 +1,179 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+import 'dart:async';
+import 'core/router/app_router.dart';
+import 'core/theme/app_theme.dart';
+import 'core/constants/app_strings.dart';
+import 'data/services/service_provider.dart';
+import 'l10n/app_localizations.dart';
+
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // CRITICAL: Enable clean URL routing (remove hash # from URLs)
+  // This MUST be called before runApp() and only takes effect on web platform
+  // Allows clean URLs like /auth, /chat instead of /#/auth, /#/chat
+  // Improves SEO as search engines can properly index clean URLs
+  if (kIsWeb) {
+    setUrlStrategy(PathUrlStrategy());
+  }
+  
+  debugPrint('[MAIN] Starting app initialization...');
+  
+  
+  try {
+    debugPrint('[MAIN] Initializing service provider...');
+    await serviceProvider.init();
+    debugPrint('[MAIN] Service provider initialized successfully');
+  } catch (e, stackTrace) {
+    debugPrint('[MAIN] ERROR during service provider init: $e');
+    debugPrint('[MAIN] Stack trace: $stackTrace');
+    // Continue anyway - app can still load with fallback state
+  }
+  
+  debugPrint('[MAIN] Starting ZaplyApp...');
+  runApp(const ZaplyApp());
+  debugPrint('[MAIN] ZaplyApp started');
+}
+
+class ZaplyApp extends StatefulWidget {
+  const ZaplyApp({super.key});
+
+  @override
+  State<ZaplyApp> createState() => _ZaplyAppState();
+}
+
+class _ZaplyAppState extends State<ZaplyApp> {
+  late bool _darkMode;
+  String? _initError;
+  bool _disposed = false;
+  Timer? _themeListenerTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      _darkMode = serviceProvider.settingsService.darkMode;
+      _setupThemeListener();
+    } catch (e) {
+      debugPrint('[ZaplyApp] Initialization error: $e');
+      _initError = e.toString();
+      _darkMode = false; // Fallback to light theme
+    }
+  }
+
+  void _setupThemeListener() {
+    debugPrint('[ZaplyApp] Setting up theme listener...');
+    
+    // Use a periodic timer instead of Future.doWhile to prevent memory leaks
+    _themeListenerTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted || _disposed) {
+        debugPrint('[ZaplyApp] Theme listener stopped');
+        _themeListenerTimer?.cancel();
+        return;
+      }
+      
+      try {
+        final newDarkMode = serviceProvider.settingsService.darkMode;
+        if (_darkMode != newDarkMode && mounted && !_disposed) {
+          debugPrint('[ZaplyApp] Theme changed: $_darkMode -> $newDarkMode');
+          setState(() {
+            _darkMode = newDarkMode;
+          });
+        }
+      } catch (e) {
+        debugPrint('[ZaplyApp] Theme listener error: $e');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _themeListenerTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    debugPrint('[ZaplyApp] Building app...');
+    
+    try {
+      // If there's an init error, show error screen
+      if (_initError != null) {
+        debugPrint('[ZaplyApp] Showing error screen: $_initError');
+        return MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  const Text('Initialization Error'),
+                  const SizedBox(height: 8),
+                  Text(_initError!),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _initError = null;
+                      });
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      debugPrint('[ZaplyApp] Creating MaterialApp.router...');
+      return MaterialApp.router(
+        title: AppStrings.appName,
+        debugShowCheckedModeBanner: false,
+        theme: _darkMode ? AppTheme.darkTheme : AppTheme.lightTheme,
+        routerConfig: appRouter,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: AppLocalizations.fallbackLocale,
+        localizationsDelegates: [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+      );
+    } catch (e, stackTrace) {
+      debugPrint('[ZaplyApp] Build error: $e');
+      debugPrint('[ZaplyApp] Stack trace: $stackTrace');
+      
+      // Fallback to a simple error screen
+      return MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text('App Build Error'),
+                const SizedBox(height: 8),
+                Text(e.toString()),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {});
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+  }
+}
