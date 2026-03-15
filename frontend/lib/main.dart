@@ -16,7 +16,7 @@ Future<void> main() async {
   // Enable clean URL routing by removing hash (#) from URLs
   // This must be called before runApp() and is only effective on web platform
   if (kIsWeb) {
-    setUrlStrategy(const PathUrlStrategy());
+    setUrlStrategy(PathUrlStrategy());
   }
   
   debugPrint('[MAIN] Starting app initialization...');
