@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
@@ -14,7 +15,9 @@ Future<void> main() async {
   
   // Enable clean URL routing by removing hash (#) from URLs
   // This must be called before runApp() and is only effective on web platform
-  setPathUrlStrategy();
+  if (kIsWeb) {
+    setPathUrlStrategy();
+  }
   
   debugPrint('[MAIN] Starting app initialization...');
   
