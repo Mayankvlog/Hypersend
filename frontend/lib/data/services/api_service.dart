@@ -126,10 +126,11 @@ class ApiService {
       // Configure Dio with credentials for HTTPOnly cookie support
       _dio = Dio(BaseOptions(
         baseUrl: url,
-        // CRITICAL FIX: Adaptive timeouts for large file operations
-        connectTimeout: const Duration(minutes: 10),  // Increased for 40GB files
-        receiveTimeout: const Duration(hours: 2),    // Decreased for faster networks
-        sendTimeout: const Duration(minutes: 5),     // Decreased for smaller uploads
+        // CRITICAL: Reasonable timeouts for API responsiveness
+        // These are for normal API calls - large file uploads use separate timeout logic
+        connectTimeout: const Duration(seconds: 30),  // Connection establishment timeout
+        receiveTimeout: const Duration(seconds: 60),  // Response receive timeout
+        sendTimeout: const Duration(seconds: 30),     // Request send timeout
         contentType: 'application/json',
         validateStatus: (status) => status != null && (status >= 200 && status < 300),
         headers: {
