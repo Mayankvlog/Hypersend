@@ -23,8 +23,41 @@ import '../../data/services/service_provider.dart';
 
 
 final appRouter = GoRouter(
-  initialLocation: Uri.base.path.isEmpty ? '/' : Uri.base.path,
+  // FIXED: Use static initialLocation for Flutter Web
+  // Dynamic Uri.base.path can be empty or undefined during initial load,
+  // causing GoRouter to fall back to hash-based routing (#/auth)
+  initialLocation: '/',
+  
+  // Enable router diagnostics for debugging
+  debugLogDiagnostics: true,
+  
   observers: [],
+  
+  // Redirect to handle initial location and hash-based URLs
+  redirect: (context, state) {
+    final path = state.uri.path;
+    
+    // Log current navigation for debugging
+    debugPrint('[GoRouter] Redirect: path=$path, uri=${state.uri}');
+    
+    // If somehow we get a hash URL (shouldn't happen with path strategy),
+    // extract the real path and redirect to it
+    if (state.uri.fragment.isNotEmpty && !path.endsWith(state.uri.fragment)) {
+      final fragment = state.uri.fragment;
+      debugPrint('[GoRouter] Detected hash fragment: $fragment, redirecting to: /$fragment');
+      
+      // Extract the route from hash if it starts with /
+      if (fragment.startsWith('/')) {
+        return fragment;
+      } else if (fragment.isNotEmpty) {
+        return '/$fragment';
+      }
+    }
+    
+    // No redirect needed
+    return null;
+  },
+  
   errorBuilder: (context, state) {
     return Scaffold(
       body: Center(
