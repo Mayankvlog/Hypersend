@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="zaply - Secure P2P Chat and File Transfer Application">
+
+  <title>zaply - Fast. Secure. Chat.</title>
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="zaply">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <link rel="manifest" href="manifest.json">
+  
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="cache-buster" content="2025-03-09-006">
+  
+  <!-- Additional cache busting for maximum freshness -->
+  <meta name="build-timestamp" content="20250309163000">
+  <!-- Note: Last-Modified and ETag headers should be configured in HTTP server/CDN -->
+  
+<style>
+    /* Custom loading container to show icon before Flutter loads */
+    #flutter-loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #0F1922 0%, #1a2332 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+    
+    #flutter-loading .icon-container {
+      width: 120px;
+      height: 120px;
+      background: #00D4FF;
+      border-radius: 24px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 8px 32px rgba(0, 212, 255, 0.3);
+      margin-bottom: 24px;
+    }
+    
+    #flutter-loading .icon {
+      width: 64px;
+      height: 64px;
+      object-fit: contain;
+    }
+    
+    #flutter-loading .title {
+      color: white;
+      font-size: 28px;
+      font-weight: bold;
+      margin-bottom: 8px;
+      letter-spacing: 1.2px;
+    }
+    
+    #flutter-loading .tagline {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 16px;
+      margin-bottom: 32px;
+    }
+    
+    #flutter-loading .loading {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 14px;
+      letter-spacing: 2px;
+    }
+    
+    /* Hide loading container when Flutter is ready */
+    .flutter-ready #flutter-loading {
+      display: none;
+    }
+  </style>
+  
+</head>
+<body>
+  <!-- Custom loading container shown before Flutter loads -->
+  <div id="flutter-loading">
+    <div class="icon-container">
+      <img src="assets/assets/icons/icon.png?v=20250309163000" alt="zaply Icon" class="icon" 
+           onerror="this.onerror=null; this.src='assets/assets/icons/app_icon.png?v=20250309163000'; console.error('Primary icon failed, trying fallback');"
+           onload="console.log('Icon loaded successfully');">
+    </div>
+    <div class="title">zaply</div>
+    <div class="tagline">Fast. Secure. Chat.</div>
+    <div class="loading">CONNECTING...</div>
+  </div>
+
+  <script>
+    // Production Flutter Configuration with CanvasKit optimization
+    window.flutterConfiguration = {
+      // Explicitly set CanvasKit CDN URL for production
+      canvasKitBaseUrl: 'https://www.gstatic.com/flutter-canvaskit/',
+      // Force CanvasKit renderer for best performance
+      renderer: 'canvaskit'
+    };
+    
+    // Hide loading container when Flutter is ready
+    window.addEventListener('flutter-first-frame', () => {
+      document.body.classList.add('flutter-ready');
+    });
+    
+    // Fallback: Hide loading after timeout (10 seconds max)
+    setTimeout(() => {
+      document.body.classList.add('flutter-ready');
+    }, 10000);
+    
+    // Enhanced error handling for CanvasKit loading
+    window.addEventListener('error', function(e) {
+      if (e.message && (e.message.includes('Content-Security-Policy') || e.message.includes('canvaskit'))) {
+        console.warn('CSP blocked CanvasKit, falling back to HTML renderer');
+        localStorage.setItem('flutter_html_fallback', 'true');
+        window.flutterConfiguration.renderer = 'html';
+        window.flutterConfiguration.canvasKitBaseUrl = '';
+        location.reload();
+      }
+    });
+    
+    // Handle CanvasKit loading failures
+    window.addEventListener('unhandledrejection', function(e) {
+      if (e.reason && e.reason.message && e.reason.message.includes('canvaskit')) {
+        console.warn('CanvasKit loading failed, falling back to HTML renderer');
+        localStorage.setItem('flutter_html_fallback', 'true');
+        window.flutterConfiguration.renderer = 'html';
+        window.flutterConfiguration.canvasKitBaseUrl = '';
+        e.preventDefault();
+        location.reload();
+      }
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async defer></script>
+</body>
+</html>
