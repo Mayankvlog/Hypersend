@@ -44,7 +44,7 @@ class _ZaplyAppState extends State<ZaplyApp> {
   late bool _darkMode;
   String? _initError;
   bool _disposed = false;
-  Timer? _themeListenerTimer;
+  Timer? _themeListenerTimer;    
 
   @override
   void initState() {
