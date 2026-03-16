@@ -40,6 +40,7 @@ RUN rm -rf build/ && flutter clean
 # Source maps are only needed for development debugging
 # In production, they expose source code and cause 404 errors when not properly served
 RUN flutter build web --release \
+    --base-href / \
     --no-source-maps \
     --no-tree-shake-icons \
     --dart-define=API_BASE_URL=${API_BASE_URL} \
