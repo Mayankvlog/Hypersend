@@ -23,7 +23,7 @@ import '../../data/services/service_provider.dart';
 
 
 final appRouter = GoRouter(
-  initialLocation: '/',
+  initialLocation: Uri.base.path.isEmpty ? '/' : Uri.base.path,
   observers: [],
   errorBuilder: (context, state) {
     return Scaffold(
