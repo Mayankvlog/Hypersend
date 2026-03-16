@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'dart:async';
 
 import 'core/router/app_router.dart';
@@ -12,8 +12,10 @@ import 'l10n/app_localizations.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Flutter Web uses path-based routing by default (no hash)
-  // No need for url_strategy package - Flutter handles this natively
+  // Enable path-based URL strategy for Flutter Web (no hash in URLs)
+  usePathUrlStrategy();
+
+  // Using url_strategy package to ensure clean path-based URLs without hash fragments
 
   debugPrint('[MAIN] Starting app initialization...');
 
