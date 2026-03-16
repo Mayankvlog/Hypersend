@@ -15,7 +15,7 @@ Future<void> main() async {
 
   // Enable clean URL routing for Flutter Web
   if (kIsWeb) {
-    usePathUrlStrategy();
+    setPathUrlStrategy();
   }
 
   debugPrint('[MAIN] Starting app initialization...');
