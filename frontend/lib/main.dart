@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:url_strategy/url_strategy.dart';
 import 'dart:async';
 
 import 'core/router/app_router.dart';
