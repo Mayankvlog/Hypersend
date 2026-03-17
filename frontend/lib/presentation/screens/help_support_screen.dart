@@ -24,15 +24,6 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
         child: Column(
           children: [
             const SizedBox(height: 24),
-            const Text(
-              "UPDATED HELP SCREEN V2",
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.red,
-              ),
-            ),
-            const SizedBox(height: 24),
             _buildSectionHeader(context, 'FREQUENTLY ASKED QUESTIONS'),
             _buildFaqTile(
               context,
@@ -59,24 +50,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
               'Is my data encrypted?',
               'Yes, all messages are end-to-end encrypted for your privacy.',
             ),
-            const SizedBox(height: 24),
-            _buildSectionHeader(context, 'FEEDBACK'),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  _showFeedbackDialog(context);
-                },
-                icon: const Icon(Icons.feedback_outlined),
-                label: const Text('Send Feedback'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryCyan,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 48),
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
+
           ],
         ),
       ),
@@ -127,42 +101,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
     );
   }
 
-  void _showFeedbackDialog(BuildContext context) {
-    final feedbackController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Send Feedback'),
-        content: TextField(
-          controller: feedbackController,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'Tell us what you think...',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Thank you for your feedback!'),
-                  backgroundColor: AppTheme.successGreen,
-                ),
-              );
-              feedbackController.clear();
-            },
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-    );
-  }
+
 
 
 
