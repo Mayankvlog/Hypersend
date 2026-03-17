@@ -24,6 +24,15 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
         child: Column(
           children: [
             const SizedBox(height: 24),
+            const Text(
+              "UPDATED HELP SCREEN V2",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(height: 24),
             _buildSectionHeader(context, 'FREQUENTLY ASKED QUESTIONS'),
             _buildFaqTile(
               context,
