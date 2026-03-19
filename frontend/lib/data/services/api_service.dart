@@ -48,8 +48,8 @@ class ApiService {
     _log('[API_REFRESH_SESSION] Calling session refresh endpoint with HTTPOnly cookie');
     
     try {
-      // CRITICAL: Create a separate Dio instance to handle refresh with explicit credentials
-      // This ensures cookies are properly sent and received for the refresh-session call
+      // CRITICAL: withCredentials must be set for Flutter Web to send cookies
+      // The request interceptor sets this globally, but we ensure it's explicit here
       final response = await _dio.post(
         '/auth/refresh-session',
         data: {},  // No body needed - server reads refresh_token from HTTPOnly cookie
@@ -59,7 +59,7 @@ class ApiService {
           headers: {
             'X-Skip-Auth-Interceptor': 'true',  // Prevent infinite refresh loops
           },
-          // CRITICAL: Ensure cookies are included in this request
+          // CRITICAL: Ensure cookies are included in this request for Flutter Web
           extra: {
             'withCredentials': true,
           },
@@ -160,7 +160,8 @@ class ApiService {
         },
       ));
       
-      // Enable credentials for HTTPOnly cookie support
+      // CRITICAL: For Flutter Web, withCredentials must be set in extra for EACH request
+      // We set it globally here and it will be applied via request interceptor
       _dio.options.extra = {'withCredentials': true};
 
     // SSL validation - platform-specific handling
@@ -202,10 +203,14 @@ class ApiService {
       logPrint: (obj) {},
     ));
     
-    // Add request interceptor to ensure auth tokens are sent
+    // Add request interceptor to ensure auth tokens are sent and cookies work
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
+          // CRITICAL: Set withCredentials for Flutter Web to send cookies
+          // This is required for HTTPOnly cookie-based authentication
+          options.extra['withCredentials'] = true;
+          
           // Ensure Content-Type is set for all requests if not already set
           if (!options.headers.containsKey('Content-Type')) {
             options.headers['Content-Type'] = 'application/json';
