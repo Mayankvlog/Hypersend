@@ -2350,12 +2350,10 @@ async def upload_avatar(
         
 
         # Generate absolute URL AFTER file is saved
-        # CRITICAL FIX: Use absolute URL for frontend to display images correctly
+        # CRITICAL FIX: Use base URL without /api/v1 for avatar URLs to work correctly
         from backend.config import settings
-        avatar_url = f"{settings.API_BASE_URL}/users/avatar/{new_file_name}"
-
-
-            # Continue anyway - new file is already saved
+        base_url = settings.API_BASE_URL.replace('/api/v1', '')
+        avatar_url = f"{base_url}/users/avatar/{new_file_name}"
 
         
 
@@ -2459,7 +2457,7 @@ async def upload_avatar(
 
         if "avatar" not in response_data:
 
-            response_data["avatar"] = current_avatar if current_avatar else ""
+            response_data["avatar"] = ""  # Always empty string for image avatars
 
             
 
