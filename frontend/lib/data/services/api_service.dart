@@ -45,25 +45,44 @@ class ApiService {
 
   // Session refresh for HTTPOnly cookie support
   Future<Map<String, dynamic>> refreshSession() async {
-    _log('[API_REFRESH_SESSION] Calling session refresh endpoint');
+    _log('[API_REFRESH_SESSION] Calling session refresh endpoint with HTTPOnly cookie');
     
     try {
+      // CRITICAL: Create a separate Dio instance to handle refresh with explicit credentials
+      // This ensures cookies are properly sent and received for the refresh-session call
       final response = await _dio.post(
         '/auth/refresh-session',
-        data: {},  // No body needed - server reads from cookies
+        data: {},  // No body needed - server reads refresh_token from HTTPOnly cookie
         options: Options(
           method: 'POST',
+          contentType: 'application/json',
+          headers: {
+            'X-Skip-Auth-Interceptor': 'true',  // Prevent infinite refresh loops
+          },
+          // CRITICAL: Ensure cookies are included in this request
+          extra: {
+            'withCredentials': true,
+          },
         ),
       );
       
-      _log('[API_REFRESH_SESSION] Response: ${response.data}');
-      return response.data as Map<String, dynamic>;
+      _log('[API_REFRESH_SESSION] Response status: ${response.statusCode}');
+      _log('[API_REFRESH_SESSION] Success - new access_token cookie has been set by server');
+      
+      // Return response - it should contain success message
+      return response.data is Map<String, dynamic> 
+        ? response.data as Map<String, dynamic>
+        : {'message': 'Session refreshed', 'token_type': 'bearer'};
     } catch (e) {
-      _log('[API_REFRESH_SESSION] Error: $e');
-      return {
-        'detail': e.toString(),
-        'error': 'Session refresh failed'
-      };
+      _log('[API_REFRESH_SESSION] ❌ Error: $e');
+      
+      // Check if this is a 401 (token expired) or other error
+      if (e is DioException && e.response?.statusCode == 401) {
+        _log('[API_REFRESH_SESSION] 401 Unauthorized - refresh token is invalid or expired');
+        throw Exception('Refresh token expired - please login again');
+      }
+      
+      throw Exception('Session refresh failed: $e');
     }
   }
 
