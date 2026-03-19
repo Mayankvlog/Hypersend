@@ -931,7 +931,7 @@ async def login(credentials: UserLogin, request: Request) -> JSONResponse:
         # This ensures cookies persist across browser restarts and page refreshes
         cookie_secure = True  # ALWAYS True for HTTPS - cookies won't persist without it
         cookie_same_site = "None"  # ALWAYS "None" for cross-site cookie support
-        cookie_domain = "zaply.in.net"  # ALWAYS set domain for persistent cookies
+        cookie_domain = ".zaply.in.net"  # CRITICAL: Use leading dot for subdomain compatibility
         
         # Build cookie kwargs for cleaner code
         cookie_kwargs = {
@@ -1211,9 +1211,10 @@ async def refresh_session_token(request: Request) -> JSONResponse:
         )
         
         # Set new access token cookie (refresh token stays the same)
-        cookie_secure = not settings.DEBUG  # Secure flag for HTTPS in production
-        cookie_same_site = "None" if not settings.DEBUG else "Lax"  # None for cross-site in production
-        cookie_domain = None if settings.DEBUG else "zaply.in.net"  # Conditional domain based on DEBUG
+        # CRITICAL FIX: Use consistent cookie settings with login endpoint
+        cookie_secure = True  # ALWAYS True for HTTPS - cookies won't persist without it
+        cookie_same_site = "None"  # ALWAYS "None" for cross-site cookie support
+        cookie_domain = ".zaply.in.net"  # CRITICAL: Use leading dot for subdomain compatibility
         
         # Calculate access token expiration
         access_expires_timestamp = int((datetime.now(timezone.utc) + access_token_expires).timestamp())
@@ -1440,8 +1441,10 @@ async def logout(request: Request, current_user: str = Depends(get_current_user)
         )
         
         # Clear HTTPOnly cookies by setting them to expire immediately
-        # Use conditional cookie domain based on DEBUG flag
-        cookie_domain = None if settings.DEBUG else "zaply.in.net"
+        # CRITICAL FIX: Use consistent cookie settings with login endpoint
+        cookie_domain = ".zaply.in.net"  # CRITICAL: Use leading dot for subdomain compatibility
+        cookie_secure = True  # ALWAYS True for HTTPS - cookies won't persist without it
+        cookie_same_site = "None"  # ALWAYS "None" for cross-site cookie support
         
         # Clear access token cookie
         response.set_cookie(
@@ -1451,9 +1454,9 @@ async def logout(request: Request, current_user: str = Depends(get_current_user)
             expires=0,  # Unix epoch start
             path="/",
             domain=cookie_domain,
-            secure=not settings.DEBUG,  # Secure flag for HTTPS in production
+            secure=cookie_secure,
             httponly=True,
-            samesite="None" if not settings.DEBUG else "Lax"
+            samesite=cookie_same_site
         )
         
         # Clear refresh token cookie
@@ -1464,9 +1467,9 @@ async def logout(request: Request, current_user: str = Depends(get_current_user)
             expires=0,  # Unix epoch start
             path="/",
             domain=cookie_domain,
-            secure=not settings.DEBUG,  # Secure flag for HTTPS in production
+            secure=cookie_secure,
             httponly=True,
-            samesite="None" if not settings.DEBUG else "Lax"
+            samesite=cookie_same_site
         )
         
         return response
