@@ -403,8 +403,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
     
     if (index == 1) {
-      // Navigate to file transfer
-      context.push('/file-transfer');
+      // Navigate to status
+      context.push('/status');
     } else if (index == 2) {
       // Navigate to settings
       context.push('/settings');
@@ -685,8 +685,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
             label: 'Chats',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.swap_horiz),
-            label: 'Transfer',
+            icon: Icon(Icons.circle_outlined),
+            label: 'Status',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
