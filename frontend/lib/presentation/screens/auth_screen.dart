@@ -148,6 +148,8 @@ class _AuthScreenState extends State<AuthScreen> {
               if (!_isLogin) ...[
                 TextField(
                   controller: _name,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.name],
                   decoration: const InputDecoration(
                     labelText: 'Name',
                     prefixIcon: Icon(Icons.person_outline),
@@ -158,6 +160,8 @@ class _AuthScreenState extends State<AuthScreen> {
               TextField(
                 controller: _email,
                 keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.email],
                 decoration: const InputDecoration(
                   labelText: 'Email',
                   prefixIcon: Icon(Icons.mail_outline),
@@ -167,6 +171,8 @@ class _AuthScreenState extends State<AuthScreen> {
               TextField(
                 controller: _password,
                 obscureText: _obscurePassword,
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.password],
                 decoration: InputDecoration(
                   labelText: 'Password',
                   prefixIcon: const Icon(Icons.lock_outline),

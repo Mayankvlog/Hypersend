@@ -32,17 +32,12 @@ class _SplashScreenState extends State<SplashScreen>
 
     debugPrint('[SplashScreen] Animation started, setting up navigation timer...');
     
-    // Navigate after 3 seconds with proper error handling
+    // Navigate after 3 seconds with proper error handling and auto-login
     _navigationTimer = Timer(const Duration(seconds: 3), () {
       debugPrint('[SplashScreen] Navigation timer triggered');
       if (mounted) {
         try {
-          debugPrint('[SplashScreen] Checking auth service...');
-          final isLoggedIn = serviceProvider.authService.isLoggedIn;
-          final nextRoute = isLoggedIn ? '/chats' : '/auth';
-          debugPrint('[SplashScreen] Navigating to: $nextRoute (isLoggedIn: $isLoggedIn)');
-          context.go(nextRoute);
-          debugPrint('[SplashScreen] Navigation completed');
+          _performAutoLogin();
         } catch (e, stackTrace) {
           debugPrint('[SplashScreen] Navigation error: $e');
           debugPrint('[SplashScreen] Stack trace: $stackTrace');
@@ -58,6 +53,32 @@ class _SplashScreenState extends State<SplashScreen>
     });
     
     debugPrint('[SplashScreen] Splash screen initialization complete');
+  }
+
+  /// Perform auto-login by checking if session is still valid via HTTPOnly cookies
+  Future<void> _performAutoLogin() async {
+    debugPrint('[SplashScreen] Performing auto-login check...');
+    
+    try {
+      // Check if user has a valid session via HTTPOnly cookies
+      final isSessionValid = await serviceProvider.authService.checkSessionValid();
+      
+      if (!mounted) return;
+      
+      if (isSessionValid) {
+        debugPrint('[SplashScreen] ✓ Valid session found - redirecting to chats');
+        context.go('/chats');
+      } else {
+        debugPrint('[SplashScreen] ✗ No valid session - redirecting to login');
+        context.go('/auth');
+      }
+    } catch (e) {
+      debugPrint('[SplashScreen] Auto-login error: $e');
+      if (mounted) {
+        debugPrint('[SplashScreen] Falling back to auth screen');
+        context.go('/auth');
+      }
+    }
   }
 
   

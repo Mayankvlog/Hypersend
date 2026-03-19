@@ -369,6 +369,58 @@ class AuthService {
     }
   }
 
+  /// Check if user session is valid via HTTPOnly cookies
+  /// This is called on app startup to implement persistent login
+  Future<bool> checkSessionValid() async {
+    try {
+      debugPrint('[AUTH_CHECK_SESSION] Checking if session is valid...');
+      
+      // Call /me endpoint to verify user is still authenticated
+      // If cookies are valid, this will succeed
+      // If cookies are expired/invalid, this returns 401
+      final me = await _api.getMe();
+      
+      if (me.isNotEmpty) {
+        debugPrint('[AUTH_CHECK_SESSION] ✓ Session is valid - user is authenticated');
+        _isAuthenticated = true;
+        return true;
+      }
+      
+      debugPrint('[AUTH_CHECK_SESSION] ✗ Session invalid - /me returned empty');
+      _isAuthenticated = false;
+      return false;
+    } catch (e) {
+      debugPrint('[AUTH_CHECK_SESSION] ✗ Session check failed: $e');
+      
+      // Check if it's a 401 error (expired cookies)
+      if (e.toString().contains('401') || e.toString().contains('Unauthorized')) {
+        debugPrint('[AUTH_CHECK_SESSION] Server returned 401 - cookies are expired');
+        _isAuthenticated = false;
+        
+        // Try to refresh using refresh token cookie
+        final refreshed = await refreshSession();
+        if (refreshed) {
+          debugPrint('[AUTH_CHECK_SESSION] ✓ Session refreshed successfully');
+          
+          // Retry /me endpoint after refresh
+          try {
+            final me = await _api.getMe();
+            if (me.isNotEmpty) {
+              debugPrint('[AUTH_CHECK_SESSION] ✓ Retry successful - session is now valid');
+              _isAuthenticated = true;
+              return true;
+            }
+          } catch (retryError) {
+            debugPrint('[AUTH_CHECK_SESSION] Retry failed: $retryError');
+          }
+        }
+      }
+      
+      _isAuthenticated = false;
+      return false;
+    }
+  }
+
   Future<void> _clearTokens() async {
     _accessToken = null;
     _refreshToken = null;
