@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:http_parser/http_parser.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:image/image.dart' as img;
 
 // Conditional IO imports: dart:io for native, stub for web
 import 'file_transfer_io.dart' if (dart.library.html) 'file_transfer_io_stub.dart' as io;
@@ -1194,12 +1195,81 @@ class ApiService {
     }
   }
 
+  /// Compress image to reduce upload size (fixes HTTP 413 Payload Too Large)
+  /// Max quality: 85% to balance size vs visual quality
+  /// Max dimensions: 1024x1024 to prevent oversized images  
+  /// Typical result: 5MB photo -> 200-300KB compressed
+  Future<Uint8List> _compressImage(Uint8List bytes, String filename) async {
+    try {
+      debugPrint('[IMAGE_COMPRESS] Original size: ${bytes.length} bytes, file: $filename');
+      
+      // Decode image
+      final image = img.decodeImage(bytes);
+      if (image == null) {
+        debugPrint('[IMAGE_COMPRESS] Failed to decode image, returning original');
+        return bytes;
+      }
+      
+      // Get current dimensions
+      int newWidth = image.width;
+      int newHeight = image.height;
+      
+      // Resize if image is larger than 1024x1024
+      if (image.width > 1024 || image.height > 1024) {
+        final ratio = image.width / image.height;
+        if (ratio > 1) {
+          // Width is larger
+          newWidth = 1024;
+          newHeight = (1024 / ratio).toInt();
+        } else {
+          // Height is larger
+          newHeight = 1024;
+          newWidth = (1024 * ratio).toInt();
+        }
+        debugPrint('[IMAGE_COMPRESS] Resizing from ${image.width}x${image.height} to $newWidth x $newHeight');
+      }
+      
+      // Get file extension to determine format
+      final ext = filename.split('.').last.toLowerCase();
+      
+      // Compress based on format
+      Uint8List compressed;
+      if (ext == 'png' || ext == 'webp') {
+        // For PNG/WebP, use PNG with compression
+        final resized = img.copyResize(image, width: newWidth, height: newHeight);
+        compressed = Uint8List.fromList(img.encodePng(resized, level: 9));
+        debugPrint('[IMAGE_COMPRESS] Encoded as PNG');
+      } else {
+        // For JPG/JPEG, compress with quality 85
+        final resized = img.copyResize(image, width: newWidth, height: newHeight);
+        compressed = Uint8List.fromList(img.encodeJpg(resized, quality: 85));
+        debugPrint('[IMAGE_COMPRESS] Encoded as JPG with quality 85');
+      }
+      
+      debugPrint('[IMAGE_COMPRESS] Compressed size: ${compressed.length} bytes (${((compressed.length / bytes.length) * 100).toStringAsFixed(1)}% of original)');
+      
+      // Only return compressed if smaller
+      if (compressed.length < bytes.length) {
+        return compressed;
+      } else {
+        debugPrint('[IMAGE_COMPRESS] Compressed is larger, returning original');
+        return bytes;
+      }
+    } catch (e) {
+      debugPrint('[IMAGE_COMPRESS_ERROR] Compression failed: $e, returning original');
+      return bytes; // Return original on error
+    }
+  }
+
 Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) async {
     try {
-      debugPrint('[API_SERVICE] Uploading avatar: $filename (${bytes.length} bytes)');
+      // Compress image to reduce payload size (fixes HTTP 413)
+      final compressedBytes = await _compressImage(bytes, filename);
+      
+      debugPrint('[API_SERVICE] Uploading avatar: $filename (compressed ${compressedBytes.length} bytes)');
       
       final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(bytes, filename: filename),
+        'file': MultipartFile.fromBytes(compressedBytes, filename: filename),
       });
       
       final uploadUrl = '${ApiConstants.usersEndpoint}/avatar';
@@ -1608,10 +1678,13 @@ Future<void> postToChannel(String channelId, String text) async {
     required String filename,
   }) async {
     try {
-      debugPrint('[API_SERVICE] Uploading group avatar: $filename (${bytes.length} bytes)');
+      // Compress image to reduce payload size (fixes HTTP 413)
+      final compressedBytes = await _compressImage(bytes, filename);
+      
+      debugPrint('[API_SERVICE] Uploading group avatar: $filename (compressed ${compressedBytes.length} bytes)');
 
       final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(bytes, filename: filename),
+        'file': MultipartFile.fromBytes(compressedBytes, filename: filename),
       });
 
       final uploadUrl = 'groups/$groupId/avatar';

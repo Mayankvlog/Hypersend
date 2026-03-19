@@ -2205,6 +2205,18 @@ async def upload_avatar(
 
         
 
+        # CRITICAL: Validate file size BEFORE saving (5MB limit for avatars)
+        # This prevents large uploads from consuming disk space and bandwidth
+        MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
+        if file.size and file.size > MAX_AVATAR_SIZE:
+            size_mb = file.size / (1024 * 1024)
+            logger.warning(f"Avatar file too large: {size_mb:.2f}MB (max: 5MB)")
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Image file too large: {size_mb:.2f}MB. Maximum size is 5MB. Please compress or scale down the image."
+            )
+        
+
         # Create directory
 
         from pathlib import Path

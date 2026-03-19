@@ -652,9 +652,15 @@ async def upload_group_avatar(
 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
 
-    if len(content) > 10 * 1024 * 1024:
-
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large")
+    # CRITICAL: Validate file size (5MB limit for group avatars to match profile avatars)
+    # Prevents large uploads from consuming disk space and bandwidth
+    MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
+    if len(content) > MAX_AVATAR_SIZE:
+        size_mb = len(content) / (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Image file too large: {size_mb:.2f}MB. Maximum size is 5MB. Please compress or scale down the image."
+        )
 
 
 
