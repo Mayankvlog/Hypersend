@@ -927,9 +927,11 @@ async def login(credentials: UserLogin, request: Request) -> JSONResponse:
         )
         
         # Set secure HTTPOnly cookies with conditional domain
-        cookie_secure = not settings.DEBUG  # Secure flag for HTTPS in production
-        cookie_same_site = "None" if not settings.DEBUG else "Lax"  # None for cross-site in production
-        cookie_domain = None if settings.DEBUG else "zaply.in.net"  # Conditional domain based on DEBUG
+        # CRITICAL FIX: Always use secure=True and samesite="None" for production HTTPS
+        # This ensures cookies persist across browser restarts and page refreshes
+        cookie_secure = True  # ALWAYS True for HTTPS - cookies won't persist without it
+        cookie_same_site = "None"  # ALWAYS "None" for cross-site cookie support
+        cookie_domain = "zaply.in.net"  # ALWAYS set domain for persistent cookies
         
         # Build cookie kwargs for cleaner code
         cookie_kwargs = {
