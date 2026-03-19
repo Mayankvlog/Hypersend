@@ -1721,6 +1721,7 @@ async def upload_avatar(
 @router.get("/avatar/{filename}/")
 async def get_avatar(
     filename: str,
+    request: Request = None,
     current_user: Optional[str] = Depends(get_current_user_optional),
 ):
     logger.info(f"[GET_AVATAR] Requested filename: {filename}")
@@ -1760,12 +1761,18 @@ async def get_avatar(
 
     logger.info(f"[GET_AVATAR] Serving file with MIME type: {mime_type}")
 
+    # CRITICAL FIX: Use proper CORS origin instead of wildcard "*"
+    # When allow_credentials=True, Access-Control-Allow-Origin cannot be "*"
+    request_origin = request.headers.get("origin", "") if request else ""
+    cors_origin = get_secure_cors_origin(request_origin)
+
     return FileResponse(
         str(file_path),
         media_type=mime_type,
         headers={
             "Cache-Control": "public, max-age=86400",
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": cors_origin,
+            "Access-Control-Allow-Credentials": "true",
         },
     )
 

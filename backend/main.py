@@ -87,50 +87,60 @@ except Exception as e:
 
 async def _wait_for_redis_with_retry():
     """Wait for Redis to be reachable with retry mechanism and health verification.
-    
+
     CRITICAL: This function ensures Redis is fully operational before
     the application continues startup. Implements 5 retries with exponential backoff.
-    
+
     Returns:
         Redis client instance that is guaranteed to be connected and healthy
-        
+
     Raises:
         RuntimeError: If Redis cannot be connected to after all retries
     """
     from backend.config import settings
     import time
-    
+
     max_retries = 5
     base_delay = 2  # Base delay in seconds
-    
+
     # CRITICAL: Use docker service name only, never localhost
-    redis_host = getattr(settings, 'REDIS_HOST', 'redis')
-    redis_port = getattr(settings, 'REDIS_PORT', 6379)
-    redis_password = getattr(settings, 'REDIS_PASSWORD', None)
-    redis_db = getattr(settings, 'REDIS_DB', 0)
-    
+    redis_host = getattr(settings, "REDIS_HOST", "redis")
+    redis_port = getattr(settings, "REDIS_PORT", 6379)
+    redis_password = getattr(settings, "REDIS_PASSWORD", None)
+    redis_db = getattr(settings, "REDIS_DB", 0)
+
     # Enforce docker service name in production
-    if redis_host in ('localhost', '127.0.0.1', '::1'):
-        logger.error(f"[REDIS-HEALTH] CRITICAL: Redis host is {redis_host} - forcing to 'redis'")
+    if redis_host in ("localhost", "127.0.0.1", "::1"):
+        logger.error(
+            f"[REDIS-HEALTH] CRITICAL: Redis host is {redis_host} - forcing to 'redis'"
+        )
         redis_host = "redis"
-        logger.info(f"[REDIS-HEALTH] Forced Redis host to docker service name: {redis_host}")
-    
+        logger.info(
+            f"[REDIS-HEALTH] Forced Redis host to docker service name: {redis_host}"
+        )
+
     # Clean up empty password
-    if redis_password == '':
+    if redis_password == "":
         redis_password = None
-    
-    logger.info(f"[REDIS-HEALTH] Starting Redis connection attempts to {redis_host}:{redis_port}/{redis_db}")
-    
+
+    logger.info(
+        f"[REDIS-HEALTH] Starting Redis connection attempts to {redis_host}:{redis_port}/{redis_db}"
+    )
+
     for attempt in range(max_retries):
         try:
-            logger.info(f"[REDIS-HEALTH] Connection attempt {attempt + 1}/{max_retries} to {redis_host}:{redis_port}")
-            
+            logger.info(
+                f"[REDIS-HEALTH] Connection attempt {attempt + 1}/{max_retries} to {redis_host}:{redis_port}"
+            )
+
             # Import Redis here to avoid import issues
             try:
                 import redis.asyncio as redis
             except ImportError:
-                raise RuntimeError("Redis library not available - install redis package")
-            
+                raise RuntimeError(
+                    "Redis library not available - install redis package"
+                )
+
             # Create Redis client with production-safe configuration
             redis_client = redis.Redis(
                 host=redis_host,
@@ -144,29 +154,39 @@ async def _wait_for_redis_with_retry():
                 socket_keepalive=True,
                 retry_on_timeout=True,
             )
-            
+
             try:
                 # CRITICAL: Test connection with timeout
                 ping_result = await asyncio.wait_for(redis_client.ping(), timeout=15.0)
-                
+
                 if ping_result:
-                    logger.info(f"[REDIS-HEALTH] Successfully connected to {redis_host}:{redis_port}/{redis_db}")
-                    
+                    logger.info(
+                        f"[REDIS-HEALTH] Successfully connected to {redis_host}:{redis_port}/{redis_db}"
+                    )
+
                     # Verify Redis server info
                     try:
-                        info = await asyncio.wait_for(redis_client.info('server'), timeout=5.0)
-                        logger.info(f"[REDIS-HEALTH] Redis server version: {info.get('redis_version', 'unknown')}")
+                        info = await asyncio.wait_for(
+                            redis_client.info("server"), timeout=5.0
+                        )
+                        logger.info(
+                            f"[REDIS-HEALTH] Redis server version: {info.get('redis_version', 'unknown')}"
+                        )
                     except Exception as e:
-                        logger.warning(f"[REDIS-HEALTH] Could not fetch server info: {e}")
-                    
+                        logger.warning(
+                            f"[REDIS-HEALTH] Could not fetch server info: {e}"
+                        )
+
                     # CRITICAL: Test Redis functionality with actual operations
                     await _verify_redis_functionality(redis_client)
-                    
+
                     logger.info(f"[REDIS-HEALTH] Redis fully verified and ready")
                     return redis_client
                 else:
-                    raise RuntimeError(f"Redis ping returned False for {redis_host}:{redis_port}")
-            
+                    raise RuntimeError(
+                        f"Redis ping returned False for {redis_host}:{redis_port}"
+                    )
+
             except (asyncio.TimeoutError, Exception) as e:
                 # CRITICAL: Cleanup redis_client if initialization fails
                 try:
@@ -176,26 +196,34 @@ async def _wait_for_redis_with_retry():
                         redis_client.close()
                     except Exception:
                         pass
-                
+
                 if isinstance(e, asyncio.TimeoutError):
-                    logger.error(f"[REDIS-HEALTH] Connection timeout attempt {attempt + 1}: {e}")
+                    logger.error(
+                        f"[REDIS-HEALTH] Connection timeout attempt {attempt + 1}: {e}"
+                    )
                 else:
-                    logger.error(f"[REDIS-HEALTH] Connection error attempt {attempt + 1}: {type(e).__name__}: {e}")
-                
+                    logger.error(
+                        f"[REDIS-HEALTH] Connection error attempt {attempt + 1}: {type(e).__name__}: {e}"
+                    )
+
                 # Re-raise to go to outer exception handler
                 raise
-            
+
         except asyncio.TimeoutError as e:
-            logger.error(f"[REDIS-HEALTH] Connection timeout attempt {attempt + 1}: {e}")
+            logger.error(
+                f"[REDIS-HEALTH] Connection timeout attempt {attempt + 1}: {e}"
+            )
         except Exception as e:
-            logger.error(f"[REDIS-HEALTH] Connection error attempt {attempt + 1}: {type(e).__name__}: {e}")
-        
+            logger.error(
+                f"[REDIS-HEALTH] Connection error attempt {attempt + 1}: {type(e).__name__}: {e}"
+            )
+
         # Retry logic with exponential backoff
         if attempt < max_retries - 1:
-            delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s, 16s
+            delay = base_delay * (2**attempt)  # Exponential backoff: 2s, 4s, 8s, 16s
             logger.warning(f"[REDIS-HEALTH] Retrying in {delay} seconds...")
             await asyncio.sleep(delay)
-    
+
     # All retries failed
     error_msg = f"Redis connection failed after {max_retries} attempts to {redis_host}:{redis_port}/{redis_db}"
     logger.error(f"[REDIS-HEALTH] CRITICAL: {error_msg}")
@@ -204,98 +232,94 @@ async def _wait_for_redis_with_retry():
 
 async def _verify_redis_functionality(redis_client):
     """Verify Redis functionality with test operations.
-    
+
     CRITICAL: This function ensures Redis is not just connected but fully operational.
     Tests basic operations, pub/sub, and memory usage.
-    
+
     Args:
         redis_client: Connected Redis client instance
-        
+
     Raises:
         RuntimeError: If any Redis functionality test fails
     """
     import time
     import uuid
-    
+
     test_key = f"__redis_functionality_test__{int(time.time())}__{uuid.uuid4().hex[:8]}"
     test_value = {"test": True, "timestamp": time.time(), "data": "verification"}
-    
+
     try:
         # Test 1: Basic SET/GET operation
         await asyncio.wait_for(
-            redis_client.setex(test_key, 60, json.dumps(test_value)),
-            timeout=5.0
+            redis_client.setex(test_key, 60, json.dumps(test_value)), timeout=5.0
         )
-        
-        retrieved = await asyncio.wait_for(
-            redis_client.get(test_key),
-            timeout=5.0
-        )
-        
+
+        retrieved = await asyncio.wait_for(redis_client.get(test_key), timeout=5.0)
+
         if not retrieved:
             raise RuntimeError("Redis GET returned None for test key")
-        
+
         # Verify JSON serialization
         retrieved_data = json.loads(retrieved)
         if retrieved_data.get("test") != True:
             raise RuntimeError("Redis data corruption detected")
-        
+
         logger.info(f"[REDIS-HEALTH] ✓ Basic SET/GET operations verified")
-        
+
         # Test 2: Pub/Sub functionality
         test_channel = f"__test_channel__{uuid.uuid4().hex[:8]}"
         test_message = {"type": "test", "data": "pubsub_verification"}
-        
+
         pubsub = redis_client.pubsub()
         await asyncio.wait_for(pubsub.subscribe(test_channel), timeout=5.0)
-        
+
         # Publish test message
         await asyncio.wait_for(
-            redis_client.publish(test_channel, json.dumps(test_message)),
-            timeout=5.0
+            redis_client.publish(test_channel, json.dumps(test_message)), timeout=5.0
         )
-        
+
         # Helper coroutine to consume pubsub messages with timeout protection
         async def _consume_pubsub(pubsub_obj):
             """Consume pubsub messages and wait for test message."""
             async for message in pubsub_obj.listen():
-                if message['type'] == 'message':
-                    data = json.loads(message['data'])
+                if message["type"] == "message":
+                    data = json.loads(message["data"])
                     if data.get("type") == "test":
                         return True
             return False
-        
+
         # Listen for message with timeout
         message_received = False
         try:
-            message_received = await asyncio.wait_for(_consume_pubsub(pubsub), timeout=10.0)
+            message_received = await asyncio.wait_for(
+                _consume_pubsub(pubsub), timeout=10.0
+            )
         except asyncio.TimeoutError:
             logger.warning(f"[REDIS-HEALTH] Pub/Sub message receive timed out")
             message_received = False
         finally:
             await pubsub.close()
-        
+
         if not message_received:
             raise RuntimeError("Redis Pub/Sub functionality test failed")
-        
+
         logger.info(f"[REDIS-HEALTH] ✓ Pub/Sub functionality verified")
-        
+
         # Test 3: Memory usage check
         try:
             memory_info = await asyncio.wait_for(
-                redis_client.info('memory'),
-                timeout=5.0
+                redis_client.info("memory"), timeout=5.0
             )
-            used_memory = memory_info.get('used_memory', 0)
+            used_memory = memory_info.get("used_memory", 0)
             logger.info(f"[REDIS-HEALTH] ✓ Memory usage: {used_memory} bytes")
         except Exception as e:
             logger.warning(f"[REDIS-HEALTH] Memory info check failed: {e}")
-        
+
         # Cleanup test key
         await asyncio.wait_for(redis_client.delete(test_key), timeout=5.0)
-        
+
         logger.info(f"[REDIS-HEALTH] ✓ All Redis functionality tests passed")
-        
+
     except asyncio.TimeoutError as e:
         raise RuntimeError(f"Redis functionality test timeout: {e}")
     except Exception as e:
@@ -305,7 +329,7 @@ async def _verify_redis_functionality(redis_client):
 async def _cleanup_redis_cache(app):
     """Cleanup Redis cache on shutdown with proper error handling"""
     try:
-        redis_client = getattr(app.state, 'redis_client', None)
+        redis_client = getattr(app.state, "redis_client", None)
         if redis_client:
             try:
                 await asyncio.wait_for(redis_client.aclose(), timeout=5.0)
@@ -314,10 +338,11 @@ async def _cleanup_redis_cache(app):
                 logger.warning("[SHUTDOWN] Redis client close timed out")
             except Exception as e:
                 logger.debug(f"[SHUTDOWN] Error closing Redis client: {e}")
-        
+
         # Also cleanup cache module if available
         try:
             from backend.redis_cache import cache
+
             if cache:
                 try:
                     await asyncio.wait_for(cache.disconnect(), timeout=5.0)
@@ -333,7 +358,6 @@ async def _cleanup_redis_cache(app):
         logger.error(f"[SHUTDOWN] Error during Redis cleanup: {e}")
 
 
-
 def init_storage():
     """Initialize and validate storage system - must run before routes load"""
     logger.info("[STARTUP] Initializing storage system...")
@@ -341,41 +365,52 @@ def init_storage():
         # settings module automatically initializes storage directories in __init__
         # Just validate that it's properly set up
         if not settings.SERVER_STORAGE_ENABLED:
-            logger.warning("[STARTUP] WARNING: SERVER_STORAGE_ENABLED is False - storage may be disabled")
-        
+            logger.warning(
+                "[STARTUP] WARNING: SERVER_STORAGE_ENABLED is False - storage may be disabled"
+            )
+
         from pathlib import Path
-        
+
         # Verify paths are accessible
         temp_path = Path(settings.TEMP_STORAGE_PATH)
         upload_path = Path(settings.UPLOAD_DIR)
-        
+
         if not temp_path.exists():
-            raise RuntimeError(f"TEMP_STORAGE_PATH does not exist: {settings.TEMP_STORAGE_PATH}")
+            raise RuntimeError(
+                f"TEMP_STORAGE_PATH does not exist: {settings.TEMP_STORAGE_PATH}"
+            )
         if not upload_path.exists():
             raise RuntimeError(f"UPLOAD_DIR does not exist: {settings.UPLOAD_DIR}")
-        
+
         # Check writability
         try:
             test_file_temp = temp_path / ".write_test"
             test_file_temp.touch(exist_ok=True)
             test_file_temp.unlink(missing_ok=True)
-            logger.info(f"[STARTUP] Storage validated - TEMP_STORAGE_PATH is writable: {settings.TEMP_STORAGE_PATH}")
+            logger.info(
+                f"[STARTUP] Storage validated - TEMP_STORAGE_PATH is writable: {settings.TEMP_STORAGE_PATH}"
+            )
         except Exception as e:
             raise RuntimeError(f"TEMP_STORAGE_PATH is not writable: {str(e)}")
-        
+
         try:
             test_file_upload = upload_path / ".write_test"
             test_file_upload.touch(exist_ok=True)
             test_file_upload.unlink(missing_ok=True)
-            logger.info(f"[STARTUP] Storage validated - UPLOAD_DIR is writable: {settings.UPLOAD_DIR}")
+            logger.info(
+                f"[STARTUP] Storage validated - UPLOAD_DIR is writable: {settings.UPLOAD_DIR}"
+            )
         except Exception as e:
             raise RuntimeError(f"UPLOAD_DIR is not writable: {str(e)}")
-        
+
         logger.info("[STARTUP] Storage system initialized successfully")
         return True
     except Exception as e:
-        logger.error(f"[STARTUP] CRITICAL: Storage initialization failed: {type(e).__name__}: {str(e)}")
+        logger.error(
+            f"[STARTUP] CRITICAL: Storage initialization failed: {type(e).__name__}: {str(e)}"
+        )
         import traceback
+
         logger.error(f"[STARTUP] Traceback: {traceback.format_exc()}")
         raise RuntimeError(f"Storage initialization failed: {str(e)}")
 
@@ -383,72 +418,95 @@ def init_storage():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan event handler - initialize storage, database and cleanup"""
-    
+
     # Import pytest detection from centralized location
     from database import _is_pytest_running
-    
+
     is_test_mode = _is_pytest_running()
     if is_test_mode:
-        logger.info("[STARTUP] Pytest detected - running in test mode with mock cache only")
-    
+        logger.info(
+            "[STARTUP] Pytest detected - running in test mode with mock cache only"
+        )
+
     # Startup - CRITICAL: Storage must initialize first, before all other systems
     # Call synchronous storage init function
     try:
         init_storage()
     except Exception as e:
-        logger.error(f"[STARTUP] CRITICAL: Storage initialization failed, cannot start application: {str(e)}")
+        logger.error(
+            f"[STARTUP] CRITICAL: Storage initialization failed, cannot start application: {str(e)}"
+        )
         raise
-    
+
     # Database initialization - only initialize if not already done by conftest or external setup
     from database import is_database_initialized
+
     if not is_database_initialized():
         await init_database()
-    
+
     # Store database connection in app state for reliable access
     from database import db, client
+
     app.state.db = db
     app.state.client = client
     logger.info(f"[STARTUP] Database available in app.state")
-    
+
     # Initialize Redis cache (CRITICAL for production - fail if not available)
     redis_client = None
     cache = None
-    
+
     if not is_test_mode:
         try:
             # CRITICAL: Initialize module-level cache with retry mechanism
             # This ensures all cache operations throughout the app use authenticated connection
-            logger.info("[STARTUP] Initializing Redis cache module with retry mechanism")
+            logger.info(
+                "[STARTUP] Initializing Redis cache module with retry mechanism"
+            )
             cache_initialized = await init_cache()
-            
+
             if not cache_initialized:
                 logger.error("[STARTUP] CRITICAL: Cache initialization returned False")
                 raise RuntimeError("Cache initialization failed - returned False")
-            
+
             # Store cache instance in app state for reliable access
             try:
                 from backend.redis_cache import cache as redis_cache_module
+
                 cache = redis_cache_module
                 app.state.cache = cache
                 redis_client = cache.redis_client
                 app.state.redis_client = redis_client
-                
+
                 if redis_client and cache.is_connected:
-                    logger.info("[STARTUP] Redis cache initialized successfully and stored in app.state")
+                    logger.info(
+                        "[STARTUP] Redis cache initialized successfully and stored in app.state"
+                    )
                 else:
-                    logger.error("[STARTUP] CRITICAL: Redis cache initialized but connection not verified")
-                    logger.error(f"[STARTUP] redis_client is None: {redis_client is None}, is_connected: {cache.is_connected if cache else 'NO_CACHE'}")
-                    raise RuntimeError(f"Redis connection not verified - client: {redis_client}, connected: {cache.is_connected if cache else False}")
-                    
+                    logger.error(
+                        "[STARTUP] CRITICAL: Redis cache initialized but connection not verified"
+                    )
+                    logger.error(
+                        f"[STARTUP] redis_client is None: {redis_client is None}, is_connected: {cache.is_connected if cache else 'NO_CACHE'}"
+                    )
+                    raise RuntimeError(
+                        f"Redis connection not verified - client: {redis_client}, connected: {cache.is_connected if cache else False}"
+                    )
+
             except Exception as e:
-                logger.error(f"[STARTUP] CRITICAL: Failed to access cache module after init: {type(e).__name__}: {e}")
+                logger.error(
+                    f"[STARTUP] CRITICAL: Failed to access cache module after init: {type(e).__name__}: {e}"
+                )
                 import traceback
+
                 logger.error(f"[STARTUP] Traceback: {traceback.format_exc()}")
                 raise RuntimeError(f"Cache module access failed: {e}")
-                
+
         except Exception as e:
-            logger.error(f"[STARTUP] CRITICAL: Redis initialization failed - cannot start without Redis: {type(e).__name__}: {e}")
+            logger.error(
+                f"[STARTUP] CRITICAL: Redis initialization failed - cannot start without Redis: {type(e).__name__}: {e}"
+            )
             import traceback
+
             logger.error(f"[STARTUP] Traceback: {traceback.format_exc()}")
             # Ensure redis_client is still set in app.state, even if None, to prevent AttributeError later
             app.state.redis_client = None
@@ -458,88 +516,113 @@ async def lifespan(app: FastAPI):
         # In test mode, initialize mock cache only
         try:
             from backend.redis_cache import cache as redis_cache_module
+
             cache = redis_cache_module
             await cache.clear_mock_cache()
             app.state.cache = cache
             app.state.redis_client = None  # Explicitly None in test mode
             logger.info("[STARTUP] Mock cache initialized for test mode")
         except Exception as e:
-            logger.error(f"[STARTUP] ERROR: Mock cache initialization failed: {type(e).__name__}: {e}")
+            logger.error(
+                f"[STARTUP] ERROR: Mock cache initialization failed: {type(e).__name__}: {e}"
+            )
             # Still allow test mode to continue with empty cache
             app.state.cache = None
             app.state.redis_client = None
-    
+
     # Verify redis_client is always set in app.state before WebSocket manager initialization
-    if not hasattr(app.state, 'redis_client'):
+    if not hasattr(app.state, "redis_client"):
         app.state.redis_client = None
-    if not hasattr(app.state, 'cache'):
+    if not hasattr(app.state, "cache"):
         app.state.cache = None
-    
+
     # NOTE: Redis Pub/Sub subscriber is now managed by WebSocket manager singleton
     # No need for separate subscriber - WebSocket manager handles it
-    
+
     # CRITICAL: Initialize WebSocket manager singleton (AFTER Redis is ready)
     websocket_manager_initialization_started = False
     websocket_manager_initialized = False
     if not is_test_mode:
         try:
             # Get Redis client from app.state (guaranteed to be available now)
-            redis_client = getattr(app.state, 'redis_client', None)
-            
+            redis_client = getattr(app.state, "redis_client", None)
+
             if not redis_client:
-                logger.error("[STARTUP] CRITICAL: Redis client is None - cannot initialize WebSocket manager")
+                logger.error(
+                    "[STARTUP] CRITICAL: Redis client is None - cannot initialize WebSocket manager"
+                )
                 logger.error(f"[STARTUP] app.state.redis_client: {redis_client}")
-                logger.error(f"[STARTUP] app.state.cache: {getattr(app.state, 'cache', 'MISSING')}")
-                if hasattr(app.state, 'cache') and app.state.cache:
-                    logger.error(f"[STARTUP] cache.redis_client: {app.state.cache.redis_client}")
-                    logger.error(f"[STARTUP] cache.is_connected: {app.state.cache.is_connected}")
-                raise RuntimeError("Redis client is None - WebSocket manager requires Redis to be connected")
-            
+                logger.error(
+                    f"[STARTUP] app.state.cache: {getattr(app.state, 'cache', 'MISSING')}"
+                )
+                if hasattr(app.state, "cache") and app.state.cache:
+                    logger.error(
+                        f"[STARTUP] cache.redis_client: {app.state.cache.redis_client}"
+                    )
+                    logger.error(
+                        f"[STARTUP] cache.is_connected: {app.state.cache.is_connected}"
+                    )
+                raise RuntimeError(
+                    "Redis client is None - WebSocket manager requires Redis to be connected"
+                )
+
             logger.info("[STARTUP] Initializing WebSocket manager with Redis client...")
             # Initialize WebSocket manager with Redis client
             websocket_manager_initialization_started = True
             await asyncio.wait_for(
-                websocket_manager.initialize(redis_client),
-                timeout=10.0
+                websocket_manager.initialize(redis_client), timeout=10.0
             )
             websocket_manager_initialized = True
             logger.info("[STARTUP] WebSocket manager initialization completed")
-            
+
             # Start global Pub/Sub subscriber
             logger.info("[STARTUP] Starting global Pub/Sub subscriber...")
             await websocket_manager.start_global_pubsub()
-            
-            logger.info("[STARTUP] WebSocket manager initialized and ready for connections")
+
+            logger.info(
+                "[STARTUP] WebSocket manager initialized and ready for connections"
+            )
         except asyncio.TimeoutError as e:
-            logger.error(f"[STARTUP] CRITICAL: WebSocket manager initialization timed out: {e}")
+            logger.error(
+                f"[STARTUP] CRITICAL: WebSocket manager initialization timed out: {e}"
+            )
             # Cleanup if initialization was started (even if not completed)
             if websocket_manager_initialization_started:
                 try:
                     await websocket_manager.shutdown()
                 except Exception as cleanup_e:
-                    logger.error(f"[STARTUP] Failed to cleanup WebSocket manager: {cleanup_e}")
+                    logger.error(
+                        f"[STARTUP] Failed to cleanup WebSocket manager: {cleanup_e}"
+                    )
             raise RuntimeError(f"WebSocket manager initialization timeout: {e}")
         except Exception as e:
-            logger.error(f"[STARTUP] CRITICAL: WebSocket manager initialization failed: {type(e).__name__}: {e}")
+            logger.error(
+                f"[STARTUP] CRITICAL: WebSocket manager initialization failed: {type(e).__name__}: {e}"
+            )
             import traceback
+
             logger.error(f"[STARTUP] Traceback: {traceback.format_exc()}")
             # Cleanup if initialization was started (even if not completed)
             if websocket_manager_initialization_started:
                 try:
                     await websocket_manager.shutdown()
                 except Exception as cleanup_e:
-                    logger.error(f"[STARTUP] Failed to cleanup WebSocket manager: {cleanup_e}")
+                    logger.error(
+                        f"[STARTUP] Failed to cleanup WebSocket manager: {cleanup_e}"
+                    )
             raise RuntimeError(f"WebSocket manager initialization failed: {e}")
-    
+
     # Initialize background file cleanup task (CRITICAL for production)
     cleanup_task = None
     if settings.AUTO_CLEANUP_ENABLED:
         try:
             from backend.services.file_cleanup_service import periodic_file_cleanup
-            
+
             # Create cleanup task that runs periodically
             cleanup_task = asyncio.create_task(
-                periodic_file_cleanup(interval_minutes=settings.FILE_CLEANUP_INTERVAL_MINUTES)
+                periodic_file_cleanup(
+                    interval_minutes=settings.FILE_CLEANUP_INTERVAL_MINUTES
+                )
             )
             app.state.cleanup_task = cleanup_task
             logger.info(
@@ -551,19 +634,19 @@ async def lifespan(app: FastAPI):
             # Continue even if cleanup fails - not critical for operation
     else:
         logger.info("[STARTUP] File cleanup is disabled (AUTO_CLEANUP_ENABLED=false)")
-    
+
     logger.info("[STARTUP] Application startup complete")
-    
+
     yield
-    
+
     # Graceful shutdown sequence - CRITICAL ORDER
     # 1. Cancel background cleanup task
     # 2. Shutdown WebSocket manager
     # 3. Cleanup Redis
     # 4. Close database
-    
+
     # Cancel background file cleanup task first
-    cleanup_task = getattr(app.state, 'cleanup_task', None)
+    cleanup_task = getattr(app.state, "cleanup_task", None)
     if cleanup_task and not cleanup_task.done():
         try:
             logger.info("[SHUTDOWN] Cancelling file cleanup task...")
@@ -575,7 +658,7 @@ async def lifespan(app: FastAPI):
             logger.warning("[SHUTDOWN] File cleanup task cancellation timed out")
         except Exception as e:
             logger.debug(f"[SHUTDOWN] Error cancelling cleanup task: {e}")
-    
+
     # Shutdown WebSocket manager (singleton instance)
     try:
         # Use the module-level websocket_manager imported at top
@@ -585,10 +668,10 @@ async def lifespan(app: FastAPI):
         logger.warning("[SHUTDOWN] WebSocket manager shutdown timed out")
     except Exception as e:
         logger.debug(f"[SHUTDOWN] Error shutting down WebSocket manager: {e}")
-    
+
     # Cleanup Redis cache (must happen before DB)
     try:
-        redis_client = getattr(app.state, 'redis_client', None)
+        redis_client = getattr(app.state, "redis_client", None)
         if redis_client:
             try:
                 await asyncio.wait_for(redis_client.aclose(), timeout=5.0)
@@ -597,10 +680,11 @@ async def lifespan(app: FastAPI):
                 logger.warning("[SHUTDOWN] Redis client close timed out")
             except Exception as e:
                 logger.debug(f"[SHUTDOWN] Error closing Redis client: {e}")
-        
+
         # Also cleanup cache module if available
         try:
             from backend.redis_cache import cache
+
             if cache:
                 try:
                     await asyncio.wait_for(cache.disconnect(), timeout=5.0)
@@ -614,20 +698,22 @@ async def lifespan(app: FastAPI):
         logger.warning("[SHUTDOWN] Redis cleanup timed out")
     except Exception as e:
         logger.error(f"[SHUTDOWN] Error during Redis cleanup: {e}")
-    
+
     # Shutdown database connection (last)
     try:
         from database import client
+
         if client:
             try:
                 client.close()
             except Exception:
                 pass
             logger.info("[SHUTDOWN] Database connection closed")
-        
+
         # Reset database module state
         try:
             import database as _database
+
             _database.client = None
             _database.db = None
             _database._database_initialized = False
@@ -635,7 +721,7 @@ async def lifespan(app: FastAPI):
             pass
     except Exception as e:
         logger.error(f"[SHUTDOWN] Error closing database: {e}")
-    
+
     logger.info("[SHUTDOWN] Application shutdown complete")
 
 
@@ -643,14 +729,16 @@ async def lifespan(app: FastAPI):
 import json
 from bson import ObjectId
 
+
 class CustomJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder to handle MongoDB ObjectId serialization and UTC timestamps.
-    
+
     CRITICAL FIXES:
     - All timestamps returned as ISO 8601 with Z suffix (UTC only)
     - No timezone conversion on backend
     - ObjectId converted to string
     """
+
     def default(self, obj):
         if isinstance(obj, ObjectId):
             return str(obj)
@@ -658,19 +746,19 @@ class CustomJSONEncoder(json.JSONEncoder):
         if isinstance(obj, datetime):
             iso_str = obj.isoformat()
             # Ensure Z suffix for UTC timestamps
-            if iso_str.endswith('+00:00'):
-                return iso_str.replace('+00:00', 'Z')
-            elif not iso_str.endswith('Z') and obj.tzinfo:
+            if iso_str.endswith("+00:00"):
+                return iso_str.replace("+00:00", "Z")
+            elif not iso_str.endswith("Z") and obj.tzinfo:
                 # Check if UTC timestamp without Z suffix
                 offset = obj.tzinfo.utcoffset(obj)
                 if offset is not None and offset == timedelta(0):
-                    return iso_str + 'Z'
+                    return iso_str + "Z"
             return iso_str
         # Handle timezone-aware datetime with isoformat
-        if hasattr(obj, 'isoformat') and callable(obj.isoformat):
+        if hasattr(obj, "isoformat") and callable(obj.isoformat):
             iso_str = obj.isoformat()
-            if iso_str.endswith('+00:00'):
-                return iso_str.replace('+00:00', 'Z')
+            if iso_str.endswith("+00:00"):
+                return iso_str.replace("+00:00", "Z")
             return iso_str
         return super().default(obj)
 
@@ -679,8 +767,10 @@ class CustomJSONEncoder(json.JSONEncoder):
 from fastapi.responses import JSONResponse
 from typing import Any
 
+
 class CustomJSONResponse(JSONResponse):
     """Custom JSON response that properly serializes MongoDB ObjectId"""
+
     def render(self, content: Any) -> bytes:
         return json.dumps(
             content,
@@ -709,27 +799,32 @@ register_exception_handlers(app)
 # GLOBAL REDIS CLIENT ACCESSOR - CRITICAL FOR ASYNC OPERATIONS
 # ============================================================================
 
+
 def get_redis_client():
     """
     Get the global Redis client instance from app state.
-    
+
     CRITICAL: This function provides safe access to Redis client after startup.
     Returns None if Redis is not available (test mode).
-    
+
     Returns:
         Redis client instance or None if not initialized
-        
+
     Raises:
         RuntimeError: If called during startup before Redis is initialized
     """
     try:
-        redis_client = getattr(app.state, 'redis_client', None)
+        redis_client = getattr(app.state, "redis_client", None)
         if redis_client is None:
-            logger.debug("[REDIS-ACCESSOR] Redis client not available (test mode or not yet initialized)")
+            logger.debug(
+                "[REDIS-ACCESSOR] Redis client not available (test mode or not yet initialized)"
+            )
         return redis_client
     except AttributeError:
         # app.state not available (shouldn't happen in normal operation)
-        logger.warning("[REDIS-ACCESSOR] app.state not available - Redis client cannot be accessed")
+        logger.warning(
+            "[REDIS-ACCESSOR] app.state not available - Redis client cannot be accessed"
+        )
         return None
 
 
@@ -788,9 +883,9 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     "backend",
                     "0.0.0.0",
                 ]
-                return any(pattern in client_host for pattern in internal_patterns) or any(
-                    pattern in host_header for pattern in internal_patterns
-                )
+                return any(
+                    pattern in client_host for pattern in internal_patterns
+                ) or any(pattern in host_header for pattern in internal_patterns)
 
             # CRITICAL FIX: Less aggressive security patterns to avoid false positives
             # Focus on actual attacks, not normal text containing keywords
@@ -1480,7 +1575,9 @@ def _configure_s3_lifecycle():
             Bucket=settings.S3_BUCKET, LifecycleConfiguration=lifecycle_policy
         )
 
-        logger.info(f"[S3] Lifecycle policy configured for bucket: {settings.S3_BUCKET}")
+        logger.info(
+            f"[S3] Lifecycle policy configured for bucket: {settings.S3_BUCKET}"
+        )
         logger.info(f"[S3] - Temporary files (temp/) auto-deleted after 24 hours")
         logger.info(f"[S3] - Incomplete uploads (temp/) cleaned after 24 hours")
         logger.info("[S3] WhatsApp-style ephemeral storage: Enabled ✓")
@@ -1489,7 +1586,9 @@ def _configure_s3_lifecycle():
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
         if error_code == "NoSuchBucket":
             logger.warning(f"[S3] Bucket '{settings.S3_BUCKET}' does not exist")
-            logger.warning(f"[S3] Please create the S3 bucket and configure lifecycle manually:")
+            logger.warning(
+                f"[S3] Please create the S3 bucket and configure lifecycle manually:"
+            )
             logger.warning(
                 f"[S3] Lifecycle policy needed: Delete objects in 'temp/' prefix after 24 hours"
             )
@@ -2015,12 +2114,23 @@ if isinstance(cors_origins, list) and len(cors_origins) > 0:
     cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
 
 # Production CORS: allow only configured zaply origins (no extra debug origins)
+# CRITICAL FIX: allow_headers cannot be wildcard ["*"] when allow_credentials=True per CORS spec
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
-    allow_headers=["*"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "Accept-Language",
+        "Content-Language",
+        "X-Access-Token",
+        "X-Skip-Auth-Interceptor",
+    ],
     expose_headers=[
         "Content-Disposition",
         "X-Total-Count",
@@ -2028,6 +2138,7 @@ app.add_middleware(
         "Access-Control-Allow-Methods",
         "Access-Control-Allow-Headers",
         "Content-Length",
+        "Set-Cookie",
     ],
     max_age=3600,  # Cache preflight requests for 1 hour
 )
@@ -2065,7 +2176,11 @@ async def handle_options_request(full_path: str, request: Request):
     # If no Origin header, this is not a browser CORS request. Do not emit wildcard
     # in production. Return the primary allowed origin to keep responses consistent.
     if not origin:
-        allowed_origin = settings.CORS_ORIGINS[0] if getattr(settings, "CORS_ORIGINS", None) else "https://zaply.in.net"
+        allowed_origin = (
+            settings.CORS_ORIGINS[0]
+            if getattr(settings, "CORS_ORIGINS", None)
+            else "https://zaply.in.net"
+        )
 
     return Response(
         status_code=200,
@@ -2091,7 +2206,11 @@ async def api_status(request: Request):
     # Only allow access in debug mode or from internal service network
     client_host = request.client.host if request.client else "unknown"
 
-    if not settings.DEBUG and client_host not in ["hypersend_backend", "backend", "0.0.0.0"]:
+    if not settings.DEBUG and client_host not in [
+        "hypersend_backend",
+        "backend",
+        "0.0.0.0",
+    ]:
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
             content={
@@ -2198,9 +2317,10 @@ async def health_check():
 
         try:
             from pathlib import Path
+
             temp_path = Path(settings.TEMP_STORAGE_PATH)
             upload_path = Path(settings.UPLOAD_DIR)
-            
+
             if not temp_path.exists() or not upload_path.exists():
                 storage_status = "unhealthy"
                 storage_error = "Storage directories do not exist"
@@ -2210,11 +2330,11 @@ async def health_check():
                     test_file_temp = temp_path / ".health_test"
                     test_file_temp.touch(exist_ok=True)
                     test_file_temp.unlink(missing_ok=True)
-                    
+
                     test_file_upload = upload_path / ".health_test"
                     test_file_upload.touch(exist_ok=True)
                     test_file_upload.unlink(missing_ok=True)
-                    
+
                     storage_status = "healthy"
                 except Exception as e:
                     storage_status = "unhealthy"
@@ -2230,12 +2350,12 @@ async def health_check():
         try:
             # Import database module and check connection
             import database
-            
+
             # Force database initialization
             db = database.get_database()
-            
+
             # Check if client is available
-            if hasattr(database, 'client') and database.client is not None:
+            if hasattr(database, "client") and database.client is not None:
                 # Test connection with ping
                 try:
                     await database.client.admin.command("ping")
@@ -2278,7 +2398,11 @@ async def health_check():
 
         # Determine overall status - fail if storage, database, or Redis is unhealthy
         overall_status = "healthy"
-        if storage_status == "unhealthy" or db_status == "unhealthy" or redis_status == "unhealthy":
+        if (
+            storage_status == "unhealthy"
+            or db_status == "unhealthy"
+            or redis_status == "unhealthy"
+        ):
             overall_status = "unhealthy"
 
         response_data = {
@@ -2336,7 +2460,9 @@ async def contacts_route(
     limit: int = 50,
     current_user: str = Depends(get_current_user),
 ):
-    return await users.get_contacts(offset=offset, limit=limit, current_user=current_user)
+    return await users.get_contacts(
+        offset=offset, limit=limit, current_user=current_user
+    )
 
 
 # ====================
@@ -2349,15 +2475,21 @@ app.include_router(chats.router, prefix="/api/v1/chats")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
 app.include_router(e2ee_messages.router, prefix="/api/v1")  # E2EE encrypted messages
-app.include_router(files.router, prefix="/api/v1/files")  # Standard file operations: /api/v1/files/*
-app.include_router(files.attach_router, prefix="/api/v1")  # Attachment operations: /api/v1/attach/*
+app.include_router(
+    files.router, prefix="/api/v1/files"
+)  # Standard file operations: /api/v1/files/*
+app.include_router(
+    files.attach_router, prefix="/api/v1"
+)  # Attachment operations: /api/v1/attach/*
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")  # E2EE Device Management
 
 # Log router registration for troubleshooting
-logger.info("[ROUTING] All routers registered. Files: /api/v1/files/*, Attachments: /api/v1/attach/photos-videos/init, /api/v1/attach/documents/init, etc.")
+logger.info(
+    "[ROUTING] All routers registered. Files: /api/v1/files/*, Attachments: /api/v1/attach/photos-videos/init, /api/v1/attach/documents/init, etc."
+)
 
 
 # Add swagger.json endpoint for compatibility
@@ -2447,7 +2579,11 @@ async def preflight_alias_endpoints(request: Request):
 
     # If no Origin header, this is not a browser preflight. Do not emit wildcard.
     if not origin:
-        allowed_origin = settings.CORS_ORIGINS[0] if getattr(settings, "CORS_ORIGINS", None) else "https://zaply.in.net"
+        allowed_origin = (
+            settings.CORS_ORIGINS[0]
+            if getattr(settings, "CORS_ORIGINS", None)
+            else "https://zaply.in.net"
+        )
 
     return Response(
         status_code=200,
