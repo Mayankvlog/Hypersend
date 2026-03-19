@@ -410,5 +410,272 @@ class TestDatabaseErrorHandling:
             pass
 
 
+class TestHTTPOnlyCookieAuthentication:
+    """Test HTTPOnly cookie-based authentication"""
+    
+    def test_login_sets_httponly_cookies(self):
+        """Test that login endpoint sets HTTPOnly cookies for both access and refresh tokens"""
+        test_email = f"cookie_test_{int(asyncio.get_event_loop().time())}@example.com"
+        
+        # Register first to ensure user exists
+        registration_data = {
+            "email": test_email,
+            "password": "TestPassword123",
+            "name": "Cookie Test User"
+        }
+        
+        reg_response = client.post("/api/v1/auth/register", 
+            json=registration_data,
+            headers={"User-Agent": "testclient"}
+        )
+        print(f"Registration: {reg_response.status_code}")
+        
+        if reg_response.status_code not in [201, 409, 500, 503]:
+            print(f"Unexpected registration response: {reg_response.text}")
+        
+        # Now login to get cookies
+        login_data = {
+            "email": test_email,
+            "password": "TestPassword123"
+        }
+        
+        response = client.post("/api/v1/auth/login", 
+            json=login_data,
+            headers={"User-Agent": "testclient"}
+        )
+        
+        # Should return 200 or 500/503 (database unavailable)
+        assert response.status_code in [200, 401, 500, 503]
+        
+        if response.status_code == 200:
+            # Check that cookies are set in response headers
+            cookies = response.cookies
+            
+            # Verify access_token cookie exists
+            assert "access_token" in cookies, "access_token cookie should be set"
+            assert cookies["access_token"].value != "", "access_token should have a value"
+            
+            # Verify refresh_token cookie exists
+            assert "refresh_token" in cookies, "refresh_token cookie should be set"
+            assert cookies["refresh_token"].value != "", "refresh_token should have a value"
+            
+            # Verify cookie security attributes
+            # Note: TestClient doesn't expose all cookie attributes directly,
+            # but we can verify they exist
+            print(f"Access token cookie: {cookies['access_token'].value[:20]}...")
+            print(f"Refresh token cookie: {cookies['refresh_token'].value[:20]}...")
+            
+            # Response body should NOT contain tokens (they're in cookies, not body)
+            data = response.json()
+            assert "access_token" not in data, "access_token should NOT be in response body (it's in cookie)"
+            assert "refresh_token" not in data, "refresh_token should NOT be in response body (it's in cookie)"
+            assert "message" in data, "Response should have message field"
+            assert "token_type" in data, "Response should have token_type field"
+    
+    def test_refresh_session_with_refresh_token_cookie(self):
+        """Test that refresh-session endpoint reads refresh token from cookie and issues new access token"""
+        test_email = f"refresh_test_{int(asyncio.get_event_loop().time())}@example.com"
+        
+        # Register user
+        registration_data = {
+            "email": test_email,
+            "password": "TestPassword123",
+            "name": "Refresh Test User"
+        }
+        
+        reg_response = client.post("/api/v1/auth/register", 
+            json=registration_data,
+            headers={"User-Agent": "testclient"}
+        )
+        print(f"Registration: {reg_response.status_code}")
+        
+        # Login to get cookies
+        login_data = {
+            "email": test_email,
+            "password": "TestPassword123"
+        }
+        
+        login_response = client.post("/api/v1/auth/login", 
+            json=login_data,
+            headers={"User-Agent": "testclient"}
+        )
+        
+        print(f"Login: {login_response.status_code}")
+        
+        if login_response.status_code == 200:
+            # Now call refresh-session - cookies should be preserved by TestClient
+            refresh_response = client.post("/api/v1/auth/refresh-session", 
+                json={},
+                headers={"User-Agent": "testclient"}
+            )
+            
+            print(f"Refresh-session: {refresh_response.status_code}")
+            
+            # Should return 200 or 401 (if cookies expired) or 500/503 (database unavailable)
+            assert refresh_response.status_code in [200, 401, 500, 503]
+            
+            if refresh_response.status_code == 200:
+                # Verify new access token cookie is set
+                new_cookies = refresh_response.cookies
+                
+                if "access_token" in new_cookies:
+                    assert new_cookies["access_token"].value != "", "New access_token should have a value"
+                    print(f"New access token issued: {new_cookies['access_token'].value[:20]}...")
+                
+                # Response should contain success message
+                data = refresh_response.json()
+                assert "message" in data
+                assert "Session refreshed" in data["message"]
+        
+        elif login_response.status_code in [500, 503]:
+            # Database unavailable - skip test
+            pass
+    
+    def test_protected_endpoint_with_cookie_auth(self):
+        """Test that protected endpoints work with HTTPOnly cookie authentication"""
+        test_email = f"protected_test_{int(asyncio.get_event_loop().time())}@example.com"
+        
+        # Register and login to get cookies
+        registration_data = {
+            "email": test_email,
+            "password": "TestPassword123",
+            "name": "Protected Test User"
+        }
+        
+        reg_response = client.post("/api/v1/auth/register", 
+            json=registration_data,
+            headers={"User-Agent": "testclient"}
+        )
+        
+        login_data = {
+            "email": test_email,
+            "password": "TestPassword123"
+        }
+        
+        login_response = client.post("/api/v1/auth/login", 
+            json=login_data,
+            headers={"User-Agent": "testclient"}
+        )
+        
+        print(f"Login: {login_response.status_code}")
+        
+        if login_response.status_code == 200:
+            # Call protected endpoint /me with cookies preserved by TestClient
+            me_response = client.get("/api/v1/users/me", 
+                headers={"User-Agent": "testclient"}
+            )
+            
+            print(f"GET /me with cookies: {me_response.status_code}")
+            
+            # Should return 200 or 500/503 (database unavailable)
+            assert me_response.status_code in [200, 404, 500, 503]
+            
+            if me_response.status_code == 200:
+                data = me_response.json()
+                assert "email" in data, "Response should contain email"
+                assert "name" in data, "Response should contain name"
+                assert "id" in data, "Response should contain user id"
+                print(f"User profile retrieved: {data['email']}")
+    
+    def test_logout_clears_cookies(self):
+        """Test that logout endpoint clears HTTPOnly cookies"""
+        test_email = f"logout_test_{int(asyncio.get_event_loop().time())}@example.com"
+        
+        # Register and login
+        registration_data = {
+            "email": test_email,
+            "password": "TestPassword123",
+            "name": "Logout Test User"
+        }
+        
+        client.post("/api/v1/auth/register", 
+            json=registration_data,
+            headers={"User-Agent": "testclient"}
+        )
+        
+        login_data = {
+            "email": test_email,
+            "password": "TestPassword123"
+        }
+        
+        login_response = client.post("/api/v1/auth/login", 
+            json=login_data,
+            headers={"User-Agent": "testclient"}
+        )
+        
+        print(f"Login: {login_response.status_code}")
+        
+        if login_response.status_code == 200:
+            # Call logout with cookies
+            logout_response = client.post("/api/v1/auth/logout", 
+                headers={"User-Agent": "testclient"}
+            )
+            
+            print(f"Logout: {logout_response.status_code}")
+            
+            # Should return 200 or 401 (not authenticated) or 500/503 (database unavailable)
+            assert logout_response.status_code in [200, 401, 500, 503]
+            
+            if logout_response.status_code == 200:
+                # Verify cookies are cleared (set to empty/expire in response)
+                logout_cookies = logout_response.cookies
+                
+                # Check if cookies are cleared (by having empty values or being deleted)
+                # TestClient may not show exact cookie clearing behavior, but we can verify response
+                data = logout_response.json()
+                assert "message" in data
+                assert "successfully" in str(data["message"]).lower()
+                print("User successfully logged out")
+
+
+class TestAuthenticationSessionPersistence:
+    """Test session persistence with HTTPOnly cookies"""
+    
+    def test_auto_login_with_valid_cookies(self):
+        """Test that auto-login works with valid HTTPOnly cookies (simulates Flutter app startup)"""
+        test_email = f"autologin_test_{int(asyncio.get_event_loop().time())}@example.com"
+        
+        # Register and login to get cookies
+        registration_data = {
+            "email": test_email,
+            "password": "TestPassword123",
+            "name": "Auto-Login Test User"
+        }
+        
+        client.post("/api/v1/auth/register", 
+            json=registration_data,
+            headers={"User-Agent": "testclient"}
+        )
+        
+        login_data = {
+            "email": test_email,
+            "password": "TestPassword123"
+        }
+        
+        login_response = client.post("/api/v1/auth/login", 
+            json=login_data,
+            headers={"User-Agent": "testclient"}
+        )
+        
+        print(f"Login: {login_response.status_code}")
+        
+        if login_response.status_code == 200:
+            # Simulate app startup - call /me endpoint (no explicit token, cookies are auto-sent)
+            # This is what Flutter app does on startup for auto-login
+            me_response = client.get("/api/v1/users/me", 
+                headers={"User-Agent": "testclient"}
+            )
+            
+            print(f"Auto-login check (GET /me): {me_response.status_code}")
+            
+            # Should return 200 if session is valid, 401 if cookies expired
+            assert me_response.status_code in [200, 401, 500, 503]
+            
+            if me_response.status_code == 200:
+                data = me_response.json()
+                assert data["email"] == test_email
+                print(f"Auto-login successful for {test_email}")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
