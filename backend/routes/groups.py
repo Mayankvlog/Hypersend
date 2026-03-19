@@ -1,28 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, UploadFile, File
-
 from fastapi.encoders import jsonable_encoder
-
 from fastapi.responses import FileResponse
-
 from typing import List, Optional, Any, Dict
-
 from datetime import datetime, timezone, timedelta
-
 from bson import ObjectId
-
 import asyncio
 import aiofiles
-
 import json
-
 import logging
-
 import os
-
 import time
-
 import uuid
-
 import re
 import base64
 import mimetypes
@@ -686,7 +674,8 @@ async def upload_group_avatar(
 
 
 
-    avatar_url = f"/api/v1/groups/avatar/{safe_name}"
+    # CRITICAL FIX: Use absolute URL for frontend to display images correctly
+    avatar_url = f"{settings.API_BASE_URL}/groups/avatar/{safe_name}"
 
     # Broadcast group avatar update via WebSocket
     try:
@@ -2999,10 +2988,11 @@ async def update_group_photo(
         
         # Update group document with UTC timestamp - use single timestamp
         ts = _now()
+        # CRITICAL FIX: Use absolute URL for frontend to display images correctly
         update_data = {
             "photo_id": photo_id,
             "photo_extension": extension,  # Store the extension
-            "photo_url": f"/api/groups/{group_id}/photo/{photo_id}",
+            "photo_url": f"{settings.API_BASE_URL}/groups/{group_id}/photo/{photo_id}",
             "photo_updated_at": ts.isoformat().replace('+00:00', 'Z'),  # UTC with Z suffix
             "photo_updated_by": current_user
         }
@@ -3020,11 +3010,12 @@ async def update_group_photo(
             members = group.get("members", [])
             for member_id in members:
                 # Broadcast to each member's devices using same timestamp
+                # CRITICAL FIX: Use absolute URL for frontend to display images correctly
                 broadcast_message = {
                     "type": "group_photo_updated",
                     "group_id": group_id,
                     "photo_id": photo_id,
-                    "photo_url": f"/api/groups/{group_id}/photo/{photo_id}",
+                    "photo_url": update_data["photo_url"],
                     "updated_by": current_user,
                     "timestamp": ts.isoformat().replace('+00:00', 'Z')  # Same timestamp
                 }

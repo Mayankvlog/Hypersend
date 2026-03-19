@@ -41,8 +41,16 @@ class MessageBubble extends StatelessWidget {
               backgroundColor: AppTheme.cardDark,
               backgroundImage: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/') && !avatarUrl!.contains('/avatar/')
                   ? (avatarUrl!.startsWith('http')
-                      ? NetworkImage(avatarUrl!)
-                      : NetworkImage('${ApiConstants.serverBaseUrl}${avatarUrl!}')
+                      ? NetworkImage(
+                          avatarUrl!,
+                          // CRITICAL FIX: Add cache-busting to prevent stale images
+                          headers: {'Cache-Control': 'no-cache'},
+                        )
+                      : NetworkImage(
+                          '${ApiConstants.serverBaseUrl}${avatarUrl!}',
+                          // CRITICAL FIX: Add cache-busting to prevent stale images
+                          headers: {'Cache-Control': 'no-cache'},
+                        )
                   )
                   : null,
               child: avatarUrl!.isNotEmpty && !avatarUrl!.endsWith('/') && !avatarUrl!.contains('/avatar/')

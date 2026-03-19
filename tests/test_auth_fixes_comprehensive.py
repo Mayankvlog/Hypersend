@@ -415,7 +415,8 @@ class TestHTTPOnlyCookieAuthentication:
     
     def test_login_sets_httponly_cookies(self):
         """Test that login endpoint sets HTTPOnly cookies for both access and refresh tokens"""
-        test_email = f"cookie_test_{int(asyncio.get_event_loop().time())}@example.com"
+        import time
+        test_email = f"cookie_test_{int(time.time())}@example.com"
         
         # Register first to ensure user exists
         registration_data = {
@@ -474,7 +475,8 @@ class TestHTTPOnlyCookieAuthentication:
     
     def test_refresh_session_with_refresh_token_cookie(self):
         """Test that refresh-session endpoint reads refresh token from cookie and issues new access token"""
-        test_email = f"refresh_test_{int(asyncio.get_event_loop().time())}@example.com"
+        import time
+        test_email = f"refresh_test_{int(time.time())}@example.com"
         
         # Register user
         registration_data = {
@@ -533,7 +535,8 @@ class TestHTTPOnlyCookieAuthentication:
     
     def test_protected_endpoint_with_cookie_auth(self):
         """Test that protected endpoints work with HTTPOnly cookie authentication"""
-        test_email = f"protected_test_{int(asyncio.get_event_loop().time())}@example.com"
+        import time
+        test_email = f"protected_test_{int(time.time())}@example.com"
         
         # Register and login to get cookies
         registration_data = {
@@ -579,7 +582,8 @@ class TestHTTPOnlyCookieAuthentication:
     
     def test_logout_clears_cookies(self):
         """Test that logout endpoint clears HTTPOnly cookies"""
-        test_email = f"logout_test_{int(asyncio.get_event_loop().time())}@example.com"
+        import time
+        test_email = f"logout_test_{int(time.time())}@example.com"
         
         # Register and login
         registration_data = {
@@ -633,7 +637,8 @@ class TestAuthenticationSessionPersistence:
     
     def test_auto_login_with_valid_cookies(self):
         """Test that auto-login works with valid HTTPOnly cookies (simulates Flutter app startup)"""
-        test_email = f"autologin_test_{int(asyncio.get_event_loop().time())}@example.com"
+        import time
+        test_email = f"autologin_test_{int(time.time())}@example.com"
         
         # Register and login to get cookies
         registration_data = {

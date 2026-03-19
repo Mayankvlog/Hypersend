@@ -43,15 +43,26 @@ class ServiceProvider {
         // Non-blocking - app continues even if auth fails initially
       }
 
-      // If logged in, fetch current user and populate profile service
-      if (authService.isLoggedIn) {
+      // CRITICAL FIX: Check session validity on app startup for persistent login
+      // This implements automatic login using HTTPOnly cookies
+      debugPrint('[ServiceProvider] Checking session validity for automatic login...');
+      final isSessionValid = await authService.checkSessionValid();
+      
+      // If session is valid (HTTPOnly cookies are working), fetch current user
+      if (isSessionValid) {
         try {
+          debugPrint('[ServiceProvider] Session valid - fetching user profile...');
           final me = await apiService.getMe();
           profileService.setUser(User.fromApi(me));
+          debugPrint('[ServiceProvider] Automatic login successful');
         } catch (e) {
-          debugPrint('[ServiceProvider] Profile fetch error: $e');
-          // User will be prompted to log in again
+          debugPrint('[ServiceProvider] Profile fetch error after valid session: $e');
+          // CRITICAL FIX: Clear auth state to avoid inconsistent logged-in state
+          profileService.clearProfile();
+          authService.handleAuthenticationFailure();
         }
+      } else {
+        debugPrint('[ServiceProvider] No valid session - user needs to login');
       }
       debugPrint('[ServiceProvider] Initialization complete');
     } catch (e) {

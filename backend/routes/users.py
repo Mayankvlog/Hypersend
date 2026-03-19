@@ -54,7 +54,7 @@ import asyncio
 
 from pydantic import BaseModel, Field, field_validator
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from typing import Optional
 
@@ -67,6 +67,21 @@ import math
 import logging
 
 from bson import ObjectId
+
+import asyncio
+import aiofiles
+import logging
+import os
+from pathlib import Path
+
+
+
+# Helper function to check if URL is an avatar URL
+def _is_avatar_url(url: str) -> bool:
+    """Check if URL is an avatar URL (both old relative and new absolute formats)"""
+    if not isinstance(url, str) or not url:
+        return False
+    return ("/api/v1/users/avatar/" in url or "/users/avatar/" in url)
 
 
 
@@ -703,19 +718,12 @@ async def update_profile(
                                 except Exception as delete_error:
 
                                     logger.warning(f"Could not delete old avatar file {old_filename}: {delete_error}")
-
             except Exception as cleanup_error:
-
                 logger.warning(f"Cleanup error while checking old avatar: {cleanup_error}")
-
-                # Continue anyway - new avatar URL will be set
-
-            
 
             update_data["avatar_url"] = profile_data.avatar_url
 
             # Clear avatar initials when avatar_url is set
-
             update_data["avatar"] = None
 
         else:
@@ -724,43 +732,25 @@ async def update_profile(
 
             try:
 
-                current_user_data = await asyncio.wait_for(
+                current_user_id = current_user_data.get("_id") if current_user_data else current_user_oid
 
-                    users_collection().find_one({"_id": current_user_oid}),
+                # Use the already-available current_user_data instead of redundant DB lookup
+                user_doc = current_user_data
 
-                    timeout=5.0
-
-                )
-
-                
-
-                if current_user_data and "avatar_url" in current_user_data:
-
-                    old_avatar_url = current_user_data["avatar_url"]
-
-                    if old_avatar_url and old_avatar_url.startswith("/api/v1/users/avatar/"):
-
-                        old_filename = old_avatar_url.split("/")[-1]
-
-                        from pathlib import Path
-
+                if user_doc and "avatar_url" in user_doc:
+                    if _is_avatar_url(user_doc["avatar_url"]):
+                        # Extract filename from both relative and absolute URLs
+                        old_filename = user_doc["avatar_url"].split("/")[-1]
+                        # Get avatar_dir the same way upload_avatar does
                         data_root = Path(settings.DATA_ROOT)
-
-                        old_file_path = data_root / "avatars" / old_filename
-
+                        avatar_dir = data_root / "avatars"
+                        old_file_path = avatar_dir / old_filename
                         if old_file_path.exists():
-
                             try:
-
                                 old_file_path.unlink()
-
-                                logger.info(f"Removed avatar file: {old_filename}")
-
+                                logger.debug("Cleaned up old avatar file")
                             except Exception as delete_error:
-
-                                logger.warning(f"Could not remove avatar file {old_filename}: {delete_error}")
-
-                
+                                    logger.warning(f"Could not delete old avatar: {delete_error}")
 
                 # Set avatar_url to None in database to remove avatar
 
@@ -2359,59 +2349,11 @@ async def upload_avatar(
 
         
 
-        # Generate URL AFTER file is saved
+        # Generate absolute URL AFTER file is saved
+        # CRITICAL FIX: Use absolute URL for frontend to display images correctly
+        from backend.config import settings
+        avatar_url = f"{settings.API_BASE_URL}/users/avatar/{new_file_name}"
 
-        avatar_url = f"/api/v1/users/avatar/{new_file_name}"
-
-        logger.debug("Avatar URL generated")
-
-        
-
-        # Clean up old avatar files AFTER saving new file
-
-        current_avatar = None
-
-        try:
-
-            user_id = _maybe_object_id(current_user)
-
-            user = await asyncio.wait_for(
-
-                users_collection().find_one({"_id": user_id}),
-
-                timeout=5.0
-
-            )
-
-            if user and "avatar_url" in user:
-
-                old_avatar_url = user["avatar_url"]
-
-                if old_avatar_url and old_avatar_url.startswith("/api/v1/users/avatar/"):
-
-                    old_filename = old_avatar_url.split("/")[-1]
-
-                    old_file_path = avatar_dir / old_filename
-
-                    if old_file_path.exists():
-
-                        try:
-
-                            old_file_path.unlink()
-
-                            logger.debug("Cleaned up old avatar file")
-
-                        except Exception as delete_error:
-
-                            logger.warning(f"Could not delete old avatar: {delete_error}")
-
-            # Store current avatar for response
-
-            current_avatar = user.get("avatar", "") if user else None
-
-        except Exception as cleanup_error:
-
-            logger.warning(f"Cleanup error while checking old avatar: {cleanup_error}")
 
             # Continue anyway - new file is already saved
 

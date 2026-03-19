@@ -38,72 +38,41 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
       return null;
     }
     
-    // FIXED: Enhanced validation to prevent filename rendering glitches
-    // Check if this looks like a filename pattern (like "YenSurferUserSetup")
-    if (_isLikelyFilename(avatarUrl)) {
-      debugPrint('[PROFILE_PHOTO] Detected filename pattern, preventing rendering glitch: $avatarUrl');
-      return null; // This is a filename, not a URL - prevent glitch
-    }
-    
     // Check if this looks like a valid URL or path
     if (avatarUrl.startsWith('http')) {
       debugPrint('[PROFILE_PHOTO] Loading HTTP avatar: $avatarUrl');
-      return NetworkImage(avatarUrl);
+      return NetworkImage(
+        avatarUrl,
+        // CRITICAL FIX: Add cache-busting to prevent stale images
+        headers: {'Cache-Control': 'no-cache'},
+      );
     } else if (avatarUrl.startsWith('/')) {
       // PREVENT requests to POST endpoints
       if (avatarUrl.endsWith('/')) {
         debugPrint('[PROFILE_PHOTO] Blocking POST endpoint request: $avatarUrl');
-        return null;  // Don't load POST endpoints
+        return null;
       }
       
-      // Check for valid avatar paths that contain 'avatar/' and have a filename with extension
+      // Only allow GET endpoints for avatars
       if (avatarUrl.contains('/avatar/') && 
           avatarUrl.split('/').last.contains('.')) {
         debugPrint('[PROFILE_PHOTO] Loading GET avatar: ${ApiConstants.serverBaseUrl}$avatarUrl');
-        return NetworkImage('${ApiConstants.serverBaseUrl}$avatarUrl');
+        return NetworkImage(
+          '${ApiConstants.serverBaseUrl}$avatarUrl',
+          // CRITICAL FIX: Add cache-busting to prevent stale images
+          headers: {'Cache-Control': 'no-cache'},
+        );
       }
       
       debugPrint('[PROFILE_PHOTO] Invalid avatar URL format: $avatarUrl');
-      return null; // Invalid format - don't try to load
+      return null;
     }
     
-    debugPrint('[PROFILE_PHOTO] Unknown avatar format: $avatarUrl');
+    debugPrint('[PROFILE_PHOTO] Invalid avatar URL format: $avatarUrl');
     return null;
   }
 
-  // FIXED: Helper method to detect filename patterns that cause rendering glitches
-  bool _isLikelyFilename(String text) {
-    // Check for common filename patterns that would cause rendering glitches
-    // 1. Contains dots but no slashes (like "YenSurferUserSetup-x64-13.5.exe")
-    if (text.contains('.') && !text.contains('/')) {
-      // Additional check for executable-like patterns
-      if (text.contains('-') && text.contains('x64') || text.contains('Setup')) {
-        return true;
-      }
-      // Check for common filename extensions
-      final extensions = ['.exe', '.jpg', '.png', '.gif', '.webp', '.jpeg', '.bmp'];
-      for (final ext in extensions) {
-        if (text.toLowerCase().endsWith(ext)) {
-          return true;
-        }
-      }
-      // Check if it looks like a filename (contains dots and no URL-like structure)
-      if (text.split('.').length >= 2) {
-        return true;
-      }
-    }
-    
-    // 2. Check for specific patterns that cause glitches
-    if (text.contains('YenSurferUserSetup') || 
-        text.contains('UserSetup') ||
-        text.contains('x64') ||
-        (text.contains('-') && text.split('-').length >= 2)) {
-      return true;
-    }
-    
-    return false;
-  }
-
+  // REMOVED: _isLikelyFilename method - unused
   // REMOVED: _getUserInitials - not needed since we never show initials
 
   @override
