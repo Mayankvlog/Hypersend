@@ -252,17 +252,17 @@ class ApiService {
                 
                 if (refreshed) {
                   _log('[API_401] Token refreshed successfully, retrying request');
-                  // Get new access token from auth service
-                  final newToken = authService.accessToken;
-                  if (newToken != null) {
-                    // Update authorization header with new token
-                    error.requestOptions.headers['Authorization'] = 'Bearer $newToken';
-                    // Retry the request with all original options preserved
-                    return handler.resolve(await _dio.request(
-                      error.requestOptions.path,
-                      options: Options(
-                        method: error.requestOptions.method,
-                        headers: error.requestOptions.headers,
+                  // CRITICAL FIX: With HTTPOnly cookies, we don't need to update Authorization headers
+                  // The server has already set the new access_token cookie in the refresh response
+                  // The browser will automatically send the new cookie on the next request
+                  // No need to access authService.accessToken or modify headers
+                  
+                  // Retry the request - browser will auto-send new cookie
+                  return handler.resolve(await _dio.request(
+                    error.requestOptions.path,
+                    options: Options(
+                      method: error.requestOptions.method,
+                      headers: error.requestOptions.headers,
                         contentType: error.requestOptions.contentType,
                       ),
                       data: error.requestOptions.data,
@@ -271,7 +271,6 @@ class ApiService {
                       onSendProgress: error.requestOptions.onSendProgress,
                       onReceiveProgress: error.requestOptions.onReceiveProgress,
                     ));
-                  }
                 } else {
                   _log('[API_401] Token refresh failed, user must re-login');
                 }

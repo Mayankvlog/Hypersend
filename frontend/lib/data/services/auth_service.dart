@@ -6,8 +6,6 @@ import 'dart:async';
 class AuthService {
   static const _kLastLoginAttemptKey = 'auth.lastLoginAttempt';
   static const _kFailedAttemptsKey = 'auth.failedAttempts';
-  static const _kAccessTokenKey = 'auth.accessToken';
-  static const _kRefreshTokenKey = 'auth.refreshToken';
 
   final ApiService _api;
 
@@ -124,26 +122,14 @@ class AuthService {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // Restore saved tokens (same keys used by _persistTokens)
-      final savedAccessToken = prefs.getString(_kAccessTokenKey);
-      final savedRefreshToken = prefs.getString(_kRefreshTokenKey);
+      // CRITICAL FIX: Do NOT restore tokens from SharedPreferences
+      // HTTPOnly cookies persist automatically - they're in the browser storage
+      // SharedPreferences cannot store HTTPOnly cookies (that's the whole point!)
+      // If tokens are in SharedPreferences, they're NOT HTTPOnly (security vulnerability)
+      // Instead: Call checkSessionValid() to verify HTTPOnly cookies are still valid
+      debugPrint('[AUTH_INIT] Using HTTPOnly cookies for session persistence (NOT SharedPreferences)');
       
-      if (savedAccessToken != null && savedRefreshToken != null) {
-        _accessToken = savedAccessToken;
-        _refreshToken = savedRefreshToken;
-        _api.setAuthToken(_accessToken!);
-        _isAuthenticated = true;
-        // Log non-sensitive metadata only - token lengths and restoration status
-        final accessTokenLength = _accessToken?.length ?? 0;
-        final refreshTokenLength = _refreshToken?.length ?? 0;
-        debugPrint('[AUTH_INIT] Tokens restored - access token length: $accessTokenLength, refresh token length: $refreshTokenLength');
-        
-        // TODO: Add any post-load logic here (e.g., schedule refresh, notify listeners)
-      } else {
-        debugPrint('[AUTH_INIT] No saved tokens found');
-      }
-      
-      // Load failure tracking data (keep existing functionality)
+      // Load failure tracking data only (keep existing functionality, not auth tokens)
       _failedAttempts = prefs.getInt(_kFailedAttemptsKey) ?? 0;
       final lastAttemptStr = prefs.getString(_kLastLoginAttemptKey);
       if (lastAttemptStr != null) {
@@ -173,14 +159,26 @@ class AuthService {
         }
       }
       
-      // With HTTPOnly cookies, we don't need to validate tokens here
-      // The server will validate cookies and return errors if needed
+      // CRITICAL FIX: Check if HTTPOnly cookies are valid on app startup
+      // This is how persistent login works - cookies are stored in browser, not in code
+      debugPrint('[AUTH_INIT] Verifying HTTPOnly cookie-based session...');
+      final isSessionValid = await checkSessionValid();
+      
+      if (isSessionValid) {
+        debugPrint('[AUTH_INIT] ✓ Valid HTTPOnly cookies found - session restored');
+        _isAuthenticated = true;
+      } else {
+        debugPrint('[AUTH_INIT] ✗ No valid HTTPOnly cookies - user not authenticated');
+        _isAuthenticated = false;
+      }
+      
       debugPrint('[AUTH_INIT] HTTPOnly cookie-based authentication initialized');
     } catch (e) {
       debugPrint('[AUTH_INIT_ERROR] Failed to initialize auth: $e');
       _failedAttempts = 0;
       _lastLoginAttempt = null;
       _loginCooldownTimer?.cancel();
+      _isAuthenticated = false;
     }
   }
 
@@ -193,7 +191,9 @@ class AuthService {
     _lastLoginAttempt = null;
     _loginCooldownTimer?.cancel();
     _isAuthenticated = false; // Set authentication state to false
-    _api.clearAuthToken();
+    // CRITICAL FIX: Do NOT call _api.clearAuthToken()
+    // HTTPOnly cookies are cleared by the server on logout
+    // We don't need to manage Authorization headers
     await _clearTokens();
   }
 
@@ -203,7 +203,8 @@ class AuthService {
     _isAuthenticated = false;
     _accessToken = null;
     _refreshToken = null;
-    _api.clearAuthToken();
+    // CRITICAL FIX: Do NOT call _api.clearAuthToken()
+    // HTTPOnly cookies are managed by browser automatically
   }
 
   Future<void> login({
@@ -424,10 +425,10 @@ class AuthService {
   Future<void> _clearTokens() async {
     _accessToken = null;
     _refreshToken = null;
-    _api.clearAuthToken();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kAccessTokenKey);
-    await prefs.remove(_kRefreshTokenKey);
+    // CRITICAL FIX: Do NOT call _api.clearAuthToken()
+    // HTTPOnly cookies are never stored in SharedPreferences
+    // They're managed by the browser automatically
+    // Tokens are HTTPOnly cookies (not in SharedPreferences)
   }
   
   void dispose() {
