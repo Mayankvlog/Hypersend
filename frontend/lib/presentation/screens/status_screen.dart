@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io' as io;
+import 'dart:io';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_strings.dart';
 import '../../data/services/service_provider.dart';
@@ -217,7 +217,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       
       // Import dart:io for native File
       // For web, this would need different handling (use file.bytes)
-      final imageFile = io.File(file.path!);
+      final imageFile = File(file.path!);
 
       // Show loading indicator
       if (mounted) {
@@ -229,8 +229,13 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         );
       }
 
-      // Upload image to backend
-      final uploadResponse = await serviceProvider.apiService.uploadStatusMedia(imageFile);
+      // Read file bytes and upload to backend
+      final fileBytes = await imageFile.readAsBytes();
+      final fileName = file.path!.split('/').last;
+      final uploadResponse = await serviceProvider.apiService.uploadStatusMedia(
+        fileBytes,
+        filename: fileName,
+      );
       
       // Create status with uploaded file
       await serviceProvider.apiService.createStatus(

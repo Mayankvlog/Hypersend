@@ -3434,17 +3434,18 @@ if (!kIsWeb) {
     }
   }
   
-  /// Upload media for status (native platforms with dart:io File)
-  Future<Map<String, dynamic>> uploadStatusMedia(io.File file) async {
+  /// Upload media for status (works for both native and web via Uint8List bytes)
+  Future<Map<String, dynamic>> uploadStatusMedia(
+    Uint8List bytes, {
+    String filename = 'media',
+  }) async {
     try {
-      _log('[API_UPLOAD_STATUS_MEDIA] Uploading status media: ${file.path}');
-      
-      final fileName = file.path.split('/').last;
+      _log('[API_UPLOAD_STATUS_MEDIA] Uploading status media: $filename');
       
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(
-          file.path,
-          filename: fileName,
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
         ),
       });
       
