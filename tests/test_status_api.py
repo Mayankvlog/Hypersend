@@ -167,18 +167,30 @@ class TestStatusAPIValidation:
         from backend.main import app
         from backend.routes import status as status_module
         from backend.auth import utils as auth_utils
+        from unittest.mock import AsyncMock
 
         mock_user = {
-            "_id": ObjectId("507f1f77bcf86cd799439011"),
+            "_id": "507f1f77bcf86cd799439011",
             "email": "testuser@example.com",
             "name": "Test User",
         }
 
+        # Create proper mock database with __getitem__
+        mock_db = MagicMock()
+        mock_status_collection = AsyncMock()
+        
+        def getitem_side_effect(key):
+            if key == "statuses":
+                return mock_status_collection
+            raise KeyError(f"Collection '{key}' not found in mock database")
+        
+        mock_db.__getitem__ = MagicMock(side_effect=getitem_side_effect)
+
         async def override_get_database():
-            return MagicMock()
+            return mock_db
 
         async def override_get_status_collection():
-            return MagicMock()
+            return mock_status_collection
 
         def override_get_current_user():
             return mock_user
@@ -211,12 +223,24 @@ class TestStatusAPIValidation:
         from fastapi.testclient import TestClient
         from backend.main import app
         from backend.routes import status as status_module
+        from unittest.mock import AsyncMock
+
+        # Create proper mock database with __getitem__
+        mock_db = MagicMock()
+        mock_status_collection = AsyncMock()
+        
+        def getitem_side_effect(key):
+            if key == "statuses":
+                return mock_status_collection
+            raise KeyError(f"Collection '{key}' not found in mock database")
+        
+        mock_db.__getitem__ = MagicMock(side_effect=getitem_side_effect)
 
         async def override_get_database():
-            return MagicMock()
+            return mock_db
 
         async def override_get_status_collection():
-            return MagicMock()
+            return mock_status_collection
 
         app.dependency_overrides[status_module.get_database] = override_get_database
         app.dependency_overrides[
