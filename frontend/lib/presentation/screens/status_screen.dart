@@ -19,6 +19,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   List<Map<String, dynamic>> _recentUpdates = [];
   List<Map<String, dynamic>> _viewedUpdates = [];
   bool _loading = true;
+  bool _isUploading = false;
   String? _error;
 
   @override
@@ -287,20 +288,16 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       // For web: use file.bytes directly
       late Uint8List fileBytes;
       
-      if (kIsWeb) {
-        // Web platform
-        if (file.bytes != null) {
-          fileBytes = file.bytes!;
-        } else {
-          throw Exception('File bytes not available for web');
+      if (file.bytes != null) {
+        fileBytes = file.bytes!;
+      } else if (file.readStream != null) {
+        final chunks = <int>[];
+        await for (final chunk in file.readStream!) {
+          chunks.addAll(chunk);
         }
+        fileBytes = Uint8List.fromList(chunks);
       } else {
-        // Native platform
-        if (file.path == null) {
-          throw Exception('File path not available');
-        }
-        final imageFile = io.File(file.path!);
-        fileBytes = await imageFile.readAsBytes();
+        throw Exception('File bytes not available');
       }
 
       if (mounted) {
