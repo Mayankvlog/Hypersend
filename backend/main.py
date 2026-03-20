@@ -20,6 +20,9 @@ from datetime import datetime, timedelta, timezone
 logger = logging.getLogger("zaply")
 logger.setLevel(logging.INFO)
 
+# CRITICAL: Add parent directory to sys.path so 'backend' module can be imported
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from backend.models import MessageCreate
 
 # WhatsApp-Grade Cryptographic Imports
@@ -33,7 +36,7 @@ from backend.crypto.multi_device import MultiDeviceManager
 from backend.crypto.delivery_semantics import DeliveryManager
 from backend.crypto.media_encryption import MediaEncryptionService
 from backend.workers.fan_out_worker import MessageFanOutWorker
-from websocket.websocket_manager import websocket_manager
+from backend.websocket.websocket_manager import websocket_manager
 
 # Add current directory to Python path for Docker
 # CRITICAL: Do NOT reload .env files - config.py handles initialization only once!
@@ -370,7 +373,7 @@ def init_storage():
                 "Please configure S3_BUCKET in your .env file or environment variables."
             )
         logger.info(f"[STARTUP] S3 Bucket validated: {settings.S3_BUCKET}")
-        
+
         # settings module automatically initializes storage directories in __init__
         # Just validate that it's properly set up
         if not settings.SERVER_STORAGE_ENABLED:
@@ -648,7 +651,7 @@ async def lifespan(app: FastAPI):
     status_cleanup_task = None
     try:
         from backend.routes.status import periodic_status_cleanup
-        
+
         status_cleanup_task = asyncio.create_task(
             periodic_status_cleanup(interval_minutes=5)  # Run every 5 minutes
         )

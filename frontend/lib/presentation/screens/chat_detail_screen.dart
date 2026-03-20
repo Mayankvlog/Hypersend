@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:path/path.dart' as path;
 
 // Platform-specific imports: dart:io is conditionally imported only for non-web platforms
@@ -1761,27 +1762,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {
     try {
       if (!kIsWeb) {
-        // Safety: this helper is meant for web only; native platforms use _downloadAndOpenFile
         throw Exception('Web-only download helper called on non-web platform');
       }
 
-      // IMPORTANT:
-      // We MUST use the authorized API client (Dio) so the Authorization: Bearer <token>
-      // header is sent. The backend explicitly rejects query-parameter auth such as
-      // ?token=... for security reasons and will return 401 otherwise.
-      // Therefore we do NOT open the raw /download URL directly in the browser.
+      debugPrint('[FILE_WEB] Downloading file via authorized API client for $fileName');
 
-      debugPrint('[FILE_WEB] Downloading file bytes via authorized API client for $fileName');
-
-      // Verify file exists (best-effort); ignore failures here because we will
-      // get a better error when downloading bytes.
       try {
         await serviceProvider.apiService.getFileInfo(fileId);
       } catch (infoError) {
         debugPrint('[FILE_WEB] getFileInfo failed (continuing to bytes download): $infoError');
       }
 
-      // Download bytes with Authorization header handled by ApiService
       final response = await serviceProvider.apiService.downloadFileBytes(fileId);
       final data = response.data;
       final bytes = data is Uint8List
@@ -1792,30 +1783,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         throw Exception('No data received or file is empty');
       }
 
-      // Infer MIME type from filename so the browser knows how to handle it.
-      String mimeType = 'application/octet-stream';
-      final fileNameLower = fileName.toLowerCase();
-      if (fileNameLower.endsWith('.pdf')) {
-        mimeType = 'application/pdf';
-      } else if (fileNameLower.endsWith('.jpg') || fileNameLower.endsWith('.jpeg')) {
-        mimeType = 'image/jpeg';
-      } else if (fileNameLower.endsWith('.png')) {
-        mimeType = 'image/png';
-      } else if (fileNameLower.endsWith('.gif')) {
-        mimeType = 'image/gif';
-      } else if (fileNameLower.endsWith('.webp')) {
-        mimeType = 'image/webp';
-      } else if (fileNameLower.endsWith('.txt')) {
-        mimeType = 'text/plain';
-      }
+      debugPrint('[FILE_WEB] Downloaded ${bytes.length} bytes for $fileName');
 
-      final dataUri = Uri.dataFromBytes(bytes, mimeType: mimeType);
-      final launched = await launchUrl(dataUri);
-      if (!launched) {
-        throw Exception('Unable to open downloaded file in browser');
-      }
+      // Use saveFileToDownloads which triggers browser download dialog
+      io.saveFileToDownloads(fileName, bytes);
 
-      debugPrint('[FILE_WEB] Opened file in browser via data URI for $fileName');
+      debugPrint('[FILE_WEB] File download triggered for $fileName');
     } catch (e) {
       debugPrint('[FILE_WEB_ERROR] $e');
       rethrow;

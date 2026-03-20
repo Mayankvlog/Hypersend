@@ -3091,6 +3091,7 @@ async def stream_media(
 @router.get("/media/{file_key}")
 async def get_media_by_key(
     file_key: str,
+    download: bool = False,
     current_user: str = Depends(get_current_user),
     request: Request = None,
 ):
@@ -3103,6 +3104,7 @@ async def get_media_by_key(
     - Streaming response prevents memory buffering of large files
     - No S3 URLs are exposed in API responses
     - Supports all file types stored in S3 bucket
+    - When download=True, returns Content-Disposition: attachment for PC download
     """
     try:
         # Validate file_key format (prevent directory traversal)
@@ -3319,13 +3321,17 @@ async def get_media_by_key(
 
         # Return streaming response with proper headers
         quoted_key = quote(safe_file_key, safe="")
+        disposition_type = "attachment" if download else "inline"
+        filename = safe_file_key.split("/")[-1]
         return StreamingResponse(
             stream_s3_object(),
             media_type=content_type,
             headers={
                 "Content-Length": str(content_length),
-                "Content-Disposition": f"inline; filename*=UTF-8''{quoted_key}",
-                "Cache-Control": "private, max-age=3600",  # Cache for 1 hour
+                "Content-Disposition": f"{disposition_type}; filename*=UTF-8''{quote(filename, safe='')}",
+                "Cache-Control": "private, max-age=3600"
+                if not download
+                else "no-cache, no-store, must-revalidate",
                 "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
                 "X-Frame-Options": "DENY",  # Prevent embedding in frames
             },
