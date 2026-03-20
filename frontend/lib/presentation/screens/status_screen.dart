@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io' as io;
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_strings.dart';
 import '../../data/services/service_provider.dart';
@@ -19,6 +21,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   List<Map<String, dynamic>> _recentUpdates = [];
   List<Map<String, dynamic>> _viewedUpdates = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -36,88 +39,43 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   Future<void> _loadStatusData() async {
     setState(() {
       _loading = true;
+      _error = null;
     });
 
     try {
-      // Simulate loading status data
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Load all statuses from other users
+      final response = await serviceProvider.apiService.getAllStatuses();
       
-      // Mock data for my status
-      _myStatus = [
-        {
-          'id': '1',
-          'content': 'Hello World! 🌍',
-          'timestamp': DateTime.now().subtract(const Duration(hours: 2)),
-          'type': 'text',
-          'background_color': '#1E88E5',
-          'views': 12,
-        }
-      ];
-
-      // Mock data for recent updates (unviewed)
-      _recentUpdates = [
-        {
-          'id': '2',
-          'user': {
-            'id': 'user1',
-            'name': 'Alice Johnson',
-            'avatar': 'AJ',
-            'avatar_color': '#E91E63',
-          },
-          'content': 'Having a great day! 😊',
-          'timestamp': DateTime.now().subtract(const Duration(minutes: 30)),
-          'type': 'text',
-          'background_color': '#4CAF50',
-          'views': 5,
-        },
-        {
-          'id': '3',
-          'user': {
-            'id': 'user2',
-            'name': 'Bob Smith',
-            'avatar': 'BS',
-            'avatar_color': '#2196F3',
-          },
-          'content': 'Working on new projects',
-          'timestamp': DateTime.now().subtract(const Duration(hours: 1)),
-          'type': 'text',
-          'background_color': '#FF9800',
-          'views': 8,
-        },
-      ];
-
-      // Mock data for viewed updates
-      _viewedUpdates = [
-        {
-          'id': '4',
-          'user': {
-            'id': 'user3',
-            'name': 'Carol Davis',
-            'avatar': 'CD',
-            'avatar_color': '#9C27B0',
-          },
-          'content': 'Weekend vibes 🎉',
-          'timestamp': DateTime.now().subtract(const Duration(hours: 3)),
-          'type': 'text',
-          'background_color': '#795548',
-          'views': 15,
-        },
-      ];
-
-      setState(() {
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _loading = false;
-      });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load status updates'),
-            backgroundColor: AppTheme.errorRed,
-          ),
-        );
+        setState(() {
+          _recentUpdates = List<Map<String, dynamic>>.from(
+            response['statuses']?.map((status) => {
+              'id': status['id'],
+              'user': {
+                'id': status['user_id'],
+                'name': 'User ${status['user_id']}', // TODO: Get actual user name
+                'avatar': 'U${status['user_id'][0]}', // TODO: Get actual avatar
+                'avatar_color': '#2196F3', // TODO: Get actual avatar color
+              },
+              'content': status['text'] ?? 'Media status',
+              'timestamp': DateTime.parse(status['created_at']),
+              'type': status['file_url'] != null ? 'image' : 'text',
+              'background_color': status['file_url'] != null ? '#4CAF50' : '#1E88E5',
+              'views': status['views'] ?? 0,
+              'file_url': status['file_url'],
+              'file_type': status['file_type'],
+            }) ?? []
+          );
+          _viewedUpdates = []; // TODO: Implement viewed status tracking
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
       }
     }
   }
@@ -170,7 +128,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                 subtitle: const Text('Share an image as status'),
                 onTap: () {
                   Navigator.pop(context);
-                  _showComingSoon('Image status');
+                  _pickAndUploadImage();
                 },
               ),
               ListTile(
@@ -221,6 +179,87 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
     );
   }
 
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.first;
+        await _uploadImageStatus(file);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick image: $e'),
+            backgroundColor: AppTheme.errorRed,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadImageStatus(PlatformFile file) async {
+    try {
+      // Handle PlatformFile: convert path to dart:io File for native platforms
+      if (file.path == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to get file path'),
+            backgroundColor: AppTheme.errorRed,
+          ),
+        );
+        return;
+      }
+      
+      // Import dart:io for native File
+      // For web, this would need different handling (use file.bytes)
+      final imageFile = io.File(file.path!);
+
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Uploading status...'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+
+      // Upload image to backend
+      final uploadResponse = await serviceProvider.apiService.uploadStatusMedia(imageFile);
+      
+      // Create status with uploaded file
+      await serviceProvider.apiService.createStatus(
+        fileKey: uploadResponse['upload_id']?.toString(),
+      );
+
+      // Refresh status list
+      await _loadStatusData();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Image status uploaded successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload image: $e'),
+            backgroundColor: AppTheme.errorRed,
+          ),
+        );
+      }
+    }
+  }
+
   void _showComingSoon(String feature) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -231,7 +270,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   }
 
   void _viewStatus(Map<String, dynamic> status) async {
-    // Simulate viewing status
+    // Show full-screen status viewer
     await showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -240,26 +279,38 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         child: Container(
           width: MediaQuery.of(context).size.width * 0.9,
           height: MediaQuery.of(context).size.height * 0.7,
-          decoration: BoxDecoration(
-            color: Color(int.parse(status['background_color'].replaceFirst('#', '0xFF'))),
-            borderRadius: BorderRadius.circular(16),
-          ),
+          decoration: status['type'] == 'image' && status['file_url'] != null
+              ? BoxDecoration(
+                  image: DecorationImage(
+                    image: NetworkImage(status['file_url']),
+                    fit: BoxFit.cover,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                )
+              : BoxDecoration(
+                  color: _parseBackgroundColor(status['background_color']),
+                  borderRadius: BorderRadius.circular(16),
+                ),
           child: Stack(
             children: [
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Text(
-                    status['content'],
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w500,
+              // For text statuses, show the text content
+              if (status['type'] == 'text')
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      status['content'],
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                    textAlign: TextAlign.center,
                   ),
                 ),
-              ),
+              
+              // Close button
               Positioned(
                 top: 40,
                 right: 20,
@@ -268,6 +319,8 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                   icon: const Icon(Icons.close, color: Colors.white, size: 28),
                 ),
               ),
+              
+              // Bottom info section
               Positioned(
                 bottom: 40,
                 left: 20,
@@ -358,6 +411,20 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       return '${difference.inHours}h ago';
     } else {
       return '${difference.inDays}d ago';
+    }
+  }
+
+  Color _parseBackgroundColor(dynamic colorValue) {
+    try {
+      if (colorValue == null || colorValue.toString().isEmpty) {
+        return const Color(0xFF1E88E5);
+      }
+      final colorStr = colorValue.toString().trim();
+      final hexColor = colorStr.startsWith('#') ? colorStr : '#$colorStr';
+      final parsedValue = int.parse(hexColor.replaceFirst('#', '0xFF'), radix: 16);
+      return Color(parsedValue);
+    } catch (e) {
+      return const Color(0xFF1E88E5);
     }
   }
 
@@ -475,15 +542,33 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                 width: status['views'] == 0 ? 3 : 1,
               ),
             ),
-            child: Center(
-              child: Text(
-                user['avatar'],
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
+            child: Stack(
+              children: [
+                Center(
+                  child: Text(
+                    user['avatar'],
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
                 ),
-              ),
+                // Show indicator for new/unviewed statuses
+                if (status['views'] == 0)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: const BoxDecoration(
+                        color: Colors.green,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -495,9 +580,11 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
           ),
         ),
         subtitle: Text(
-          status['content'].length > 30 
-              ? '${status['content'].substring(0, 30)}...'
-              : status['content'],
+          status['type'] == 'image' 
+              ? '📷 Photo'
+              : (status['content'] != null && (status['content'] as String).length > 30 
+                  ? '${(status['content'] as String).substring(0, 30)}...'
+                  : status['content'] ?? ''),
           style: TextStyle(
             color: Colors.grey[600],
             fontSize: 14,
@@ -546,41 +633,69 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                   // Recent Updates Tab
                   _loading
                       ? const Center(child: CircularProgressIndicator())
-                      : Column(
-                          children: [
-                            _buildMyStatusItem(),
-                            const Divider(height: 32),
-                            Expanded(
-                              child: _recentUpdates.isEmpty
-                                  ? Center(
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.visibility_off,
-                                            size: 64,
-                                            color: Colors.grey[400],
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            'No recent updates',
-                                            style: TextStyle(
-                                              color: Colors.grey[600],
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : ListView.builder(
-                                      itemCount: _recentUpdates.length,
-                                      itemBuilder: (context, index) {
-                                        return _buildStatusItem(_recentUpdates[index]);
-                                      },
+                      : _error != null
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.error_outline, color: AppTheme.errorRed, size: 48),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Failed to load statuses',
+                                      style: Theme.of(context).textTheme.titleMedium,
                                     ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _error!,
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    ElevatedButton(
+                                      onPressed: _loadStatusData,
+                                      child: const Text('Retry'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : Column(
+                              children: [
+                                _buildMyStatusItem(),
+                                const Divider(height: 32),
+                                Expanded(
+                                  child: _recentUpdates.isEmpty
+                                      ? Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.visibility_off,
+                                                size: 64,
+                                                color: Colors.grey[400],
+                                              ),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'No recent updates',
+                                                style: TextStyle(
+                                                  color: Colors.grey[600],
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      : ListView.builder(
+                                          itemCount: _recentUpdates.length,
+                                          itemBuilder: (context, index) {
+                                            return _buildStatusItem(_recentUpdates[index]);
+                                          },
+                                        ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
                   // Viewed Updates Tab
                   _loading
                       ? const Center(child: CircularProgressIndicator())

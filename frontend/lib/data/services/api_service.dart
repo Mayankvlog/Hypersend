@@ -3407,6 +3407,126 @@ if (!kIsWeb) {
       _log('[WEBSOCKET] Error closing connections: $e');
     }
   }
+
+  // ==================== STATUS API METHODS ====================
+  
+  /// Create a new status (text or media)
+  Future<Map<String, dynamic>> createStatus({
+    String? text,
+    String? fileKey,
+  }) async {
+    try {
+      _log('[API_CREATE_STATUS] Creating new status');
+      final data = <String, dynamic>{};
+      if (text != null) data['text'] = text;
+      if (fileKey != null) data['file_key'] = fileKey;
+      
+      final response = await _dio.post(
+        '/status',
+        data: data,
+      );
+      
+      _log('[API_CREATE_STATUS] Status created successfully');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      _log('[API_CREATE_STATUS] Error: $e');
+      rethrow;
+    }
+  }
+  
+  /// Upload media for status (native platforms with dart:io File)
+  Future<Map<String, dynamic>> uploadStatusMedia(io.File file) async {
+    try {
+      _log('[API_UPLOAD_STATUS_MEDIA] Uploading status media: ${file.path}');
+      
+      final fileName = file.path.split('/').last;
+      
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          file.path,
+          filename: fileName,
+        ),
+      });
+      
+      final response = await _dio.post(
+        '/status/upload',
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+        ),
+      );
+      
+      _log('[API_UPLOAD_STATUS_MEDIA] Media uploaded successfully');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      _log('[API_UPLOAD_STATUS_MEDIA] Error: $e');
+      rethrow;
+    }
+  }
+  
+  /// Get all statuses from other users
+  Future<Map<String, dynamic>> getAllStatuses({
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      _log('[API_GET_ALL_STATUSES] Fetching all statuses');
+      
+      final response = await _dio.get(
+        '/status',
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+        },
+      );
+      
+      _log('[API_GET_ALL_STATUSES] Fetched ${response.data['statuses']?.length ?? 0} statuses');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      _log('[API_GET_ALL_STATUSES] Error: $e');
+      rethrow;
+    }
+  }
+  
+  /// Get statuses from a specific user
+  Future<Map<String, dynamic>> getUserStatuses(
+    String userId, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      _log('[API_GET_USER_STATUSES] Fetching statuses for user: $userId');
+      
+      final response = await _dio.get(
+        '/status/$userId',
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+        },
+      );
+      
+      _log('[API_GET_USER_STATUSES] Fetched ${response.data['statuses']?.length ?? 0} statuses for user: $userId');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      _log('[API_GET_USER_STATUSES] Error: $e');
+      rethrow;
+    }
+  }
+  
+  /// Delete a status
+  Future<Map<String, dynamic>> deleteStatus(String statusId) async {
+    try {
+      _log('[API_DELETE_STATUS] Deleting status: $statusId');
+      
+      final response = await _dio.delete('/status/$statusId');
+      
+      _log('[API_DELETE_STATUS] Status deleted successfully');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      _log('[API_DELETE_STATUS] Error: $e');
+      rethrow;
+    }
+  }
 }
 
 /// Singleton WebSocket connection handler per chat
