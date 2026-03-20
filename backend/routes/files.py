@@ -142,33 +142,40 @@ def _safe_collection(factory_or_collection):
     return factory_or_collection
 
 
-async def _save_chunk_to_disk(chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str):
+async def _save_chunk_to_disk(
+    chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str
+):
     """Save chunk data to disk with proper error handling"""
     try:
         # Ensure directory exists
         chunk_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Write chunk data to file
-        async with aiofiles.open(chunk_path, 'wb') as f:
+        async with aiofiles.open(chunk_path, "wb") as f:
             await f.write(chunk_data)
-        
-        _log("info", f"Chunk {chunk_index} saved successfully for user {user_id}", {
-            "chunk_index": chunk_index,
-            "chunk_size": len(chunk_data),
-            "user_id": user_id,
-            "chunk_path": str(chunk_path)
-        })
-        
+
+        _log(
+            "info",
+            f"Chunk {chunk_index} saved successfully for user {user_id}",
+            {
+                "chunk_index": chunk_index,
+                "chunk_size": len(chunk_data),
+                "user_id": user_id,
+                "chunk_path": str(chunk_path),
+            },
+        )
+
     except Exception as e:
-        _log("error", f"Failed to save chunk {chunk_index} for user {user_id}", {
-            "chunk_index": chunk_index,
-            "user_id": user_id,
-            "error": str(e)
-        })
+        _log(
+            "error",
+            f"Failed to save chunk {chunk_index} for user {user_id}",
+            {"chunk_index": chunk_index, "user_id": user_id, "error": str(e)},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save chunk {chunk_index}: {str(e)}"
+            detail=f"Failed to save chunk {chunk_index}: {str(e)}",
         )
+
 
 import sys
 
@@ -285,7 +292,9 @@ class WhatsAppMediaLifecycle:
 
         # Store metadata
         metadata_key = f"media_metadata:{media_id}"
-        await cache.set(metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS)
+        await cache.set(
+            metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS
+        )
 
         # Generate upload tokens
         upload_tokens = {}
@@ -382,7 +391,9 @@ class WhatsAppMediaLifecycle:
         # Update metadata
         metadata["file_hash"] = file_hash
         metadata["upload_status"] = "completed"
-        await cache.set(metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS)
+        await cache.set(
+            metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS
+        )
 
         # Distribute encrypted media keys
         media_key_bytes = base64.b64decode(media_key)
@@ -401,7 +412,9 @@ class WhatsAppMediaLifecycle:
                 # Store key package
                 key_package_key = f"media_key:{media_id}:{device_id}"
                 await cache.set(
-                    key_package_key, key_package, expire_seconds=settings.FILE_TTL_SECONDS
+                    key_package_key,
+                    key_package,
+                    expire_seconds=settings.FILE_TTL_SECONDS,
                 )
 
         # Generate download tokens
@@ -445,7 +458,9 @@ class WhatsAppMediaLifecycle:
             metadata["delivery_status"][device_id][f"{ack_type}_at"] = int(time.time())
             metadata["delivery_status"][device_id]["ack_status"] = ack_type
 
-        await cache.set(metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS)
+        await cache.set(
+            metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS
+        )
 
         # Check if all devices have ACKed
         await self._check_all_devices_acked(media_id, ack_type)
@@ -531,7 +546,7 @@ def _get_s3_client():
         client_kwargs = {k: v for k, v in client_kwargs.items() if v}
 
         s3_client = boto3.client("s3", **client_kwargs)
-        
+
         _log("info", f"S3 client initialized for region: {settings.AWS_REGION}")
         return s3_client
     except Exception as e:
@@ -758,30 +773,34 @@ def _ensure_storage_dirs() -> Tuple[Path, Path]:
     """
     temp_root = Path(getattr(settings, "TEMP_STORAGE_PATH", "/app/temp"))
     upload_root = Path(getattr(settings, "UPLOAD_DIR", "/app/uploads"))
-    
+
     error_details = []
-    
+
     try:
         # Create directories if they don't exist
         os.makedirs(str(temp_root), exist_ok=True)
         os.makedirs(str(upload_root), exist_ok=True)
-        
+
         # Validate writeability - try to create and remove a test file
         temp_test_file = temp_root / ".write_test"
         upload_test_file = upload_root / ".write_test"
-        
+
         try:
             temp_test_file.touch(exist_ok=True)
             temp_test_file.unlink(missing_ok=True)
         except Exception as e:
-            error_details.append(f"TEMP_STORAGE_PATH not writable ({temp_root}): {type(e).__name__}: {str(e)}")
-        
+            error_details.append(
+                f"TEMP_STORAGE_PATH not writable ({temp_root}): {type(e).__name__}: {str(e)}"
+            )
+
         try:
             upload_test_file.touch(exist_ok=True)
             upload_test_file.unlink(missing_ok=True)
         except Exception as e:
-            error_details.append(f"UPLOAD_DIR not writable ({upload_root}): {type(e).__name__}: {str(e)}")
-        
+            error_details.append(
+                f"UPLOAD_DIR not writable ({upload_root}): {type(e).__name__}: {str(e)}"
+            )
+
         if error_details:
             error_msg = " | ".join(error_details)
             logger.error(f"[STORAGE] Writability check failed: {error_msg}")
@@ -789,10 +808,12 @@ def _ensure_storage_dirs() -> Tuple[Path, Path]:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"Storage unavailable - permission denied: {error_msg}",
             )
-        
-        logger.debug(f"[STORAGE] Storage directories validated: temp={temp_root}, upload={upload_root}")
+
+        logger.debug(
+            f"[STORAGE] Storage directories validated: temp={temp_root}, upload={upload_root}"
+        )
         return temp_root, upload_root
-        
+
     except HTTPException:
         raise
     except PermissionError as e:
@@ -813,6 +834,7 @@ def _ensure_storage_dirs() -> Tuple[Path, Path]:
         error_msg = f"Failed to initialize storage: {type(e).__name__}: {str(e)}"
         logger.error(f"[STORAGE] {error_msg}")
         import traceback
+
         logger.error(f"[STORAGE] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1157,10 +1179,21 @@ async def initialize_upload(
 
         chunk_size = body.get("chunk_size")
         if chunk_size is None:
-            chunk_size = int(getattr(settings, "CHUNK_SIZE", getattr(settings, "UPLOAD_CHUNK_SIZE", 8 * 1024 * 1024)))
+            chunk_size = int(
+                getattr(
+                    settings,
+                    "CHUNK_SIZE",
+                    getattr(settings, "UPLOAD_CHUNK_SIZE", 8 * 1024 * 1024),
+                )
+            )
 
         total_chunks = body.get("total_chunks")
-        if total_chunks is None and isinstance(file_size, int) and isinstance(chunk_size, int) and chunk_size > 0:
+        if (
+            total_chunks is None
+            and isinstance(file_size, int)
+            and isinstance(chunk_size, int)
+            and chunk_size > 0
+        ):
             total_chunks = int(math.ceil(file_size / chunk_size))
 
         # Validate required fields
@@ -1235,7 +1268,9 @@ async def initialize_upload(
         # Enforce auth only after the request has passed input validation.
         # This ensures invalid JSON / missing fields tests get 400/422 rather than 401.
         is_testclient = "testclient" in (request.headers.get("user-agent", "").lower())
-        if not current_user and not (bool(getattr(settings, "DEBUG", False)) or is_testclient):
+        if not current_user and not (
+            bool(getattr(settings, "DEBUG", False)) or is_testclient
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing authentication credentials",
@@ -1301,42 +1336,61 @@ async def initialize_upload(
         # Do NOT block legitimate file extensions (.exe, .js, .msi, .jar, etc.)
         # Users should be able to share ANY file type via encrypted connection
         # Only block actual security threats: path traversal, code injection, reserved names
-        
+
         # COMPREHENSIVE SECURITY: Only block ACTUAL threats, NOT legitimate file types
         # Reasoning: Users should be able to share ANY file type via encrypted connection
         # Server-side encryption ensures users cannot run malicious code
         import re
         from pathlib import Path as PathlibPath
-        
+
         # ONLY block actual security threats, NOT legitimate file types
         filename_lower = filename.lower()
         filename_without_ext = PathlibPath(filename).stem.lower()
-        
+
         # Windows reserved device names - EXACT match only (critical security)
         reserved_names = {
-            'con', 'prn', 'aux', 'nul',
-            'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
-            'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'
+            "con",
+            "prn",
+            "aux",
+            "nul",
+            "com1",
+            "com2",
+            "com3",
+            "com4",
+            "com5",
+            "com6",
+            "com7",
+            "com8",
+            "com9",
+            "lpt1",
+            "lpt2",
+            "lpt3",
+            "lpt4",
+            "lpt5",
+            "lpt6",
+            "lpt7",
+            "lpt8",
+            "lpt9",
         }
-        
+
         is_dangerous = False
         danger_reason = ""
-        
+
         # Check 1: Path traversal attempts - CRITICAL SECURITY
-        if '../' in filename or '..\\'  in filename:
+        if "../" in filename or "..\\" in filename:
             is_dangerous = True
             danger_reason = "Path traversal pattern detected"
-        
+
         # Check 2: Null byte injection - CRITICAL SECURITY (already removed by sanitize_input)
-        elif '\x00' in filename:
+        elif "\x00" in filename:
             is_dangerous = True
             danger_reason = "Null byte injection detected"
-        
+
         # Check 3: Windows reserved names - must be EXACT match (case-insensitive)
         elif filename_without_ext in reserved_names:
             is_dangerous = True
             danger_reason = f"Windows reserved name: {filename_without_ext}"
-        
+
         if is_dangerous:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1366,13 +1420,15 @@ async def initialize_upload(
         upload_id = str(uuid.uuid4())
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
         file_oid = ObjectId()
-        storage_key_owner = str(upload_user_id) if upload_user_id is not None else "anonymous"
+        storage_key_owner = (
+            str(upload_user_id) if upload_user_id is not None else "anonymous"
+        )
         storage_key = f"files/{storage_key_owner}/{upload_id}/{filename}"
-        
+
         # CRITICAL: Configurable TTL expiry for compliance (UTC only)
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
         expires_at = now + timedelta(seconds=_get_file_ttl_seconds())
-        
+
         upload_doc = {
             "upload_id": upload_id,
             "user_id": upload_user_id,
@@ -1419,11 +1475,10 @@ async def initialize_upload(
             max_parallel=1,
             upload_url=None,
         )
-        
+
         # Ensure proper JSON serialization to prevent namespace errors
         return JSONResponse(
-            content=jsonable_encoder(response_data),
-            status_code=status.HTTP_200_OK
+            content=jsonable_encoder(response_data), status_code=status.HTTP_200_OK
         )
 
     except HTTPException:
@@ -1519,7 +1574,9 @@ async def upload_chunk(
 
     # CRITICAL FIX: Check Content-Length header (411 Length Required)
     content_length = request.headers.get("content-length")
-    if content_length is None or (isinstance(content_length, str) and content_length.strip() == ""):
+    if content_length is None or (
+        isinstance(content_length, str) and content_length.strip() == ""
+    ):
         _log(
             "warning",
             f"Missing Content-Length header for chunk upload",
@@ -1555,12 +1612,17 @@ async def upload_chunk(
     from datetime import datetime as dt
 
     from bson import ObjectId
+
     if not ObjectId.is_valid(current_user):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id"
+        )
 
     upload = await _maybe_await(uploads_collection().find_one({"upload_id": upload_id}))
     if not upload:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found"
+        )
 
     if upload.get("user_id") != ObjectId(current_user):
         raise HTTPException(
@@ -1597,66 +1659,83 @@ async def upload_chunk(
     updated_upload = await _maybe_await(
         uploads_collection().find_one({"upload_id": upload_id})
     )
-    
+
     # Calculate progress from persisted data
     total_chunks = updated_upload.get("total_chunks", 1)
     uploaded_chunks = updated_upload.get("uploaded_chunks", [])
     # Deduplicate chunks to prevent inflation on retries
     unique_uploaded_chunks = list(set(uploaded_chunks))
     progress_percent = (len(unique_uploaded_chunks) / total_chunks) * 100
-    
+
     # Broadcast upload progress via WebSocket after DB update
     try:
         from websocket.websocket_manager import websocket_manager
+
         progress_message = {
-            'type': 'upload_progress',
-            'upload_id': upload_id,
-            'user_id': current_user,
-            'chunk_index': int(chunk_index),
-            'total_chunks': total_chunks,
-            'uploaded_chunks': len(unique_uploaded_chunks),
-            'progress_percent': round(progress_percent, 2),
-            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+            "type": "upload_progress",
+            "upload_id": upload_id,
+            "user_id": current_user,
+            "chunk_index": int(chunk_index),
+            "total_chunks": total_chunks,
+            "uploaded_chunks": len(unique_uploaded_chunks),
+            "progress_percent": round(progress_percent, 2),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
-        
+
         # Send to all user devices
         try:
-            devices_notified = await websocket_manager.send_message_to_user(current_user, progress_message)
-            
-            _log("info", f"Upload progress broadcast: {progress_percent}%", {
-                "upload_id": upload_id,
-                "user_id": current_user,
-                "chunk_index": int(chunk_index),
-                "progress_percent": progress_percent,
-                "unique_uploaded_chunks": len(unique_uploaded_chunks),
-                "devices_notified": devices_notified
-            })
+            devices_notified = await websocket_manager.send_message_to_user(
+                current_user, progress_message
+            )
+
+            _log(
+                "info",
+                f"Upload progress broadcast: {progress_percent}%",
+                {
+                    "upload_id": upload_id,
+                    "user_id": current_user,
+                    "chunk_index": int(chunk_index),
+                    "progress_percent": progress_percent,
+                    "unique_uploaded_chunks": len(unique_uploaded_chunks),
+                    "devices_notified": devices_notified,
+                },
+            )
         except AttributeError as ae:
             # WebSocketManager method missing - log but continue (non-fatal)
-            _log("error", f"WebSocket send_message_to_user not available: {ae}", {
-                "upload_id": upload_id,
-                "user_id": current_user,
-                "error_type": "AttributeError"
-            })
+            _log(
+                "error",
+                f"WebSocket send_message_to_user not available: {ae}",
+                {
+                    "upload_id": upload_id,
+                    "user_id": current_user,
+                    "error_type": "AttributeError",
+                },
+            )
         except Exception as e:
             # Any other broadcast error - log but continue upload (non-fatal)
-            _log("warning", f"Failed to broadcast upload progress: {type(e).__name__}: {e}", {
-                "upload_id": upload_id,
-                "user_id": current_user,
-                "error_type": type(e).__name__
-            })
-        
+            _log(
+                "warning",
+                f"Failed to broadcast upload progress: {type(e).__name__}: {e}",
+                {
+                    "upload_id": upload_id,
+                    "user_id": current_user,
+                    "error_type": type(e).__name__,
+                },
+            )
+
     except Exception as e:
-        _log("warning", f"Failed to broadcast upload progress (outer): {type(e).__name__}: {e}", {
-            "upload_id": upload_id,
-            "user_id": current_user
-        })
+        _log(
+            "warning",
+            f"Failed to broadcast upload progress (outer): {type(e).__name__}: {e}",
+            {"upload_id": upload_id, "user_id": current_user},
+        )
 
     # Ensure proper JSON serialization to prevent namespace errors
-    response_data = ChunkUploadResponse(upload_id=upload_id, chunk_index=int(chunk_index), status="received")
+    response_data = ChunkUploadResponse(
+        upload_id=upload_id, chunk_index=int(chunk_index), status="received"
+    )
     return JSONResponse(
-        content=jsonable_encoder(response_data),
-        status_code=status.HTTP_200_OK
+        content=jsonable_encoder(response_data), status_code=status.HTTP_200_OK
     )
 
 
@@ -1713,13 +1792,18 @@ async def complete_upload(
             )
 
         from bson import ObjectId
+
         if not ObjectId.is_valid(current_user):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id"
+            )
 
         uploads_col = _safe_collection(uploads_collection)
         upload_doc = await _maybe_await(uploads_col.find_one({"upload_id": upload_id}))
         if upload_doc is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found"
+            )
 
         filename = upload_doc.get("filename")
         if not filename or not isinstance(filename, str):
@@ -1738,9 +1822,14 @@ async def complete_upload(
         total_chunks = upload_doc.get("total_chunks")
         uploaded_chunks = upload_doc.get("uploaded_chunks") or []
         if not isinstance(total_chunks, int):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid total_chunks")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid total_chunks"
+            )
         if not isinstance(uploaded_chunks, list):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid uploaded_chunks")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid uploaded_chunks",
+            )
         if total_chunks != len(uploaded_chunks):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1793,14 +1882,20 @@ async def complete_upload(
 
         # Store file metadata in files collection for MongoDB Atlas
         from bson import ObjectId
+
         file_oid = upload_doc.get("file_id")
         if not isinstance(file_oid, ObjectId):
             file_oid = ObjectId()
 
         file_id = str(file_oid)
-        storage_key = upload_doc.get("storage_key") or f"files/{upload_user_id}/{upload_id}/{filename}"
-        
-        expires_at = now + timedelta(seconds=_get_file_ttl_seconds())  # Configurable TTL file expiry (UTC only)
+        storage_key = (
+            upload_doc.get("storage_key")
+            or f"files/{upload_user_id}/{upload_id}/{filename}"
+        )
+
+        expires_at = now + timedelta(
+            seconds=_get_file_ttl_seconds()
+        )  # Configurable TTL file expiry (UTC only)
         file_doc = {
             "_id": file_oid,
             "file_id": file_oid,
@@ -1819,10 +1914,10 @@ async def complete_upload(
             "upload_id": upload_id,
             "storage_path": str(final_path),
         }
-        
+
         files_col = _safe_collection(files_collection)
         await _maybe_await(files_col.insert_one(file_doc))
-        
+
         _log(
             "info",
             f"[FILE_METADATA] File metadata stored in Atlas",
@@ -1925,7 +2020,9 @@ async def get_file_info(
             owner_id = file_doc.get("owner_id")
             receiver_id = file_doc.get("receiver_id")
             owner_ok = str(owner_id) == str(current_user)
-            receiver_ok = receiver_id is not None and str(receiver_id) == str(current_user)
+            receiver_ok = receiver_id is not None and str(receiver_id) == str(
+                current_user
+            )
             if not owner_ok and not receiver_ok:
                 _log(
                     "warning",
@@ -1962,7 +2059,9 @@ async def get_file_info(
                 "file_type": "file",
                 "mime_type": encoded_doc.get("mime_type"),
                 "owner_id": str(owner_id) if owner_id is not None else None,
-                "chat_id": str(file_doc.get("chat_id")) if file_doc.get("chat_id") is not None else None,
+                "chat_id": str(file_doc.get("chat_id"))
+                if file_doc.get("chat_id") is not None
+                else None,
                 "delivery_status": encoded_doc.get("delivery_status"),
                 "expiry_time": encoded_doc.get("expiry_time"),
                 "user_id": current_user,
@@ -2240,7 +2339,9 @@ async def download_file(
 
                     chat_doc = await chats_collection().find_one({"_id": chat_id})
                     if not chat_doc and ObjectId.is_valid(str(chat_id)):
-                        chat_doc = await chats_collection().find_one({"_id": ObjectId(str(chat_id))})
+                        chat_doc = await chats_collection().find_one(
+                            {"_id": ObjectId(str(chat_id))}
+                        )
 
                     members = chat_doc.get("members", []) if chat_doc else []
                     if chat_doc and str(current_user) in [str(m) for m in members]:
@@ -2287,23 +2388,23 @@ async def download_file(
             expires_at = file_doc.get("expires_at")
             if expires_at:
                 from datetime import datetime as dt, timezone as tz
-                
+
                 current_utc = dt.now(tz.utc)
-                
+
                 # Handle both datetime objects and ISO strings
                 if isinstance(expires_at, str):
-                    expires_at_dt = dt.fromisoformat(expires_at.replace('Z', '+00:00'))
+                    expires_at_dt = dt.fromisoformat(expires_at.replace("Z", "+00:00"))
                 elif isinstance(expires_at, dt):
                     expires_at_dt = expires_at
                 else:
                     expires_at_dt = expires_at
-                
+
                 # Ensure expires_at is timezone-aware UTC
                 if expires_at_dt.tzinfo is None:
                     expires_at_dt = expires_at_dt.replace(tzinfo=tz.utc)
                 elif expires_at_dt.tzinfo != tz.utc:
                     expires_at_dt = expires_at_dt.astimezone(tz.utc)
-                
+
                 # STRICT: Block download if current UTC >= expires_at UTC
                 if current_utc >= expires_at_dt:
                     logger.warning(
@@ -2359,7 +2460,7 @@ async def download_file(
             storage_key = file_doc.get("storage_key")
             bucket = file_doc.get("bucket")
             region = file_doc.get("region")
-            
+
             if not storage_key or not bucket or not region:
                 _log(
                     "error",
@@ -2397,7 +2498,9 @@ async def download_file(
 
             if dl_requested:
                 # NEVER return JSON when dl=1 is requested - always redirect to actual file
-                return RedirectResponse(url=download_url, status_code=status.HTTP_302_FOUND)
+                return RedirectResponse(
+                    url=download_url, status_code=status.HTTP_302_FOUND
+                )
 
             # Only return JSON metadata when dl is NOT requested (API mode)
 
@@ -2407,7 +2510,9 @@ async def download_file(
                     {
                         "$set": {
                             "delivery_status": "downloading",
-                            "download_requested_at": datetime.utcnow().replace(tzinfo=timezone.utc),
+                            "download_requested_at": datetime.utcnow().replace(
+                                tzinfo=timezone.utc
+                            ),
                         }
                     },
                 )
@@ -2417,7 +2522,7 @@ async def download_file(
                     f"Failed to update delivery status: {str(e)}",
                     {"user_id": current_user, "operation": "file_download"},
                 )
-            
+
             # Ensure all fields are properly typed and serializable
             response_data = {
                 "presigned_url": download_url,
@@ -2427,7 +2532,7 @@ async def download_file(
                 "size": int(file_doc.get("size", 0)) if file_doc.get("size") else 0,
                 "mime_type": file_doc.get("mime_type", "application/octet-stream"),
                 "expires_in": 600,
-                "status": "ready"
+                "status": "ready",
             }
             return response_data
 
@@ -2644,7 +2749,7 @@ async def upload_media_chunk(
     """Upload encrypted media chunk with real-time progress tracking"""
     media_id = None
     chunk_count = None
-    
+
     try:
         # Get media lifecycle service
         media_service = get_media_lifecycle()
@@ -2652,7 +2757,7 @@ async def upload_media_chunk(
         # Get token metadata to track progress
         token_key = f"upload_token:{token}"
         token_data = await cache.get(token_key) if cache else None
-        
+
         if token_data:
             media_id = token_data.get("media_id")
             # Get media metadata for chunk count
@@ -2673,7 +2778,7 @@ async def upload_media_chunk(
         # CRITICAL: Emit progress event via Redis pub/sub for real-time WebSocket delivery
         if cache and media_id and chunk_count:
             progress_percentage = int(((chunk_index + 1) / chunk_count) * 100)
-            
+
             # Emit progress event to Redis channel
             progress_event = {
                 "type": "file_upload_progress",
@@ -2684,11 +2789,10 @@ async def upload_media_chunk(
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "uploader_user_id": current_user,
             }
-            
+
             try:
                 await cache.publish(
-                    f"upload_progress:{media_id}",
-                    json.dumps(progress_event)
+                    f"upload_progress:{media_id}", json.dumps(progress_event)
                 )
                 _log(
                     "info",
@@ -2697,14 +2801,14 @@ async def upload_media_chunk(
                         "chunk": chunk_index + 1,
                         "total": chunk_count,
                         "percent": progress_percentage,
-                        "user_id": current_user
-                    }
+                        "user_id": current_user,
+                    },
                 )
             except Exception as e:
                 _log(
                     "warning",
                     f"Failed to emit progress event: {str(e)}",
-                    {"media_id": media_id, "user_id": current_user}
+                    {"media_id": media_id, "user_id": current_user},
                 )
 
         return result
@@ -2894,7 +2998,7 @@ async def stream_media(
     try:
         # Get media lifecycle service
         media_service = get_media_lifecycle()
-        
+
         # Get S3 client (may be None if S3 is disabled)
         s3_client = _get_s3_client()
 
@@ -2988,11 +3092,11 @@ async def stream_media(
 async def get_media_by_key(
     file_key: str,
     current_user: str = Depends(get_current_user),
-    request: Request = None
+    request: Request = None,
 ):
     """
     SECURE MEDIA ACCESS ENDPOINT
-    
+
     Fetch media from S3 bucket by file_key without exposing S3 URLs.
     - Only authenticated users can access this endpoint
     - File key is used to identify the object in S3
@@ -3007,14 +3111,14 @@ async def get_media_by_key(
         if not decoded_file_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid file key format"
+                detail="Invalid file key format",
             )
 
         # Reject windows-style path separators / encoded traversal attempts
         if "\\" in decoded_file_key or decoded_file_key.startswith("\\"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid file key format"
+                detail="Invalid file key format",
             )
 
         normalized_key = os.path.normpath(decoded_file_key)
@@ -3029,7 +3133,7 @@ async def get_media_by_key(
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid file key format"
+                detail="Invalid file key format",
             )
 
         safe_file_key = normalized_key.replace(os.sep, "/")
@@ -3050,6 +3154,17 @@ async def get_media_by_key(
                     timeout=30.0,
                 )
 
+            # Also check status collection for status media (file_key pattern: status/{user_id}/...)
+            status_doc = None
+            if not file_doc and safe_file_key.startswith("status/"):
+                from backend.routes.status import get_status_collection
+
+                status_col = await get_status_collection()
+                status_doc = await asyncio.wait_for(
+                    status_col.find_one({"file_key": safe_file_key}),
+                    timeout=30.0,
+                )
+
             if file_doc:
                 owner_id = file_doc.get("owner_id")
                 chat_id = file_doc.get("chat_id")
@@ -3064,10 +3179,14 @@ async def get_media_by_key(
 
                     chat_doc = await chats_collection().find_one({"_id": chat_id})
                     if not chat_doc and ObjectId.is_valid(str(chat_id)):
-                        chat_doc = await chats_collection().find_one({"_id": ObjectId(str(chat_id))})
+                        chat_doc = await chats_collection().find_one(
+                            {"_id": ObjectId(str(chat_id))}
+                        )
 
                     members = chat_doc.get("members", []) if chat_doc else []
-                    if not (chat_doc and str(current_user) in [str(m) for m in members]):
+                    if not (
+                        chat_doc and str(current_user) in [str(m) for m in members]
+                    ):
                         raise HTTPException(
                             status_code=status.HTTP_403_FORBIDDEN,
                             detail="Access denied: you don't have permission to access this media",
@@ -3077,6 +3196,30 @@ async def get_media_by_key(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Access denied: you don't have permission to access this media",
                     )
+            elif status_doc:
+                # Status media is publicly viewable like WhatsApp stories
+                # Anyone authenticated can view status content
+                status_user_id = status_doc.get("user_id")
+                current_time = datetime.now(timezone.utc)
+                expires_at = status_doc.get("expires_at")
+
+                # Check if status has expired
+                if expires_at and expires_at < current_time:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Status has expired",
+                    )
+
+                # Allow access if status exists and is not expired (public viewing model)
+                _log(
+                    "info",
+                    f"Status media access granted: {safe_file_key}",
+                    {
+                        "user_id": current_user,
+                        "status_owner": status_user_id,
+                        "file_key": safe_file_key,
+                    },
+                )
             else:
                 # If metadata isn't found, do not leak existence; treat as forbidden.
                 raise HTTPException(
@@ -3089,49 +3232,51 @@ async def get_media_by_key(
             _log(
                 "error",
                 f"Error checking media authorization: {str(e)}",
-                {"user_id": current_user, "file_key": safe_file_key, "operation": "get_media_by_key"},
+                {
+                    "user_id": current_user,
+                    "file_key": safe_file_key,
+                    "operation": "get_media_by_key",
+                },
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: unable to verify access",
             )
-        
+
         # Get S3 client
         s3_client = _get_s3_client()
         if not s3_client:
             _log(
                 "warning",
                 f"S3 client unavailable for media access: {file_key}",
-                {"user_id": current_user}
+                {"user_id": current_user},
             )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Media storage service unavailable"
+                detail="Media storage service unavailable",
             )
-        
+
         # Fetch object metadata from S3 to get content type and size
         try:
             obj_metadata = s3_client.head_object(
-                Bucket=settings.S3_BUCKET,
-                Key=safe_file_key
+                Bucket=settings.S3_BUCKET, Key=safe_file_key
             )
         except ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 _log(
                     "warning",
                     f"Media file not found: {safe_file_key}",
-                    {"user_id": current_user, "file_key": safe_file_key}
+                    {"user_id": current_user, "file_key": safe_file_key},
                 )
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Media file not found"
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
                 )
             raise
-        
+
         # Get content type from metadata or default to octet-stream
-        content_type = obj_metadata.get('ContentType', 'application/octet-stream')
-        content_length = obj_metadata.get('ContentLength', 0)
-        
+        content_type = obj_metadata.get("ContentType", "application/octet-stream")
+        content_length = obj_metadata.get("ContentLength", 0)
+
         # Log media access for audit
         _log(
             "info",
@@ -3140,18 +3285,18 @@ async def get_media_by_key(
                 "user_id": current_user,
                 "file_key": safe_file_key,
                 "content_type": content_type,
-                "size": content_length
-            }
+                "size": content_length,
+            },
         )
-        
+
         # Fetch object from S3
         obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
-        
+
         # Create streaming response
         async def stream_s3_object():
             """Stream S3 object in chunks to prevent memory buffering"""
             try:
-                body = obj['Body']
+                body = obj["Body"]
                 chunk_size = 65536  # 64KB chunks for efficient streaming
                 loop = asyncio.get_running_loop()
                 while True:
@@ -3164,14 +3309,14 @@ async def get_media_by_key(
                 _log(
                     "error",
                     f"Error streaming media: {str(e)}",
-                    {"user_id": current_user, "file_key": safe_file_key}
+                    {"user_id": current_user, "file_key": safe_file_key},
                 )
                 # Re-raise to trigger client disconnect
                 raise
             finally:
                 if "body" in locals() and hasattr(body, "close"):
                     body.close()
-        
+
         # Return streaming response with proper headers
         quoted_key = quote(safe_file_key, safe="")
         return StreamingResponse(
@@ -3183,20 +3328,24 @@ async def get_media_by_key(
                 "Cache-Control": "private, max-age=3600",  # Cache for 1 hour
                 "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
                 "X-Frame-Options": "DENY",  # Prevent embedding in frames
-            }
+            },
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         _log(
             "error",
             f"Failed to fetch media by key: {str(e)}",
-            {"user_id": current_user, "file_key": file_key, "operation": "get_media_by_key"}
+            {
+                "user_id": current_user,
+                "file_key": file_key,
+                "operation": "get_media_by_key",
+            },
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch media"
+            detail="Failed to fetch media",
         )
 
 
@@ -3553,24 +3702,30 @@ async def get_upload_progress(
 ):
     """Get real-time file upload progress via Server-Sent Events"""
     from bson import ObjectId
-    
+
     if not ObjectId.is_valid(current_user):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
-    
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id"
+        )
+
     upload = await _maybe_await(uploads_collection().find_one({"upload_id": upload_id}))
     if not upload:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found"
+        )
+
     if upload.get("user_id") != ObjectId(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to check progress for this upload",
         )
-    
+
     total_chunks = upload.get("total_chunks", 0)
     uploaded_chunks = len(upload.get("uploaded_chunks", []))
-    progress_percent = int((uploaded_chunks / total_chunks * 100)) if total_chunks > 0 else 0
-    
+    progress_percent = (
+        int((uploaded_chunks / total_chunks * 100)) if total_chunks > 0 else 0
+    )
+
     return {
         "upload_id": upload_id,
         "total_chunks": total_chunks,
@@ -3583,26 +3738,24 @@ async def get_upload_progress(
 # WHATSAPP-STYLE ATTACHMENT ENDPOINTS
 @attach_router.post("/photos-videos/init")
 async def init_photo_video_upload(
-    request: Request,
-    current_user: Optional[str] = Depends(get_current_user_for_upload)
+    request: Request, current_user: Optional[str] = Depends(get_current_user_for_upload)
 ):
     """Initialize photo/video upload - Uses /init endpoint under the hood"""
     body = await request.json()
     body["file_type"] = "photo_video"
-    
+
     # Delegate to main init endpoint
     return await initialize_upload(request=request, current_user=current_user)
 
 
 @attach_router.post("/documents/init")
 async def init_document_upload(
-    request: Request,
-    current_user: Optional[str] = Depends(get_current_user_for_upload)
+    request: Request, current_user: Optional[str] = Depends(get_current_user_for_upload)
 ):
     """Initialize document upload"""
     body = await request.json()
     body["file_type"] = "document"
-    
+
     return await initialize_upload(request=request, current_user=current_user)
 
 
@@ -3613,36 +3766,36 @@ async def capture_camera_image(
 ):
     """Capture image from camera and upload"""
     body = await request.json()
-    body["filename"] = body.get("filename", f"camera_{datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()}.jpg")
+    body["filename"] = body.get(
+        "filename",
+        f"camera_{datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()}.jpg",
+    )
     body["mime_type"] = "image/jpeg"
     body["file_type"] = "camera"
-    
+
     return await initialize_upload(request=request, current_user=current_user)
 
 
 @attach_router.post("/audio/init")
 async def init_audio_upload(
-    request: Request,
-    current_user: Optional[str] = Depends(get_current_user_for_upload)
+    request: Request, current_user: Optional[str] = Depends(get_current_user_for_upload)
 ):
     """Initialize audio/voice message upload"""
     body = await request.json()
     body["file_type"] = "audio"
-    
+
     return await initialize_upload(request=request, current_user=current_user)
 
 
 @attach_router.post("/files/init")
 async def init_file_upload(
-    request: Request,
-    current_user: Optional[str] = Depends(get_current_user_for_upload)
+    request: Request, current_user: Optional[str] = Depends(get_current_user_for_upload)
 ):
     """Initialize generic file upload"""
     body = await request.json()
     body["file_type"] = "file"
-    
-    return await initialize_upload(request=request, current_user=current_user)
 
+    return await initialize_upload(request=request, current_user=current_user)
 
 
 async def refresh_upload_token(
@@ -3858,6 +4011,7 @@ def _ensure_session_validity(
                 token = auth_header.replace("Bearer ", "").strip()
                 if token:
                     from auth.utils import decode_token
+
                     token_data = decode_token(token)
                     if token_data.token_type != "access":
                         raise HTTPException(
@@ -5491,7 +5645,9 @@ async def save_to_public_directory(
 
         # Create target filename with UTC timestamp
         original_filename = file_doc.get("filename", f"file_{file_id}")
-        target_filename = f"{int(datetime.now(timezone.utc).timestamp())}_{original_filename}"
+        target_filename = (
+            f"{int(datetime.now(timezone.utc).timestamp())}_{original_filename}"
+        )
         target_full_path = Path(target_path) / target_filename
 
         # Get source file path
