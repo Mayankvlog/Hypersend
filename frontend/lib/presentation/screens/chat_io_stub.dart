@@ -5,6 +5,7 @@
 import 'package:web/web.dart' as html;
 import 'dart:typed_data';
 import 'dart:js_interop';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 // Re-export path for compatibility - not used in web stub
 
@@ -139,4 +140,45 @@ Future<void> saveFileToDownloads(String fileName, Uint8List bytes) async {
 
 Future<void> openFile(String filePath) async {
   throw UnsupportedError('openFile is not supported on web platform');
+}
+
+/// **CRITICAL FIX**: Direct URL-based download 
+/// This method triggers a native browser download without loading bytes into memory
+/// Properly respects Content-Disposition: attachment header from backend
+/// Better for large files and ensures proper file saving behavior
+Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
+  debugPrint('[FILE_WEB] Direct URL download: $fileName');
+  debugPrint('[FILE_WEB] URL: $downloadUrl');
+  
+  try {
+    // Create anchor element with direct link
+    final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
+    anchor.href = downloadUrl;
+    anchor.download = fileName;
+    
+    // Set rel="noopener" to prevent window manipulation
+    anchor.setAttribute('rel', 'noopener');
+    
+    // Set target="_blank" with download attribute for cross-origin support
+    anchor.target = '_blank';
+    
+    // Append to body (required in some browsers)
+    html.document.body?.appendChild(anchor);
+    
+    debugPrint('[FILE_WEB] Triggering download click');
+    
+    // Trigger the download
+    anchor.click();
+    
+    // Delay cleanup to ensure download starts
+    await Future.delayed(const Duration(milliseconds: 100));
+    
+    // Clean up
+    html.document.body?.removeChild(anchor);
+    
+    debugPrint('[FILE_WEB] Download initiated for: $fileName');
+  } catch (e) {
+    debugPrint('[FILE_WEB_ERROR] saveFileDirectFromUrl failed: $e');
+    rethrow;
+  }
 }

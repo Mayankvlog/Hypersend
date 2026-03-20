@@ -5,6 +5,7 @@
 import 'package:web/web.dart' as html;
 import 'dart:typed_data';
 import 'dart:js_interop';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 // Re-export path for compatibility - not used in web stub
 
@@ -132,15 +133,64 @@ Directory getExternalStorageDirectory() {
 }
 
 Future<void> saveFileToDownloads(String fileName, Uint8List bytes) async {
-  // Create a blob and download it using modern web API
-  final jsArray = [bytes.toJS].toJS;
-  final blob = html.Blob(jsArray);
-  final url = html.URL.createObjectURL(blob);
-  final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.click();
-  html.URL.revokeObjectURL(url);
+  // DEPRECATED: Use saveFileDirectFromUrl instead for better memory management
+  // This method loads entire file into memory, which can fail for large files
+  
+  debugPrint('[FILE_WEB_STUB] saveFileToDownloads (memory-based): $fileName');
+  
+  try {
+    // Create a blob and download it using modern web API
+    final jsArray = [bytes.toJS].toJS;
+    final blob = html.Blob(jsArray);
+    final url = html.URL.createObjectURL(blob);
+    final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    html.URL.revokeObjectURL(url);
+    debugPrint('[FILE_WEB_STUB] File download initiated: $fileName');
+  } catch (e) {
+    debugPrint('[FILE_WEB_STUB_ERROR] saveFileToDownloads failed: $e');
+    rethrow;
+  }
+}
+
+/// **CRITICAL FIX**: Direct URL-based download 
+/// This method triggers a native browser download without loading bytes into memory
+/// Properly respects Content-Disposition: attachment header from backend
+/// Better for large files and ensures proper file saving behavior
+Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
+  debugPrint('[FILE_WEB_STUB] Direct URL download: $fileName');
+  debugPrint('[FILE_WEB_STUB] URL: $downloadUrl');
+  
+  try {
+    // Create anchor element with direct link
+    final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
+    anchor.href = downloadUrl;
+    anchor.download = fileName;
+    
+    // Set rel="noopener" to prevent window manipulation
+    anchor.setAttribute('rel', 'noopener');
+    
+    // Set target="_blank" with download attribute for cross-origin support
+    anchor.target = '_blank';
+    
+    // Append to body (required in some browsers)
+    html.document.body?.appendChild(anchor);
+    
+    debugPrint('[FILE_WEB_STUB] Triggering download click');
+    
+    // Trigger the download
+    anchor.click();
+    
+    // Clean up
+    html.document.body?.removeChild(anchor);
+    
+    debugPrint('[FILE_WEB_STUB] Download initiated for: $fileName');
+  } catch (e) {
+    debugPrint('[FILE_WEB_STUB_ERROR] saveFileDirectFromUrl failed: $e');
+    rethrow;
+  }
 }
 
 Future<void> openFile(String filePath) async {

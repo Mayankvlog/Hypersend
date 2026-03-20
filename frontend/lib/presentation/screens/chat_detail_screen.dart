@@ -17,6 +17,7 @@ import 'package:path/path.dart' as path;
 import 'chat_io.dart' if (dart.library.html) 'chat_io_stub.dart' as io;
 
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/api_constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
@@ -1765,30 +1766,31 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         throw Exception('Web-only download helper called on non-web platform');
       }
 
-      debugPrint('[FILE_WEB] Downloading file via authorized API client for $fileName');
+      debugPrint('[FILE_WEB] Initiating download for: $fileName');
+      debugPrint('[FILE_WEB] File ID: $fileId');
 
-      try {
-        await serviceProvider.apiService.getFileInfo(fileId);
-      } catch (infoError) {
-        debugPrint('[FILE_WEB] getFileInfo failed (continuing to bytes download): $infoError');
+      // **CRITICAL FIX**: Use direct download link with download=true parameter
+      // This allows the browser to handle the Content-Disposition header properly
+      // and save the file directly instead of opening in browser
+      
+      // Get the access token for authentication
+      final accessToken = serviceProvider.authService.accessToken;
+      
+      // Build the download URL with dl=1 parameter
+      // This ensures Content-Disposition: attachment is sent by backend
+      String downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
+      
+      if (accessToken != null) {
+        downloadUrl += '&token=$accessToken';
       }
-
-      final response = await serviceProvider.apiService.downloadFileBytes(fileId);
-      final data = response.data;
-      final bytes = data is Uint8List
-          ? data
-          : Uint8List.fromList(List<int>.from(data ?? const <int>[]));
-
-      if (bytes.isEmpty) {
-        throw Exception('No data received or file is empty');
-      }
-
-      debugPrint('[FILE_WEB] Downloaded ${bytes.length} bytes for $fileName');
-
-      // Use saveFileToDownloads which triggers browser download dialog
-      io.saveFileToDownloads(fileName, bytes);
-
-      debugPrint('[FILE_WEB] File download triggered for $fileName');
+      
+      debugPrint('[FILE_WEB] Download URL: $downloadUrl');
+      
+      // Create an anchor element and trigger download
+      // This is the proper way to handle downloads on web
+      io.saveFileDirectFromUrl(fileName, downloadUrl);
+      
+      debugPrint('[FILE_WEB] Download triggered for $fileName');
     } catch (e) {
       debugPrint('[FILE_WEB_ERROR] $e');
       rethrow;

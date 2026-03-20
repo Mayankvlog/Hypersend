@@ -84,3 +84,9 @@ Future<void> openFile(String filePath) async {
     throw Exception('Unsupported platform for file opening: ${Platform.operatingSystem}');
   }
 }
+
+/// Placeholder for web-only function
+/// On native platforms, use URL launcher or system file opening instead
+Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
+  throw UnsupportedError('saveFileDirectFromUrl is only available on web platform. Use saveFileToDownloads or url_launcher instead.');
+}
