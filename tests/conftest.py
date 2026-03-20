@@ -12,39 +12,39 @@ from pathlib import Path
 
 # CRITICAL: Set PYTEST_CURRENT_TEST BEFORE importing any backend modules
 # This allows pytest detection to work during module initialization
-os.environ['PYTEST_CURRENT_TEST'] = 'pytest:conftest'
+os.environ["PYTEST_CURRENT_TEST"] = "pytest:conftest"
 
 # Enable pytest-asyncio
-pytest_plugins = ('pytest_asyncio',)
+pytest_plugins = ("pytest_asyncio",)
 
 # Set environment variables for testing
-os.environ.setdefault('USE_MOCK_DB', 'false')
-os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
-os.environ['ENVIRONMENT'] = 'test'
+os.environ.setdefault("USE_MOCK_DB", "false")
+os.environ.setdefault("MONGODB_ATLAS_ENABLED", "true")
+os.environ["ENVIRONMENT"] = "test"
 
 # Set longer timeout for HTTP requests to prevent connection pool issues
-os.environ['TEST_TIMEOUT'] = '60'
+os.environ["TEST_TIMEOUT"] = "60"
 
 # Set connection timeout for tests to prevent retries
-os.environ['TEST_TIMEOUT'] = '30'
+os.environ["TEST_TIMEOUT"] = "30"
 
 # Set default test credentials if not provided
-if not os.getenv('TEST_USER_EMAIL'):
-    os.environ['TEST_USER_EMAIL'] = 'test@example.com'
-if not os.getenv('TEST_USER_PASSWORD'):
-    os.environ['TEST_USER_PASSWORD'] = 'Test@123456'
+if not os.getenv("TEST_USER_EMAIL"):
+    os.environ["TEST_USER_EMAIL"] = "test@example.com"
+if not os.getenv("TEST_USER_PASSWORD"):
+    os.environ["TEST_USER_PASSWORD"] = "Test@123456"
 
-if not os.getenv('TEST_EMAIL'):
-    os.environ['TEST_EMAIL'] = 'test@example.com'
-if not os.getenv('TEST_PASSWORD'):
-    os.environ['TEST_PASSWORD'] = 'Test@123456'
+if not os.getenv("TEST_EMAIL"):
+    os.environ["TEST_EMAIL"] = "test@example.com"
+if not os.getenv("TEST_PASSWORD"):
+    os.environ["TEST_PASSWORD"] = "Test@123456"
 
 # Add project root to path to allow imports
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 # Add the backend directory to Python path
-backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
+backend_path = os.path.join(os.path.dirname(__file__), "..", "backend")
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
@@ -55,86 +55,102 @@ if backend_path not in sys.path:
 # Configure DB mode for tests.
 # IMPORTANT: This must be set BEFORE importing backend modules.
 # Use real MongoDB Atlas for testing to ensure Atlas compatibility
-os.environ.setdefault('USE_MOCK_DB', 'false')
-os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
-os.environ.setdefault('MONGODB_URI', 'mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority')
-os.environ.setdefault('DATABASE_NAME', 'Hypersend')
-os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
-os.environ['DEBUG'] = 'True'  # Enable debug mode for tests
+os.environ.setdefault("USE_MOCK_DB", "false")
+os.environ.setdefault("MONGODB_ATLAS_ENABLED", "true")
+os.environ.setdefault(
+    "MONGODB_URI",
+    "mongodb+srv://mayanllr0311_db_user:JBkAZin8lytTK6vg@cluster0.rnj3vfd.mongodb.net/hypersend?retryWrites=true&w=majority",
+)
+os.environ.setdefault("DATABASE_NAME", "Hypersend")
+os.environ.setdefault(
+    "SECRET_KEY", "test-secret-key-for-pytest-only-do-not-use-in-production"
+)
+os.environ["DEBUG"] = "True"  # Enable debug mode for tests
 
 # Configure Redis for tests (use Docker service name in production, localhost for local testing)
 # CRITICAL: Docker environment uses 'redis' service name (from docker-compose.yml)
 # Local testing uses localhost:6379
 import socket
+
+
 def _get_redis_host():
     """Get Redis host: 'redis' for Docker, 'localhost' for local testing"""
     # Check if we're running in Docker container (simple heuristic)
     try:
-        socket.gethostbyname('redis')
+        socket.gethostbyname("redis")
         # If we can resolve 'redis' DNS, we're in Docker
-        return 'redis'
+        return "redis"
     except socket.gaierror:
         # Cannot resolve 'redis', use localhost for local testing
-        return 'localhost'
+        return "localhost"
+
 
 _redis_host = _get_redis_host()
-os.environ.setdefault('REDIS_HOST', _redis_host)
-os.environ.setdefault('REDIS_PORT', '6379')
-os.environ.setdefault('REDIS_DB', '0')
-os.environ.setdefault('REDIS_PASSWORD', '')  # No password in development
-os.environ.setdefault('REDIS_URL', f'redis://{_redis_host}:6379/0')
+os.environ.setdefault("REDIS_HOST", _redis_host)
+os.environ.setdefault("REDIS_PORT", "6379")
+os.environ.setdefault("REDIS_DB", "0")
+os.environ.setdefault("REDIS_PASSWORD", "")  # No password in development
+os.environ.setdefault("REDIS_URL", f"redis://{_redis_host}:6379/0")
 
 # Add backend to sys.modules to fix relative imports
 import importlib.util
 import sys
-backend_spec = importlib.util.spec_from_file_location("backend", os.path.join(backend_path, "__init__.py"))
+
+backend_spec = importlib.util.spec_from_file_location(
+    "backend", os.path.join(backend_path, "__init__.py")
+)
 if backend_spec and backend_spec.loader:
     backend_module = importlib.util.module_from_spec(backend_spec)
-    sys.modules['backend'] = backend_module
+    sys.modules["backend"] = backend_module
     backend_spec.loader.exec_module(backend_module)
 
 # Mock the app import to avoid dependency issues
 try:
     from fastapi import FastAPI
+
     # Create a minimal test app if main app fails to import
     def create_test_app():
         app = FastAPI(title="Test Hypersend API")
-        
+
         @app.get("/")
         async def root():
             return {"status": "test"}
-        
+
         @app.get("/health")
         async def health():
             return {"status": "healthy"}
-        
+
         return app
-    
+
     # Try to import the real app, fallback to test app
     try:
         from backend.main import app
     except (ImportError, SyntaxError):
         app = create_test_app()
         print("[CONFTEST] Using minimal test app due to import/syntax issues")
-        
+
 except ImportError:
     print("[CONFTEST] FastAPI not available, creating mock app")
+
     # Create a mock app for testing
     class MockApp:
         def __init__(self):
             self.routes = []
-        
+
         def get(self, path):
             def decorator(func):
                 return func
+
             return decorator
-        
+
         def post(self, path):
             def decorator(func):
                 return func
+
             return decorator
-    
+
     app = MockApp()
+
 
 # Database initialization fixture
 @pytest.fixture(scope="session")
@@ -143,6 +159,7 @@ async def initialize_test_database():
     try:
         # Import the main app to trigger startup event
         from backend.main import app
+
         print("[CONFTEST] Database initialized for tests")
     except Exception as e:
         print(f"[CONFTEST] Database initialization failed: {e}")
@@ -212,16 +229,36 @@ def require_redis():
     """
     redis_available = False
     try:
-        socket.create_connection(('redis', 6379), timeout=2)
+        socket.create_connection(("redis", 6379), timeout=2)
         redis_available = True
     except (socket.timeout, ConnectionRefusedError, socket.gaierror):
         try:
-            socket.create_connection(('localhost', 6379), timeout=2)
+            socket.create_connection(("localhost", 6379), timeout=2)
             redis_available = True
         except (socket.timeout, ConnectionRefusedError, socket.gaierror):
             pass
-    
+
     if not redis_available:
         pytest.skip("Redis server is not available")
-    
+
     return redis_available
+
+
+@pytest.fixture(autouse=True)
+def reset_app_state():
+    """Reset app state between tests to prevent state leakage"""
+    from backend.main import app
+
+    # Save original state
+    original_state = {}
+    if hasattr(app.state, "_state"):
+        original_state = app.state._state.copy()
+
+    yield
+
+    # Clean up dependency overrides
+    app.dependency_overrides.clear()
+
+    # Restore original state
+    for key, value in original_state.items():
+        setattr(app.state, key, value)
