@@ -3091,7 +3091,7 @@ async def stream_media(
 @router.get("/media/{file_key}")
 async def get_media_by_key(
     file_key: str,
-    download: bool = False,
+    download: bool = True,
     current_user: str = Depends(get_current_user),
     request: Request = None,
 ):

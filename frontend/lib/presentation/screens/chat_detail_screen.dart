@@ -1689,8 +1689,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       debugPrint('[FILE_DOWNLOAD] File type: $contentType, isPDF: $isPDF, isImage: $isImage, isVideo: $isVideo');
       
       if (kIsWeb) {
-        // For web, create blob URL and open in new tab
-        await _openFileInWeb(fileId, fileName, isPDF);
+        // For web, trigger a real download (Content-Disposition: attachment)
+        // Prefer the secure media endpoint (/api/v1/media/{file_key}) when available.
+        await _openFileInWeb(message, fileId, fileName, isPDF);
       } else {
         // For native platforms, download and open file
         await _downloadAndOpenFile(fileId, fileName, contentType);
@@ -1760,7 +1761,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return 'application/octet-stream';
   }
 
-  Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {
+  Future<void> _openFileInWeb(Message message, String fileId, String fileName, bool isPDF) async {
     try {
       if (!kIsWeb) {
         throw Exception('Web-only download helper called on non-web platform');
@@ -1769,19 +1770,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       debugPrint('[FILE_WEB] Initiating download for: $fileName');
       debugPrint('[FILE_WEB] File ID: $fileId');
 
-      // **CRITICAL FIX**: Use direct download link with download=true parameter
-      // This allows the browser to handle the Content-Disposition header properly
-      // and save the file directly instead of opening in browser
-      
-      // Get the access token for authentication
       final accessToken = serviceProvider.authService.accessToken;
-      
-      // Build the download URL with dl=1 parameter
-      // This ensures Content-Disposition: attachment is sent by backend
-      String downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
-      
+
+      final fileKey = (message.fileKey ?? '').trim();
+
+      // Build the download URL.
+      // 1) Preferred: /api/v1/media/{file_key}?download=true
+      // 2) Fallback: legacy /files/{fileId}/download?dl=1
+      String downloadUrl;
+      if (fileKey.isNotEmpty) {
+        downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileKey?download=true';
+      } else {
+        downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
+      }
+
       if (accessToken != null) {
-        downloadUrl += '&token=$accessToken';
+        downloadUrl += downloadUrl.contains('?') ? '&token=$accessToken' : '?token=$accessToken';
       }
       
       debugPrint('[FILE_WEB] Download URL: $downloadUrl');

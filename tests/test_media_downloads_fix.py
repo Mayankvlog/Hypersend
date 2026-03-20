@@ -130,9 +130,48 @@ async def test_download_parameter_attachment_header(client, auth_headers):
 
 @pytest.mark.asyncio
 async def test_inline_parameter_inline_header(client, auth_headers):
-    """TEST 3: download=false (default) returns Content-Disposition: inline"""
+    """TEST 3: download=false returns Content-Disposition: inline"""
 
     test_file_key = "test/file/image.jpg"
+    mock_response = {
+        "Body": MagicMock(),
+        "ContentType": "image/jpeg",
+        "ContentLength": 512,
+    }
+
+    with patch("backend.routes.files._get_s3_client") as mock_s3:
+        s3_client = MagicMock()
+        s3_client.head_object.return_value = mock_response
+        s3_client.get_object.return_value = mock_response
+        mock_s3.return_value = s3_client
+
+        with patch("backend.routes.files.files_collection") as mock_files_col:
+            mock_col = MagicMock()
+            mock_col.find_one = AsyncMock(return_value=None)
+            mock_files_col.return_value = mock_col
+
+            # Request with download=false (force inline)
+            response = client.get(
+                f"/api/v1/media/{test_file_key}?download=false",
+                headers=auth_headers,
+            )
+
+            # For inline, we expect 200 with inline disposition or 403 for auth
+            disposition = response.headers.get("Content-Disposition", "")
+            print(f"✓ TEST 3: Content-Disposition header (inline mode): {disposition}")
+
+            if response.status_code == 200:
+                assert (
+                    "inline" in disposition
+                ), f"Expected 'inline' in Content-Disposition, got: {disposition}"
+                print(f"✓ TEST 3 PASSED: Content-Disposition: inline set correctly")
+
+
+@pytest.mark.asyncio
+async def test_default_is_attachment_header(client, auth_headers):
+    """TEST 3B: default behavior returns Content-Disposition: attachment"""
+
+    test_file_key = "test/file/image-default.jpg"
     mock_response = {
         "Body": MagicMock(),
         "ContentType": "image/jpeg",
@@ -156,15 +195,14 @@ async def test_inline_parameter_inline_header(client, auth_headers):
                 headers=auth_headers,
             )
 
-            # For inline, we expect 200 with inline disposition or 403 for auth
             disposition = response.headers.get("Content-Disposition", "")
-            print(f"✓ TEST 3: Content-Disposition header (inline mode): {disposition}")
+            print(f"✓ TEST 3B: Content-Disposition header (default mode): {disposition}")
 
             if response.status_code == 200:
                 assert (
-                    "inline" in disposition
-                ), f"Expected 'inline' in Content-Disposition, got: {disposition}"
-                print(f"✓ TEST 3 PASSED: Content-Disposition: inline set correctly")
+                    "attachment" in disposition
+                ), f"Expected 'attachment' in Content-Disposition, got: {disposition}"
+                print("✓ TEST 3B PASSED: Content-Disposition: attachment set by default")
 
 
 @pytest.mark.asyncio
