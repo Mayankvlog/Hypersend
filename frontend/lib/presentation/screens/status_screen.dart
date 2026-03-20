@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
-import 'dart:io' if (dart.library.html) 'dart:html';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
+
+// Platform-specific imports with prefixes to avoid conflicts
+import 'dart:html' as html;
+import 'dart:io' as io;
 
 class StatusScreen extends StatefulWidget {
   const StatusScreen({super.key});
@@ -303,7 +306,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         if (file.path == null) {
           throw Exception('File path not available');
         }
-        final imageFile = File(file.path!);
+        final imageFile = io.File(file.path!);
         fileBytes = await imageFile.readAsBytes();
       }
 
