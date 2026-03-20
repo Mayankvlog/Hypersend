@@ -363,6 +363,14 @@ def init_storage():
     """Initialize and validate storage system - must run before routes load"""
     logger.info("[STARTUP] Initializing storage system...")
     try:
+        # Validate S3_BUCKET is configured for production
+        if not settings.S3_BUCKET or settings.S3_BUCKET.strip() == "":
+            raise RuntimeError(
+                "S3_BUCKET environment variable is required but not set or empty. "
+                "Please configure S3_BUCKET in your .env file or environment variables."
+            )
+        logger.info(f"[STARTUP] S3 Bucket validated: {settings.S3_BUCKET}")
+        
         # settings module automatically initializes storage directories in __init__
         # Just validate that it's properly set up
         if not settings.SERVER_STORAGE_ENABLED:

@@ -322,6 +322,8 @@ class TestStatusListExpiryFiltering:
             assert (
                 response.status_code == 400
             ), f"Expected 400, got {response.status_code}: {response.text}"
+            
+            # Check error message for proper validation
             assert "Invalid user ID format" in response.json()["detail"]
         finally:
             app.dependency_overrides.clear()

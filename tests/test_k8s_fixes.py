@@ -63,7 +63,8 @@ def test_secret_key_references():
     secret_keys = set(secret_doc.get('data', {}).keys())
     
     # Check that referenced keys exist in the secret
-    expected_keys = {'mongodb-uri', 'secret-key', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'}
+    # AWS keys are now in stringData (kebab-case), not data (uppercase)
+    expected_keys = {'mongodb-uri', 'secret-key'}
     missing_keys = expected_keys - secret_keys
     assert not missing_keys, f"Missing secret keys: {missing_keys}"
 

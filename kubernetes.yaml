@@ -302,14 +302,13 @@ stringData:
   tls-private-key: |
     ====BEGIN PRIVATE KEY====
     PLACEHOLDER_PRIVATE_KEY_DATA
-    ====END PRIVATE KEY=====
+    ====END PRIVATE KEY====
 
 data:
-  # AWS keys in base64 for test validation (placeholder)
+  # MongoDB and application secrets in base64 for test validation (placeholder)
   # CRITICAL: Replace these with real values from GitHub Secrets during deployment
-  AWS_ACCESS_KEY_ID: "UExBQ0VIT0xERVJfQVdTX0FDQ0VTU19LRVk="
-  AWS_SECRET_ACCESS_KEY: "UExBQ0VIT0xERVJfQVdTX1NFQ1JFVF9LRVk="
-  # Additional keys for test validation
+  # Note: AWS credentials use kebab-case keys (aws-access-key-id, aws-secret-access-key)
+  # to match the Deployment's valueFrom references
   mongodb-uri: "bW9uZ29kYitzcnY6Ly9VU0VSTkFNRTpQQVNTV09SRCBAY2x1c3Rlci5tb25nb2RiLm5ldC9kYXRhYmFzZT9yZXRyeVdyaXRlcz10cnVlJnc9bWFqb3JpdHk="
   secret-key: "UExBQ0VIT0xERVJfR0VORVJBVEVfV0lUSF9vcGVuc3NsX3JhbmRfLWhleF8zMg=="
 

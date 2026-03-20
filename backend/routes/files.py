@@ -3153,8 +3153,10 @@ async def get_media_by_key(
             try:
                 body = obj['Body']
                 chunk_size = 65536  # 64KB chunks for efficient streaming
+                loop = asyncio.get_running_loop()
                 while True:
-                    chunk = body.read(chunk_size)
+                    # Use executor to prevent blocking the event loop on I/O
+                    chunk = await loop.run_in_executor(None, body.read, chunk_size)
                     if not chunk:
                         break
                     yield chunk

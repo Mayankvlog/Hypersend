@@ -69,7 +69,7 @@ class TestKubernetesFixes:
         print(f"✅ Nginx image: {image}")
     
     def test_aws_access_key_id_base64_encoded(self, k8s_config):
-        """Test 2a: AWS_ACCESS_KEY_ID should be properly base64 encoded"""
+        """Test 2a: aws-access-key-id should be properly base64 encoded in stringData"""
         secret = next(
             (doc for doc in k8s_config if doc and 
              doc.get('kind') == 'Secret' and 
@@ -78,24 +78,22 @@ class TestKubernetesFixes:
         )
         assert secret is not None, "backend-secrets not found"
         
-        aws_access_key = secret.get('data', {}).get('AWS_ACCESS_KEY_ID', '')
-        assert aws_access_key, "AWS_ACCESS_KEY_ID not found in secrets"
+        # Check stringData for kebab-case AWS keys (not data for uppercase)
+        aws_access_key = secret.get('stringData', {}).get('aws-access-key-id', '')
+        assert aws_access_key, "aws-access-key-id not found in stringData"
         
         # Remove quotes if present
         if aws_access_key.startswith('"'):
             aws_access_key = aws_access_key.strip('"')
         
-        # Validate base64 encoding
-        try:
-            decoded = base64.b64decode(aws_access_key, validate=True)
-            decoded_str = decoded.decode('utf-8')
-            assert len(decoded_str) > 0, "Decoded AWS_ACCESS_KEY_ID is empty"
-            print(f"✅ AWS_ACCESS_KEY_ID is valid base64")
-        except Exception as e:
-            pytest.fail(f"AWS_ACCESS_KEY_ID is not valid base64: {e}")
+        # Validate that it's a placeholder string (not base64 encoded)
+        # stringData stores plaintext, data stores base64
+        assert aws_access_key == "PLACEHOLDER_AWS_ACCESS_KEY_ID_FROM_GITHUB_SECRETS", \
+            f"Expected placeholder value, got: {aws_access_key}"
+        print(f"✅ aws-access-key-id has correct placeholder value")
     
     def test_aws_secret_access_key_base64_encoded(self, k8s_config):
-        """Test 2b: AWS_SECRET_ACCESS_KEY should be properly base64 encoded"""
+        """Test 2b: aws-secret-access-key should be properly base64 encoded in stringData"""
         secret = next(
             (doc for doc in k8s_config if doc and 
              doc.get('kind') == 'Secret' and 
@@ -104,21 +102,19 @@ class TestKubernetesFixes:
         )
         assert secret is not None, "backend-secrets not found"
         
-        aws_secret_key = secret.get('data', {}).get('AWS_SECRET_ACCESS_KEY', '')
-        assert aws_secret_key, "AWS_SECRET_ACCESS_KEY not found in secrets"
+        # Check stringData for kebab-case AWS keys (not data for uppercase)
+        aws_secret_key = secret.get('stringData', {}).get('aws-secret-access-key', '')
+        assert aws_secret_key, "aws-secret-access-key not found in stringData"
         
         # Remove quotes if present
         if aws_secret_key.startswith('"'):
             aws_secret_key = aws_secret_key.strip('"')
         
-        # Validate base64 encoding
-        try:
-            decoded = base64.b64decode(aws_secret_key, validate=True)
-            decoded_str = decoded.decode('utf-8')
-            assert len(decoded_str) > 0, "Decoded AWS_SECRET_ACCESS_KEY is empty"
-            print(f"✅ AWS_SECRET_ACCESS_KEY is valid base64")
-        except Exception as e:
-            pytest.fail(f"AWS_SECRET_ACCESS_KEY is not valid base64: {e}")
+        # Validate that it's a placeholder string (not base64 encoded)
+        # stringData stores plaintext, data stores base64
+        assert aws_secret_key == "PLACEHOLDER_AWS_SECRET_ACCESS_KEY_FROM_GITHUB_SECRETS", \
+            f"Expected placeholder value, got: {aws_secret_key}"
+        print(f"✅ aws-secret-access-key has correct placeholder value")
     
     def test_nginx_cache_path_configured(self, k8s_config):
         """Test 3a: Nginx cache should have proxy_cache_path directive"""

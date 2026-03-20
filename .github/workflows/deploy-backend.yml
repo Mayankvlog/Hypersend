@@ -107,6 +107,12 @@ jobs:
             echo "📋 Starting deployment with optimized scripts..."
             
             # Set environment variables for localhost development
+            export S3_BUCKET="${{ secrets.S3_BUCKET }}"
+            export AWS_REGION="${{ secrets.AWS_REGION }}"
+            export AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}"
+            export AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+            export DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
             export API_BASE_URL=http://localhost:8000/api/v1
             export APP_URL=http://localhost:3000
             export DEBUG=true
@@ -118,24 +124,15 @@ jobs:
             export SENDER_NAME=Hypersend Support
             export RATE_LIMIT_ENABLED=true
             export USE_MOCK_DB=true
-            export DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
-            export DOCKERHUB_TOKEN=${{ secrets.DOCKERHUB_TOKEN }}
             
             # ===== AWS/S3 CONFIGURATION =====
-            # CRITICAL: Load AWS credentials from GitHub secrets (never expose in logs)
-            # These secrets must be configured in GitHub repository settings
-            export S3_BUCKET="${{ secrets.S3_BUCKET }}"
-            export AWS_REGION="${{ secrets.AWS_REGION || 'us-east-1' }}"
-            export AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}"
-            export AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+            # AWS credentials passed via envs parameter with proper escaping by appleboy/ssh-action
+            # Set default AWS region if not provided
+            export AWS_REGION=${AWS_REGION:-us-east-1}
             
             # Validate that required AWS secrets are configured
             if [ -z "$S3_BUCKET" ]; then
               echo "⚠️  WARNING: S3_BUCKET secret not configured in GitHub"
-              echo "   Configure in repository settings: Settings > Secrets and variables > Actions"
-            fi
-            if [ "$AWS_REGION" = "us-east-1" ] && [ -z "${{ secrets.AWS_REGION }}" ]; then
-              echo "⚠️  WARNING: AWS_REGION secret not configured in GitHub (using default 'us-east-1')"
               echo "   Configure in repository settings: Settings > Secrets and variables > Actions"
             fi
             if [ -z "$AWS_ACCESS_KEY_ID" ]; then
