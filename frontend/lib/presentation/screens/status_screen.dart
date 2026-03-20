@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
-import 'dart:io' if (dart.library.html) 'dart:html' as io;
+import 'dart:io' if (dart.library.html) 'dart:html';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
@@ -303,7 +303,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         if (file.path == null) {
           throw Exception('File path not available');
         }
-        final imageFile = io.File(file.path!);
+        final imageFile = File(file.path!);
         fileBytes = await imageFile.readAsBytes();
       }
 
