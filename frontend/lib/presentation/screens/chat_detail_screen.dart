@@ -1772,7 +1772,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
       final accessToken = serviceProvider.authService.accessToken;
 
-      final fileKey = (message.fileKey ?? '').trim();
+      final fileKey = (message.fileId ?? '').trim();
 
       // Build the download URL.
       // 1) Preferred: /api/v1/media/{file_key}?download=true
@@ -1801,14 +1801,43 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
+  Future<void> _downloadFileInWeb(String fileId, String fileName) async {
+    try {
+      if (!kIsWeb) {
+        throw Exception('Web-only download helper called on non-web platform');
+      }
+
+      debugPrint('[FILE_WEB] Initiating simple download for: $fileName');
+      debugPrint('[FILE_WEB] File ID: $fileId');
+
+      final accessToken = serviceProvider.authService.accessToken;
+      
+      // Use the legacy download URL since we don't have fileKey without Message object
+      final downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
+      
+      final finalUrl = accessToken != null 
+          ? '$downloadUrl&token=$accessToken'
+          : downloadUrl;
+      
+      debugPrint('[FILE_WEB] Download URL: $finalUrl');
+      
+      // Create an anchor element and trigger download
+      io.saveFileDirectFromUrl(fileName, finalUrl);
+      
+      debugPrint('[FILE_WEB] Download triggered for $fileName');
+    } catch (e) {
+      debugPrint('[FILE_WEB_ERROR] $e');
+      rethrow;
+    }
+  }
+
   Future<void> _downloadAndOpenFile(String fileId, String fileName, String contentType) async {
     try {
       debugPrint('[FILE_NATIVE] Starting enhanced download for: $fileName');
       
       if (kIsWeb) {
-        // Web: Use browser download
-        final isPDF = contentType.toLowerCase().contains('pdf');
-        await _openFileInWeb(fileId, fileName, isPDF);
+        // Web: Use direct download without Message object
+        await _downloadFileInWeb(fileId, fileName);
         return;
       } else {
         // Native: Use FileTransferService for proper chunked download
