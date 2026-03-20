@@ -6,10 +6,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
 
-// Platform-specific imports with prefixes to avoid conflicts
-import 'dart:html' as html;
-import 'dart:io' as io;
-
 class StatusScreen extends StatefulWidget {
   const StatusScreen({super.key});
 
@@ -24,8 +20,6 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   List<Map<String, dynamic>> _viewedUpdates = [];
   bool _loading = true;
   String? _error;
-  DateTime? _lastRefresh;
-  bool _isUploading = false;
 
   @override
   void initState() {
@@ -123,7 +117,6 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
           
           _viewedUpdates = []; // TODO: Implement viewed status tracking
           _loading = false;
-          _lastRefresh = DateTime.now();
           
           debugPrint('[StatusScreen] Loaded ${_recentUpdates.length} non-expired statuses');
         });

@@ -398,6 +398,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   
   void _onBottomNavTap(int index) {
+    debugPrint('Tab: $index');
     debugPrint('[BOTTOM_NAV] Current tab index: $index');
     setState(() {
       _selectedIndex = index;
@@ -688,7 +689,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             label: 'Chats',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.circle_outlined),
+            icon: Icon(Icons.radio_button_checked),
             label: 'Status',
           ),
           BottomNavigationBarItem(
