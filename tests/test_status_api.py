@@ -67,6 +67,114 @@ class TestStatusAPIValidation:
         finally:
             app.dependency_overrides.clear()
 
+
+class TestStatusListExpiryFiltering:
+    """Test that status listing endpoints do not return expired statuses"""
+
+    def test_get_all_statuses_filters_expired(self):
+        """GET /api/v1/status/ should exclude expired statuses via expires_at > now query"""
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend.routes import status as status_module
+        from unittest.mock import MagicMock
+
+        mock_user = {
+            "_id": ObjectId("507f1f77bcf86cd799439011"),
+            "email": "testuser@example.com",
+            "name": "Test User",
+        }
+
+        class MockCursor:
+            def __init__(self, docs):
+                self._docs = docs
+
+            def sort(self, *args, **kwargs):
+                return self
+
+            def skip(self, *args, **kwargs):
+                return self
+
+            def limit(self, *args, **kwargs):
+                return self
+
+            def __aiter__(self):
+                async def gen():
+                    for d in self._docs:
+                        yield d
+
+                return gen()
+
+        class MockStatusCollection:
+            def __init__(self, docs):
+                self._docs = docs
+                self.find_calls = []
+
+            async def count_documents(self, query):
+                return len(self._docs)
+
+            def find(self, query):
+                self.find_calls.append(query)
+                return MockCursor(self._docs)
+
+        now = datetime.now(timezone.utc)
+        valid_doc = {
+            "_id": ObjectId("507f1f77bcf86cd799439012"),
+            "user_id": str(ObjectId("507f1f77bcf86cd799439099")),
+            "text": "hello",
+            "file_key": None,
+            "file_type": None,
+            "created_at": now - timedelta(hours=1),
+            "expires_at": now + timedelta(hours=23),
+            "views": 0,
+        }
+        expired_doc = {
+            "_id": ObjectId("507f1f77bcf86cd799439013"),
+            "user_id": str(ObjectId("507f1f77bcf86cd799439098")),
+            "text": "expired",
+            "file_key": None,
+            "file_type": None,
+            "created_at": now - timedelta(hours=30),
+            "expires_at": now - timedelta(hours=1),
+            "views": 0,
+        }
+
+        docs_to_return = [valid_doc]
+        mock_status_collection = MockStatusCollection(docs_to_return)
+
+        async def override_get_status_collection():
+            return mock_status_collection
+
+        def override_get_current_user():
+            return mock_user
+
+        # NOTE: get_status_collection() is NOT a FastAPI dependency (it's called directly),
+        # so dependency_overrides will not apply. Patch the module function instead.
+        original_get_status_collection = status_module.get_status_collection
+        status_module.get_status_collection = override_get_status_collection
+
+        # get_current_user IS a FastAPI dependency (Depends), but it was imported into status_module.
+        app.dependency_overrides[status_module.get_current_user] = override_get_current_user
+
+        try:
+            client = TestClient(app)
+            res = client.get("/api/v1/status/", headers={"Authorization": "Bearer test_token"})
+            assert res.status_code == 200, res.text
+            body = res.json()
+            assert isinstance(body.get("statuses"), list)
+            assert len(body["statuses"]) == 1
+            assert body["statuses"][0]["text"] == "hello"
+            # Sanity check: expired_doc not present
+            assert all(s.get("text") != "expired" for s in body["statuses"])
+
+            # Ensure query uses expires_at > now
+            assert mock_status_collection.find_calls, "Expected find() to be called"
+            query = mock_status_collection.find_calls[0]
+            assert "expires_at" in query
+            assert "$gt" in query["expires_at"]
+        finally:
+            status_module.get_status_collection = original_get_status_collection
+            app.dependency_overrides.clear()
+
     def test_upload_status_media_invalid_type(self):
         """Test status media upload with invalid file type"""
         from fastapi.testclient import TestClient

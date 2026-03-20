@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
-import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io';
 import 'dart:typed_data';
+import 'dart:io' if (dart.library.html) 'dart:html' as io;
 import '../../core/theme/app_theme.dart';
-import '../../core/constants/app_strings.dart';
+import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
-import '../../data/models/user.dart';
 
 class StatusScreen extends StatefulWidget {
   const StatusScreen({super.key});
@@ -41,6 +38,23 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         _loadStatusData();
       }
     });
+  }
+
+  String? _statusMediaUrl(Map<String, dynamic> status) {
+    final raw = status['file_url'] as String?;
+    final fileKey = status['file_key'] as String?;
+
+    String? base;
+    if (raw != null && raw.isNotEmpty) {
+      base = raw;
+    } else if (fileKey != null && fileKey.isNotEmpty) {
+      base = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileKey';
+    }
+
+    if (base == null || base.isEmpty) return null;
+
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    return base.contains('?') ? '$base&t=$ts' : '$base?t=$ts';
   }
 
   @override
@@ -93,6 +107,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                 'background_color': status['file_url'] != null ? '#4CAF50' : '#1E88E5',
                 'views': status['views'] ?? 0,
                 'file_url': status['file_url'],
+                'file_key': status['file_key'],
                 'file_type': status['file_type'],
               };
             }).toList() ?? []
@@ -288,7 +303,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         if (file.path == null) {
           throw Exception('File path not available');
         }
-        final imageFile = File(file.path!);
+        final imageFile = io.File(file.path!);
         fileBytes = await imageFile.readAsBytes();
       }
 
@@ -372,10 +387,10 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         child: Container(
           width: MediaQuery.of(context).size.width * 0.9,
           height: MediaQuery.of(context).size.height * 0.7,
-          decoration: status['type'] == 'image' && status['file_url'] != null
+          decoration: status['type'] == 'image' && _statusMediaUrl(status) != null
               ? BoxDecoration(
                   image: DecorationImage(
-                    image: NetworkImage(status['file_url']),
+                    image: NetworkImage(_statusMediaUrl(status)!),
                     fit: BoxFit.cover,
                   ),
                   borderRadius: BorderRadius.circular(16),

@@ -8,7 +8,6 @@ import '../../presentation/screens/chat_settings_screen.dart';
 import '../../presentation/screens/profile_edit_screen.dart';
 import '../../presentation/screens/profile_photo_screen.dart';
 import '../../presentation/screens/settings_screen.dart';
-import '../../presentation/screens/file_transfer_screen.dart';
 import '../../presentation/screens/notification_sound_screen.dart';
 import '../../presentation/screens/privacy_settings_screen.dart';
 import '../../presentation/screens/blocked_users_screen.dart';
@@ -122,10 +121,6 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
-    ),
-    GoRoute(
-      path: '/file-transfer',
-      builder: (context, state) => const FileTransferScreen(),
     ),
     GoRoute(
       path: '/notification-sound',

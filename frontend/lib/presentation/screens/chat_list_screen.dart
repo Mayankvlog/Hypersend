@@ -398,16 +398,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   
   void _onBottomNavTap(int index) {
+    debugPrint('[BOTTOM_NAV] Current tab index: $index');
     setState(() {
       _selectedIndex = index;
     });
     
-    if (index == 1) {
+    if (index == 0) {
+      context.go('/chats');
+    } else if (index == 1) {
       // Navigate to status
-      context.push('/status');
+      context.go('/status');
     } else if (index == 2) {
       // Navigate to settings
-      context.push('/settings');
+      context.go('/settings');
     }
   }
 

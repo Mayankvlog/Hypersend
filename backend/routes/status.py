@@ -92,7 +92,7 @@ def status_to_response(status: StatusInDB, current_user_id: str) -> StatusRespon
     file_url = None
     if status.file_key:
         # Generate S3 URL using existing media endpoint pattern
-        file_url = f"{settings.API_BASE_URL}/api/v1/media/{status.file_key}"
+        file_url = f"{settings.API_BASE_URL}/media/{status.file_key}"
     
     # Check if status is expired
     is_expired = datetime.now(timezone.utc) > status.expires_at
@@ -250,7 +250,7 @@ async def upload_status_media(
             chunk_size=1024 * 1024,  # 1MB chunks
             total_chunks=1,
             expires_in=86400,  # 24 hours (matches status expiry)
-            upload_url=f"{settings.API_BASE_URL}/api/v1/media/{file_key}"
+            upload_url=f"{settings.API_BASE_URL}/media/{file_key}"
         )
         
     except HTTPException:
@@ -291,6 +291,9 @@ async def get_all_statuses(
         statuses = []
         
         async for doc in cursor:
+            # Normalize MongoDB ObjectId -> str for Pydantic model
+            if isinstance(doc.get("_id"), ObjectId):
+                doc["_id"] = str(doc["_id"])
             # Convert to StatusInDB model
             status_doc = StatusInDB(**doc)
             statuses.append(status_to_response(status_doc, user_id))
@@ -348,6 +351,9 @@ async def get_user_statuses(
         status_ids_to_increment = []  # Collect IDs that need view increment
         
         async for doc in cursor:
+            # Normalize MongoDB ObjectId -> str for Pydantic model
+            if isinstance(doc.get("_id"), ObjectId):
+                doc["_id"] = str(doc["_id"])
             # Convert to StatusInDB model
             status_doc = StatusInDB(**doc)
             response = status_to_response(status_doc, requesting_user_id)

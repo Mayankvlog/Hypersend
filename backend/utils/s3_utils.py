@@ -76,4 +76,4 @@ def generate_status_media_url(file_key: str) -> str:
     Generate media URL for status files
     Uses existing media endpoint pattern
     """
-    return f"{settings.API_BASE_URL}/api/v1/media/{file_key}"
+    return f"{settings.API_BASE_URL}/media/{file_key}"
