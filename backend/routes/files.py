@@ -517,8 +517,8 @@ def _get_s3_client():
 
         # Prefer explicit credentials when provided, otherwise fall back to boto3's
         # default credential provider chain (IAM role, env vars, shared config, etc.).
-        # IMPORTANT: Deployment requirement: always use us-east-1 for zaply-temp bucket.
-        client_kwargs: Dict[str, Any] = {"region_name": "us-east-1"}
+        # CRITICAL: Use region_name from settings.AWS_REGION for environment-based configuration
+        client_kwargs: Dict[str, Any] = {"region_name": settings.AWS_REGION}
         if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
             client_kwargs.update(
                 {
@@ -532,7 +532,7 @@ def _get_s3_client():
 
         s3_client = boto3.client("s3", **client_kwargs)
         
-        _log("info", f"S3 client initialized for region: {getattr(settings, 'AWS_REGION', None)}")
+        _log("info", f"S3 client initialized for region: {settings.AWS_REGION}")
         return s3_client
     except Exception as e:
         _log("error", f"Failed to initialize S3 client: {str(e)}")
@@ -2978,6 +2978,223 @@ async def stream_media(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to stream media",
+        )
+
+
+# ============================================================================
+# SECURE MEDIA ACCESS ENDPOINT - No S3 URL Exposure
+# ============================================================================
+@router.get("/media/{file_key}")
+async def get_media_by_key(
+    file_key: str,
+    current_user: str = Depends(get_current_user),
+    request: Request = None
+):
+    """
+    SECURE MEDIA ACCESS ENDPOINT
+    
+    Fetch media from S3 bucket by file_key without exposing S3 URLs.
+    - Only authenticated users can access this endpoint
+    - File key is used to identify the object in S3
+    - Streaming response prevents memory buffering of large files
+    - No S3 URLs are exposed in API responses
+    - Supports all file types stored in S3 bucket
+    """
+    try:
+        # Validate file_key format (prevent directory traversal)
+        decoded_file_key = unquote(file_key) if file_key else ""
+
+        if not decoded_file_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file key format"
+            )
+
+        # Reject windows-style path separators / encoded traversal attempts
+        if "\\" in decoded_file_key or decoded_file_key.startswith("\\"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file key format"
+            )
+
+        normalized_key = os.path.normpath(decoded_file_key)
+
+        # Reject absolute paths and traversal (including encoded variants)
+        if (
+            decoded_file_key.startswith("/")
+            or normalized_key.startswith("..")
+            or normalized_key.startswith("/")
+            or os.path.isabs(normalized_key)
+            or any(part == ".." for part in normalized_key.split(os.sep) if part)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file key format"
+            )
+
+        safe_file_key = normalized_key.replace(os.sep, "/")
+
+        # AUTHORIZATION: ensure the requester can access this object.
+        # Reuse the same logic pattern as download_file (owner OR shared_with OR chat member).
+        try:
+            import asyncio
+            from bson import ObjectId
+
+            file_doc = await asyncio.wait_for(
+                files_collection().find_one({"object_key": safe_file_key}),
+                timeout=30.0,
+            )
+            if not file_doc:
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"storage_path": safe_file_key}),
+                    timeout=30.0,
+                )
+
+            if file_doc:
+                owner_id = file_doc.get("owner_id")
+                chat_id = file_doc.get("chat_id")
+                shared_with = file_doc.get("shared_with", [])
+
+                if str(owner_id) == str(current_user):
+                    pass
+                elif str(current_user) in [str(x) for x in (shared_with or [])]:
+                    pass
+                elif chat_id:
+                    from db_proxy import chats_collection
+
+                    chat_doc = await chats_collection().find_one({"_id": chat_id})
+                    if not chat_doc and ObjectId.is_valid(str(chat_id)):
+                        chat_doc = await chats_collection().find_one({"_id": ObjectId(str(chat_id))})
+
+                    members = chat_doc.get("members", []) if chat_doc else []
+                    if not (chat_doc and str(current_user) in [str(m) for m in members]):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied: you don't have permission to access this media",
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied: you don't have permission to access this media",
+                    )
+            else:
+                # If metadata isn't found, do not leak existence; treat as forbidden.
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: you don't have permission to access this media",
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            _log(
+                "error",
+                f"Error checking media authorization: {str(e)}",
+                {"user_id": current_user, "file_key": safe_file_key, "operation": "get_media_by_key"},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: unable to verify access",
+            )
+        
+        # Get S3 client
+        s3_client = _get_s3_client()
+        if not s3_client:
+            _log(
+                "warning",
+                f"S3 client unavailable for media access: {file_key}",
+                {"user_id": current_user}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Media storage service unavailable"
+            )
+        
+        # Fetch object metadata from S3 to get content type and size
+        try:
+            obj_metadata = s3_client.head_object(
+                Bucket=settings.S3_BUCKET,
+                Key=safe_file_key
+            )
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                _log(
+                    "warning",
+                    f"Media file not found: {safe_file_key}",
+                    {"user_id": current_user, "file_key": safe_file_key}
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Media file not found"
+                )
+            raise
+        
+        # Get content type from metadata or default to octet-stream
+        content_type = obj_metadata.get('ContentType', 'application/octet-stream')
+        content_length = obj_metadata.get('ContentLength', 0)
+        
+        # Log media access for audit
+        _log(
+            "info",
+            f"Media access granted: {safe_file_key}",
+            {
+                "user_id": current_user,
+                "file_key": safe_file_key,
+                "content_type": content_type,
+                "size": content_length
+            }
+        )
+        
+        # Fetch object from S3
+        obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
+        
+        # Create streaming response
+        async def stream_s3_object():
+            """Stream S3 object in chunks to prevent memory buffering"""
+            try:
+                body = obj['Body']
+                chunk_size = 65536  # 64KB chunks for efficient streaming
+                while True:
+                    chunk = body.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+            except Exception as e:
+                _log(
+                    "error",
+                    f"Error streaming media: {str(e)}",
+                    {"user_id": current_user, "file_key": safe_file_key}
+                )
+                # Re-raise to trigger client disconnect
+                raise
+            finally:
+                if "body" in locals() and hasattr(body, "close"):
+                    body.close()
+        
+        # Return streaming response with proper headers
+        quoted_key = quote(safe_file_key, safe="")
+        return StreamingResponse(
+            stream_s3_object(),
+            media_type=content_type,
+            headers={
+                "Content-Length": str(content_length),
+                "Content-Disposition": f"inline; filename*=UTF-8''{quoted_key}",
+                "Cache-Control": "private, max-age=3600",  # Cache for 1 hour
+                "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
+                "X-Frame-Options": "DENY",  # Prevent embedding in frames
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log(
+            "error",
+            f"Failed to fetch media by key: {str(e)}",
+            {"user_id": current_user, "file_key": file_key, "operation": "get_media_by_key"}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch media"
         )
 
 

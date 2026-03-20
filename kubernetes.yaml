@@ -285,6 +285,15 @@ stringData:
   smtp-password: "PLACEHOLDER_GMAIL_APP_PASSWORD"
   email-from: "noreply@zaply.in.net"
   
+  # AWS S3 Credentials (PLACEHOLDER - CRITICAL: Never commit real secrets)
+  # These are loaded from GitHub Secrets Manager during CI/CD deployment
+  # To set these values:
+  #   1. In GitHub: Settings > Secrets and variables > Actions
+  #   2. Create secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+  #   3. Run: kubectl create secret generic backend-secrets --from-literal=aws-access-key-id='YOUR_KEY' --from-literal=aws-secret-access-key='YOUR_SECRET'
+  aws-access-key-id: "PLACEHOLDER_AWS_ACCESS_KEY_ID_FROM_GITHUB_SECRETS"
+  aws-secret-access-key: "PLACEHOLDER_AWS_SECRET_ACCESS_KEY_FROM_GITHUB_SECRETS"
+  
   # TLS Certificates (see TLS Certificate Management section)
   tls-certificate: |
     ====BEGIN CERTIFICATE====
@@ -293,10 +302,11 @@ stringData:
   tls-private-key: |
     ====BEGIN PRIVATE KEY====
     PLACEHOLDER_PRIVATE_KEY_DATA
-    ====END PRIVATE KEY====
+    ====END PRIVATE KEY=====
 
 data:
-  # AWS keys in base64 for test validation
+  # AWS keys in base64 for test validation (placeholder)
+  # CRITICAL: Replace these with real values from GitHub Secrets during deployment
   AWS_ACCESS_KEY_ID: "UExBQ0VIT0xERVJfQVdTX0FDQ0VTU19LRVk="
   AWS_SECRET_ACCESS_KEY: "UExBQ0VIT0xERVJfQVdTX1NFQ1JFVF9LRVk="
   # Additional keys for test validation
@@ -363,9 +373,10 @@ data:
   SMTP_USE_TLS: "true"
   SENDER_NAME: "Zaply Support"
   
-  # AWS S3 Configuration (if using S3)
+  # AWS S3 Configuration (Non-sensitive configuration in ConfigMap)
+  # CRITICAL: S3 bucket name and region (credentials in secrets)
   AWS_REGION: "us-east-1"
-  S3_BUCKET: "hypersend-prod"
+  S3_BUCKET: "zaply-object-storage-781953767677-us-east-1-an"
   
   # Logging
   LOG_LEVEL: "INFO"
@@ -1097,6 +1108,30 @@ spec:
             secretKeyRef:
               name: backend-secrets
               key: email-from
+        
+        # ===== AWS S3 Configuration =====
+        # CRITICAL: AWS credentials must be stored in Kubernetes secrets (never in ConfigMap)
+        # These are injected from GitHub Secrets during CI/CD deployment
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: AWS_REGION
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: hypersend-config
+              key: S3_BUCKET
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: aws-access-key-id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: aws-secret-access-key
         
         # Logging & Monitoring
         - name: LOG_LEVEL

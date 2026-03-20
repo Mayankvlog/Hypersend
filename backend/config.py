@@ -416,11 +416,16 @@ class Settings:
     # ============================================================================
     # AWS/S3 CONFIGURATION (optional for WhatsApp model)
     # ============================================================================
+    # CRITICAL: AWS credentials are loaded from environment variables only
+    # Never hardcode credentials - use .env file or deployment secrets
     
     S3_BUCKET: str = os.getenv("S3_BUCKET", "zaply-temp")
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    
+    # Helper: Check if AWS credentials are configured
+    _AWS_CREDENTIALS_CONFIGURED: bool = bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY)
     
     # ============================================================================
     # STORAGE MODEL CONFIGURATION
@@ -504,8 +509,21 @@ class Settings:
         "upload": UPLOADS_PATH,
     }
 
+    # ============================================================================
+    # LOGGING: AWS/S3 CONFIGURATION STATUS
+    # ============================================================================
     logger.info(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
     logger.info(f"[CONFIG] AWS Region: {AWS_REGION}")
+    
+    # Log AWS credential status (without exposing secrets)
+    if _AWS_CREDENTIALS_CONFIGURED:
+        # Mask credential keys for logging
+        masked_key_id = AWS_ACCESS_KEY_ID[:4] + "***" if len(AWS_ACCESS_KEY_ID) > 4 else "***"
+        logger.info(f"[CONFIG] AWS Credentials: ✓ Configured (Key ID: {masked_key_id}...)")
+    else:
+        logger.warning("[CONFIG] AWS Credentials: Not configured - will use IAM role or boto3 default provider chain")
+    
+    logger.info("[CONFIG] S3/Media Access: Use /api/v1/media/{file_key} endpoint - no direct S3 URLs exposed")
 
     # File upload settings (15GB Support)
     # LARGE_FILE_THRESHOLD and MAX_FILE_SIZE already set above

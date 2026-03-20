@@ -156,6 +156,15 @@ services:
       AUTO_CLEANUP_ENABLED: "true"
       ALLOWED_FILE_TYPES: "jpg,jpeg,png,gif,pdf,doc,docx,txt,mp4,mp3,zip,avi,wmv,flv,webm,mpg,wmf,wmv,exe,msi,deb,rar,7z,iso"
 
+      # ===== AWS/S3 CONFIGURATION =====
+      # CRITICAL SECURITY: All AWS credentials loaded from .env file only
+      # Never expose secrets in docker-compose.yml - use env_file or secrets
+      S3_BUCKET: ${S3_BUCKET:-zaply-object-storage-781953767677-us-east-1-an}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      # Note: Credentials from AWS IAM roles will be used if keys above are not set
+
       # ===== LOGGING =====
       LOG_LEVEL: "INFO"
       LOG_FORMAT: "json"
