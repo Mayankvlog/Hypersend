@@ -636,12 +636,26 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("[STARTUP] File cleanup is disabled (AUTO_CLEANUP_ENABLED=false)")
 
+    # Initialize background status cleanup task (CRITICAL for 24-hour status expiry)
+    status_cleanup_task = None
+    try:
+        from backend.routes.status import periodic_status_cleanup
+        
+        status_cleanup_task = asyncio.create_task(
+            periodic_status_cleanup(interval_minutes=5)  # Run every 5 minutes
+        )
+        app.state.status_cleanup_task = status_cleanup_task
+        logger.info("[STARTUP] Status cleanup task initialized (interval=5min)")
+    except Exception as e:
+        logger.error(f"[STARTUP] Failed to initialize status cleanup task: {e}")
+        # Continue even if cleanup fails - not critical for operation
+
     logger.info("[STARTUP] Application startup complete")
 
     yield
 
     # Graceful shutdown sequence - CRITICAL ORDER
-    # 1. Cancel background cleanup task
+    # 1. Cancel background cleanup tasks
     # 2. Shutdown WebSocket manager
     # 3. Cleanup Redis
     # 4. Close database
@@ -659,6 +673,20 @@ async def lifespan(app: FastAPI):
             logger.warning("[SHUTDOWN] File cleanup task cancellation timed out")
         except Exception as e:
             logger.debug(f"[SHUTDOWN] Error cancelling cleanup task: {e}")
+
+    # Cancel background status cleanup task
+    status_cleanup_task = getattr(app.state, "status_cleanup_task", None)
+    if status_cleanup_task and not status_cleanup_task.done():
+        try:
+            logger.info("[SHUTDOWN] Cancelling status cleanup task...")
+            status_cleanup_task.cancel()
+            await asyncio.wait_for(status_cleanup_task, timeout=5.0)
+        except asyncio.CancelledError:
+            logger.info("[SHUTDOWN] Status cleanup task cancelled")
+        except asyncio.TimeoutError:
+            logger.warning("[SHUTDOWN] Status cleanup task cancellation timed out")
+        except Exception as e:
+            logger.debug(f"[SHUTDOWN] Error cancelling status cleanup task: {e}")
 
     # Shutdown WebSocket manager (singleton instance)
     try:

@@ -1,5 +1,7 @@
 import os
 import uuid
+import logging
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
@@ -18,11 +20,71 @@ from backend.utils.s3_utils import upload_file_to_s3
 # Initialize router
 router = APIRouter(prefix="/api/v1/status", tags=["status"])
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+
 # Status collection helper
 async def get_status_collection():
     """Get status collection from database"""
     db = get_database()
     return db["statuses"]
+
+# ============================================================================
+# BACKGROUND TASK: Auto-delete expired statuses
+# ============================================================================
+async def periodic_status_cleanup(interval_minutes: int = 5):
+    """
+    Background task to delete expired statuses from database
+    Runs periodically to keep database clean
+    
+    Args:
+        interval_minutes: How often to run cleanup (default: 5 minutes)
+    """
+    logger.info(f"[STATUS_CLEANUP] Starting status cleanup task (interval={interval_minutes}min)")
+    
+    try:
+        while True:
+            try:
+                await asyncio.sleep(interval_minutes * 60)  # Wait before first cleanup
+                
+                status_collection = await get_status_collection()
+                current_time = datetime.now(timezone.utc)
+                
+                # Find all expired statuses
+                expired_query = {"expires_at": {"$lt": current_time}}
+                
+                # Also delete associated S3 files
+                expired_statuses = []
+                cursor = status_collection.find(expired_query)
+                async for doc in cursor:
+                    expired_statuses.append(doc)
+                
+                # Clean up S3 files
+                for status_doc in expired_statuses:
+                    if status_doc.get("file_key"):
+                        try:
+                            from backend.utils import s3_utils
+                            s3_utils.delete_object(settings.S3_BUCKET, status_doc["file_key"])
+                            logger.debug(f"[STATUS_CLEANUP] Deleted S3 object: {status_doc['file_key']}")
+                        except Exception as e:
+                            logger.warning(f"[STATUS_CLEANUP] Failed to delete S3 object {status_doc['file_key']}: {str(e)}")
+                
+                # Delete expired statuses from database
+                result = await status_collection.delete_many(expired_query)
+                
+                if result.deleted_count > 0:
+                    logger.info(f"[STATUS_CLEANUP] Deleted {result.deleted_count} expired statuses")
+                
+            except asyncio.CancelledError:
+                logger.info("[STATUS_CLEANUP] Status cleanup task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"[STATUS_CLEANUP] Error during cleanup: {type(e).__name__}: {str(e)}")
+                # Continue running even if one cleanup cycle fails
+                
+    except Exception as e:
+        logger.error(f"[STATUS_CLEANUP] Fatal error in status cleanup task: {type(e).__name__}: {str(e)}")
+        raise
 
 # Helper function to convert StatusInDB to StatusResponse
 def status_to_response(status: StatusInDB, current_user_id: str) -> StatusResponse:
@@ -54,39 +116,64 @@ async def create_status(
 ):
     """
     Create a new status (text or media)
-    Reuses existing S3 upload logic
+    
+    Request body:
+    {
+        "text": "Status text (optional if file_key provided)",
+        "file_key": "S3 file key from /status/upload response (optional if text provided)"
+    }
+    
+    Returns:
+    StatusResponse with id, user_id, text, file_url, expires_at, etc.
     """
     try:
         status_collection = await get_status_collection()
         user_id = str(current_user["_id"])
         
-        # Create status document
-        # If file_key is provided, attempt to get metadata for file_type
-        file_type = None
-        if status_data.file_key:
-            # TODO: Implement get_upload_metadata(file_key) to fetch content_type from storage
-            # For now, falling back to None until metadata lookup is implemented
-            file_type = None
+        logger.info(f"[STATUS_CREATE] User {user_id} creating status - text_len: {len(status_data.text or '')}, has_file: {bool(status_data.file_key)}")
         
-        # Validate expiry is in future (service-layer check for creation)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-        if expires_at <= datetime.now(timezone.utc):
+        # Validate that either text or file_key is provided (done in model validator, but log it)
+        if not status_data.text and not status_data.file_key:
+            logger.warning(f"[STATUS_CREATE] Invalid: neither text nor file_key provided")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to set expiry time"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either text or file_key must be provided"
             )
         
+        # Calculate expiry: 24 hours from now
+        created_at = datetime.now(timezone.utc)
+        expires_at = created_at + timedelta(hours=24)
+        
+        logger.info(f"[STATUS_CREATE] Created at: {created_at}, expires at: {expires_at}")
+        
+        # Determine file type if file_key is provided
+        file_type = None
+        if status_data.file_key:
+            # Parse file type from extension
+            _, ext = os.path.splitext(status_data.file_key)
+            if ext.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                file_type = 'image'
+            elif ext.lower() in ['.mp4', '.3gp']:
+                file_type = 'video'
+            logger.info(f"[STATUS_CREATE] Detected file_type: {file_type} from extension: {ext}")
+        
+        # Create status document
         status_doc = StatusInDB(
             user_id=user_id,
             text=status_data.text,
             file_key=status_data.file_key,
             file_type=file_type,
+            created_at=created_at,
             expires_at=expires_at
         )
+        
+        logger.info(f"[STATUS_CREATE] Inserting status document: {status_doc.model_dump(by_alias=True)}")
         
         # Insert into database
         result = await status_collection.insert_one(status_doc.model_dump(by_alias=True))
         status_doc.id = str(result.inserted_id)
+        
+        logger.info(f"[STATUS_CREATE] Status created successfully, id: {status_doc.id}")
         
         # Convert to response
         response = status_to_response(status_doc, user_id)
@@ -99,6 +186,9 @@ async def create_status(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"[STATUS_CREATE] Error: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"[STATUS_CREATE] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create status: {str(e)}"
@@ -111,14 +201,19 @@ async def upload_status_media(
 ):
     """
     Upload media for status using existing S3 upload logic
-    Stores only file_key, not full S3 URL
+    Stores file_key (S3 reference), not full URL
+    
+    Returns FileInitResponse with metadata for frontend
     """
     try:
         user_id = str(current_user["_id"])
         
+        logger.info(f"[STATUS_UPLOAD] User {user_id} uploading status media: {file.filename}")
+        
         # Validate file type
         allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/3gpp']
         if file.content_type not in allowed_types:
+            logger.warning(f"[STATUS_UPLOAD] Invalid file type: {file.content_type}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File type {file.content_type} not supported. Allowed types: {', '.join(allowed_types)}"
@@ -128,6 +223,7 @@ async def upload_status_media(
         max_size = 16 * 1024 * 1024  # 16MB
         file_content = await file.read()
         if len(file_content) > max_size:
+            logger.warning(f"[STATUS_UPLOAD] File too large: {len(file_content)} bytes")
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail="File too large. Maximum size is 16MB"
@@ -137,6 +233,8 @@ async def upload_status_media(
         file_extension = os.path.splitext(file.filename)[1] if file.filename else ''
         unique_filename = f"status/{user_id}/{uuid.uuid4()}{file_extension}"
         
+        logger.info(f"[STATUS_UPLOAD] Uploading to S3 as: {unique_filename}")
+        
         # Upload to S3 using existing utility
         file_key = upload_file_to_s3(
             file_content=file_content,
@@ -144,18 +242,21 @@ async def upload_status_media(
             content_type=file.content_type
         )
         
-        # Return file init response compatible with existing frontend logic
+        logger.info(f"[STATUS_UPLOAD] Successfully uploaded, file_key: {file_key}")
+        
+        # Return file init response with file_key embedded for later status creation
         return FileInitResponse(
-            upload_id=str(uuid.uuid4()),
+            upload_id=file_key,  # Use file_key as upload_id for transparency
             chunk_size=1024 * 1024,  # 1MB chunks
             total_chunks=1,
-            expires_in=3600,  # 1 hour
+            expires_in=86400,  # 24 hours (matches status expiry)
             upload_url=f"{settings.API_BASE_URL}/api/v1/media/{file_key}"
         )
         
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"[STATUS_UPLOAD] Error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload status media: {str(e)}"

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_strings.dart';
 import '../../data/services/service_provider.dart';
@@ -22,21 +24,35 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   List<Map<String, dynamic>> _viewedUpdates = [];
   bool _loading = true;
   String? _error;
+  DateTime? _lastRefresh;
+  bool _isUploading = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    debugPrint('[StatusScreen] Initializing - loading status data...');
     _loadStatusData();
+    
+    // Auto-refresh every 30 seconds to show expired statuses disappearing
+    Future.delayed(const Duration(seconds: 30), () {
+      if (mounted) {
+        debugPrint('[StatusScreen] Auto-refresh triggered (30s interval)');
+        _loadStatusData();
+      }
+    });
   }
 
   @override
   void dispose() {
+    debugPrint('[StatusScreen] Disposing...');
     _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _loadStatusData() async {
+    debugPrint('[StatusScreen] Loading status data...');
+    
     setState(() {
       _loading = true;
       _error = null;
@@ -46,35 +62,60 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       // Load all statuses from other users
       final response = await serviceProvider.apiService.getAllStatuses();
       
+      debugPrint('[StatusScreen] API response received: ${response['statuses']?.length ?? 0} statuses');
+      
       if (mounted) {
         setState(() {
           _recentUpdates = List<Map<String, dynamic>>.from(
-            response['statuses']?.map((status) => {
-              'id': status['id'],
-              'user': {
-                'id': status['user_id'],
-                'name': 'User ${status['user_id']}', // TODO: Get actual user name
-                'avatar': 'U${status['user_id'][0]}', // TODO: Get actual avatar
-                'avatar_color': '#2196F3', // TODO: Get actual avatar color
-              },
-              'content': status['text'] ?? 'Media status',
-              'timestamp': DateTime.parse(status['created_at']),
-              'type': status['file_url'] != null ? 'image' : 'text',
-              'background_color': status['file_url'] != null ? '#4CAF50' : '#1E88E5',
-              'views': status['views'] ?? 0,
-              'file_url': status['file_url'],
-              'file_type': status['file_type'],
-            }) ?? []
+            response['statuses']?.map((status) {
+              // Skip expired statuses from display
+              final isExpired = status['is_expired'] ?? false;
+              final expiresAt = status['expires_at'] != null 
+                ? DateTime.parse(status['expires_at'] as String)
+                : DateTime.now();
+              
+              debugPrint('[StatusScreen] Status from ${status['user_id']}: expired=$isExpired, expires_at=$expiresAt');
+              
+              return {
+                'id': status['id'],
+                'user_id': status['user_id'],
+                'user': {
+                  'id': status['user_id'],
+                  'name': 'User ${status['user_id']}', // TODO: Get actual user name from users endpoint
+                  'avatar': 'U${(status['user_id'] as String)[0]}',
+                  'avatar_color': '#2196F3',
+                },
+                'content': status['text'] ?? 'Media status',
+                'timestamp': DateTime.parse(status['created_at'] as String),
+                'expires_at': expiresAt,
+                'is_expired': isExpired,
+                'type': status['file_url'] != null ? 'image' : 'text',
+                'background_color': status['file_url'] != null ? '#4CAF50' : '#1E88E5',
+                'views': status['views'] ?? 0,
+                'file_url': status['file_url'],
+                'file_type': status['file_type'],
+              };
+            }).toList() ?? []
           );
+          
+          // Filter out expired statuses for display
+          _recentUpdates = _recentUpdates.where((s) => 
+            !(s['is_expired'] as bool? ?? false)
+          ).toList();
+          
           _viewedUpdates = []; // TODO: Implement viewed status tracking
           _loading = false;
+          _lastRefresh = DateTime.now();
+          
+          debugPrint('[StatusScreen] Loaded ${_recentUpdates.length} non-expired statuses');
         });
       }
     } catch (e) {
+      debugPrint('[StatusScreen] Error loading statuses: $e');
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = e.toString();
+          _error = 'Failed to load statuses: $e';
         });
       }
     }
@@ -157,26 +198,48 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
     );
   }
 
-  void _addTextStatus(String content, String backgroundColor) {
-    final newStatus = {
-      'id': DateTime.now().millisecondsSinceEpoch.toString(),
-      'content': content,
-      'timestamp': DateTime.now(),
-      'type': 'text',
-      'background_color': backgroundColor,
-      'views': 0,
-    };
-
-    setState(() {
-      _myStatus.insert(0, newStatus);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Status posted successfully!'),
-        backgroundColor: Colors.green,
-      ),
-    );
+  void _addTextStatus(String content, String backgroundColor) async {
+    debugPrint('[StatusScreen] Creating text status: $content');
+    
+    setState(() => _isUploading = true);
+    
+    try {
+      // Call API to create text status
+      final response = await serviceProvider.apiService.createStatus(
+        text: content,
+      );
+      
+      debugPrint('[StatusScreen] Status created: ${response['id']}');
+      
+      if (mounted) {
+        Navigator.pop(context);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Status posted successfully! ✓'),
+            backgroundColor: AppTheme.successGreen,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        
+        // Refresh status list to show new status
+        await _loadStatusData();
+      }
+    } catch (e) {
+      debugPrint('[StatusScreen] Error creating text status: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to post status: $e'),
+            backgroundColor: AppTheme.errorRed,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
   }
 
   Future<void> _pickAndUploadImage() async {
@@ -191,6 +254,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         await _uploadImageStatus(file);
       }
     } catch (e) {
+      debugPrint('[StatusScreen] Error picking image: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -204,56 +268,75 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
 
   Future<void> _uploadImageStatus(PlatformFile file) async {
     try {
-      // Handle PlatformFile: convert path to dart:io File for native platforms
-      if (file.path == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to get file path'),
-            backgroundColor: AppTheme.errorRed,
-          ),
-        );
-        return;
-      }
+      debugPrint('[StatusScreen] Uploading image status: ${file.name}');
       
-      // Import dart:io for native File
-      // For web, this would need different handling (use file.bytes)
-      final imageFile = File(file.path!);
+      setState(() => _isUploading = true);
+      
+      // For native: convert path to File
+      // For web: use file.bytes directly
+      late Uint8List fileBytes;
+      
+      if (kIsWeb) {
+        // Web platform
+        if (file.bytes != null) {
+          fileBytes = file.bytes!;
+        } else {
+          throw Exception('File bytes not available for web');
+        }
+      } else {
+        // Native platform
+        if (file.path == null) {
+          throw Exception('File path not available');
+        }
+        final imageFile = File(file.path!);
+        fileBytes = await imageFile.readAsBytes();
+      }
 
-      // Show loading indicator
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Uploading status...'),
-            duration: Duration(seconds: 1),
+            content: Text('Uploading image...'),
+            duration: Duration(seconds: 2),
           ),
         );
       }
 
-      // Read file bytes and upload to backend
-      final fileBytes = await imageFile.readAsBytes();
-      final fileName = file.path!.split('/').last;
+      // Step 1: Upload media to get file_key
+      debugPrint('[StatusScreen] Uploading media bytes (${fileBytes.length} bytes)');
       final uploadResponse = await serviceProvider.apiService.uploadStatusMedia(
         fileBytes,
-        filename: fileName,
+        filename: file.name,
       );
       
-      // Create status with uploaded file
-      await serviceProvider.apiService.createStatus(
-        fileKey: uploadResponse['upload_id']?.toString(),
-      );
+      final fileKey = uploadResponse['upload_id'] as String?;
+      if (fileKey == null || fileKey.isEmpty) {
+        throw Exception('No file_key returned from upload');
+      }
+      
+      debugPrint('[StatusScreen] Media uploaded with file_key: $fileKey');
 
-      // Refresh status list
-      await _loadStatusData();
+      // Step 2: Create status with file_key
+      debugPrint('[StatusScreen] Creating status with file_key: $fileKey');
+      final statusResponse = await serviceProvider.apiService.createStatus(
+        fileKey: fileKey,
+      );
+      
+      debugPrint('[StatusScreen] Status created: ${statusResponse['id']}');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Image status uploaded successfully!'),
-            backgroundColor: Colors.green,
+            content: Text('Image status posted! ✓'),
+            backgroundColor: AppTheme.successGreen,
+            duration: Duration(seconds: 2),
           ),
         );
+        
+        // Refresh status list to show new status
+        await _loadStatusData();
       }
     } catch (e) {
+      debugPrint('[StatusScreen] Error uploading image status: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -261,6 +344,10 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
             backgroundColor: AppTheme.errorRed,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
       }
     }
   }
@@ -275,6 +362,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   }
 
   void _viewStatus(Map<String, dynamic> status) async {
+    debugPrint('[StatusScreen] Viewing status: ${status['id']}');
     // Show full-screen status viewer
     await showDialog(
       context: context,

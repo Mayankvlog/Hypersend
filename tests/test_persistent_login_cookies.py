@@ -65,7 +65,7 @@ class TestPersistentLoginCookies:
         
         # Handle both TestClient and httpx.AsyncClient
         if hasattr(http_client, 'post'):
-            # TestClient
+            # TestClient - don't use await
             response = http_client.post(f"/auth/login", json=payload)
         else:
             # httpx.AsyncClient
@@ -108,12 +108,65 @@ class TestPersistentLoginCookies:
             "password": TEST_USER_PASSWORD
         }
         
-        login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
+        # Handle both TestClient and httpx.AsyncClient
+        if hasattr(http_client, 'post'):
+            # TestClient - don't use await
+            login_response = http_client.post(f"/auth/login", json=login_payload)
+        else:
+            # httpx.AsyncClient
+            # Handle both TestClient and httpx.AsyncClient
+
+            if hasattr(http_client, 'post'):
+
+                # TestClient - don't use await
+
+                login_response = http_client.post(f"/auth/login", json=login_payload)
+
+            else:
+
+                # httpx.AsyncClient
+
+                # Handle both TestClient and httpx.AsyncClient
+
+
+                if hasattr(http_client, 'post'):
+
+
+                    # TestClient - don't use await
+
+
+                    login_response = http_client.post(f"/auth/login", json=login_payload)
+
+
+                else:
+
+
+                    # httpx.AsyncClient
+
+
+                    login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
         assert login_response.status_code in [200, 201]
         
         # Cookies should be automatically included now
         # Make request to /me endpoint which requires authentication
-        me_response = await http_client.get(f"{API_BASE}/users/me")
+        if hasattr(http_client, 'get'):
+            # TestClient - don't use await
+            me_response = http_client.get(f"/users/me")
+        else:
+            # httpx.AsyncClient
+            # Handle both TestClient and httpx.AsyncClient
+
+            if hasattr(http_client, 'get'):
+
+                # TestClient - don't use await
+
+                me_response = http_client.get(f"/users/me")
+
+            else:
+
+                # httpx.AsyncClient
+
+                me_response = await http_client.get(f"{API_BASE}/users/me")
         
         # Should succeed or 404 if endpoint doesn't exist
         if me_response.status_code not in [200, 404]:
@@ -136,17 +189,65 @@ class TestPersistentLoginCookies:
             "password": TEST_USER_PASSWORD
         }
         
-        login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
+        # Handle both TestClient and httpx.AsyncClient
+
+        
+        if hasattr(http_client, 'post'):
+
+        
+            # TestClient - don't use await
+
+        
+            login_response = http_client.post(f"/auth/login", json=login_payload)
+
+        
+        else:
+
+        
+            # httpx.AsyncClient
+
+        
+            # Handle both TestClient and httpx.AsyncClient
+
+
+        
+            if hasattr(http_client, 'post'):
+
+
+        
+                # TestClient - don't use await
+
+
+        
+                login_response = http_client.post(f"/auth/login", json=login_payload)
+
+
+        
+            else:
+
+
+        
+                # httpx.AsyncClient
+
+
+        
+                login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
         # Should succeed or 404 if endpoint doesn't exist
         if login_response.status_code not in [200, 201, 404]:
             pytest.skip(f"Login endpoint returned {login_response.status_code} - may not exist")
         
         if login_response.status_code == 404:
             pytest.skip("Login endpoint not available - skipping refresh token test")
-        refresh_response = await http_client.post(
-            f"{API_BASE}/auth/refresh-session",
-            data={}  # refresh token comes from cookies
-        )
+        # Handle both TestClient and httpx.AsyncClient
+        if hasattr(http_client, 'post'):
+            # TestClient - don't use await
+            refresh_response = http_client.post(f"/auth/refresh-session", data={})
+        else:
+            # httpx.AsyncClient
+            refresh_response = await http_client.post(
+                f"{API_BASE}/auth/refresh-session",
+                data={}  # refresh token comes from cookies
+            )
         
         # Should return 200 or 404 if endpoint doesn't exist
         if refresh_response.status_code not in [200, 404]:
@@ -173,7 +274,49 @@ class TestPersistentLoginCookies:
             "password": TEST_USER_PASSWORD
         }
         
-        login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
+        # Handle both TestClient and httpx.AsyncClient
+
+        
+        if hasattr(http_client, 'post'):
+
+        
+            # TestClient - don't use await
+
+        
+            login_response = http_client.post(f"/auth/login", json=login_payload)
+
+        
+        else:
+
+        
+            # httpx.AsyncClient
+
+        
+            # Handle both TestClient and httpx.AsyncClient
+
+
+        
+            if hasattr(http_client, 'post'):
+
+
+        
+                # TestClient - don't use await
+
+
+        
+                login_response = http_client.post(f"/auth/login", json=login_payload)
+
+
+        
+            else:
+
+
+        
+                # httpx.AsyncClient
+
+
+        
+                login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
         # Should succeed or 404 if endpoint doesn't exist
         if login_response.status_code not in [200, 201, 404]:
             pytest.skip(f"Login endpoint returned {login_response.status_code} - may not exist")
@@ -182,7 +325,19 @@ class TestPersistentLoginCookies:
             pytest.skip("Login endpoint not available - skipping expired token test")
         
         # Simulate making a request with valid session
-        me_response = await http_client.get(f"{API_BASE}/users/me")
+        # Handle both TestClient and httpx.AsyncClient
+
+        if hasattr(http_client, 'get'):
+
+            # TestClient - don't use await
+
+            me_response = http_client.get(f"/users/me")
+
+        else:
+
+            # httpx.AsyncClient
+
+            me_response = await http_client.get(f"{API_BASE}/users/me")
         assert me_response.status_code == 200, "Initial /me request should succeed"
         
         # The actual access token expiration is handled by the API interceptor
@@ -205,7 +360,49 @@ class TestPersistentLoginCookies:
             "password": TEST_USER_PASSWORD
         }
         
-        login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
+        # Handle both TestClient and httpx.AsyncClient
+
+        
+        if hasattr(http_client, 'post'):
+
+        
+            # TestClient - don't use await
+
+        
+            login_response = http_client.post(f"/auth/login", json=login_payload)
+
+        
+        else:
+
+        
+            # httpx.AsyncClient
+
+        
+            # Handle both TestClient and httpx.AsyncClient
+
+
+        
+            if hasattr(http_client, 'post'):
+
+
+        
+                # TestClient - don't use await
+
+
+        
+                login_response = http_client.post(f"/auth/login", json=login_payload)
+
+
+        
+            else:
+
+
+        
+                # httpx.AsyncClient
+
+
+        
+                login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
         # Should succeed or 404 if endpoint doesn't exist
         if login_response.status_code not in [200, 201, 404]:
             pytest.skip(f"Login endpoint returned {login_response.status_code} - may not exist")
@@ -214,17 +411,53 @@ class TestPersistentLoginCookies:
             pytest.skip("Login endpoint not available - skipping logout test")
         
         # Make a request to verify we're logged in
-        me_response = await http_client.get(f"{API_BASE}/users/me")
+        # Handle both TestClient and httpx.AsyncClient
+
+        if hasattr(http_client, 'get'):
+
+            # TestClient - don't use await
+
+            me_response = http_client.get(f"/users/me")
+
+        else:
+
+            # httpx.AsyncClient
+
+            me_response = await http_client.get(f"{API_BASE}/users/me")
         assert me_response.status_code == 200, "Should be logged in"
         
         # Logout
-        logout_response = await http_client.post(f"{API_BASE}/auth/logout")
+        # Handle both TestClient and httpx.AsyncClient
+
+        if hasattr(http_client, 'post'):
+
+            # TestClient - don't use await
+
+            logout_response = http_client.post(f"/auth/logout")
+
+        else:
+
+            # httpx.AsyncClient
+
+            logout_response = await http_client.post(f"{API_BASE}/auth/logout")
         # Should return 200 or 404 if endpoint doesn't exist
         assert logout_response.status_code in [200, 404], f"Expected 200/404, got {logout_response.status_code}: {logout_response.text}"
         
         # Try to use the cookie after logout
         # The client should still have the cookie, but server should reject it
-        me_response = await http_client.get(f"{API_BASE}/users/me")
+        # Handle both TestClient and httpx.AsyncClient
+
+        if hasattr(http_client, 'get'):
+
+            # TestClient - don't use await
+
+            me_response = http_client.get(f"/users/me")
+
+        else:
+
+            # httpx.AsyncClient
+
+            me_response = await http_client.get(f"{API_BASE}/users/me")
         assert me_response.status_code == 401, "Should be logged out after logout"
         
         print(f"{GREEN}✓ Logout clears session successfully{RESET}")
@@ -238,7 +471,49 @@ class TestPersistentLoginCookies:
             "password": TEST_USER_PASSWORD
         }
         
-        login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
+        # Handle both TestClient and httpx.AsyncClient
+
+        
+        if hasattr(http_client, 'post'):
+
+        
+            # TestClient - don't use await
+
+        
+            login_response = http_client.post(f"/auth/login", json=login_payload)
+
+        
+        else:
+
+        
+            # httpx.AsyncClient
+
+        
+            # Handle both TestClient and httpx.AsyncClient
+
+
+        
+            if hasattr(http_client, 'post'):
+
+
+        
+                # TestClient - don't use await
+
+
+        
+                login_response = http_client.post(f"/auth/login", json=login_payload)
+
+
+        
+            else:
+
+
+        
+                # httpx.AsyncClient
+
+
+        
+                login_response = await http_client.post(f"{API_BASE}/auth/login", json=login_payload)
         # Should succeed or 404 if endpoint doesn't exist
         if login_response.status_code not in [200, 201, 404]:
             pytest.skip(f"Login endpoint returned {login_response.status_code} - may not exist")
@@ -248,7 +523,19 @@ class TestPersistentLoginCookies:
         
         # Make multiple requests and verify all succeed (cookies persist)
         for i in range(3):
-            me_response = await http_client.get(f"{API_BASE}/users/me")
+            # Handle both TestClient and httpx.AsyncClient
+
+            if hasattr(http_client, 'get'):
+
+                # TestClient - don't use await
+
+                me_response = http_client.get(f"/users/me")
+
+            else:
+
+                # httpx.AsyncClient
+
+                me_response = await http_client.get(f"{API_BASE}/users/me")
             assert me_response.status_code == 200, f"Request {i+1} should succeed with persisted cookies"
         
         print(f"{GREEN}✓ Session persists across multiple requests{RESET}")
@@ -275,7 +562,19 @@ class TestPersistentLoginCookies:
     async def test_refresh_token_validation(self, http_client):
         """Verify refresh token endpoint validates token integrity"""
         # Try to refresh without logging in first (no valid cookie)
-        response = await http_client.post(f"{API_BASE}/auth/refresh-session", data={})
+        # Handle both TestClient and httpx.AsyncClient
+
+        if hasattr(http_client, 'post'):
+
+            # TestClient - don't use await
+
+            response = http_client.post(f"/auth/refresh-session", data={})
+
+        else:
+
+            # httpx.AsyncClient
+
+            response = await http_client.post(f"{API_BASE}/auth/refresh-session", data={})
         
         # Should return 400/401 or 404 if endpoint doesn't exist
         assert response.status_code in [400, 401, 404], f"Expected 400/401/404 for missing refresh token, got {response.status_code}"

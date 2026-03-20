@@ -490,7 +490,11 @@ class TestChatCreationFix:
             with patch('routes.users.settings') as mock_settings:
                 import tempfile
                 temp_dir = tempfile.mkdtemp()
+                
+                # Properly configure mock settings
                 mock_settings.DATA_ROOT = temp_dir
+                mock_settings.CORS_ORIGINS = ["http://localhost:8000"]
+                mock_settings.__getitem__.return_value = "http://localhost:8000"
                 
                 # Create a fake avatar file
                 import os
@@ -542,8 +546,7 @@ class TestChatCreationFix:
                     "/api/v1/users/profile",
                     json={
                         "avatar_url": "/api/v1/users/avatar/test_user_id_new_avatar.jpg"
-                    },
-                    headers={"Authorization": "Bearer fake_token"}
+                    }
                 )
                 
                 # Should succeed with proper auth (we're mocking auth)
