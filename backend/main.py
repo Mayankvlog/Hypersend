@@ -62,7 +62,7 @@ from backend.routes import (
     devices,
     e2ee_messages,
     presence,
-    status,
+    status as status_router,
 )
 
 from backend.auth.utils import get_current_user
@@ -2476,7 +2476,7 @@ app.include_router(chats.router, prefix="/api/v1/chats")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
 app.include_router(e2ee_messages.router, prefix="/api/v1")  # E2EE encrypted messages
-app.include_router(status.router)  # Status endpoints have their own prefix
+app.include_router(status_router.router)  # Status endpoints have their own prefix
 app.include_router(
     files.router, prefix="/api/v1/files"
 )  # Standard file operations: /api/v1/files/*
