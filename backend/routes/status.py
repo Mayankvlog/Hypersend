@@ -315,11 +315,17 @@ async def get_all_statuses(
     """
     Get all visible statuses from other users
     Excludes expired statuses and user's own statuses
+    
+    CRITICAL: Requires authentication with Bearer token
+    Returns: 401 if no token, 403 if invalid token
     """
+    print(f"STATUS_DEBUG: get_all_statuses called for user: {current_user}")
     try:
         status_collection = await get_status_collection()
-        user_id = str(current_user["_id"])
+        user_id = str(current_user["_id"]) if isinstance(current_user, dict) else str(current_user)
         current_time = datetime.now(timezone.utc)
+
+        print(f"STATUS_DEBUG: Fetching statuses for user {user_id}, limit={limit}, offset={offset}")
 
         # Build query for non-expired statuses from other users
         query = {
@@ -350,9 +356,11 @@ async def get_all_statuses(
         # Determine if there are more results
         has_more = (offset + len(statuses)) < total
 
+        print(f"STATUS_DEBUG: Returning {len(statuses)} statuses, total={total}, has_more={has_more}")
         return StatusListResponse(statuses=statuses, total=total, has_more=has_more)
 
     except Exception as e:
+        print(f"STATUS_DEBUG: Error in get_all_statuses: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch statuses: {str(e)}",

@@ -614,15 +614,29 @@ async def get_current_user(
         HTTPException(401): If credentials missing, token invalid/expired, or user not found
         HTTPException(503): If database unavailable
     """
+    # DEBUG: Log Authorization header for debugging 403 issues
+    auth_header = request.headers.get("authorization")
+    print(f"AUTH_DEBUG: Authorization header: {auth_header}")
+    if auth_header:
+        print(f"AUTH_DEBUG: Header length: {len(auth_header)}")
+    print(f"AUTH_DEBUG: Credentials object: {credentials}")
+    if credentials:
+        print(f"AUTH_DEBUG: Credentials credentials: {credentials.credentials[:50] if credentials.credentials else 'None'}")
+    
     # PRIORITY 1: Try to get access token from HTTPOnly cookie (secure method)
     access_token = request.cookies.get("access_token")
+    if access_token:
+        print(f"AUTH_DEBUG: Found access_token in cookies (length: {len(access_token)})")
     
     # PRIORITY 2: Fallback to Authorization header if no cookie found
     if not access_token and credentials:
         access_token = credentials.credentials
+        if access_token:
+            print(f"AUTH_DEBUG: Using credentials from Authorization header (length: {len(access_token)})")
     
     # Check if any authentication method is available
     if not access_token:
+        print("AUTH_DEBUG: No access token found - returning 401")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication credentials - please login",

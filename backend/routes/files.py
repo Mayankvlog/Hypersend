@@ -3107,11 +3107,14 @@ async def get_media_by_key(
     - Supports all file types stored in S3 bucket
     - When download=True, returns Content-Disposition: attachment for PC download
     """
+    print(f"MEDIA_DEBUG: get_media_by_key called for user: {current_user}, file_key: {file_key}")
+    print(f"MEDIA_DEBUG: download={download}, force_download={force_download}")
     try:
         # Validate file_key format (prevent directory traversal)
         decoded_file_key = unquote(file_key) if file_key else ""
 
         if not decoded_file_key:
+            print(f"MEDIA_DEBUG: Invalid file_key format - empty")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid file key format",
@@ -3119,6 +3122,7 @@ async def get_media_by_key(
 
         # Reject windows-style path separators / encoded traversal attempts
         if "\\" in decoded_file_key or decoded_file_key.startswith("\\"):
+            print(f"MEDIA_DEBUG: Invalid file_key format - windows path separators")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid file key format",
@@ -3134,12 +3138,14 @@ async def get_media_by_key(
             or os.path.isabs(normalized_key)
             or any(part == ".." for part in normalized_key.split(os.sep) if part)
         ):
+            print(f"MEDIA_DEBUG: Invalid file_key format - path traversal attempt")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid file key format",
             )
 
         safe_file_key = normalized_key.replace(os.sep, "/")
+        print(f"MEDIA_DEBUG: Safe file_key: {safe_file_key}")
 
         # AUTHORIZATION: ensure the requester can access this object.
         # Reuse the same logic pattern as download_file (owner OR shared_with OR chat member).
@@ -3325,18 +3331,26 @@ async def get_media_by_key(
         # FORCE attachment (download) by default - this prevents browser from opening PDFs/images inline
         disposition_type = "attachment"
         filename = safe_file_key.split("/")[-1]
+        
+        # DEBUG: Log headers being set
+        headers_dict = {
+            "Content-Length": str(content_length),
+            "Content-Disposition": f"{disposition_type}; filename*=UTF-8''{quote(filename, safe='')}",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
+            "X-Frame-Options": "DENY",  # Prevent embedding in frames
+            "Pragma": "no-cache",  # HTTP 1.0 compatibility
+            "Expires": "0",
+        }
+        print(f"MEDIA_DEBUG: Returning streaming response with headers:")
+        print(f"MEDIA_DEBUG: Content-Type: {content_type}")
+        print(f"MEDIA_DEBUG: Content-Disposition: {headers_dict['Content-Disposition']}")
+        print(f"MEDIA_DEBUG: Content-Length: {headers_dict['Content-Length']}")
+        
         return StreamingResponse(
             stream_s3_object(),
             media_type=content_type,
-            headers={
-                "Content-Length": str(content_length),
-                "Content-Disposition": f"{disposition_type}; filename*=UTF-8''{quote(filename, safe='')}",
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
-                "X-Frame-Options": "DENY",  # Prevent embedding in frames
-                "Pragma": "no-cache",  # HTTP 1.0 compatibility
-                "Expires": "0",
-            },
+            headers=headers_dict,
         )
 
     except HTTPException:

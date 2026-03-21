@@ -164,29 +164,103 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
   debugPrint('[FILE_WEB_STUB] URL: $downloadUrl');
   
   try {
-    // Create anchor element with direct link
-    final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
-    anchor.href = downloadUrl;
-    anchor.download = fileName;
+    // For authenticated downloads, we need to use fetch() to pass Authorization header
+    // First, check if URL contains token parameter (legacy method)
+    bool hasTokenParam = downloadUrl.contains('token=');
     
-    // Set rel="noopener" to prevent window manipulation
-    anchor.setAttribute('rel', 'noopener');
-    
-    // Set target="_blank" with download attribute for cross-origin support
-    anchor.target = '_blank';
-    
-    // Append to body (required in some browsers)
-    html.document.body?.appendChild(anchor);
-    
-    debugPrint('[FILE_WEB_STUB] Triggering download click');
-    
-    // Trigger the download
-    anchor.click();
-    
-    // Clean up
-    html.document.body?.removeChild(anchor);
-    
-    debugPrint('[FILE_WEB_STUB] Download initiated for: $fileName');
+    if (hasTokenParam) {
+      debugPrint('[FILE_WEB_STUB] Using legacy token parameter method');
+      // Fall back to simple anchor element for URLs with embedded token
+      final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
+      anchor.href = downloadUrl;
+      anchor.download = fileName;
+      
+      // Set rel="noopener" to prevent window manipulation
+      anchor.setAttribute('rel', 'noopener');
+      
+      // Set target="_blank" with download attribute for cross-origin support
+      anchor.target = '_blank';
+      
+      // Append to body (required in some browsers)
+      html.document.body?.appendChild(anchor);
+      
+      debugPrint('[FILE_WEB_STUB] Triggering download click');
+      
+      // Trigger the download
+      anchor.click();
+      
+      // Clean up
+      html.document.body?.removeChild(anchor);
+      
+      debugPrint('[FILE_WEB_STUB] Download initiated for: $fileName');
+    } else {
+      debugPrint('[FILE_WEB_STUB] Using fetch with Authorization header for authenticated download');
+      // Use fetch() to properly send Authorization header
+      // This allows the backend to receive the Bearer token
+      try {
+        // Get the auth token from localStorage (set by AuthService)
+        final token = html.window.localStorage['access_token'] ?? '';
+        final headers = <String, dynamic>{};
+        
+        if (token.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $token';
+          debugPrint('[FILE_WEB_STUB] Authorization header set (Bearer token)');
+        } else {
+          debugPrint('[FILE_WEB_STUB] No token found in localStorage');
+        }
+        
+        // Make fetch request with Authorization header
+        final response = await html.window.fetch(
+          downloadUrl,
+          <String, dynamic>{
+            'method': 'GET',
+            'headers': headers,
+            'credentials': 'include', // Include cookies as well
+          },
+        );
+        
+        final blob = await response.blob();
+        
+        debugPrint('[FILE_WEB_STUB] Received blob with size: ${blob.size}');
+        
+        // Create object URL from blob
+        final blobUrl = html.Url.createObjectUrlFromBlob(blob);
+        
+        // Create anchor element to download the blob
+        final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
+        anchor.href = blobUrl;
+        anchor.download = fileName;
+        
+        // Set rel="noopener" to prevent window manipulation
+        anchor.setAttribute('rel', 'noopener');
+        
+        // Append to body (required in some browsers)
+        html.document.body?.appendChild(anchor);
+        
+        debugPrint('[FILE_WEB_STUB] Triggering blob download click');
+        
+        // Trigger the download
+        anchor.click();
+        
+        // Clean up
+        html.document.body?.removeChild(anchor);
+        html.Url.revokeObjectUrl(blobUrl);
+        
+        debugPrint('[FILE_WEB_STUB] Download initiated for: $fileName');
+      } catch (fetchError) {
+        debugPrint('[FILE_WEB_STUB] Fetch method failed: $fetchError, falling back to anchor element');
+        // Fallback to simple anchor if fetch fails
+        final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
+        anchor.href = downloadUrl;
+        anchor.download = fileName;
+        anchor.setAttribute('rel', 'noopener');
+        anchor.target = '_blank';
+        html.document.body?.appendChild(anchor);
+        anchor.click();
+        html.document.body?.removeChild(anchor);
+        debugPrint('[FILE_WEB_STUB] Fallback download initiated for: $fileName');
+      }
+    }
   } catch (e) {
     debugPrint('[FILE_WEB_STUB_ERROR] saveFileDirectFromUrl failed: $e');
     rethrow;
