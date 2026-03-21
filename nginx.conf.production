@@ -155,14 +155,20 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
             
+            # CRITICAL: Pass authentication headers for S3 and file operations
+            proxy_set_header Authorization $http_authorization;
+            
+            # CRITICAL: Pass cookies for session management
+            proxy_set_header Cookie $http_cookie;
+            
             # WebSocket upgrade support (for future use)
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
             
-            # Timeouts for API requests
-            proxy_connect_timeout 30s;
-            proxy_send_timeout 30s;
-            proxy_read_timeout 30s;
+            # Timeouts for API requests (increased for large file downloads)
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 300s;
+            proxy_read_timeout 300s;
             
             # Disable buffering for file downloads/streaming
             proxy_buffering off;
@@ -175,10 +181,7 @@ http {
             proxy_pass_header Accept-Ranges;
             proxy_pass_header Cache-Control;
             
-            # CRITICAL: Pass cookies through proxy for HTTPOnly cookie support
-            # Explicitly forward cookies from client to backend
-            proxy_set_header Cookie $http_cookie;
-            # Allow Set-Cookie headers from backend to client
+            # CRITICAL: Allow Set-Cookie headers from backend to client
             proxy_pass_header Set-Cookie;
             
             # Error handling with retries

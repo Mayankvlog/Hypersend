@@ -301,14 +301,23 @@ async def create_status(
         # Determine file type if file_key is provided
         file_type = None
         if status_data.file_key:
+            # CRITICAL: Validate s3_key is not empty
+            if not status_data.file_key.strip():
+                logger.error(f"[STATUS_CREATE] CRITICAL: file_key is empty string!")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="file_key cannot be empty",
+                )
+            
             # Parse file type from extension
             _, ext = os.path.splitext(status_data.file_key)
             if ext.lower() in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
                 file_type = "image"
             elif ext.lower() in [".mp4", ".3gp"]:
                 file_type = "video"
+            
             logger.info(
-                f"[STATUS_CREATE] Detected file_type: {file_type} from extension: {ext}"
+                f"[STATUS_CREATE] FILE_KEY_VALIDATED - s3_key={status_data.file_key}, file_type={file_type}, ext={ext}"
             )
 
         # Create status document
@@ -323,7 +332,7 @@ async def create_status(
         )
 
         logger.info(
-            f"[STATUS_CREATE] Inserting status document: {status_doc.model_dump(by_alias=True)}"
+            f"[STATUS_CREATE] DATABASE_INSERT - document prepared: id_placeholder, user_id={user_id}, file_key={status_data.file_key}, file_type={file_type}"
         )
 
         # Insert into database
@@ -332,7 +341,9 @@ async def create_status(
         )
         status_doc.id = str(result.inserted_id)
 
-        logger.info(f"[STATUS_CREATE] Status created successfully, id: {status_doc.id}")
+        logger.info(
+            f"[STATUS_CREATE] DATABASE_INSERT_SUCCESS - status_id={status_doc.id}, file_key={status_data.file_key}"
+        )
 
         # Convert to response
         response = status_to_response(status_doc, user_id)
@@ -434,10 +445,16 @@ async def upload_status_media(
                 file_key=unique_filename,
                 content_type=file.content_type,
             )
+            
+            # CRITICAL: Verify s3_key is not empty before saving to DB
+            if not file_key or not file_key.strip():
+                logger.error(f"[STATUS_UPLOAD] CRITICAL: S3 upload returned empty file_key!")
+                raise ValueError("S3 upload returned empty file_key")
+            
             logger.info(
-                f"[STATUS_UPLOAD] Successfully uploaded to S3, file_key: {file_key}"
+                f"[STATUS_UPLOAD] Successfully uploaded to S3, s3_key: {file_key} (size: {len(file_content)} bytes)"
             )
-            print(f"[STATUS_UPLOAD] S3 upload confirmed, file_key: {file_key}")
+            print(f"[STATUS_UPLOAD] S3 upload confirmed, s3_key: {file_key}")
         except Exception as e:
             logger.error(f"[STATUS_UPLOAD] S3 upload failed: {str(e)}")
             print(f"[STATUS_UPLOAD] S3 upload failed: {str(e)}")
@@ -446,6 +463,11 @@ async def upload_status_media(
                 detail=f"Failed to upload file to S3: {str(e)}",
             )
 
+        # CRITICAL: Log the s3_key that will be stored in database
+        logger.info(
+            f"[STATUS_UPLOAD] DATABASE_INSERT - s3_key={file_key}, file_type={os.path.splitext(file_key)[1]}, user_id={user_id}"
+        )
+        
         # Return file init response with file_key embedded for later status creation
         return FileInitResponse(
             upload_id=file_key,  # Use file_key as upload_id for transparency

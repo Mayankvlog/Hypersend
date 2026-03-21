@@ -1953,6 +1953,8 @@ async def complete_upload(
             "size": upload_doc.get("file_size"),
             "mime_type": upload_doc.get("mime_type"),
             "storage_key": storage_key,
+            "s3_key": None,  # Not an S3 file - local storage only
+            "storage_type": "local",  # CRITICAL: Mark as local storage
             "bucket": "zaply-temp",
             "region": "us-east-1",
             "upload_status": "completed",
@@ -1969,12 +1971,14 @@ async def complete_upload(
 
         _log(
             "info",
-            f"[FILE_METADATA] File metadata stored in Atlas",
+            f"[FILE_METADATA] File metadata stored in Atlas with storage_type=local",
             {
                 "file_id": file_id,
                 "filename": filename,
                 "owner_id": str(upload_user_id),
                 "storage_key": storage_key,
+                "storage_type": "local",
+                "storage_path": str(final_path),
                 "bucket": _get_sanitized_bucket_name(),
             },
         )
@@ -3228,20 +3232,24 @@ async def get_media_by_id_main(
                 detail="File not found",
             )
 
-        # Extract storage information
-        storage_key = (
-            file_doc.get("storage_key")
-            or file_doc.get("object_key")
-            or file_doc.get("storage_path")
-        )
+        # Extract storage information - CRITICAL: Use proper field names
+        s3_key = file_doc.get("s3_key") or file_doc.get("storage_key") or file_doc.get("object_key")
         storage_type = file_doc.get("storage_type", "unknown")
         file_path = file_doc.get("storage_path") or file_doc.get("file_path")
+        file_id_str = str(file_id)  # Convert to string for logging
 
-        if not storage_key and not file_path:
-            print(f"MEDIA_DEBUG: No storage information found for file: {file_id}")
+        # CRITICAL: Log all storage information for debugging
+        print(f"MEDIA_DEBUG: FILE_ID={file_id_str} | storage_type={storage_type} | s3_key={s3_key} | file_path={file_path}")
+        
+        # CRITICAL: Validate that we have storage information
+        has_s3_info = s3_key and s3_key.strip() != ""
+        has_local_info = file_path and file_path.strip() != ""
+
+        if not has_s3_info and not has_local_info:
+            print(f"MEDIA_DEBUG: ROUTE_404 - No storage information for file: {file_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="File storage information not found",
+                detail="File storage information not found (route 404 - no storage info)",
             )
 
         # Authorization checks
@@ -3282,38 +3290,49 @@ async def get_media_by_id_main(
                 detail="Access denied: you don't have permission to access this media",
             )
 
-        print(f"MEDIA_DEBUG: Access granted, storage_type: {storage_type}")
+        print(f"MEDIA_DEBUG: ACCESS_GRANTED for user={current_user}, storage_type={storage_type}, has_s3={has_s3_info}, has_local={has_local_info}")
 
-        # Handle different storage types
-        if storage_type == "s3" and storage_key:
-            # S3 storage - generate presigned URL or stream directly
+        # Handle different storage types with priority to S3
+        if storage_type == "s3":
+            if not has_s3_info:
+                print(f"MEDIA_DEBUG: FILE_404 - storage_type=s3 but s3_key is empty/null: {file_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found in S3 (empty s3_key)",
+                )
+            print(f"MEDIA_DEBUG: USING_S3 - s3_key={s3_key}")
             return await _handle_s3_media_download(
-                storage_key, file_doc, download, force_download, use_redirect
+                s3_key, file_doc, download, force_download, use_redirect
             )
-        elif storage_type == "local" and file_path:
-            # Local storage - serve file directly
+        elif storage_type == "local":
+            if not has_local_info:
+                print(f"MEDIA_DEBUG: FILE_404 - storage_type=local but file_path is empty/null: {file_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found locally (empty file_path)",
+                )
+            print(f"MEDIA_DEBUG: USING_LOCAL - file_path={file_path}")
             return await _handle_local_media_download(
                 file_path, file_doc, download, force_download
             )
         else:
-            # Try to determine storage type and handle accordingly
-            if storage_key and ("." in storage_key or "/" in storage_key):
-                # Likely S3 key
+            # Fallback: Try to determine storage type based on available information
+            print(f"MEDIA_DEBUG: FALLBACK_STORAGE_TYPE - storage_type was '{storage_type}', attempting auto-detection")
+            if has_s3_info:
+                print(f"MEDIA_DEBUG: AUTO_DETECT_S3 - using s3_key={s3_key}")
                 return await _handle_s3_media_download(
-                    storage_key, file_doc, download, force_download, use_redirect
+                    s3_key, file_doc, download, force_download, use_redirect
                 )
-            elif file_path and os.path.exists(file_path):
-                # Local file exists
+            elif has_local_info and os.path.exists(file_path):
+                print(f"MEDIA_DEBUG: AUTO_DETECT_LOCAL - using file_path={file_path}")
                 return await _handle_local_media_download(
                     file_path, file_doc, download, force_download
                 )
             else:
-                print(
-                    f"MEDIA_DEBUG: Cannot determine storage type or file not accessible"
-                )
+                print(f"MEDIA_DEBUG: FILE_404 - Cannot determine storage type or file not accessible")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found or not accessible",
+                    detail="File not found or not accessible (auto-detect failed)",
                 )
 
     except HTTPException:
@@ -3574,37 +3593,70 @@ async def _handle_s3_media_download(
     force_download: bool,
     use_redirect: bool,
 ):
-    """Handle S3 media download with proper headers and streaming"""
-    print(f"MEDIA_DEBUG: Handling S3 download for key: {storage_key}")
+    """Handle S3 media download with proper headers and streaming
+    
+    CRITICAL: Validates s3_key before attempting S3 access
+    Generates presigned URLs for secure, time-limited access
+    Streams large files without loading into memory
+    """
+    print(f"MEDIA_DEBUG: _handle_s3_media_download START - s3_key={storage_key}")
+    
+    # CRITICAL: Validate s3_key is not empty
+    if not storage_key or not storage_key.strip():
+        print(f"MEDIA_DEBUG: S3_KEY_EMPTY - storage_key is null/empty for download")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found in S3 (empty s3_key)",
+        )
 
     try:
         s3_client = _get_s3_client()
         if not s3_client:
+            print(f"MEDIA_DEBUG: S3_CLIENT_UNAVAILABLE")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="S3 client not available",
             )
 
+        bucket_name = _get_sanitized_bucket_name()
+        print(f"MEDIA_DEBUG: S3_QUERY - Bucket={bucket_name}, Key={storage_key}")
+        
         # Get S3 object metadata
-        obj_metadata = s3_client.head_object(
-            Bucket=_get_sanitized_bucket_name(), Key=storage_key
-        )
+        try:
+            obj_metadata = s3_client.head_object(
+                Bucket=bucket_name, Key=storage_key
+            )
+            print(f"MEDIA_DEBUG: S3_FILE_FOUND - ETag={obj_metadata.get('ETag')}, Size={obj_metadata.get('ContentLength')}")
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "404":
+                print(f"MEDIA_DEBUG: S3_FILE_NOT_FOUND - Key does not exist in S3: {storage_key}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found in S3",
+                )
+            else:
+                print(f"MEDIA_DEBUG: S3_ERROR - {e.response['Error']['Code']}: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="S3 access error",
+                )
+        
         content_type = obj_metadata.get("ContentType", "application/octet-stream")
         content_length = obj_metadata.get("ContentLength", 0)
         filename = storage_key.split("/")[-1]
 
-        print(f"MEDIA_DEBUG: S3 file found: {storage_key}, size: {content_length}")
+        print(f"MEDIA_DEBUG: S3_METADATA - content_type={content_type}, size={content_length}, filename={filename}")
 
         # For redirect mode, generate presigned URL
         if use_redirect:
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=storage_key,
-                bucket=_get_sanitized_bucket_name(),
+                bucket=bucket_name,
                 expires_in=3600,
             )
             if presigned_url:
-                print(f"MEDIA_DEBUG: Returning 307 redirect to presigned URL")
+                print(f"MEDIA_DEBUG: REDIRECT_307 - Presigned URL generated for {storage_key}")
                 headers = {
                     "Content-Disposition": f'attachment; filename="{filename}"',
                     "Content-Type": content_type,
@@ -3614,7 +3666,8 @@ async def _handle_s3_media_download(
                 )
 
         # Stream S3 object directly
-        obj = s3_client.get_object(Bucket=_get_sanitized_bucket_name(), Key=storage_key)
+        print(f"MEDIA_DEBUG: STREAM_S3 - Streaming from S3: {storage_key}")
+        obj = s3_client.get_object(Bucket=bucket_name, Key=storage_key)
 
         async def stream_s3_object():
             """Stream S3 object in chunks to prevent memory buffering"""
@@ -3622,13 +3675,16 @@ async def _handle_s3_media_download(
                 body = obj["Body"]
                 chunk_size = 65536  # 64KB chunks
                 loop = asyncio.get_running_loop()
+                bytes_streamed = 0
                 while True:
                     chunk = await loop.run_in_executor(None, body.read, chunk_size)
                     if not chunk:
                         break
+                    bytes_streamed += len(chunk)
                     yield chunk
+                print(f"MEDIA_DEBUG: STREAM_COMPLETE - Total bytes streamed: {bytes_streamed}")
             except Exception as e:
-                print(f"MEDIA_DEBUG: Error streaming S3 object: {e}")
+                print(f"MEDIA_DEBUG: STREAM_ERROR - Error streaming S3 object: {e}")
                 raise
             finally:
                 if "body" in locals() and hasattr(body, "close"):
@@ -3647,13 +3703,18 @@ async def _handle_s3_media_download(
             "Accept-Ranges": "bytes",
         }
 
+        print(f"MEDIA_DEBUG: RESPONSE_SENT - {disposition_type}, size={content_length}")
+        
         return StreamingResponse(
             stream_s3_object(),
             media_type=content_type,
             headers=headers,
         )
 
+    except HTTPException:
+        raise
     except ClientError as e:
+        print(f"MEDIA_DEBUG: S3_DOWNLOAD_ERROR - {e}")
         if e.response["Error"]["Code"] == "404":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -3665,7 +3726,7 @@ async def _handle_s3_media_download(
                 detail="S3 access error",
             )
     except Exception as e:
-        print(f"MEDIA_DEBUG: S3 download error: {e}")
+        print(f"MEDIA_DEBUG: S3_UNEXPECTED_ERROR - {type(e).__name__}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to download from S3",
