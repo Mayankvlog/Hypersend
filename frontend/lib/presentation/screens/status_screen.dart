@@ -124,10 +124,24 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       }
     } catch (e) {
       debugPrint('[StatusScreen] Error loading statuses: $e');
+      
+      // Extract user-friendly error message
+      String errorMessage = 'Failed to load statuses';
+      if (e.toString().contains('403')) {
+        errorMessage = 'Please login to view statuses';
+      } else if (e.toString().contains('404')) {
+        errorMessage = 'No statuses available';
+      } else if (e.toString().contains('Connection refused') || 
+                 e.toString().contains('Network')) {
+        errorMessage = 'Network connection failed. Please check your internet.';
+      } else if (e.toString().contains('timeout')) {
+        errorMessage = 'Request timed out. Please try again.';
+      }
+      
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Failed to load statuses: $e';
+          _error = errorMessage;
         });
       }
     }
@@ -239,10 +253,21 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       }
     } catch (e) {
       debugPrint('[StatusScreen] Error creating text status: $e');
+      
+      // Extract user-friendly error message
+      String errorMessage = 'Failed to post status';
+      if (e.toString().contains('403')) {
+        errorMessage = 'Please login to post status';
+      } else if (e.toString().contains('400')) {
+        errorMessage = 'Invalid status content. Please try again.';
+      } else if (e.toString().contains('Network')) {
+        errorMessage = 'Network error. Check your internet connection.';
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to post status: $e'),
+            content: Text(errorMessage),
             backgroundColor: AppTheme.errorRed,
           ),
         );
@@ -345,10 +370,23 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       }
     } catch (e) {
       debugPrint('[StatusScreen] Error uploading image status: $e');
+      
+      // Extract user-friendly error message
+      String errorMessage = 'Failed to upload image';
+      if (e.toString().contains('403')) {
+        errorMessage = 'Please login to upload status';
+      } else if (e.toString().contains('413')) {
+        errorMessage = 'Image is too large. Please choose a smaller image.';
+      } else if (e.toString().contains('Network')) {
+        errorMessage = 'Network error. Check your internet connection.';
+      } else if (e.toString().contains('No file_key')) {
+        errorMessage = 'Upload failed. Server error.';
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to upload image: $e'),
+            content: Text(errorMessage),
             backgroundColor: AppTheme.errorRed,
           ),
         );

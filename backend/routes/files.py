@@ -3252,90 +3252,137 @@ async def get_media_by_key(
                 detail="Access denied: unable to verify access",
             )
 
-        # Get S3 client
+        # Try S3 first, then fallback to filesystem
         s3_client = _get_s3_client()
-        if not s3_client:
+        final_path = None
+        content_type = None
+        content_length = 0
+        filename = safe_file_key.split("/")[-1]
+        
+        # Priority 1: Try S3
+        s3_available = False
+        if s3_client:
+            try:
+                print(f"MEDIA_DEBUG: Attempting S3 access for: {safe_file_key}")
+                obj_metadata = s3_client.head_object(
+                    Bucket=settings.S3_BUCKET, Key=safe_file_key
+                )
+                content_type = obj_metadata.get("ContentType", "application/octet-stream")
+                content_length = obj_metadata.get("ContentLength", 0)
+                s3_available = True
+                print(f"MEDIA_DEBUG: S3 file found: {safe_file_key}, size: {content_length}")
+                
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "404":
+                    print(f"MEDIA_DEBUG: S3 file not found: {safe_file_key}")
+                else:
+                    print(f"MEDIA_DEBUG: S3 error: {str(e)}")
+        
+        # Priority 2: Fallback to filesystem using storage_path from database
+        if not s3_available:
+            print(f"MEDIA_DEBUG: S3 unavailable, checking filesystem...")
+            if file_doc:
+                storage_path = file_doc.get("storage_path")
+                print(f"MEDIA_DEBUG: Storage path from DB: {storage_path}")
+                
+                if storage_path and os.path.exists(storage_path):
+                    final_path = storage_path
+                    content_length = os.path.getsize(final_path)
+                    # Determine content type from file extension
+                    import mimetypes
+                    content_type, _ = mimetypes.guess_type(final_path)
+                    if not content_type:
+                        content_type = "application/octet-stream"
+                    print(f"MEDIA_DEBUG: Filesystem file found: {final_path}, size: {content_length}")
+                else:
+                    print(f"MEDIA_DEBUG: File not found in filesystem: {storage_path}")
+        
+        # Check if file exists in either storage
+        if not s3_available and not final_path:
+            print(f"MEDIA_DEBUG: FILE NOT FOUND - S3 unavailable and no filesystem path")
             _log(
                 "warning",
-                f"S3 client unavailable for media access: {file_key}",
-                {"user_id": current_user},
+                f"Media file not found: {safe_file_key}",
+                {"user_id": current_user, "file_key": safe_file_key},
             )
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Media storage service unavailable",
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Media file not found"
             )
-
-        # Fetch object metadata from S3 to get content type and size
-        try:
-            obj_metadata = s3_client.head_object(
-                Bucket=settings.S3_BUCKET, Key=safe_file_key
-            )
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "404":
-                _log(
-                    "warning",
-                    f"Media file not found: {safe_file_key}",
-                    {"user_id": current_user, "file_key": safe_file_key},
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-                )
-            raise
-
-        # Get content type from metadata or default to octet-stream
-        content_type = obj_metadata.get("ContentType", "application/octet-stream")
-        content_length = obj_metadata.get("ContentLength", 0)
 
         # Log media access for audit
+        storage_type = "S3" if s3_available else "Filesystem"
         _log(
             "info",
-            f"Media access granted: {safe_file_key}",
+            f"Media access granted: {safe_file_key} ({storage_type})",
             {
                 "user_id": current_user,
                 "file_key": safe_file_key,
                 "content_type": content_type,
                 "size": content_length,
+                "storage": storage_type,
             },
         )
 
-        # Fetch object from S3
-        obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
+        # Create streaming response based on storage type
+        if s3_available:
+            # Fetch object from S3
+            obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
 
-        # Create streaming response
-        async def stream_s3_object():
-            """Stream S3 object in chunks to prevent memory buffering"""
-            try:
-                body = obj["Body"]
-                chunk_size = 65536  # 64KB chunks for efficient streaming
-                loop = asyncio.get_running_loop()
-                while True:
-                    # Use executor to prevent blocking the event loop on I/O
-                    chunk = await loop.run_in_executor(None, body.read, chunk_size)
-                    if not chunk:
-                        break
-                    yield chunk
-            except Exception as e:
-                _log(
-                    "error",
-                    f"Error streaming media: {str(e)}",
-                    {"user_id": current_user, "file_key": safe_file_key},
-                )
-                # Re-raise to trigger client disconnect
-                raise
-            finally:
-                if "body" in locals() and hasattr(body, "close"):
-                    body.close()
+            async def stream_s3_object():
+                """Stream S3 object in chunks to prevent memory buffering"""
+                try:
+                    body = obj["Body"]
+                    chunk_size = 65536  # 64KB chunks for efficient streaming
+                    loop = asyncio.get_running_loop()
+                    while True:
+                        chunk = await loop.run_in_executor(None, body.read, chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+                except Exception as e:
+                    _log(
+                        "error",
+                        f"Error streaming media from S3: {str(e)}",
+                        {"user_id": current_user, "file_key": safe_file_key},
+                    )
+                    raise
+                finally:
+                    if "body" in locals() and hasattr(body, "close"):
+                        body.close()
+            
+            stream_gen = stream_s3_object()
+        else:
+            # Stream from filesystem
+            async def stream_filesystem_object():
+                """Stream filesystem object in chunks to prevent memory buffering"""
+                try:
+                    print(f"MEDIA_DEBUG: Streaming from filesystem: {final_path}")
+                    chunk_size = 65536  # 64KB chunks
+                    loop = asyncio.get_running_loop()
+                    with open(final_path, 'rb') as f:
+                        while True:
+                            chunk = await loop.run_in_executor(None, f.read, chunk_size)
+                            if not chunk:
+                                break
+                            yield chunk
+                except Exception as e:
+                    _log(
+                        "error",
+                        f"Error streaming media from filesystem: {str(e)}",
+                        {"user_id": current_user, "file_path": final_path},
+                    )
+                    print(f"MEDIA_DEBUG: Streaming error: {str(e)}")
+                    raise
+            
+            stream_gen = stream_filesystem_object()
 
         # Return streaming response with proper headers
-        quoted_key = quote(safe_file_key, safe="")
-        # Set disposition based on download parameter
         disposition_type = "attachment" if download or force_download else "inline"
-        filename = safe_file_key.split("/")[-1]
         
-        # DEBUG: Log headers being set
         headers_dict = {
             "Content-Length": str(content_length),
-            "Content-Disposition": f"{disposition_type}; filename*=UTF-8''{quote(filename, safe='')}",
+            "Content-Disposition": f'{disposition_type}; filename="{filename}"',
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
             "X-Frame-Options": "DENY",  # Prevent embedding in frames
@@ -3349,7 +3396,7 @@ async def get_media_by_key(
         print(f"MEDIA_DEBUG: Content-Length: {headers_dict['Content-Length']}")
         
         return StreamingResponse(
-            stream_s3_object(),
+            stream_gen,
             media_type=content_type,
             headers=headers_dict,
         )

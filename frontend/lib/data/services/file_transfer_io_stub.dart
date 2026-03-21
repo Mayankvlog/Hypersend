@@ -163,31 +163,62 @@ Future<void> saveFileToDownloads(String fileName, Uint8List bytes) async {
 /// Properly respects Content-Disposition: attachment header from backend
 /// Better for large files and ensures proper file saving behavior
 Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
-  debugPrint('[FILE_WEB_STUB] Direct URL download: $fileName');
+  debugPrint('[FILE_WEB_STUB] Fetch-based download: $fileName');
   debugPrint('[FILE_WEB_STUB] URL: $downloadUrl');
   
   try {
-    // For authenticated downloads, we need to use fetch() to pass Authorization header
-    // First, check if URL contains token parameter (legacy method)
-    bool hasTokenParam = downloadUrl.contains('token=');
+    // Use fetch API to properly handle the download with authentication
+    debugPrint('[FILE_WEB_STUB] Starting fetch request...');
     
-    if (hasTokenParam) {
-      debugPrint('[FILE_WEB_STUB] Using legacy token parameter method');
-      // Fall back to simple anchor element for URLs with embedded token
+    // Use fetch to get the response as a blob
+    final result = await html.window.fetch(downloadUrl, {
+      'method': 'GET',
+      'credentials': 'include', // Include cookies for authentication
+      'headers': {'Accept': '*/*'},
+    });
+    
+    // Check response status
+    final fetchResponse = result as html.Response;
+    if (!fetchResponse.ok) {
+      print('[FILE_WEB_STUB_ERROR] Fetch failed with status: ${fetchResponse.status}');
+      if (fetchResponse.status == 404) {
+        throw Exception('Media file not found (404)');
+      } else if (fetchResponse.status == 403) {
+        throw Exception('Access denied - please login (403)');
+      } else {
+        throw Exception('Download failed: ${fetchResponse.statusText}');
+      }
+    }
+    
+    debugPrint('[FILE_WEB_STUB] Fetch successful, status: ${fetchResponse.status}');
+    
+    // Convert response to blob
+    debugPrint('[FILE_WEB_STUB] Converting response to blob...');
+    final blob = await fetchResponse.blob();
+    
+    debugPrint('[FILE_WEB_STUB] Blob size: ${blob.size} bytes');
+    
+    if (blob.size == 0) {
+      throw Exception('Downloaded file is empty');
+    }
+    
+    // Create blob URL
+    debugPrint('[FILE_WEB_STUB] Creating blob URL...');
+    final blobUrl = html.Url.createObjectUrl(blob);
+    
+    try {
+      // Create anchor element
       final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
-      anchor.href = downloadUrl;
+      anchor.href = blobUrl;
       anchor.download = fileName;
       
       // Set rel="noopener" to prevent window manipulation
       anchor.setAttribute('rel', 'noopener');
       
-      // Set target="_blank" with download attribute for cross-origin support
-      anchor.target = '_blank';
-      
       // Append to body (required in some browsers)
       html.document.body?.appendChild(anchor);
       
-      debugPrint('[FILE_WEB_STUB] Triggering download click');
+      debugPrint('[FILE_WEB_STUB] Triggering download click for: $fileName');
       
       // Trigger the download
       anchor.click();
@@ -196,36 +227,12 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
       html.document.body?.removeChild(anchor);
       
       debugPrint('[FILE_WEB_STUB] Download initiated for: $fileName');
-    } else {
-      debugPrint('[FILE_WEB_STUB] Using simple anchor method for authenticated download');
-      // Use simple anchor method for better web compatibility
-      try {
-        final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
-        anchor.href = downloadUrl;
-        anchor.download = fileName;
-        
-        // Set rel="noopener" to prevent window manipulation
-        anchor.setAttribute('rel', 'noopener');
-        
-        // Set target="_blank" with download attribute for cross-origin support
-        anchor.target = '_blank';
-        
-        // Append to body (required in some browsers)
-        html.document.body?.appendChild(anchor);
-        
-        debugPrint('[FILE_WEB_STUB] Triggering download click');
-        
-        // Trigger the download
-        anchor.click();
-        
-        // Clean up
-        html.document.body?.removeChild(anchor);
-        
-        debugPrint('[FILE_WEB_STUB] Download initiated for: $fileName');
-      } catch (anchorError) {
-        debugPrint('[FILE_WEB_STUB] Anchor method failed: $anchorError');
-        rethrow;
-      }
+    } finally {
+      // Release blob URL after a short delay (allow time for download to start)
+      Future.delayed(const Duration(milliseconds: 100), () {
+        html.Url.revokeObjectUrl(blobUrl);
+        debugPrint('[FILE_WEB_STUB] Blob URL revoked');
+      });
     }
   } catch (e) {
     debugPrint('[FILE_WEB_STUB_ERROR] saveFileDirectFromUrl failed: $e');
