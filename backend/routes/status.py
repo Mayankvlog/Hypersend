@@ -4,6 +4,7 @@ import logging
 import asyncio
 import tempfile
 import subprocess
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
@@ -373,9 +374,12 @@ async def upload_status_media(
         # Debug log for response payload
         response_dict = response_data.model_dump(by_alias=True)
         logger.info(f"[STATUS_UPLOAD] Response payload: {response_dict}")
-        print(f"[STATUS_UPLOAD] DEBUG: Returning response with uploadId={file_key}, duration={video_duration}")
-        print(f"[STATUS_UPLOAD] FILE KEY RETURNED: {file_key}")
-        print(f"[STATUS_UPLOAD] UPLOAD RESPONSE: {response_dict}")
+        logger.info(f"[STATUS_UPLOAD] FILE_KEY_IN_RESPONSE: {file_key} (uploadId={response_dict.get('uploadId')}, file_key={response_dict.get('file_key')})")
+        logger.info(f"[STATUS_UPLOAD] RESPONSE_SCHEMA: uploadId={type(response_dict.get('uploadId')).__name__}, file_key={type(response_dict.get('file_key')).__name__}, duration={response_dict.get('duration')}")
+        
+        # CRITICAL: Print for production debugging
+        print(f"[STATUS_UPLOAD] RESPONSE_READY: uploadId={file_key}, file_key={file_key}, duration={video_duration}")
+        print(f"[STATUS_UPLOAD] JSON_RESPONSE: {json.dumps(response_dict)}")
         
         return response_data
 
@@ -386,6 +390,123 @@ async def upload_status_media(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload status media: {str(e)}",
+        )
+
+
+@router.post("/", response_model=StatusResponse)
+async def create_status(
+    status_create: StatusCreate, current_user: str = Depends(get_current_user)
+):
+    """
+    Create a new status with text and/or media.
+    
+    CRITICAL: Either text or file_key must be provided
+    file_key must be from a previous upload_status_media call
+    
+    Flow:
+    1. User uploads media via POST /upload → gets file_key
+    2. User creates status with file_key via this endpoint
+    
+    Returns: 200 with created status, 400 if validation fails, 500 if DB error
+    """
+    try:
+        user_id = str(current_user)
+        logger.info(f"[STATUS_CREATE] User {user_id} creating status")
+        print(f"[STATUS_CREATE] Creating status for user: {user_id}")
+        
+        # Validate that either text or file_key is provided
+        if not status_create.text and not status_create.file_key:
+            logger.warning(f"[STATUS_CREATE] Validation error - no text or file_key")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either text or file_key must be provided"
+            )
+        
+        # If file_key is provided, verify it exists in S3
+        if status_create.file_key:
+            logger.info(f"[STATUS_CREATE] Validating file_key exists: {status_create.file_key}")
+            try:
+                from backend.routes.files import _get_s3_client
+                s3_client = _get_s3_client()
+                if s3_client:
+                    try:
+                        s3_client.head_object(
+                            Bucket=settings.S3_BUCKET,
+                            Key=status_create.file_key
+                        )
+                        logger.info(f"[STATUS_CREATE] Verified file_key exists in S3: {status_create.file_key}")
+                        print(f"[STATUS_CREATE] S3 KEY VALIDATED: {status_create.file_key}")
+                    except Exception as e:
+                        logger.warning(f"[STATUS_CREATE] file_key not found in S3: {status_create.file_key}")
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"File not found or upload incomplete. Try uploading again."
+                        )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"[STATUS_CREATE] Error validating file_key: {str(e)}")
+                # Don't fail if S3 validation fails - might be permission issue
+        
+        # Create status document
+        status_collection = await get_status_collection()
+        
+        # Determine file_type from file_key if provided
+        file_type = None
+        if status_create.file_key:
+            # Extract MIME type from file extension
+            ext = os.path.splitext(status_create.file_key)[1].lower()
+            file_type_map = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp',
+                '.mp4': 'video/mp4',
+                '.3gp': 'video/3gpp',
+            }
+            file_type = file_type_map.get(ext)
+        
+        # Create StatusInDB model
+        status_doc = StatusInDB(
+            user_id=user_id,
+            text=status_create.text,
+            file_key=status_create.file_key,
+            file_type=file_type,
+            duration=status_create.duration,
+        )
+        
+        # Convert to dict for MongoDB insertion
+        status_dict = status_doc.model_dump(by_alias=True)
+        
+        logger.info(f"[STATUS_CREATE] Inserting status to DB: user={user_id}, has_file={bool(status_create.file_key)}")
+        print(f"[STATUS_CREATE] DB INSERT: user={user_id}, file_key={status_create.file_key}")
+        
+        # Insert into database
+        result = await status_collection.insert_one(status_dict)
+        
+        logger.info(f"[STATUS_CREATE] Status created successfully with ID: {result.inserted_id}")
+        print(f"[STATUS_CREATE] Status inserted with ID: {result.inserted_id}")
+        
+        # Convert inserted ID back to string for response
+        status_doc.id = str(result.inserted_id)
+        
+        # Return as StatusResponse
+        response = status_to_response(status_doc, user_id)
+        
+        logger.info(f"[STATUS_CREATE] Status created: id={response.id}, user={user_id}")
+        print(f"[STATUS_CREATE] RESPONSE CREATED: {response.model_dump()}")
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[STATUS_CREATE] Error creating status: {type(e).__name__}: {str(e)}")
+        print(f"[STATUS_CREATE] ERROR: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create status: {str(e)}",
         )
 
 
