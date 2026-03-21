@@ -351,7 +351,7 @@ class WhatsAppMediaLifecycle:
             s3_client = _get_s3_client()
             if s3_client:
                 s3_client.put_object(
-                    Bucket=settings.S3_BUCKET,
+                    Bucket=_get_sanitized_bucket_name(),
                     Key=chunk_key,
                     Body=encrypted_data,
                     Metadata={
@@ -524,6 +524,18 @@ def get_media_lifecycle():
     return media_lifecycle
 
 
+def _get_sanitized_bucket_name() -> str:
+    """
+    Get sanitized bucket name, ensuring it's not in ARN format.
+    Sometimes bucket names get converted to ARN format, strip ARN prefix if present.
+    """
+    bucket_name = settings.S3_BUCKET
+    if bucket_name.startswith("arn:aws:s3:::"):
+        bucket_name = bucket_name.replace("arn:aws:s3:::", "")
+        print(f"[S3_DEBUG] Converted ARN to bucket name: {bucket_name}")
+    return bucket_name
+
+
 def _get_s3_client():
     """Get S3 client for AWS S3 operations with full credentials validation"""
     try:
@@ -566,15 +578,19 @@ def _get_s3_client():
 
         s3_client = boto3.client("s3", **client_kwargs)
 
+        # CRITICAL FIX: Ensure bucket name is not in ARN format
+        bucket_name = _get_sanitized_bucket_name()
+        print(f"[S3_DEBUG] Using bucket name: '{bucket_name}'")
+        
         # Test connection by listing bucket
         try:
-            s3_client.head_bucket(Bucket=settings.S3_BUCKET)
+            s3_client.head_bucket(Bucket=bucket_name)
             print(
-                f"[S3_DEBUG] Successfully connected to S3 bucket: {settings.S3_BUCKET}"
+                f"[S3_DEBUG] Successfully connected to S3 bucket: {bucket_name}"
             )
             _log(
                 "info",
-                f"S3 client initialized and verified for bucket: {settings.S3_BUCKET} in region: {settings.AWS_REGION}",
+                f"S3 client initialized and verified for bucket: {bucket_name} in region: {settings.AWS_REGION}",
             )
         except Exception as e:
             print(f"[S3_DEBUG] WARNING: Could not verify S3 bucket access: {str(e)}")
@@ -616,7 +632,7 @@ def _generate_presigned_url(
         pass
 
     try:
-        params = {"Bucket": bucket or settings.S3_BUCKET, "Key": object_key}
+        params = {"Bucket": bucket or _get_sanitized_bucket_name(), "Key": object_key}
         if content_type:
             params["ContentType"] = content_type
         if file_size:
@@ -1961,7 +1977,7 @@ async def complete_upload(
                 "filename": filename,
                 "owner_id": str(upload_user_id),
                 "storage_key": storage_key,
-                "bucket": settings.S3_BUCKET,
+                "bucket": _get_sanitized_bucket_name(),
             },
         )
 
@@ -2519,9 +2535,10 @@ async def download_file(
                     detail="File not found - storage key missing",
                 )
 
-            # Use settings.S3_BUCKET to ensure consistency between upload and download
+            # Use sanitized bucket name to ensure consistency between upload and download
+            bucket_name = _get_sanitized_bucket_name()
             effective_bucket = (
-                settings.S3_BUCKET if bucket != settings.S3_BUCKET else bucket
+                bucket_name if bucket != bucket_name else bucket
             )
             print(
                 f"[DOWNLOAD] S3 URL GENERATED - bucket={effective_bucket}, key={storage_key}"
@@ -3103,7 +3120,7 @@ async def stream_media(
                             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="S3 storage is unavailable",
                         )
-                    obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=chunk_key)
+                    obj = s3_client.get_object(Bucket=_get_sanitized_bucket_name(), Key=chunk_key)
 
                     # Stream the encrypted data
                     chunk_data = obj["Body"].read()
@@ -3458,7 +3475,7 @@ async def _handle_s3_media_download(
         
         # Get S3 object metadata
         obj_metadata = s3_client.head_object(
-            Bucket=settings.S3_BUCKET, Key=storage_key
+            Bucket=_get_sanitized_bucket_name(), Key=storage_key
         )
         content_type = obj_metadata.get("ContentType", "application/octet-stream")
         content_length = obj_metadata.get("ContentLength", 0)
@@ -3471,7 +3488,7 @@ async def _handle_s3_media_download(
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=storage_key,
-                bucket=settings.S3_BUCKET,
+                bucket=_get_sanitized_bucket_name(),
                 expires_in=3600,
             )
             if presigned_url:
@@ -3990,7 +4007,7 @@ async def get_media_by_key(
             try:
                 print(f"MEDIA_DEBUG: Attempting S3 access for: {safe_file_key}")
                 obj_metadata = s3_client.head_object(
-                    Bucket=settings.S3_BUCKET, Key=safe_file_key
+                    Bucket=_get_sanitized_bucket_name(), Key=safe_file_key
                 )
                 content_type = obj_metadata.get(
                     "ContentType", "application/octet-stream"
@@ -4063,8 +4080,9 @@ async def get_media_by_key(
 
         # Log media access for audit
         storage_type = "S3" if s3_available else "Filesystem"
+        bucket_name = _get_sanitized_bucket_name()
         print(
-            f"MEDIA_DEBUG: S3 URL GENERATED - storage_type={storage_type}, bucket={settings.S3_BUCKET}, key={safe_file_key}"
+            f"MEDIA_DEBUG: S3 URL GENERATED - storage_type={storage_type}, bucket={bucket_name}, key={safe_file_key}"
         )
         _log(
             "info",
@@ -4076,7 +4094,7 @@ async def get_media_by_key(
                 "size": content_length,
                 "storage": storage_type,
                 "file_path": final_path,
-                "s3_bucket": settings.S3_BUCKET,
+                "bucket": bucket_name,
             },
         )
 
@@ -4087,12 +4105,12 @@ async def get_media_by_key(
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=safe_file_key,
-                bucket=settings.S3_BUCKET,
+                bucket=_get_sanitized_bucket_name(),
                 expires_in=3600,
             )
             if presigned_url:
                 print(
-                    f"MEDIA_DEBUG: S3 URL GENERATED - bucket={settings.S3_BUCKET}, key={safe_file_key}, url={presigned_url[:80]}..."
+                    f"MEDIA_DEBUG: S3 URL GENERATED - bucket={_get_sanitized_bucket_name()}, key={safe_file_key}, url={presigned_url[:80]}..."
                 )
                 print(f"MEDIA_DEBUG: Returning 307 redirect to presigned URL")
                 _log(
@@ -4122,7 +4140,7 @@ async def get_media_by_key(
         # Create streaming response based on storage type
         if s3_available:
             # Fetch object from S3
-            obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
+            obj = s3_client.get_object(Bucket=_get_sanitized_bucket_name(), Key=safe_file_key)
 
             async def stream_s3_object():
                 """Stream S3 object in chunks to prevent memory buffering"""
