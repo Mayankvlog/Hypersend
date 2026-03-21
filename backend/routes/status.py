@@ -256,116 +256,6 @@ def status_to_response(status: StatusInDB, current_user_id: str) -> StatusRespon
     )
 
 
-@router.post("/", response_model=StatusResponse)
-async def create_status(
-    status_data: StatusCreate, current_user: str = Depends(get_current_user)
-):
-    """
-    Create a new status (text or media)
-
-    Request body:
-    {
-        "text": "Status text (optional if file_key provided)",
-        "file_key": "S3 file key from /status/upload response (optional if text provided)"
-    }
-
-    Returns:
-    StatusResponse with id, user_id, text, file_url, expires_at, etc.
-    """
-    try:
-        status_collection = await get_status_collection()
-        user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
-
-        logger.info(
-            f"[STATUS_CREATE] User {user_id} creating status - text_len: {len(status_data.text or '')}, has_file: {bool(status_data.file_key)}"
-        )
-
-        # Validate that either text or file_key is provided (done in model validator, but log it)
-        if not status_data.text and not status_data.file_key:
-            logger.warning(
-                f"[STATUS_CREATE] Invalid: neither text nor file_key provided"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Either text or file_key must be provided",
-            )
-
-        # Calculate expiry: 24 hours from now
-        created_at = datetime.now(timezone.utc)
-        expires_at = created_at + timedelta(hours=24)
-
-        logger.info(
-            f"[STATUS_CREATE] Created at: {created_at}, expires at: {expires_at}"
-        )
-
-        # Determine file type if file_key is provided
-        file_type = None
-        if status_data.file_key:
-            # CRITICAL: Validate s3_key is not empty
-            if not status_data.file_key.strip():
-                logger.error(f"[STATUS_CREATE] CRITICAL: file_key is empty string!")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="file_key cannot be empty",
-                )
-            
-            # Parse file type from extension
-            _, ext = os.path.splitext(status_data.file_key)
-            if ext.lower() in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
-                file_type = "image"
-            elif ext.lower() in [".mp4", ".3gp"]:
-                file_type = "video"
-            
-            logger.info(
-                f"[STATUS_CREATE] FILE_KEY_VALIDATED - s3_key={status_data.file_key}, file_type={file_type}, ext={ext}"
-            )
-
-        # Create status document
-        status_doc = StatusInDB(
-            user_id=user_id,
-            text=status_data.text,
-            file_key=status_data.file_key,
-            file_type=file_type,
-            duration=status_data.duration,
-            created_at=created_at,
-            expires_at=expires_at,
-        )
-
-        logger.info(
-            f"[STATUS_CREATE] DATABASE_INSERT - document prepared: id_placeholder, user_id={user_id}, file_key={status_data.file_key}, file_type={file_type}"
-        )
-
-        # Insert into database
-        result = await status_collection.insert_one(
-            status_doc.model_dump(by_alias=True)
-        )
-        status_doc.id = str(result.inserted_id)
-
-        logger.info(
-            f"[STATUS_CREATE] DATABASE_INSERT_SUCCESS - status_id={status_doc.id}, file_key={status_data.file_key}"
-        )
-
-        # Convert to response
-        response = status_to_response(status_doc, user_id)
-
-        return JSONResponse(
-            status_code=status.HTTP_201_CREATED,
-            content=response.model_dump(by_alias=True),
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[STATUS_CREATE] Error: {type(e).__name__}: {str(e)}")
-        import traceback
-
-        logger.error(f"[STATUS_CREATE] Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create status: {str(e)}",
-        )
-
-
 @router.post("/upload", response_model=FileInitResponse)
 async def upload_status_media(
     file: UploadFile = File(...), current_user: str = Depends(get_current_user)
@@ -454,7 +344,7 @@ async def upload_status_media(
             logger.info(
                 f"[STATUS_UPLOAD] Successfully uploaded to S3, s3_key: {file_key} (size: {len(file_content)} bytes)"
             )
-            print(f"[STATUS_UPLOAD] S3 upload confirmed, s3_key: {file_key}")
+            print(f"[STATUS_UPLOAD] S3 UPLOAD SUCCESS: {file_key}")
         except Exception as e:
             logger.error(f"[STATUS_UPLOAD] S3 upload failed: {str(e)}")
             print(f"[STATUS_UPLOAD] S3 upload failed: {str(e)}")
@@ -471,16 +361,21 @@ async def upload_status_media(
         # Return file init response with file_key embedded for later status creation
         response_data = FileInitResponse(
             uploadId=file_key,  # Use file_key as uploadId for transparency
+            file_key=file_key,  # Also set file_key for backward compatibility
             chunk_size=1024 * 1024,  # 1MB chunks
             total_chunks=1,
             expires_in=86400,  # 24 hours (matches status expiry)
+            max_parallel=4,  # Default max parallel chunks
             upload_url=f"{settings.API_BASE_URL}/media/{file_key}",
             duration=video_duration,  # Video duration if applicable
         )
         
         # Debug log for response payload
-        logger.info(f"[STATUS_UPLOAD] Response payload: {response_data.model_dump(by_alias=True)}")
+        response_dict = response_data.model_dump(by_alias=True)
+        logger.info(f"[STATUS_UPLOAD] Response payload: {response_dict}")
         print(f"[STATUS_UPLOAD] DEBUG: Returning response with uploadId={file_key}, duration={video_duration}")
+        print(f"[STATUS_UPLOAD] FILE KEY RETURNED: {file_key}")
+        print(f"[STATUS_UPLOAD] UPLOAD RESPONSE: {response_dict}")
         
         return response_data
 

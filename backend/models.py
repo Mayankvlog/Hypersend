@@ -841,6 +841,7 @@ class FileInitRequest(BaseModel):
 
 class FileInitResponse(BaseModel):
     uploadId: str  # camelCase for frontend consistency
+    file_key: Optional[str] = None  # snake_case for backward compatibility
     chunk_size: int
     total_chunks: int
     expires_in: int  # Duration in seconds
@@ -848,6 +849,18 @@ class FileInitResponse(BaseModel):
     upload_token: Optional[str] = None  # Long-lived token for large file uploads
     upload_url: Optional[str] = None  # Ephemeral S3 presigned URL
     duration: Optional[float] = None  # Video duration in seconds (for video uploads)
+    
+    model_config = ConfigDict(populate_by_name=True)
+    
+    def model_dump(self, **kwargs):
+        """Override model_dump to include both camelCase and snake_case fields"""
+        data = super().model_dump(**kwargs)
+        # Add snake_case alias for backward compatibility
+        if 'uploadId' in data and 'file_key' not in data:
+            data['file_key'] = data['uploadId']
+        elif 'file_key' in data and 'uploadId' not in data:
+            data['uploadId'] = data['file_key']
+        return data
 
 
 class ChunkUploadResponse(BaseModel):

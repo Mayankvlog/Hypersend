@@ -205,14 +205,53 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                   _pickAndUploadImage();
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.videocam, color: AppTheme.primaryCyan),
-                title: const Text('Video Status'),
-                subtitle: const Text('Share a video as status (max 3 minutes)'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickAndUploadVideo();
-                },
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.orange[400]!, Colors.deepOrange[400]!],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.videocam, color: Colors.white, size: 24),
+                  ),
+                  title: const Text(
+                    'Video Status',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Share videos up to 3 minutes',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                  trailing: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.play_arrow, color: Colors.white, size: 20),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickAndUploadVideo();
+                  },
+                ),
               ),
               const SizedBox(height: 20),
             ],
@@ -312,6 +351,8 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
 
   Future<void> _pickAndUploadVideo() async {
     try {
+      debugPrint('[StatusScreen] Opening video picker...');
+      
       final result = await FilePicker.platform.pickFiles(
         type: FileType.video,
         allowMultiple: false,
@@ -319,15 +360,50 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
+        debugPrint('[StatusScreen] Video selected: ${file.name}, size: ${file.size}');
+        
+        // Validate file size before upload (50MB max)
+        if (file.size != null && file.size! > 50 * 1024 * 1024) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Video file is too large. Maximum size is 50MB.'),
+                backgroundColor: AppTheme.errorRed,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+          return;
+        }
+        
+        // Validate file extension
+        final validExtensions = ['.mp4', '.3gp', '.mov', '.avi'];
+        final fileExtension = file.name.toLowerCase().split('.').last;
+        if (!validExtensions.contains('.$fileExtension')) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Invalid video format. Supported formats: ${validExtensions.join(', ')}'),
+                backgroundColor: AppTheme.errorRed,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+          return;
+        }
+        
         await _uploadVideoStatus(file);
+      } else {
+        debugPrint('[StatusScreen] No video selected');
       }
     } catch (e) {
       debugPrint('[StatusScreen] Error picking video: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to pick video: $e'),
+            content: Text('Failed to pick video: ${e.toString()}'),
             backgroundColor: AppTheme.errorRed,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -357,10 +433,40 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       }
 
       if (mounted) {
+        // Show detailed upload progress
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Uploading video...'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Row(
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Uploading video status...'),
+                      Text(
+                        'Processing: ${file.name}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.orange[600],
+            duration: const Duration(seconds: 10),
           ),
         );
       }
@@ -372,7 +478,9 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         filename: file.name,
       );
       
-      final fileKey = uploadResponse['upload_id'] as String?;
+      // Handle both camelCase (uploadId) and snake_case (upload_id) from backend
+      final fileKey = (uploadResponse['uploadId'] as String?) ?? 
+                     (uploadResponse['upload_id'] as String?);
       if (fileKey == null || fileKey.isEmpty) {
         throw Exception('No file_key returned from upload');
       }
@@ -388,11 +496,44 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       debugPrint('[StatusScreen] Status created: ${statusResponse['id']}');
 
       if (mounted) {
+        // Hide any existing upload progress
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        
+        // Show success message with video icon
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Video status posted! ✓'),
-            backgroundColor: AppTheme.successGreen,
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.videocam, color: Colors.white, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Video status posted successfully!',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Your video will be visible for 24 hours',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+              ],
+            ),
+            backgroundColor: const Color(0xFF4CAF50),
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
           ),
         );
         
@@ -471,7 +612,9 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         filename: file.name,
       );
       
-      final fileKey = uploadResponse['upload_id'] as String?;
+      // Handle both camelCase (uploadId) and snake_case (upload_id) from backend
+      final fileKey = (uploadResponse['uploadId'] as String?) ?? 
+                     (uploadResponse['upload_id'] as String?);
       if (fileKey == null || fileKey.isEmpty) {
         throw Exception('No file_key returned from upload');
       }
@@ -602,24 +745,57 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                   child: ValueListenableBuilder<VideoPlayerValue>(
                     valueListenable: _videoController!,
                     builder: (context, snapshot, child) {
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              if (snapshot.isPlaying) {
-                                _videoController!.pause();
-                              } else {
-                                _videoController!.play();
-                              }
-                            },
-                            icon: Icon(
-                              snapshot.isPlaying ? Icons.pause : Icons.play_arrow,
-                              color: Colors.white,
-                              size: 48,
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Play/Pause button
+                            IconButton(
+                              onPressed: () {
+                                if (snapshot.isPlaying) {
+                                  _videoController!.pause();
+                                } else {
+                                  _videoController!.play();
+                                }
+                              },
+                              icon: Icon(
+                                snapshot.isPlaying ? Icons.pause : Icons.play_arrow,
+                                color: Colors.white,
+                                size: 32,
+                              ),
                             ),
-                          ),
-                        ],
+                            
+                            // Progress indicator
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: VideoProgressIndicator(
+                                  _videoController!,
+                                  allowScrubbing: true,
+                                  colors: const VideoProgressColors(
+                                    playedColor: Colors.orange,
+                                    bufferedColor: Colors.grey,
+                                    backgroundColor: Colors.white24,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            
+                            // Duration display
+                            Text(
+                              _formatVideoDuration(snapshot.position),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),
@@ -771,6 +947,13 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
     } else {
       return '${difference.inDays}d ago';
     }
+  }
+
+  String _formatVideoDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return '$minutes:$seconds';
   }
 
   Color _parseBackgroundColor(dynamic colorValue) {
@@ -938,18 +1121,45 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
             fontSize: 16,
           ),
         ),
-        subtitle: Text(
-          status['type'] == 'image' 
-              ? '📷 Photo'
-              : status['type'] == 'video'
-                  ? '🎥 Video'
-                  : (status['content'] != null && (status['content'] as String).length > 30 
+        subtitle: Row(
+          children: [
+            if (status['type'] == 'image') ...[
+              const Icon(Icons.photo, size: 16, color: Colors.grey),
+              const SizedBox(width: 4),
+              const Text('Photo'),
+            ] else if (status['type'] == 'video') ...[
+              const Icon(Icons.videocam, size: 16, color: Colors.orange),
+              const SizedBox(width: 4),
+              const Text('Video'),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Text(
+                  status['duration'] != null ? _formatVideoDuration(Duration(seconds: status['duration'])) : '0:00',
+                  style: TextStyle(
+                    color: Colors.orange[700],
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ] else ...[
+              const Icon(Icons.text_fields, size: 16, color: Colors.grey),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  status['content'] != null && (status['content'] as String).length > 30 
                       ? '${(status['content'] as String).substring(0, 30)}...'
-                      : status['content'] ?? ''),
-          style: TextStyle(
-            color: Colors.grey[600],
-            fontSize: 14,
-          ),
+                      : status['content'] ?? 'Text status',
+                ),
+              ),
+            ],
+          ],
         ),
         trailing: Text(
           timestamp,
@@ -1026,6 +1236,60 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                               children: [
                                 _buildMyStatusItem(),
                                 const Divider(height: 32),
+                                // Video Status Feature Banner
+                                Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [Colors.orange[400]!, Colors.deepOrange[400]!],
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.orange.withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.videocam, color: Colors.white, size: 24),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Video Status Available!',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Share videos up to 3 minutes long',
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(0.9),
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.play_circle_filled,
+                                        color: Colors.white.withOpacity(0.8),
+                                        size: 28,
+                                      ),
+                                    ],
+                                  ),
+                                ),
                                 Expanded(
                                   child: _recentUpdates.isEmpty
                                       ? Center(
@@ -1033,9 +1297,9 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                                             mainAxisAlignment: MainAxisAlignment.center,
                                             children: [
                                               Icon(
-                                                Icons.visibility_off,
+                                                Icons.videocam,
                                                 size: 64,
-                                                color: Colors.grey[400],
+                                                color: Colors.orange[400],
                                               ),
                                               const SizedBox(height: 16),
                                               Text(
@@ -1043,6 +1307,14 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                                                 style: TextStyle(
                                                   color: Colors.grey[600],
                                                   fontSize: 16,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                'Tap the + button to share a video status',
+                                                style: TextStyle(
+                                                  color: Colors.grey[500],
+                                                  fontSize: 14,
                                                 ),
                                               ),
                                             ],
