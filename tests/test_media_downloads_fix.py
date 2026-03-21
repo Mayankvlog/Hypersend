@@ -130,7 +130,7 @@ async def test_download_parameter_attachment_header(client, auth_headers):
 
 @pytest.mark.asyncio
 async def test_inline_parameter_inline_header(client, auth_headers):
-    """TEST 3: download=false returns Content-Disposition: inline"""
+    """TEST 3: DEPRECATED - download parameter is ignored, all returns attachment by default"""
 
     test_file_key = "test/file/image.jpg"
     mock_response = {
@@ -150,26 +150,27 @@ async def test_inline_parameter_inline_header(client, auth_headers):
             mock_col.find_one = AsyncMock(return_value=None)
             mock_files_col.return_value = mock_col
 
-            # Request with download=false (force inline)
+            # Request with download=false (now forced to attachment anyway)
             response = client.get(
                 f"/api/v1/media/{test_file_key}?download=false",
                 headers=auth_headers,
             )
 
-            # For inline, we expect 200 with inline disposition or 403 for auth
+            # CRITICAL FIX: All responses now force attachment for PC download
             disposition = response.headers.get("Content-Disposition", "")
-            print(f"✓ TEST 3: Content-Disposition header (inline mode): {disposition}")
+            print(f"✓ TEST 3: Content-Disposition header (now always attachment): {disposition}")
 
             if response.status_code == 200:
                 assert (
-                    "inline" in disposition
-                ), f"Expected 'inline' in Content-Disposition, got: {disposition}"
-                print(f"✓ TEST 3 PASSED: Content-Disposition: inline set correctly")
+                    "attachment" in disposition
+                ), f"Expected 'attachment' in Content-Disposition (forced download), got: {disposition}"
+                print(f"✓ TEST 3 PASSED: Content-Disposition: attachment forced (no inline mode)")
+
 
 
 @pytest.mark.asyncio
 async def test_default_is_attachment_header(client, auth_headers):
-    """TEST 3B: default behavior returns Content-Disposition: attachment"""
+    """TEST 4: CRITICAL FIX - default behavior ALWAYS returns Content-Disposition: attachment"""
 
     test_file_key = "test/file/image-default.jpg"
     mock_response = {
@@ -189,20 +190,20 @@ async def test_default_is_attachment_header(client, auth_headers):
             mock_col.find_one = AsyncMock(return_value=None)
             mock_files_col.return_value = mock_col
 
-            # Request without download parameter (default)
+            # Request without download parameter (default) - should force attachment
             response = client.get(
                 f"/api/v1/media/{test_file_key}",
                 headers=auth_headers,
             )
 
             disposition = response.headers.get("Content-Disposition", "")
-            print(f"✓ TEST 3B: Content-Disposition header (default mode): {disposition}")
-
+            print(f"✓ TEST 4: Content-Disposition header (default=attachment): {disposition}")
+            
             if response.status_code == 200:
                 assert (
                     "attachment" in disposition
-                ), f"Expected 'attachment' in Content-Disposition, got: {disposition}"
-                print("✓ TEST 3B PASSED: Content-Disposition: attachment set by default")
+                ), f"CRITICAL: Expected 'attachment' in Content-Disposition by default for PC downloads, got: {disposition}"
+                print(f"✓ TEST 4 PASSED: Default behavior forces attachment (files download to PC, not opened in browser)")
 
 
 @pytest.mark.asyncio

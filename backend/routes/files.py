@@ -3094,6 +3094,7 @@ async def get_media_by_key(
     download: bool = True,
     current_user: str = Depends(get_current_user),
     request: Request = None,
+    force_download: bool = False,
 ):
     """
     SECURE MEDIA ACCESS ENDPOINT
@@ -3321,7 +3322,8 @@ async def get_media_by_key(
 
         # Return streaming response with proper headers
         quoted_key = quote(safe_file_key, safe="")
-        disposition_type = "attachment" if download else "inline"
+        # FORCE attachment (download) by default - this prevents browser from opening PDFs/images inline
+        disposition_type = "attachment"
         filename = safe_file_key.split("/")[-1]
         return StreamingResponse(
             stream_s3_object(),
@@ -3329,11 +3331,11 @@ async def get_media_by_key(
             headers={
                 "Content-Length": str(content_length),
                 "Content-Disposition": f"{disposition_type}; filename*=UTF-8''{quote(filename, safe='')}",
-                "Cache-Control": "private, max-age=3600"
-                if not download
-                else "no-cache, no-store, must-revalidate",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
                 "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
                 "X-Frame-Options": "DENY",  # Prevent embedding in frames
+                "Pragma": "no-cache",  # HTTP 1.0 compatibility
+                "Expires": "0",
             },
         )
 
