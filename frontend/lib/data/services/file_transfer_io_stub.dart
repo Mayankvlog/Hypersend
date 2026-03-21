@@ -7,6 +7,9 @@ import 'dart:typed_data';
 import 'dart:js_interop';
 import 'package:flutter/foundation.dart' show debugPrint;
 
+// Import Blob type from web package
+typedef Blob = html.Blob;
+
 // Re-export path for compatibility - not used in web stub
 
 // Stub Directory class
@@ -194,71 +197,34 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
       
       debugPrint('[FILE_WEB_STUB] Download initiated for: $fileName');
     } else {
-      debugPrint('[FILE_WEB_STUB] Using fetch with Authorization header for authenticated download');
-      // Use fetch() to properly send Authorization header
-      // This allows the backend to receive the Bearer token
+      debugPrint('[FILE_WEB_STUB] Using simple anchor method for authenticated download');
+      // Use simple anchor method for better web compatibility
       try {
-        // Get the auth token from localStorage (set by AuthService)
-        final token = html.window.localStorage['access_token'] ?? '';
-        final headers = <String, dynamic>{};
-        
-        if (token.isNotEmpty) {
-          headers['Authorization'] = 'Bearer $token';
-          debugPrint('[FILE_WEB_STUB] Authorization header set (Bearer token)');
-        } else {
-          debugPrint('[FILE_WEB_STUB] No token found in localStorage');
-        }
-        
-        // Make fetch request with Authorization header
-        final response = await html.window.fetch(
-          downloadUrl,
-          <String, dynamic>{
-            'method': 'GET',
-            'headers': headers,
-            'credentials': 'include', // Include cookies as well
-          },
-        );
-        
-        final blob = await response.blob();
-        
-        debugPrint('[FILE_WEB_STUB] Received blob with size: ${blob.size}');
-        
-        // Create object URL from blob
-        final blobUrl = html.Url.createObjectUrlFromBlob(blob);
-        
-        // Create anchor element to download the blob
         final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
-        anchor.href = blobUrl;
+        anchor.href = downloadUrl;
         anchor.download = fileName;
         
         // Set rel="noopener" to prevent window manipulation
         anchor.setAttribute('rel', 'noopener');
         
+        // Set target="_blank" with download attribute for cross-origin support
+        anchor.target = '_blank';
+        
         // Append to body (required in some browsers)
         html.document.body?.appendChild(anchor);
         
-        debugPrint('[FILE_WEB_STUB] Triggering blob download click');
+        debugPrint('[FILE_WEB_STUB] Triggering download click');
         
         // Trigger the download
         anchor.click();
         
         // Clean up
         html.document.body?.removeChild(anchor);
-        html.Url.revokeObjectUrl(blobUrl);
         
         debugPrint('[FILE_WEB_STUB] Download initiated for: $fileName');
-      } catch (fetchError) {
-        debugPrint('[FILE_WEB_STUB] Fetch method failed: $fetchError, falling back to anchor element');
-        // Fallback to simple anchor if fetch fails
-        final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
-        anchor.href = downloadUrl;
-        anchor.download = fileName;
-        anchor.setAttribute('rel', 'noopener');
-        anchor.target = '_blank';
-        html.document.body?.appendChild(anchor);
-        anchor.click();
-        html.document.body?.removeChild(anchor);
-        debugPrint('[FILE_WEB_STUB] Fallback download initiated for: $fileName');
+      } catch (anchorError) {
+        debugPrint('[FILE_WEB_STUB] Anchor method failed: $anchorError');
+        rethrow;
       }
     }
   } catch (e) {
