@@ -2473,20 +2473,31 @@ app.include_router(chats.router, prefix="/api/v1/chats")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
 app.include_router(e2ee_messages.router, prefix="/api/v1")  # E2EE encrypted messages
-app.include_router(status_router.router)  # Status endpoints have their own prefix
+app.include_router(
+    status_router.router
+)  # Status endpoints have their own prefix /api/v1/status
 app.include_router(
     files.router, prefix="/api/v1/files"
 )  # Standard file operations: /api/v1/files/*
 app.include_router(
     files.attach_router, prefix="/api/v1"
-)  # Attachment operations: /api/v1/attach/*
+)  # Attachment operations: /api/v1/attach/photos-videos/init, /api/v1/attach/documents/init, etc.
 app.include_router(
     files.media_router, prefix="/api/v1"
-)  # Media operations: /api/v1/media/*
+)  # Media operations: /api/v1/media/{file_id} - CRITICAL endpoint for status and chat media
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")  # E2EE Device Management
+
+logger.info("[ROUTING] === MEDIA ENDPOINT REGISTRATION ===")
+logger.info(f"[ROUTING] files.router registered at: /api/v1/files")
+logger.info(f"[ROUTING] files.media_router registered at: /api/v1")
+logger.info(f"[ROUTING] files.attach_router registered at: /api/v1")
+logger.info(
+    f"[ROUTING] status_router registered at: (router has internal /api/v1/status prefix)"
+)
+logger.info("[ROUTING] === END MEDIA ENDPOINT REGISTRATION ===")
 
 # Log router registration for troubleshooting
 logger.info(
@@ -2496,13 +2507,13 @@ logger.info(
 # Print all registered routes for debugging
 logger.info("[ROUTES] Registered media endpoints:")
 for route in app.routes:
-    if hasattr(route, 'path') and hasattr(route, 'methods'):
-        if 'media' in route.path.lower():
+    if hasattr(route, "path") and hasattr(route, "methods"):
+        if "media" in route.path.lower():
             logger.info(f"[ROUTES] {list(route.methods)} {route.path}")
-    elif hasattr(route, 'routes'):
+    elif hasattr(route, "routes"):
         for sub_route in route.routes:
-            if hasattr(sub_route, 'path') and hasattr(sub_route, 'methods'):
-                if 'media' in sub_route.path.lower():
+            if hasattr(sub_route, "path") and hasattr(sub_route, "methods"):
+                if "media" in sub_route.path.lower():
                     logger.info(f"[ROUTES] {list(sub_route.methods)} {sub_route.path}")
 
 

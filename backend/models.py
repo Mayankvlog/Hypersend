@@ -410,7 +410,9 @@ class ChatMember(BaseModel):
     user_id: str
     chat_id: str
     role: str = Role.MEMBER
-    joined_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc))
+    joined_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
+    )
     invited_by: Optional[str] = None
     permissions: Optional[AdminPermissions] = None  # For admins
     restricted_permissions: Optional[ChatPermissions] = None  # For restricted users
@@ -563,9 +565,11 @@ class MessageInDB(BaseModel):
     file_type: Optional[str] = None  # MIME type metadata only
 
     # Metadata fields only - UTC ONLY with timezone awareness for tests
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
+    )
     language: Optional[str] = None  # Language code metadata
-    
+
     # Emoji support: Up to 8 categories (Smileys, Animals, Food, Travel, Activities, Objects, Symbols, Flags)
     # UTF-8 encoding preserved fully in MongoDB storage
 
@@ -761,7 +765,9 @@ class MessageDeliveryReceipt(BaseModel):
 
     # Receipt type and timestamp
     receipt_type: str  # delivered, read
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc))
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
+    )
 
     # Device metadata
     device_type: Optional[str] = None
@@ -842,6 +848,7 @@ class FileInitResponse(BaseModel):
     max_parallel: int = 4  # Default max parallel chunks
     upload_token: Optional[str] = None  # Long-lived token for large file uploads
     upload_url: Optional[str] = None  # Ephemeral S3 presigned URL
+    duration: Optional[float] = None  # Video duration in seconds (for video uploads)
 
 
 class ChunkUploadResponse(BaseModel):
@@ -940,9 +947,13 @@ class UserSearchResponse(BaseModel):
 # Status Models for WhatsApp-like Status Feature
 class StatusCreate(BaseModel):
     """Request to create a new status"""
+
     text: Optional[str] = Field(None, max_length=500)
     file_key: Optional[str] = Field(None, max_length=255)  # S3 file key, not full URL
-    
+    duration: Optional[
+        float
+    ] = None  # Video duration in seconds (optional, from upload)
+
     @field_validator("text")
     @classmethod
     def validate_text(cls, v):
@@ -964,6 +975,7 @@ class StatusCreate(BaseModel):
 
 class StatusInDB(BaseModel):
     """Status model stored in database"""
+
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
@@ -971,21 +983,26 @@ class StatusInDB(BaseModel):
     text: Optional[str] = None
     file_key: Optional[str] = None  # S3 file key reference
     file_type: Optional[str] = None  # MIME type for media files
+    duration: Optional[float] = None  # Video duration in seconds
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(hours=24))
+    expires_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc) + timedelta(hours=24)
+    )
     views: int = 0  # Number of times this status was viewed
-    
+
     # Note: Expiry validation moved to service layer during creation.
     # This allows loading expired records from DB without validation errors.
 
 
 class StatusResponse(BaseModel):
     """Status response for API"""
+
     id: str
     user_id: str
     text: Optional[str] = None
     file_url: Optional[str] = None  # Full S3 URL for frontend
     file_type: Optional[str] = None
+    duration: Optional[float] = None  # Video duration in seconds
     created_at: datetime
     expires_at: datetime
     views: int
@@ -994,6 +1011,7 @@ class StatusResponse(BaseModel):
 
 class StatusListResponse(BaseModel):
     """Response for status list endpoints"""
+
     statuses: List[StatusResponse]
     total: int
     has_more: bool
@@ -1509,7 +1527,9 @@ class MessageDeliveryStatus(BaseModel):
     new_status: str = Field(
         ..., description="One of: pending, sent, delivered, read, deleted, failed"
     )
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc))
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
+    )
     error: Optional[str] = None  # Error message if status is failed
 
 
@@ -1669,7 +1689,9 @@ class MessageDeliveryReceipt(BaseModel):
 
     # Receipt type and timestamp
     receipt_type: str  # delivered, read
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc))
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
+    )
 
     # Device metadata
     device_type: Optional[str] = None
@@ -2222,7 +2244,7 @@ class UserPresence(BaseModel):
     last_seen_at: datetime = Field(
         # Always store timezone-aware UTC (avoid naive datetime.utcnow())
         default_factory=lambda: datetime.now(timezone.utc),
-        description="Last activity time (UTC aware)"
+        description="Last activity time (UTC aware)",
     )
 
     # Privacy Controls
@@ -2356,7 +2378,9 @@ class MessageDeliveryState(BaseModel):
     )
 
     # Timestamps for Each State
-    pending_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    pending_at: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     sent_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
@@ -2490,7 +2514,7 @@ class PersistentMessageHistory(BaseModel):
     created_at: datetime = Field(
         # Use timezone-aware UTC timestamp; keep tzinfo to guarantee storage in UTC
         default_factory=lambda: datetime.now(timezone.utc),
-        description="Message creation time (UTC aware)"
+        description="Message creation time (UTC aware)",
     )
     sent_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
@@ -2563,7 +2587,9 @@ class ConversationMetadataTracker(BaseModel):
     # Frequency Metrics
     messages_sent_by_user1: int = Field(default=0)
     messages_sent_by_user2: int = Field(default=0)
-    last_interaction_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_interaction_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     last_message_sender: Optional[str] = None
     last_message_preview: Optional[str] = Field(None, max_length=100)
 
@@ -2620,8 +2646,12 @@ class UserRelationshipGraph(BaseModel):
     messages_received_by_user: int = Field(default=0)
 
     # Temporal Metrics
-    first_interaction_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_interaction_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    first_interaction_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    last_interaction_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     interaction_days: int = Field(default=0)
 
     # Activity Pattern
@@ -2638,7 +2668,9 @@ class UserRelationshipGraph(BaseModel):
     # Update tracking
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_score_calculated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_score_calculated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
 
 
 class DeviceMessageSync(BaseModel):
@@ -2668,7 +2700,9 @@ class DeviceMessageSync(BaseModel):
     sync_from_timestamp: datetime = Field(
         default_factory=lambda: (datetime.now(timezone.utc) - timedelta(days=90))
     )
-    sync_until_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc))
+    sync_until_timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
+    )
 
     # Progress Tracking
     total_messages_to_sync: int = Field(default=0)
@@ -2688,7 +2722,9 @@ class DeviceMessageSync(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    last_sync_update_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_sync_update_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
 
     # Retry Information
     retry_count: int = Field(default=0)
@@ -2767,7 +2803,9 @@ class MultiDeviceState(BaseModel):
     max_devices_allowed: int = Field(default=4)
 
     # Sync State
-    last_multi_device_sync_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_multi_device_sync_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     requiring_sync_count: int = Field(default=0)
 
     # Timestamps

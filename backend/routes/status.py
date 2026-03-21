@@ -38,102 +38,123 @@ async def get_status_collection():
     return db["statuses"]
 
 
-async def get_video_duration(file_content: bytes, filename: Optional[str]) -> Optional[float]:
+async def get_video_duration(
+    file_content: bytes, filename: Optional[str]
+) -> Optional[float]:
     """
     Get video duration in seconds using ffprobe (async version)
-    
+
     Args:
         file_content: Video file bytes
         filename: Original filename for extension (can be None)
-        
+
     Returns:
         Duration in seconds or None if unable to determine
     """
     try:
         # Create safe filename fallback if None
         safe_filename = filename or "video.mp4"
-        
+
         # Create temporary file
-        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(safe_filename)[1], delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            suffix=os.path.splitext(safe_filename)[1], delete=False
+        ) as temp_file:
             temp_file.write(file_content)
             temp_file_path = temp_file.name
-        
+
         try:
             # Use asyncio subprocess to get video duration
             cmd = [
-                'ffprobe', 
-                '-v', 'error',
-                '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                temp_file_path
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                temp_file_path,
             ]
-            
+
             # Run ffprobe asynchronously
             process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            
+
             try:
                 # Add timeout to prevent indefinite hangs
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10.0)
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=10.0
+                )
             except asyncio.TimeoutError:
-                logger.warning(f"[VIDEO_DURATION] ffprobe timeout for {safe_filename}, terminating process")
+                logger.warning(
+                    f"[VIDEO_DURATION] ffprobe timeout for {safe_filename}, terminating process"
+                )
                 try:
                     process.terminate()
                     await asyncio.wait_for(process.wait(), timeout=5.0)
                 except (asyncio.TimeoutError, ProcessLookupError):
-                    logger.warning(f"[VIDEO_DURATION] Force killing ffprobe process for {safe_filename}")
+                    logger.warning(
+                        f"[VIDEO_DURATION] Force killing ffprobe process for {safe_filename}"
+                    )
                     process.kill()
                     await process.wait()
                 return None
-            
+
             if process.returncode == 0:
                 duration_str = stdout.decode().strip()
                 if duration_str:
                     return float(duration_str)
-            
-            logger.warning(f"[VIDEO_DURATION] ffprobe failed for {safe_filename}: {stderr.decode()}")
+
+            logger.warning(
+                f"[VIDEO_DURATION] ffprobe failed for {safe_filename}: {stderr.decode()}"
+            )
             return None
-            
+
         finally:
             # Clean up temporary file
             try:
                 os.unlink(temp_file_path)
             except OSError:
                 pass
-                
+
     except Exception as e:
-        logger.error(f"[VIDEO_DURATION] Error getting duration for {filename or 'unknown'}: {str(e)}")
+        logger.error(
+            f"[VIDEO_DURATION] Error getting duration for {filename or 'unknown'}: {str(e)}"
+        )
         return None
 
 
-async def validate_video_duration(file_content: bytes, filename: Optional[str], max_duration_minutes: int = 3) -> bool:
+async def validate_video_duration(
+    file_content: bytes, filename: Optional[str], max_duration_minutes: int = 3
+) -> bool:
     """
     Validate that video duration does not exceed maximum allowed (async version)
-    
+
     Args:
         file_content: Video file bytes
         filename: Original filename (can be None)
         max_duration_minutes: Maximum allowed duration in minutes (default: 3)
-        
+
     Returns:
         True if duration is valid, False otherwise
     """
     duration_seconds = await get_video_duration(file_content, filename)
-    
+
     if duration_seconds is None:
         # If we can't determine duration, allow the file but log warning
-        logger.warning(f"[VIDEO_DURATION] Could not determine duration for {filename or 'unknown'}, allowing upload")
+        logger.warning(
+            f"[VIDEO_DURATION] Could not determine duration for {filename or 'unknown'}, allowing upload"
+        )
         return True
-    
+
     max_seconds = max_duration_minutes * 60
     is_valid = duration_seconds <= max_seconds
-    
+
     if not is_valid:
-        logger.warning(f"[VIDEO_DURATION] Video {filename or 'unknown'} duration {duration_seconds:.1f}s exceeds maximum {max_seconds}s")
-    
+        logger.warning(
+            f"[VIDEO_DURATION] Video {filename or 'unknown'} duration {duration_seconds:.1f}s exceeds maximum {max_seconds}s"
+        )
+
     return is_valid
 
 
@@ -227,6 +248,7 @@ def status_to_response(status: StatusInDB, current_user_id: str) -> StatusRespon
         text=status.text,
         file_url=file_url,
         file_type=status.file_type,
+        duration=status.duration,
         created_at=status.created_at,
         expires_at=status.expires_at,
         views=status.views,
@@ -295,6 +317,7 @@ async def create_status(
             text=status_data.text,
             file_key=status_data.file_key,
             file_type=file_type,
+            duration=status_data.duration,
             created_at=created_at,
             expires_at=expires_at,
         )
@@ -376,14 +399,26 @@ async def upload_status_media(
             )
 
         # Validate video duration for video files (max 3 minutes)
+        video_duration = None
         if file.content_type.startswith("video/"):
-            logger.info(f"[STATUS_UPLOAD] Validating video duration for {file.filename}")
-            if not await validate_video_duration(file_content, file.filename, max_duration_minutes=3):
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="Video duration exceeds maximum allowed time of 3 minutes",
+            logger.info(
+                f"[STATUS_UPLOAD] Validating video duration for {file.filename}"
+            )
+            # Get duration first to include in response
+            video_duration = await get_video_duration(file_content, file.filename)
+
+            if video_duration is not None:
+                max_seconds = 3 * 60  # 3 minutes
+                if video_duration > max_seconds:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="Video duration exceeds maximum allowed time of 3 minutes",
+                    )
+                logger.info(f"[STATUS_UPLOAD] Video duration: {video_duration:.1f}s")
+            else:
+                logger.warning(
+                    f"[STATUS_UPLOAD] Could not determine video duration for {file.filename}"
                 )
-            logger.info(f"[STATUS_UPLOAD] Video duration validation passed for {file.filename}")
 
         # Generate unique file key for status media
         file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
@@ -399,7 +434,9 @@ async def upload_status_media(
                 file_key=unique_filename,
                 content_type=file.content_type,
             )
-            logger.info(f"[STATUS_UPLOAD] Successfully uploaded to S3, file_key: {file_key}")
+            logger.info(
+                f"[STATUS_UPLOAD] Successfully uploaded to S3, file_key: {file_key}"
+            )
             print(f"[STATUS_UPLOAD] S3 upload confirmed, file_key: {file_key}")
         except Exception as e:
             logger.error(f"[STATUS_UPLOAD] S3 upload failed: {str(e)}")
@@ -416,6 +453,7 @@ async def upload_status_media(
             total_chunks=1,
             expires_in=86400,  # 24 hours (matches status expiry)
             upload_url=f"{settings.API_BASE_URL}/media/{file_key}",
+            duration=video_duration,  # Video duration if applicable
         )
 
     except HTTPException:
@@ -435,17 +473,23 @@ async def get_all_statuses(
     """
     Get all visible statuses from other users
     Excludes expired statuses and user's own statuses
-    
+
     CRITICAL: Requires authentication with Bearer token
     Returns: 401 if no token, 403 if invalid token
     """
     print(f"STATUS_DEBUG: get_all_statuses called for user: {current_user}")
     try:
         status_collection = await get_status_collection()
-        user_id = str(current_user["_id"]) if isinstance(current_user, dict) else str(current_user)
+        user_id = (
+            str(current_user["_id"])
+            if isinstance(current_user, dict)
+            else str(current_user)
+        )
         current_time = datetime.now(timezone.utc)
 
-        print(f"STATUS_DEBUG: Fetching statuses for user {user_id}, limit={limit}, offset={offset}")
+        print(
+            f"STATUS_DEBUG: Fetching statuses for user {user_id}, limit={limit}, offset={offset}"
+        )
 
         # Build query for non-expired statuses from other users
         query = {
@@ -476,7 +520,9 @@ async def get_all_statuses(
         # Determine if there are more results
         has_more = (offset + len(statuses)) < total
 
-        print(f"STATUS_DEBUG: Returning {len(statuses)} statuses, total={total}, has_more={has_more}")
+        print(
+            f"STATUS_DEBUG: Returning {len(statuses)} statuses, total={total}, has_more={has_more}"
+        )
         return StatusListResponse(statuses=statuses, total=total, has_more=has_more)
 
     except Exception as e:
