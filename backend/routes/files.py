@@ -2347,6 +2347,20 @@ async def download_file(
                 )
 
         if file_doc:
+            # Log file record details for debugging
+            file_id_str = str(file_doc.get("_id", ""))
+            file_path_val = (
+                file_doc.get("storage_path")
+                or file_doc.get("object_key")
+                or file_doc.get("storage_key")
+                or ""
+            )
+            s3_key_val = file_doc.get("storage_key") or file_doc.get("object_key") or ""
+            storage_type_val = file_doc.get("storage_type", "unknown")
+            print(
+                f"[DOWNLOAD] FILE RECORD: file_id={file_id_str}, file_path={file_path_val}, s3_key={s3_key_val}, storage_type={storage_type_val}"
+            )
+
             # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
             owner_id = file_doc.get("owner_id")
             chat_id = file_doc.get("chat_id")
@@ -2482,11 +2496,9 @@ async def download_file(
                         headers={
                             "Cache-Control": "no-store",
                             "Accept-Ranges": "bytes",
-                            "Content-Disposition": (
-                                f'attachment; filename="{filename}"'
-                                if dl_requested
-                                else f'inline; filename="{filename}"'
-                            ),
+                            "Content-Type": "application/octet-stream",
+                            # Always use attachment for PC download behavior
+                            "Content-Disposition": f'attachment; filename="{filename}"',
                         },
                     )
 
@@ -2506,11 +2518,19 @@ async def download_file(
                     detail="File not found - storage key missing",
                 )
 
+            # Use settings.S3_BUCKET to ensure consistency between upload and download
+            effective_bucket = (
+                settings.S3_BUCKET if bucket != settings.S3_BUCKET else bucket
+            )
+            print(
+                f"[DOWNLOAD] S3 URL GENERATED - bucket={effective_bucket}, key={storage_key}"
+            )
+
             download_url = _generate_presigned_url(
                 "get",
                 object_key=storage_key,
                 expires_in=600,
-                bucket=bucket,
+                bucket=effective_bucket,
             )
 
             # Test mode fallback: use mock URL when S3 is not available
@@ -2532,8 +2552,14 @@ async def download_file(
 
             if dl_requested:
                 # NEVER return JSON when dl=1 is requested - always redirect to actual file
+                # Add headers to ensure browser downloads the file instead of previewing
+                filename = file_doc.get("filename", "file")
+                headers = {
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Type": "application/octet-stream",
+                }
                 return RedirectResponse(
-                    url=download_url, status_code=status.HTTP_302_FOUND
+                    url=download_url, status_code=status.HTTP_302_FOUND, headers=headers
                 )
 
             # Only return JSON metadata when dl is NOT requested (API mode)
@@ -3129,6 +3155,7 @@ async def get_media_by_key(
     current_user: str = Depends(get_current_user),
     request: Request = None,
     force_download: bool = False,
+    use_redirect: bool = False,
 ):
     """
     SECURE MEDIA ACCESS ENDPOINT
@@ -3139,11 +3166,13 @@ async def get_media_by_key(
     - Streaming response prevents memory buffering of large files
     - No S3 URLs are exposed in API responses
     - Supports all file types stored in S3 bucket
-    - When download=True, returns Content-Disposition: attachment for PC download
+    - Returns Content-Disposition: inline by default, attachment when download=true
     """
-    print(
-        f"MEDIA_DEBUG: get_media_by_key called for user: {current_user}, file_key: {file_key}"
-    )
+    print(f"MEDIA_DEBUG: DOWNLOAD START for user: {current_user}, file_key: {file_key}")
+
+    # Default to inline viewing, only force download when explicitly requested
+    # Remove automatic force_download to allow inline viewing by default
+
     print(f"MEDIA_DEBUG: download={download}, force_download={force_download}")
     try:
         # Validate file_key format (prevent directory traversal)
@@ -3182,6 +3211,9 @@ async def get_media_by_key(
 
         safe_file_key = normalized_key.replace(os.sep, "/")
         print(f"MEDIA_DEBUG: Safe file_key: {safe_file_key}")
+        print(
+            f"MEDIA_DEBUG: DOWNLOAD START for user: {current_user}, file_key: {file_key}"
+        )
 
         # AUTHORIZATION: Try to get file from DB for authorization checks.
         # If DB lookup fails, still try S3 (S3 success means file exists).
@@ -3247,8 +3279,26 @@ async def get_media_by_key(
 
             # Authorization checks if file_doc found
             if file_doc:
+                file_id_str = str(file_doc.get("_id", ""))
+                file_path_val = (
+                    file_doc.get("storage_path")
+                    or file_doc.get("object_key")
+                    or file_doc.get("storage_key")
+                    or ""
+                )
+                s3_key_val = (
+                    file_doc.get("storage_key") or file_doc.get("object_key") or ""
+                )
+                storage_type_val = file_doc.get("storage_type", "unknown")
+
                 print(
-                    f"MEDIA_DEBUG: File doc found: owner={file_doc.get('owner_id')}, storage_key={file_doc.get('storage_key')}, storage_path={file_doc.get('storage_path')}"
+                    f"MEDIA_DEBUG: DOWNLOAD FILE RECORD - file_id={file_id_str}, file_path={file_path_val}, s3_key={s3_key_val}, storage_type={storage_type_val}"
+                )
+                print(
+                    f"MEDIA_DEBUG: File doc found: owner={file_doc.get('owner_id')}, storage_key={file_doc.get('storage_key')}, storage_path={file_doc.get('storage_path')}, storage_type={file_doc.get('storage_type')}"
+                )
+                print(
+                    f"MEDIA_DEBUG: FILE PATH RESOLVED - file_id={file_id_str}, s3_key={s3_key_val}, storage_type={storage_type_val}"
                 )
                 owner_id = file_doc.get("owner_id")
                 chat_id = file_doc.get("chat_id")
@@ -3452,9 +3502,23 @@ async def get_media_by_key(
         content_length = 0
         filename = safe_file_key.split("/")[-1]
 
-        # Priority 1: Try S3
+        # Check storage_type from DB record (if available)
+        storage_type_from_db = None
+        if file_doc:
+            storage_type_from_db = file_doc.get("storage_type", "").lower()
+            print(f"MEDIA_DEBUG: Storage type from DB: {storage_type_from_db}")
+
+        # Priority based on storage_type from DB
+        # If storage_type == "local", skip S3 and use local storage only
+        # If storage_type == "s3" or unknown, try S3 first, then fallback to local
         s3_available = False
-        if s3_client:
+
+        # For local storage type, skip S3 and check local storage directly
+        if storage_type_from_db == "local":
+            print(f"MEDIA_DEBUG: Storage type is 'local', skipping S3 check")
+            s3_available = False
+        elif s3_client:
+            # For S3 or unknown storage type, try S3 first
             try:
                 print(f"MEDIA_DEBUG: Attempting S3 access for: {safe_file_key}")
                 obj_metadata = s3_client.head_object(
@@ -3497,6 +3561,24 @@ async def get_media_by_key(
                 else:
                     print(f"MEDIA_DEBUG: File not found in filesystem: {storage_path}")
 
+            # If storage_type is 'local', also check /data/uploads/{safe_file_key}
+            if storage_type_from_db == "local" and not final_path:
+                local_path = f"/data/uploads/{safe_file_key}"
+                print(f"MEDIA_DEBUG: Checking local storage path: {local_path}")
+                if os.path.exists(local_path):
+                    final_path = local_path
+                    content_length = os.path.getsize(final_path)
+                    import mimetypes
+
+                    content_type, _ = mimetypes.guess_type(final_path)
+                    if not content_type:
+                        content_type = "application/octet-stream"
+                    print(
+                        f"MEDIA_DEBUG: Local file found at: {local_path}, size: {content_length}"
+                    )
+                else:
+                    print(f"MEDIA_DEBUG: FILE NOT FOUND ON DISK: {local_path}")
+
         # Check if file exists in either storage
         if not s3_available and not final_path:
             print(
@@ -3513,6 +3595,9 @@ async def get_media_by_key(
 
         # Log media access for audit
         storage_type = "S3" if s3_available else "Filesystem"
+        print(
+            f"MEDIA_DEBUG: S3 URL GENERATED - storage_type={storage_type}, bucket={settings.S3_BUCKET}, key={safe_file_key}"
+        )
         _log(
             "info",
             f"Media access granted: {safe_file_key} ({storage_type})",
@@ -3522,8 +3607,49 @@ async def get_media_by_key(
                 "content_type": content_type,
                 "size": content_length,
                 "storage": storage_type,
+                "file_path": final_path,
+                "s3_bucket": settings.S3_BUCKET,
             },
         )
+
+        # For S3 files with use_redirect=true, return 307 redirect to presigned URL
+        # Ensure proper headers are passed to trigger browser download
+        if s3_available and use_redirect:
+            print(f"MEDIA_DEBUG: Generating presigned URL for redirect...")
+            presigned_url = _generate_presigned_url(
+                "GET",
+                object_key=safe_file_key,
+                bucket=settings.S3_BUCKET,
+                expires_in=3600,
+            )
+            if presigned_url:
+                print(
+                    f"MEDIA_DEBUG: S3 URL GENERATED - bucket={settings.S3_BUCKET}, key={safe_file_key}, url={presigned_url[:80]}..."
+                )
+                print(f"MEDIA_DEBUG: Returning 307 redirect to presigned URL")
+                _log(
+                    "info",
+                    f"S3 redirect: {safe_file_key} -> presigned_url",
+                    {
+                        "user_id": current_user,
+                        "file_key": safe_file_key,
+                        "bucket": settings.S3_BUCKET,
+                    },
+                )
+                from fastapi.responses import RedirectResponse
+
+                # Add headers to ensure proper download behavior
+                headers = {
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Type": "application/octet-stream",
+                }
+                return RedirectResponse(
+                    url=presigned_url, status_code=307, headers=headers
+                )
+            else:
+                print(
+                    f"MEDIA_DEBUG: Failed to generate presigned URL, falling back to streaming"
+                )
 
         # Create streaming response based on storage type
         if s3_available:
@@ -3605,7 +3731,9 @@ async def get_media_by_key(
             f"MEDIA_DEBUG: Content-Disposition: {headers_dict['Content-Disposition']}"
         )
         print(f"MEDIA_DEBUG: Storage: {storage_type}")
-        print(f"MEDIA_DEBUG: download={download}, force_download={force_download}")
+        print(
+            f"MEDIA_DEBUG: download={download}, force_download={force_download}, use_redirect={use_redirect}"
+        )
 
         return StreamingResponse(
             stream_gen,
