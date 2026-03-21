@@ -258,7 +258,7 @@ def status_to_response(status: StatusInDB, current_user_id: str) -> StatusRespon
 
 @router.post("/", response_model=StatusResponse)
 async def create_status(
-    status_data: StatusCreate, current_user: dict = Depends(get_current_user)
+    status_data: StatusCreate, current_user: str = Depends(get_current_user)
 ):
     """
     Create a new status (text or media)
@@ -274,7 +274,7 @@ async def create_status(
     """
     try:
         status_collection = await get_status_collection()
-        user_id = str(current_user["_id"])
+        user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
 
         logger.info(
             f"[STATUS_CREATE] User {user_id} creating status - text_len: {len(status_data.text or '')}, has_file: {bool(status_data.file_key)}"
@@ -357,7 +357,7 @@ async def create_status(
 
 @router.post("/upload", response_model=FileInitResponse)
 async def upload_status_media(
-    file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
+    file: UploadFile = File(...), current_user: str = Depends(get_current_user)
 ):
     """
     Upload media for status using existing S3 upload logic
@@ -366,7 +366,7 @@ async def upload_status_media(
     Returns FileInitResponse with metadata for frontend
     """
     try:
-        user_id = str(current_user["_id"])
+        user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
 
         logger.info(
             f"[STATUS_UPLOAD] User {user_id} uploading status media: {file.filename}"
@@ -468,7 +468,7 @@ async def upload_status_media(
 
 @router.get("/", response_model=StatusListResponse)
 async def get_all_statuses(
-    limit: int = 50, offset: int = 0, current_user: dict = Depends(get_current_user)
+    limit: int = 50, offset: int = 0, current_user: str = Depends(get_current_user)
 ):
     """
     Get all visible statuses from other users
@@ -480,11 +480,7 @@ async def get_all_statuses(
     print(f"STATUS_DEBUG: get_all_statuses called for user: {current_user}")
     try:
         status_collection = await get_status_collection()
-        user_id = (
-            str(current_user["_id"])
-            if isinstance(current_user, dict)
-            else str(current_user)
-        )
+        user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
         current_time = datetime.now(timezone.utc)
 
         print(
@@ -538,7 +534,7 @@ async def get_user_statuses(
     user_id: str,
     limit: int = 50,
     offset: int = 0,
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ):
     """
     Get statuses from a specific user
@@ -552,7 +548,7 @@ async def get_user_statuses(
     try:
         status_collection = await get_status_collection()
         current_time = datetime.now(timezone.utc)
-        requesting_user_id = str(current_user["_id"])
+        requesting_user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
 
         # Build query for user's non-expired statuses
         query = {
@@ -609,13 +605,13 @@ async def get_user_statuses(
 
 
 @router.delete("/{status_id}")
-async def delete_status(status_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_status(status_id: str, current_user: str = Depends(get_current_user)):
     """
     Delete a status (only own statuses)
     """
     try:
         status_collection = await get_status_collection()
-        user_id = str(current_user["_id"])
+        user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
 
         # Validate status_id format
         if not ObjectId.is_valid(status_id):

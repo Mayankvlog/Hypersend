@@ -3452,7 +3452,7 @@ async def _handle_status_s3_download(
                 )
 
         # Stream S3 object directly
-        obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=storage_key)
+        obj = s3_client.get_object(Bucket=_get_sanitized_bucket_name(), Key=storage_key)
 
         async def stream_s3_object():
             """Stream S3 object in chunks to prevent memory buffering"""
@@ -3614,7 +3614,7 @@ async def _handle_s3_media_download(
                 )
 
         # Stream S3 object directly
-        obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=storage_key)
+        obj = s3_client.get_object(Bucket=_get_sanitized_bucket_name(), Key=storage_key)
 
         async def stream_s3_object():
             """Stream S3 object in chunks to prevent memory buffering"""
