@@ -15,35 +15,66 @@ def upload_file_to_s3(
 ) -> str:
     """
     Upload file to S3 and return the file key
+    CRITICAL: Validates S3 upload succeeds before returning file_key
     Reuses existing S3 client infrastructure (synchronous boto3)
     """
     try:
         s3_client = _get_s3_client()
         if not s3_client:
-            # Fallback to mock mode for testing
-            return file_key
+            # Log and raise - don't fallback silently
+            import logging
+            logger = logging.getLogger(__name__)
+            error_msg = "S3 client not available - cannot upload file"
+            logger.error(f"[S3_UPLOAD] {error_msg}")
+            raise ValueError(error_msg)
         
-        # Upload to S3 (synchronous call with sync boto3 client)
-        s3_client.put_object(
+        # Validate S3_BUCKET is configured
+        if not settings.S3_BUCKET:
+            import logging
+            logger = logging.getLogger(__name__)
+            error_msg = f"S3_BUCKET not configured in settings"
+            logger.error(f"[S3_UPLOAD] {error_msg}")
+            raise ValueError(error_msg)
+        
+        print(f"[S3_UPLOAD] Uploading file: {file_key} (size: {len(file_content)} bytes) to bucket: {settings.S3_BUCKET}")
+        
+        # CRITICAL: Upload to S3 (synchronous call with sync boto3 client)
+        # Verify content is bytes
+        if not isinstance(file_content, bytes):
+            raise ValueError(f"file_content must be bytes, got {type(file_content)}")
+        
+        response = s3_client.put_object(
             Bucket=settings.S3_BUCKET,
             Key=file_key,
             Body=file_content,
             ContentType=content_type,
             Metadata={
                 'uploaded-by': 'hypersend-status',
-                'content-type': content_type
+                'content-type': content_type,
+                'file-size': str(len(file_content))
             }
         )
+        
+        print(f"[S3_UPLOAD] Successfully uploaded: {file_key}")
+        print(f"[S3_UPLOAD] S3 response: ETag={response.get('ETag')}, VersionId={response.get('VersionId')}")
+        
+        # Verify file was actually uploaded by checking if it exists
+        try:
+            s3_client.head_object(Bucket=settings.S3_BUCKET, Key=file_key)
+            print(f"[S3_UPLOAD] Verified file exists in S3: {file_key}")
+        except Exception as e:
+            print(f"[S3_UPLOAD] WARNING: Could not verify file upload: {str(e)}")
         
         return file_key
         
     except Exception as e:
-        # Log error with full context before returning
+        # Log error with full context
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"S3 upload failed for key {file_key}: {str(e)}", exc_info=True)
-        # Return file_key for mock mode, but error is logged for debugging
-        return file_key
+        print(f"[S3_UPLOAD] ERROR: S3 upload failed for key {file_key}: {str(e)}")
+        logger.error(f"[S3_UPLOAD] S3 upload failed for key {file_key}: {str(e)}", exc_info=True)
+        # CRITICAL: Re-raise to prevent silent failures
+        raise
 
 
 def delete_object(bucket: str, file_key: str) -> bool:

@@ -465,10 +465,11 @@ class Settings:
     # CRITICAL: AWS credentials are loaded from environment variables only
     # Never hardcode credentials - use .env file or deployment secrets
 
-    S3_BUCKET: str = os.getenv("S3_BUCKET", "zaply-temp")
-    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
-    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
-    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    _raw_s3_bucket = os.getenv("S3_BUCKET", "").strip()
+    S3_BUCKET: str = _raw_s3_bucket if _raw_s3_bucket else "zaply-temp"
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1").strip()
 
     # Helper: Check if AWS credentials are configured
     _AWS_CREDENTIALS_CONFIGURED: bool = bool(
@@ -578,6 +579,12 @@ class Settings:
     # ============================================================================
     logger.info(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
     logger.info(f"[CONFIG] AWS Region: {AWS_REGION}")
+    
+    # VALIDATE S3 CONFIGURATION - Log bucket status
+    if not _raw_s3_bucket:
+        logger.warning("[CONFIG] S3_BUCKET not explicitly set in .env - using default 'zaply-temp'")
+    else:
+        logger.info(f"[CONFIG] S3_BUCKET from .env: {S3_BUCKET}")
 
     # Log AWS credential status (without exposing secrets)
     if _AWS_CREDENTIALS_CONFIGURED:

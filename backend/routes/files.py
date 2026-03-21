@@ -525,31 +525,56 @@ def get_media_lifecycle():
 
 
 def _get_s3_client():
-    """Get S3 client for AWS presigned URL generation"""
+    """Get S3 client for AWS S3 operations with full credentials validation"""
     try:
         if boto3 is None:
+            print("[S3_DEBUG] boto3 not available")
+            _log("warning", "boto3 not available - S3 operations disabled")
+            return None
+
+        # VALIDATION: Ensure S3 bucket is configured
+        if not settings.S3_BUCKET:
+            print("[S3_DEBUG] S3_BUCKET not configured")
+            _log("warning", "S3_BUCKET not configured in settings")
             return None
 
         # Prefer explicit credentials when provided, otherwise fall back to boto3's
         # default credential provider chain (IAM role, env vars, shared config, etc.).
         # CRITICAL: Use region_name from settings.AWS_REGION for environment-based configuration
         client_kwargs: Dict[str, Any] = {"region_name": settings.AWS_REGION}
+        
+        # Add explicit credentials if provided
         if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+            print(f"[S3_DEBUG] Using explicit AWS credentials for region {settings.AWS_REGION}")
             client_kwargs.update(
                 {
                     "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
                     "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
                 }
             )
+            _log("info", f"S3 client using explicit AWS credentials")
+        else:
+            print(f"[S3_DEBUG] Using default credential chain for region {settings.AWS_REGION}")
+            _log("info", f"S3 client using default credential provider chain")
 
         # Remove None values to avoid boto warnings.
         client_kwargs = {k: v for k, v in client_kwargs.items() if v}
 
         s3_client = boto3.client("s3", **client_kwargs)
+        
+        # Test connection by listing bucket
+        try:
+            s3_client.head_bucket(Bucket=settings.S3_BUCKET)
+            print(f"[S3_DEBUG] Successfully connected to S3 bucket: {settings.S3_BUCKET}")
+            _log("info", f"S3 client initialized and verified for bucket: {settings.S3_BUCKET} in region: {settings.AWS_REGION}")
+        except Exception as e:
+            print(f"[S3_DEBUG] WARNING: Could not verify S3 bucket access: {str(e)}")
+            _log("warning", f"S3 bucket verification failed: {str(e)}")
+            # Still return client - it might work later
 
-        _log("info", f"S3 client initialized for region: {settings.AWS_REGION}")
         return s3_client
     except Exception as e:
+        print(f"[S3_DEBUG] Failed to initialize S3 client: {str(e)}")
         _log("error", f"Failed to initialize S3 client: {str(e)}")
         return None
 
@@ -3378,22 +3403,31 @@ async def get_media_by_key(
             stream_gen = stream_filesystem_object()
 
         # Return streaming response with proper headers
-        disposition_type = "attachment" if download or force_download else "inline"
+        # CRITICAL: Always use attachment for downloads to trigger native browser download
+        disposition_type = "attachment" if (download or force_download) else "inline"
+        
+        # Ensure filename is safe for Content-Disposition header
+        safe_filename = filename.replace('\n', '').replace('\r', '').replace('"', '')
         
         headers_dict = {
             "Content-Length": str(content_length),
-            "Content-Disposition": f'{disposition_type}; filename="{filename}"',
+            "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
+            "Content-Type": content_type,  # Explicit header
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
             "X-Frame-Options": "DENY",  # Prevent embedding in frames
             "Pragma": "no-cache",  # HTTP 1.0 compatibility
             "Expires": "0",
+            "Accept-Ranges": "bytes",  # Support range requests
         }
         print(f"MEDIA_DEBUG: Returning streaming response with headers:")
+        print(f"MEDIA_DEBUG: S3_KEY: {safe_file_key}")
+        print(f"MEDIA_DEBUG: FILE_ID: {file_key}")
         print(f"MEDIA_DEBUG: Content-Type: {content_type}")
-        print(f"MEDIA_DEBUG: Content-Disposition: {headers_dict['Content-Disposition']}")
-        print(f"MEDIA_DEBUG: download={download}, force_download={force_download}, disposition_type={disposition_type}")
         print(f"MEDIA_DEBUG: Content-Length: {headers_dict['Content-Length']}")
+        print(f"MEDIA_DEBUG: Content-Disposition: {headers_dict['Content-Disposition']}")
+        print(f"MEDIA_DEBUG: Storage: {storage_type}")
+        print(f"MEDIA_DEBUG: download={download}, force_download={force_download}")
         
         return StreamingResponse(
             stream_gen,

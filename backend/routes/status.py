@@ -279,15 +279,24 @@ async def upload_status_media(
         unique_filename = f"status/{user_id}/{uuid.uuid4()}{file_extension}"
 
         logger.info(f"[STATUS_UPLOAD] Uploading to S3 as: {unique_filename}")
+        print(f"[STATUS_UPLOAD] Starting S3 upload: {unique_filename}")
 
-        # Upload to S3 using existing utility
-        file_key = upload_file_to_s3(
-            file_content=file_content,
-            file_key=unique_filename,
-            content_type=file.content_type,
-        )
-
-        logger.info(f"[STATUS_UPLOAD] Successfully uploaded, file_key: {file_key}")
+        # CRITICAL: Upload to S3 and validate success
+        try:
+            file_key = upload_file_to_s3(
+                file_content=file_content,
+                file_key=unique_filename,
+                content_type=file.content_type,
+            )
+            logger.info(f"[STATUS_UPLOAD] Successfully uploaded to S3, file_key: {file_key}")
+            print(f"[STATUS_UPLOAD] S3 upload confirmed, file_key: {file_key}")
+        except Exception as e:
+            logger.error(f"[STATUS_UPLOAD] S3 upload failed: {str(e)}")
+            print(f"[STATUS_UPLOAD] S3 upload failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload file to S3: {str(e)}",
+            )
 
         # Return file init response with file_key embedded for later status creation
         return FileInitResponse(
