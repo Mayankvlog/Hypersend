@@ -610,6 +610,7 @@ def _generate_presigned_url(
     file_size: Optional[int] = None,
     expires_in: int = 900,
     bucket: Optional[str] = None,
+    response_content_disposition: Optional[str] = None,
 ):
     s3_client = _get_s3_client()
     if not s3_client:
@@ -635,6 +636,9 @@ def _generate_presigned_url(
             params["ContentType"] = content_type
         if file_size:
             params["ContentLength"] = file_size
+        if response_content_disposition:
+            params["ResponseContentDisposition"] = response_content_disposition
+        
         return s3_client.generate_presigned_url(
             method, Params=params, ExpiresIn=expires_in
         )
@@ -4282,11 +4286,19 @@ async def get_media_by_key(
         # Ensure proper headers are passed to trigger browser download
         if s3_available and use_redirect:
             print(f"MEDIA_DEBUG: Generating presigned URL for redirect...")
+            
+            # Prepare Content-Disposition for presigned URL
+            response_content_disposition = None
+            if download or force_download:
+                safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
+                response_content_disposition = f'attachment; filename="{safe_filename}"'
+            
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=safe_file_key,
                 bucket=_get_sanitized_bucket_name(),
                 expires_in=3600,
+                response_content_disposition=response_content_disposition,
             )
             if presigned_url:
                 print(
@@ -4304,11 +4316,13 @@ async def get_media_by_key(
                 )
                 from fastapi.responses import RedirectResponse
 
-                # Add headers to ensure proper download behavior
-                headers = {
-                    "Content-Disposition": f'attachment; filename="{filename}"',
-                    "Content-Type": "application/octet-stream",
-                }
+                # Add headers to ensure proper download behavior (only for non-presigned URL redirects)
+                headers = {}
+                if not response_content_disposition:
+                    # Only add headers if we're not using Content-Disposition in presigned URL
+                    headers = {
+                        "Content-Type": "application/octet-stream",
+                    }
                 return RedirectResponse(
                     url=presigned_url, status_code=307, headers=headers
                 )

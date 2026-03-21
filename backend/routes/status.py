@@ -25,7 +25,7 @@ from backend.database import get_database
 from backend.utils.s3_utils import upload_file_to_s3
 
 # Initialize router
-router = APIRouter(prefix="/api/v1/status", tags=["status"])
+router = APIRouter(prefix="/status", tags=["status"])
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -469,7 +469,7 @@ async def upload_status_media(
         )
         
         # Return file init response with file_key embedded for later status creation
-        return FileInitResponse(
+        response_data = FileInitResponse(
             uploadId=file_key,  # Use file_key as uploadId for transparency
             chunk_size=1024 * 1024,  # 1MB chunks
             total_chunks=1,
@@ -477,6 +477,12 @@ async def upload_status_media(
             upload_url=f"{settings.API_BASE_URL}/media/{file_key}",
             duration=video_duration,  # Video duration if applicable
         )
+        
+        # Debug log for response payload
+        logger.info(f"[STATUS_UPLOAD] Response payload: {response_data.model_dump(by_alias=True)}")
+        print(f"[STATUS_UPLOAD] DEBUG: Returning response with uploadId={file_key}, duration={video_duration}")
+        
+        return response_data
 
     except HTTPException:
         raise
