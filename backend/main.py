@@ -2480,6 +2480,9 @@ app.include_router(
 app.include_router(
     files.attach_router, prefix="/api/v1"
 )  # Attachment operations: /api/v1/attach/*
+app.include_router(
+    files.media_router, prefix="/api/v1"
+)  # Media operations: /api/v1/media/*
 app.include_router(updates.router, prefix="/api/v1")
 app.include_router(p2p_transfer.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
@@ -2489,6 +2492,18 @@ app.include_router(devices.router, prefix="/api/v1")  # E2EE Device Management
 logger.info(
     "[ROUTING] All routers registered. Files: /api/v1/files/*, Attachments: /api/v1/attach/photos-videos/init, /api/v1/attach/documents/init, etc."
 )
+
+# Print all registered routes for debugging
+logger.info("[ROUTES] Registered media endpoints:")
+for route in app.routes:
+    if hasattr(route, 'path') and hasattr(route, 'methods'):
+        if 'media' in route.path.lower():
+            logger.info(f"[ROUTES] {list(route.methods)} {route.path}")
+    elif hasattr(route, 'routes'):
+        for sub_route in route.routes:
+            if hasattr(sub_route, 'path') and hasattr(sub_route, 'methods'):
+                if 'media' in sub_route.path.lower():
+                    logger.info(f"[ROUTES] {list(sub_route.methods)} {sub_route.path}")
 
 
 # Add swagger.json endpoint for compatibility

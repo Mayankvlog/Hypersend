@@ -1772,14 +1772,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
       final accessToken = serviceProvider.authService.accessToken;
 
-      final fileKey = (message.fileId ?? '').trim();
-
       // Build the download URL.
-      // 1) Preferred: /api/v1/media/{file_key}?download=true
-      // 2) Fallback: legacy /files/{fileId}/download?dl=1
+      // 1) Preferred: /api/v1/media/{file_id}?download=true
+      //  Fallback: legacy /files/{fileId}/download?dl=1
       String downloadUrl;
-      if (fileKey.isNotEmpty) {
-        downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileKey?download=true';
+      if (fileId.isNotEmpty) {
+        downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileId?download=true';
       } else {
         downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
       }
