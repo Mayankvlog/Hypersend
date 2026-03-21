@@ -151,7 +151,7 @@ def test_media_download_query_param():
                 client = TestClient(app)
                 
                 response = client.get(
-                    "/api/v1/files/media/test_file.pdf?download=true&request=test",
+                    "/api/v1/files/media-by-key/test_file.pdf?download=true&request=test",
                     cookies={"access_token": token},
                 )
                 
@@ -181,7 +181,7 @@ def test_media_download_query_param():
 def test_media_inline_without_download():
     """
     CRITICAL FIX #2b: Media Default Inline Behavior
-    GET /api/v1/files/media/{file_key} (no ?download param) should:
+    GET /api/v1/files/media-by-key/{file_key} (no ?download param) should:
     - Return 200 OK
     - Set Content-Disposition: inline
     """
@@ -236,7 +236,7 @@ def test_media_inline_without_download():
                 client = TestClient(app)
                 
                 response = client.get(
-                    "/api/v1/files/media/test_image.png?request=test",
+                    "/api/v1/files/media-by-key/test_image.png?request=test",
                     cookies={"access_token": token},
                 )
                 

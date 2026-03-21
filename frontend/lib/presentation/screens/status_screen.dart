@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
+import 'package:video_player/video_player.dart';
+import 'dart:io';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
@@ -21,6 +23,8 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   bool _loading = true;
   bool _isUploading = false;
   String? _error;
+  VideoPlayerController? _videoController;
+  bool _isVideoInitialized = false;
 
   @override
   void initState() {
@@ -58,6 +62,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   @override
   void dispose() {
     debugPrint('[StatusScreen] Disposing...');
+    _videoController?.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -101,7 +106,9 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                 'timestamp': DateTime.parse(status['created_at'] as String),
                 'expires_at': expiresAt,
                 'is_expired': isExpired,
-                'type': status['file_url'] != null ? 'image' : 'text',
+                'type': status['file_url'] != null 
+                    ? (status['file_type'] == 'video' ? 'video' : 'image')
+                    : 'text',
                 'background_color': status['file_url'] != null ? '#4CAF50' : '#1E88E5',
                 'views': status['views'] ?? 0,
                 'file_url': status['file_url'],
@@ -201,10 +208,10 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
               ListTile(
                 leading: const Icon(Icons.videocam, color: AppTheme.primaryCyan),
                 title: const Text('Video Status'),
-                subtitle: const Text('Share a video as status'),
+                subtitle: const Text('Share a video as status (max 3 minutes)'),
                 onTap: () {
                   Navigator.pop(context);
-                  _showComingSoon('Video status');
+                  _pickAndUploadVideo();
                 },
               ),
               const SizedBox(height: 20),
@@ -279,26 +286,125 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
     }
   }
 
-  Future<void> _pickAndUploadImage() async {
+  Future<void> _pickAndUploadVideo() async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
+        type: FileType.video,
         allowMultiple: false,
       );
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
-        await _uploadImageStatus(file);
+        await _uploadVideoStatus(file);
       }
     } catch (e) {
-      debugPrint('[StatusScreen] Error picking image: $e');
+      debugPrint('[StatusScreen] Error picking video: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to pick image: $e'),
+            content: Text('Failed to pick video: $e'),
             backgroundColor: AppTheme.errorRed,
           ),
         );
+      }
+    }
+  }
+
+  Future<void> _uploadVideoStatus(PlatformFile file) async {
+    try {
+      debugPrint('[StatusScreen] Uploading video status: ${file.name}');
+      
+      setState(() => _isUploading = true);
+      
+      // For native: convert path to File
+      // For web: use file.bytes directly
+      late Uint8List fileBytes;
+      
+      if (file.bytes != null) {
+        fileBytes = file.bytes!;
+      } else if (file.readStream != null) {
+        final chunks = <int>[];
+        await for (final chunk in file.readStream!) {
+          chunks.addAll(chunk);
+        }
+        fileBytes = Uint8List.fromList(chunks);
+      } else {
+        throw Exception('File bytes not available');
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Uploading video...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Step 1: Upload media to get file_key
+      debugPrint('[StatusScreen] Uploading video bytes (${fileBytes.length} bytes)');
+      final uploadResponse = await serviceProvider.apiService.uploadStatusMedia(
+        fileBytes,
+        filename: file.name,
+      );
+      
+      final fileKey = uploadResponse['upload_id'] as String?;
+      if (fileKey == null || fileKey.isEmpty) {
+        throw Exception('No file_key returned from upload');
+      }
+      
+      debugPrint('[StatusScreen] Video uploaded with file_key: $fileKey');
+
+      // Step 2: Create status with file_key
+      debugPrint('[StatusScreen] Creating status with file_key: $fileKey');
+      final statusResponse = await serviceProvider.apiService.createStatus(
+        fileKey: fileKey,
+      );
+      
+      debugPrint('[StatusScreen] Status created: ${statusResponse['id']}');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Video status posted! ✓'),
+            backgroundColor: AppTheme.successGreen,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        
+        // Refresh status list to show new status
+        await _loadStatusData();
+      }
+    } catch (e) {
+      debugPrint('[StatusScreen] Error uploading video status: $e');
+      
+      // Extract user-friendly error message
+      String errorMessage = 'Failed to upload video';
+      if (e.toString().contains('403')) {
+        errorMessage = 'Please login to upload status';
+      } else if (e.toString().contains('413')) {
+        if (e.toString().contains('duration')) {
+          errorMessage = 'Video is too long. Maximum duration is 3 minutes.';
+        } else {
+          errorMessage = 'Video is too large. Please choose a smaller video.';
+        }
+      } else if (e.toString().contains('Network')) {
+        errorMessage = 'Network error. Check your internet connection.';
+      } else if (e.toString().contains('No file_key')) {
+        errorMessage = 'Upload failed. Server error.';
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: AppTheme.errorRed,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
       }
     }
   }
@@ -409,6 +515,22 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
 
   void _viewStatus(Map<String, dynamic> status) async {
     debugPrint('[StatusScreen] Viewing status: ${status['id']}');
+    
+    // Initialize video controller if it's a video status
+    if (status['type'] == 'video' && _statusMediaUrl(status) != null) {
+      try {
+        await _initializeVideoPlayer(_statusMediaUrl(status)!);
+      } catch (e) {
+        debugPrint('[StatusScreen] Error initializing video player: $e');
+        // Fall back to showing as non-video status
+      }
+    } else {
+      // Dispose video controller if not a video status
+      _videoController?.dispose();
+      _videoController = null;
+      _isVideoInitialized = false;
+    }
+    
     // Show full-screen status viewer
     await showDialog(
       context: context,
@@ -418,20 +540,18 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         child: Container(
           width: MediaQuery.of(context).size.width * 0.9,
           height: MediaQuery.of(context).size.height * 0.7,
-          decoration: status['type'] == 'image' && _statusMediaUrl(status) != null
-              ? BoxDecoration(
-                  image: DecorationImage(
-                    image: NetworkImage(_statusMediaUrl(status)!),
-                    fit: BoxFit.cover,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                )
-              : BoxDecoration(
-                  color: _parseBackgroundColor(status['background_color']),
-                  borderRadius: BorderRadius.circular(16),
-                ),
+          decoration: _getStatusDecoration(status),
           child: Stack(
             children: [
+              // For video statuses, show video player
+              if (status['type'] == 'video' && _isVideoInitialized && _videoController != null)
+                Center(
+                  child: AspectRatio(
+                    aspectRatio: _videoController!.value.aspectRatio,
+                    child: VideoPlayer(_videoController!),
+                  ),
+                ),
+              // For image statuses, the background image is already set by _getStatusDecoration
               // For text statuses, show the text content
               if (status['type'] == 'text')
                 Center(
@@ -446,6 +566,38 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                       ),
                       textAlign: TextAlign.center,
                     ),
+                  ),
+                ),
+              
+              // Video controls overlay
+              if (status['type'] == 'video' && _isVideoInitialized && _videoController != null)
+                Positioned(
+                  bottom: 40,
+                  left: 20,
+                  right: 20,
+                  child: ValueListenableBuilder<VideoPlayerValue>(
+                    valueListenable: _videoController!,
+                    builder: (context, snapshot, child) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              if (snapshot.isPlaying) {
+                                _videoController!.pause();
+                              } else {
+                                _videoController!.play();
+                              }
+                            },
+                            icon: Icon(
+                              snapshot.isPlaying ? Icons.pause : Icons.play_arrow,
+                              color: Colors.white,
+                              size: 48,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               
@@ -529,12 +681,56 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       ),
     );
 
+    // Clean up video controller after dialog closes
+    try {
+      _videoController?.dispose();
+    } catch (e) {
+      debugPrint('[StatusScreen] Error disposing video controller: $e');
+    } finally {
+      _videoController = null;
+      _isVideoInitialized = false;
+    }
+
     // Update views count only for other users' statuses
     final isMyStatus = _myStatus.any((myStatus) => myStatus['id'] == status['id']);
     if (!isMyStatus) {
       setState(() {
         status['views'] = (status['views'] as int) + 1;
       });
+    }
+  }
+
+  Future<void> _initializeVideoPlayer(String videoUrl) async {
+    try {
+      _videoController = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+      await _videoController!.initialize();
+      setState(() {
+        _isVideoInitialized = true;
+      });
+      await _videoController!.play(); // Auto-play video
+    } catch (e) {
+      debugPrint('[StatusScreen] Error initializing video player: $e');
+      _videoController?.dispose();
+      _videoController = null;
+      _isVideoInitialized = false;
+      rethrow;
+    }
+  }
+
+  Decoration _getStatusDecoration(Map<String, dynamic> status) {
+    if (status['type'] == 'image' && _statusMediaUrl(status) != null) {
+      return BoxDecoration(
+        image: DecorationImage(
+          image: NetworkImage(_statusMediaUrl(status)!),
+          fit: BoxFit.cover,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      );
+    } else {
+      return BoxDecoration(
+        color: _parseBackgroundColor(status['background_color']),
+        borderRadius: BorderRadius.circular(16),
+      );
     }
   }
 
@@ -721,9 +917,11 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         subtitle: Text(
           status['type'] == 'image' 
               ? '📷 Photo'
-              : (status['content'] != null && (status['content'] as String).length > 30 
-                  ? '${(status['content'] as String).substring(0, 30)}...'
-                  : status['content'] ?? ''),
+              : status['type'] == 'video'
+                  ? '🎥 Video'
+                  : (status['content'] != null && (status['content'] as String).length > 30 
+                      ? '${(status['content'] as String).substring(0, 30)}...'
+                      : status['content'] ?? ''),
           style: TextStyle(
             color: Colors.grey[600],
             fontSize: 14,

@@ -2,6 +2,8 @@ import os
 import uuid
 import logging
 import asyncio
+import tempfile
+import subprocess
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
@@ -34,6 +36,105 @@ async def get_status_collection():
     """Get status collection from database"""
     db = get_database()
     return db["statuses"]
+
+
+async def get_video_duration(file_content: bytes, filename: Optional[str]) -> Optional[float]:
+    """
+    Get video duration in seconds using ffprobe (async version)
+    
+    Args:
+        file_content: Video file bytes
+        filename: Original filename for extension (can be None)
+        
+    Returns:
+        Duration in seconds or None if unable to determine
+    """
+    try:
+        # Create safe filename fallback if None
+        safe_filename = filename or "video.mp4"
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(safe_filename)[1], delete=False) as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Use asyncio subprocess to get video duration
+            cmd = [
+                'ffprobe', 
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                temp_file_path
+            ]
+            
+            # Run ffprobe asynchronously
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            try:
+                # Add timeout to prevent indefinite hangs
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"[VIDEO_DURATION] ffprobe timeout for {safe_filename}, terminating process")
+                try:
+                    process.terminate()
+                    await asyncio.wait_for(process.wait(), timeout=5.0)
+                except (asyncio.TimeoutError, ProcessLookupError):
+                    logger.warning(f"[VIDEO_DURATION] Force killing ffprobe process for {safe_filename}")
+                    process.kill()
+                    await process.wait()
+                return None
+            
+            if process.returncode == 0:
+                duration_str = stdout.decode().strip()
+                if duration_str:
+                    return float(duration_str)
+            
+            logger.warning(f"[VIDEO_DURATION] ffprobe failed for {safe_filename}: {stderr.decode()}")
+            return None
+            
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+            except OSError:
+                pass
+                
+    except Exception as e:
+        logger.error(f"[VIDEO_DURATION] Error getting duration for {filename or 'unknown'}: {str(e)}")
+        return None
+
+
+async def validate_video_duration(file_content: bytes, filename: Optional[str], max_duration_minutes: int = 3) -> bool:
+    """
+    Validate that video duration does not exceed maximum allowed (async version)
+    
+    Args:
+        file_content: Video file bytes
+        filename: Original filename (can be None)
+        max_duration_minutes: Maximum allowed duration in minutes (default: 3)
+        
+    Returns:
+        True if duration is valid, False otherwise
+    """
+    duration_seconds = await get_video_duration(file_content, filename)
+    
+    if duration_seconds is None:
+        # If we can't determine duration, allow the file but log warning
+        logger.warning(f"[VIDEO_DURATION] Could not determine duration for {filename or 'unknown'}, allowing upload")
+        return True
+    
+    max_seconds = max_duration_minutes * 60
+    is_valid = duration_seconds <= max_seconds
+    
+    if not is_valid:
+        logger.warning(f"[VIDEO_DURATION] Video {filename or 'unknown'} duration {duration_seconds:.1f}s exceeds maximum {max_seconds}s")
+    
+    return is_valid
 
 
 # ============================================================================
@@ -273,6 +374,16 @@ async def upload_status_media(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail="File too large. Maximum size is 16MB",
             )
+
+        # Validate video duration for video files (max 3 minutes)
+        if file.content_type.startswith("video/"):
+            logger.info(f"[STATUS_UPLOAD] Validating video duration for {file.filename}")
+            if not await validate_video_duration(file_content, file.filename, max_duration_minutes=3):
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Video duration exceeds maximum allowed time of 3 minutes",
+                )
+            logger.info(f"[STATUS_UPLOAD] Video duration validation passed for {file.filename}")
 
         # Generate unique file key for status media
         file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
