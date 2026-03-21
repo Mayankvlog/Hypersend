@@ -286,6 +286,30 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
     }
   }
 
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.first;
+        await _uploadImageStatus(file);
+      }
+    } catch (e) {
+      debugPrint('[StatusScreen] Error picking image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick image: $e'),
+            backgroundColor: AppTheme.errorRed,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _pickAndUploadVideo() async {
     try {
       final result = await FilePicker.platform.pickFiles(
