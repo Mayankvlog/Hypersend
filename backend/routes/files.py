@@ -3091,7 +3091,7 @@ async def stream_media(
 @router.get("/media/{file_key}")
 async def get_media_by_key(
     file_key: str,
-    download: bool = True,
+    download: bool = False,
     current_user: str = Depends(get_current_user),
     request: Request = None,
     force_download: bool = False,
@@ -3328,8 +3328,8 @@ async def get_media_by_key(
 
         # Return streaming response with proper headers
         quoted_key = quote(safe_file_key, safe="")
-        # FORCE attachment (download) by default - this prevents browser from opening PDFs/images inline
-        disposition_type = "attachment"
+        # Set disposition based on download parameter
+        disposition_type = "attachment" if download or force_download else "inline"
         filename = safe_file_key.split("/")[-1]
         
         # DEBUG: Log headers being set
@@ -3345,6 +3345,7 @@ async def get_media_by_key(
         print(f"MEDIA_DEBUG: Returning streaming response with headers:")
         print(f"MEDIA_DEBUG: Content-Type: {content_type}")
         print(f"MEDIA_DEBUG: Content-Disposition: {headers_dict['Content-Disposition']}")
+        print(f"MEDIA_DEBUG: download={download}, force_download={force_download}, disposition_type={disposition_type}")
         print(f"MEDIA_DEBUG: Content-Length: {headers_dict['Content-Length']}")
         
         return StreamingResponse(
