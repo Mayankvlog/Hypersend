@@ -470,7 +470,7 @@ async def upload_status_media(
         
         # Return file init response with file_key embedded for later status creation
         return FileInitResponse(
-            upload_id=file_key,  # Use file_key as upload_id for transparency
+            uploadId=file_key,  # Use file_key as uploadId for transparency
             chunk_size=1024 * 1024,  # 1MB chunks
             total_chunks=1,
             expires_in=86400,  # 24 hours (matches status expiry)

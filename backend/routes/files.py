@@ -1517,7 +1517,6 @@ async def initialize_upload(
         # Return upload initialization response with proper serialization
         response_data = FileInitResponse(
             uploadId=upload_id,
-            upload_id=upload_id,
             chunk_size=int(chunk_size),
             total_chunks=int(total_chunks),
             expires_in=3600,
@@ -3649,6 +3648,7 @@ async def _handle_s3_media_download(
 
         # For redirect mode, generate presigned URL
         if use_redirect:
+            print(f"MEDIA_DEBUG: GENERATING_PRESIGNED_URL - Key={storage_key}, Bucket={bucket_name}")
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=storage_key,
@@ -3656,13 +3656,20 @@ async def _handle_s3_media_download(
                 expires_in=3600,
             )
             if presigned_url:
-                print(f"MEDIA_DEBUG: REDIRECT_307 - Presigned URL generated for {storage_key}")
+                print(f"MEDIA_DEBUG: REDIRECT_307 - Presigned URL generated successfully for {storage_key}")
+                print(f"MEDIA_DEBUG: PRESIGNED_URL_LENGTH={len(presigned_url)} chars")
                 headers = {
                     "Content-Disposition": f'attachment; filename="{filename}"',
                     "Content-Type": content_type,
                 }
                 return RedirectResponse(
                     url=presigned_url, status_code=307, headers=headers
+                )
+            else:
+                print(f"MEDIA_DEBUG: PRESIGNED_URL_FAILED - Failed to generate presigned URL for {storage_key}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to generate presigned URL",
                 )
 
         # Stream S3 object directly

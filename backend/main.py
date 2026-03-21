@@ -2474,8 +2474,8 @@ app.include_router(groups.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
 app.include_router(e2ee_messages.router, prefix="/api/v1")  # E2EE encrypted messages
 app.include_router(
-    status_router.router
-)  # Status endpoints have their own prefix /api/v1/status
+    status_router.router, prefix="/api/v1"
+)  # Status endpoints with proper prefix
 app.include_router(
     files.router, prefix="/api/v1/files"
 )  # Standard file operations: /api/v1/files/*
@@ -2495,7 +2495,7 @@ logger.info(f"[ROUTING] files.router registered at: /api/v1/files")
 logger.info(f"[ROUTING] files.media_router registered at: /api/v1")
 logger.info(f"[ROUTING] files.attach_router registered at: /api/v1")
 logger.info(
-    f"[ROUTING] status_router registered at: (router has internal /api/v1/status prefix)"
+    f"[ROUTING] status_router registered at: /api/v1/status"
 )
 logger.info("[ROUTING] === END MEDIA ENDPOINT REGISTRATION ===")
 
