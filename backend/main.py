@@ -2229,7 +2229,7 @@ async def handle_options_request(full_path: str, request: Request):
         headers={
             "Access-Control-Allow-Origin": allowed_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With, X-Access-Token",
             "Access-Control-Allow-Credentials": "true"
             if allowed_origin != "null" and allowed_origin != "*"
             else "false",
@@ -2238,57 +2238,13 @@ async def handle_options_request(full_path: str, request: Request):
     )
 
 
-# Detailed status endpoint for debugging
 @app.get("/api/v1/status")
 async def api_status(request: Request):
-    """
-    Detailed API status endpoint for debugging connection issues.
-    RESTRICTED: Only accessible in DEBUG mode or from internal service network.
-    """
-    # Only allow access in debug mode or from internal service network
-    client_host = request.client.host if request.client else "unknown"
-
-    if not settings.DEBUG and client_host not in [
-        "hypersend_backend",
-        "backend",
-        "0.0.0.0",
-    ]:
-        return JSONResponse(
-            status_code=status.HTTP_403_FORBIDDEN,
-            content={
-                "status_code": 403,
-                "error": "Not Found",
-                "detail": "This endpoint is only accessible in debug mode",
-            },
-        )
-
-    # In production, return minimal information
-    if not settings.DEBUG:
-        return {
-            "status": "operational",
-            "service": "zaply-api",
-            "version": "1.0.0",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    # In debug mode, return detailed information
     return {
         "status": "operational",
         "service": "zaply-api",
         "version": "1.0.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "api": {
-            "base_url": settings.API_BASE_URL,
-            "host": settings.API_HOST,
-            "port": settings.API_PORT,
-            "debug_mode": settings.DEBUG,
-            "cors_origins": cors_origins[:3],  # Show first 3 origins only
-        },
-        "database": {
-            "type": "MongoDB",
-            "mock_mode": settings.USE_MOCK_DB,
-        },
-        "environment": "debug" if settings.DEBUG else "production",
     }
 
 

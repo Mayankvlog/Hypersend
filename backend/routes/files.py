@@ -542,10 +542,12 @@ def _get_s3_client():
         # default credential provider chain (IAM role, env vars, shared config, etc.).
         # CRITICAL: Use region_name from settings.AWS_REGION for environment-based configuration
         client_kwargs: Dict[str, Any] = {"region_name": settings.AWS_REGION}
-        
+
         # Add explicit credentials if provided
         if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
-            print(f"[S3_DEBUG] Using explicit AWS credentials for region {settings.AWS_REGION}")
+            print(
+                f"[S3_DEBUG] Using explicit AWS credentials for region {settings.AWS_REGION}"
+            )
             client_kwargs.update(
                 {
                     "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
@@ -554,19 +556,26 @@ def _get_s3_client():
             )
             _log("info", f"S3 client using explicit AWS credentials")
         else:
-            print(f"[S3_DEBUG] Using default credential chain for region {settings.AWS_REGION}")
+            print(
+                f"[S3_DEBUG] Using default credential chain for region {settings.AWS_REGION}"
+            )
             _log("info", f"S3 client using default credential provider chain")
 
         # Remove None values to avoid boto warnings.
         client_kwargs = {k: v for k, v in client_kwargs.items() if v}
 
         s3_client = boto3.client("s3", **client_kwargs)
-        
+
         # Test connection by listing bucket
         try:
             s3_client.head_bucket(Bucket=settings.S3_BUCKET)
-            print(f"[S3_DEBUG] Successfully connected to S3 bucket: {settings.S3_BUCKET}")
-            _log("info", f"S3 client initialized and verified for bucket: {settings.S3_BUCKET} in region: {settings.AWS_REGION}")
+            print(
+                f"[S3_DEBUG] Successfully connected to S3 bucket: {settings.S3_BUCKET}"
+            )
+            _log(
+                "info",
+                f"S3 client initialized and verified for bucket: {settings.S3_BUCKET} in region: {settings.AWS_REGION}",
+            )
         except Exception as e:
             print(f"[S3_DEBUG] WARNING: Could not verify S3 bucket access: {str(e)}")
             _log("warning", f"S3 bucket verification failed: {str(e)}")
@@ -3132,7 +3141,9 @@ async def get_media_by_key(
     - Supports all file types stored in S3 bucket
     - When download=True, returns Content-Disposition: attachment for PC download
     """
-    print(f"MEDIA_DEBUG: get_media_by_key called for user: {current_user}, file_key: {file_key}")
+    print(
+        f"MEDIA_DEBUG: get_media_by_key called for user: {current_user}, file_key: {file_key}"
+    )
     print(f"MEDIA_DEBUG: download={download}, force_download={force_download}")
     try:
         # Validate file_key format (prevent directory traversal)
@@ -3172,20 +3183,171 @@ async def get_media_by_key(
         safe_file_key = normalized_key.replace(os.sep, "/")
         print(f"MEDIA_DEBUG: Safe file_key: {safe_file_key}")
 
-        # AUTHORIZATION: ensure the requester can access this object.
-        # Reuse the same logic pattern as download_file (owner OR shared_with OR chat member).
+        # AUTHORIZATION: Try to get file from DB for authorization checks.
+        # If DB lookup fails, still try S3 (S3 success means file exists).
+        file_doc = None
+        status_doc = None
+
         try:
             import asyncio
             from bson import ObjectId
 
-            file_doc = await asyncio.wait_for(
-                files_collection().find_one({"object_key": safe_file_key}),
-                timeout=30.0,
+            print(f"MEDIA_DEBUG: Searching for file with key: {safe_file_key}")
+
+            # Try storage_key first (where complete_upload stores S3 keys)
+            try:
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"storage_key": safe_file_key}),
+                    timeout=30.0,
+                )
+                print(
+                    f"MEDIA_DEBUG: Query by storage_key result: {'found' if file_doc else 'not found'}"
+                )
+            except Exception as e:
+                print(f"MEDIA_DEBUG: storage_key query failed: {e}")
+
+            # Also check object_key for legacy files
+            if not file_doc:
+                try:
+                    file_doc = await asyncio.wait_for(
+                        files_collection().find_one({"object_key": safe_file_key}),
+                        timeout=30.0,
+                    )
+                    print(
+                        f"MEDIA_DEBUG: Query by object_key result: {'found' if file_doc else 'not found'}"
+                    )
+                except Exception as e:
+                    print(f"MEDIA_DEBUG: object_key query failed: {e}")
+
+            # Check storage_path for filesystem-stored files
+            if not file_doc:
+                try:
+                    file_doc = await asyncio.wait_for(
+                        files_collection().find_one({"storage_path": safe_file_key}),
+                        timeout=30.0,
+                    )
+                    print(
+                        f"MEDIA_DEBUG: Query by storage_path result: {'found' if file_doc else 'not found'}"
+                    )
+                except Exception as e:
+                    print(f"MEDIA_DEBUG: storage_path query failed: {e}")
+
+            # Also check status collection for status media
+            if safe_file_key.startswith("status/"):
+                try:
+                    from backend.routes.status import get_status_collection
+
+                    status_col = await get_status_collection()
+                    status_doc = await asyncio.wait_for(
+                        status_col.find_one({"file_key": safe_file_key}),
+                        timeout=30.0,
+                    )
+                except Exception as e:
+                    print(f"MEDIA_DEBUG: status query failed: {e}")
+
+            # Authorization checks if file_doc found
+            if file_doc:
+                print(
+                    f"MEDIA_DEBUG: File doc found: owner={file_doc.get('owner_id')}, storage_key={file_doc.get('storage_key')}, storage_path={file_doc.get('storage_path')}"
+                )
+                owner_id = file_doc.get("owner_id")
+                chat_id = file_doc.get("chat_id")
+                shared_with = file_doc.get("shared_with", [])
+
+                if str(owner_id) == str(current_user):
+                    pass  # Owner has access
+                elif str(current_user) in [str(x) for x in (shared_with or [])]:
+                    pass  # Shared user has access
+                elif chat_id:
+                    try:
+                        from db_proxy import chats_collection
+
+                        chat_doc = await chats_collection().find_one({"_id": chat_id})
+                        if not chat_doc and ObjectId.is_valid(str(chat_id)):
+                            chat_doc = await chats_collection().find_one(
+                                {"_id": ObjectId(str(chat_id))}
+                            )
+                        members = chat_doc.get("members", []) if chat_doc else []
+                        if not (
+                            chat_doc and str(current_user) in [str(m) for m in members]
+                        ):
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Access denied: you don't have permission to access this media",
+                            )
+                    except HTTPException:
+                        raise
+                    except Exception as e:
+                        print(f"MEDIA_DEBUG: Chat membership check failed: {e}")
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied: unable to verify chat membership",
+                        )
+                else:
+                    # No authorization context found, deny access
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied: no authorization context for this file",
+                    )
+            elif status_doc:
+                # Status media is publicly viewable like WhatsApp stories
+                current_time = datetime.now(timezone.utc)
+                expires_at = status_doc.get("expires_at")
+                if expires_at and expires_at < current_time:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Status has expired",
+                    )
+                _log(
+                    "info",
+                    f"Status media access granted: {safe_file_key}",
+                    {
+                        "user_id": current_user,
+                        "status_owner": status_doc.get("user_id"),
+                    },
+                )
+            # If no file_doc and no status_doc, proceed anyway - S3 access will validate existence
+            else:
+                print(
+                    f"MEDIA_DEBUG: No DB record found, will rely on S3 access for: {safe_file_key}"
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            _log(
+                "error",
+                f"Error checking media authorization: {str(e)}",
+                {
+                    "user_id": current_user,
+                    "file_key": safe_file_key,
+                    "operation": "get_media_by_key",
+                },
             )
+            # Don't fail on DB errors - let S3 access determine if file exists
+            print(f"MEDIA_DEBUG: DB authorization error: {e}, proceeding to S3 check")
+            print(
+                f"MEDIA_DEBUG: Query by storage_key result: {'found' if file_doc else 'not found'}"
+            )
+
+            # Also check object_key for legacy files
+            if not file_doc:
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"object_key": safe_file_key}),
+                    timeout=30.0,
+                )
+                print(
+                    f"MEDIA_DEBUG: Query by object_key result: {'found' if file_doc else 'not found'}"
+                )
+
+            # Check storage_path for filesystem-stored files
             if not file_doc:
                 file_doc = await asyncio.wait_for(
                     files_collection().find_one({"storage_path": safe_file_key}),
                     timeout=30.0,
+                )
+                print(
+                    f"MEDIA_DEBUG: Query by storage_path result: {'found' if file_doc else 'not found'}"
                 )
 
             # Also check status collection for status media (file_key pattern: status/{user_id}/...)
@@ -3200,6 +3362,9 @@ async def get_media_by_key(
                 )
 
             if file_doc:
+                print(
+                    f"MEDIA_DEBUG: File doc found: owner={file_doc.get('owner_id')}, storage_key={file_doc.get('storage_key')}, storage_path={file_doc.get('storage_path')}"
+                )
                 owner_id = file_doc.get("owner_id")
                 chat_id = file_doc.get("chat_id")
                 shared_with = file_doc.get("shared_with", [])
@@ -3251,14 +3416,17 @@ async def get_media_by_key(
                     {
                         "user_id": current_user,
                         "status_owner": status_user_id,
-                        "file_key": safe_file_key,
+                        "status_file_key": safe_file_key,
                     },
                 )
             else:
-                # If metadata isn't found, do not leak existence; treat as forbidden.
+                # File not found in database - return 404
+                print(
+                    f"MEDIA_DEBUG: File not found in database for key: {safe_file_key}"
+                )
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: you don't have permission to access this media",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Media file not found",
                 )
         except HTTPException:
             raise
@@ -3283,7 +3451,7 @@ async def get_media_by_key(
         content_type = None
         content_length = 0
         filename = safe_file_key.split("/")[-1]
-        
+
         # Priority 1: Try S3
         s3_available = False
         if s3_client:
@@ -3292,47 +3460,55 @@ async def get_media_by_key(
                 obj_metadata = s3_client.head_object(
                     Bucket=settings.S3_BUCKET, Key=safe_file_key
                 )
-                content_type = obj_metadata.get("ContentType", "application/octet-stream")
+                content_type = obj_metadata.get(
+                    "ContentType", "application/octet-stream"
+                )
                 content_length = obj_metadata.get("ContentLength", 0)
                 s3_available = True
-                print(f"MEDIA_DEBUG: S3 file found: {safe_file_key}, size: {content_length}")
-                
+                print(
+                    f"MEDIA_DEBUG: S3 file found: {safe_file_key}, size: {content_length}"
+                )
+
             except ClientError as e:
                 if e.response["Error"]["Code"] == "404":
                     print(f"MEDIA_DEBUG: S3 file not found: {safe_file_key}")
                 else:
                     print(f"MEDIA_DEBUG: S3 error: {str(e)}")
-        
+
         # Priority 2: Fallback to filesystem using storage_path from database
         if not s3_available:
             print(f"MEDIA_DEBUG: S3 unavailable, checking filesystem...")
             if file_doc:
                 storage_path = file_doc.get("storage_path")
                 print(f"MEDIA_DEBUG: Storage path from DB: {storage_path}")
-                
+
                 if storage_path and os.path.exists(storage_path):
                     final_path = storage_path
                     content_length = os.path.getsize(final_path)
                     # Determine content type from file extension
                     import mimetypes
+
                     content_type, _ = mimetypes.guess_type(final_path)
                     if not content_type:
                         content_type = "application/octet-stream"
-                    print(f"MEDIA_DEBUG: Filesystem file found: {final_path}, size: {content_length}")
+                    print(
+                        f"MEDIA_DEBUG: Filesystem file found: {final_path}, size: {content_length}"
+                    )
                 else:
                     print(f"MEDIA_DEBUG: File not found in filesystem: {storage_path}")
-        
+
         # Check if file exists in either storage
         if not s3_available and not final_path:
-            print(f"MEDIA_DEBUG: FILE NOT FOUND - S3 unavailable and no filesystem path")
+            print(
+                f"MEDIA_DEBUG: FILE NOT FOUND - S3 unavailable and no filesystem path"
+            )
             _log(
                 "warning",
                 f"Media file not found: {safe_file_key}",
                 {"user_id": current_user, "file_key": safe_file_key},
             )
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="Media file not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
             )
 
         # Log media access for audit
@@ -3375,7 +3551,7 @@ async def get_media_by_key(
                 finally:
                     if "body" in locals() and hasattr(body, "close"):
                         body.close()
-            
+
             stream_gen = stream_s3_object()
         else:
             # Stream from filesystem
@@ -3385,7 +3561,7 @@ async def get_media_by_key(
                     print(f"MEDIA_DEBUG: Streaming from filesystem: {final_path}")
                     chunk_size = 65536  # 64KB chunks
                     loop = asyncio.get_running_loop()
-                    with open(final_path, 'rb') as f:
+                    with open(final_path, "rb") as f:
                         while True:
                             chunk = await loop.run_in_executor(None, f.read, chunk_size)
                             if not chunk:
@@ -3399,16 +3575,16 @@ async def get_media_by_key(
                     )
                     print(f"MEDIA_DEBUG: Streaming error: {str(e)}")
                     raise
-            
+
             stream_gen = stream_filesystem_object()
 
         # Return streaming response with proper headers
         # CRITICAL: Always use attachment for downloads to trigger native browser download
         disposition_type = "attachment" if (download or force_download) else "inline"
-        
+
         # Ensure filename is safe for Content-Disposition header
-        safe_filename = filename.replace('\n', '').replace('\r', '').replace('"', '')
-        
+        safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
+
         headers_dict = {
             "Content-Length": str(content_length),
             "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
@@ -3425,10 +3601,12 @@ async def get_media_by_key(
         print(f"MEDIA_DEBUG: FILE_ID: {file_key}")
         print(f"MEDIA_DEBUG: Content-Type: {content_type}")
         print(f"MEDIA_DEBUG: Content-Length: {headers_dict['Content-Length']}")
-        print(f"MEDIA_DEBUG: Content-Disposition: {headers_dict['Content-Disposition']}")
+        print(
+            f"MEDIA_DEBUG: Content-Disposition: {headers_dict['Content-Disposition']}"
+        )
         print(f"MEDIA_DEBUG: Storage: {storage_type}")
         print(f"MEDIA_DEBUG: download={download}, force_download={force_download}")
-        
+
         return StreamingResponse(
             stream_gen,
             media_type=content_type,
