@@ -3455,18 +3455,22 @@ async def _handle_status_s3_download(
             f"MEDIA_DEBUG: S3 status file found: {storage_key}, size: {content_length}"
         )
 
-        # For redirect mode, generate presigned URL
+        # For redirect mode, generate presigned URL with download headers
         if use_redirect:
+            safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
+            response_disposition = f'attachment; filename="{safe_filename}"'
+            
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=storage_key,
                 bucket=_get_sanitized_bucket_name(),
                 expires_in=3600,
+                response_content_disposition=response_disposition,
             )
             if presigned_url:
-                print(f"MEDIA_DEBUG: Returning 307 redirect to presigned URL")
+                print(f"MEDIA_DEBUG: Returning 307 redirect to presigned URL with download headers")
                 headers = {
-                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Disposition": response_disposition,
                     "Content-Type": content_type,
                 }
                 return RedirectResponse(
@@ -3650,20 +3654,25 @@ async def _handle_s3_media_download(
 
         print(f"MEDIA_DEBUG: S3_METADATA - content_type={content_type}, size={content_length}, filename={filename}")
 
-        # For redirect mode, generate presigned URL
+        # For redirect mode, generate presigned URL with download headers
         if use_redirect:
             print(f"MEDIA_DEBUG: GENERATING_PRESIGNED_URL - Key={storage_key}, Bucket={bucket_name}")
+            # Create download-forcing disposition header
+            safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
+            response_disposition = f'attachment; filename="{safe_filename}"'
+            
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=storage_key,
                 bucket=bucket_name,
                 expires_in=3600,
+                response_content_disposition=response_disposition,
             )
             if presigned_url:
-                print(f"MEDIA_DEBUG: REDIRECT_307 - Presigned URL generated successfully for {storage_key}")
+                print(f"MEDIA_DEBUG: REDIRECT_307 - Presigned URL with download headers generated for {storage_key}")
                 print(f"MEDIA_DEBUG: PRESIGNED_URL_LENGTH={len(presigned_url)} chars")
                 headers = {
-                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Disposition": response_disposition,
                     "Content-Type": content_type,
                 }
                 return RedirectResponse(

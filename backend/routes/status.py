@@ -233,15 +233,22 @@ async def periodic_status_cleanup(interval_minutes: int = 5):
 
 
 # Helper function to convert StatusInDB to StatusResponse
-def status_to_response(status: StatusInDB, current_user_id: str) -> StatusResponse:
-    """Convert database status model to API response with proper URL mapping"""
-    file_url = None
-    if status.file_key:
-        # Generate S3 URL using existing media endpoint pattern
+def status_to_response(status: StatusInDB, current_user_id: str, presigned_url: Optional[str] = None) -> StatusResponse:
+    """Convert database status model to API response with seen/unseen tracking and viewer list"""
+    file_url = presigned_url
+    if file_url is None and status.file_key:
+        # Generate media endpoint URL (will be converted to presigned URL during download)
         file_url = f"{settings.API_BASE_URL}/media/{status.file_key}"
 
     # Check if status is expired
     is_expired = datetime.now(timezone.utc) > status.expires_at
+    
+    # Compute is_seen: check if current_user_id is in views array
+    is_seen = current_user_id in status.views
+    view_count = len(status.views)
+    
+    # Only owner sees full viewers list, others see count only
+    viewers_list = status.views if status.user_id == current_user_id else None
 
     return StatusResponse(
         id=status.id,
@@ -252,7 +259,9 @@ def status_to_response(status: StatusInDB, current_user_id: str) -> StatusRespon
         duration=status.duration,
         created_at=status.created_at,
         expires_at=status.expires_at,
-        views=status.views,
+        is_seen=is_seen,
+        view_count=view_count,
+        views=viewers_list,
         is_expired=is_expired,
     )
 
@@ -467,20 +476,22 @@ async def create_status(
             }
             file_type = file_type_map.get(ext)
         
-        # Create StatusInDB model
+        # Create status document with views initialized as empty array
         status_doc = StatusInDB(
             user_id=user_id,
             text=status_create.text,
             file_key=status_create.file_key,
             file_type=file_type,
             duration=status_create.duration,
+            storage_type="s3",
+            views=[],  # Initialize empty views array for tracking viewers
         )
         
         # Convert to dict for MongoDB insertion
         status_dict = status_doc.model_dump(by_alias=True)
         
         logger.info(f"[STATUS_CREATE] Inserting status to DB: user={user_id}, has_file={bool(status_create.file_key)}")
-        print(f"[STATUS_CREATE] DB INSERT: user={user_id}, file_key={status_create.file_key}")
+        print(f"[STATUS_CREATE] DB INSERT: user={user_id}, file_key={status_create.file_key}, views_initialized=[]")
         
         # Insert into database
         result = await status_collection.insert_one(status_dict)
@@ -488,14 +499,20 @@ async def create_status(
         logger.info(f"[STATUS_CREATE] Status created successfully with ID: {result.inserted_id}")
         print(f"[STATUS_CREATE] Status inserted with ID: {result.inserted_id}")
         
-        # Convert inserted ID back to string for response
-        status_doc.id = str(result.inserted_id)
+        # Refresh document from DB to ensure all fields are correct
+        inserted_doc = await status_collection.find_one({"_id": ObjectId(result.inserted_id)})
+        if inserted_doc:
+            if isinstance(inserted_doc.get("_id"), ObjectId):
+                inserted_doc["_id"] = str(inserted_doc["_id"])
+            status_doc = StatusInDB(**inserted_doc)
+        else:
+            status_doc.id = str(result.inserted_id)
         
         # Return as StatusResponse
         response = status_to_response(status_doc, user_id)
         
-        logger.info(f"[STATUS_CREATE] Status created: id={response.id}, user={user_id}")
-        print(f"[STATUS_CREATE] RESPONSE CREATED: {response.model_dump()}")
+        logger.info(f"[STATUS_CREATE] STATUS SAVED SUCCESS: id={response.id}, user={user_id}, views={len(status_doc.views)}")
+        print(f"[STATUS_CREATE] STATUS SAVED SUCCESS: {response.model_dump()}")
         
         return response
         
@@ -515,23 +532,39 @@ async def get_all_statuses(
     limit: int = 50, offset: int = 0, current_user: str = Depends(get_current_user)
 ):
     """
-    Get all visible statuses from other users
-    Excludes expired statuses and user's own statuses
+    Get all visible statuses from other users grouped by user_id
+    - Filters only active statuses (expires_at > now)
+    - Sorts unseen statuses first, then seen
+    - Deletes expired statuses before fetching
+    - Groups by user_id with latest first per group
+    - Excludes own statuses
 
     CRITICAL: Requires authentication with Bearer token
     Returns: 401 if no token, 403 if invalid token
     """
-    print(f"STATUS_DEBUG: get_all_statuses called for user: {current_user}")
+    print(f"[STATUS_GET] get_all_statuses called for user: {current_user}")
     try:
         status_collection = await get_status_collection()
-        user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
+        user_id = str(current_user)
         current_time = datetime.now(timezone.utc)
 
-        print(
-            f"STATUS_DEBUG: Fetching statuses for user {user_id}, limit={limit}, offset={offset}"
-        )
+        print(f"[STATUS_GET] Deleting expired statuses")
+        
+        # STEP 1: Delete expired statuses safely
+        try:
+            expired_result = await status_collection.delete_many(
+                {"expires_at": {"$lte": current_time}}
+            )
+            logger.info(f"[STATUS_GET] Deleted {expired_result.deleted_count} expired statuses")
+            print(f"[STATUS_GET] Deleted {expired_result.deleted_count} expired statuses")
+        except Exception as e:
+            logger.warning(f"[STATUS_GET] Warning: Failed to delete expired statuses: {str(e)}")
+            print(f"[STATUS_GET] Warning: Failed to delete expired statuses: {str(e)}")
+            # Continue - don't break flow
 
-        # Build query for non-expired statuses from other users
+        print(f"[STATUS_GET] Fetching active statuses for user {user_id}, limit={limit}, offset={offset}")
+
+        # STEP 2: Query active, non-own statuses
         query = {
             "user_id": {"$ne": user_id},  # Exclude own statuses
             "expires_at": {"$gt": current_time},  # Only non-expired
@@ -540,36 +573,144 @@ async def get_all_statuses(
         # Get total count
         total = await status_collection.count_documents(query)
 
-        # Fetch statuses with pagination
-        cursor = (
-            status_collection.find(query)
-            .sort("created_at", -1)
-            .skip(offset)
-            .limit(limit)
-        )
-        statuses = []
+        # STEP 3: Fetch all statuses (we'll sort in-memory for reels-like ordering)
+        cursor = status_collection.find(query).sort("created_at", -1)
+        all_statuses = []
 
         async for doc in cursor:
-            # Normalize MongoDB ObjectId -> str for Pydantic model
             if isinstance(doc.get("_id"), ObjectId):
                 doc["_id"] = str(doc["_id"])
-            # Convert to StatusInDB model
-            status_doc = StatusInDB(**doc)
-            statuses.append(status_to_response(status_doc, user_id))
+            try:
+                status_doc = StatusInDB(**doc)
+                all_statuses.append(status_doc)
+            except Exception as e:
+                logger.warning(f"[STATUS_GET] Skipping invalid status doc: {str(e)}")
+                continue
+
+        # STEP 4: Group by user_id and compute is_seen status
+        grouped_by_user = {}
+        for status_doc in all_statuses:
+            user = status_doc.user_id
+            if user not in grouped_by_user:
+                grouped_by_user[user] = []
+            is_seen = user_id in status_doc.views
+            grouped_by_user[user].append({
+                "status": status_doc,
+                "is_seen": is_seen,
+            })
+
+        # STEP 5: Sort groups - unseen statuses first, then seen
+        all_status_responses = []
+        
+        # First add unseen statuses from all users
+        for user, status_list in grouped_by_user.items():
+            for status_item in status_list:
+                if not status_item["is_seen"]:
+                    all_status_responses.append(status_to_response(status_item["status"], user_id))
+
+        # Then add seen statuses
+        for user, status_list in grouped_by_user.items():
+            for status_item in status_list:
+                if status_item["is_seen"]:
+                    all_status_responses.append(status_to_response(status_item["status"], user_id))
+
+        # STEP 6: Apply pagination on sorted results
+        paginated_statuses = all_status_responses[offset:offset + limit]
 
         # Determine if there are more results
-        has_more = (offset + len(statuses)) < total
+        has_more = (offset + len(paginated_statuses)) < len(all_status_responses)
 
-        print(
-            f"STATUS_DEBUG: Returning {len(statuses)} statuses, total={total}, has_more={has_more}"
+        logger.info(f"[STATUS_GET] Returning {len(paginated_statuses)} statuses, total_active={len(all_status_responses)}, has_more={has_more}")
+        print(f"[STATUS_GET] Returning {len(paginated_statuses)} statuses, total={total}, has_more={has_more}")
+        
+        return StatusListResponse(
+            statuses=paginated_statuses, 
+            total=len(all_status_responses), 
+            has_more=has_more
         )
-        return StatusListResponse(statuses=statuses, total=total, has_more=has_more)
 
     except Exception as e:
-        print(f"STATUS_DEBUG: Error in get_all_statuses: {type(e).__name__}: {str(e)}")
+        logger.error(f"[STATUS_GET] Error in get_all_statuses: {type(e).__name__}: {str(e)}")
+        print(f"[STATUS_GET] Error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch statuses: {str(e)}",
+        )
+
+
+@router.post("/{status_id}/view", response_model=StatusResponse)
+async def mark_status_as_seen(
+    status_id: str, current_user: str = Depends(get_current_user)
+):
+    """
+    Mark a status as seen by current user
+    Appends current_user.id to views array (prevents duplicates)
+    """
+    try:
+        user_id = str(current_user)
+        logger.info(f"[STATUS_MARK_SEEN] User {user_id} marking status {status_id} as seen")
+        print(f"[STATUS_MARK_SEEN] Marking status {status_id} as seen by user {user_id}")
+        
+        # Validate status_id format
+        if not ObjectId.is_valid(status_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status ID format",
+            )
+
+        status_collection = await get_status_collection()
+        
+        # Find status
+        status_doc = await status_collection.find_one(
+            {"_id": ObjectId(status_id)}
+        )
+        
+        if not status_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Status not found",
+            )
+        
+        # Check if already seen (prevent duplicate user_ids)
+        if "views" not in status_doc:
+            status_doc["views"] = []
+        
+        if user_id not in status_doc["views"]:
+            # Append user_id to views array
+            result = await status_collection.update_one(
+                {"_id": ObjectId(status_id)},
+                {"$addToSet": {"views": user_id}}  # $addToSet prevents duplicates
+            )
+            logger.info(f"[STATUS_MARK_SEEN] User {user_id} added to viewers, matched={result.matched_count}, modified={result.modified_count}")
+            print(f"[STATUS_MARK_SEEN] Updated views for status {status_id}")
+        else:
+            logger.info(f"[STATUS_MARK_SEEN] User {user_id} already in viewers")
+            print(f"[STATUS_MARK_SEEN] User already marked as seen")
+        
+        # Fetch updated document
+        updated_doc = await status_collection.find_one(
+            {"_id": ObjectId(status_id)}
+        )
+        
+        if isinstance(updated_doc.get("_id"), ObjectId):
+            updated_doc["_id"] = str(updated_doc["_id"])
+        
+        status_model = StatusInDB(**updated_doc)
+        response = status_to_response(status_model, user_id)
+        
+        logger.info(f"[STATUS_MARK_SEEN] SUCCESS: Status {status_id} view_count={response.view_count}")
+        print(f"[STATUS_MARK_SEEN] SUCCESS: view_count={response.view_count}")
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[STATUS_MARK_SEEN] Error: {type(e).__name__}: {str(e)}")
+        print(f"[STATUS_MARK_SEEN] ERROR: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to mark status as seen: {str(e)}",
         )
 
 
@@ -611,7 +752,7 @@ async def get_user_statuses(
             .limit(limit)
         )
         statuses = []
-        status_ids_to_increment = []  # Collect IDs that need view increment
+        status_ids_to_mark_seen = []  # Collect IDs to mark as seen
 
         async for doc in cursor:
             # Normalize MongoDB ObjectId -> str for Pydantic model
@@ -621,18 +762,33 @@ async def get_user_statuses(
             status_doc = StatusInDB(**doc)
             response = status_to_response(status_doc, requesting_user_id)
 
-            # Collect status IDs for batch update if viewing someone else's status
-            if user_id != requesting_user_id:
-                status_ids_to_increment.append(ObjectId(status_doc.id))
-                response.views += 1  # Pre-increment response view count
+            # Mark status as seen if viewing someone else's status
+            if user_id != requesting_user_id and requesting_user_id not in status_doc.views:
+                status_ids_to_mark_seen.append(ObjectId(status_doc.id))
 
             statuses.append(response)
 
-        # Batch update view counts in single DB round-trip
-        if status_ids_to_increment:
+        # Batch mark statuses as seen in single DB round-trip (add current user to views)
+        if status_ids_to_mark_seen:
             await status_collection.update_many(
-                {"_id": {"$in": status_ids_to_increment}}, {"$inc": {"views": 1}}
+                {"_id": {"$in": status_ids_to_mark_seen}}, 
+                {"$addToSet": {"views": requesting_user_id}}  # $addToSet prevents duplicates
             )
+            logger.info(f"[STATUS_USER] Marked {len(status_ids_to_mark_seen)} statuses as seen for user {requesting_user_id}")
+
+        # Re-fetch statuses to get updated view counts
+        updated_statuses = []
+        for status_obj in statuses:
+            doc = await status_collection.find_one({"_id": ObjectId(status_obj.id)})
+            if doc:
+                if isinstance(doc.get("_id"), ObjectId):
+                    doc["_id"] = str(doc["_id"])
+                status_doc = StatusInDB(**doc)
+                updated_statuses.append(status_to_response(status_doc, requesting_user_id))
+            else:
+                updated_statuses.append(status_obj)
+        
+        statuses = updated_statuses
 
         # Determine if there are more results
         has_more = (offset + len(statuses)) < total

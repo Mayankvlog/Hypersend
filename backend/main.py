@@ -2238,15 +2238,6 @@ async def handle_options_request(full_path: str, request: Request):
     )
 
 
-@app.get("/api/v1/status")
-async def api_status(request: Request):
-    return {
-        "status": "operational",
-        "service": "zaply-api",
-        "version": "1.0.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
 
 @app.get("/")
 async def root():

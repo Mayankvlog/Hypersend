@@ -113,7 +113,7 @@ class TestStatusAPIValidation:
         
         mock_user = "507f1f77bcf86cd799439011"
         
-        # Mock status documents
+        # Mock status documents - views is now a list of user_ids
         mock_statuses = [
             {
                 "_id": ObjectId("507f1f77bcf86cd799439015"),
@@ -121,10 +121,11 @@ class TestStatusAPIValidation:
                 "text": "Status 1",
                 "file_key": "status/other_user_1/abc123.jpg",
                 "file_type": "image",
+                "storage_type": "s3",
                 "duration": None,
                 "created_at": datetime.now(timezone.utc),
                 "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
-                "views": 5
+                "views": ["user1", "user2", "user3", "user4", "user5"]  # 5 viewers
             },
             {
                 "_id": ObjectId("507f1f77bcf86cd799439016"), 
@@ -132,22 +133,30 @@ class TestStatusAPIValidation:
                 "text": "Status 2",
                 "file_key": None,
                 "file_type": None,
+                "storage_type": "s3",
                 "duration": None,
                 "created_at": datetime.now(timezone.utc),
                 "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
-                "views": 3
+                "views": ["user1", "user2", "user3"]  # 3 viewers
             }
         ]
         
         mock_cursor = AsyncMock()
         mock_cursor.sort = AsyncMock(return_value=mock_cursor)
-        mock_cursor.skip = AsyncMock(return_value=mock_cursor)
-        mock_cursor.limit = AsyncMock(return_value=mock_cursor)
+        
+        # Create a proper async iterator
+        async def mock_find_gen():
+            for status in mock_statuses:
+                yield status
+        
+        # Setup the mock to return an async iterator when iterated
+        mock_cursor.__aiter__ = AsyncMock(side_effect=lambda: mock_find_gen())
         mock_cursor.to_list = AsyncMock(return_value=mock_statuses)
         
         mock_status_collection = AsyncMock()
         mock_status_collection.find = AsyncMock(return_value=mock_cursor)
         mock_status_collection.count_documents = AsyncMock(return_value=2)
+        mock_status_collection.delete_many = AsyncMock(return_value=Mock(deleted_count=0))
         
         async def override_get_database():
             return Mock()
@@ -164,7 +173,7 @@ class TestStatusAPIValidation:
         
         client = TestClient(app)
         response = client.get(
-            "/api/v1/status",
+            "/api/v1/status/",
             headers={"Authorization": "Bearer mock_token"}
         )
         
@@ -179,12 +188,14 @@ class TestStatusAPIValidation:
         status1 = response_data["statuses"][0]
         assert "file_url" in status1
         assert status1["file_type"] == "image"
-        assert status1["views"] == 5
+        assert status1["view_count"] == 5  # Check view_count instead of views
+        assert "is_seen" in status1  # Check is_seen field exists
         
         status2 = response_data["statuses"][1]
         assert status2["text"] == "Status 2"
         assert status2["file_type"] is None
-        assert status2["views"] == 3
+        assert status2["view_count"] == 3  # Check view_count instead of views
+        assert "is_seen" in status2  # Check is_seen field exists
         
         print("✅ GET /status returns uploaded items test passed")
 

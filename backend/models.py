@@ -996,11 +996,12 @@ class StatusInDB(BaseModel):
     file_key: Optional[str] = None  # S3 file key reference
     file_type: Optional[str] = None  # MIME type for media files
     duration: Optional[float] = None  # Video duration in seconds
+    storage_type: str = Field(default="s3")  # Storage type: s3 or local
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc) + timedelta(hours=24)
     )
-    views: int = 0  # Number of times this status was viewed
+    views: List[str] = Field(default_factory=list)  # Array of viewer user_ids
 
     # Note: Expiry validation moved to service layer during creation.
     # This allows loading expired records from DB without validation errors.
@@ -1012,12 +1013,14 @@ class StatusResponse(BaseModel):
     id: str
     user_id: str
     text: Optional[str] = None
-    file_url: Optional[str] = None  # Full S3 URL for frontend
+    file_url: Optional[str] = None  # Presigned S3 URL for frontend
     file_type: Optional[str] = None
     duration: Optional[float] = None  # Video duration in seconds
     created_at: datetime
     expires_at: datetime
-    views: int
+    is_seen: bool = False  # Whether current user has seen this status
+    view_count: int = 0  # Number of viewers
+    views: Optional[List[str]] = None  # Full viewer list (only if owner)
     is_expired: bool = False  # Convenience field for frontend
 
 
