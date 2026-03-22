@@ -343,7 +343,7 @@ async def get_current_user_profile(current_user: str = Depends(get_current_user)
             updated_at=user.get("updated_at"),
             last_seen=user.get("last_seen"),
             is_online=user.get("is_online", False),
-            status=user.get("status"),
+            status=user.get("status", ""),
             permissions=user.get(
                 "permissions", {"camera": False, "microphone": False, "storage": False}
             ),
@@ -549,7 +549,7 @@ async def update_profile(
             if len(profile_data.bio) > 500:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Bio/Status is too long. Maximum 500 characters allowed.",
+                    detail="Bio is too long. Maximum 500 characters allowed.",
                 )
 
             # Basic content sanitization
@@ -561,7 +561,7 @@ async def update_profile(
             if sanitized_bio != profile_data.bio.strip():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Bio/Status contains invalid characters. Please use plain text only.",
+                    detail="Bio contains invalid characters. Please use plain text only.",
                 )
 
             logger.info(f"SUCCESS: Bio set: [REDACTED_FOR_PRIVACY]")
@@ -756,7 +756,7 @@ async def update_profile(
             updated_at=updated_user.get("updated_at"),
             last_seen=updated_user.get("last_seen"),
             is_online=updated_user.get("is_online", False),
-            status=updated_user.get("status"),
+            status=updated_user.get("status", ""),
             pinned_chats=updated_user.get("pinned_chats", []) or [],
             is_contact=False,  # Current user can't be a contact of themselves
         )
