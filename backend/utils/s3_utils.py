@@ -2,11 +2,6 @@
 S3 utilities
 """
 import logging
-
-# NOTE: The legacy Status feature has been removed.
-# This module remains as a small compatibility shim for any leftover imports.
-# All S3 logic should live in backend.routes.files.
-
 from backend.routes.files import _get_s3_client
 
 # Create logger for this module
