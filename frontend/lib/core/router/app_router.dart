@@ -14,7 +14,6 @@ import '../../presentation/screens/blocked_users_screen.dart';
 import '../../presentation/screens/storage_manager_screen.dart';
 import '../../presentation/screens/help_support_screen.dart';
 import '../../presentation/screens/group_creation_screen.dart';
-import '../../presentation/screens/status_screen.dart';
 
 import '../../presentation/screens/group_detail_screen.dart';
 import '../../data/mock/mock_data.dart';
@@ -146,11 +145,7 @@ final appRouter = GoRouter(
       path: '/group-create',
       builder: (context, state) => const GroupCreationScreen(),
     ),
-    GoRoute(
-      path: '/status',
-      builder: (context, state) => const StatusScreen(),
-    ),
-
+    
     GoRoute(
       path: '/group/:id',
       builder: (context, state) {

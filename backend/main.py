@@ -65,7 +65,6 @@ from backend.routes import (
     devices,
     e2ee_messages,
     presence,
-    status as status_router,
 )
 
 from backend.auth.utils import get_current_user
@@ -649,19 +648,6 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("[STARTUP] File cleanup is disabled (AUTO_CLEANUP_ENABLED=false)")
 
-    # Initialize background status cleanup task (CRITICAL for 24-hour status expiry)
-    status_cleanup_task = None
-    try:
-        from backend.routes.status import periodic_status_cleanup
-
-        status_cleanup_task = asyncio.create_task(
-            periodic_status_cleanup(interval_minutes=5)  # Run every 5 minutes
-        )
-        app.state.status_cleanup_task = status_cleanup_task
-        logger.info("[STARTUP] Status cleanup task initialized (interval=5min)")
-    except Exception as e:
-        logger.error(f"[STARTUP] Failed to initialize status cleanup task: {e}")
-        # Continue even if cleanup fails - not critical for operation
 
     logger.info("[STARTUP] Application startup complete")
 
@@ -687,19 +673,6 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.debug(f"[SHUTDOWN] Error cancelling cleanup task: {e}")
 
-    # Cancel background status cleanup task
-    status_cleanup_task = getattr(app.state, "status_cleanup_task", None)
-    if status_cleanup_task and not status_cleanup_task.done():
-        try:
-            logger.info("[SHUTDOWN] Cancelling status cleanup task...")
-            status_cleanup_task.cancel()
-            await asyncio.wait_for(status_cleanup_task, timeout=5.0)
-        except asyncio.CancelledError:
-            logger.info("[SHUTDOWN] Status cleanup task cancelled")
-        except asyncio.TimeoutError:
-            logger.warning("[SHUTDOWN] Status cleanup task cancellation timed out")
-        except Exception as e:
-            logger.debug(f"[SHUTDOWN] Error cancelling status cleanup task: {e}")
 
     # Shutdown WebSocket manager (singleton instance)
     try:
@@ -2465,9 +2438,6 @@ app.include_router(groups.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
 app.include_router(e2ee_messages.router, prefix="/api/v1")  # E2EE encrypted messages
 app.include_router(
-    status_router.router, prefix="/api/v1"
-)  # Status endpoints with proper prefix
-app.include_router(
     files.router, prefix="/api/v1/files"
 )  # Standard file operations: /api/v1/files/*
 app.include_router(
@@ -2485,9 +2455,6 @@ logger.info("[ROUTING] === MEDIA ENDPOINT REGISTRATION ===")
 logger.info(f"[ROUTING] files.router registered at: /api/v1/files")
 logger.info(f"[ROUTING] files.media_router registered at: /api/v1")
 logger.info(f"[ROUTING] files.attach_router registered at: /api/v1")
-logger.info(
-    f"[ROUTING] status_router registered at: /api/v1/status"
-)
 logger.info("[ROUTING] === END MEDIA ENDPOINT REGISTRATION ===")
 
 # Log router registration for troubleshooting

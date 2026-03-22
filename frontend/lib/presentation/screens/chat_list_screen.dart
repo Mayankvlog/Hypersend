@@ -408,10 +408,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (index == 0) {
       context.go('/chats');
     } else if (index == 1) {
-      // Navigate to status
-      context.go('/status');
-    } else if (index == 2) {
-      // Navigate to settings
+      // Navigate to settings (status removed)
       context.go('/settings');
     }
   }
@@ -688,10 +685,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.message),
             label: 'Chats',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.circle),
-            label: 'Status',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),

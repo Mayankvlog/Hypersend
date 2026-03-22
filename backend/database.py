@@ -201,12 +201,6 @@ def reset_tokens_collection():
         return db["reset_tokens"]
     raise RuntimeError("Database not initialized")
 
-def statuses_collection():
-    """Get statuses collection"""
-    if is_database_initialized() and db is not None:
-        return db["statuses"]
-    raise RuntimeError("Database not initialized")
-
 def group_activity_collection():
     """Get group activity collection"""
     if is_database_initialized() and db is not None:

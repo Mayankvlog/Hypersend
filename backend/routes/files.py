@@ -4074,18 +4074,7 @@ async def get_media_by_key(
                 except Exception as e:
                     print(f"MEDIA_DEBUG: storage_path query failed: {e}")
 
-            # Also check status collection for status media
-            if safe_file_key.startswith("status/"):
-                try:
-                    from backend.routes.status import get_status_collection
 
-                    status_col = await get_status_collection()
-                    status_doc = await asyncio.wait_for(
-                        status_col.find_one({"file_key": safe_file_key}),
-                        timeout=30.0,
-                    )
-                except Exception as e:
-                    print(f"MEDIA_DEBUG: status query failed: {e}")
 
             # Authorization checks if file_doc found
             if file_doc:
@@ -4149,24 +4138,7 @@ async def get_media_by_key(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Access denied: no authorization context for this file",
                     )
-            elif status_doc:
-                # Status media is publicly viewable like WhatsApp stories
-                current_time = datetime.now(timezone.utc)
-                expires_at = status_doc.get("expires_at")
-                if expires_at and expires_at < current_time:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Status has expired",
-                    )
-                _log(
-                    "info",
-                    f"Status media access granted: {safe_file_key}",
-                    {
-                        "user_id": current_user,
-                        "status_owner": status_doc.get("user_id"),
-                    },
-                )
-            # If no file_doc and no status_doc, proceed anyway - S3 access will validate existence
+            # If no file_doc, proceed anyway - S3 access will validate existence
             else:
                 print(
                     f"MEDIA_DEBUG: No DB record found, will rely on S3 access for: {safe_file_key}"
@@ -4210,16 +4182,8 @@ async def get_media_by_key(
                     f"MEDIA_DEBUG: Query by storage_path result: {'found' if file_doc else 'not found'}"
                 )
 
-            # Also check status collection for status media (file_key pattern: status/{user_id}/...)
+            # No status collection check anymore
             status_doc = None
-            if not file_doc and safe_file_key.startswith("status/"):
-                from backend.routes.status import get_status_collection
-
-                status_col = await get_status_collection()
-                status_doc = await asyncio.wait_for(
-                    status_col.find_one({"file_key": safe_file_key}),
-                    timeout=30.0,
-                )
 
             if file_doc:
                 print(
@@ -4255,30 +4219,6 @@ async def get_media_by_key(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Access denied: you don't have permission to access this media",
                     )
-            elif status_doc:
-                # Status media is publicly viewable like WhatsApp stories
-                # Anyone authenticated can view status content
-                status_user_id = status_doc.get("user_id")
-                current_time = datetime.now(timezone.utc)
-                expires_at = status_doc.get("expires_at")
-
-                # Check if status has expired
-                if expires_at and expires_at < current_time:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Status has expired",
-                    )
-
-                # Allow access if status exists and is not expired (public viewing model)
-                _log(
-                    "info",
-                    f"Status media access granted: {safe_file_key}",
-                    {
-                        "user_id": current_user,
-                        "status_owner": status_user_id,
-                        "status_file_key": safe_file_key,
-                    },
-                )
             else:
                 # File not found in database - return 404
                 print(
