@@ -2907,7 +2907,8 @@ if (!kIsWeb) {
       return response.statusCode == 200;
     } catch (e) {
       _log('[QR_CODE_DISCONNECT_ERROR] Failed to disconnect device: $e');
-      rethrow;
+      // Return false instead of throwing - graceful degradation
+      return false;
     }
   }
   
@@ -2934,7 +2935,8 @@ if (!kIsWeb) {
       return response.data ?? {};
     } catch (e) {
       _log('[QR_CODE_SYNC_ERROR] Failed to sync $dataType: $e');
-      rethrow;
+      // Return empty map instead of throwing - graceful degradation
+      return {'error': 'Sync failed', 'data_type': dataType};
     }
   }
   
@@ -2975,7 +2977,8 @@ if (!kIsWeb) {
       return response.statusCode == 200;
     } catch (e) {
       _log('[QR_CODE_ENABLE_SYNC_ERROR] Failed to enable sync: $e');
-      rethrow;
+      // Return false instead of throwing - graceful degradation
+      return false;
     }
   }
   
@@ -2994,7 +2997,8 @@ if (!kIsWeb) {
       return response.statusCode == 200;
     } catch (e) {
       _log('[QR_CODE_DISABLE_SYNC_ERROR] Failed to disable sync: $e');
-      rethrow;
+      // Return false instead of throwing - graceful degradation
+      return false;
     }
   }
   
@@ -3028,10 +3032,10 @@ if (!kIsWeb) {
       // Get user info
       final userInfo = await getMe();
       
-      // Get connected devices
+      // Get connected devices (gracefully handles errors)
       final devices = await getConnectedDevices();
       
-      // Get sync status
+      // Get sync status (gracefully handles errors, returns empty map on failure)
       final syncStatus = await getDeviceSyncStatus();
       
       _log('[QR_CODE_ACCOUNT_INFO] Account info retrieved successfully');
@@ -3045,7 +3049,20 @@ if (!kIsWeb) {
       };
     } catch (e) {
       _log('[QR_CODE_ACCOUNT_INFO_ERROR] Failed to get account connection info: $e');
-      rethrow;
+      // Return partial data rather than crashing - graceful degradation
+      try {
+        return {
+          'user': await getMe(),
+          'devices': [],
+          'sync_status': {},
+          'total_devices': 0,
+          'timestamp': DateTime.now().toUtc().toIso8601String().replaceFirst('+00:00', 'Z'),
+          'error': 'Partial data - some services unavailable',
+        };
+      } catch (fallbackError) {
+        _log('[QR_CODE_ACCOUNT_INFO_CRITICAL] Even fallback failed: $fallbackError');
+        return {};
+      }
     }
   }
   
