@@ -621,6 +621,8 @@ async def get_all_statuses(
         
         # STEP 1: Delete expired statuses safely
         try:
+            # Ensure current_time is timezone-aware for consistent comparison
+            current_time = datetime.now(timezone.utc)
             expired_result = await status_collection.delete_many(
                 {"expires_at": {"$lte": current_time}}
             )
@@ -649,6 +651,20 @@ async def get_all_statuses(
         async for doc in cursor:
             if isinstance(doc.get("_id"), ObjectId):
                 doc["_id"] = str(doc["_id"])
+            
+            # Fix views field data type issue - ensure it's always a list
+            if "views" in doc:
+                # Capture original value before overwriting for logging
+                original_views = doc["views"]
+                if isinstance(doc["views"], int):
+                    # Convert incorrectly stored integer to empty list
+                    doc["views"] = []
+                    logger.warning(f"[STATUS_GET] Fixed views field: converted int {original_views} to empty list")
+                elif not isinstance(doc["views"], list):
+                    # Convert any non-list type to empty list
+                    doc["views"] = []
+                    logger.warning(f"[STATUS_GET] Fixed views field: converted {type(original_views).__name__} ({original_views}) to empty list")
+            
             try:
                 status_doc = StatusInDB(**doc)
                 all_statuses.append(status_doc)

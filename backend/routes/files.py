@@ -3305,7 +3305,7 @@ async def get_media_by_id_main(
                 )
             print(f"MEDIA_DEBUG: USING_S3 - s3_key={s3_key}")
             return await _handle_s3_media_download(
-                s3_key, file_doc, download, force_download, use_redirect
+                s3_key, file_doc, download, force_download, use_redirect, has_local_info, file_path
             )
         elif storage_type == "local":
             if not has_local_info:
@@ -3324,7 +3324,7 @@ async def get_media_by_id_main(
             if has_s3_info:
                 print(f"MEDIA_DEBUG: AUTO_DETECT_S3 - using s3_key={s3_key}")
                 return await _handle_s3_media_download(
-                    s3_key, file_doc, download, force_download, use_redirect
+                    s3_key, file_doc, download, force_download, use_redirect, has_local_info, file_path
                 )
             elif has_local_info and os.path.exists(file_path):
                 print(f"MEDIA_DEBUG: AUTO_DETECT_LOCAL - using file_path={file_path}")
@@ -3599,6 +3599,8 @@ async def _handle_s3_media_download(
     download: bool,
     force_download: bool,
     use_redirect: bool,
+    has_local_info: bool = False,
+    file_path: str = None,
 ):
     """Handle S3 media download with proper headers and streaming
     
@@ -3620,9 +3622,16 @@ async def _handle_s3_media_download(
         s3_client = _get_s3_client()
         if not s3_client:
             print(f"MEDIA_DEBUG: S3_CLIENT_UNAVAILABLE")
+            # Fallback to local storage if available
+            if has_local_info and file_path and os.path.exists(file_path):
+                print(f"MEDIA_DEBUG: FALLBACK_TO_LOCAL - S3 client unavailable, using local storage: {file_path}")
+                return await _handle_local_media_download(
+                    file_path, file_doc, download, force_download
+                )
+            # If no local fallback available, return 500
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="S3 client not available",
+                detail="Storage service temporarily unavailable",
             )
 
         bucket_name = _get_sanitized_bucket_name()
@@ -3635,17 +3644,27 @@ async def _handle_s3_media_download(
             )
             print(f"MEDIA_DEBUG: S3_FILE_FOUND - ETag={obj_metadata.get('ETag')}, Size={obj_metadata.get('ContentLength')}")
         except ClientError as e:
-            if e.response["Error"]["Code"] == "404":
-                print(f"MEDIA_DEBUG: S3_FILE_NOT_FOUND - Key does not exist in S3: {storage_key}")
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            if error_code == "404" or error_code == "NoSuchKey":
+                print(f"MEDIA_DEBUG: S3_FILE_NOT_FOUND - Key does not exist in S3: {storage_key}, error_code: {error_code}, exception: {e}")
+                
+                # Try local storage as fallback if available
+                if has_local_info and file_path and os.path.exists(file_path):
+                    print(f"MEDIA_DEBUG: FALLBACK_TO_LOCAL - S3 file not found, trying local storage: {file_path}")
+                    return await _handle_local_media_download(
+                        file_path, file_doc, download, force_download
+                    )
+                
+                # If no local fallback, return generic 404 message
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found in S3",
+                    detail="File not found",
                 )
             else:
-                print(f"MEDIA_DEBUG: S3_ERROR - {e.response['Error']['Code']}: {e}")
+                print(f"MEDIA_DEBUG: S3_ERROR - error_code: {error_code}, exception: {e}")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="S3 access error",
+                    detail="Internal storage error",
                 )
         
         content_type = obj_metadata.get("ContentType", "application/octet-stream")
