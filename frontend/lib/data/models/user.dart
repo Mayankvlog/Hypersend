@@ -11,7 +11,6 @@ class User extends Equatable {
   final String? avatarUrl;
   final bool isOnline;
   final DateTime? lastSeen;
-  final String? status;
   final DateTime? updatedAt;
   final bool isContact;
   final bool isBlocked;
@@ -26,7 +25,6 @@ class User extends Equatable {
     this.bio,
     this.isOnline = false,
     this.lastSeen,
-    this.status,
     this.updatedAt,
     this.isContact = false,
     this.isBlocked = false,
@@ -44,7 +42,6 @@ class User extends Equatable {
       avatarUrl: json['avatar_url']?.toString().trim(),
       isOnline: (json['is_online'] ?? json['online'] ?? false) as bool,
       lastSeen: json['last_seen'] != null ? DateTime.tryParse(json['last_seen']) : null,
-      status: json['status']?.toString().trim(),
       updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at']) : null,
       isContact: (json['is_contact'] ?? false) as bool,
       isBlocked: (json['is_blocked'] ?? false) as bool,
@@ -54,7 +51,7 @@ class User extends Equatable {
   @override
   List<Object?> get props => [
         id, name, username, email, bio, avatar, avatarUrl, isOnline, 
-        lastSeen, status, updatedAt, isContact, isBlocked
+        lastSeen, updatedAt, isContact, isBlocked
       ];
 
   User copyWith({
@@ -67,7 +64,6 @@ class User extends Equatable {
     String? avatarUrl,
     bool? isOnline,
     DateTime? lastSeen,
-    String? status,
     DateTime? updatedAt,
     bool? isContact,
     bool? isBlocked,
@@ -82,7 +78,6 @@ class User extends Equatable {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       isOnline: isOnline ?? this.isOnline,
       lastSeen: lastSeen ?? this.lastSeen,
-      status: status ?? this.status,
       updatedAt: updatedAt ?? this.updatedAt,
       isContact: isContact ?? this.isContact,
       isBlocked: isBlocked ?? this.isBlocked,
@@ -200,15 +195,10 @@ class User extends Equatable {
     }
   }
 
-  /// Get status text or fallback to last seen
+  /// Get last seen text
   String get displayStatus {
-    if (status?.isNotEmpty == true) {
-      return status!;
-    }
     return lastSeenText;
   }
-
-  /// Check if username is not empty
   bool get usernameIsNotEmpty => username.isNotEmpty;
 
   /// Check if user is recently online (within last 5 minutes)
