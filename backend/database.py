@@ -129,6 +129,9 @@ async def init_database():
             await db["messages"].create_index([("status", 1), ("created_at", 1)])
             await db["users"].create_index([("email", 1)], unique=True)
             await db["chats"].create_index([("members", 1), ("updated_at", 1)])
+            # Status-related indexes for cleanup and filtering
+            await db["statuses"].create_index([("expires_at", 1)])  # For status cleanup
+            await db["statuses"].create_index([("user_id", 1), ("created_at", -1)])  # For status queries
             logger.info("[DATABASE] Async indexes created/verified (UTC timestamps used)")
         except Exception as e:
             # Index creation should not prevent startup; Atlas may restrict permissions.
@@ -197,6 +200,12 @@ def reset_tokens_collection():
     """Get reset tokens collection"""
     if is_database_initialized() and db is not None:
         return db["reset_tokens"]
+    raise RuntimeError("Database not initialized")
+
+def statuses_collection():
+    """Get statuses collection"""
+    if is_database_initialized() and db is not None:
+        return db["statuses"]
     raise RuntimeError("Database not initialized")
 
 def group_activity_collection():

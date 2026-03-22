@@ -22,7 +22,7 @@ from backend.models import (
 )
 from backend.auth.utils import get_current_user
 from backend.config import settings
-from backend.database import get_database
+from backend.database import get_database, statuses_collection
 from backend.utils.s3_utils import upload_file_to_s3
 
 # Initialize router
@@ -33,10 +33,9 @@ logger = logging.getLogger(__name__)
 
 
 # Status collection helper
-async def get_status_collection():
-    """Get status collection from database"""
-    db = get_database()
-    return db["statuses"]
+def get_status_collection():
+    """Get status collection from database - uses proper database helper with initialization checks"""
+    return statuses_collection()
 
 
 async def get_video_duration(
@@ -179,7 +178,7 @@ async def periodic_status_cleanup(interval_minutes: int = 5):
             try:
                 await asyncio.sleep(interval_minutes * 60)  # Wait before first cleanup
 
-                status_collection = await get_status_collection()
+                status_collection = get_status_collection()
                 current_time = datetime.now(timezone.utc)
 
                 # Find all expired statuses
@@ -246,7 +245,7 @@ def status_to_response(status: StatusInDB, current_user_id: str, presigned_url: 
             )
             logger.debug(f"[STATUS_RESPONSE] Generated presigned URL for {status.file_key}")
         except Exception as e:
-            logger.warning(f"[STATUS_RESPONSE] Failed to generate presigned URL: {str(e)}")
+            logger.warning(f"[STATUS_RESPONSE] Failed to generate presigned URL: {str(e)}", exc_info=True)
             # Fallback to media endpoint if presigned fails
             file_url = f"{settings.API_BASE_URL}/media/{status.file_key}"
 
@@ -254,11 +253,19 @@ def status_to_response(status: StatusInDB, current_user_id: str, presigned_url: 
     is_expired = datetime.now(timezone.utc) > status.expires_at
     
     # Compute is_seen: check if current_user_id is in views array
-    is_seen = current_user_id in status.views
-    view_count = len(status.views)
+    try:
+        # Ensure views is a list before checking membership
+        views_list = status.views if isinstance(status.views, list) else []
+        is_seen = current_user_id in views_list
+        view_count = len(views_list)
+    except Exception as e:
+        logger.warning(f"[STATUS_RESPONSE] Error computing views: {str(e)}", exc_info=True)
+        is_seen = False
+        view_count = 0
+        views_list = []
     
     # Only owner sees full viewers list, others see count only
-    viewers_list = status.views if status.user_id == current_user_id else None
+    viewers_list = views_list if status.user_id == current_user_id else None
 
     return StatusResponse(
         id=status.id,
@@ -300,7 +307,7 @@ async def create_text_status(
                 detail="Status text exceeds maximum length of 500 characters",
             )
         
-        status_collection = await get_status_collection()
+        status_collection = get_status_collection()
         current_time = datetime.now(timezone.utc)
         
         # Create status document
@@ -383,9 +390,12 @@ async def upload_status_media(
                 detail=f"File type {file.content_type} not supported. Allowed types: {', '.join(allowed_types)}",
             )
 
+        # CRITICAL: Read file content ONCE at the beginning
+        # UploadFile stream can only be read once - all subsequent reads return empty bytes
+        file_content = await file.read()
+        
         # Validate file size (max 16MB for status)
         max_size = 16 * 1024 * 1024  # 16MB
-        file_content = await file.read()
         if len(file_content) > max_size:
             logger.warning(f"[STATUS_UPLOAD] File too large: {len(file_content)} bytes")
             raise HTTPException(
@@ -400,6 +410,7 @@ async def upload_status_media(
                 f"[STATUS_UPLOAD] Validating video duration for {file.filename}"
             )
             # Get duration first to include in response
+            # NOTE: Using already-read file_content - do NOT re-read the stream!
             video_duration = await get_video_duration(file_content, file.filename)
 
             if video_duration is not None:
@@ -423,12 +434,11 @@ async def upload_status_media(
         unique_filename = f"status/{user_id}/{uuid.uuid4().hex}_{clean_filename}"
         
         logger.info(f"[STATUS_UPLOAD] Cleaned filename: {clean_filename} -> {unique_filename}")
-        print(f"[STATUS_UPLOAD] Starting S3 upload: {unique_filename}")
+        logger.info(f"[STATUS_UPLOAD] Starting S3 upload: {unique_filename}")
 
         # CRITICAL: Upload to S3 and validate success
         try:
-            # Read file content first
-            file_content = await file.read()
+            # Use file_content already read above - never re-read the stream!
             
             # Check if we're in testing mode and use mock S3
             from backend.config import settings, TESTING
@@ -463,7 +473,6 @@ async def upload_status_media(
                     s3_client.head_object(Bucket=settings.S3_BUCKET, Key=file_key)
                     logger.info(f"[STATUS_UPLOAD] Verified file exists in S3: {file_key}")
                 logger.info(f"[STATUS_UPLOAD] S3 head_object success: {file_key}")
-                print(f"[STATUS_UPLOAD] S3 UPLOAD SUCCESS: {file_key}")
             except Exception as e:
                 logger.error(f"[STATUS_UPLOAD] S3 head_object failed: {e}")
                 raise HTTPException(
@@ -488,10 +497,10 @@ async def upload_status_media(
                 import uuid as uuid_module
                 status_id = str(uuid_module.uuid4())
                 logger.info(f"[STATUS_UPLOAD] MOCK: Using mock database insert: {status_id}")
-                print(f"[STATUS_UPLOAD] MOCK DATABASE INSERT SUCCESS: {status_id}")
+                logger.info(f"[STATUS_UPLOAD] MOCK DATABASE INSERT SUCCESS: {status_id}")
             else:
                 # Real database insert for production
-                status_collection = await get_status_collection()
+                status_collection = get_status_collection()
                 
                 # Create status document with storage_type="s3"
                 status_doc = {
@@ -511,7 +520,6 @@ async def upload_status_media(
                 status_id = str(result.inserted_id)
                 
                 logger.info(f"[STATUS_UPLOAD] DATABASE_INSERT_SUCCESS - status_id={status_id}, file_key={file_key}, storage_type=s3")
-                print(f"[STATUS_UPLOAD] DATABASE INSERT SUCCESS: {status_id}")
             
         except Exception as e:
             logger.error(f"[STATUS_UPLOAD] Database insert failed: {e}")
@@ -537,10 +545,6 @@ async def upload_status_media(
         logger.info(f"[STATUS_UPLOAD] Response payload: {response_dict}")
         logger.info(f"[STATUS_UPLOAD] FILE_KEY_IN_RESPONSE: {file_key} (uploadId={response_dict.get('uploadId')}, file_key={response_dict.get('file_key')})")
         logger.info(f"[STATUS_UPLOAD] RESPONSE_SCHEMA: uploadId={type(response_dict.get('uploadId')).__name__}, file_key={type(response_dict.get('file_key')).__name__}, duration={response_dict.get('duration')}")
-        
-        # CRITICAL: Print for production debugging
-        print(f"[STATUS_UPLOAD] RESPONSE_READY: uploadId={file_key}, file_key={file_key}, duration={video_duration}")
-        print(f"[STATUS_UPLOAD] JSON_RESPONSE: {json.dumps(response_dict)}")
         
         return response_data
 
@@ -568,56 +572,15 @@ async def get_all_statuses(
     CRITICAL: Requires authentication with Bearer token
     Returns: 401 if no token, 403 if invalid token
     """
-    print(f"[STATUS_GET] get_all_statuses called for user: {current_user}")
+    logger.info(f"[STATUS_GET] get_all_statuses called for user: {current_user}")
     try:
-        # Check if we're in testing mode and use mock database
-        from backend.config import settings, TESTING
-        if TESTING:
-            # Mock status data for testing
-            logger.info(f"[STATUS_GET] MOCK: Using mock status data for testing")
-            mock_statuses = [
-                {
-                    "id": "mock_status_1",
-                    "user_id": "mock_user_1",
-                    "text": None,
-                    "file_url": "http://mock-s3-test-server/status/mock_user_1/mock_file_1.jpg",
-                    "file_type": "image",
-                    "duration": None,
-                    "created_at": datetime.now(timezone.utc),
-                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
-                    "is_seen": False,
-                    "view_count": 5,
-                    "views": ["other_user_1", "other_user_2"],
-                    "is_expired": False
-                },
-                {
-                    "id": "mock_status_2", 
-                    "user_id": "mock_user_2",
-                    "text": "Status 2",
-                    "file_url": None,
-                    "file_type": None,
-                    "duration": None,
-                    "created_at": datetime.now(timezone.utc),
-                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
-                    "is_seen": False,
-                    "view_count": 3,
-                    "views": ["other_user_3"],
-                    "is_expired": False
-                }
-            ]
-            
-            return StatusListResponse(
-                statuses=mock_statuses,
-                total=len(mock_statuses),
-                has_more=False
-            )
         
-        # Real database operations for production
-        status_collection = await get_status_collection()
+        # Database operations
+        status_collection = get_status_collection()
         user_id = str(current_user)
         current_time = datetime.now(timezone.utc)
 
-        print(f"[STATUS_GET] Deleting expired statuses")
+        logger.info(f"[STATUS_GET] Deleting expired statuses")
         
         # STEP 1: Delete expired statuses safely
         try:
@@ -627,13 +590,12 @@ async def get_all_statuses(
                 {"expires_at": {"$lte": current_time}}
             )
             logger.info(f"[STATUS_GET] Deleted {expired_result.deleted_count} expired statuses")
-            print(f"[STATUS_GET] Deleted {expired_result.deleted_count} expired statuses")
         except Exception as e:
             logger.warning(f"[STATUS_GET] Warning: Failed to delete expired statuses: {str(e)}")
             print(f"[STATUS_GET] Warning: Failed to delete expired statuses: {str(e)}")
             # Continue - don't break flow
 
-        print(f"[STATUS_GET] Fetching active statuses for user {user_id}, limit={limit}, offset={offset}")
+        logger.info(f"[STATUS_GET] Fetching active statuses for user {user_id}, limit={limit}, offset={offset}")
 
         # STEP 2: Query active, non-own statuses
         query = {
@@ -642,35 +604,45 @@ async def get_all_statuses(
         }
 
         # Get total count
-        total = await status_collection.count_documents(query)
+        try:
+            total = await status_collection.count_documents(query)
+        except Exception as e:
+            logger.warning(f"[STATUS_GET] Count failed: {str(e)}, proceeding with results")
+            total = 0
 
         # STEP 3: Fetch all statuses (we'll sort in-memory for reels-like ordering)
-        cursor = status_collection.find(query).sort("created_at", -1)
         all_statuses = []
-
-        async for doc in cursor:
-            if isinstance(doc.get("_id"), ObjectId):
-                doc["_id"] = str(doc["_id"])
-            
-            # Fix views field data type issue - ensure it's always a list
-            if "views" in doc:
-                # Capture original value before overwriting for logging
-                original_views = doc["views"]
-                if isinstance(doc["views"], int):
-                    # Convert incorrectly stored integer to empty list
-                    doc["views"] = []
-                    logger.warning(f"[STATUS_GET] Fixed views field: converted int {original_views} to empty list")
-                elif not isinstance(doc["views"], list):
-                    # Convert any non-list type to empty list
-                    doc["views"] = []
-                    logger.warning(f"[STATUS_GET] Fixed views field: converted {type(original_views).__name__} ({original_views}) to empty list")
-            
-            try:
-                status_doc = StatusInDB(**doc)
-                all_statuses.append(status_doc)
-            except Exception as e:
-                logger.warning(f"[STATUS_GET] Skipping invalid status doc: {str(e)}")
-                continue
+        try:
+            cursor = status_collection.find(query).sort("created_at", -1)
+            async for doc in cursor:
+                try:
+                    # Ensure _id is properly converted to string
+                    if isinstance(doc.get("_id"), ObjectId):
+                        doc["_id"] = str(doc["_id"])
+                    
+                    # Fix views field data type issue - ensure it's always a list
+                    if "views" in doc:
+                        # Capture original value before overwriting for logging
+                        original_views = doc["views"]
+                        if isinstance(doc["views"], int):
+                            # Convert incorrectly stored integer to empty list
+                            doc["views"] = []
+                            logger.warning(f"[STATUS_GET] Fixed views field: converted int {original_views} to empty list")
+                        elif not isinstance(doc["views"], list):
+                            # Convert any non-list type to empty list
+                            doc["views"] = []
+                            logger.warning(f"[STATUS_GET] Fixed views field: converted {type(original_views).__name__} ({original_views}) to empty list")
+                    
+                    # Try to instantiate the model
+                    status_doc = StatusInDB(**doc)
+                    all_statuses.append(status_doc)
+                except Exception as e:
+                    logger.warning(f"[STATUS_GET] Skipping invalid status doc: {str(e)}", exc_info=True)
+                    continue
+        except Exception as e:
+            logger.error(f"[STATUS_GET] Cursor iteration failed: {type(e).__name__}: {str(e)}", exc_info=True)
+            # Continue with partial results if cursor fails
+            pass
 
         # STEP 4: Group by user_id and compute is_seen status
         grouped_by_user = {}
@@ -706,7 +678,6 @@ async def get_all_statuses(
         has_more = (offset + len(paginated_statuses)) < len(all_status_responses)
 
         logger.info(f"[STATUS_GET] Returning {len(paginated_statuses)} statuses, total_active={len(all_status_responses)}, has_more={has_more}")
-        print(f"[STATUS_GET] Returning {len(paginated_statuses)} statuses, total={total}, has_more={has_more}")
         
         return StatusListResponse(
             statuses=paginated_statuses, 
@@ -715,8 +686,7 @@ async def get_all_statuses(
         )
 
     except Exception as e:
-        logger.error(f"[STATUS_GET] Error in get_all_statuses: {type(e).__name__}: {str(e)}")
-        print(f"[STATUS_GET] Error: {type(e).__name__}: {str(e)}")
+        logger.error(f"[STATUS_GET] Error in get_all_statuses: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch statuses: {str(e)}",
@@ -743,7 +713,7 @@ async def mark_status_as_seen(
                 detail="Invalid status ID format",
             )
 
-        status_collection = await get_status_collection()
+        status_collection = get_status_collection()
         
         # Find status
         status_doc = await status_collection.find_one(
@@ -816,7 +786,7 @@ async def get_user_statuses(
         )
 
     try:
-        status_collection = await get_status_collection()
+        status_collection = get_status_collection()
         current_time = datetime.now(timezone.utc)
         requesting_user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
 
@@ -908,7 +878,7 @@ async def download_status_file(
                 detail="Invalid status ID format",
             )
 
-        status_collection = await get_status_collection()
+        status_collection = get_status_collection()
         
         # Find status
         status_doc = await status_collection.find_one(
@@ -984,7 +954,7 @@ async def delete_status(status_id: str, current_user: str = Depends(get_current_
     Delete a status (only own statuses)
     """
     try:
-        status_collection = await get_status_collection()
+        status_collection = get_status_collection()
         user_id = str(current_user)  # current_user is already a string (user_id) from get_current_user
 
         # Validate status_id format
