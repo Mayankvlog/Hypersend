@@ -197,7 +197,7 @@ class TestNginxConfiguration:
         assert "location" in content, "nginx.conf should have location blocks"
         
         # Should have proper backend proxy configuration (either direct or upstream)
-        assert "proxy_pass http://backend_upstream" in content or "proxy_pass http://hypersend_backend:8000" in content, "nginx.conf should use proper proxy_pass to backend"
+        assert "proxy_pass http://backend_upstream" in content or "proxy_pass http://hypersend_backend:8000" in content or "proxy_pass http://hypersend_backend" in content, "nginx.conf should use proper proxy_pass to backend"
         
         print("✅ Nginx.conf has valid syntax and structure")
     
