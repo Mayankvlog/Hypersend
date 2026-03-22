@@ -470,8 +470,9 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         filename: file.name,
       );
       
-      // Handle both camelCase (uploadId) and snake_case (upload_id) from backend
+      // Handle both camelCase (uploadId) and snake_case (file_key, upload_id) from backend
       final fileKey = (uploadResponse['uploadId'] as String?) ?? 
+                     (uploadResponse['file_key'] as String?) ??
                      (uploadResponse['upload_id'] as String?);
       if (fileKey == null || fileKey.isEmpty) {
         throw Exception('No file_key returned from upload');
@@ -602,8 +603,9 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         filename: file.name,
       );
       
-      // Handle both camelCase (uploadId) and snake_case (upload_id) from backend
+      // Handle both camelCase (uploadId) and snake_case (file_key, upload_id) from backend
       final fileKey = (uploadResponse['uploadId'] as String?) ?? 
+                     (uploadResponse['file_key'] as String?) ??
                      (uploadResponse['upload_id'] as String?);
       if (fileKey == null || fileKey.isEmpty) {
         throw Exception('No file_key returned from upload');

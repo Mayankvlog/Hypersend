@@ -129,7 +129,6 @@ async def init_database():
             await db["messages"].create_index([("status", 1), ("created_at", 1)])
             await db["users"].create_index([("email", 1)], unique=True)
             await db["chats"].create_index([("members", 1), ("updated_at", 1)])
-            # Status-related indexes for cleanup and filtering
             await db["statuses"].create_index([("expires_at", 1)])  # For status cleanup
             await db["statuses"].create_index([("user_id", 1), ("created_at", -1)])  # For status queries
             logger.info("[DATABASE] Async indexes created/verified (UTC timestamps used)")
