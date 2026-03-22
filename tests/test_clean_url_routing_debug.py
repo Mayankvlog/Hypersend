@@ -133,7 +133,7 @@ class TestCORSConfiguration:
         """Test actual API response includes CORS headers"""
         client = TestClient(app)
         response = client.get(
-            "/api/v1/status",
+            "/api/v1/health",
             headers={"Origin": "http://localhost:8000"}
         )
         print(f"\n[CORS_RESPONSE] Status: {response.status_code}")
@@ -225,11 +225,11 @@ class TestAPIRouting:
     def test_api_requests_route_to_backend(self):
         """Verify /api/* requests are routed to backend, not frontend"""
         client = TestClient(app)
-        # Request an API endpoint
+        # Request an API endpoint - use health check instead of status (status feature removed)
         response = client.get(
-            "/api/v1/status"
+            "/api/v1/health"
         )
-        print(f"\n[API_ROUTING] Status: {response.status_code}")
+        print(f"\n[API_ROUTING] Health check status: {response.status_code}")
         
         # Check if response looks like backend API response
         if response.status_code == 200:
