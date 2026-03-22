@@ -408,7 +408,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (index == 0) {
       context.go('/chats');
     } else if (index == 1) {
-      // Navigate to settings (status removed)
+      // Navigate to settings
       context.go('/settings');
     }
   }

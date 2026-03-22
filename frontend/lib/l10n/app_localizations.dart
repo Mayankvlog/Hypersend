@@ -46,7 +46,6 @@ class AppLocalizations {
   static String get loading => 'Loading...';
   static String get retry => 'Retry';
   static String get search => 'Search';
-  static String get status => 'Status';
   static String get fileTransfer => 'File Transfer';
   static String get selectFile => 'Select File';
   static String get uploading => 'Uploading...';
