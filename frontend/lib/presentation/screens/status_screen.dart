@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
 import 'package:video_player/video_player.dart';
-import 'dart:io';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/api_constants.dart';
 import '../../data/services/service_provider.dart';
@@ -17,11 +15,10 @@ class StatusScreen extends StatefulWidget {
 
 class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<Map<String, dynamic>> _myStatus = [];
+  final List<Map<String, dynamic>> _myStatus = [];
   List<Map<String, dynamic>> _recentUpdates = [];
   List<Map<String, dynamic>> _viewedUpdates = [];
   bool _loading = true;
-  bool _isUploading = false;
   String? _error;
   VideoPlayerController? _videoController;
   bool _isVideoInitialized = false;
@@ -219,7 +216,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.videocam, color: Colors.white, size: 24),
@@ -242,7 +239,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                   trailing: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.play_arrow, color: Colors.white, size: 20),
@@ -273,8 +270,6 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   void _addTextStatus(String content, String backgroundColor) async {
     debugPrint('[StatusScreen] Creating text status: $content');
     
-    setState(() => _isUploading = true);
-    
     try {
       // Call API to create text status
       final response = await serviceProvider.apiService.createStatus(
@@ -300,7 +295,6 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
     } catch (e) {
       debugPrint('[StatusScreen] Error creating text status: $e');
       
-      // Extract user-friendly error message
       String errorMessage = 'Failed to post status';
       if (e.toString().contains('403')) {
         errorMessage = 'Please login to post status';
@@ -320,7 +314,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       }
     } finally {
       if (mounted) {
-        setState(() => _isUploading = false);
+        _loadStatusData();
       }
     }
   }
@@ -363,7 +357,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         debugPrint('[StatusScreen] Video selected: ${file.name}, size: ${file.size}');
         
         // Validate file size before upload (50MB max)
-        if (file.size != null && file.size! > 50 * 1024 * 1024) {
+        if (file.size > 50 * 1024 * 1024) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -413,8 +407,6 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   Future<void> _uploadVideoStatus(PlatformFile file) async {
     try {
       debugPrint('[StatusScreen] Uploading video status: ${file.name}');
-      
-      setState(() => _isUploading = true);
       
       // For native: convert path to File
       // For web: use file.bytes directly
@@ -569,7 +561,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       }
     } finally {
       if (mounted) {
-        setState(() => _isUploading = false);
+        _loadStatusData();
       }
     }
   }
@@ -577,8 +569,6 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   Future<void> _uploadImageStatus(PlatformFile file) async {
     try {
       debugPrint('[StatusScreen] Uploading image status: ${file.name}');
-      
-      setState(() => _isUploading = true);
       
       // For native: convert path to File
       // For web: use file.bytes directly
@@ -666,18 +656,9 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
       }
     } finally {
       if (mounted) {
-        setState(() => _isUploading = false);
+        _loadStatusData();
       }
     }
-  }
-
-  void _showComingSoon(String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$feature coming soon!'),
-        backgroundColor: Colors.orange,
-      ),
-    );
   }
 
   void _viewStatus(Map<String, dynamic> status) async {
@@ -748,7 +729,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                       return Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
+                          color: Colors.black.withValues(alpha: 0.6),
                           borderRadius: BorderRadius.circular(30),
                         ),
                         child: Row(
@@ -1135,9 +1116,9 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   status['duration'] != null ? _formatVideoDuration(Duration(seconds: status['duration'])) : '0:00',
@@ -1249,7 +1230,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                                     borderRadius: BorderRadius.circular(12),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.orange.withOpacity(0.3),
+                                        color: Colors.orange.withValues(alpha: 0.3),
                                         blurRadius: 8,
                                         offset: const Offset(0, 2),
                                       ),
@@ -1275,7 +1256,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                                             Text(
                                               'Share videos up to 3 minutes long',
                                               style: TextStyle(
-                                                color: Colors.white.withOpacity(0.9),
+                                                color: Colors.white.withValues(alpha: 0.9),
                                                 fontSize: 14,
                                               ),
                                             ),
@@ -1284,7 +1265,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
                                       ),
                                       Icon(
                                         Icons.play_circle_filled,
-                                        color: Colors.white.withOpacity(0.8),
+                                        color: Colors.white.withValues(alpha: 0.8),
                                         size: 28,
                                       ),
                                     ],
