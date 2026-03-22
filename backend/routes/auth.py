@@ -1108,6 +1108,10 @@ async def refresh_session_token(request: Request) -> JSONResponse:
                 detail="Refresh token has no expiration - database corruption"
             )
         
+        # Ensure expires_at is timezone-aware for comparison
+        if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
         if expires_at < datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1330,6 +1334,10 @@ async def refresh_access_token(request: RefreshTokenRequest) -> Token:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token has no expiration - database corruption"
             )
+        
+        # Ensure expires_at is timezone-aware for comparison
+        if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         
         if expires_at < datetime.now(timezone.utc):
             raise HTTPException(

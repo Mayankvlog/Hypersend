@@ -250,7 +250,11 @@ def status_to_response(status: StatusInDB, current_user_id: str, presigned_url: 
             file_url = f"{settings.API_BASE_URL}/media/{status.file_key}"
 
     # Check if status is expired
-    is_expired = datetime.now(timezone.utc) > status.expires_at
+    # Ensure expires_at is timezone-aware for comparison
+    expires_at = status.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    is_expired = datetime.now(timezone.utc) > expires_at
     
     # Compute is_seen: check if current_user_id is in views array
     try:
