@@ -3,9 +3,49 @@ S3 utilities for status uploads
 Reuses existing S3 infrastructure from files.py
 """
 import uuid
+import logging
 from typing import Optional
 from backend.config import settings
 from backend.routes.files import _get_s3_client
+
+# Create logger for this module
+logger = logging.getLogger(__name__)
+
+
+def generate_presigned_url(file_key: str, expiration: int = 3600) -> str:
+    """
+    Generate a presigned URL for S3 file download
+    """
+    try:
+        # Check if we're in testing mode and use mock URL
+        from backend.config import settings, TESTING
+        if TESTING:
+            # Mock presigned URL for testing
+            mock_url = f"http://mock-s3-test-server/{file_key}"
+            logger.info(f"[S3_PRESIGNED] MOCK: Using mock presigned URL for {file_key}")
+            return mock_url
+        
+        s3_client = _get_s3_client()
+        if not s3_client:
+            raise ValueError("S3 client not available")
+        
+        if not settings.S3_BUCKET:
+            raise ValueError("S3_BUCKET not configured")
+        
+        # Generate presigned URL for download
+        url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': settings.S3_BUCKET, 'Key': file_key},
+            ExpiresIn=expiration
+        )
+        
+        logger.info(f"[S3_PRESIGNED] Generated URL for {file_key}, expires in {expiration}s")
+        return url
+        
+    except Exception as e:
+        logger.error(f"[S3_PRESIGNED] Error generating presigned URL: {e}")
+        # Fallback to direct URL if presigned fails
+        return f"{settings.API_BASE_URL}/media/{file_key}"
 
 
 def upload_file_to_s3(

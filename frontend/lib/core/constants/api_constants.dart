@@ -84,7 +84,7 @@ class ApiConstants {
   static const int fileTtlHours = 24;  // 24h temp only like WhatsApp
   static const int serverStorageBytes = 0;  // 0 bytes stored on server
   static const String costModel = "free";  // No server storage cost
-  static const String s3Bucket = "zaply-temp";  // S3 bucket name
+  static const String s3Bucket = "zaply-object-storage-781953767677-us-east-1-an";  // Production S3 bucket
   
   // API Endpoints
   static const String authEndpoint = 'auth';
@@ -93,6 +93,7 @@ class ApiConstants {
   static const String usersEndpoint = 'users';
   static const String filesEndpoint = 'files';
   static const String attachEndpoint = 'attach';
+  static const String statusEndpoint = 'status';
   
   // Timeouts
   static const Duration connectTimeout = Duration(seconds: 30);

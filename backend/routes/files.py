@@ -3823,6 +3823,119 @@ async def _handle_local_media_download(
         )
 
 
+@router.get("/media/{file_key}")
+async def get_media_download(
+    file_key: str,
+    download: bool = False,
+    current_user: str = Depends(get_current_user),
+    request: Request = None,
+    force_download: bool = False,
+    use_redirect: bool = False,
+):
+    """
+    MEDIA DOWNLOAD ENDPOINT - Compatible with frontend expectations
+    
+    Fetch media from S3 bucket by file_key and return as streaming response
+    Supports both inline viewing and attachment download
+    """
+    print(f"[MEDIA_DOWNLOAD] Download request for user: {current_user}, file_key: {file_key}, download: {download}")
+    
+    try:
+        # Validate file_key format (prevent directory traversal)
+        from urllib.parse import unquote
+        decoded_file_key = unquote(file_key) if file_key else ""
+        
+        if not decoded_file_key:
+            print(f"[MEDIA_DOWNLOAD] Invalid file_key format - empty")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file key format",
+            )
+        
+        # Reject windows-style path separators / encoded traversal attempts
+        if "\\" in decoded_file_key or decoded_file_key.startswith("\\"):
+            print(f"[MEDIA_DOWNLOAD] Invalid file_key format - windows path separators")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file key format",
+            )
+        
+        # Normalize path and check for traversal
+        import os
+        normalized_key = os.path.normpath(decoded_file_key)
+        
+        if (
+            decoded_file_key.startswith("/")
+            or normalized_key.startswith("..")
+            or normalized_key.startswith("/")
+            or os.path.isabs(normalized_key)
+            or any(part == ".." for part in normalized_key.split(os.sep) if part)
+        ):
+            print(f"[MEDIA_DOWNLOAD] Invalid file_key format - path traversal attempt")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file key format",
+            )
+        
+        safe_file_key = normalized_key.replace(os.sep, "/")
+        print(f"[MEDIA_DOWNLOAD] Safe file_key: {safe_file_key}")
+        
+        # Verify S3 object exists before generating presigned URL
+        from backend.utils.s3_utils import _get_s3_client, generate_presigned_url
+        s3_client = _get_s3_client()
+        if not s3_client:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage service unavailable"
+            )
+        
+        try:
+            s3_client.head_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
+            print(f"[MEDIA_DOWNLOAD] S3 object exists: {safe_file_key}")
+        except Exception as e:
+            print(f"[MEDIA_DOWNLOAD] S3 object not found: {safe_file_key}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found or upload incomplete"
+            )
+        
+        # Generate presigned URL for download
+        presigned_url = generate_presigned_url(
+            safe_file_key,
+            expiration=3600  # 1 hour
+        )
+        
+        print(f"[MEDIA_DOWNLOAD] Generated presigned URL: {presigned_url}")
+        
+        # Extract filename from file_key for Content-Disposition
+        filename = safe_file_key.split('/')[-1].split('_')[-1]
+        
+        # Determine content disposition based on download parameter
+        content_disposition = f"attachment; filename=\"{filename}\"" if (download or force_download) else f"inline; filename=\"{filename}\""
+        
+        # Return redirect to presigned URL (more efficient than streaming through backend)
+        if use_redirect:
+            return RedirectResponse(url=presigned_url)
+        
+        # For direct download, we could stream the file, but redirect is more efficient
+        # For now, return the presigned URL in JSON response
+        return JSONResponse({
+            "download_url": presigned_url,
+            "filename": filename,
+            "content_type": "application/octet-stream",  # Generic binary type
+            "expires_in": 3600
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[MEDIA_DOWNLOAD] Error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate download URL: {str(e)}",
+        )
+
+
 # ============================================================================
 # SECURE MEDIA ACCESS ENDPOINT - No S3 URL Exposure (Original by file_key)
 # ============================================================================
