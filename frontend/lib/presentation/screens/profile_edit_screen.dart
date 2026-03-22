@@ -21,7 +21,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   late TextEditingController _nameController;
   late TextEditingController _usernameController;
   late TextEditingController _emailController;
-  late TextEditingController _statusController;
   late String _currentAvatar;
   late User _initialUser;  // Store the actual source for change comparison
   bool _isLoading = false;
@@ -44,7 +43,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final userEmail = _initialUser.email ?? '';
     final isValidEmail = (userEmail.contains('@') && userEmail.contains('.'));
     _emailController = TextEditingController(text: isValidEmail ? userEmail : '');
-    _statusController = TextEditingController(text: 'Available');
   }
 
   // Helper method to validate avatar URL format
@@ -69,7 +67,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _nameController.dispose();
     _usernameController.dispose();
     _emailController.dispose();
-    _statusController.dispose();
     super.dispose();
   }
 
@@ -123,17 +120,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         nameToSend = newName;
       }
 
-// Status field is treated as bio
+      // Bio field validation
       String? bioToSend;
-      final newBio = _statusController.text.trim();
-      final currentBio = _initialUser.bio ?? 'Available'; // Use actual user bio from database
+      final currentBio = _initialUser.bio ?? '';
       
-      if (newBio != currentBio) {
+      if (currentBio.isNotEmpty) {
         // Validate bio length (optional but should have reasonable limits)
-        if (newBio.length > 500) {
-          throw Exception('Status is too long. Maximum 500 characters allowed.');
+        if (currentBio.length > 500) {
+          throw Exception('Bio is too long. Maximum 500 characters allowed.');
         }
-        bioToSend = newBio.isEmpty ? null : newBio;
+        bioToSend = currentBio;
       }
 
       debugPrint('[PROFILE_EDIT] Sending profile update: fields=${[nameToSend != null, usernameToSend != null, emailToSend != null, _avatarChanged, bioToSend != null]}');
@@ -184,7 +180,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (nameToSend != null) updatedFields.add('Name');
       if (usernameToSend != null) updatedFields.add('Username');
       if (emailToSend != null) updatedFields.add('Email');
-      if (bioToSend != null) updatedFields.add('Status');
+      if (bioToSend != null) updatedFields.add('Bio');
       if (_avatarChanged && _currentAvatar != (_initialUser.avatarUrl ?? '')) updatedFields.add('Profile Photo');
       
       final successMessage = updatedFields.isNotEmpty 
@@ -237,8 +233,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           errorMessage = 'Username issue: This username may be taken or invalid.';
         } else if (errorString.contains('name')) {
           errorMessage = 'Name issue: Please provide a valid name (2+ characters).';
-        } else if (errorString.contains('bio') || errorString.contains('status') || errorString.contains('too long')) {
-          errorMessage = 'Status issue: Please check your status message and try again.';
+        } else if (errorString.contains('bio') || errorString.contains('too long')) {
+          errorMessage = 'Bio issue: Please check your bio message and try again.';
         } else {
           errorMessage = 'Validation error: Please check all fields and try again.';
         }
@@ -450,14 +446,6 @@ if (result != null && result is String) {
                   _emailChanged = value.trim() != (_initialUser.email ?? '').trim();
                 });
               },
-            ),
-            const SizedBox(height: 16),
-            // Status field
-            _buildProfileField(
-              label: 'Status',
-              controller: _statusController,
-              icon: Icons.comment_outlined,
-              onChanged: (_) {},
             ),
             const SizedBox(height: 32),
             // Account actions
