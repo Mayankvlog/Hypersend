@@ -3896,35 +3896,38 @@ async def get_media_download(
                 detail="Invalid file key format",
             )
         
-        safe_file_key = normalized_key.replace(os.sep, "/")
+        # Security: sanitize file key
+        safe_file_key = file_key.replace("..", "").replace("//", "/").lstrip("/")
         print(f"[MEDIA_DOWNLOAD] Safe file_key: {safe_file_key}")
         
         # Verify S3 object exists before generating presigned URL
-        from backend.utils.s3_utils import _get_s3_client, generate_presigned_url
         s3_client = _get_s3_client()
         if not s3_client:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storage service unavailable"
+                detail="S3 storage not available"
             )
         
+        # Check if object exists
         try:
             s3_client.head_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
             print(f"[MEDIA_DOWNLOAD] S3 object exists: {safe_file_key}")
         except Exception as e:
-            print(f"[MEDIA_DOWNLOAD] S3 object not found: {safe_file_key}")
+            print(f"[MEDIA_DOWNLOAD] S3 object not found: {safe_file_key} - {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found or upload incomplete"
+                detail="Media file not found"
             )
         
         # Generate presigned URL for download
-        presigned_url = generate_presigned_url(
-            safe_file_key,
-            expiration=3600  # 1 hour
+        presigned_url = _generate_presigned_url(
+            "GET",
+            object_key=safe_file_key,
+            bucket=settings.S3_BUCKET,
+            expires_in=3600,
         )
         
-        print(f"[MEDIA_DOWNLOAD] Generated presigned URL: {presigned_url}")
+        print(f"[MEDIA_DOWNLOAD] Generated presigned URL: {presigned_url[:50]}...")
         
         # Extract filename from file_key for Content-Disposition
         filename = safe_file_key.split('/')[-1].split('_')[-1]
