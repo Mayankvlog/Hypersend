@@ -197,32 +197,36 @@ class TestFileDownloadResponseFix:
                     )
                     mock_files.return_value.update_one = AsyncMock()
                     
-                    with patch("backend.routes.files._generate_presigned_url") as mock_presigned:
-                        mock_presigned.return_value = "https://s3.amazonaws.com/presigned-url"
+                    with patch("backend.routes.files._get_s3_client") as mock_s3:
+                        # Mock S3 client as unavailable to trigger presigned URL fallback
+                        mock_s3.return_value = None
                         
-                        response = await client.get(
-                            f"/api/v1/files/{test_file_id}/download",
-                            headers={"Authorization": "Bearer test_token"}
-                        )
-                        
-                        data = response.json()
-                        
-                        # Verify required fields
-                        assert "presigned_url" in data
-                        assert "file_id" in data
-                        assert "filename" in data
-                        assert "size" in data
-                        assert "mime_type" in data
-                        assert "expires_in" in data
-                        
-                        # Verify types
-                        assert isinstance(data["presigned_url"], str)
-                        assert isinstance(data["file_id"], str)
-                        assert isinstance(data["filename"], str)
-                        assert isinstance(data["size"], (int, float))
-                        assert isinstance(data["expires_in"], int)
-                        
-                        print("✅ File download presigned URL response properly structured")
+                        with patch("backend.routes.files._generate_presigned_url") as mock_presigned:
+                            mock_presigned.return_value = "https://s3.amazonaws.com/presigned-url"
+                            
+                            response = await client.get(
+                                f"/api/v1/files/{test_file_id}/download",
+                                headers={"Authorization": "Bearer test_token"}
+                            )
+                            
+                            data = response.json()
+                            
+                            # Verify required fields
+                            assert "presigned_url" in data
+                            assert "file_id" in data
+                            assert "filename" in data
+                            assert "size" in data
+                            assert "mime_type" in data
+                            assert "expires_in" in data
+                            
+                            # Verify types
+                            assert isinstance(data["presigned_url"], str)
+                            assert isinstance(data["file_id"], str)
+                            assert isinstance(data["filename"], str)
+                            assert isinstance(data["size"], (int, float))
+                            assert isinstance(data["expires_in"], int)
+                            
+                            print("✅ File download presigned URL response properly structured")
     
     @pytest.mark.asyncio
     async def test_file_download_includes_download_url_alias(self):
@@ -251,21 +255,25 @@ class TestFileDownloadResponseFix:
                     )
                     mock_files.return_value.update_one = AsyncMock()
                     
-                    with patch("backend.routes.files._generate_presigned_url") as mock_presigned:
-                        mock_presigned.return_value = "https://s3.amazonaws.com/presigned-url"
+                    with patch("backend.routes.files._get_s3_client") as mock_s3:
+                        # Mock S3 client as unavailable to trigger presigned URL fallback
+                        mock_s3.return_value = None
                         
-                        response = await client.get(
-                            f"/api/v1/files/{test_file_id}/download",
-                            headers={"Authorization": "Bearer test_token"}
-                        )
-                        
-                        data = response.json()
-                        
-                        # Verify alias exists
-                        assert "download_url" in data
-                        assert data["download_url"] == data["presigned_url"]
-                        
-                        print("✅ File download includes download_url alias")
+                        with patch("backend.routes.files._generate_presigned_url") as mock_presigned:
+                            mock_presigned.return_value = "https://s3.amazonaws.com/presigned-url"
+                            
+                            response = await client.get(
+                                f"/api/v1/files/{test_file_id}/download",
+                                headers={"Authorization": "Bearer test_token"}
+                            )
+                            
+                            data = response.json()
+                            
+                            # Verify alias exists
+                            assert "download_url" in data
+                            assert data["download_url"] == data["presigned_url"]
+                            
+                            print("✅ File download includes download_url alias")
 
 
 class TestObjectIdSerializationIntegration:

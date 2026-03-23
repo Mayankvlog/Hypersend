@@ -2212,8 +2212,10 @@ Future<void> postToChannel(String channelId, String text) async {
       url,
       options: Options(
         responseType: ResponseType.bytes,
-        followRedirects: false,
-        headers: _mergeAuthHeaders({'Range': 'bytes=0-'}),
+        followRedirects: false,  // Allow manual redirect handling
+        headers: _mergeAuthHeaders({
+          'Accept': 'application/octet-stream, image/*, video/*, */*',
+        }),
       ),
     );
   }

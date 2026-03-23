@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
 import '../../core/constants/api_constants.dart';
@@ -197,89 +196,46 @@ class FileTransferService {
       throw UnsupportedError('File download to local filesystem is not supported on web platform. Use browser download instead.');
     }
 
-    // Enhanced download path generation with proper validation for native platforms
-    String actualSavePath = await _getNativeSavePath(fileName, savePath);
-      
-    // Enhanced path validation
-    final file = io.File(actualSavePath);
-    final parentDir = file.parent;
-    
-    debugPrint('[FILE_TRANSFER] Final save path: $actualSavePath');
-    debugPrint('[FILE_TRANSFER] Parent directory exists: ${await parentDir.exists()}');
-    debugPrint('[FILE_TRANSFER] Parent directory path: ${parentDir.path}');
-    
-    // CRITICAL FIX: Ensure parent directory exists with proper error handling
+    String actualSavePath;
     try {
+      if (savePath.isEmpty) {
+        final directory = await getApplicationDocumentsDirectory();
+        actualSavePath = '${directory.path}/$fileName';
+      } else {
+        actualSavePath = savePath;
+      }
+      
+      // Ensure parent directory exists
+      final file = io.File(actualSavePath);
+      final parentDir = file.parent;
       if (!await parentDir.exists()) {
-        debugPrint('[FILE_TRANSFER] Creating parent directory: ${parentDir.path}');
         await parentDir.create(recursive: true);
       }
-      
-      // CRITICAL FIX: Test write permissions more robustly
-      final testFile = io.File('${parentDir.path}/.download_test_${DateTime.now().toUtc().millisecondsSinceEpoch}');
-      try {
-        await testFile.writeAsString('test');
-        final writtenContent = await testFile.readAsString();
-        if (writtenContent != 'test') {
-          throw Exception('Directory write test failed - content mismatch');
-        }
-        await testFile.delete();
-        debugPrint('[FILE_TRANSFER] Directory is writable: ✅');
-      } catch (writeError) {
-        debugPrint('[FILE_TRANSFER] Write permission test failed: $writeError');
-        throw Exception('Directory is not writable: $writeError');
-      }
     } catch (e) {
-      debugPrint('[FILE_TRANSFER] Directory creation/writability failed: $e');
-      throw Exception('Cannot create or write to download directory: $e');
+      debugPrint('[FILE_TRANSFER] Error preparing download path: $e');
+      throw Exception('Unable to prepare save location for downloaded file');
     }
 
-    final transfer = FileTransfer(
-      id: fileId,
-      fileName: fileName,
-      fileSize: 0,
-      filePath: actualSavePath,
-      chatId: '',
-      status: TransferStatus.downloading,
-      direction: TransferDirection.download,
-      progress: 0,
-    );
-    _transfers.add(transfer);
-
     try {
-      debugPrint('[FILE_TRANSFER] Getting file info to determine download strategy');
-      debugPrint('[FILE_TRANSFER] Download path: $actualSavePath');
+      // Create transfer record with proper file ID and metadata
+      final transfer = FileTransfer(
+        id: fileId,
+        fileName: fileName,
+        filePath: actualSavePath,
+        fileSize: 0, // Will be updated after getting file info
+        status: TransferStatus.downloading,
+        progress: 0.0,
+        direction: TransferDirection.download,
+        chatId: '', // Not used for downloads
+      );
       
-      // Get file info first to determine size and strategy
-      final fileInfo = await _api.getFileInfo(fileId);
-      final fileSize = fileInfo['size'] as int? ?? 0;
+      _transfers.add(transfer);
+      debugPrint('[FILE_TRANSFER] Download started: $fileId -> $actualSavePath');
       
-      debugPrint('[FILE_TRANSFER] File size: $fileSize bytes');
-      
-       // CRITICAL FIX: Ensure directory exists with proper error handling (native only)
-       if (!kIsWeb) {
-         final directory = io.File(actualSavePath).parent;
-         try {
-           if (!await directory.exists()) {
-             debugPrint('[FILE_TRANSFER] Creating directory: ${directory.path}');
-             await directory.create(recursive: true);
-           }
-           
-           // Verify directory is writable
-           if (!await directory.exists()) {
-             throw Exception('Failed to create download directory: ${directory.path}');
-           }
-           
-           debugPrint('[FILE_TRANSFER] Directory ready: ${directory.path}');
-         } catch (e) {
-           debugPrint('[FILE_TRANSFER] Directory setup failed: $e');
-           throw Exception('Cannot setup download directory: $e');
-         }
-       }
-      
-      // Use chunked download for large files (>100MB)
-      if (fileSize > 100 * 1024 * 1024) {
-        debugPrint('[FILE_TRANSFER] Using chunked download for large file: $fileSize bytes');
+      // Get file info first for size validation
+      try {
+        final fileInfo = await _api.getFileInfo(fileId);
+        final fileSize = fileInfo['size'] as int? ?? 0;
         
         // Update transfer with actual file size
         final transferIndex = _transfers.indexWhere((t) => t.id == fileId);
@@ -301,21 +257,22 @@ class FileTransferService {
             }
           },
         );
-      } else {
-        debugPrint('[FILE_TRANSFER] Using regular download for small file: $fileSize bytes');
-        
-        // Update transfer with actual file size and track progress
-        final transferIndex = _transfers.indexWhere((t) => t.id == fileId);
-        if (transferIndex >= 0) {
-          _transfers[transferIndex] = _transfers[transferIndex].copyWith(fileSize: fileSize);
-        }
-        
+      } catch (e) {
+        debugPrint('[FILE_TRANSFER] Error getting file info: $e');
+        // Continue with download without size info
         await _api.downloadFileToPathWithProgress(
           fileId: fileId,
           savePath: actualSavePath,
           onProgress: (progress) {
-            // Track progress for small files too
-            _updateProgress(fileId, progress, onProgress);
+            // Update transfer progress
+            final transferIndex = _transfers.indexWhere((t) => t.id == fileId);
+            if (transferIndex >= 0) {
+              _transfers[transferIndex] = _transfers[transferIndex].copyWith(
+                progress: progress,
+                status: progress >= 1.0 ? TransferStatus.completed : TransferStatus.downloading,
+              );
+            }
+            
             onProgress(progress);
           },
         );
@@ -381,31 +338,6 @@ class FileTransferService {
     }
   }
 
-  // Sanitize file name to prevent directory traversal and invalid characters
-  String _sanitizeFileName(String fileName) {
-    // Remove path traversal attempts
-    String sanitized = fileName
-        .replaceAll(RegExp(r'\.\.[\\/]'), '') // Remove ../
-        .replaceAll(RegExp(r'^[\\/]'), '') // Remove leading /
-        .replaceAll(RegExp(r'[<>:"|?*]'), '_') // Replace invalid characters
-        .trim();
-    
-    // Ensure filename is not empty
-    if (sanitized.isEmpty) {
-      sanitized = 'download_${DateTime.now().toUtc().millisecondsSinceEpoch}';
-    }
-    
-    // Limit filename length
-    if (sanitized.length > 255) {
-      final extension = sanitized.contains('.') ? 
-          sanitized.substring(sanitized.lastIndexOf('.')) : '';
-      final nameWithoutExt = sanitized.contains('.') ? 
-          sanitized.substring(0, sanitized.lastIndexOf('.')) : sanitized;
-      sanitized = '${nameWithoutExt.substring(0, 255 - extension.length)}$extension';
-    }
-    
-    return sanitized;
-  }
 
   void _markCompleted(String transferId) {
     final index = _transfers.indexWhere((t) => t.id == transferId);
@@ -421,56 +353,6 @@ class FileTransferService {
     }
   }
 
-  Future<String> _getNativeSavePath(String fileName, String savePath) async {
-    // Web platform does not support native downloads
-    if (kIsWeb) {
-      throw UnsupportedError('Native file paths are not supported on Flutter Web');
-    }
-    
-    // For native platforms, use platform-appropriate directory
-    io.Directory? directory;
-    try {
-      // Use path_provider to get appropriate base directory
-      if (io.Platform.isAndroid) {
-        final baseDir = await getExternalStorageDirectory();
-        if (baseDir != null) {
-          directory = io.Directory(path.join(baseDir.path, 'karo'));
-        } else {
-          // Fallback to application documents when external storage is unavailable
-          final appDocsDir = await getApplicationDocumentsDirectory();
-          directory = io.Directory(path.join(appDocsDir.path, 'karo'));
-        }
-      } else {
-        // For iOS, macOS, Windows, Linux - use application documents
-        final baseDir = await getApplicationDocumentsDirectory();
-        directory = io.Directory(path.join(baseDir.path, 'karo'));
-      }
-      
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-    } catch (e) {
-      debugPrint('[FILE_TRANSFER] Could not get downloads directory: $e');
-    }
-    
-    // Fallback to application documents if downloads directory fails
-    if (directory == null) {
-      try {
-        final appDocsDir = await getApplicationDocumentsDirectory();
-        directory = io.Directory(path.join(appDocsDir.path, 'karo'));
-        debugPrint('[FILE_TRANSFER] Using fallback directory: ${directory.path}');
-      } catch (e) {
-        debugPrint('[FILE_TRANSFER] Could not get application directory: $e');
-        throw Exception('Unable to determine save location for downloaded file');
-      }
-    }
-    
-    // directory cannot be null here due to the fallback logic above
-    
-    // Use path.join for cross-platform path construction
-    final sanitizedSavePath = _sanitizeFileName(savePath);
-    return path.join(directory.path, sanitizedSavePath);
-  }
 }
 
 enum TransferStatus { uploading, downloading, completed, failed, cancelled }

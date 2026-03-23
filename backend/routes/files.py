@@ -1904,15 +1904,32 @@ async def complete_upload(
                 detail="S3 service unavailable - cannot upload file",
             )
 
-        # Read assembled file and upload to S3
+        # Read assembled file and upload to S3 with checksum validation
         s3_key = f"files/{upload_user_id}/{upload_id}/{filename}"
 
+        # Calculate file checksum and size for validation
+        file_hash = None
+        actual_size = 0
+
         try:
-            # Read the assembled file and upload to S3
             async with aiofiles.open(str(final_path), "rb") as file_data:
                 file_content = await file_data.read()
+                actual_size = len(file_content)
 
-            # Upload directly to S3
+                # Calculate SHA-256 checksum for integrity validation
+                file_hash = hashlib.sha256(file_content).hexdigest()
+
+                # Validate file size against upload metadata
+                expected_size = upload_doc.get("total_size", 0)
+                if expected_size > 0 and actual_size != expected_size:
+                    _log(
+                        "warning",
+                        f"File size mismatch during upload: expected={expected_size}, actual={actual_size}",
+                        {"user_id": current_user, "upload_id": upload_id},
+                    )
+                    # Continue with upload but log the discrepancy
+
+            # Upload directly to S3 with checksum metadata
             s3_client.put_object(
                 Bucket=_get_sanitized_bucket_name(),
                 Key=s3_key,
@@ -1924,7 +1941,17 @@ async def complete_upload(
                     "mime_type": upload_doc.get(
                         "mime_type", "application/octet-stream"
                     ),
+                    "sha256_checksum": file_hash,
+                    "file_size": str(actual_size),
                 },
+                ContentType=upload_doc.get("mime_type", "application/octet-stream"),
+                ContentLength=actual_size,
+            )
+
+            _log(
+                "info",
+                f"File uploaded to S3 successfully: size={actual_size}, checksum={file_hash}",
+                {"user_id": current_user, "upload_id": upload_id, "s3_key": s3_key},
             )
 
             # Clean up temporary files after S3 upload
@@ -1998,7 +2025,7 @@ async def complete_upload(
             "file_id": file_oid,
             "owner_id": upload_user_id,
             "filename": filename,
-            "size": upload_doc.get("file_size"),
+            "size": actual_size,  # Use actual size from S3 upload
             "mime_type": upload_doc.get("mime_type"),
             "storage_key": s3_key,
             "s3_key": s3_key,  # CRITICAL: Always set S3 key
@@ -2012,6 +2039,7 @@ async def complete_upload(
             "status": "active",
             "upload_id": upload_id,
             "storage_path": None,  # No local storage path
+            "checksum": file_hash,  # Store checksum for integrity validation
         }
 
         files_col = _safe_collection(files_collection)
@@ -2533,134 +2561,228 @@ async def download_file(
             object_key = file_doc.get("object_key")
             storage_path = file_doc.get("storage_path")
 
-            # Prefer local filesystem download when available (S3 is disabled in this deployment).
-            if storage_path:
-                try:
-                    file_path = Path(storage_path)
-                except Exception:
-                    file_path = None
-
-                if file_path and file_path.exists() and file_path.is_file():
-                    mime_type = file_doc.get("mime_type") or "application/octet-stream"
-                    filename = file_doc.get("filename") or str(file_path.name)
-                    try:
-                        await files_collection().update_one(
-                            {"_id": file_doc.get("_id")},
-                            {
-                                "$set": {
-                                    "delivery_status": "downloading",
-                                    "download_requested_at": datetime.now(timezone.utc),
-                                }
-                            },
-                        )
-                    except Exception:
-                        pass
-
-                    return FileResponse(
-                        path=str(file_path),
-                        filename=filename,
-                        media_type=mime_type,
-                        headers={
-                            "Cache-Control": "no-store",
-                            "Accept-Ranges": "bytes",
-                            "Content-Type": "application/octet-stream",
-                            # Always use attachment for PC download behavior
-                            "Content-Disposition": f'attachment; filename="{filename}"',
-                        },
-                    )
-
-            # Fallback to presigned URL flow (if object_key exists)
+            # ENHANCED: Direct S3 streaming with proper headers (NO LOCAL FALLBACK)
             storage_key = file_doc.get("storage_key")
             bucket = file_doc.get("bucket")
             region = file_doc.get("region")
+            mime_type = file_doc.get("mime_type", "application/octet-stream")
+            filename = file_doc.get("filename", "file")
+            file_size = file_doc.get("size", 0)
 
+            # S3-ONLY: Require S3 storage for all files
             if not storage_key or not bucket or not region:
                 _log(
                     "error",
-                    "File missing storage reference in DB",
+                    "File missing S3 storage reference - local storage disabled",
                     {"user_id": current_user, "operation": "file_download"},
                 )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found - storage key missing",
+                    detail="File not found - S3 storage key missing",
                 )
 
-            # Use sanitized bucket name to ensure consistency between upload and download
-            bucket_name = _get_sanitized_bucket_name()
-            effective_bucket = bucket_name if bucket != bucket_name else bucket
-            print(
-                f"[DOWNLOAD] S3 URL GENERATED - bucket={effective_bucket}, key={storage_key}"
-            )
-
-            download_url = _generate_presigned_url(
-                "get",
-                object_key=storage_key,
-                expires_in=600,
-                bucket=effective_bucket,
-            )
-
-            # Test mode fallback: use mock URL when S3 is not available
-            if not download_url and _is_test_request(request):
-                download_url = f"https://mock-s3.test/{storage_key}"
-
-            if not download_url:
-                # Do not block downloads when S3 is temporarily unavailable.
-                # Return a stable JSON payload so clients can retry or surface UI state.
-                return {
-                    "presigned_url": None,
-                    "file_id": str(file_doc.get("_id")),
-                    "filename": file_doc.get("filename"),
-                    "size": file_doc.get("size"),
-                    "mime_type": file_doc.get("mime_type", "application/octet-stream"),
-                    "expires_in": 0,
-                    "error": "Temporary storage unavailable",
-                }
-
-            if dl_requested:
-                # NEVER return JSON when dl=1 is requested - always redirect to actual file
-                # Add headers to ensure browser downloads the file instead of previewing
-                filename = file_doc.get("filename", "file")
-                headers = {
-                    "Content-Disposition": f'attachment; filename="{filename}"',
-                    "Content-Type": "application/octet-stream",
-                }
-                return RedirectResponse(
-                    url=download_url, status_code=status.HTTP_302_FOUND, headers=headers
+            # Get S3 client for direct streaming
+            s3_client = _get_s3_client()
+            if not s3_client:
+                # Fallback to presigned URL if S3 is unavailable
+                download_url = _generate_presigned_url(
+                    "get",
+                    object_key=storage_key,
+                    expires_in=600,
+                    bucket=bucket,
+                    response_content_disposition=f'attachment; filename="{filename}"' if dl_requested else f'inline; filename="{filename}"',
                 )
-
-            # Only return JSON metadata when dl is NOT requested (API mode)
-
-            try:
-                await files_collection().update_one(
-                    {"_id": file_doc.get("_id")},
-                    {
-                        "$set": {
-                            "delivery_status": "downloading",
-                            "download_requested_at": datetime.utcnow().replace(
-                                tzinfo=timezone.utc
-                            ),
+                
+                if not download_url:
+                    return {
+                        "presigned_url": None,
+                        "file_id": str(file_doc.get("_id")),
+                        "filename": filename,
+                        "size": file_size,
+                        "mime_type": mime_type,
+                        "expires_in": 0,
+                        "error": "Storage service unavailable",
+                    }
+                
+                if dl_requested:
+                    return RedirectResponse(
+                        url=download_url, 
+                        status_code=status.HTTP_302_FOUND, 
+                        headers={
+                            "Content-Disposition": f'attachment; filename="{filename}"',
                         }
+                    )
+                
+                return {
+                    "presigned_url": download_url,
+                    "download_url": download_url,
+                    "file_id": str(file_doc.get("_id")),
+                    "filename": filename,
+                    "size": file_size,
+                    "mime_type": mime_type,
+                    "expires_in": 600,
+                    "status": "ready",
+                }
+
+            # Direct S3 streaming with proper headers
+            try:
+                # Get S3 object metadata first
+                obj_metadata = s3_client.head_object(Bucket=bucket, Key=storage_key)
+                actual_size = obj_metadata.get("ContentLength", file_size)
+                actual_mime_type = obj_metadata.get("ContentType", mime_type)
+                
+                # Validate file size matches metadata
+                if file_size > 0 and actual_size != file_size:
+                    _log(
+                        "warning",
+                        f"File size mismatch: DB={file_size}, S3={actual_size}",
+                        {"user_id": current_user, "file_id": file_id},
+                    )
+                
+                # Determine Content-Disposition based on dl parameter and file type
+                is_image = actual_mime_type.startswith("image/")
+                is_video = actual_mime_type.startswith("video/")
+                content_disposition = f'inline; filename="{filename}"' if not dl_requested and (is_image or is_video) else f'attachment; filename="{filename}"'
+                
+                # Update download status
+                try:
+                    await files_collection().update_one(
+                        {"_id": file_doc.get("_id")},
+                        {
+                            "$set": {
+                                "delivery_status": "downloading",
+                                "download_requested_at": datetime.now(timezone.utc),
+                            }
+                        },
+                    )
+                except Exception:
+                    pass
+                
+                # Create streaming response from S3
+                def generate_s3_stream():
+                    try:
+                        response = s3_client.get_object(Bucket=bucket, Key=storage_key)
+                        for chunk in response["Body"].iter_chunks(chunk_size=8192):
+                            yield chunk
+                    except Exception as e:
+                        _log(
+                            "error",
+                            f"S3 streaming error: {str(e)}",
+                            {"user_id": current_user, "file_id": file_id},
+                        )
+                        raise
+                    finally:
+                        try:
+                            response["Body"].close()
+                        except:
+                            pass
+                
+                return StreamingResponse(
+                    generate_s3_stream(),
+                    media_type=actual_mime_type,
+                    headers={
+                        "Content-Length": str(actual_size),
+                        "Content-Disposition": content_disposition,
+                        "Cache-Control": "no-cache, no-store, must-revalidate" if dl_requested else "public, max-age=3600",
+                        "Accept-Ranges": "bytes",
+                        "X-Content-Type-Options": "nosniff",
                     },
                 )
-            except Exception as e:
+                
+            except s3_client.exceptions.NoSuchKey:
+                # Structured JSON error for missing S3 objects
                 _log(
                     "warning",
-                    f"Failed to update delivery status: {str(e)}",
-                    {"user_id": current_user, "operation": "file_download"},
+                    f"S3 object not found: {storage_key}",
+                    {"user_id": current_user, "file_id": file_id, "s3_key": storage_key},
                 )
-
-            # Ensure all fields are properly typed and serializable
-            response_data = {
-                "presigned_url": download_url,
-                "download_url": download_url,  # Alias for compatibility
-                "file_id": str(file_doc.get("_id", "")),
-                "filename": file_doc.get("filename", "file"),
-                "size": int(file_doc.get("size", 0)) if file_doc.get("size") else 0,
-                "mime_type": file_doc.get("mime_type", "application/octet-stream"),
-                "expires_in": 600,
-                "status": "ready",
-            }
-            return response_data
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={
+                        "error": "File not found",
+                        "message": "The requested file does not exist in storage",
+                        "file_id": file_id,
+                        "s3_key": storage_key,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+            except s3_client.exceptions.ClientError as e:
+                # Handle other S3 client errors with structured responses
+                error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+                error_message = e.response.get('Error', {}).get('Message', 'S3 client error')
+                
+                _log(
+                    "error",
+                    f"S3 client error: {error_code} - {error_message}",
+                    {"user_id": current_user, "file_id": file_id, "error_code": error_code},
+                )
+                
+                # Map S3 error codes to appropriate HTTP status codes
+                if error_code == 'AccessDenied':
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail={
+                            "error": "Access denied",
+                            "message": "You do not have permission to access this file",
+                            "file_id": file_id,
+                            "error_code": error_code,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                elif error_code == 'InvalidArgument':
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={
+                            "error": "Invalid request",
+                            "message": "Invalid file request parameters",
+                            "file_id": file_id,
+                            "error_code": error_code,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail={
+                            "error": "Storage error",
+                            "message": f"Storage service error: {error_message}",
+                            "file_id": file_id,
+                            "error_code": error_code,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+            except Exception as e:
+                _log(
+                    "error",
+                    f"S3 streaming failed: {str(e)}",
+                    {"user_id": current_user, "file_id": file_id},
+                )
+                # Fallback to presigned URL
+                download_url = _generate_presigned_url(
+                    "get",
+                    object_key=storage_key,
+                    expires_in=600,
+                    bucket=bucket,
+                    response_content_disposition=f'attachment; filename="{filename}"' if dl_requested else f'inline; filename="{filename}"',
+                )
+                
+                if dl_requested:
+                    return RedirectResponse(
+                        url=download_url, 
+                        status_code=status.HTTP_302_FOUND,
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+                    )
+                
+                return {
+                    "presigned_url": download_url,
+                    "download_url": download_url,
+                    "file_id": str(file_doc.get("_id")),
+                    "filename": filename,
+                    "size": file_size,
+                    "mime_type": mime_type,
+                    "expires_in": 600,
+                    "status": "ready",
+                }
 
         # Check if it's an avatar file
         try:
