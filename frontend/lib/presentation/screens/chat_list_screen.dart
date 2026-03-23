@@ -17,7 +17,6 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
-  int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   List<Chat> _filteredChats = [];
   List<Chat> _allChats = [];
@@ -397,19 +396,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   
-  void _onBottomNavTap(int index) {
-    debugPrint('Tab: $index');
-    debugPrint('[BOTTOM_NAV] Current tab index: $index');
-    debugPrint('Current Tab: $index');
-    setState(() {
-      _selectedIndex = index;
-    });
-    
-    if (index == 0) {
-      context.go('/chats');
-    }
-  }
-
   void _onChatTap(Chat chat) {
     context.push('/chat/${chat.id}');
   }
@@ -669,19 +655,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       );
                     },
                   ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onBottomNavTap,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: AppTheme.primaryCyan,
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.message),
-            label: 'Chats',
           ),
         ],
       ),
