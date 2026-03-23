@@ -64,7 +64,6 @@ from backend.routes import (
     debug,
     devices,
     e2ee_messages,
-    presence,
 )
 
 from backend.auth.utils import get_current_user
