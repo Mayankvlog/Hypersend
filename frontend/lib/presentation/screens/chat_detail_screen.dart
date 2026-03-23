@@ -1795,11 +1795,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         // Try multiple endpoint strategies for better compatibility
         if (fileId.isNotEmpty) {
           // Strategy 1: Try media endpoint first (preferred)
-          downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileId?download=true';
+          downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileId?download=true&force_download=true';
           debugPrint('[FILE_WEB] Trying media endpoint: $downloadUrl');
         } else {
           // Strategy 2: Fallback to legacy files endpoint
-          downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
+          downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1&force_download=true';
           debugPrint('[FILE_WEB] Using legacy endpoint: $downloadUrl');
         }
 
@@ -1812,7 +1812,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       } catch (e) {
         debugPrint('[FILE_WEB_ERROR] URL generation failed: $e');
         // Ultimate fallback - construct basic URL
-        downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
+        downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1&force_download=true';
         if (accessToken != null) {
           downloadUrl += '&token=$accessToken';
         }

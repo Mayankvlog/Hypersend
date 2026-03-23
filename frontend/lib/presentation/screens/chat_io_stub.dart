@@ -178,8 +178,11 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     // Set target for better compatibility
     anchor.target = '_blank';
     
-    // Add download attribute for force download
+    // Force download by adding strong download attribute
     anchor.setAttribute('download', fileName);
+    
+    // Add type attribute to force download behavior for images
+    anchor.setAttribute('type', 'application/octet-stream');
     
     // Append to body (required in some browsers)
     if (html.document.body != null) {
@@ -192,7 +195,7 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     anchor.click();
     
     // Delay cleanup to ensure download starts
-    await Future.delayed(const Duration(milliseconds: 200));
+    await Future.delayed(const Duration(milliseconds: 500));
     
     // Clean up
     try {
