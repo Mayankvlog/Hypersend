@@ -152,8 +152,18 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
   
   try {
     // Validate URL before processing
-    if (downloadUrl.isEmpty || !Uri.tryParse(downloadUrl).hasAbsolutePath) {
+    if (downloadUrl.isEmpty) {
+      throw Exception('Download URL is empty');
+    }
+    
+    final uri = Uri.tryParse(downloadUrl);
+    if (uri == null) {
       throw Exception('Invalid download URL: $downloadUrl');
+    }
+    
+    // Check if URI has absolute path (safe null check)
+    if (!uri.hasAbsolutePath) {
+      throw Exception('URL must be absolute: $downloadUrl');
     }
     
     // Create anchor element with direct link
