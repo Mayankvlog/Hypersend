@@ -7,6 +7,11 @@ import 'dart:typed_data';
 import 'dart:js_interop';
 import 'package:flutter/foundation.dart' show debugPrint;
 
+// JS interop extensions
+extension StringToJS on String {
+  JSString get toJS => this.toJS;
+}
+
 // Re-export path for compatibility - not used in web stub
 
 // Stub Directory class
@@ -162,10 +167,17 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     
     // Use fetch API for proper header handling and authentication
     debugPrint('[FILE_WEB] Starting fetch request...');
-    final response = await html.window.fetch(
-      downloadUrl,
-      {'credentials': 'include'}, // Send cookies for authentication
+    
+    // Create proper RequestInit object
+    final requestInit = html.RequestInit(
+      method: 'GET',
+      credentials: 'include',
     );
+    
+    final response = await html.window.fetch(
+      downloadUrl.toJS,
+      requestInit,
+    ).toDart;
     
     if (!response.ok) {
       debugPrint('[FILE_WEB_ERROR] Fetch failed with status: ${response.status}');
@@ -174,10 +186,10 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     
     // Convert response to blob
     debugPrint('[FILE_WEB] Converting response to blob...');
-    final blob = await response.blob();
+    final blob = await response.blob().toDart;
     
     // Create blob URL
-    final blobUrl = html.Url.createObjectUrl(blob);
+    final blobUrl = html.URL.createObjectURL(blob);
     
     // Create anchor element with blob URL
     final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
@@ -210,7 +222,7 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     }
     
     // Release blob URL
-    html.Url.revokeObjectUrl(blobUrl);
+    html.URL.revokeObjectURL(blobUrl);
     
     debugPrint('[FILE_WEB] Download completed for: $fileName');
   } catch (e) {
