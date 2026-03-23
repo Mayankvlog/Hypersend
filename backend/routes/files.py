@@ -3345,7 +3345,7 @@ async def get_media_by_id_main(
         # CRITICAL: S3-ONLY DOWNLOAD - No local fallback allowed
         print(f"MEDIA_DEBUG: S3_ONLY - s3_key={s3_key}")
         return await _handle_s3_media_download(
-            s3_key, file_doc, download, force_download, use_redirect, False, None
+            s3_key, file_doc, download, force_download, use_redirect
         )
 
     except HTTPException:
