@@ -151,19 +151,30 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
   debugPrint('[FILE_WEB] URL: $downloadUrl');
   
   try {
+    // Validate URL before processing
+    if (downloadUrl.isEmpty || !Uri.tryParse(downloadUrl).hasAbsolutePath) {
+      throw Exception('Invalid download URL: $downloadUrl');
+    }
+    
     // Create anchor element with direct link
     final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
     anchor.href = downloadUrl;
     anchor.download = fileName;
     
-    // Set rel="noopener" to prevent window manipulation
-    anchor.setAttribute('rel', 'noopener');
+    // Enhanced cross-origin and security attributes
+    anchor.setAttribute('rel', 'noopener noreferrer');
+    anchor.setAttribute('crossorigin', 'anonymous');
     
-    // Set target="_blank" with download attribute for cross-origin support
+    // Set target for better compatibility
     anchor.target = '_blank';
     
+    // Add download attribute for force download
+    anchor.setAttribute('download', fileName);
+    
     // Append to body (required in some browsers)
-    html.document.body?.appendChild(anchor);
+    if (html.document.body != null) {
+      html.document.body!.appendChild(anchor);
+    }
     
     debugPrint('[FILE_WEB] Triggering download click');
     
@@ -171,14 +182,28 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     anchor.click();
     
     // Delay cleanup to ensure download starts
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 200));
     
     // Clean up
-    html.document.body?.removeChild(anchor);
+    try {
+      if (anchor.parentNode != null) {
+        anchor.parentNode!.removeChild(anchor);
+      }
+    } catch (cleanupError) {
+      debugPrint('[FILE_WEB_ERROR] Cleanup failed: $cleanupError');
+    }
     
     debugPrint('[FILE_WEB] Download initiated for: $fileName');
   } catch (e) {
     debugPrint('[FILE_WEB_ERROR] saveFileDirectFromUrl failed: $e');
-    rethrow;
+    
+    // Fallback: try to open URL in new tab if direct download fails
+    try {
+      debugPrint('[FILE_WEB] Fallback: opening URL in new tab');
+      html.window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+    } catch (fallbackError) {
+      debugPrint('[FILE_WEB_ERROR] Fallback also failed: $fallbackError');
+      rethrow;
+    }
   }
 }

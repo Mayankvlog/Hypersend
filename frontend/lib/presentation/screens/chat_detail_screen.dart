@@ -1716,20 +1716,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       if (!mounted) return;
       Navigator.pop(context); // Close loading dialog
       
-      String errorMessage = e.toString();
-      if (errorMessage.contains('not found')) {
-        errorMessage = 'File not found or has been deleted';
-      } else if (errorMessage.contains('permission')) {
-        errorMessage = 'You do not have permission to access this file';
+      // Enhanced error handling with specific messages
+      String errorMessage = e.toString().toLowerCase();
+      String userMessage = 'Failed to download file. Please try again.';
+      
+      if (errorMessage.contains('network') || errorMessage.contains('connection')) {
+        userMessage = 'Network error. Please check your connection and try again.';
+      } else if (errorMessage.contains('permission') || errorMessage.contains('unauthorized')) {
+        userMessage = 'You do not have permission to access this file.';
       } else if (errorMessage.contains('timeout')) {
-        errorMessage = 'Download timeout. Please try again';
+        userMessage = 'Download timeout. Please try again.';
+      } else if (errorMessage.contains('not found') || errorMessage.contains('404')) {
+        userMessage = 'File not found or has been deleted.';
+      } else if (errorMessage.contains('cors') || errorMessage.contains('cross-origin')) {
+        userMessage = 'Download blocked by browser security. Please try again.';
+      } else if (errorMessage.contains('invalid url')) {
+        userMessage = 'Invalid file link. Please contact support.';
       }
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to open file: $errorMessage'),
+          content: Text(userMessage),
           backgroundColor: AppTheme.errorRed,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: () {
+              // Retry download
+              _downloadFile(message);
+            },
+          ),
         ),
       );
     }
@@ -1772,18 +1789,33 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
       final accessToken = serviceProvider.authService.accessToken;
 
-      // Build the download URL.
-      // 1) Preferred: /api/v1/media/{file_id}?download=true
-      //  Fallback: legacy /files/{fileId}/download?dl=1
+      // Build the download URL with enhanced error handling
       String downloadUrl;
-      if (fileId.isNotEmpty) {
-        downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileId?download=true';
-      } else {
-        downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
-      }
+      try {
+        // Try multiple endpoint strategies for better compatibility
+        if (fileId.isNotEmpty) {
+          // Strategy 1: Try media endpoint first (preferred)
+          downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileId?download=true';
+          debugPrint('[FILE_WEB] Trying media endpoint: $downloadUrl');
+        } else {
+          // Strategy 2: Fallback to legacy files endpoint
+          downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
+          debugPrint('[FILE_WEB] Using legacy endpoint: $downloadUrl');
+        }
 
-      if (accessToken != null) {
-        downloadUrl += downloadUrl.contains('?') ? '&token=$accessToken' : '?token=$accessToken';
+        // Add authentication token
+        if (accessToken != null && accessToken.isNotEmpty) {
+          final separator = downloadUrl.contains('?') ? '&' : '?';
+          downloadUrl = '$downloadUrl${separator}token=$accessToken';
+          debugPrint('[FILE_WEB] Added auth token: ${downloadUrl.substring(0, downloadUrl.indexOf('token=') + 10)}...');
+        }
+      } catch (e) {
+        debugPrint('[FILE_WEB_ERROR] URL generation failed: $e');
+        // Ultimate fallback - construct basic URL
+        downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1';
+        if (accessToken != null) {
+          downloadUrl += '&token=$accessToken';
+        }
       }
       
       debugPrint('[FILE_WEB] Download URL: $downloadUrl');
