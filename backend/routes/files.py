@@ -1894,6 +1894,7 @@ async def complete_upload(
         os.makedirs(str(final_dir), exist_ok=True)
         final_path = final_dir / filename
 
+        # Assemble file from chunks in temporary storage, then upload to S3
         try:
             async with aiofiles.open(str(final_path), "wb") as out_f:
                 for idx in range(int(total_chunks)):
@@ -1917,6 +1918,58 @@ async def complete_upload(
                 detail="Temporary storage unavailable",
             ) from e
 
+        # CRITICAL: Upload assembled file to S3 - NO LOCAL STORAGE
+        s3_client = _get_s3_client()
+        if not s3_client:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="S3 service unavailable - cannot upload file"
+            )
+
+        # Read assembled file and upload to S3
+        s3_key = f"files/{upload_user_id}/{upload_id}/{filename}"
+        
+        try:
+            # Read the assembled file and upload to S3
+            async with aiofiles.open(str(final_path), "rb") as file_data:
+                file_content = await file_data.read()
+                
+            # Upload directly to S3
+            s3_client.put_object(
+                Bucket=_get_sanitized_bucket_name(),
+                Key=s3_key,
+                Body=file_content,
+                Metadata={
+                    "upload_id": upload_id,
+                    "user_id": str(upload_user_id),
+                    "original_filename": filename,
+                    "mime_type": upload_doc.get("mime_type", "application/octet-stream")
+                }
+            )
+            
+            # Clean up temporary files after S3 upload
+            import shutil
+            if upload_temp_dir.exists():
+                shutil.rmtree(str(upload_temp_dir))
+            if final_path.exists():
+                final_path.unlink()
+                
+        except Exception as e:
+            _log(
+                "error",
+                f"Failed to upload file to S3: {str(e)}",
+                {
+                    "user_id": current_user,
+                    "operation": "s3_upload",
+                    "upload_id": upload_id,
+                    "s3_key": s3_key,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to upload file to S3 storage"
+            ) from e
+
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
         await _maybe_await(
             uploads_col.update_one(
@@ -1932,7 +1985,7 @@ async def complete_upload(
             )
         )
 
-        # Store file metadata in files collection for MongoDB Atlas
+        # Store file metadata in files collection for MongoDB Atlas - S3 ONLY
         from bson import ObjectId
 
         file_oid = upload_doc.get("file_id")
@@ -1940,11 +1993,10 @@ async def complete_upload(
             file_oid = ObjectId()
 
         file_id = str(file_oid)
-        storage_key = (
-            upload_doc.get("storage_key")
-            or f"files/{upload_user_id}/{upload_id}/{filename}"
-        )
-
+        
+        # CRITICAL: Always use S3 storage - NO LOCAL FALLBACK
+        s3_key = f"files/{upload_user_id}/{upload_id}/{filename}"
+        
         expires_at = now + timedelta(
             seconds=_get_file_ttl_seconds()
         )  # Configurable TTL file expiry (UTC only)
@@ -1955,18 +2007,18 @@ async def complete_upload(
             "filename": filename,
             "size": upload_doc.get("file_size"),
             "mime_type": upload_doc.get("mime_type"),
-            "storage_key": storage_key,
-            "s3_key": None,  # Not an S3 file - local storage only
-            "storage_type": "local",  # CRITICAL: Mark as local storage
-            "bucket": "zaply-temp",
-            "region": "us-east-1",
+            "storage_key": s3_key,
+            "s3_key": s3_key,  # CRITICAL: Always set S3 key
+            "storage_type": "s3",  # CRITICAL: Always S3 storage
+            "bucket": _get_sanitized_bucket_name(),
+            "region": settings.AWS_REGION,
             "upload_status": "completed",
             "created_at": now,
             "updated_at": now,
-            "expires_at": expires_at,  # 72-hour expiry for file downloads
+            "expires_at": expires_at,
             "status": "active",
             "upload_id": upload_id,
-            "storage_path": str(final_path),
+            "storage_path": None,  # No local storage path
         }
 
         files_col = _safe_collection(files_collection)
@@ -1974,15 +2026,15 @@ async def complete_upload(
 
         _log(
             "info",
-            f"[FILE_METADATA] File metadata stored in Atlas with storage_type=local",
+            f"[FILE_METADATA] File uploaded to S3 and metadata stored in Atlas",
             {
                 "file_id": file_id,
                 "filename": filename,
                 "owner_id": str(upload_user_id),
-                "storage_key": storage_key,
-                "storage_type": "local",
-                "storage_path": str(final_path),
+                "s3_key": s3_key,
+                "storage_type": "s3",
                 "bucket": _get_sanitized_bucket_name(),
+                "region": settings.AWS_REGION,
             },
         )
 
@@ -3235,25 +3287,20 @@ async def get_media_by_id_main(
                 detail="File not found",
             )
 
-        # Extract storage information - CRITICAL: Use proper field names
+        # CRITICAL: Strict S3-only download logic - NO LOCAL FALLBACK
         s3_key = file_doc.get("s3_key") or file_doc.get("storage_key") or file_doc.get("object_key")
-        storage_type = file_doc.get("storage_type", "unknown")
-        file_path = file_doc.get("storage_path") or file_doc.get("file_path")
+        storage_type = file_doc.get("storage_type", "s3")  # Default to S3
         file_id_str = str(file_id)  # Convert to string for logging
 
-        # CRITICAL: Log all storage information for debugging
-        print(f"MEDIA_DEBUG: FILE_ID={file_id_str} | storage_type={storage_type} | s3_key={s3_key} | file_path={file_path}")
-        
-        # CRITICAL: Validate that we have storage information
-        has_s3_info = s3_key and s3_key.strip() != ""
-        has_local_info = file_path and file_path.strip() != ""
-
-        if not has_s3_info and not has_local_info:
-            print(f"MEDIA_DEBUG: ROUTE_404 - No storage information for file: {file_id}")
+        # CRITICAL: Validate S3 key exists - no local storage allowed
+        if not s3_key or s3_key.strip() == "":
+            print(f"MEDIA_DEBUG: FILE_404 - No S3 key found for file: {file_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="File storage information not found (route 404 - no storage info)",
+                detail="File not found in S3 (missing s3_key)",
             )
+
+        print(f"MEDIA_DEBUG: S3_ONLY_DOWNLOAD - FILE_ID={file_id_str} | s3_key={s3_key} | storage_type={storage_type}")
 
         # Authorization checks
         owner_id = file_doc.get("owner_id")
@@ -3293,50 +3340,13 @@ async def get_media_by_id_main(
                 detail="Access denied: you don't have permission to access this media",
             )
 
-        print(f"MEDIA_DEBUG: ACCESS_GRANTED for user={current_user}, storage_type={storage_type}, has_s3={has_s3_info}, has_local={has_local_info}")
+        print(f"MEDIA_DEBUG: ACCESS_GRANTED for user={current_user}, downloading from S3")
 
-        # Handle different storage types with priority to S3
-        if storage_type == "s3":
-            if not has_s3_info:
-                print(f"MEDIA_DEBUG: FILE_404 - storage_type=s3 but s3_key is empty/null: {file_id}")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found in S3 (empty s3_key)",
-                )
-            print(f"MEDIA_DEBUG: USING_S3 - s3_key={s3_key}")
-            return await _handle_s3_media_download(
-                s3_key, file_doc, download, force_download, use_redirect, has_local_info, file_path
-            )
-        elif storage_type == "local":
-            if not has_local_info:
-                print(f"MEDIA_DEBUG: FILE_404 - storage_type=local but file_path is empty/null: {file_id}")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found locally (empty file_path)",
-                )
-            print(f"MEDIA_DEBUG: USING_LOCAL - file_path={file_path}")
-            return await _handle_local_media_download(
-                file_path, file_doc, download, force_download
-            )
-        else:
-            # Fallback: Try to determine storage type based on available information
-            print(f"MEDIA_DEBUG: FALLBACK_STORAGE_TYPE - storage_type was '{storage_type}', attempting auto-detection")
-            if has_s3_info:
-                print(f"MEDIA_DEBUG: AUTO_DETECT_S3 - using s3_key={s3_key}")
-                return await _handle_s3_media_download(
-                    s3_key, file_doc, download, force_download, use_redirect, has_local_info, file_path
-                )
-            elif has_local_info and os.path.exists(file_path):
-                print(f"MEDIA_DEBUG: AUTO_DETECT_LOCAL - using file_path={file_path}")
-                return await _handle_local_media_download(
-                    file_path, file_doc, download, force_download
-                )
-            else:
-                print(f"MEDIA_DEBUG: FILE_404 - Cannot determine storage type or file not accessible")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found or not accessible (auto-detect failed)",
-                )
+        # CRITICAL: S3-ONLY DOWNLOAD - No local fallback allowed
+        print(f"MEDIA_DEBUG: S3_ONLY - s3_key={s3_key}")
+        return await _handle_s3_media_download(
+            s3_key, file_doc, download, force_download, use_redirect, False, None
+        )
 
     except HTTPException:
         raise
@@ -3599,13 +3609,11 @@ async def _handle_s3_media_download(
     download: bool,
     force_download: bool,
     use_redirect: bool,
-    has_local_info: bool = False,
-    file_path: str = None,
 ):
     """Handle S3 media download with proper headers and streaming
     
-    CRITICAL: Validates s3_key before attempting S3 access
-    Generates presigned URLs for secure, time-limited access
+    CRITICAL: S3-ONLY download - no local fallback
+    Validates s3_key before attempting S3 access
     Streams large files without loading into memory
     """
     print(f"MEDIA_DEBUG: _handle_s3_media_download START - s3_key={storage_key}")
@@ -3622,16 +3630,9 @@ async def _handle_s3_media_download(
         s3_client = _get_s3_client()
         if not s3_client:
             print(f"MEDIA_DEBUG: S3_CLIENT_UNAVAILABLE")
-            # Fallback to local storage if available
-            if has_local_info and file_path and os.path.exists(file_path):
-                print(f"MEDIA_DEBUG: FALLBACK_TO_LOCAL - S3 client unavailable, using local storage: {file_path}")
-                return await _handle_local_media_download(
-                    file_path, file_doc, download, force_download
-                )
-            # If no local fallback available, return 500
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Storage service temporarily unavailable",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="S3 service temporarily unavailable",
             )
 
         bucket_name = _get_sanitized_bucket_name()
@@ -3647,24 +3648,15 @@ async def _handle_s3_media_download(
             error_code = e.response.get("Error", {}).get("Code", "Unknown")
             if error_code == "404" or error_code == "NoSuchKey":
                 print(f"MEDIA_DEBUG: S3_FILE_NOT_FOUND - Key does not exist in S3: {storage_key}, error_code: {error_code}, exception: {e}")
-                
-                # Try local storage as fallback if available
-                if has_local_info and file_path and os.path.exists(file_path):
-                    print(f"MEDIA_DEBUG: FALLBACK_TO_LOCAL - S3 file not found, trying local storage: {file_path}")
-                    return await _handle_local_media_download(
-                        file_path, file_doc, download, force_download
-                    )
-                
-                # If no local fallback, return generic 404 message
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found",
+                    detail="File not found in S3",
                 )
             else:
                 print(f"MEDIA_DEBUG: S3_ERROR - error_code: {error_code}, exception: {e}")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Internal storage error",
+                    detail="S3 access error",
                 )
         
         content_type = obj_metadata.get("ContentType", "application/octet-stream")

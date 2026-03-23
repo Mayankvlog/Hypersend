@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 
 // JS interop extensions
 extension StringToJS on String {
-  JSString get toJS => this.toJS;
+  JSString get toJS => toJS;
 }
 
 // Re-export path for compatibility - not used in web stub
