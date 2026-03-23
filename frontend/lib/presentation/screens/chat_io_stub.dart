@@ -142,12 +142,11 @@ Future<void> openFile(String filePath) async {
   throw UnsupportedError('openFile is not supported on web platform');
 }
 
-/// **CRITICAL FIX**: Direct URL-based download 
-/// This method triggers a native browser download without loading bytes into memory
-/// Properly respects Content-Disposition: attachment header from backend
-/// Better for large files and ensures proper file saving behavior
+/// **FETCH API DOWNLOAD**: Uses proper Content-Disposition handling
+/// Respects backend headers and ensures files download with correct type
+/// Properly handles authentication and MIME types for all file types
 Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
-  debugPrint('[FILE_WEB] Direct URL download: $fileName');
+  debugPrint('[FILE_WEB] Fetch API download: $fileName');
   debugPrint('[FILE_WEB] URL: $downloadUrl');
   
   try {
@@ -161,28 +160,32 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
       throw Exception('Invalid download URL: $downloadUrl');
     }
     
-    // Check if URI has absolute path (safe null check)
-    if (!uri.hasAbsolutePath) {
-      throw Exception('URL must be absolute: $downloadUrl');
+    // Use fetch API for proper header handling and authentication
+    debugPrint('[FILE_WEB] Starting fetch request...');
+    final response = await html.window.fetch(
+      downloadUrl,
+      {'credentials': 'include'}, // Send cookies for authentication
+    );
+    
+    if (!response.ok) {
+      debugPrint('[FILE_WEB_ERROR] Fetch failed with status: ${response.status}');
+      throw Exception('Download failed: HTTP ${response.status}');
     }
     
-    // Create anchor element with direct link
+    // Convert response to blob
+    debugPrint('[FILE_WEB] Converting response to blob...');
+    final blob = await response.blob();
+    
+    // Create blob URL
+    final blobUrl = html.Url.createObjectUrl(blob);
+    
+    // Create anchor element with blob URL
     final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
-    anchor.href = downloadUrl;
-    anchor.download = fileName;
+    anchor.href = blobUrl;
+    anchor.download = fileName; // Forces download instead of opening in browser
     
-    // Enhanced cross-origin and security attributes
-    anchor.setAttribute('rel', 'noopener noreferrer');
-    anchor.setAttribute('crossorigin', 'anonymous');
-    
-    // Set target for better compatibility
-    anchor.target = '_blank';
-    
-    // Force download by adding strong download attribute
-    anchor.setAttribute('download', fileName);
-    
-    // Add type attribute to force download behavior for images
-    anchor.setAttribute('type', 'application/octet-stream');
+    // Set rel="noopener" to prevent window manipulation
+    anchor.setAttribute('rel', 'noopener');
     
     // Append to body (required in some browsers)
     if (html.document.body != null) {
@@ -195,7 +198,7 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     anchor.click();
     
     // Delay cleanup to ensure download starts
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 100));
     
     // Clean up
     try {
@@ -206,17 +209,12 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
       debugPrint('[FILE_WEB_ERROR] Cleanup failed: $cleanupError');
     }
     
-    debugPrint('[FILE_WEB] Download initiated for: $fileName');
+    // Release blob URL
+    html.Url.revokeObjectUrl(blobUrl);
+    
+    debugPrint('[FILE_WEB] Download completed for: $fileName');
   } catch (e) {
     debugPrint('[FILE_WEB_ERROR] saveFileDirectFromUrl failed: $e');
-    
-    // Fallback: try to open URL in new tab if direct download fails
-    try {
-      debugPrint('[FILE_WEB] Fallback: opening URL in new tab');
-      html.window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-    } catch (fallbackError) {
-      debugPrint('[FILE_WEB_ERROR] Fallback also failed: $fallbackError');
-      rethrow;
-    }
+    rethrow;
   }
 }

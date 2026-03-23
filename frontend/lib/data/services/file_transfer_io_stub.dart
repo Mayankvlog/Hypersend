@@ -158,25 +158,38 @@ Future<void> saveFileToDownloads(String fileName, Uint8List bytes) async {
   }
 }
 
-/// **CRITICAL FIX**: Direct URL-based download 
-/// This method triggers a native browser download without loading bytes into memory
-/// Properly respects Content-Disposition: attachment header from backend
-/// Better for large files and ensures proper file saving behavior
+/// **FETCH API DOWNLOAD**: Uses proper Content-Disposition handling
+/// Respects backend headers and ensures files download with correct type
+/// Properly handles authentication and MIME types for all file types
 Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
   debugPrint('[FILE_WEB_STUB] Fetch-based download: $fileName');
   debugPrint('[FILE_WEB_STUB] URL: $downloadUrl');
   
   try {
-    // Use fetch API to properly handle the download with authentication
+    // Use fetch API for proper header handling and authentication
     debugPrint('[FILE_WEB_STUB] Starting fetch request...');
     
-    // Simple approach: create anchor and trigger download directly
-    debugPrint('[FILE_WEB_STUB] Using direct download approach...');
+    final response = await html.window.fetch(
+      downloadUrl,
+      {'credentials': 'include'}, // Send cookies for authentication
+    );
     
-    // Create anchor element for direct download
+    if (!response.ok) {
+      debugPrint('[FILE_WEB_STUB_ERROR] Fetch failed with status: ${response.status}');
+      throw Exception('Download failed: HTTP ${response.status}');
+    }
+    
+    // Convert response to blob
+    debugPrint('[FILE_WEB_STUB] Converting response to blob...');
+    final blob = await response.blob();
+    
+    // Create blob URL
+    final blobUrl = html.Url.createObjectUrl(blob);
+    
+    // Create anchor element with blob URL
     final anchor = html.document.createElement('a') as html.HTMLAnchorElement;
-    anchor.href = downloadUrl;
-    anchor.download = fileName;
+    anchor.href = blobUrl;
+    anchor.download = fileName; // Forces download instead of opening in browser
     
     // Set rel="noopener" to prevent window manipulation
     anchor.setAttribute('rel', 'noopener');
@@ -184,7 +197,7 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     // Append to body (required in some browsers)
     html.document.body?.appendChild(anchor);
     
-    debugPrint('[FILE_WEB_STUB] Triggering direct download for: $fileName');
+    debugPrint('[FILE_WEB_STUB] Triggering download for: $fileName');
     
     // Trigger the download
     anchor.click();
@@ -192,7 +205,11 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     // Clean up
     html.document.body?.removeChild(anchor);
     
-    debugPrint('[FILE_WEB_STUB] Direct download initiated for: $fileName');
+    // Release blob URL after a delay to allow click to process
+    await Future.delayed(const Duration(milliseconds: 100));
+    html.Url.revokeObjectUrl(blobUrl);
+    
+    debugPrint('[FILE_WEB_STUB] Download completed for: $fileName');
   } catch (e) {
     debugPrint('[FILE_WEB_STUB_ERROR] saveFileDirectFromUrl failed: $e');
     rethrow;

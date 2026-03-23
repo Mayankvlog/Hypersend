@@ -3908,10 +3908,16 @@ async def get_media_download(
                 detail="S3 storage not available"
             )
         
-        # Check if object exists
+        # Fetch S3 object metadata to get proper MIME type
         try:
-            s3_client.head_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
+            obj_metadata = s3_client.head_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
             print(f"[MEDIA_DOWNLOAD] S3 object exists: {safe_file_key}")
+            
+            # Extract proper MIME type from S3 metadata
+            content_type = obj_metadata.get("ContentType", "application/octet-stream")
+            content_length = obj_metadata.get("ContentLength", 0)
+            
+            print(f"[MEDIA_DOWNLOAD] Content-Type from S3: {content_type}, Size: {content_length}")
         except Exception as e:
             print(f"[MEDIA_DOWNLOAD] S3 object not found: {safe_file_key} - {str(e)}")
             raise HTTPException(
@@ -3919,34 +3925,56 @@ async def get_media_download(
                 detail="Media file not found"
             )
         
-        # Generate presigned URL for download
-        presigned_url = _generate_presigned_url(
-            "GET",
-            object_key=safe_file_key,
-            bucket=settings.S3_BUCKET,
-            expires_in=3600,
-        )
-        
-        print(f"[MEDIA_DOWNLOAD] Generated presigned URL: {presigned_url[:50]}...")
-        
         # Extract filename from file_key for Content-Disposition
-        filename = safe_file_key.split('/')[-1].split('_')[-1]
+        filename = safe_file_key.split('/')[-1]
+        safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
         
-        # Determine content disposition based on download parameter
-        content_disposition = f"attachment; filename=\"{filename}\"" if (download or force_download) else f"inline; filename=\"{filename}\""
-        
-        # Return redirect to presigned URL (more efficient than streaming through backend)
-        if use_redirect:
-            return RedirectResponse(url=presigned_url)
-        
-        # For direct download, we could stream the file, but redirect is more efficient
-        # For now, return the presigned URL in JSON response
-        return JSONResponse({
-            "download_url": presigned_url,
-            "filename": filename,
-            "content_type": "application/octet-stream",  # Generic binary type
-            "expires_in": 3600
-        })
+        # Stream file from S3 with proper MIME type
+        try:
+            obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
+            
+            async def stream_s3_object():
+                """Stream S3 object in chunks to prevent memory buffering"""
+                try:
+                    body = obj["Body"]
+                    chunk_size = 65536  # 64KB chunks
+                    loop = asyncio.get_running_loop()
+                    while True:
+                        chunk = await loop.run_in_executor(None, body.read, chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+                except Exception as e:
+                    print(f"[MEDIA_DOWNLOAD] Error streaming S3 file: {e}")
+                    raise
+                finally:
+                    if "body" in locals() and hasattr(body, "close"):
+                        body.close()
+            
+            # Return streaming response with proper headers
+            disposition_type = "attachment" if (download or force_download) else "inline"
+            headers = {
+                "Content-Length": str(content_length),
+                "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
+                "Content-Type": content_type,
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "X-Content-Type-Options": "nosniff",
+                "Accept-Ranges": "bytes",
+            }
+            
+            print(f"[MEDIA_DOWNLOAD] Streaming {safe_file_key} with content-type: {content_type}")
+            
+            return StreamingResponse(
+                stream_s3_object(),
+                media_type=content_type,
+                headers=headers,
+            )
+        except Exception as e:
+            print(f"[MEDIA_DOWNLOAD] Error preparing stream: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to download media"
+            )
         
     except HTTPException:
         raise
