@@ -232,15 +232,29 @@ class FileTransferService {
       _transfers.add(transfer);
       debugPrint('[FILE_TRANSFER] Download started: $fileId -> $actualSavePath');
       
-      // Get file info first for size validation
+      // Get file info first for size validation and proper filename
       try {
         final fileInfo = await _api.getFileInfo(fileId);
         final fileSize = fileInfo['size'] as int? ?? 0;
+        final originalFilename = fileInfo['filename']?.toString() ?? fileName;
         
-        // Update transfer with actual file size
+        // CRITICAL FIX: Ensure save path uses correct filename with extension
+        if (originalFilename != fileName) {
+          // Update save path with correct filename
+          final file = io.File(actualSavePath);
+          final parentDir = file.parent;
+          actualSavePath = '${parentDir.path}/$originalFilename';
+          debugPrint('[FILE_TRANSFER] Updated filename: $fileName -> $originalFilename');
+        }
+        
+        // Update transfer with actual file size and correct filename
         final transferIndex = _transfers.indexWhere((t) => t.id == fileId);
         if (transferIndex >= 0) {
-          _transfers[transferIndex] = _transfers[transferIndex].copyWith(fileSize: fileSize);
+          _transfers[transferIndex] = _transfers[transferIndex].copyWith(
+            fileSize: fileSize,
+            fileName: originalFilename,
+            filePath: actualSavePath,
+          );
         }
         
         int lastReportedProgress = 0;

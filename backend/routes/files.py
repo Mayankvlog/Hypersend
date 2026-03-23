@@ -2584,45 +2584,15 @@ async def download_file(
             # Get S3 client for direct streaming
             s3_client = _get_s3_client()
             if not s3_client:
-                # Fallback to presigned URL if S3 is unavailable
-                download_url = _generate_presigned_url(
-                    "get",
-                    object_key=storage_key,
-                    expires_in=600,
-                    bucket=bucket,
-                    response_content_disposition=f'attachment; filename="{filename}"' if dl_requested else f'inline; filename="{filename}"',
+                _log(
+                    "error",
+                    "S3 client unavailable - cannot download file",
+                    {"user_id": current_user, "operation": "file_download"},
                 )
-                
-                if not download_url:
-                    return {
-                        "presigned_url": None,
-                        "file_id": str(file_doc.get("_id")),
-                        "filename": filename,
-                        "size": file_size,
-                        "mime_type": mime_type,
-                        "expires_in": 0,
-                        "error": "Storage service unavailable",
-                    }
-                
-                if dl_requested:
-                    return RedirectResponse(
-                        url=download_url, 
-                        status_code=status.HTTP_302_FOUND, 
-                        headers={
-                            "Content-Disposition": f'attachment; filename="{filename}"',
-                        }
-                    )
-                
-                return {
-                    "presigned_url": download_url,
-                    "download_url": download_url,
-                    "file_id": str(file_doc.get("_id")),
-                    "filename": filename,
-                    "size": file_size,
-                    "mime_type": mime_type,
-                    "expires_in": 600,
-                    "status": "ready",
-                }
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storage service unavailable - S3 client not configured",
+                )
 
             # Direct S3 streaming with proper headers
             try:
@@ -2659,18 +2629,33 @@ async def download_file(
                     pass
                 
                 # Create streaming response from S3
-                def generate_s3_stream():
+                async def generate_s3_stream():
                     try:
+                        # Get S3 object
                         response = s3_client.get_object(Bucket=bucket, Key=storage_key)
-                        for chunk in response["Body"].iter_chunks(chunk_size=8192):
-                            yield chunk
+                        
+                        # Stream binary data directly without any encoding/decoding
+                        body = response["Body"]
+                        
+                        # Use iter_chunks for optimal binary streaming
+                        for chunk in body.iter_chunks(chunk_size=8192):
+                            # CRITICAL: Yield raw bytes without any string conversion
+                            if isinstance(chunk, bytes):
+                                yield chunk
+                            else:
+                                # Convert to bytes if somehow not already bytes
+                                yield bytes(chunk)
+                                
                     except Exception as e:
                         _log(
                             "error",
                             f"S3 streaming error: {str(e)}",
                             {"user_id": current_user, "file_id": file_id},
                         )
-                        raise
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to stream file from storage",
+                        )
                     finally:
                         try:
                             response["Body"].close()
@@ -2686,6 +2671,7 @@ async def download_file(
                         "Cache-Control": "no-cache, no-store, must-revalidate" if dl_requested else "public, max-age=3600",
                         "Accept-Ranges": "bytes",
                         "X-Content-Type-Options": "nosniff",
+                        "ETag": f'"{file_doc.get("_id", file_id)}"',
                     },
                 )
                 

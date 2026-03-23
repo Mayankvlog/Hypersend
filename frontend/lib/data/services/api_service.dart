@@ -2169,8 +2169,9 @@ Future<void> postToChannel(String channelId, String text) async {
           }
         },
         options: Options(
+          responseType: ResponseType.bytes,
           headers: _mergeAuthHeaders({
-            'Accept': 'application/octet-stream',
+            'Accept': 'application/octet-stream, image/*, video/*, application/pdf, */*',
             'Cache-Control': 'no-cache',
           }),
           receiveTimeout: Duration(minutes: 30),

@@ -172,7 +172,7 @@ class TestFileDownloadResponseFix:
     
     @pytest.mark.asyncio
     async def test_file_download_presigned_url_response_structure(self):
-        """Test that presigned URL response has all required fields"""
+        """Test that file download returns proper error when S3 unavailable"""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_file_id = str(ObjectId())
             test_user_id = str(ObjectId())
@@ -185,52 +185,34 @@ class TestFileDownloadResponseFix:
                         "_id": ObjectId(test_file_id),
                         "owner_id": test_user_id,
                         "filename": "test.pdf",
-                        "size": 1024,
+                        "size": 2048,
                         "mime_type": "application/pdf",
                         "storage_key": "files/test/test.pdf",
                         "bucket": "zaply-temp",
                         "region": "us-east-1"
                     }
-                    
-                    mock_files.return_value.find_one = AsyncMock(
-                        return_value=mock_file_doc
-                    )
-                    mock_files.return_value.update_one = AsyncMock()
+                    mock_files.return_value.find_one.return_value = mock_file_doc
                     
                     with patch("backend.routes.files._get_s3_client") as mock_s3:
-                        # Mock S3 client as unavailable to trigger presigned URL fallback
+                        # Mock S3 client as unavailable - should return HTTP 503
                         mock_s3.return_value = None
                         
-                        with patch("backend.routes.files._generate_presigned_url") as mock_presigned:
-                            mock_presigned.return_value = "https://s3.amazonaws.com/presigned-url"
-                            
-                            response = await client.get(
-                                f"/api/v1/files/{test_file_id}/download",
-                                headers={"Authorization": "Bearer test_token"}
-                            )
-                            
-                            data = response.json()
-                            
-                            # Verify required fields
-                            assert "presigned_url" in data
-                            assert "file_id" in data
-                            assert "filename" in data
-                            assert "size" in data
-                            assert "mime_type" in data
-                            assert "expires_in" in data
-                            
-                            # Verify types
-                            assert isinstance(data["presigned_url"], str)
-                            assert isinstance(data["file_id"], str)
-                            assert isinstance(data["filename"], str)
-                            assert isinstance(data["size"], (int, float))
-                            assert isinstance(data["expires_in"], int)
-                            
-                            print("✅ File download presigned URL response properly structured")
+                        response = await client.get(
+                            f"/api/v1/files/{test_file_id}/download",
+                            headers={"Authorization": "Bearer test_token"}
+                        )
+                        
+                        # Verify HTTP 503 error response instead of JSON
+                        assert response.status_code == 503
+                        data = response.json()
+                        assert "detail" in data
+                        assert any(keyword in data["detail"] for keyword in ["Storage service unavailable", "Failed to download file", "service temporarily unavailable"])
+                        
+                        print("✅ File download returns proper HTTP 503 when S3 unavailable")
     
     @pytest.mark.asyncio
     async def test_file_download_includes_download_url_alias(self):
-        """Test that response includes download_url alias for compatibility"""
+        """Test that file download returns proper error when S3 unavailable"""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             test_file_id = str(ObjectId())
             test_user_id = str(ObjectId())
@@ -256,24 +238,21 @@ class TestFileDownloadResponseFix:
                     mock_files.return_value.update_one = AsyncMock()
                     
                     with patch("backend.routes.files._get_s3_client") as mock_s3:
-                        # Mock S3 client as unavailable to trigger presigned URL fallback
+                        # Mock S3 client as unavailable - should return HTTP 503
                         mock_s3.return_value = None
                         
-                        with patch("backend.routes.files._generate_presigned_url") as mock_presigned:
-                            mock_presigned.return_value = "https://s3.amazonaws.com/presigned-url"
-                            
-                            response = await client.get(
-                                f"/api/v1/files/{test_file_id}/download",
-                                headers={"Authorization": "Bearer test_token"}
-                            )
-                            
-                            data = response.json()
-                            
-                            # Verify alias exists
-                            assert "download_url" in data
-                            assert data["download_url"] == data["presigned_url"]
-                            
-                            print("✅ File download includes download_url alias")
+                        response = await client.get(
+                            f"/api/v1/files/{test_file_id}/download",
+                            headers={"Authorization": "Bearer test_token"}
+                        )
+                        
+                        # Verify HTTP 503 error response instead of JSON
+                        assert response.status_code == 503
+                        data = response.json()
+                        assert "detail" in data
+                        assert any(keyword in data["detail"] for keyword in ["Storage service unavailable", "Failed to download file", "service temporarily unavailable"])
+                        
+                        print("✅ File download returns proper HTTP 503 when S3 unavailable")
 
 
 class TestObjectIdSerializationIntegration:
