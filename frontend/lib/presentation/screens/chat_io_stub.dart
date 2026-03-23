@@ -7,10 +7,8 @@ import 'dart:typed_data';
 import 'dart:js_interop';
 import 'package:flutter/foundation.dart' show debugPrint;
 
-// JS interop extensions
-extension StringToJS on String {
-  JSString get toJS => toJS;
-}
+// JS interop extensions - using built-in toJS from dart:js_interop
+// These stubs rely on the built-in String.toJS extension method
 
 // Re-export path for compatibility - not used in web stub
 

@@ -733,56 +733,27 @@ async def get_current_user(
         HTTPException(401): If credentials missing, token invalid/expired, or user not found
         HTTPException(503): If database unavailable
     """
-    # DEBUG: Log all auth headers and cookies for debugging 403 issues
-    auth_header = request.headers.get("authorization")
-    print(f"AUTH_DEBUG: Authorization header: {auth_header}")
-    if auth_header:
-        print(f"AUTH_DEBUG: Header length: {len(auth_header)}")
-    print(f"AUTH_DEBUG: Credentials object: {credentials}")
-    if credentials:
-        print(
-            f"AUTH_DEBUG: Credentials credentials: {credentials.credentials[:50] if credentials.credentials else 'None'}"
-        )
-
-    # Log all cookies for debugging
-    print(f"AUTH_DEBUG: All cookies: {dict(request.cookies)}")
-
     # PRIORITY 1: Try to get access token from HTTPOnly cookie (secure method)
     access_token = request.cookies.get("access_token")
-    if access_token:
-        print(
-            f"AUTH_DEBUG: Found access_token in cookies (length: {len(access_token)})"
-        )
 
     # PRIORITY 2: Fallback to Authorization header if no cookie found
     if not access_token and credentials:
         access_token = credentials.credentials
-        if access_token:
-            print(
-                f"AUTH_DEBUG: Using credentials from Authorization header (length: {len(access_token)})"
-            )
 
     # Check if any authentication method is available
     if not access_token:
-        print("AUTH_DEBUG: No access token found - returning 401")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication credentials - please login",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # CRITICAL FIX: Decode and validate token with proper expiration handling
-    # This will raise HTTPException(401) for expired tokens
+    # Decode and validate token with proper expiration handling
     try:
         token_data = decode_token(access_token)
-        print(
-            f"AUTH_DEBUG: Token decoded successfully, user_id: {token_data.user_id}, token_type: {token_data.token_type}"
-        )
     except HTTPException as e:
-        print(f"AUTH_DEBUG: Token decode failed: {e.detail}")
         # Re-raise auth exceptions with proper headers
         if e.status_code == status.HTTP_401_UNAUTHORIZED:
-            # Ensure 401 responses have WWW-Authenticate header
             if not e.headers:
                 e.headers = {}
             if "WWW-Authenticate" not in e.headers:
@@ -790,7 +761,6 @@ async def get_current_user(
         raise
 
     if token_data.token_type != "access":
-        print(f"AUTH_DEBUG: Invalid token type: {token_data.token_type}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type - access token required",
@@ -800,15 +770,12 @@ async def get_current_user(
     from bson import ObjectId
 
     user_id_str = token_data.user_id
-    # Validate user_id format - must be valid ObjectId
     if not ObjectId.is_valid(user_id_str):
-        print(f"AUTH_DEBUG: Invalid user_id format: {user_id_str}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user identifier in token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    print(f"AUTH_DEBUG: Valid user_id: {user_id_str}")
 
     user_oid = ObjectId(user_id_str)
 
@@ -841,13 +808,7 @@ async def get_current_user(
     existing_user = None
     try:
         existing_user = await users_col.find_one({"_id": user_oid})
-        print(
-            f"AUTH_DEBUG: User lookup result: {'found' if existing_user else 'not found'}"
-        )
     except Exception as e:
-        # Authentication must not "randomly fail" due to transient DB issues.
-        # If Atlas is unavailable, surface it as a service error rather than
-        # incorrectly treating the user as unauthenticated.
         logger.error(f"Database error during user lookup: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -862,13 +823,10 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    print(f"AUTH_DEBUG: Auth successful for user_id: {user_id_str}")
-
     try:
-        # Attach loaded user doc for downstream route handlers
         setattr(request.state, "current_user", existing_user)
     except Exception:
-        pass  # Non-critical, continue if setting state fails
+        pass
 
     return user_id_str
 

@@ -532,7 +532,6 @@ def _get_sanitized_bucket_name() -> str:
     bucket_name = settings.S3_BUCKET
     if bucket_name.startswith("arn:aws:s3:::"):
         bucket_name = bucket_name.replace("arn:aws:s3:::", "")
-        print(f"[S3_DEBUG] Converted ARN to bucket name: {bucket_name}")
     return bucket_name
 
 
@@ -540,64 +539,43 @@ def _get_s3_client():
     """Get S3 client for AWS S3 operations with full credentials validation"""
     try:
         if boto3 is None:
-            print("[S3_DEBUG] boto3 not available")
             _log("warning", "boto3 not available - S3 operations disabled")
             return None
 
-        # VALIDATION: Ensure S3 bucket is configured
         if not settings.S3_BUCKET:
-            print("[S3_DEBUG] S3_BUCKET not configured")
             _log("warning", "S3_BUCKET not configured in settings")
             return None
 
-        # Prefer explicit credentials when provided, otherwise fall back to boto3's
-        # default credential provider chain (IAM role, env vars, shared config, etc.).
-        # CRITICAL: Use region_name from settings.AWS_REGION for environment-based configuration
         client_kwargs: Dict[str, Any] = {"region_name": settings.AWS_REGION}
 
-        # Add explicit credentials if provided
         if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
-            print(
-                f"[S3_DEBUG] Using explicit AWS credentials for region {settings.AWS_REGION}"
-            )
             client_kwargs.update(
                 {
                     "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
                     "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
                 }
             )
-            _log("info", f"S3 client using explicit AWS credentials")
+            _log("info", "S3 client using explicit AWS credentials")
         else:
-            print(
-                f"[S3_DEBUG] Using default credential chain for region {settings.AWS_REGION}"
-            )
-            _log("info", f"S3 client using default credential provider chain")
+            _log("info", "S3 client using default credential provider chain")
 
-        # Remove None values to avoid boto warnings.
         client_kwargs = {k: v for k, v in client_kwargs.items() if v}
 
         s3_client = boto3.client("s3", **client_kwargs)
 
-        # CRITICAL FIX: Ensure bucket name is not in ARN format
         bucket_name = _get_sanitized_bucket_name()
-        print(f"[S3_DEBUG] Using bucket name: '{bucket_name}'")
 
-        # Test connection by listing bucket
         try:
             s3_client.head_bucket(Bucket=bucket_name)
-            print(f"[S3_DEBUG] Successfully connected to S3 bucket: {bucket_name}")
             _log(
                 "info",
                 f"S3 client initialized and verified for bucket: {bucket_name} in region: {settings.AWS_REGION}",
             )
         except Exception as e:
-            print(f"[S3_DEBUG] WARNING: Could not verify S3 bucket access: {str(e)}")
             _log("warning", f"S3 bucket verification failed: {str(e)}")
-            # Still return client - it might work later
 
         return s3_client
     except Exception as e:
-        print(f"[S3_DEBUG] Failed to initialize S3 client: {str(e)}")
         _log("error", f"Failed to initialize S3 client: {str(e)}")
         return None
 
@@ -638,7 +616,7 @@ def _generate_presigned_url(
             params["ContentLength"] = file_size
         if response_content_disposition:
             params["ResponseContentDisposition"] = response_content_disposition
-        
+
         return s3_client.generate_presigned_url(
             method, Params=params, ExpiresIn=expires_in
         )
@@ -1923,17 +1901,17 @@ async def complete_upload(
         if not s3_client:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="S3 service unavailable - cannot upload file"
+                detail="S3 service unavailable - cannot upload file",
             )
 
         # Read assembled file and upload to S3
         s3_key = f"files/{upload_user_id}/{upload_id}/{filename}"
-        
+
         try:
             # Read the assembled file and upload to S3
             async with aiofiles.open(str(final_path), "rb") as file_data:
                 file_content = await file_data.read()
-                
+
             # Upload directly to S3
             s3_client.put_object(
                 Bucket=_get_sanitized_bucket_name(),
@@ -1943,17 +1921,20 @@ async def complete_upload(
                     "upload_id": upload_id,
                     "user_id": str(upload_user_id),
                     "original_filename": filename,
-                    "mime_type": upload_doc.get("mime_type", "application/octet-stream")
-                }
+                    "mime_type": upload_doc.get(
+                        "mime_type", "application/octet-stream"
+                    ),
+                },
             )
-            
+
             # Clean up temporary files after S3 upload
             import shutil
+
             if upload_temp_dir.exists():
                 shutil.rmtree(str(upload_temp_dir))
             if final_path.exists():
                 final_path.unlink()
-                
+
         except Exception as e:
             _log(
                 "error",
@@ -1967,7 +1948,7 @@ async def complete_upload(
             )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to upload file to S3 storage"
+                detail="Failed to upload file to S3 storage",
             ) from e
 
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -1993,10 +1974,22 @@ async def complete_upload(
             file_oid = ObjectId()
 
         file_id = str(file_oid)
-        
+
         # CRITICAL: Always use S3 storage - NO LOCAL FALLBACK
         s3_key = f"files/{upload_user_id}/{upload_id}/{filename}"
-        
+
+        # CRITICAL: Validate s3_key before saving metadata
+        if not s3_key or not s3_key.strip():
+            _log(
+                "error",
+                "Invalid s3_key for file upload",
+                {"user_id": current_user, "upload_id": upload_id},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to complete upload - invalid storage key",
+            )
+
         expires_at = now + timedelta(
             seconds=_get_file_ttl_seconds()
         )  # Configurable TTL file expiry (UTC only)
@@ -3221,7 +3214,7 @@ async def stream_media(
 
 
 # ============================================================================
-# SECURE MEDIA ACCESS ENDPOINT BY FILE ID - Frontend Compatible (Media Router)
+# SECURE MEDIA ACCESS ENDPOINT BY FILE ID - S3-Only Mode
 # ============================================================================
 @media_router.get("/media/{file_id}")
 async def get_media_by_id_main(
@@ -3233,7 +3226,7 @@ async def get_media_by_id_main(
     use_redirect: bool = False,
 ):
     """
-    SECURE MEDIA ACCESS ENDPOINT BY FILE ID - Main endpoint for frontend
+    SECURE MEDIA ACCESS ENDPOINT BY FILE ID - Main endpoint for frontend (S3-only)
 
     Fetch media by file_id which can be:
     - A MongoDB ObjectId (for regular files stored in files collection)
@@ -3242,28 +3235,21 @@ async def get_media_by_id_main(
     - Only authenticated users can access this endpoint
     - For regular files, File ID is used to lookup the file record
     - For status files, the file_id is used directly as the S3 storage key
-    - Supports both local storage and S3
+    - S3-ONLY MODE: No local storage fallback allowed
     - Returns Content-Disposition: inline by default, attachment when download=true
     """
-    print(f"MEDIA_DEBUG: DOWNLOAD START for user: {current_user}, file_id: {file_id}")
-
     try:
-        # Check if this is a status file (file_key pattern)
         if file_id.startswith("status/"):
-            print(f"MEDIA_DEBUG: Handling status media file: {file_id}")
             return await _handle_status_media(
                 file_id, download, force_download, use_redirect
             )
 
-        # Handle regular files (MongoDB ObjectId lookup)
         if not file_id or not ObjectId.is_valid(file_id):
-            print(f"MEDIA_DEBUG: Invalid file_id format: {file_id}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid file ID format",
             )
 
-        # Look up file record by ID
         file_doc = None
         try:
             import asyncio
@@ -3272,45 +3258,59 @@ async def get_media_by_id_main(
                 files_collection().find_one({"_id": ObjectId(file_id)}),
                 timeout=30.0,
             )
-            print(f"MEDIA_DEBUG: File record found: {'yes' if file_doc else 'no'}")
         except Exception as e:
-            print(f"MEDIA_DEBUG: Database query failed: {e}")
+            _log(
+                "error",
+                f"Database query failed: {str(e)}",
+                {"user_id": current_user, "file_id": file_id},
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Database query failed",
             )
 
         if not file_doc:
-            print(f"MEDIA_DEBUG: File not found in database: {file_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="File not found",
             )
 
-        # CRITICAL: Strict S3-only download logic - NO LOCAL FALLBACK
-        s3_key = file_doc.get("s3_key") or file_doc.get("storage_key") or file_doc.get("object_key")
-        storage_type = file_doc.get("storage_type", "s3")  # Default to S3
-        file_id_str = str(file_id)  # Convert to string for logging
+        storage_type = file_doc.get("storage_type", "").lower()
+        if storage_type and storage_type != "s3":
+            _log(
+                "warning",
+                f"Invalid storage type for S3-only mode: {storage_type}",
+                {"user_id": current_user, "file_id": file_id},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found",
+            )
 
-        # CRITICAL: Validate S3 key exists - no local storage allowed
+        s3_key = (
+            file_doc.get("s3_key")
+            or file_doc.get("storage_key")
+            or file_doc.get("object_key")
+        )
         if not s3_key or s3_key.strip() == "":
-            print(f"MEDIA_DEBUG: FILE_404 - No S3 key found for file: {file_id}")
+            _log(
+                "warning",
+                f"No S3 key found for file",
+                {"user_id": current_user, "file_id": file_id},
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="File not found in S3 (missing s3_key)",
             )
 
-        print(f"MEDIA_DEBUG: S3_ONLY_DOWNLOAD - FILE_ID={file_id_str} | s3_key={s3_key} | storage_type={storage_type}")
-
-        # Authorization checks
         owner_id = file_doc.get("owner_id")
         chat_id = file_doc.get("chat_id")
         shared_with = file_doc.get("shared_with", [])
 
         if str(owner_id) == str(current_user):
-            pass  # Owner has access
+            pass
         elif str(current_user) in [str(x) for x in (shared_with or [])]:
-            pass  # Shared user has access
+            pass
         elif chat_id:
             try:
                 from db_proxy import chats_collection
@@ -3328,8 +3328,7 @@ async def get_media_by_id_main(
                     )
             except HTTPException:
                 raise
-            except Exception as e:
-                print(f"MEDIA_DEBUG: Chat membership check failed: {e}")
+            except Exception:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: unable to verify chat membership",
@@ -3340,10 +3339,6 @@ async def get_media_by_id_main(
                 detail="Access denied: you don't have permission to access this media",
             )
 
-        print(f"MEDIA_DEBUG: ACCESS_GRANTED for user={current_user}, downloading from S3")
-
-        # CRITICAL: S3-ONLY DOWNLOAD - No local fallback allowed
-        print(f"MEDIA_DEBUG: S3_ONLY - s3_key={s3_key}")
         return await _handle_s3_media_download(
             s3_key, file_doc, download, force_download, use_redirect
         )
@@ -3351,7 +3346,11 @@ async def get_media_by_id_main(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"MEDIA_DEBUG: Unexpected error: {e}")
+        _log(
+            "error",
+            f"Failed to download media: {str(e)}",
+            {"user_id": current_user, "file_id": file_id},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to download media",
@@ -3365,14 +3364,11 @@ async def _handle_status_media(
     use_redirect: bool,
 ):
     """
-    Handle status media download directly from S3/storage.
+    Handle status media download from S3 (S3-only mode).
     Status media is stored with keys like 'status/{user_id}/uuid.ext'
     These are publicly accessible to authenticated users.
     """
-    print(f"MEDIA_DEBUG: _handle_status_media called with key: {storage_key}")
-
     try:
-        # Determine file extension for content type
         file_ext = (
             os.path.splitext(storage_key)[1].lower() if "." in storage_key else ""
         )
@@ -3391,36 +3387,23 @@ async def _handle_status_media(
 
         filename = os.path.basename(storage_key)
 
-        # Handle S3 storage
-        if settings.USE_S3:
-            return await _handle_status_s3_download(
-                storage_key,
-                content_type,
-                download,
-                force_download,
-                use_redirect,
-                filename,
-            )
-        else:
-            # Local storage fallback - construct path from storage_key
-            local_path = os.path.join(
-                settings.UPLOAD_DIR, storage_key.replace("/", os.sep)
-            )
-            if os.path.exists(local_path):
-                return await _handle_status_local_download(
-                    local_path, content_type, download, force_download, filename
-                )
-            else:
-                print(f"MEDIA_DEBUG: Status file not found locally: {local_path}")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Status media not found",
-                )
+        return await _handle_status_s3_download(
+            storage_key,
+            content_type,
+            download,
+            force_download,
+            use_redirect,
+            filename,
+        )
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"MEDIA_DEBUG: Error handling status media: {e}")
+        _log(
+            "error",
+            f"Failed to download status media: {str(e)}",
+            {"storage_key": storage_key},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to download status media",
@@ -3436,49 +3419,45 @@ async def _handle_status_s3_download(
     filename: str,
 ):
     """Handle S3 download for status media with proper headers"""
-    print(f"MEDIA_DEBUG: Handling S3 status download for key: {storage_key}")
-
     try:
         s3_client = _get_s3_client()
         if not s3_client:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="S3 client not available",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage service temporarily unavailable",
             )
 
-        # Get S3 object metadata to verify existence
+        bucket_name = _get_sanitized_bucket_name()
         try:
-            obj_metadata = s3_client.head_object(
-                Bucket=_get_sanitized_bucket_name(), Key=storage_key
-            )
+            obj_metadata = s3_client.head_object(Bucket=bucket_name, Key=storage_key)
             content_length = obj_metadata.get("ContentLength", 0)
         except ClientError as e:
             if e.response["Error"]["Code"] == "404":
-                print(f"MEDIA_DEBUG: S3 file not found: {storage_key}")
+                _log(
+                    "warning",
+                    f"Status media not found in S3: {storage_key}",
+                    {"storage_key": storage_key},
+                )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Status media not found in storage",
+                    detail="Status media not found",
                 )
             raise
 
-        print(
-            f"MEDIA_DEBUG: S3 status file found: {storage_key}, size: {content_length}"
-        )
-
-        # For redirect mode, generate presigned URL with download headers
         if use_redirect:
-            safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
+            safe_filename = (
+                filename.replace("\n", "").replace("\r", "").replace('"', "")
+            )
             response_disposition = f'attachment; filename="{safe_filename}"'
-            
+
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=storage_key,
-                bucket=_get_sanitized_bucket_name(),
+                bucket=bucket_name,
                 expires_in=3600,
                 response_content_disposition=response_disposition,
             )
             if presigned_url:
-                print(f"MEDIA_DEBUG: Returning 307 redirect to presigned URL with download headers")
                 headers = {
                     "Content-Disposition": response_disposition,
                     "Content-Type": content_type,
@@ -3487,14 +3466,13 @@ async def _handle_status_s3_download(
                     url=presigned_url, status_code=307, headers=headers
                 )
 
-        # Stream S3 object directly
-        obj = s3_client.get_object(Bucket=_get_sanitized_bucket_name(), Key=storage_key)
+        obj = s3_client.get_object(Bucket=bucket_name, Key=storage_key)
 
         async def stream_s3_object():
-            """Stream S3 object in chunks to prevent memory buffering"""
+            body = None
             try:
                 body = obj["Body"]
-                chunk_size = 65536  # 64KB chunks
+                chunk_size = 65536
                 loop = asyncio.get_running_loop()
                 while True:
                     chunk = await loop.run_in_executor(None, body.read, chunk_size)
@@ -3502,13 +3480,19 @@ async def _handle_status_s3_download(
                         break
                     yield chunk
             except Exception as e:
-                print(f"MEDIA_DEBUG: Error streaming S3 object: {e}")
+                _log(
+                    "error",
+                    f"Error streaming S3 object: {str(e)}",
+                    {"storage_key": storage_key},
+                )
                 raise
             finally:
-                if "body" in locals() and hasattr(body, "close"):
-                    body.close()
+                if body is not None and hasattr(body, "close"):
+                    try:
+                        body.close()
+                    except Exception:
+                        pass
 
-        # Return streaming response
         disposition_type = "attachment" if (download or force_download) else "inline"
         safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
 
@@ -3536,66 +3520,28 @@ async def _handle_status_s3_download(
                 detail="Status media not found in S3",
             )
         else:
+            _log(
+                "error",
+                f"S3 access error: {str(e)}",
+                {"storage_key": storage_key},
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="S3 access error",
             )
     except Exception as e:
-        print(f"MEDIA_DEBUG: S3 status download error: {e}")
+        _log(
+            "error",
+            f"Failed to download status media: {str(e)}",
+            {"storage_key": storage_key},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to download from S3",
         )
 
 
-async def _handle_status_local_download(
-    file_path: str,
-    content_type: str,
-    download: bool,
-    force_download: bool,
-    filename: str,
-):
-    """Handle local filesystem download for status media"""
-    print(f"MEDIA_DEBUG: Handling local status download for path: {file_path}")
-
-    try:
-        if not os.path.exists(file_path):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Status media not found on local storage",
-            )
-
-        content_length = os.path.getsize(file_path)
-        disposition_type = "attachment" if (download or force_download) else "inline"
-        safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
-
-        headers = {
-            "Content-Length": str(content_length),
-            "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
-            "Content-Type": content_type,
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "X-Content-Type-Options": "nosniff",
-        }
-
-        return FileResponse(
-            path=file_path,
-            media_type=content_type,
-            headers=headers,
-            filename=safe_filename,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"MEDIA_DEBUG: Local status download error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to download status media",
-        )
-
-
-# NOTE: The duplicate /media/{file_id} endpoint was removed from router to avoid conflict
-# The main media endpoint is in media_router at /api/v1/media/{file_id}
+# NOTE: Local storage functions removed - S3-only mode
 
 
 # ============================================================================
@@ -3610,17 +3556,8 @@ async def _handle_s3_media_download(
     force_download: bool,
     use_redirect: bool,
 ):
-    """Handle S3 media download with proper headers and streaming
-    
-    CRITICAL: S3-ONLY download - no local fallback
-    Validates s3_key before attempting S3 access
-    Streams large files without loading into memory
-    """
-    print(f"MEDIA_DEBUG: _handle_s3_media_download START - s3_key={storage_key}")
-    
-    # CRITICAL: Validate s3_key is not empty
+    """Handle S3 media download with proper headers and streaming (S3-only mode)"""
     if not storage_key or not storage_key.strip():
-        print(f"MEDIA_DEBUG: S3_KEY_EMPTY - storage_key is null/empty for download")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found in S3 (empty s3_key)",
@@ -3629,49 +3566,48 @@ async def _handle_s3_media_download(
     try:
         s3_client = _get_s3_client()
         if not s3_client:
-            print(f"MEDIA_DEBUG: S3_CLIENT_UNAVAILABLE")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="S3 service temporarily unavailable",
+                detail="Storage service temporarily unavailable",
             )
 
         bucket_name = _get_sanitized_bucket_name()
-        print(f"MEDIA_DEBUG: S3_QUERY - Bucket={bucket_name}, Key={storage_key}")
-        
-        # Get S3 object metadata
+
         try:
-            obj_metadata = s3_client.head_object(
-                Bucket=bucket_name, Key=storage_key
-            )
-            print(f"MEDIA_DEBUG: S3_FILE_FOUND - ETag={obj_metadata.get('ETag')}, Size={obj_metadata.get('ContentLength')}")
+            obj_metadata = s3_client.head_object(Bucket=bucket_name, Key=storage_key)
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "Unknown")
             if error_code == "404" or error_code == "NoSuchKey":
-                print(f"MEDIA_DEBUG: S3_FILE_NOT_FOUND - Key does not exist in S3: {storage_key}, error_code: {error_code}, exception: {e}")
+                _log(
+                    "warning",
+                    f"File not found in S3: {storage_key}",
+                    {"storage_key": storage_key},
+                )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="File not found in S3",
                 )
             else:
-                print(f"MEDIA_DEBUG: S3_ERROR - error_code: {error_code}, exception: {e}")
+                _log(
+                    "error",
+                    f"S3 error: {str(e)}",
+                    {"storage_key": storage_key, "error_code": error_code},
+                )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="S3 access error",
                 )
-        
+
         content_type = obj_metadata.get("ContentType", "application/octet-stream")
         content_length = obj_metadata.get("ContentLength", 0)
         filename = storage_key.split("/")[-1]
 
-        print(f"MEDIA_DEBUG: S3_METADATA - content_type={content_type}, size={content_length}, filename={filename}")
-
-        # For redirect mode, generate presigned URL with download headers
         if use_redirect:
-            print(f"MEDIA_DEBUG: GENERATING_PRESIGNED_URL - Key={storage_key}, Bucket={bucket_name}")
-            # Create download-forcing disposition header
-            safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
+            safe_filename = (
+                filename.replace("\n", "").replace("\r", "").replace('"', "")
+            )
             response_disposition = f'attachment; filename="{safe_filename}"'
-            
+
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=storage_key,
@@ -3680,8 +3616,6 @@ async def _handle_s3_media_download(
                 response_content_disposition=response_disposition,
             )
             if presigned_url:
-                print(f"MEDIA_DEBUG: REDIRECT_307 - Presigned URL with download headers generated for {storage_key}")
-                print(f"MEDIA_DEBUG: PRESIGNED_URL_LENGTH={len(presigned_url)} chars")
                 headers = {
                     "Content-Disposition": response_disposition,
                     "Content-Type": content_type,
@@ -3690,38 +3624,38 @@ async def _handle_s3_media_download(
                     url=presigned_url, status_code=307, headers=headers
                 )
             else:
-                print(f"MEDIA_DEBUG: PRESIGNED_URL_FAILED - Failed to generate presigned URL for {storage_key}")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to generate presigned URL",
                 )
 
-        # Stream S3 object directly
-        print(f"MEDIA_DEBUG: STREAM_S3 - Streaming from S3: {storage_key}")
         obj = s3_client.get_object(Bucket=bucket_name, Key=storage_key)
 
         async def stream_s3_object():
-            """Stream S3 object in chunks to prevent memory buffering"""
+            body = None
             try:
                 body = obj["Body"]
-                chunk_size = 65536  # 64KB chunks
+                chunk_size = 65536
                 loop = asyncio.get_running_loop()
-                bytes_streamed = 0
                 while True:
                     chunk = await loop.run_in_executor(None, body.read, chunk_size)
                     if not chunk:
                         break
-                    bytes_streamed += len(chunk)
                     yield chunk
-                print(f"MEDIA_DEBUG: STREAM_COMPLETE - Total bytes streamed: {bytes_streamed}")
             except Exception as e:
-                print(f"MEDIA_DEBUG: STREAM_ERROR - Error streaming S3 object: {e}")
+                _log(
+                    "error",
+                    f"Error streaming S3 object: {str(e)}",
+                    {"storage_key": storage_key},
+                )
                 raise
             finally:
-                if "body" in locals() and hasattr(body, "close"):
-                    body.close()
+                if body is not None and hasattr(body, "close"):
+                    try:
+                        body.close()
+                    except Exception:
+                        pass
 
-        # Return streaming response
         disposition_type = "attachment" if (download or force_download) else "inline"
         safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
 
@@ -3734,8 +3668,6 @@ async def _handle_s3_media_download(
             "Accept-Ranges": "bytes",
         }
 
-        print(f"MEDIA_DEBUG: RESPONSE_SENT - {disposition_type}, size={content_length}")
-        
         return StreamingResponse(
             stream_s3_object(),
             media_type=content_type,
@@ -3745,19 +3677,27 @@ async def _handle_s3_media_download(
     except HTTPException:
         raise
     except ClientError as e:
-        print(f"MEDIA_DEBUG: S3_DOWNLOAD_ERROR - {e}")
         if e.response["Error"]["Code"] == "404":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="File not found in S3",
             )
         else:
+            _log(
+                "error",
+                f"S3 access error: {str(e)}",
+                {"storage_key": storage_key},
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="S3 access error",
             )
     except Exception as e:
-        print(f"MEDIA_DEBUG: S3_UNEXPECTED_ERROR - {type(e).__name__}: {e}")
+        _log(
+            "error",
+            f"Failed to download from S3: {str(e)}",
+            {"storage_key": storage_key},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to download from S3",
@@ -3845,24 +3785,27 @@ async def get_media_download(
 ):
     """
     MEDIA DOWNLOAD ENDPOINT - Compatible with frontend expectations
-    
+
     Fetch media from S3 bucket by file_key and return as streaming response
     Supports both inline viewing and attachment download
     """
-    print(f"[MEDIA_DOWNLOAD] Download request for user: {current_user}, file_key: {file_key}, download: {download}")
-    
+    print(
+        f"[MEDIA_DOWNLOAD] Download request for user: {current_user}, file_key: {file_key}, download: {download}"
+    )
+
     try:
         # Validate file_key format (prevent directory traversal)
         from urllib.parse import unquote
+
         decoded_file_key = unquote(file_key) if file_key else ""
-        
+
         if not decoded_file_key:
             print(f"[MEDIA_DOWNLOAD] Invalid file_key format - empty")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid file key format",
             )
-        
+
         # Reject windows-style path separators / encoded traversal attempts
         if "\\" in decoded_file_key or decoded_file_key.startswith("\\"):
             print(f"[MEDIA_DOWNLOAD] Invalid file_key format - windows path separators")
@@ -3870,11 +3813,12 @@ async def get_media_download(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid file key format",
             )
-        
+
         # Normalize path and check for traversal
         import os
+
         normalized_key = os.path.normpath(decoded_file_key)
-        
+
         if (
             decoded_file_key.startswith("/")
             or normalized_key.startswith("..")
@@ -3887,44 +3831,47 @@ async def get_media_download(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid file key format",
             )
-        
+
         # Security: sanitize file key
         safe_file_key = file_key.replace("..", "").replace("//", "/").lstrip("/")
         print(f"[MEDIA_DOWNLOAD] Safe file_key: {safe_file_key}")
-        
+
         # Verify S3 object exists before generating presigned URL
         s3_client = _get_s3_client()
         if not s3_client:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="S3 storage not available"
+                detail="S3 storage not available",
             )
-        
+
         # Fetch S3 object metadata to get proper MIME type
         try:
-            obj_metadata = s3_client.head_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
+            obj_metadata = s3_client.head_object(
+                Bucket=settings.S3_BUCKET, Key=safe_file_key
+            )
             print(f"[MEDIA_DOWNLOAD] S3 object exists: {safe_file_key}")
-            
+
             # Extract proper MIME type from S3 metadata
             content_type = obj_metadata.get("ContentType", "application/octet-stream")
             content_length = obj_metadata.get("ContentLength", 0)
-            
-            print(f"[MEDIA_DOWNLOAD] Content-Type from S3: {content_type}, Size: {content_length}")
+
+            print(
+                f"[MEDIA_DOWNLOAD] Content-Type from S3: {content_type}, Size: {content_length}"
+            )
         except Exception as e:
             print(f"[MEDIA_DOWNLOAD] S3 object not found: {safe_file_key} - {str(e)}")
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Media file not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
             )
-        
+
         # Extract filename from file_key for Content-Disposition
-        filename = safe_file_key.split('/')[-1]
+        filename = safe_file_key.split("/")[-1]
         safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
-        
+
         # Stream file from S3 with proper MIME type
         try:
             obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=safe_file_key)
-            
+
             async def stream_s3_object():
                 """Stream S3 object in chunks to prevent memory buffering"""
                 try:
@@ -3942,9 +3889,11 @@ async def get_media_download(
                 finally:
                     if "body" in locals() and hasattr(body, "close"):
                         body.close()
-            
+
             # Return streaming response with proper headers
-            disposition_type = "attachment" if (download or force_download) else "inline"
+            disposition_type = (
+                "attachment" if (download or force_download) else "inline"
+            )
             headers = {
                 "Content-Length": str(content_length),
                 "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
@@ -3953,9 +3902,11 @@ async def get_media_download(
                 "X-Content-Type-Options": "nosniff",
                 "Accept-Ranges": "bytes",
             }
-            
-            print(f"[MEDIA_DOWNLOAD] Streaming {safe_file_key} with content-type: {content_type}")
-            
+
+            print(
+                f"[MEDIA_DOWNLOAD] Streaming {safe_file_key} with content-type: {content_type}"
+            )
+
             return StreamingResponse(
                 stream_s3_object(),
                 media_type=content_type,
@@ -3965,9 +3916,9 @@ async def get_media_download(
             print(f"[MEDIA_DOWNLOAD] Error preparing stream: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to download media"
+                detail="Failed to download media",
             )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -4096,8 +4047,6 @@ async def get_media_by_key(
                     )
                 except Exception as e:
                     print(f"MEDIA_DEBUG: storage_path query failed: {e}")
-
-
 
             # Authorization checks if file_doc found
             if file_doc:
@@ -4268,150 +4217,102 @@ async def get_media_by_key(
                 detail="Access denied: unable to verify access",
             )
 
-        # Try S3 first, then fallback to filesystem
+        # S3-ONLY MODE: No local storage fallback allowed
+        storage_type = file_doc.get("storage_type", "").lower() if file_doc else ""
+        if storage_type and storage_type != "s3":
+            _log(
+                "warning",
+                f"Invalid storage type for S3-only mode: {storage_type}",
+                {
+                    "user_id": current_user,
+                    "file_key": safe_file_key,
+                    "storage_type": storage_type,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Media file not found",
+            )
+
         s3_client = _get_s3_client()
-        final_path = None
         content_type = None
         content_length = 0
         filename = safe_file_key.split("/")[-1]
 
-        # Check storage_type from DB record (if available)
-        storage_type_from_db = None
-        if file_doc:
-            storage_type_from_db = file_doc.get("storage_type", "").lower()
-            print(f"MEDIA_DEBUG: Storage type from DB: {storage_type_from_db}")
-
-        # Priority based on storage_type from DB
-        # If storage_type == "local", skip S3 and use local storage only
-        # If storage_type == "s3" or unknown, try S3 first, then fallback to local
-        s3_available = False
-
-        # For local storage type, skip S3 and check local storage directly
-        if storage_type_from_db == "local":
-            print(f"MEDIA_DEBUG: Storage type is 'local', skipping S3 check")
-            s3_available = False
-        elif s3_client:
-            # For S3 or unknown storage type, try S3 first
-            try:
-                print(f"MEDIA_DEBUG: Attempting S3 access for: {safe_file_key}")
-                obj_metadata = s3_client.head_object(
-                    Bucket=_get_sanitized_bucket_name(), Key=safe_file_key
-                )
-                content_type = obj_metadata.get(
-                    "ContentType", "application/octet-stream"
-                )
-                content_length = obj_metadata.get("ContentLength", 0)
-                s3_available = True
-                print(
-                    f"MEDIA_DEBUG: S3 file found: {safe_file_key}, size: {content_length}"
-                )
-
-            except ClientError as e:
-                if e.response["Error"]["Code"] == "404":
-                    print(f"MEDIA_DEBUG: S3 file not found: {safe_file_key}")
-                else:
-                    print(f"MEDIA_DEBUG: S3 error: {str(e)}")
-
-        # Priority 2: Fallback to filesystem using storage_path from database
-        if not s3_available:
-            print(f"MEDIA_DEBUG: S3 unavailable, checking filesystem...")
-            if file_doc:
-                storage_path = file_doc.get("storage_path")
-                print(f"MEDIA_DEBUG: Storage path from DB: {storage_path}")
-
-                if storage_path and os.path.exists(storage_path):
-                    final_path = storage_path
-                    content_length = os.path.getsize(final_path)
-                    # Determine content type from file extension
-                    import mimetypes
-
-                    content_type, _ = mimetypes.guess_type(final_path)
-                    if not content_type:
-                        content_type = "application/octet-stream"
-                    print(
-                        f"MEDIA_DEBUG: Filesystem file found: {final_path}, size: {content_length}"
-                    )
-                else:
-                    print(f"MEDIA_DEBUG: File not found in filesystem: {storage_path}")
-
-            # If storage_type is 'local', also check /data/uploads/{safe_file_key}
-            if storage_type_from_db == "local" and not final_path:
-                local_path = f"/data/uploads/{safe_file_key}"
-                print(f"MEDIA_DEBUG: Checking local storage path: {local_path}")
-                if os.path.exists(local_path):
-                    final_path = local_path
-                    content_length = os.path.getsize(final_path)
-                    import mimetypes
-
-                    content_type, _ = mimetypes.guess_type(final_path)
-                    if not content_type:
-                        content_type = "application/octet-stream"
-                    print(
-                        f"MEDIA_DEBUG: Local file found at: {local_path}, size: {content_length}"
-                    )
-                else:
-                    print(f"MEDIA_DEBUG: FILE NOT FOUND ON DISK: {local_path}")
-
-        # Check if file exists in either storage
-        if not s3_available and not final_path:
-            print(
-                f"MEDIA_DEBUG: FILE NOT FOUND - S3 unavailable and no filesystem path"
-            )
+        if not s3_client:
             _log(
-                "warning",
-                f"Media file not found: {safe_file_key}",
+                "error",
+                "S3 client not available",
                 {"user_id": current_user, "file_key": safe_file_key},
             )
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage service temporarily unavailable",
             )
 
+        try:
+            obj_metadata = s3_client.head_object(
+                Bucket=_get_sanitized_bucket_name(), Key=safe_file_key
+            )
+            content_type = obj_metadata.get("ContentType", "application/octet-stream")
+            content_length = obj_metadata.get("ContentLength", 0)
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "404":
+                _log(
+                    "warning",
+                    f"Media file not found in S3: {safe_file_key}",
+                    {"user_id": current_user, "file_key": safe_file_key},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Media file not found",
+                )
+            else:
+                _log(
+                    "error",
+                    f"S3 error accessing file: {str(e)}",
+                    {"user_id": current_user, "file_key": safe_file_key},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to access media file",
+                )
+
         # Log media access for audit
-        storage_type = "S3" if s3_available else "Filesystem"
         bucket_name = _get_sanitized_bucket_name()
-        print(
-            f"MEDIA_DEBUG: S3 URL GENERATED - storage_type={storage_type}, bucket={bucket_name}, key={safe_file_key}"
-        )
         _log(
             "info",
-            f"Media access granted: {safe_file_key} ({storage_type})",
+            f"Media access granted: {safe_file_key} (S3)",
             {
                 "user_id": current_user,
                 "file_key": safe_file_key,
                 "content_type": content_type,
                 "size": content_length,
-                "storage": storage_type,
-                "file_path": final_path,
+                "storage": "S3",
                 "bucket": bucket_name,
             },
         )
 
         # For S3 files with use_redirect=true, return 307 redirect to presigned URL
-        # Ensure proper headers are passed to trigger browser download
-        if s3_available and use_redirect:
-            print(f"MEDIA_DEBUG: Generating presigned URL for redirect...")
-            
-            # Prepare Content-Disposition for presigned URL
+        if use_redirect:
             response_content_disposition = None
             if download or force_download:
-                safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
+                safe_filename = (
+                    filename.replace("\n", "").replace("\r", "").replace('"', "")
+                )
                 response_content_disposition = f'attachment; filename="{safe_filename}"'
-            
+
             presigned_url = _generate_presigned_url(
                 "GET",
                 object_key=safe_file_key,
-                bucket=_get_sanitized_bucket_name(),
+                bucket=bucket_name,
                 expires_in=3600,
                 response_content_disposition=response_content_disposition,
             )
             if presigned_url:
-                print(
-                    f"MEDIA_DEBUG: S3 URL GENERATED - bucket={_get_sanitized_bucket_name()}, key={safe_file_key}, url={presigned_url[:80]}..."
-                )
-                print(f"MEDIA_DEBUG: Returning 307 redirect to presigned URL")
                 _log(
                     "info",
-                    f"S3 redirect: {safe_file_key} -> presigned_url",
+                    f"S3 redirect: {safe_file_key}",
                     {
                         "user_id": current_user,
                         "file_key": safe_file_key,
@@ -4420,106 +4321,59 @@ async def get_media_by_key(
                 )
                 from fastapi.responses import RedirectResponse
 
-                # Add headers to ensure proper download behavior (only for non-presigned URL redirects)
                 headers = {}
                 if not response_content_disposition:
-                    # Only add headers if we're not using Content-Disposition in presigned URL
-                    headers = {
-                        "Content-Type": "application/octet-stream",
-                    }
+                    headers = {"Content-Type": "application/octet-stream"}
                 return RedirectResponse(
                     url=presigned_url, status_code=307, headers=headers
                 )
-            else:
-                print(
-                    f"MEDIA_DEBUG: Failed to generate presigned URL, falling back to streaming"
+
+        # Stream from S3
+        obj = s3_client.get_object(Bucket=bucket_name, Key=safe_file_key)
+
+        async def stream_s3_object():
+            """Stream S3 object in chunks to prevent memory buffering"""
+            body = None
+            try:
+                body = obj["Body"]
+                chunk_size = 65536  # 64KB chunks for efficient streaming
+                loop = asyncio.get_running_loop()
+                while True:
+                    chunk = await loop.run_in_executor(None, body.read, chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+            except Exception as e:
+                _log(
+                    "error",
+                    f"Error streaming media from S3: {str(e)}",
+                    {"user_id": current_user, "file_key": safe_file_key},
                 )
-
-        # Create streaming response based on storage type
-        if s3_available:
-            # Fetch object from S3
-            obj = s3_client.get_object(
-                Bucket=_get_sanitized_bucket_name(), Key=safe_file_key
-            )
-
-            async def stream_s3_object():
-                """Stream S3 object in chunks to prevent memory buffering"""
-                try:
-                    body = obj["Body"]
-                    chunk_size = 65536  # 64KB chunks for efficient streaming
-                    loop = asyncio.get_running_loop()
-                    while True:
-                        chunk = await loop.run_in_executor(None, body.read, chunk_size)
-                        if not chunk:
-                            break
-                        yield chunk
-                except Exception as e:
-                    _log(
-                        "error",
-                        f"Error streaming media from S3: {str(e)}",
-                        {"user_id": current_user, "file_key": safe_file_key},
-                    )
-                    raise
-                finally:
-                    if "body" in locals() and hasattr(body, "close"):
+                raise
+            finally:
+                if body is not None and hasattr(body, "close"):
+                    try:
                         body.close()
+                    except Exception:
+                        pass
 
-            stream_gen = stream_s3_object()
-        else:
-            # Stream from filesystem
-            async def stream_filesystem_object():
-                """Stream filesystem object in chunks to prevent memory buffering"""
-                try:
-                    print(f"MEDIA_DEBUG: Streaming from filesystem: {final_path}")
-                    chunk_size = 65536  # 64KB chunks
-                    loop = asyncio.get_running_loop()
-                    with open(final_path, "rb") as f:
-                        while True:
-                            chunk = await loop.run_in_executor(None, f.read, chunk_size)
-                            if not chunk:
-                                break
-                            yield chunk
-                except Exception as e:
-                    _log(
-                        "error",
-                        f"Error streaming media from filesystem: {str(e)}",
-                        {"user_id": current_user, "file_path": final_path},
-                    )
-                    print(f"MEDIA_DEBUG: Streaming error: {str(e)}")
-                    raise
-
-            stream_gen = stream_filesystem_object()
+        stream_gen = stream_s3_object()
 
         # Return streaming response with proper headers
-        # CRITICAL: Always use attachment for downloads to trigger native browser download
         disposition_type = "attachment" if (download or force_download) else "inline"
-
-        # Ensure filename is safe for Content-Disposition header
         safe_filename = filename.replace("\n", "").replace("\r", "").replace('"', "")
 
         headers_dict = {
             "Content-Length": str(content_length),
             "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
-            "Content-Type": content_type,  # Explicit header
+            "Content-Type": content_type,
             "Cache-Control": "no-cache, no-store, must-revalidate",
-            "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
-            "X-Frame-Options": "DENY",  # Prevent embedding in frames
-            "Pragma": "no-cache",  # HTTP 1.0 compatibility
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Pragma": "no-cache",
             "Expires": "0",
-            "Accept-Ranges": "bytes",  # Support range requests
+            "Accept-Ranges": "bytes",
         }
-        print(f"MEDIA_DEBUG: Returning streaming response with headers:")
-        print(f"MEDIA_DEBUG: S3_KEY: {safe_file_key}")
-        print(f"MEDIA_DEBUG: FILE_ID: {file_key}")
-        print(f"MEDIA_DEBUG: Content-Type: {content_type}")
-        print(f"MEDIA_DEBUG: Content-Length: {headers_dict['Content-Length']}")
-        print(
-            f"MEDIA_DEBUG: Content-Disposition: {headers_dict['Content-Disposition']}"
-        )
-        print(f"MEDIA_DEBUG: Storage: {storage_type}")
-        print(
-            f"MEDIA_DEBUG: download={download}, force_download={force_download}, use_redirect={use_redirect}"
-        )
 
         return StreamingResponse(
             stream_gen,
