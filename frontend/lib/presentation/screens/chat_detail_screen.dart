@@ -1690,7 +1690,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _showImageOptions(Message message, String fileId, String fileName, String contentType) async {
     if (!mounted) return;
     
-    final imageUrl = '${ApiConstants.serverBaseUrl}/api/v1/files/download/$fileId';
+    final imageUrl = '${ApiConstants.baseUrl}/files/download/$fileId';
     
     showDialog(
       context: context,
@@ -1708,43 +1708,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  imageUrl,
-                  fit: BoxFit.cover,
-                  headers: {'Cache-Control': 'no-cache'},
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: 250,
-                      height: 180,
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.broken_image, color: Colors.red, size: 32),
-                          SizedBox(height: 8),
-                          Text('Preview not available'),
-                        ],
-                      ),
-                    );
-                  },
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Container(
-                      width: 250,
-                      height: 180,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  },
-                ),
+                child: _buildAuthenticatedImagePreview(imageUrl, fileName),
               ),
             ),
             const SizedBox(height: 16),
@@ -1779,6 +1743,58 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAuthenticatedImagePreview(String imageUrl, String fileName) {
+    final serviceProvider = ServiceProvider();
+    final accessToken = serviceProvider.authService.accessToken;
+    
+    // Build headers for authenticated image request
+    Map<String, String> headers = {'Cache-Control': 'no-cache'};
+    if (accessToken != null && accessToken.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $accessToken';
+    }
+
+    return Image.network(
+      imageUrl,
+      width: 250,
+      height: 180,
+      fit: BoxFit.cover,
+      headers: headers,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint('[IMAGE_PREVIEW] Error loading image: $error');
+        return Container(
+          width: 250,
+          height: 180,
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.broken_image, color: Colors.red, size: 32),
+              SizedBox(height: 8),
+              Text('Preview not available'),
+            ],
+          ),
+        );
+      },
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          width: 250,
+          height: 180,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      },
     );
   }
 

@@ -3,6 +3,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/utils/time_formatter.dart';
 import '../../data/models/message.dart';
+import '../../data/services/service_provider.dart';
 import 'message_reactions_bar.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -56,7 +57,7 @@ class MessageBubble extends StatelessWidget {
 
   Widget _buildImagePreview(Message message, String fileName) {
     final imageUrl = message.fileId != null 
-        ? '${ApiConstants.serverBaseUrl}/api/v1/files/download/${message.fileId}'
+        ? '${ApiConstants.baseUrl}/files/download/${message.fileId}'
         : null;
     
     if (imageUrl == null) {
@@ -77,65 +78,7 @@ class MessageBubble extends StatelessWidget {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              imageUrl,
-              width: 200,
-              height: 150,
-              fit: BoxFit.cover,
-              headers: {'Cache-Control': 'no-cache'},
-              errorBuilder: (context, error, stackTrace) {
-                debugPrint('[IMAGE_PREVIEW] Error loading image: $error');
-                return Container(
-                  width: 200,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.broken_image, color: Colors.red, size: 32),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Image not available',
-                        style: TextStyle(
-                          color: Colors.red.withValues(alpha: 0.8),
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        fileName,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontSize: 10,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                );
-              },
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Container(
-                  width: 200,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
-                      strokeWidth: 2,
-                    ),
-                  ),
-                );
-              },
-            ),
+            child: _buildAuthenticatedImage(imageUrl, fileName),
           ),
         ),
         const SizedBox(height: 4),
@@ -150,6 +93,77 @@ class MessageBubble extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
       ],
+    );
+  }
+
+  Widget _buildAuthenticatedImage(String imageUrl, String fileName) {
+    final serviceProvider = ServiceProvider();
+    final accessToken = serviceProvider.authService.accessToken;
+    
+    // Build headers for authenticated image request
+    Map<String, String> headers = {'Cache-Control': 'no-cache'};
+    if (accessToken != null && accessToken.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $accessToken';
+    }
+
+    return Image.network(
+      imageUrl,
+      width: 200,
+      height: 150,
+      fit: BoxFit.cover,
+      headers: headers,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint('[IMAGE_PREVIEW] Error loading image: $error');
+        return Container(
+          width: 200,
+          height: 150,
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.broken_image, color: Colors.red, size: 32),
+              const SizedBox(height: 8),
+              Text(
+                'Image not available',
+                style: TextStyle(
+                  color: Colors.red.withValues(alpha: 0.8),
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                fileName,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontSize: 10,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        );
+      },
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          width: 200,
+          height: 150,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+              strokeWidth: 2,
+            ),
+          ),
+        );
+      },
     );
   }
 

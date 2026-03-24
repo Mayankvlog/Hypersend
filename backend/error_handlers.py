@@ -947,12 +947,19 @@ def register_exception_handlers(app: FastAPI) -> None:
             traceback.print_exc()
 
         # Determine appropriate status code based on exception type
+        exc_str = str(exc).lower()
         if isinstance(exc, TimeoutError):
             status_code = status.HTTP_504_GATEWAY_TIMEOUT
             detail = "Request timeout - please try again"
         elif isinstance(exc, ConnectionError):
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             detail = "Service temporarily unavailable - please try again"
+        elif (
+            "attached to a different loop" in exc_str
+            or "running in different thread" in exc_str
+        ):
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            detail = "Service temporarily busy - please retry the request"
         elif isinstance(exc, ValueError):
             status_code = status.HTTP_400_BAD_REQUEST
             detail = "Invalid input data - please check your request"
