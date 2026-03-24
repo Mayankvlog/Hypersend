@@ -789,25 +789,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               const SizedBox(height: 24),
               
-              // First row: Camera (native on mobile, web-enabled on web via FilePicker), Photos/Videos, Documents
+              // First row: Photos/Videos, Documents
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildAttachmentButton(
-                    icon: Icons.camera_alt,
-                    label: 'Camera',
-                    color: Colors.blue,
-                    onTap: () {
-                      Navigator.pop(context);
-                      if (kIsWeb) {
-                        // On web: use FilePicker with camera support
-                        _captureFromWebCamera();
-                      } else {
-                        // On mobile: use native camera
-                        _captureFromCamera();
-                      }
-                    },
-                  ),
+                  const SizedBox(width: 40), // Spacer for alignment
                   _buildAttachmentButton(
                     icon: Icons.image,
                     label: 'Photos/Videos',
@@ -826,6 +812,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       _uploadFromMediaPicker('document');
                     },
                   ),
+                  const SizedBox(width: 40), // Spacer for alignment
                 ],
               ),
               const SizedBox(height: 24),
