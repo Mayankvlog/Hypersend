@@ -1121,9 +1121,17 @@ async def login(credentials: UserLogin, request: Request) -> JSONResponse:
 
         auth_log(f"SUCCESS: Login successful: {credentials.email}")
 
-        # Create response with secure HTTPOnly cookies only (tokens not exposed in body)
+        # Create response with tokens IN BODY (for frontend use) + HTTPOnly cookies (for backup/auto-refresh)
         response = JSONResponse(
-            content={"message": "Login successful", "token_type": "bearer"},
+            content={
+                "message": "Login successful",
+                "token_type": "bearer",
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "user_id": str(existing_user["_id"]),
+                "email": existing_user.get("email", ""),
+                "expires_in": settings.ACCESS_TOKEN_EXPIRE_SECONDS,
+            },
             status_code=status.HTTP_200_OK,
         )
 
