@@ -151,10 +151,12 @@ class WebSocketManager:
             else:
                 self.delivery_manager = None
                 
+            self.device_manager = None
             if MultiDeviceManager and redis_client:
-                self.device_manager = MultiDeviceManager(redis_client)
-            else:
-                self.device_manager = None
+                try:
+                    self.device_manager = MultiDeviceManager(redis_client)
+                except Exception as e:
+                    logger.warning(f"Failed to initialize device_manager: {e}")
                 
             if SignalProtocol:
                 self.signal_protocol = SignalProtocol()
