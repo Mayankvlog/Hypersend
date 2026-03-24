@@ -25,6 +25,8 @@ os.environ['SMTP_HOST'] = 'smtp.test.com'
 os.environ['SMTP_USERNAME'] = 'test@test.com'
 os.environ['SMTP_PASSWORD'] = 'testpass'
 os.environ['EMAIL_FROM'] = 'test@test.com'
+# Fix S3_BUCKET validation - use lowercase bucket name for testing
+os.environ['S3_BUCKET'] = 'test-bucket-name'
 
 import pytest
 import asyncio

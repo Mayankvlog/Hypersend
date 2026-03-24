@@ -1037,13 +1037,21 @@ def _log(level: str, message: str, user_data: dict = None):
     from datetime import datetime as dt, timezone as tz
 
     if user_data:
-        # Remove PII from logs in production
+        # Preserve all contextual fields while protecting PII
         safe_data = {
             "user_id": user_data.get("user_id", "unknown"),
             "operation": user_data.get("operation", "unknown"),
             "timestamp": dt.now(tz.utc).isoformat(),
         }
-        safe_message = f"{message} (user: {safe_data['user_id']})"
+        
+        # Include all additional contextual fields for debugging
+        for key, value in user_data.items():
+            if key not in ["user_id", "operation", "timestamp"]:
+                safe_data[key] = value
+        
+        # Build comprehensive log message
+        context_str = ", ".join([f"{k}={v}" for k, v in safe_data.items()])
+        safe_message = f"{message} ({context_str})"
     else:
         safe_message = message
 
@@ -1269,7 +1277,20 @@ async def initialize_upload(
                 headers={"Retry-After": "60"},
             )
 
-        # Validate S3 configuration before proceeding
+        # Validate S3 configuration before proceeding with enhanced checks
+        _log(
+            "info",
+            "[UPLOAD_INIT] Starting S3 configuration validation",
+            {
+                "user_id": current_user or "anonymous",
+                "operation": "upload_init",
+                "s3_bucket": settings.S3_BUCKET,
+                "aws_region": settings.AWS_REGION,
+                "has_access_key": bool(settings.AWS_ACCESS_KEY_ID),
+                "has_secret_key": bool(settings.AWS_SECRET_ACCESS_KEY),
+            },
+        )
+        
         s3_client = _get_s3_client()
         if s3_client is None:
             _log(
@@ -1377,6 +1398,8 @@ async def initialize_upload(
         mime_type = body.get("mime_type")
         if mime_type is None:
             mime_type = body.get("mime")
+        if mime_type is None:
+            mime_type = body.get("content_type")
 
         chunk_size = body.get("chunk_size")
         if chunk_size is None:
@@ -1389,13 +1412,48 @@ async def initialize_upload(
             )
 
         total_chunks = body.get("total_chunks")
-        if (
-            total_chunks is None
-            and isinstance(file_size, int)
-            and isinstance(chunk_size, int)
-            and chunk_size > 0
-        ):
-            total_chunks = int(math.ceil(file_size / chunk_size))
+
+        # CRITICAL: Ensure all variables are properly initialized and validated
+        # Prevent None values from causing issues downstream
+        if filename is not None:
+            filename = str(filename).strip() if isinstance(filename, str) else ""
+        if file_size is not None:
+            file_size = int(file_size) if isinstance(file_size, (int, str)) and str(file_size).isdigit() else 0
+        if chat_id is not None:
+            chat_id = str(chat_id).strip() if isinstance(chat_id, str) else ""
+        if mime_type is not None:
+            mime_type = str(mime_type).strip().lower() if isinstance(mime_type, str) else ""
+        if chunk_size is not None:
+            chunk_size = int(chunk_size) if isinstance(chunk_size, (int, str)) and str(chunk_size).isdigit() else 0
+        if total_chunks is not None:
+            total_chunks = int(total_chunks) if isinstance(total_chunks, (int, str)) and str(total_chunks).isdigit() else 0
+
+        # Calculate total_chunks when missing after coercion
+        if (not total_chunks or total_chunks == 0) and chunk_size > 0 and file_size > 0:
+            total_chunks = (file_size + chunk_size - 1) // chunk_size
+
+        # DEBUG: Log variable states for troubleshooting
+        _log(
+            "info",
+            "[UPLOAD_INIT] Variable states after initialization",
+            {
+                "user_id": current_user or "anonymous",
+                "filename": filename,
+                "file_size": file_size,
+                "chat_id": chat_id,
+                "mime_type": mime_type,
+                "chunk_size": chunk_size,
+                "total_chunks": total_chunks,
+                "types": {
+                    "filename": type(filename).__name__,
+                    "file_size": type(file_size).__name__,
+                    "chat_id": type(chat_id).__name__,
+                    "mime_type": type(mime_type).__name__,
+                    "chunk_size": type(chunk_size).__name__,
+                    "total_chunks": type(total_chunks).__name__,
+                }
+            },
+        )
 
         # Validate required fields
         if not all([filename, file_size, chat_id, mime_type]):
@@ -1680,8 +1738,8 @@ async def initialize_upload(
         if filename and mime_type != "application/octet-stream":
             import mimetypes
 
-            _, guessed_ext = mimetypes.guess_extension(mime_type)
-            _, file_ext = mimetypes.guess_extension(
+            guessed_ext = mimetypes.guess_extension(mime_type)
+            file_ext = mimetypes.guess_extension(
                 f"image/{filename.split('.')[-1]}" if "." in filename else "unknown"
             )
             file_actual_ext = (
@@ -1713,7 +1771,39 @@ async def initialize_upload(
         storage_key_owner = (
             str(upload_user_id) if upload_user_id is not None else "anonymous"
         )
-        storage_key = f"files/{storage_key_owner}/{upload_id}/{filename}"
+        
+        # CRITICAL: Safely construct file key using sanitized file_name
+        # Prevent path traversal and ensure valid S3 key format
+        safe_filename = sanitize_input(filename.strip())
+        if not safe_filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "ERROR",
+                    "message": "Filename cannot be empty after sanitization",
+                    "data": {"error_code": "INVALID_FILENAME"},
+                },
+            )
+        
+        storage_key = f"files/{storage_key_owner}/{upload_id}/{safe_filename}"
+        
+        # Debug logging for bucket, key, and content_type before S3 call
+        _log(
+            "info",
+            "[UPLOAD_INIT] Preparing S3 storage with debug info",
+            {
+                "user_id": current_user or "anonymous",
+                "upload_id": upload_id,
+                "filename": safe_filename,
+                "original_filename": filename,
+                "storage_key": storage_key,
+                "bucket": _get_sanitized_bucket_name(),
+                "content_type": mime_type,
+                "file_size": file_size,
+                "chunk_size": chunk_size,
+                "total_chunks": total_chunks,
+            },
+        )
 
         # CRITICAL: Configurable TTL expiry for compliance (UTC only)
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -1742,21 +1832,114 @@ async def initialize_upload(
         uploads_col = _safe_collection(uploads_collection)
         await _maybe_await(uploads_col.insert_one(upload_doc))
 
-        # Generate presigned PUT URL for direct S3 upload
-        presigned_put_url = _generate_presigned_url(
-            "put_object",
-            object_key=storage_key,
-            content_type=mime_type,
-            expires_in=900,
-            bucket=_get_sanitized_bucket_name(),
-        )
-        if not presigned_put_url:
+        # Generate presigned PUT URL for direct S3 upload with enhanced error handling
+        try:
+            _log(
+                "info",
+                "[UPLOAD_INIT] Generating presigned URL for S3 upload",
+                {
+                    "user_id": current_user or "anonymous",
+                    "upload_id": upload_id,
+                    "storage_key": storage_key,
+                    "bucket": _get_sanitized_bucket_name(),
+                    "content_type": mime_type,
+                },
+            )
+            
+            # Prevent None values from being passed into boto3 methods
+            bucket_name = _get_sanitized_bucket_name()
+            if not bucket_name:
+                raise ValueError("S3 bucket name is empty or invalid")
+            
+            if not storage_key or not isinstance(storage_key, str):
+                raise ValueError("Storage key is empty or invalid")
+            
+            if not mime_type or not isinstance(mime_type, str):
+                raise ValueError("Content type is empty or invalid")
+            
+            presigned_put_url = _generate_presigned_url(
+                "put_object",
+                object_key=storage_key,
+                content_type=mime_type,
+                expires_in=900,
+                bucket=bucket_name,
+            )
+            
+            if not presigned_put_url:
+                # Log as service error when presigned URL generation fails (infrastructure issue)
+                _log(
+                    "error",
+                    f"[UPLOAD_INIT] Service error: Failed to generate presigned URL",
+                    {
+                        "user_id": current_user or "anonymous",
+                        "upload_id": upload_id,
+                        "storage_key": storage_key,
+                        "bucket_name": bucket_name,
+                        "mime_type": mime_type,
+                        "error_type": "ServiceError",
+                        "error_details": "Presigned URL generation returned None",
+                    },
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "status": "ERROR",
+                        "message": "Upload service temporarily unavailable - please retry",
+                        "data": {
+                            "error_code": "PRESIGN_SERVICE_ERROR",
+                            "error_details": "Presigned URL generation failed",
+                        },
+                    },
+                )
+                
+        except ValueError as ve:
+            _log(
+                "error",
+                f"[UPLOAD_INIT] ValueError during presigned URL generation: {str(ve)}",
+                {
+                    "user_id": current_user or "anonymous",
+                    "upload_id": upload_id,
+                    "storage_key": storage_key,
+                    "bucket": bucket_name,
+                    "content_type": mime_type,
+                    "error_type": "ValueError",
+                    "error_details": str(ve),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "ERROR",
+                    "message": f"Invalid parameters for upload: {str(ve)}",
+                    "data": {
+                        "error_code": "PRESIGN_VALIDATION_ERROR",
+                        "error_details": str(ve),
+                    },
+                },
+            )
+        except Exception as e:
+            _log(
+                "error",
+                f"[UPLOAD_INIT] Unexpected error during presigned URL generation: {str(e)}",
+                {
+                    "user_id": current_user or "anonymous",
+                    "upload_id": upload_id,
+                    "storage_key": storage_key,
+                    "bucket": bucket_name,
+                    "content_type": mime_type,
+                    "error_type": type(e).__name__,
+                    "error_details": str(e),
+                },
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={
                     "status": "ERROR",
                     "message": "Failed to generate upload URL",
-                    "data": {"error_code": "PRESIGN_FAILED"},
+                    "data": {
+                        "error_code": "PRESIGN_FAILED",
+                        "error_details": str(e) if settings.DEBUG else "Contact administrator",
+                    },
                 },
             )
 
@@ -5252,11 +5435,180 @@ async def init_photo_video_upload(
     request: Request, current_user: Optional[str] = Depends(get_current_user_for_upload)
 ):
     """Initialize photo/video upload - Uses /init endpoint under the hood"""
-    body = await request.json()
+    import traceback
+    
+    try:
+        body = await request.json()
+    except ValueError as json_error:
+        _log(
+            "error",
+            f"Invalid JSON in photo/video upload init request: {str(json_error)}",
+            {
+                "user_id": current_user or "anonymous",
+                "operation": "photo_video_init",
+                "error_type": "json_parse_error",
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "ERROR",
+                "message": "Malformed JSON in request body",
+                "data": {"error_code": "JSON_PARSE_ERROR"},
+            },
+        )
+    
+    # Validate required fields for photo/video upload
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "ERROR",
+                "message": "Request body must be a JSON object",
+                "data": {"error_code": "INVALID_BODY_TYPE"},
+            },
+        )
+    
+    # Strict validation: file_name and content_type must not be empty
+    file_name = body.get("file_name") or body.get("filename")
+    content_type = body.get("mime_type") or body.get("mime") or body.get("content_type")
+    
+    if not file_name or not isinstance(file_name, str) or file_name.strip() == "":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "ERROR",
+                "message": "file_name is required and cannot be empty",
+                "data": {
+                    "error_code": "MISSING_FILE_NAME",
+                    "provided": file_name,
+                },
+            },
+        )
+    
+    if not content_type or not isinstance(content_type, str) or content_type.strip() == "":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "ERROR",
+                "message": "content_type/mime_type is required and cannot be empty",
+                "data": {
+                    "error_code": "MISSING_CONTENT_TYPE",
+                    "provided": content_type,
+                },
+            },
+        )
+    
+    # Sanitize and validate file name
+    sanitized_name = sanitize_input(file_name.strip())
+    if len(sanitized_name) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "ERROR",
+                "message": "file_name cannot be empty after sanitization",
+                "data": {"error_code": "INVALID_FILE_NAME"},
+            },
+        )
+    
+    # Ensure content_type is properly formatted
+    content_type = content_type.strip().lower()
+    
+    # Validate MIME type - only allow image/* or video/* for photo/video uploads
+    if not (content_type.startswith("image/") or content_type.startswith("video/")):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={
+                "status": "ERROR",
+                "message": "Unsupported MIME type for photo/video upload. Only image/* and video/* are allowed",
+                "data": {
+                    "error_code": "UNSUPPORTED_MIME_TYPE",
+                    "provided_mime_type": content_type,
+                    "allowed_types": ["image/*", "video/*"],
+                },
+            },
+        )
+    
+    # Set validated and sanitized values back to body
+    body["file_name"] = sanitized_name
+    body["filename"] = sanitized_name  # For backward compatibility
+    body["mime_type"] = content_type
+    body["mime"] = content_type  # For backward compatibility
     body["file_type"] = "photo_video"
 
-    # Delegate to main init endpoint
-    return await initialize_upload(request=request, current_user=current_user)
+    # DEBUG: Log before delegating to main init endpoint
+    _log(
+        "info",
+        "[PHOTO_VIDEO_INIT] About to delegate to main init endpoint",
+        {
+            "user_id": current_user or "anonymous",
+            "sanitized_name": sanitized_name,
+            "content_type": content_type,
+            "body_keys": list(body.keys()),
+        },
+    )
+
+    # Delegate to main init endpoint with enhanced error handling
+    try:
+        return await initialize_upload(request=request, current_user=current_user)
+    except HTTPException as he:
+        # Re-raise HTTPException to preserve status codes
+        _log(
+            "info",
+            "[PHOTO_VIDEO_INIT] HTTPException caught and re-raised",
+            {
+                "user_id": current_user or "anonymous",
+                "status_code": he.status_code,
+                "detail": str(he.detail),
+            },
+        )
+        raise he
+    except ValueError as ve:
+        _log(
+            "error",
+            f"ValueError in photo/video upload initialization: {str(ve)}",
+            {
+                "user_id": current_user or "anonymous",
+                "operation": "photo_video_init",
+                "error_type": "ValueError",
+                "error_details": str(ve),
+                "traceback": traceback.format_exc(),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "ERROR",
+                "message": f"Invalid input: {str(ve)}",
+                "data": {
+                    "error_code": "VALIDATION_ERROR",
+                    "error_details": str(ve),
+                },
+            },
+        )
+    except Exception as e:
+        _log(
+            "error",
+            f"Unexpected error in photo/video upload initialization: {str(e)}",
+            {
+                "user_id": current_user or "anonymous",
+                "operation": "photo_video_init",
+                "error_type": type(e).__name__,
+                "error_details": str(e),
+                "traceback": traceback.format_exc(),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "status": "ERROR",
+                "message": "Internal server error during upload initialization",
+                "data": {
+                    "error_code": "INTERNAL_ERROR",
+                    "error_details": str(e) if settings.DEBUG else "Contact administrator",
+                },
+            },
+        )
 
 
 @attach_router.post("/documents/init")
