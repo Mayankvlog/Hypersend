@@ -145,14 +145,25 @@ def _safe_collection(factory_or_collection):
 async def _save_chunk_to_disk(
     chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str
 ):
-    """Save chunk data to disk with proper error handling"""
+    """Save chunk data to disk with proper error handling and binary integrity checks"""
     try:
+        # CRITICAL: Ensure chunk_data is bytes type to prevent corruption
+        if not isinstance(chunk_data, bytes):
+            raise ValueError(f"Chunk data must be bytes, got {type(chunk_data)}")
+        
         # Ensure directory exists
         chunk_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Write chunk data to file
+        # CRITICAL: Write chunk data to file in binary mode with explicit bytes
         async with aiofiles.open(chunk_path, "wb") as f:
             await f.write(chunk_data)
+
+        # Verify the written chunk size matches expected
+        written_size = chunk_path.stat().st_size
+        expected_size = len(chunk_data)
+        
+        if written_size != expected_size:
+            raise IOError(f"Chunk size mismatch: expected {expected_size}, wrote {written_size}")
 
         _log(
             "info",
@@ -160,6 +171,7 @@ async def _save_chunk_to_disk(
             {
                 "chunk_index": chunk_index,
                 "chunk_size": len(chunk_data),
+                "verified_size": written_size,
                 "user_id": user_id,
                 "chunk_path": str(chunk_path),
             },
@@ -2413,7 +2425,7 @@ async def _complete_upload_with_retry(
             os.makedirs(str(final_dir), exist_ok=True)
             final_path = final_dir / filename
 
-            # Assemble file from chunks
+            # Assemble file from chunks with strict binary handling
             try:
                 async with aiofiles.open(str(final_path), "wb") as out_f:
                     for idx in range(int(total_chunks)):
@@ -2423,12 +2435,59 @@ async def _complete_upload_with_retry(
                                 status_code=status.HTTP_400_BAD_REQUEST,
                                 detail=f"Missing chunk {idx}",
                             )
+                        # CRITICAL: Stream chunk data through fixed-size buffer to prevent memory issues
+                        BUFFER_SIZE = 65536  # 64KB buffer
                         async with aiofiles.open(str(part_path), "rb") as in_f:
+                            chunk_size = 0
                             while True:
-                                buf = await in_f.read(1024 * 1024)
-                                if not buf:
+                                chunk_data = await in_f.read(BUFFER_SIZE)
+                                if not chunk_data:
                                     break
-                                await out_f.write(buf)
+                                # CRITICAL: Write raw bytes directly without buffering
+                                await out_f.write(chunk_data)
+                                chunk_size += len(chunk_data)
+                            
+                        _log(
+                            "debug",
+                            f"Assembled chunk {idx} into final file",
+                            {
+                                "chunk_index": idx,
+                                "chunk_size": chunk_size,
+                                "upload_id": upload_id,
+                            },
+                        )
+                
+                # CRITICAL: Verify assembled file integrity
+                final_size = final_path.stat().st_size
+                expected_total_size = upload_doc.get("total_size") or upload_doc.get("file_size", 0)
+                
+                if expected_total_size > 0 and final_size != expected_total_size:
+                    _log(
+                        "error",
+                        f"File assembly size mismatch: expected={expected_total_size}, actual={final_size}",
+                        {
+                            "upload_id": upload_id,
+                            "expected_size": expected_total_size,
+                            "actual_size": final_size,
+                            "total_chunks": total_chunks,
+                        },
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"File assembly failed: size mismatch (expected {expected_total_size}, got {final_size})",
+                    )
+                
+                _log(
+                    "info",
+                    f"File assembly completed successfully",
+                    {
+                        "upload_id": upload_id,
+                        "final_size": final_size,
+                        "expected_size": expected_total_size,
+                        "total_chunks": total_chunks,
+                        "filename": filename,
+                    },
+                )
             except HTTPException:
                 raise
             except Exception as e:
@@ -2452,39 +2511,80 @@ async def _complete_upload_with_retry(
             now = datetime.utcnow().replace(tzinfo=timezone.utc)
 
             try:
-                async with aiofiles.open(str(final_path), "rb") as file_data:
-                    file_content = await file_data.read()
-                    actual_size = len(file_content)
-                    file_hash = hashlib.sha256(file_content).hexdigest()
-
-                expected_size = upload_doc.get("total_size", 0)
-                if expected_size > 0 and actual_size != expected_size:
-                    _log(
-                        "warning",
-                        f"File size mismatch during upload: expected={expected_size}, actual={actual_size}",
-                        {"user_id": current_user, "upload_id": upload_id},
+                # CRITICAL: Stream file assembly directly to S3 without loading entire file into memory
+                s3_client = _get_s3_client()
+                if not s3_client:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Storage service unavailable",
                     )
-
+                
+                # Initialize hasher for checksum calculation
+                file_hasher = hashlib.sha256()
+                actual_size = 0
+                now = datetime.utcnow().replace(tzinfo=timezone.utc)
+                
+                # Open assembled file for streaming read and hash calculation
+                async with aiofiles.open(str(final_path), "rb") as file_data:
+                    # CRITICAL: Stream through hasher in chunks
+                    BUFFER_SIZE = 65536  # 64KB buffer
+                    while True:
+                        chunk = await file_data.read(BUFFER_SIZE)
+                        if not chunk:
+                            break
+                        
+                        # Update hasher with chunk
+                        file_hasher.update(chunk)
+                        actual_size += len(chunk)
+                    
+                    # Get final hash after reading entire file
+                    file_hash = file_hasher.hexdigest()
+                    
+                    # Check expected size
+                    expected_size = upload_doc.get("total_size") or upload_doc.get("file_size", 0)
+                    if expected_size > 0 and actual_size != expected_size:
+                        _log(
+                            "warning",
+                            f"File size mismatch during upload: expected={expected_size}, actual={actual_size}",
+                            {"user_id": current_user, "upload_id": upload_id},
+                        )
+                
+                # CRITICAL: Upload to S3 using synchronous file handle in threadpool
                 upload_doc_mime_type = (
                     upload_doc.get("mime_type") or "application/octet-stream"
                 )
-
-                s3_client.put_object(
-                    Bucket=_get_sanitized_bucket_name(),
-                    Key=s3_key,
-                    Body=file_content,
-                    Metadata={
-                        "upload_id": upload_id,
-                        "user_id": str(upload_user_id),
-                        "original_filename": filename,
-                        "mime_type": upload_doc_mime_type,
-                        "sha256_checksum": file_hash,
-                        "file_size": str(actual_size),
-                        "upload_timestamp": now.isoformat(),
-                    },
-                    ContentType=upload_doc_mime_type,
-                    ContentLength=actual_size,
-                )
+                
+                def _sync_s3_upload():
+                    """Synchronous S3 upload function for threadpool execution"""
+                    import boto3
+                    from botocore.exceptions import ClientError
+                    
+                    # Open file synchronously for boto3
+                    with open(str(final_path), "rb") as sync_file:
+                        # Use upload_fileobj for better handling of large files
+                        extra_args = {
+                            "Metadata": {
+                                "upload_id": upload_id,
+                                "user_id": str(upload_user_id),
+                                "original_filename": filename,
+                                "mime_type": upload_doc_mime_type,
+                                "sha256_checksum": file_hash,
+                                "file_size": str(actual_size),
+                                "upload_timestamp": now.isoformat(),
+                            },
+                            "ContentType": upload_doc_mime_type,
+                            "ContentLength": actual_size,
+                        }
+                        
+                        s3_client.upload_fileobj(
+                            sync_file,
+                            _get_sanitized_bucket_name(),
+                            s3_key,
+                            ExtraArgs=extra_args
+                        )
+                
+                # Execute synchronous upload in threadpool
+                await asyncio.to_thread(_sync_s3_upload)
 
                 _log(
                     "info",
@@ -3331,21 +3431,158 @@ async def download_file(
                     pass
 
                 # Create streaming response from S3 - NO JSON WRAPPING, PURE BINARY STREAM
+                # CRITICAL: Pre-validate S3 object with proper error handling
+                try:
+                    response = s3_client.get_object(Bucket=bucket, Key=storage_key)
+                    body = response["Body"]
+                except Exception as e:
+                    # Import botocore for proper error handling
+                    try:
+                        from botocore.exceptions import ClientError
+                        if isinstance(e, ClientError):
+                            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+                            
+                            if error_code in ("NoSuchKey", "NotFound"):
+                                _log(
+                                    "warning",
+                                    f"S3 object not found: {error_code}",
+                                    {
+                                        "user_id": current_user,
+                                        "file_id": file_id,
+                                        "s3_key": storage_key,
+                                        "error_code": error_code,
+                                    },
+                                )
+                                raise HTTPException(
+                                    status_code=status.HTTP_404_NOT_FOUND,
+                                    detail="File not found"
+                                ) from e
+                            elif error_code == "AccessDenied":
+                                _log(
+                                    "warning",
+                                    f"S3 access denied: {error_code}",
+                                    {
+                                        "user_id": current_user,
+                                        "file_id": file_id,
+                                        "s3_key": storage_key,
+                                        "error_code": error_code,
+                                    },
+                                )
+                                raise HTTPException(
+                                    status_code=status.HTTP_403_FORBIDDEN,
+                                    detail="Access to file denied"
+                                ) from e
+                            else:
+                                _log(
+                                    "error",
+                                    f"S3 ClientError: {error_code} - {str(e)}",
+                                    {
+                                        "user_id": current_user,
+                                        "file_id": file_id,
+                                        "s3_key": storage_key,
+                                        "error_code": error_code,
+                                        "error_message": str(e),
+                                    },
+                                )
+                                raise HTTPException(
+                                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                    detail="Failed to access file storage"
+                                ) from e
+                        else:
+                            # Non-ClientError exception
+                            raise
+                    except ImportError:
+                        # botocore not available, fall back to generic handling
+                        _log(
+                            "error",
+                            f"Failed to get S3 object (botocore unavailable): {str(e)}",
+                            {
+                                "user_id": current_user,
+                                "file_id": file_id,
+                                "s3_key": storage_key,
+                            },
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to access file storage"
+                        ) from e
+
                 async def generate_s3_stream():
                     try:
-                        # Get S3 object - stream directly without buffering entire file
-                        response = s3_client.get_object(Bucket=bucket, Key=storage_key)
-                        body = response["Body"]
-
-                        # Stream binary data in chunks without any encoding/decoding
-                        # CRITICAL: Use iter_chunks for optimal memory efficiency
+                        # CRITICAL: Stream binary data with integrity checks
+                        total_bytes_streamed = 0
+                        chunk_count = 0
+                        conversion_error_occurred = False
+                        
                         for chunk in body.iter_chunks(chunk_size=8192):
-                            # CRITICAL: Yield raw bytes ONLY - no string conversion ever
-                            if isinstance(chunk, bytes):
+                            # CRITICAL: Validate chunk is bytes and not empty
+                            if isinstance(chunk, bytes) and len(chunk) > 0:
+                                total_bytes_streamed += len(chunk)
+                                chunk_count += 1
                                 yield chunk
                             elif chunk:
                                 # Safety: ensure chunk is bytes if somehow not already
-                                yield bytes(chunk)
+                                try:
+                                    byte_chunk = bytes(chunk)
+                                    total_bytes_streamed += len(byte_chunk)
+                                    chunk_count += 1
+                                    yield byte_chunk
+                                except Exception as conversion_error:
+                                    _log(
+                                        "error",
+                                        f"Failed to convert chunk to bytes - aborting stream: {conversion_error}",
+                                        {
+                                            "user_id": current_user,
+                                            "file_id": file_id,
+                                            "chunk_index": chunk_count,
+                                        },
+                                    )
+                                    conversion_error_occurred = True
+                                    # CRITICAL: Raise exception to abort connection instead of return
+                                    raise RuntimeError(f"Data conversion error in stream: {conversion_error}") from conversion_error
+                        
+                        # Verify streaming completion and log appropriate result
+                        if conversion_error_occurred:
+                            # This should not be reached due to the raise above, but kept for safety
+                            _log(
+                                "error",
+                                f"S3 streaming aborted due to conversion error",
+                                {
+                                    "user_id": current_user,
+                                    "file_id": file_id,
+                                    "total_bytes_streamed": total_bytes_streamed,
+                                    "chunk_count": chunk_count,
+                                    "expected_size": actual_size,
+                                },
+                            )
+                            # CRITICAL: Raise exception to abort connection instead of return
+                            raise RuntimeError("Stream aborted due to data conversion error")
+                        elif total_bytes_streamed == actual_size:
+                            _log(
+                                "info",
+                                f"S3 streaming completed successfully",
+                                {
+                                    "user_id": current_user,
+                                    "file_id": file_id,
+                                    "total_bytes_streamed": total_bytes_streamed,
+                                    "chunk_count": chunk_count,
+                                    "expected_size": actual_size,
+                                },
+                            )
+                        else:
+                            _log(
+                                "error",
+                                f"S3 streaming incomplete - size mismatch",
+                                {
+                                    "user_id": current_user,
+                                    "file_id": file_id,
+                                    "total_bytes_streamed": total_bytes_streamed,
+                                    "chunk_count": chunk_count,
+                                    "expected_size": actual_size,
+                                },
+                            )
+                            # CRITICAL: Raise exception to abort connection instead of return
+                            raise RuntimeError(f"Stream incomplete: expected {actual_size} bytes, got {total_bytes_streamed}")
 
                     except Exception as e:
                         _log(
@@ -3357,8 +3594,8 @@ async def download_file(
                                 "s3_key": storage_key,
                             },
                         )
-                        # Do not raise HTTPException in generator - connection will close
-                        return
+                        # CRITICAL: Re-raise exception to abort connection instead of return
+                        raise
                     finally:
                         try:
                             body.close()
