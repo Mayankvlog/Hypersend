@@ -16,7 +16,7 @@ def test_auth_routes():
         with open(auth_file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
         
-        # Check for required decorators
+        # Check for required decorators (handle multiline decorators)
         required_decorators = [
             '@router.post("/register"',
             '@router.post("/login"', 
@@ -24,9 +24,17 @@ def test_auth_routes():
             '@router.post("/logout"'
         ]
         
+        # Also check for multiline patterns
+        multiline_patterns = [
+            '@router.post(\n    "/register"',
+            '@router.post(\n    "/login"',
+            '@router.post(\n    "/refresh"',
+            '@router.post(\n    "/logout"'
+        ]
+        
         missing_decorators = []
-        for decorator in required_decorators:
-            if decorator not in content:
+        for i, decorator in enumerate(required_decorators):
+            if decorator not in content and multiline_patterns[i] not in content:
                 missing_decorators.append(decorator)
         
         assert not missing_decorators, f"Missing decorators: {missing_decorators}"
