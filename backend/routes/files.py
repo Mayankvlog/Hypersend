@@ -1431,6 +1431,25 @@ async def initialize_upload(
                 },
             )
 
+        # CRITICAL FIX: Auto-detect MIME type from filename if not provided or is generic
+        if not mime_type or mime_type.strip() == "" or mime_type == "application/octet-stream":
+            if filename:
+                import mimetypes
+                guessed_type, _ = mimetypes.guess_type(filename)
+                if guessed_type and guessed_type != "application/octet-stream":
+                    mime_type = guessed_type.lower().strip()
+                    _log(
+                        "info",
+                        f"[UPLOAD_INIT] Auto-detected MIME type from filename: {filename} -> {mime_type}",
+                        {"user_id": current_user, "filename": filename}
+                    )
+                else:
+                    mime_type = "application/octet-stream"
+            else:
+                mime_type = "application/octet-stream"
+        else:
+            mime_type = mime_type.lower().strip() if mime_type else "application/octet-stream"
+
         # Create upload session in MongoDB Atlas (uploads collection)
         from bson import ObjectId
         from datetime import datetime as dt
@@ -2561,9 +2580,26 @@ async def download_file(
             storage_key = file_doc.get("storage_key")
             bucket = file_doc.get("bucket")
             region = file_doc.get("region")
-            mime_type = file_doc.get("mime_type", "application/octet-stream")
             filename = file_doc.get("filename", "file")
             file_size = file_doc.get("size", 0)
+            
+            # CRITICAL FIX: Auto-detect MIME type from filename if not stored or generic
+            mime_type = file_doc.get("mime_type", "application/octet-stream")
+            if not mime_type or mime_type.strip() == "" or mime_type.lower() == "application/octet-stream":
+                # Try to guess MIME type from filename
+                if filename:
+                    import mimetypes
+                    guessed_type, _ = mimetypes.guess_type(filename)
+                    if guessed_type and guessed_type != "application/octet-stream":
+                        mime_type = guessed_type.lower().strip()
+                        _log(
+                            "info",
+                            f"Auto-detected MIME type from filename: {filename} -> {mime_type}",
+                            {"user_id": current_user, "file_id": file_id, "filename": filename}
+                        )
+            
+            # Normalize MIME type
+            mime_type = mime_type.lower().strip() if mime_type else "application/octet-stream"
 
             # S3-ONLY: Require S3 storage for all files
             if not storage_key or not bucket or not region:
