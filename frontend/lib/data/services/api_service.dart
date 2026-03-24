@@ -1895,8 +1895,24 @@ Future<void> postToChannel(String channelId, String text) async {
       case 429:
         return 'Too many upload attempts. Please wait before trying again.';
       case 500:
+        // Check for S3 configuration errors
+        final responseData = e.response?.data;
+        if (responseData is Map<String, dynamic>) {
+          final errorCode = responseData['error_code'] as String?;
+          if (errorCode == 'S3_CONFIG_ERROR') {
+            return 'S3 storage configuration error. Please contact support.';
+          }
+        }
         return 'Server error. Please try again later.';
       case 503:
+        // Check for S3 configuration errors
+        final responseData = e.response?.data;
+        if (responseData is Map<String, dynamic>) {
+          final errorCode = responseData['error_code'] as String?;
+          if (errorCode == 'S3_CONFIG_ERROR') {
+            return 'S3 storage service temporarily unavailable. Please contact support.';
+          }
+        }
         return 'Service temporarily unavailable. Please try again later.';
       default:
         return e.message ?? 'Unknown error occurred during upload initialization.';

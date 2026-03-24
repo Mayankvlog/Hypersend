@@ -537,46 +537,82 @@ def _get_sanitized_bucket_name() -> str:
 
 def _get_s3_client():
     """Get S3 client for AWS S3 operations with full credentials validation"""
+    import traceback
+    
     try:
         if boto3 is None:
             _log("warning", "boto3 not available - S3 operations disabled")
             return None
 
-        if not settings.S3_BUCKET:
-            _log("warning", "S3_BUCKET not configured in settings")
+        # Validate S3_BUCKET is not empty
+        if not settings.S3_BUCKET or settings.S3_BUCKET.strip() == "":
+            _log("error", "S3_BUCKET is empty or not configured in settings")
             return None
 
-        client_kwargs: Dict[str, Any] = {"region_name": settings.AWS_REGION}
+        # Validate AWS credentials
+        if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
+            _log("error", "AWS credentials not configured - missing AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY")
+            return None
 
-        if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
-            client_kwargs.update(
-                {
-                    "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
-                    "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
-                }
-            )
-            _log("info", "S3 client using explicit AWS credentials")
-        else:
-            _log("info", "S3 client using default credential provider chain")
+        # Validate AWS region
+        if not settings.AWS_REGION:
+            _log("error", "AWS_REGION not configured in settings")
+            return None
 
-        client_kwargs = {k: v for k, v in client_kwargs.items() if v}
+        # Log S3 client initialization parameters
+        _log("info", f"Initializing S3 client with region: {settings.AWS_REGION}")
+        _log("info", f"Target S3 bucket: {settings.S3_BUCKET}")
+        
+        # Mask credentials for logging
+        masked_key_id = settings.AWS_ACCESS_KEY_ID[:4] + "***" if len(settings.AWS_ACCESS_KEY_ID) > 4 else "***"
+        _log("info", f"Using AWS credentials with key ID: {masked_key_id}...")
 
-        s3_client = boto3.client("s3", **client_kwargs)
-
-        bucket_name = _get_sanitized_bucket_name()
+        client_kwargs: Dict[str, Any] = {
+            "region_name": settings.AWS_REGION,
+            "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
+            "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
+        }
 
         try:
+            s3_client = boto3.client("s3", **client_kwargs)
+            _log("info", "S3 client created successfully")
+        except Exception as init_error:
+            _log("error", f"Failed to create S3 client: {str(init_error)}")
+            _log("error", f"S3 client initialization traceback: {traceback.format_exc()}")
+            return None
+
+        bucket_name = _get_sanitized_bucket_name()
+        _log("info", f"Performing S3 connectivity check for bucket: {bucket_name}")
+
+        try:
+            # S3 connectivity check using head_bucket
             s3_client.head_bucket(Bucket=bucket_name)
             _log(
                 "info",
-                f"S3 client initialized and verified for bucket: {bucket_name} in region: {settings.AWS_REGION}",
+                f"S3 client initialized and verified successfully for bucket: {bucket_name} in region: {settings.AWS_REGION}",
             )
+        except ClientError as bucket_error:
+            error_code = bucket_error.response.get('Error', {}).get('Code', 'Unknown')
+            error_message = bucket_error.response.get('Error', {}).get('Message', str(bucket_error))
+            
+            if error_code == '404':
+                _log("error", f"S3 bucket '{bucket_name}' does not exist or access denied")
+            elif error_code == '403':
+                _log("error", f"Access denied to S3 bucket '{bucket_name}' - check IAM permissions")
+            else:
+                _log("error", f"S3 bucket verification failed - {error_code}: {error_message}")
+            
+            _log("error", f"S3 connectivity check traceback: {traceback.format_exc()}")
+            return None
         except Exception as e:
-            _log("warning", f"S3 bucket verification failed: {str(e)}")
+            _log("error", f"Unexpected error during S3 bucket verification: {str(e)}")
+            _log("error", f"S3 verification traceback: {traceback.format_exc()}")
+            return None
 
         return s3_client
     except Exception as e:
         _log("error", f"Failed to initialize S3 client: {str(e)}")
+        _log("error", f"S3 client initialization traceback: {traceback.format_exc()}")
         return None
 
 
@@ -1114,11 +1150,47 @@ async def initialize_upload(
     Uses local filesystem storage in UPLOAD_DIR.
     """
 
-    # S3 is disabled - always proceed with local storage
-
+    # Validate S3 configuration before proceeding
+    s3_client = _get_s3_client()
+    if s3_client is None:
+        _log(
+            "error",
+            "[UPLOAD_INIT] S3 configuration validation failed - cannot initialize upload",
+            {
+                "user_id": current_user or "anonymous",
+                "operation": "upload_init",
+                "s3_bucket": settings.S3_BUCKET,
+                "aws_region": settings.AWS_REGION,
+                "has_credentials": bool(settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "ERROR",
+                "message": "S3 configuration invalid - upload service temporarily unavailable",
+                "data": {
+                    "error_code": "S3_CONFIG_ERROR",
+                    "s3_bucket": settings.S3_BUCKET,
+                    "aws_region": settings.AWS_REGION,
+                    "credentials_configured": bool(settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY),
+                },
+            },
+        )
+    
     _log(
         "info",
-        f"[WHATSAPP_UPLOAD] File upload initialization",
+        "[UPLOAD_INIT] S3 configuration validated - proceeding with upload initialization",
+        {
+            "user_id": current_user or "anonymous",
+            "s3_bucket": settings.S3_BUCKET,
+            "aws_region": settings.AWS_REGION,
+        },
+    )
+    
+    _log(
+        "info",
+        "[WHATSAPP_UPLOAD] File upload initialization",
         {
             "path": str(request.url.path),
             "method": request.method,
@@ -1543,6 +1615,8 @@ async def initialize_upload(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        
         _log(
             "error",
             f"[WHATSAPP_UPLOAD] Unexpected error in upload initialization",
@@ -1551,14 +1625,29 @@ async def initialize_upload(
                 "operation": "upload_init",
                 "error": str(e),
                 "error_type": type(e).__name__,
+                "traceback": traceback.format_exc(),
             },
         )
+        
+        # Check if S3 configuration is the issue
+        if "S3" in str(e) or "AWS" in str(e) or "credentials" in str(e).lower():
+            error_message = "S3 configuration error - please check AWS credentials and bucket permissions"
+            if settings.DEBUG:
+                error_message += f": {str(e)}"
+        else:
+            error_message = "Internal server error during upload initialization"
+            if settings.DEBUG:
+                error_message += f": {str(e)}"
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
                 "status": "ERROR",
-                "message": "Internal server error during upload initialization",
-                "data": {"error": str(e) if settings.DEBUG else "Internal error"},
+                "message": error_message,
+                "data": {
+                    "error_type": type(e).__name__,
+                    "error_details": str(e) if settings.DEBUG else "Contact administrator for details"
+                },
             },
         )
 
