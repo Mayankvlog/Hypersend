@@ -2556,8 +2556,7 @@ async def _complete_upload_with_retry(
                 
                 def _sync_s3_upload():
                     """Synchronous S3 upload function for threadpool execution"""
-                    import boto3
-                    from botocore.exceptions import ClientError
+                    # boto3 and ClientError are already imported at module level
                     
                     # Open file synchronously for boto3
                     with open(str(final_path), "rb") as sync_file:
@@ -3436,66 +3435,61 @@ async def download_file(
                     response = s3_client.get_object(Bucket=bucket, Key=storage_key)
                     body = response["Body"]
                 except Exception as e:
-                    # Import botocore for proper error handling
-                    try:
-                        from botocore.exceptions import ClientError
-                        if isinstance(e, ClientError):
-                            error_code = e.response.get("Error", {}).get("Code", "Unknown")
-                            
-                            if error_code in ("NoSuchKey", "NotFound"):
-                                _log(
-                                    "warning",
-                                    f"S3 object not found: {error_code}",
-                                    {
-                                        "user_id": current_user,
-                                        "file_id": file_id,
-                                        "s3_key": storage_key,
-                                        "error_code": error_code,
-                                    },
-                                )
-                                raise HTTPException(
-                                    status_code=status.HTTP_404_NOT_FOUND,
-                                    detail="File not found"
-                                ) from e
-                            elif error_code == "AccessDenied":
-                                _log(
-                                    "warning",
-                                    f"S3 access denied: {error_code}",
-                                    {
-                                        "user_id": current_user,
-                                        "file_id": file_id,
-                                        "s3_key": storage_key,
-                                        "error_code": error_code,
-                                    },
-                                )
-                                raise HTTPException(
-                                    status_code=status.HTTP_403_FORBIDDEN,
-                                    detail="Access to file denied"
-                                ) from e
-                            else:
-                                _log(
-                                    "error",
-                                    f"S3 ClientError: {error_code} - {str(e)}",
-                                    {
-                                        "user_id": current_user,
-                                        "file_id": file_id,
-                                        "s3_key": storage_key,
-                                        "error_code": error_code,
-                                        "error_message": str(e),
-                                    },
-                                )
-                                raise HTTPException(
-                                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                    detail="Failed to access file storage"
-                                ) from e
+                    # ClientError is already imported at module level
+                    if isinstance(e, ClientError):
+                        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+                        
+                        if error_code in ("NoSuchKey", "NotFound"):
+                            _log(
+                                "warning",
+                                f"S3 object not found: {error_code}",
+                                {
+                                    "user_id": current_user,
+                                    "file_id": file_id,
+                                    "s3_key": storage_key,
+                                    "error_code": error_code,
+                                },
+                            )
+                            raise HTTPException(
+                                status_code=status.HTTP_404_NOT_FOUND,
+                                detail="File not found"
+                            ) from e
+                        elif error_code == "AccessDenied":
+                            _log(
+                                "warning",
+                                f"S3 access denied: {error_code}",
+                                {
+                                    "user_id": current_user,
+                                    "file_id": file_id,
+                                    "s3_key": storage_key,
+                                    "error_code": error_code,
+                                },
+                            )
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Access to file denied"
+                            ) from e
                         else:
-                            # Non-ClientError exception
-                            raise
-                    except ImportError:
-                        # botocore not available, fall back to generic handling
+                            _log(
+                                "error",
+                                f"S3 ClientError: {error_code} - {str(e)}",
+                                {
+                                    "user_id": current_user,
+                                    "file_id": file_id,
+                                    "s3_key": storage_key,
+                                    "error_code": error_code,
+                                    "error_message": str(e),
+                                },
+                            )
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail="Failed to access file storage"
+                            ) from e
+                    else:
+                        # Non-ClientError exception
                         _log(
                             "error",
-                            f"Failed to get S3 object (botocore unavailable): {str(e)}",
+                            f"Failed to get S3 object: {str(e)}",
                             {
                                 "user_id": current_user,
                                 "file_id": file_id,
