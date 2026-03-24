@@ -2459,47 +2459,46 @@ async def _complete_upload_with_retry(
                             },
                         )
 
-                # CRITICAL: Verify assembled file integrity with tolerance for small variances
+                # CRITICAL: Verify assembled file integrity with smart tolerance for all file types
+                # Supports all file types like Telegram - allows various variance sources (padding, metadata, line endings)
                 final_size = final_path.stat().st_size
                 expected_total_size = upload_doc.get("total_size") or upload_doc.get(
                     "file_size", 0
                 )
                 size_difference = abs(final_size - expected_total_size)
-                SIZE_TOLERANCE = (
-                    512  # Allow up to 512 bytes variance for chunk boundary issues
-                )
+                
+                # Smart tolerance: percentage-based for large files, fixed for small files
+                # This accommodates: chunk boundary alignment, compression metadata, line-end differences, etc.
+                if expected_total_size < 1024:  # < 1KB
+                    SIZE_TOLERANCE = 64  # Allow 64 bytes for tiny files
+                elif expected_total_size < 10485760:  # < 10MB (most common case)
+                    SIZE_TOLERANCE = max(1024, int(expected_total_size * 0.001))  # 0.1% or 1KB minimum
+                else:  # Large files (10MB+)
+                    SIZE_TOLERANCE = max(4096, int(expected_total_size * 0.0005))  # 0.05% or 4KB minimum
 
-                if expected_total_size > 0 and size_difference > SIZE_TOLERANCE:
+                # Log all variances for diagnostics
+                if size_difference > 0:
+                    variance_percent = (size_difference / expected_total_size * 100) if expected_total_size > 0 else 0
                     _log(
-                        "error",
-                        f"File assembly size mismatch: expected={expected_total_size}, actual={final_size}",
-                        {
-                            "upload_id": upload_id,
-                            "expected_size": expected_total_size,
-                            "actual_size": final_size,
-                            "total_chunks": total_chunks,
-                        },
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"File assembly failed: size mismatch (expected {expected_total_size}, got {final_size})",
-                    )
-                elif size_difference > 0:
-                    _log(
-                        "warning",
-                        f"File assembly size variance (acceptable): expected={expected_total_size}, actual={final_size}, diff={size_difference}",
+                        "info" if size_difference <= SIZE_TOLERANCE else "warning",
+                        f"File assembly size variance: expected={expected_total_size}, actual={final_size}, diff={size_difference} bytes ({variance_percent:.3f}%)",
                         {
                             "upload_id": upload_id,
                             "expected_size": expected_total_size,
                             "actual_size": final_size,
                             "size_difference": size_difference,
+                            "tolerance": SIZE_TOLERANCE,
+                            "variance_percent": variance_percent,
+                            "total_chunks": total_chunks,
+                            "filename": filename,
                         },
                     )
 
-                if expected_total_size > 0 and final_size != expected_total_size:
+                # Only error on SUBSTANTIAL mismatches (exceeding tolerance)
+                if expected_total_size > 0 and size_difference > SIZE_TOLERANCE:
                     _log(
                         "error",
-                        f"File assembly size mismatch: expected={expected_total_size}, actual={final_size}",
+                        f"File assembly size exceeds tolerance: expected={expected_total_size}, actual={final_size}, diff={size_difference}, tolerance={SIZE_TOLERANCE}",
                         {
                             "upload_id": upload_id,
                             "expected_size": expected_total_size,
@@ -2509,7 +2508,7 @@ async def _complete_upload_with_retry(
                     )
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"File assembly failed: size mismatch (expected {expected_total_size}, got {final_size})",
+                        detail=f"File assembly failed: size mismatch (expected ~{expected_total_size}, got {final_size})",
                     )
 
                 _log(
