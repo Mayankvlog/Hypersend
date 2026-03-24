@@ -23,6 +23,158 @@ class MessageBubble extends StatelessWidget {
     this.onFileTap,
   });
 
+  Widget _buildFilePreview(Message message) {
+    final fileName = message.content ?? 'File';
+    final fileExtension = fileName.split('.').last.toLowerCase();
+    
+    // Check if it's an image file
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].contains(fileExtension)) {
+      return _buildImagePreview(message, fileName);
+    }
+    
+    // Default file preview
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.insert_drive_file, color: Colors.white70, size: 20),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            fileName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              decoration: TextDecoration.underline,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImagePreview(Message message, String fileName) {
+    final imageUrl = message.fileId != null 
+        ? '${ApiConstants.serverBaseUrl}/api/v1/files/download/${message.fileId}'
+        : null;
+    
+    if (imageUrl == null) {
+      return _buildFileIcon(fileName);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          constraints: const BoxConstraints(
+            maxWidth: 200,
+            maxHeight: 150,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.black.withValues(alpha: 0.3),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.network(
+              imageUrl,
+              width: 200,
+              height: 150,
+              fit: BoxFit.cover,
+              headers: {'Cache-Control': 'no-cache'},
+              errorBuilder: (context, error, stackTrace) {
+                debugPrint('[IMAGE_PREVIEW] Error loading image: $error');
+                return Container(
+                  width: 200,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.broken_image, color: Colors.red, size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Image not available',
+                        style: TextStyle(
+                          color: Colors.red.withValues(alpha: 0.8),
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        fileName,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 10,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                );
+              },
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  width: 200,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                      strokeWidth: 2,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          fileName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFileIcon(String fileName) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.insert_drive_file, color: Colors.white70, size: 20),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            fileName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              decoration: TextDecoration.underline,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -129,25 +281,7 @@ class MessageBubble extends StatelessWidget {
                           color: Colors.black.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.insert_drive_file, color: Colors.white70, size: 20),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                message.content ?? 'File',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  decoration: TextDecoration.underline,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: _buildFilePreview(message),
                       ),
                     ),
                     const SizedBox(height: 8),

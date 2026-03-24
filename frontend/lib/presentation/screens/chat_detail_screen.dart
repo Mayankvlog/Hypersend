@@ -1657,6 +1657,158 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final fileName = message.content ?? 'file';
     debugPrint('[FILE_DOWNLOAD] Processing file download: $fileName (ID: $fileId)');
     
+    // Get file metadata first to determine file type
+    final fileInfo = await _getFileInfo(fileId);
+
+    // Prefer backend-reported content type, but fall back to filename-based guess
+    String contentType;
+    final dynamic rawContentType = fileInfo['content_type'];
+    if (rawContentType is String && rawContentType.trim().isNotEmpty) {
+      contentType = rawContentType;
+    } else {
+      contentType = _guessMimeTypeFromName(fileName);
+      debugPrint('[FILE_DOWNLOAD] Falling back to extension-based MIME: $contentType');
+    }
+
+    // Enhanced file type detection for better download handling
+    final isPDF = contentType.toLowerCase().contains('pdf');
+    final isImage = contentType.toLowerCase().contains('image');
+    final isVideo = contentType.toLowerCase().contains('video');
+
+    debugPrint('[FILE_DOWNLOAD] File type: $contentType, isPDF: $isPDF, isImage: $isImage, isVideo: $isVideo');
+    
+    // For images, show preview option first
+    if (isImage) {
+      await _showImageOptions(message, fileId, fileName, contentType);
+      return;
+    }
+    
+    // For non-image files, proceed with normal download
+    await _proceedWithDownload(fileId, fileName, contentType, isPDF, message);
+  }
+
+  Future<void> _showImageOptions(Message message, String fileId, String fileName, String contentType) async {
+    if (!mounted) return;
+    
+    final imageUrl = '${ApiConstants.serverBaseUrl}/api/v1/files/download/$fileId';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Image Options'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 250,
+              height: 180,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.black.withValues(alpha: 0.1),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  headers: {'Cache-Control': 'no-cache'},
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      width: 250,
+                      height: 180,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.broken_image, color: Colors.red, size: 32),
+                          SizedBox(height: 8),
+                          Text('Preview not available'),
+                        ],
+                      ),
+                    );
+                  },
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      width: 250,
+                      height: 180,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              fileName,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _proceedWithDownload(fileId, fileName, contentType, false, message);
+            },
+            child: const Text('Download'),
+          ),
+          if (!kIsWeb)
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _openImageExternally(imageUrl, fileName);
+              },
+              child: const Text('Open in Viewer'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openImageExternally(String imageUrl, String fileName) async {
+    try {
+      debugPrint('[IMAGE_VIEWER] Opening image externally: $imageUrl');
+      
+      if (io.Platform.isWindows) {
+        await io.Process.run('start', [imageUrl], runInShell: true);
+      } else if (io.Platform.isMacOS) {
+        await io.Process.run('open', [imageUrl]);
+      } else if (io.Platform.isLinux) {
+        await io.Process.run('xdg-open', [imageUrl]);
+      }
+      
+      debugPrint('[IMAGE_VIEWER] Successfully opened image in external viewer');
+    } catch (e) {
+      debugPrint('[IMAGE_VIEWER] Error opening image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to open image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _proceedWithDownload(String fileId, String fileName, String contentType, bool isPDF, [Message? message]) async {
     // Show loading dialog without spinner
     if (!mounted) return;
     showDialog(
@@ -1667,31 +1819,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
     );
     
-    try {
-      // Get file metadata first to determine file type
-      final fileInfo = await _getFileInfo(fileId);
-
-      // Prefer backend-reported content type, but fall back to filename-based guess
-      String contentType;
-      final dynamic rawContentType = fileInfo['content_type'];
-      if (rawContentType is String && rawContentType.trim().isNotEmpty) {
-        contentType = rawContentType;
-      } else {
-        contentType = _guessMimeTypeFromName(fileName);
-        debugPrint('[FILE_DOWNLOAD] Falling back to extension-based MIME: $contentType');
-      }
-
-      // Enhanced file type detection for better download handling
-      final isPDF = contentType.toLowerCase().contains('pdf');
-      final isImage = contentType.toLowerCase().contains('image');
-      final isVideo = contentType.toLowerCase().contains('video');
-
-      debugPrint('[FILE_DOWNLOAD] File type: $contentType, isPDF: $isPDF, isImage: $isImage, isVideo: $isVideo');
-      
+    try {      
       if (kIsWeb) {
         // For web, trigger a real download (Content-Disposition: attachment)
         // Prefer the secure media endpoint (/api/v1/media/{file_key}) when available.
-        await _openFileInWeb(message, fileId, fileName, isPDF);
+        await _openFileInWeb(fileId, fileName, isPDF);
       } else {
         // For native platforms, download and open file
         await _downloadAndOpenFile(fileId, fileName, contentType);
@@ -1743,8 +1875,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             label: 'Retry',
             textColor: Colors.white,
             onPressed: () {
-              // Retry download
-              _downloadFile(message);
+              // Retry download - create a temporary message if needed
+              if (message != null) {
+                _downloadFile(message);
+              } else {
+                _proceedWithDownload(fileId, fileName, contentType, isPDF);
+              }
             },
           ),
         ),
@@ -1778,7 +1914,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return 'application/octet-stream';
   }
 
-  Future<void> _openFileInWeb(Message message, String fileId, String fileName, bool isPDF) async {
+  Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {
     try {
       if (!kIsWeb) {
         throw Exception('Web-only download helper called on non-web platform');
