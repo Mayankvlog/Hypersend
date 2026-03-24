@@ -364,6 +364,7 @@ class WhatsAppMediaLifecycle:
         try:
             s3_client = _get_s3_client()
             if s3_client:
+                # CRITICAL FIX: Wrap S3 put_object in try-except with proper error handling
                 s3_client.put_object(
                     Bucket=_get_sanitized_bucket_name(),
                     Key=chunk_key,
@@ -374,7 +375,37 @@ class WhatsAppMediaLifecycle:
                         "encrypted": "true",
                     },
                 )
+                _log(
+                    "info",
+                    f"Encrypted chunk uploaded to S3: chunk_index={chunk_index}, size={len(encrypted_data)}",
+                    {
+                        "media_id": media_id,
+                        "chunk_index": chunk_index,
+                        "chunk_size": len(encrypted_data),
+                    }
+                )
+        except ClientError as s3_error:
+            error_code = s3_error.response.get("Error", {}).get("Code", "Unknown")
+            error_msg = s3_error.response.get("Error", {}).get("Message", str(s3_error))
+            _log(
+                "error",
+                f"S3 ClientError during chunk upload: {error_code} - {error_msg}",
+                {
+                    "media_id": media_id,
+                    "chunk_index": chunk_index,
+                    "error_code": error_code,
+                }
+            )
+            raise ValueError(f"S3 storage error: {error_code} - {error_msg}")
         except Exception as e:
+            _log(
+                "error",
+                f"Failed to upload encrypted chunk: {str(e)}",
+                {
+                    "media_id": media_id,
+                    "chunk_index": chunk_index,
+                }
+            )
             raise ValueError(f"Failed to upload chunk: {e}")
 
         # Mark token as used
@@ -713,8 +744,8 @@ def _generate_presigned_url(
         params = {"Bucket": bucket or _get_sanitized_bucket_name(), "Key": object_key}
         if content_type:
             params["ContentType"] = content_type
-        if file_size:
-            params["ContentLength"] = file_size
+        # CRITICAL FIX: Remove ContentLength from presigned URL params - not valid for generate_presigned_url
+        # ContentLength is handled automatically by S3 when uploading objects
         if response_content_disposition:
             params["ResponseContentDisposition"] = response_content_disposition
 
@@ -2594,28 +2625,103 @@ async def _complete_upload_with_retry(
                     """Synchronous S3 upload function for threadpool execution"""
                     # boto3 and ClientError are already imported at module level
 
-                    # Open file synchronously for boto3
-                    with open(str(final_path), "rb") as sync_file:
-                        # Use upload_fileobj for better handling of large files
-                        extra_args = {
-                            "Metadata": {
-                                "upload_id": upload_id,
-                                "user_id": str(upload_user_id),
-                                "original_filename": filename,
-                                "mime_type": upload_doc_mime_type,
-                                "sha256_checksum": file_hash,
-                                "file_size": str(actual_size),
-                                "upload_timestamp": now.isoformat(),
-                            },
-                            "ContentType": upload_doc_mime_type,
-                            "ContentLength": actual_size,
-                        }
+                    try:
+                        # Open file synchronously for boto3
+                        with open(str(final_path), "rb") as sync_file:
+                            # Use upload_fileobj for better handling of large files
+                            # CRITICAL FIX: Remove invalid ContentLength from ExtraArgs - only ContentType and Metadata are valid
+                            extra_args = {
+                                "Metadata": {
+                                    "upload_id": upload_id,
+                                    "user_id": str(upload_user_id),
+                                    "original_filename": filename,
+                                    "mime_type": upload_doc_mime_type,
+                                    "sha256_checksum": file_hash,
+                                    "file_size": str(actual_size),
+                                    "upload_timestamp": now.isoformat(),
+                                },
+                                "ContentType": upload_doc_mime_type,
+                            }
 
-                        s3_client.upload_fileobj(
-                            sync_file,
-                            _get_sanitized_bucket_name(),
-                            s3_key,
-                            ExtraArgs=extra_args,
+                            # CRITICAL FIX: Wrap S3 upload in try-except with proper error handling
+                            s3_client.upload_fileobj(
+                                sync_file,
+                                _get_sanitized_bucket_name(),
+                                s3_key,
+                                ExtraArgs=extra_args,
+                            )
+                            
+                            # Verify upload succeeded by checking object metadata
+                            try:
+                                obj_metadata = s3_client.head_object(
+                                    Bucket=_get_sanitized_bucket_name(), 
+                                    Key=s3_key
+                                )
+                                uploaded_size = obj_metadata.get("ContentLength", 0)
+                                
+                                # CRITICAL FIX: Validate file size consistency
+                                if uploaded_size != actual_size:
+                                    raise Exception(f"Size mismatch: expected {actual_size}, got {uploaded_size}")
+                                    
+                                _log(
+                                    "info",
+                                    f"S3 upload verified: size={uploaded_size}, checksum={file_hash[:16] + '...' if file_hash else 'unknown'}",
+                                    {
+                                        "user_id": current_user,
+                                        "upload_id": upload_id,
+                                        "s3_key": s3_key,
+                                        "expected_size": actual_size,
+                                        "uploaded_size": uploaded_size,
+                                    }
+                                )
+                                
+                            except Exception as verify_error:
+                                _log(
+                                    "error",
+                                    f"S3 upload verification failed: {str(verify_error)}",
+                                    {
+                                        "user_id": current_user,
+                                        "upload_id": upload_id,
+                                        "s3_key": s3_key,
+                                    }
+                                )
+                                # Delete the uploaded object if verification failed
+                                try:
+                                    s3_client.delete_object(Bucket=_get_sanitized_bucket_name(), Key=s3_key)
+                                except:
+                                    pass
+                                raise verify_error
+
+                    except ClientError as s3_error:
+                        error_code = s3_error.response.get("Error", {}).get("Code", "Unknown")
+                        error_msg = s3_error.response.get("Error", {}).get("Message", str(s3_error))
+                        _log(
+                            "error",
+                            f"S3 ClientError during upload: {error_code} - {error_msg}",
+                            {
+                                "user_id": current_user,
+                                "upload_id": upload_id,
+                                "s3_key": s3_key,
+                                "error_code": error_code,
+                            }
+                        )
+                        raise HTTPException(
+                            status_code=503,  # Service Unavailable for S3 errors
+                            detail=f"Storage service unavailable: {error_code}"
+                        )
+                    except Exception as upload_error:
+                        _log(
+                            "error",
+                            f"S3 upload failed: {str(upload_error)}",
+                            {
+                                "user_id": current_user,
+                                "upload_id": upload_id,
+                                "s3_key": s3_key,
+                            }
+                        )
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"File upload failed: {str(upload_error)}"
                         )
 
                 # Execute synchronous upload in threadpool
