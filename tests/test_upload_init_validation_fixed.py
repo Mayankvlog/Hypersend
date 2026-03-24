@@ -9,11 +9,6 @@ from bson import ObjectId
 
 from backend.main import app
 from backend.database import get_database
-from fastapi.testclient import TestClient
-
-
-# Create test client
-client = TestClient(app)
 
 
 class TestUploadInitValidation:
@@ -33,7 +28,7 @@ class TestUploadInitValidation:
             headers={"Content-Type": "application/json"}
         )
         
-        assert response.status_code in [400, 500]  # Accept 400 for validation errors
+        assert response.status_code == 400
         data = response.json()
         # Handle both old and new error response formats
         if "message" in data and "data" in data:
@@ -72,7 +67,7 @@ class TestUploadInitValidation:
             headers={"Content-Type": "application/json"}
         )
         
-        assert response.status_code in [400, 500]  # Accept 400 for validation errors
+        assert response.status_code == 400
         data = response.json()
         # Handle both old and new error response formats
         if "message" in data and "data" in data:
@@ -112,7 +107,7 @@ class TestUploadInitValidation:
             headers={"Content-Type": "application/json"}
         )
         
-        assert response.status_code in [400, 500]  # Accept 400 for validation errors
+        assert response.status_code == 400
         data = response.json()
         # Handle both old and new error response formats
         if "message" in data and "data" in data:
@@ -158,7 +153,7 @@ class TestUploadInitValidation:
             headers={"Content-Type": "application/json"}
         )
         
-        assert response.status_code in [400, 500]  # Accept 400 for validation errors
+        assert response.status_code == 400
         data = response.json()
         # Handle both old and new error response formats
         if "message" in data and "data" in data:
@@ -201,7 +196,7 @@ class TestUploadInitValidation:
             headers={"Content-Type": "application/json"}
         )
         
-        assert response.status_code in [400, 500]  # Accept 400 for validation errors
+        assert response.status_code == 400
         data = response.json()
         # Handle both old and new error response formats
         if "message" in data and "data" in data:
@@ -336,7 +331,7 @@ class TestUploadInitValidation:
             headers={"Content-Type": "application/json"}
         )
         
-        assert response.status_code in [400, 500]  # Accept 400 for validation errors
+        assert response.status_code == 400
         data = response.json()
         # Handle both old and new error response formats
         if "message" in data and "data" in data:
@@ -390,7 +385,7 @@ class TestUploadInitValidation:
                 headers={"Content-Type": "application/json"}
             )
             
-            assert response.status_code in [400, 500]  # Accept 400 for validation errors
+            assert response.status_code == 400
             data = response.json()
             # Handle both old and new error response formats
             if "message" in data and "data" in data:
@@ -436,7 +431,7 @@ class TestUploadInitValidation:
                 headers={"Content-Type": "application/json"}
             )
             
-            assert response.status_code in [415, 400]  # Accept 400 for validation errors
+            assert response.status_code == 415
             data = response.json()
             # Handle both old and new error response formats
             if "message" in data and "data" in data:
