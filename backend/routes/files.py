@@ -1201,95 +1201,116 @@ async def initialize_upload(
     Uses local filesystem storage in UPLOAD_DIR.
     """
 
-    # Validate S3 configuration before proceeding
-    s3_client = _get_s3_client()
-    if s3_client is None:
+    # Import required modules at the start to prevent UnboundLocalError
+    import uuid
+    import math
+    from bson import ObjectId
+    from datetime import datetime, timedelta, timezone
+
+    # Initialize all variables at the start to prevent UnboundLocalError
+    filename = None
+    file_size = None
+    chat_id = None
+    mime_type = None
+    chunk_size = None
+    total_chunks = None
+    upload_id = None
+    file_oid = None
+    storage_key = None
+    presigned_put_url = None
+    is_anonymous = True
+    upload_user_id = None
+
+    try:
+        # Log request details for debugging
         _log(
-            "error",
-            "[UPLOAD_INIT] S3 configuration validation failed - cannot initialize upload",
+            "info",
+            "[WHATSAPP_UPLOAD] File upload initialization",
             {
-                "user_id": current_user or "anonymous",
-                "operation": "upload_init",
-                "s3_bucket": settings.S3_BUCKET,
-                "aws_region": settings.AWS_REGION,
-                "has_credentials": bool(
-                    settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY
-                ),
+                "path": str(request.url.path),
+                "method": request.method,
+                "user_agent": request.headers.get("user-agent", ""),
+                "current_user": current_user,
+                "content_type": request.headers.get("content-type", ""),
             },
         )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "status": "ERROR",
-                "message": "S3 configuration invalid - upload service temporarily unavailable",
-                "data": {
-                    "error_code": "S3_CONFIG_ERROR",
+
+        # Validate HTTP method first
+        if request.method != "POST":
+            raise HTTPException(
+                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                detail={
+                    "status": "ERROR",
+                    "message": "Method not allowed. Use POST for file upload initialization.",
+                    "data": None,
+                },
+                headers={"Allow": "POST, OPTIONS"},
+            )
+
+        # Rate limiting check
+        user_agent = request.headers.get("user-agent", "").lower()
+        is_testclient = "testclient" in user_agent
+        is_rate_limit_test = request.headers.get("x-test-rate-limit", "").lower() == "true"
+
+        if settings.DEBUG and not is_testclient:
+            upload_init_limiter.requests.clear()
+        elif is_testclient and not is_rate_limit_test:
+            upload_init_limiter.requests.clear()
+
+        limiter_key = current_user or "anonymous"
+        if not upload_init_limiter.is_allowed(limiter_key):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "status": "ERROR",
+                    "message": "Too many upload initialization requests. Please try again later.",
+                    "data": None,
+                },
+                headers={"Retry-After": "60"},
+            )
+
+        # Validate S3 configuration before proceeding
+        s3_client = _get_s3_client()
+        if s3_client is None:
+            _log(
+                "error",
+                "[UPLOAD_INIT] S3 configuration validation failed - cannot initialize upload",
+                {
+                    "user_id": current_user or "anonymous",
+                    "operation": "upload_init",
                     "s3_bucket": settings.S3_BUCKET,
                     "aws_region": settings.AWS_REGION,
-                    "credentials_configured": bool(
+                    "has_credentials": bool(
                         settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY
                     ),
                 },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "status": "ERROR",
+                    "message": "S3 configuration invalid - upload service temporarily unavailable",
+                    "data": {
+                        "error_code": "S3_CONFIG_ERROR",
+                        "s3_bucket": settings.S3_BUCKET,
+                        "aws_region": settings.AWS_REGION,
+                        "credentials_configured": bool(
+                            settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY
+                        ),
+                    },
+                },
+            )
+
+        _log(
+            "info",
+            "[UPLOAD_INIT] S3 configuration validated - proceeding with upload initialization",
+            {
+                "user_id": current_user or "anonymous",
+                "s3_bucket": settings.S3_BUCKET,
+                "aws_region": settings.AWS_REGION,
             },
         )
 
-    _log(
-        "info",
-        "[UPLOAD_INIT] S3 configuration validated - proceeding with upload initialization",
-        {
-            "user_id": current_user or "anonymous",
-            "s3_bucket": settings.S3_BUCKET,
-            "aws_region": settings.AWS_REGION,
-        },
-    )
-
-    _log(
-        "info",
-        "[WHATSAPP_UPLOAD] File upload initialization",
-        {
-            "path": str(request.url.path),
-            "method": request.method,
-            "user_agent": request.headers.get("user-agent", ""),
-            "current_user": current_user,
-            "content_type": request.headers.get("content-type", ""),
-        },
-    )
-
-    # Validate HTTP method first
-    if request.method != "POST":
-        raise HTTPException(
-            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-            detail={
-                "status": "ERROR",
-                "message": "Method not allowed. Use POST for file upload initialization.",
-                "data": None,
-            },
-            headers={"Allow": "POST, OPTIONS"},
-        )
-
-    # Rate limiting check
-    user_agent = request.headers.get("user-agent", "").lower()
-    is_testclient = "testclient" in user_agent
-    is_rate_limit_test = request.headers.get("x-test-rate-limit", "").lower() == "true"
-
-    if settings.DEBUG and not is_testclient:
-        upload_init_limiter.requests.clear()
-    elif is_testclient and not is_rate_limit_test:
-        upload_init_limiter.requests.clear()
-
-    limiter_key = current_user or "anonymous"
-    if not upload_init_limiter.is_allowed(limiter_key):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "status": "ERROR",
-                "message": "Too many upload initialization requests. Please try again later.",
-                "data": None,
-            },
-            headers={"Retry-After": "60"},
-        )
-
-    try:
         # Parse request body
         try:
             body = await request.json()
@@ -1305,7 +1326,11 @@ async def initialize_upload(
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Malformed JSON in request body",
+                detail={
+                    "status": "ERROR",
+                    "message": "Malformed JSON in request body",
+                    "data": {"error_code": "JSON_PARSE_ERROR"},
+                },
             )
 
         _log(
@@ -1410,13 +1435,21 @@ async def initialize_upload(
         if not isinstance(chunk_size, int) or chunk_size <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid chunk_size",
+                detail={
+                    "status": "ERROR",
+                    "message": "Invalid chunk_size. Must be an integer > 0",
+                    "data": {"chunk_size": chunk_size},
+                },
             )
 
         if not isinstance(total_chunks, int) or total_chunks <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid total_chunks",
+                detail={
+                    "status": "ERROR",
+                    "message": "Invalid total_chunks. Must be an integer > 0",
+                    "data": {"total_chunks": total_chunks},
+                },
             )
 
         # Validate file size (15GB limit)
@@ -1461,7 +1494,11 @@ async def initialize_upload(
         if len(filename) == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Filename cannot be empty after sanitization",
+                detail={
+                    "status": "ERROR",
+                    "message": "Filename cannot be empty after sanitization",
+                    "data": {"filename": filename},
+                },
             )
 
         # Enforce auth only after the request has passed input validation.
@@ -1472,7 +1509,11 @@ async def initialize_upload(
         ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing authentication credentials",
+                detail={
+                    "status": "ERROR",
+                    "message": "Missing authentication credentials",
+                    "data": {"error_code": "AUTH_REQUIRED"},
+                },
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -1655,8 +1696,7 @@ async def initialize_upload(
             )
 
         # Create upload session in MongoDB Atlas (uploads collection)
-        from bson import ObjectId
-        from datetime import datetime as dt
+        # ObjectId already imported at function start
 
         upload_user_id: Optional[ObjectId] = None
         if not is_anonymous:

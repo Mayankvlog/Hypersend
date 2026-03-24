@@ -1654,37 +1654,57 @@ async def general_exception_handler(request: Request, exc: Exception):
     error_msg = "Internal server error"
     hints = ["Try again in a moment", "Contact support if the problem persists"]
 
-    # Enhanced exception type handling
+    # Enhanced exception type handling with structured responses
+    error_response = {
+        "status": "ERROR",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "path": str(request.url.path),
+        "method": request.method,
+    }
+
     if isinstance(exc, asyncio.TimeoutError):
         status_code = status.HTTP_504_GATEWAY_TIMEOUT
-        error_msg = "Request timeout - operation took too long"
-        hints = [
-            "Check your network connection",
-            "Try with a smaller request",
-            "Try again later",
-        ]
+        error_response.update({
+            "error_code": "TIMEOUT_ERROR",
+            "message": "Request timeout - operation took too long",
+            "data": {
+                "hints": [
+                    "Check your network connection",
+                    "Try with a smaller request",
+                    "Try again later"
+                ]
+            }
+        })
 
     elif isinstance(exc, ConnectionError):
         # CRITICAL FIX: Distinguish between 502 and 503 errors
         error_msg_lower = str(exc).lower()
         if "connection refused" in error_msg_lower or "bad gateway" in error_msg_lower:
             status_code = status.HTTP_502_BAD_GATEWAY
-            error_msg = "Bad gateway - upstream service unavailable"
-            hints = [
-                "Check if backend service is running",
-                "Try again in a few moments",
-                "Contact support if persistent",
-            ]
+            error_response.update({
+                "error_code": "BAD_GATEWAY",
+                "message": "Bad gateway - upstream service unavailable",
+                "data": {
+                    "hints": [
+                        "Check if backend service is running",
+                        "Try again in a few moments",
+                        "Contact support if persistent"
+                    ]
+                }
+            })
         else:
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-            error_msg = (
-                "Service temporarily unavailable - cannot connect to external service"
-            )
-            hints = [
-                "Check your internet connection",
-                "Try again in a few moments",
-                "Verify service status",
-            ]
+            error_response.update({
+                "error_code": "SERVICE_UNAVAILABLE",
+                "message": "Service temporarily unavailable - cannot connect to external service",
+                "data": {
+                    "hints": [
+                        "Check your internet connection",
+                        "Try again in a few moments",
+                        "Verify service status"
+                    ]
+                }
+            })
 
     elif isinstance(exc, PyMongoError):
         if "timeout" in str(exc).lower():

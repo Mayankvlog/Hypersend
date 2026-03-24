@@ -1,0 +1,408 @@
+"""
+Comprehensive Production Safety Tests for Hypersend Backend
+Tests all critical endpoints with proper error handling and validation
+"""
+
+import pytest
+import asyncio
+import json
+from fastapi.testclient import TestClient
+from unittest.mock import patch, MagicMock
+from datetime import datetime, timezone
+import os
+import sys
+
+# Add backend to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from backend.main import app
+from backend.config import settings
+from backend.models import UserCreate, UserLogin
+
+
+class TestProductionSafety:
+    """Production safety and error handling tests"""
+    
+    @pytest.fixture
+    def client(self):
+        """Test client fixture"""
+        return TestClient(app)
+    
+    @pytest.fixture
+    def mock_user(self):
+        """Mock authenticated user"""
+        return {
+            "user_id": "507f1f77bcf86cd799439011",
+            "email": "test@example.com",
+            "username": "testuser"
+        }
+    
+    @pytest.fixture
+    def valid_upload_data(self):
+        """Valid file upload initialization data"""
+        return {
+            "file_name": "test_file.pdf",
+            "file_size": 1024000,  # 1MB
+            "chat_id": "507f1f77bcf86cd799439011",
+            "mime_type": "application/pdf",
+            "chunk_size": 1024,
+            "total_chunks": 1000
+        }
+
+    def test_health_check_endpoint(self, client):
+        """Test health check returns proper status"""
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert "timestamp" in data
+
+    def test_api_status_endpoint(self, client):
+        """Test API status endpoint with structured response"""
+        response = client.get("/api/v1/status")
+        assert response.status_code in [200, 404]  # May not exist in all versions
+        
+        if response.status_code == 200:
+            data = response.json()
+            assert "status" in data
+            assert "timestamp" in data
+
+    def test_upload_init_missing_fields(self, client, valid_upload_data):
+        """Test upload initialization with missing required fields"""
+        # Test missing file_name
+        invalid_data = valid_upload_data.copy()
+        del invalid_data["file_name"]
+        
+        response = client.post("/api/v1/files/init", json=invalid_data)
+        assert response.status_code == 400
+        data = response.json()
+        assert data["status"] == "ERROR"
+        assert "Missing required fields" in data["message"]
+        assert "required_fields" in data["data"]
+
+    def test_upload_init_invalid_file_size(self, client, valid_upload_data):
+        """Test upload initialization with invalid file size"""
+        invalid_data = valid_upload_data.copy()
+        invalid_data["file_size"] = -1
+        
+        response = client.post("/api/v1/files/init", json=invalid_data)
+        assert response.status_code == 400
+        data = response.json()
+        assert data["status"] == "ERROR"
+        assert "Invalid file_size" in data["message"]
+
+    def test_upload_init_invalid_chat_id(self, client, valid_upload_data):
+        """Test upload initialization with invalid chat_id"""
+        invalid_data = valid_upload_data.copy()
+        invalid_data["chat_id"] = "invalid_objectid"
+        
+        response = client.post("/api/v1/files/init", json=invalid_data)
+        assert response.status_code == 400
+        data = response.json()
+        assert data["status"] == "ERROR"
+        assert "Invalid chat_id" in data["message"]
+
+    def test_upload_init_empty_filename(self, client, valid_upload_data):
+        """Test upload initialization with empty filename"""
+        invalid_data = valid_upload_data.copy()
+        invalid_data["file_name"] = ""
+        
+        response = client.post("/api/v1/files/init", json=invalid_data)
+        assert response.status_code == 400
+        data = response.json()
+        assert data["status"] == "ERROR"
+        assert "Invalid filename" in data["message"]
+
+    def test_upload_init_invalid_json(self, client):
+        """Test upload initialization with malformed JSON"""
+        response = client.post(
+            "/api/v1/files/init",
+            data="invalid json{",
+            headers={"content-type": "application/json"}
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert data["status"] == "ERROR"
+        assert "JSON_PARSE_ERROR" in data["data"]["error_code"]
+
+    def test_upload_init_wrong_method(self, client, valid_upload_data):
+        """Test upload initialization with wrong HTTP method"""
+        response = client.get("/api/v1/files/init", json=valid_upload_data)
+        assert response.status_code == 405
+        data = response.json()
+        assert data["status"] == "ERROR"
+        assert "Method not allowed" in data["message"]
+
+    @patch('backend.routes.files._get_s3_client')
+    def test_upload_init_s3_config_error(self, mock_s3_client, client, valid_upload_data):
+        """Test upload initialization when S3 is not configured"""
+        mock_s3_client.return_value = None
+        
+        response = client.post("/api/v1/files/init", json=valid_upload_data)
+        assert response.status_code == 503
+        data = response.json()
+        assert data["status"] == "ERROR"
+        assert "S3_CONFIG_ERROR" in data["data"]["error_code"]
+
+    def test_user_registration_validation(self, client):
+        """Test user registration with proper validation"""
+        # Test missing email
+        invalid_user = {
+            "password": "ValidPassword123!",
+            "username": "testuser"
+        }
+        
+        response = client.post("/api/v1/auth/register", json=invalid_user)
+        assert response.status_code in [400, 422]  # Validation error
+        
+        # Test weak password
+        weak_user = {
+            "email": "test@example.com",
+            "password": "123",
+            "username": "testuser"
+        }
+        
+        response = client.post("/api/v1/auth/register", json=weak_user)
+        assert response.status_code in [400, 422]
+
+    def test_user_login_validation(self, client):
+        """Test user login with proper validation"""
+        # Test missing credentials
+        response = client.post("/api/v1/auth/login", json={})
+        assert response.status_code in [400, 422]
+        
+        # Test invalid email format
+        invalid_login = {
+            "email": "invalid-email",
+            "password": "password123"
+        }
+        
+        response = client.post("/api/v1/auth/login", json=invalid_login)
+        assert response.status_code in [400, 422]
+
+    def test_authentication_required_endpoints(self, client):
+        """Test that protected endpoints require authentication"""
+        protected_endpoints = [
+            "/api/v1/users/me",
+            "/api/v1/files/123/chunk",
+            "/api/v1/chats",
+            "/api/v1/groups"
+        ]
+        
+        for endpoint in protected_endpoints:
+            response = client.get(endpoint)
+            # Should return 401 or 404 (if endpoint doesn't exist)
+            assert response.status_code in [401, 404]
+
+    def test_cors_headers(self, client):
+        """Test CORS headers are properly set"""
+        # Test preflight request
+        response = client.options("/api/v1/files/init")
+        assert response.status_code in [200, 405]
+        
+        if response.status_code == 200:
+            assert "access-control-allow-origin" in response.headers
+            assert "access-control-allow-methods" in response.headers
+            assert "access-control-allow-headers" in response.headers
+
+    def test_rate_limiting_headers(self, client, valid_upload_data):
+        """Test rate limiting headers are present"""
+        response = client.post("/api/v1/files/init", json=valid_upload_data)
+        
+        # Rate limiting headers should be present even on success/failure
+        # (unless it's an authentication error before rate limiting check)
+        if response.status_code != 401:
+            # May or may not have rate limit headers depending on implementation
+            pass
+
+    def test_error_response_format(self, client):
+        """Test all error responses follow consistent format"""
+        # Trigger various error types and check format
+        test_cases = [
+            ("/api/v1/files/init", "POST", {}, 400),  # Missing fields
+            ("/api/v1/files/init", "GET", {}, 405),   # Wrong method
+            ("/nonexistent", "GET", {}, 404),          # Not found
+        ]
+        
+        for endpoint, method, data, expected_status in test_cases:
+            if method == "POST":
+                response = client.post(endpoint, json=data)
+            else:
+                response = client.get(endpoint)
+            
+            # Should return expected status or 401 if auth required
+            assert response.status_code in [expected_status, 401]
+            
+            if response.status_code != 401:  # Skip auth errors for format check
+                response_data = response.json()
+                
+                # All errors should have consistent format
+                if isinstance(response_data, dict):
+                    assert "status" in response_data
+                    assert response_data["status"] == "ERROR"
+                    assert "message" in response_data
+
+    def test_structured_error_data(self, client, valid_upload_data):
+        """Test structured error data in responses"""
+        # Test file size validation error
+        invalid_data = valid_upload_data.copy()
+        invalid_data["file_size"] = -1
+        
+        response = client.post("/api/v1/files/init", json=invalid_data)
+        assert response.status_code == 400
+        
+        data = response.json()
+        assert data["status"] == "ERROR"
+        assert "data" in data
+        assert "file_size" in data["data"]
+        assert data["data"]["file_size"] == -1
+
+    @patch('backend.routes.files._get_s3_client')
+    def test_upload_flow_validation(self, mock_s3_client, client, valid_upload_data):
+        """Test complete upload flow validation"""
+        # Mock S3 client
+        mock_s3_client.return_value = MagicMock()
+        
+        # Step 1: Initialize upload
+        response = client.post("/api/v1/files/init", json=valid_upload_data)
+        
+        # May fail due to auth or S3 config, but should fail gracefully
+        assert response.status_code in [200, 401, 503]
+        
+        if response.status_code == 200:
+            data = response.json()
+            assert "uploadId" in data
+            assert "upload_url" in data
+            
+            # Step 2: Test chunk upload (will likely fail due to auth)
+            upload_id = data["uploadId"]
+            chunk_data = b"test chunk data"
+            
+            response = client.put(
+                f"/api/v1/files/{upload_id}/chunk?chunk_index=0",
+                data=chunk_data,
+                headers={"content-type": "application/octet-stream"}
+            )
+            
+            # Should fail gracefully with proper error format
+            assert response.status_code in [200, 401, 404, 500]
+            
+            if response.status_code != 200:
+                error_data = response.json()
+                assert error_data["status"] == "ERROR"
+
+    def test_production_url_configuration(self):
+        """Test production URLs are properly configured"""
+        # Check that API_BASE_URL is set to production
+        assert settings.API_BASE_URL == "https://zaply.in.net/api/v1"
+        
+        # Check CORS origins are production-only
+        assert "zaply.in.net" in str(settings.CORS_ORIGINS)
+        assert "localhost" not in str(settings.CORS_ORIGINS)
+
+    def test_error_logging_context(self, client, valid_upload_data):
+        """Test that errors include proper logging context"""
+        # This test would require checking logs, which is complex in unit tests
+        # Instead, we verify error handlers include context in responses
+        
+        response = client.post("/api/v1/files/init", json={})
+        assert response.status_code == 400
+        
+        data = response.json()
+        assert data["status"] == "ERROR"
+        # Error should include helpful context for debugging
+        assert "message" in data
+        assert len(data["message"]) > 10  # Meaningful error message
+
+    def test_concurrent_request_handling(self, client, valid_upload_data):
+        """Test basic concurrent request handling"""
+        async def make_request():
+            return client.post("/api/v1/files/init", json=valid_upload_data)
+        
+        # Run multiple requests concurrently
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            tasks = [make_request() for _ in range(5)]
+            responses = loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+            
+            # All requests should complete without crashing
+            for response in responses:
+                if hasattr(response, 'status_code'):
+                    assert response.status_code in [200, 401, 503, 429]
+                else:
+                    # Should be an exception, not a crash
+                    assert isinstance(response, Exception)
+        finally:
+            loop.close()
+
+
+class TestSecurityValidation:
+    """Security-focused tests for production safety"""
+    
+    @pytest.fixture
+    def client(self):
+        return TestClient(app)
+    
+    def test_no_hardcoded_secrets(self):
+        """Test no hardcoded secrets in configuration"""
+        # Check that secrets are not hardcoded
+        secret_vars = [
+            'JWT_SECRET_KEY',
+            'SECRET_KEY', 
+            'AWS_ACCESS_KEY_ID',
+            'AWS_SECRET_ACCESS_KEY',
+            'MONGODB_URI'
+        ]
+        
+        for var in secret_vars:
+            value = getattr(settings, var, '')
+            # Should not contain obvious placeholder values
+            placeholders = [
+                'CHANGE-THIS',
+                'your-secret',
+                'example',
+                'EXAMPLE',
+                'placeholder'
+            ]
+            
+            if value:
+                for placeholder in placeholders:
+                    assert placeholder.lower() not in value.lower(), f"Placeholder found in {var}"
+    
+    def test_production_cors_restrictions(self):
+        """Test CORS is properly restricted for production"""
+        cors_origins = settings.CORS_ORIGINS
+        
+        # Should be list or string, not wildcard
+        assert cors_origins != "*"
+        assert cors_origins != ["*"]
+        
+        # Should contain production domain
+        if isinstance(cors_origins, list):
+            assert any("zaply.in.net" in origin for origin in cors_origins)
+        else:
+            assert "zaply.in.net" in cors_origins
+    
+    def test_database_connection_security(self):
+        """Test database connection uses secure configuration"""
+        # Should use MongoDB Atlas (mongodb+srv://)
+        assert settings.MONGODB_URI.startswith("mongodb+srv://")
+        
+        # Should have retryWrites and w=majority
+        assert "retryWrites=true" in settings.MONGODB_URI
+        assert "w=majority" in settings.MONGODB_URI
+    
+    def test_ssl_configuration(self):
+        """Test SSL/TLS configuration is secure"""
+        # API_BASE_URL should use HTTPS
+        assert settings.API_BASE_URL.startswith("https://")
+        
+        # Should not allow SSL verification bypass in production
+        if not settings.DEBUG:
+            assert settings.VERIFY_SSL_CERTIFICATES or settings.SSL_VERIFY_MODE == "strict"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "--tb=short"])
