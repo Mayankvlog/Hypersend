@@ -38,8 +38,8 @@ class TestUploadInitS3Config:
     def valid_upload_data(self):
         """Valid upload initialization data"""
         return {
-            "filename": "test_file.jpg",
-            "size": 1024000,
+            "file_name": "test_file.jpg",
+            "file_size": 1024000,
             "mime_type": "image/jpeg",
             "chat_id": str(ObjectId())
         }
@@ -79,8 +79,12 @@ class TestUploadInitS3Config:
         assert response.status_code == 200
         data = response.json()
         assert "uploadId" in data
+        assert "file_id" in data
+        assert data["file_id"]
         assert "chunk_size" in data
         assert "total_chunks" in data
+        assert "upload_url" in data
+        assert data["upload_url"]
         assert data["chunk_size"] > 0
         assert data["total_chunks"] > 0
 
@@ -203,9 +207,9 @@ class TestUploadInitS3Config:
     def test_upload_init_validates_required_fields(self, client, mock_user_token):
         """Test upload initialization validates required fields"""
         
-        # Test missing filename
+        # Test missing file_name / filename
         invalid_data = {
-            "size": 1024000,
+            "file_size": 1024000,
             "mime_type": "image/jpeg",
             "chat_id": str(ObjectId())
         }
@@ -221,12 +225,65 @@ class TestUploadInitS3Config:
         
         assert response.status_code == 400
 
+
+    def test_upload_init_handles_empty_mime_type(self, client, mock_user_token, valid_upload_data):
+        """Test upload initialization handles empty mime_type"""
+
+        invalid_data = valid_upload_data.copy()
+        invalid_data["mime_type"] = ""
+
+        mock_s3_client = MagicMock()
+        mock_s3_client.head_bucket.return_value = None
+
+        with patch('backend.routes.files._get_s3_client', return_value=mock_s3_client):
+            with patch('backend.routes.files.get_current_user_for_upload', return_value="test_user"):
+                with patch('backend.routes.files.get_current_user', return_value="test_user"):
+                    response = client.post(
+                        "/api/v1/files/init",
+                        json=invalid_data,
+                        headers={"Authorization": mock_user_token}
+                    )
+
+        assert response.status_code == 400
+
+
+    def test_upload_init_failure_when_bucket_region_mismatch(self, client, mock_user_token, valid_upload_data):
+        """Test upload initialization failure when bucket region mismatches AWS_REGION"""
+
+        with patch('backend.routes.files._get_s3_client', return_value=None):
+            with patch('backend.routes.files.get_current_user_for_upload', return_value="test_user"):
+                with patch('backend.routes.files.get_current_user', return_value="test_user"):
+                    response = client.post(
+                        "/api/v1/files/init",
+                        json=valid_upload_data,
+                        headers={"Authorization": mock_user_token}
+                    )
+
+        assert response.status_code == 503
+
+        # Test missing mime_type
+        invalid_data2 = {
+            "file_name": "test_file.jpg",
+            "file_size": 1024000,
+            "chat_id": str(ObjectId()),
+        }
+
+        with patch('backend.routes.files.get_current_user_for_upload', return_value="test_user"):
+            with patch('backend.routes.files.get_current_user', return_value="test_user"):
+                response2 = client.post(
+                    "/api/v1/files/init",
+                    json=invalid_data2,
+                    headers={"Authorization": mock_user_token}
+                )
+
+        assert response2.status_code == 400
+
     def test_upload_init_handles_invalid_file_size(self, client, mock_user_token, valid_upload_data):
         """Test upload initialization handles invalid file size"""
         
         # Test negative file size
         invalid_data = valid_upload_data.copy()
-        invalid_data["size"] = -1
+        invalid_data["file_size"] = -1
         
         mock_s3_client = MagicMock()
         mock_s3_client.head_bucket.return_value = None
@@ -248,7 +305,7 @@ class TestUploadInitS3Config:
         
         # Test extremely large file size (beyond limits)
         invalid_data = valid_upload_data.copy()
-        invalid_data["size"] = 100 * 1024 * 1024 * 1024  # 100GB
+        invalid_data["file_size"] = 100 * 1024 * 1024 * 1024  # 100GB
         
         mock_s3_client = MagicMock()
         mock_s3_client.head_bucket.return_value = None

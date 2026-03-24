@@ -831,16 +831,19 @@ class MessageReactionRequest(BaseModel):
 
 # File Models
 class FileInitRequest(BaseModel):
-    filename: str
-    size: int
+    filename: str = Field(..., alias="file_name")
+    size: int = Field(..., alias="file_size")
     mime_type: str
     chat_id: str
     receiver_id: Optional[str] = None
     checksum: Optional[str] = None
 
+    model_config = ConfigDict(populate_by_name=True)
+
 
 class FileInitResponse(BaseModel):
     uploadId: str  # camelCase for frontend consistency
+    file_id: Optional[str] = None
     file_key: Optional[str] = None  # snake_case for backward compatibility
     chunk_size: int
     total_chunks: int

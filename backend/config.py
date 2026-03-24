@@ -67,6 +67,40 @@ def _strip_quotes(value: str) -> str:
     return value
 
 
+def _sanitize_s3_bucket(value: str) -> str:
+    if value is None:
+        return ""
+    value = _strip_quotes(str(value)).strip()
+    if value.startswith("arn:aws:s3:::"):
+        value = value.replace("arn:aws:s3:::", "")
+    return value
+
+
+def _validate_s3_bucket(value: str) -> str:
+    """Validate S3 bucket name (not ARN, non-empty, basic DNS rules)."""
+    value = _sanitize_s3_bucket(value)
+    if not value:
+        return ""
+    # Basic S3 bucket naming rules (not exhaustive)
+    import re
+
+    if len(value) < 3 or len(value) > 63:
+        raise ValueError("S3_BUCKET must be 3-63 characters")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9\.-]*[a-z0-9]", value):
+        raise ValueError("S3_BUCKET contains invalid characters")
+    if ".." in value or ".-" in value or "-." in value:
+        raise ValueError("S3_BUCKET has invalid dot/dash sequence")
+    if value.startswith(".") or value.endswith("."):
+        raise ValueError("S3_BUCKET cannot start/end with '.'")
+    return value
+
+
+def _sanitize_aws_region(value: str) -> str:
+    if value is None:
+        return ""
+    return _strip_quotes(str(value)).strip()
+
+
 def _validate_mongodb_uri(uri: str) -> str:
     """Validate and auto-fix MongoDB URI for Atlas production use"""
     uri = uri.strip()
@@ -465,11 +499,15 @@ class Settings:
     # CRITICAL: AWS credentials are loaded from environment variables only
     # Never hardcode credentials - use .env file or deployment secrets
 
-    _raw_s3_bucket = os.getenv("S3_BUCKET", "").strip()
-    S3_BUCKET: str = _raw_s3_bucket if _raw_s3_bucket else "zaply-temp"
-    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
-    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
-    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1").strip()
+    _raw_s3_bucket = _sanitize_s3_bucket(os.getenv("S3_BUCKET", ""))
+    # IMPORTANT: Do not silently default bucket in backend.
+    # Empty means "not configured" and should be validated at the call sites.
+    S3_BUCKET: str = _validate_s3_bucket(_raw_s3_bucket) if _raw_s3_bucket else ""
+    AWS_ACCESS_KEY_ID: str = _strip_quotes(os.getenv("AWS_ACCESS_KEY_ID", "")).strip()
+    AWS_SECRET_ACCESS_KEY: str = _strip_quotes(
+        os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    ).strip()
+    AWS_REGION: str = _sanitize_aws_region(os.getenv("AWS_REGION", "us-east-1")) or "us-east-1"
 
     # Helper: Check if AWS credentials are configured
     _AWS_CREDENTIALS_CONFIGURED: bool = bool(
@@ -582,9 +620,9 @@ class Settings:
     
     # VALIDATE S3 CONFIGURATION - Log bucket status
     if not _raw_s3_bucket:
-        logger.warning("[CONFIG] S3_BUCKET not explicitly set in .env - using default 'zaply-temp'")
+        logger.warning("[CONFIG] S3_BUCKET not set (uploads requiring S3 will fail until configured)")
     else:
-        logger.info(f"[CONFIG] S3_BUCKET from .env: {S3_BUCKET}")
+        logger.info(f"[CONFIG] S3_BUCKET configured: {S3_BUCKET}")
 
     # Log AWS credential status (without exposing secrets)
     if _AWS_CREDENTIALS_CONFIGURED:

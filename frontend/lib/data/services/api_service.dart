@@ -1798,10 +1798,25 @@ Future<void> postToChannel(String channelId, String text) async {
     String? endpoint,  // Optional: use specific attachment endpoint (e.g., /attach/photos-videos/init)
   }) async {
     try {
+      if (filename.trim().isEmpty) {
+        throw Exception('Invalid filename');
+      }
+      if (size <= 0) {
+        throw Exception('Invalid file size');
+      }
+      if (mime.trim().isEmpty) {
+        throw Exception('Invalid mime type');
+      }
+      if (chatId.trim().isEmpty) {
+        throw Exception('Invalid chat id');
+      }
+
       final uploadEndpoint = endpoint ?? '${ApiConstants.filesEndpoint}/init';
       final response = await _dio.post(
         uploadEndpoint,
         data: {
+          'file_name': filename,
+          'file_size': size,
           'filename': filename,
           'size': size,
           'mime_type': mime,
@@ -1898,9 +1913,15 @@ Future<void> postToChannel(String channelId, String text) async {
         // Check for S3 configuration errors
         final responseData = e.response?.data;
         if (responseData is Map<String, dynamic>) {
-          final errorCode = responseData['error_code'] as String?;
-          if (errorCode == 'S3_CONFIG_ERROR') {
-            return 'S3 storage configuration error. Please contact support.';
+          final detail = responseData['detail'];
+          if (detail is Map<String, dynamic>) {
+            final data = detail['data'];
+            if (data is Map<String, dynamic>) {
+              final errorCode = data['error_code'] as String?;
+              if (errorCode == 'S3_CONFIG_ERROR') {
+                return 'S3 storage configuration error. Please contact support.';
+              }
+            }
           }
         }
         return 'Server error. Please try again later.';
@@ -1908,9 +1929,15 @@ Future<void> postToChannel(String channelId, String text) async {
         // Check for S3 configuration errors
         final responseData = e.response?.data;
         if (responseData is Map<String, dynamic>) {
-          final errorCode = responseData['error_code'] as String?;
-          if (errorCode == 'S3_CONFIG_ERROR') {
-            return 'S3 storage service temporarily unavailable. Please contact support.';
+          final detail = responseData['detail'];
+          if (detail is Map<String, dynamic>) {
+            final data = detail['data'];
+            if (data is Map<String, dynamic>) {
+              final errorCode = data['error_code'] as String?;
+              if (errorCode == 'S3_CONFIG_ERROR') {
+                return 'S3 storage service temporarily unavailable. Please contact support.';
+              }
+            }
           }
         }
         return 'Service temporarily unavailable. Please try again later.';

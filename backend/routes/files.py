@@ -535,6 +535,17 @@ def _get_sanitized_bucket_name() -> str:
     return bucket_name
 
 
+def _validate_s3_bucket_or_raise() -> str:
+    bucket_name = _get_sanitized_bucket_name()
+    if not bucket_name or str(bucket_name).strip() == "":
+        raise ValueError("S3_BUCKET is not set or empty")
+    if bucket_name.strip().lower() in {"zaply-temp", "example", "your-bucket"}:
+        raise ValueError(
+            "S3_BUCKET appears to be a placeholder value; configure the real bucket name"
+        )
+    return bucket_name
+
+
 def _get_s3_client():
     """Get S3 client for AWS S3 operations with full credentials validation"""
     import traceback
@@ -544,9 +555,14 @@ def _get_s3_client():
             _log("warning", "boto3 not available - S3 operations disabled")
             return None
 
-        # Validate S3_BUCKET is not empty
-        if not settings.S3_BUCKET or settings.S3_BUCKET.strip() == "":
-            _log("error", "S3_BUCKET is empty or not configured in settings")
+        # Validate S3_BUCKET is present and not a placeholder
+        try:
+            bucket_name = _validate_s3_bucket_or_raise()
+        except Exception as bucket_exc:
+            _log(
+                "error",
+                f"S3_BUCKET validation failed: {type(bucket_exc).__name__}: {bucket_exc}",
+            )
             return None
 
         # Validate AWS credentials
@@ -564,7 +580,7 @@ def _get_s3_client():
 
         # Log S3 client initialization parameters
         _log("info", f"Initializing S3 client with region: {settings.AWS_REGION}")
-        _log("info", f"Target S3 bucket: {settings.S3_BUCKET}")
+        _log("info", f"Target S3 bucket: {bucket_name}")
 
         # Mask credentials for logging
         masked_key_id = (
@@ -590,12 +606,27 @@ def _get_s3_client():
             )
             return None
 
-        bucket_name = _get_sanitized_bucket_name()
         _log("info", f"Performing S3 connectivity check for bucket: {bucket_name}")
 
         try:
             # S3 connectivity check using head_bucket
             s3_client.head_bucket(Bucket=bucket_name)
+            # Validate region match to avoid SignatureDoesNotMatch / AuthorizationHeaderMalformed
+            try:
+                loc = s3_client.get_bucket_location(Bucket=bucket_name)
+                bucket_region = (loc or {}).get("LocationConstraint") or "us-east-1"
+                configured_region = (settings.AWS_REGION or "").strip() or "us-east-1"
+                if bucket_region != configured_region:
+                    _log(
+                        "error",
+                        f"S3 bucket region mismatch: bucket_region={bucket_region} AWS_REGION={configured_region}",
+                    )
+                    return None
+            except Exception as region_check_exc:
+                _log(
+                    "warning",
+                    f"S3 region check skipped/failed: {type(region_check_exc).__name__}: {region_check_exc}",
+                )
             _log(
                 "info",
                 f"S3 client initialized and verified successfully for bucket: {bucket_name} in region: {settings.AWS_REGION}",
@@ -1277,6 +1308,17 @@ async def initialize_upload(
                 detail="Malformed JSON in request body",
             )
 
+        _log(
+            "info",
+            "[UPLOAD_INIT] Incoming payload received",
+            {
+                "user_id": current_user or "anonymous",
+                "operation": "upload_init",
+                "has_body": bool(body),
+                "keys": sorted(list(body.keys())) if isinstance(body, dict) else [],
+            },
+        )
+
         # Check for empty body
         if not body or len(str(body).strip()) == 0:
             _log(
@@ -1296,13 +1338,20 @@ async def initialize_upload(
                 },
             )
 
-        # Extract required fields
-        filename = body.get("filename")
+        # Extract required fields (support both new and legacy field names)
+        filename = body.get("file_name")
+        if filename is None:
+            filename = body.get("filename")
+
         file_size = body.get("file_size")
         if file_size is None:
             file_size = body.get("size")
+
         chat_id = body.get("chat_id")
+
         mime_type = body.get("mime_type")
+        if mime_type is None:
+            mime_type = body.get("mime")
 
         chunk_size = body.get("chunk_size")
         if chunk_size is None:
@@ -1324,7 +1373,7 @@ async def initialize_upload(
             total_chunks = int(math.ceil(file_size / chunk_size))
 
         # Validate required fields
-        if not all([filename, file_size, chat_id]):
+        if not all([filename, file_size, chat_id, mime_type]):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
@@ -1332,16 +1381,29 @@ async def initialize_upload(
                     "message": "Missing required fields",
                     "data": {
                         "required_fields": [
-                            "filename",
+                            "file_name",
                             "file_size",
+                            "mime_type",
                             "chat_id",
                         ],
                         "provided_fields": {
                             "filename": bool(filename),
                             "file_size": bool(file_size),
+                            "mime_type": bool(mime_type),
                             "chat_id": bool(chat_id),
                         },
                     },
+                },
+            )
+
+        # Validate chat_id format early
+        if not isinstance(chat_id, str) or not ObjectId.is_valid(chat_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "ERROR",
+                    "message": "Invalid chat_id",
+                    "data": {"chat_id": chat_id},
                 },
             )
 
@@ -1359,7 +1421,17 @@ async def initialize_upload(
 
         # Validate file size (15GB limit)
         max_size = getattr(settings, "MAX_FILE_SIZE_BYTES", 16106127360)  # 15GB
-        if not isinstance(file_size, int) or file_size <= 0 or file_size > max_size:
+        if not isinstance(file_size, int) or file_size <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "ERROR",
+                    "message": "Invalid file_size. Must be an integer > 0",
+                    "data": {"file_size": file_size},
+                },
+            )
+
+        if file_size > max_size:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail={
@@ -1427,6 +1499,16 @@ async def initialize_upload(
 
         # Validate MIME type for security - Only block truly dangerous script files
         # Executables are ALLOWED as per security.py configuration
+        if not isinstance(mime_type, str) or mime_type.strip() == "":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "status": "ERROR",
+                    "message": "mime_type is required and cannot be empty",
+                    "data": {"mime_type": mime_type},
+                },
+            )
+
         dangerous_mime_types = [
             "application/x-php",
             "application/x-shellscript",
@@ -1608,8 +1690,8 @@ async def initialize_upload(
             "chunk_size": chunk_size,
             "total_chunks": total_chunks,
             "storage_key": storage_key,
-            "bucket": "zaply-temp",
-            "region": "us-east-1",
+            "bucket": _get_sanitized_bucket_name(),
+            "region": settings.AWS_REGION,
             "uploaded_chunks": [],
             "created_at": now,
             "updated_at": now,
@@ -1619,6 +1701,24 @@ async def initialize_upload(
         }
         uploads_col = _safe_collection(uploads_collection)
         await _maybe_await(uploads_col.insert_one(upload_doc))
+
+        # Generate presigned PUT URL for direct S3 upload
+        presigned_put_url = _generate_presigned_url(
+            "put_object",
+            object_key=storage_key,
+            content_type=mime_type,
+            expires_in=900,
+            bucket=_get_sanitized_bucket_name(),
+        )
+        if not presigned_put_url:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "status": "ERROR",
+                    "message": "Failed to generate upload URL",
+                    "data": {"error_code": "PRESIGN_FAILED"},
+                },
+            )
 
         _log(
             "info",
@@ -1636,11 +1736,12 @@ async def initialize_upload(
         # Return upload initialization response with proper serialization
         response_data = FileInitResponse(
             uploadId=upload_id,
+            file_id=str(file_oid),
             chunk_size=int(chunk_size),
             total_chunks=int(total_chunks),
-            expires_in=3600,
+            expires_in=900,
             max_parallel=1,
-            upload_url=None,
+            upload_url=presigned_put_url,
         )
 
         # Ensure proper JSON serialization to prevent namespace errors
