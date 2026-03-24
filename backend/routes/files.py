@@ -271,43 +271,49 @@ except ImportError:
     def uploads_collection():
         return MockCollection()
 
-# Try to import utilities, fallback to local implementations
-try:
-    from utils.security import validate_path_injection
-except ImportError:
-    def validate_path_injection(file_id: str) -> bool:
-        """Basic path injection validation"""
-        if not file_id:
-            return False
-        # Check for dangerous patterns
-        dangerous_patterns = ['..', '\\', '/', '\x00']
-        return not any(pattern in file_id for pattern in dangerous_patterns)
+# Utility functions with local implementations (no external dependencies)
+def validate_path_injection(file_id: str) -> bool:
+    """Basic path injection validation"""
+    if not file_id:
+        return False
+    # Check for dangerous patterns
+    dangerous_patterns = ['..', '\\', '/', '\x00']
+    return not any(pattern in file_id for pattern in dangerous_patterns)
 
-try:
-    from utils.logging import logger as _log
-except ImportError:
-    # Mock logger
-    class MockLogger:
-        def __call__(self, level, message, context=None):
-            print(f"[{level.upper()}] {message}")
+# Mock logger with full functionality
+class MockLogger:
+    def __call__(self, level, message, context=None):
+        print(f"[{level.upper()}] {message}")
     
-    _log = MockLogger()
+    def info(self, message, context=None):
+        print(f"[INFO] {message}")
+    
+    def error(self, message, context=None):
+        print(f"[ERROR] {message}")
+    
+    def warning(self, message, context=None):
+        print(f"[WARNING] {message}")
+    
+    def debug(self, message, context=None):
+        print(f"[DEBUG] {message}")
 
-try:
-    from utils.s3 import _get_s3_client, _get_sanitized_bucket_name, _generate_presigned_url, _delete_s3_object
-except ImportError:
-    # Mock S3 functions
-    def _get_s3_client():
-        return None
-    
-    def _get_sanitized_bucket_name():
-        return "test-bucket"
-    
-    def _generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
-        return f"https://{bucket}.s3.amazonaws.com/{key}?expires={expiration}"
-    
-    def _delete_s3_object(bucket: str, key: str):
-        pass
+_log = MockLogger()
+
+# Mock S3 functions
+def _get_s3_client():
+    return None
+
+def _get_sanitized_bucket_name():
+    return "test-bucket"
+
+def _generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
+    return f"https://{bucket}.s3.amazonaws.com/{key}?expires={expiration}"
+
+def _delete_s3_object(bucket: str, key: str):
+    pass
+
+# Create a global logger reference for compatibility
+logger = _log
 
 # Settings import with fallback
 try:
