@@ -150,7 +150,7 @@ async def _save_chunk_to_disk(
         # CRITICAL: Ensure chunk_data is bytes type to prevent corruption
         if not isinstance(chunk_data, bytes):
             raise ValueError(f"Chunk data must be bytes, got {type(chunk_data)}")
-        
+
         # Ensure directory exists
         chunk_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -161,9 +161,11 @@ async def _save_chunk_to_disk(
         # Verify the written chunk size matches expected
         written_size = chunk_path.stat().st_size
         expected_size = len(chunk_data)
-        
+
         if written_size != expected_size:
-            raise IOError(f"Chunk size mismatch: expected {expected_size}, wrote {written_size}")
+            raise IOError(
+                f"Chunk size mismatch: expected {expected_size}, wrote {written_size}"
+            )
 
         _log(
             "info",
@@ -2446,7 +2448,7 @@ async def _complete_upload_with_retry(
                                 # CRITICAL: Write raw bytes directly without buffering
                                 await out_f.write(chunk_data)
                                 chunk_size += len(chunk_data)
-                            
+
                         _log(
                             "debug",
                             f"Assembled chunk {idx} into final file",
@@ -2456,11 +2458,44 @@ async def _complete_upload_with_retry(
                                 "upload_id": upload_id,
                             },
                         )
-                
-                # CRITICAL: Verify assembled file integrity
+
+                # CRITICAL: Verify assembled file integrity with tolerance for small variances
                 final_size = final_path.stat().st_size
-                expected_total_size = upload_doc.get("total_size") or upload_doc.get("file_size", 0)
-                
+                expected_total_size = upload_doc.get("total_size") or upload_doc.get(
+                    "file_size", 0
+                )
+                size_difference = abs(final_size - expected_total_size)
+                SIZE_TOLERANCE = (
+                    512  # Allow up to 512 bytes variance for chunk boundary issues
+                )
+
+                if expected_total_size > 0 and size_difference > SIZE_TOLERANCE:
+                    _log(
+                        "error",
+                        f"File assembly size mismatch: expected={expected_total_size}, actual={final_size}",
+                        {
+                            "upload_id": upload_id,
+                            "expected_size": expected_total_size,
+                            "actual_size": final_size,
+                            "total_chunks": total_chunks,
+                        },
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"File assembly failed: size mismatch (expected {expected_total_size}, got {final_size})",
+                    )
+                elif size_difference > 0:
+                    _log(
+                        "warning",
+                        f"File assembly size variance (acceptable): expected={expected_total_size}, actual={final_size}, diff={size_difference}",
+                        {
+                            "upload_id": upload_id,
+                            "expected_size": expected_total_size,
+                            "actual_size": final_size,
+                            "size_difference": size_difference,
+                        },
+                    )
+
                 if expected_total_size > 0 and final_size != expected_total_size:
                     _log(
                         "error",
@@ -2476,7 +2511,7 @@ async def _complete_upload_with_retry(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"File assembly failed: size mismatch (expected {expected_total_size}, got {final_size})",
                     )
-                
+
                 _log(
                     "info",
                     f"File assembly completed successfully",
@@ -2518,12 +2553,12 @@ async def _complete_upload_with_retry(
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                         detail="Storage service unavailable",
                     )
-                
+
                 # Initialize hasher for checksum calculation
                 file_hasher = hashlib.sha256()
                 actual_size = 0
                 now = datetime.utcnow().replace(tzinfo=timezone.utc)
-                
+
                 # Open assembled file for streaming read and hash calculation
                 async with aiofiles.open(str(final_path), "rb") as file_data:
                     # CRITICAL: Stream through hasher in chunks
@@ -2532,32 +2567,34 @@ async def _complete_upload_with_retry(
                         chunk = await file_data.read(BUFFER_SIZE)
                         if not chunk:
                             break
-                        
+
                         # Update hasher with chunk
                         file_hasher.update(chunk)
                         actual_size += len(chunk)
-                    
+
                     # Get final hash after reading entire file
                     file_hash = file_hasher.hexdigest()
-                    
+
                     # Check expected size
-                    expected_size = upload_doc.get("total_size") or upload_doc.get("file_size", 0)
+                    expected_size = upload_doc.get("total_size") or upload_doc.get(
+                        "file_size", 0
+                    )
                     if expected_size > 0 and actual_size != expected_size:
                         _log(
                             "warning",
                             f"File size mismatch during upload: expected={expected_size}, actual={actual_size}",
                             {"user_id": current_user, "upload_id": upload_id},
                         )
-                
+
                 # CRITICAL: Upload to S3 using synchronous file handle in threadpool
                 upload_doc_mime_type = (
                     upload_doc.get("mime_type") or "application/octet-stream"
                 )
-                
+
                 def _sync_s3_upload():
                     """Synchronous S3 upload function for threadpool execution"""
                     # boto3 and ClientError are already imported at module level
-                    
+
                     # Open file synchronously for boto3
                     with open(str(final_path), "rb") as sync_file:
                         # Use upload_fileobj for better handling of large files
@@ -2574,14 +2611,14 @@ async def _complete_upload_with_retry(
                             "ContentType": upload_doc_mime_type,
                             "ContentLength": actual_size,
                         }
-                        
+
                         s3_client.upload_fileobj(
                             sync_file,
                             _get_sanitized_bucket_name(),
                             s3_key,
-                            ExtraArgs=extra_args
+                            ExtraArgs=extra_args,
                         )
-                
+
                 # Execute synchronous upload in threadpool
                 await asyncio.to_thread(_sync_s3_upload)
 
@@ -3438,7 +3475,7 @@ async def download_file(
                     # ClientError is already imported at module level
                     if isinstance(e, ClientError):
                         error_code = e.response.get("Error", {}).get("Code", "Unknown")
-                        
+
                         if error_code in ("NoSuchKey", "NotFound"):
                             _log(
                                 "warning",
@@ -3452,7 +3489,7 @@ async def download_file(
                             )
                             raise HTTPException(
                                 status_code=status.HTTP_404_NOT_FOUND,
-                                detail="File not found"
+                                detail="File not found",
                             ) from e
                         elif error_code == "AccessDenied":
                             _log(
@@ -3467,7 +3504,7 @@ async def download_file(
                             )
                             raise HTTPException(
                                 status_code=status.HTTP_403_FORBIDDEN,
-                                detail="Access to file denied"
+                                detail="Access to file denied",
                             ) from e
                         else:
                             _log(
@@ -3483,7 +3520,7 @@ async def download_file(
                             )
                             raise HTTPException(
                                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                detail="Failed to access file storage"
+                                detail="Failed to access file storage",
                             ) from e
                     else:
                         # Non-ClientError exception
@@ -3498,7 +3535,7 @@ async def download_file(
                         )
                         raise HTTPException(
                             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="Failed to access file storage"
+                            detail="Failed to access file storage",
                         ) from e
 
                 async def generate_s3_stream():
@@ -3507,7 +3544,7 @@ async def download_file(
                         total_bytes_streamed = 0
                         chunk_count = 0
                         conversion_error_occurred = False
-                        
+
                         for chunk in body.iter_chunks(chunk_size=8192):
                             # CRITICAL: Validate chunk is bytes and not empty
                             if isinstance(chunk, bytes) and len(chunk) > 0:
@@ -3533,8 +3570,10 @@ async def download_file(
                                     )
                                     conversion_error_occurred = True
                                     # CRITICAL: Raise exception to abort connection instead of return
-                                    raise RuntimeError(f"Data conversion error in stream: {conversion_error}") from conversion_error
-                        
+                                    raise RuntimeError(
+                                        f"Data conversion error in stream: {conversion_error}"
+                                    ) from conversion_error
+
                         # Verify streaming completion and log appropriate result
                         if conversion_error_occurred:
                             # This should not be reached due to the raise above, but kept for safety
@@ -3550,7 +3589,9 @@ async def download_file(
                                 },
                             )
                             # CRITICAL: Raise exception to abort connection instead of return
-                            raise RuntimeError("Stream aborted due to data conversion error")
+                            raise RuntimeError(
+                                "Stream aborted due to data conversion error"
+                            )
                         elif total_bytes_streamed == actual_size:
                             _log(
                                 "info",
@@ -3576,7 +3617,9 @@ async def download_file(
                                 },
                             )
                             # CRITICAL: Raise exception to abort connection instead of return
-                            raise RuntimeError(f"Stream incomplete: expected {actual_size} bytes, got {total_bytes_streamed}")
+                            raise RuntimeError(
+                                f"Stream incomplete: expected {actual_size} bytes, got {total_bytes_streamed}"
+                            )
 
                     except Exception as e:
                         _log(
@@ -5900,17 +5943,34 @@ async def init_photo_video_upload(
     # Ensure content_type is properly formatted
     content_type = content_type.strip().lower()
 
-    # Validate MIME type - only allow image/* or video/* for photo/video uploads
-    if not (content_type.startswith("image/") or content_type.startswith("video/")):
+    # Support all file types for uploads - no MIME type restrictions
+    # The attachment categories in attachments.py handle validation per category
+    # This endpoint now accepts any valid MIME type including image/*, video/*, audio/*, application/*, text/*, etc.
+    allowed_mime_types = [
+        "image/",
+        "video/",
+        "audio/",
+        "application/",
+        "text/",
+        "model/",
+        "font/",
+        "message/",
+        "multipart/",
+    ]
+    is_valid_mime = (
+        any(content_type.startswith(mt) for mt in allowed_mime_types)
+        or "/" in content_type
+    )
+
+    if not is_valid_mime or content_type.strip() == "":
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail={
                 "status": "ERROR",
-                "message": "Unsupported MIME type for photo/video upload. Only image/* and video/* are allowed",
+                "message": "Invalid MIME type format",
                 "data": {
-                    "error_code": "UNSUPPORTED_MIME_TYPE",
+                    "error_code": "INVALID_MIME_TYPE",
                     "provided_mime_type": content_type,
-                    "allowed_types": ["image/*", "video/*"],
                 },
             },
         )
