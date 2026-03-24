@@ -1329,17 +1329,13 @@ async def initialize_upload(
                 },
             )
 
-        # Validate MIME type for security
+        # Validate MIME type for security - Only block truly dangerous script files
+        # Executables are ALLOWED as per security.py configuration
         dangerous_mime_types = [
-            "application/x-exe",
-            "application/x-msdownload",
-            "application/x-msdos-program",
             "application/x-php",
-            "application/x-shellscript",
+            "application/x-shellscript", 
             "application/x-javascript",
             "text/javascript",
-            "application/x-msi",
-            "application/x-msi-executable",
             "application/x-bat",
             "application/x-cmd",
             "application/x-com",
