@@ -1,44 +1,37 @@
+import os
+import re
 import hashlib
 import uuid
 import json
 import math
 import logging
 import asyncio
-import os
-import aiofiles
 import time
 import secrets
 import base64
+from pathlib import Path
+from typing import Optional, List, Dict, Any, Union, AsyncGenerator
+from io import BytesIO
+from datetime import datetime, timezone, timedelta
+import mimetypes
+import aiofiles
+
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 
-IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "production" and os.getenv(
-    "DEBUG", ""
-).lower() not in ("true", "1", "yes")
-
-try:
-    import boto3  # type: ignore[import-not-found]
-    from botocore.exceptions import ClientError  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover - optional dependency
-    boto3 = None  # type: ignore[assignment]
-    ClientError = Exception
-import jwt
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from urllib.parse import quote, unquote
 from fastapi import (
     APIRouter,
     HTTPException,
-    status,
-    Depends,
-    Request,
-    Header,
-    Body,
-    Query,
     UploadFile,
     File,
+    Form,
+    Depends,
+    Request,
+    status,
+    Query,
+    BackgroundTasks,
 )
 from fastapi.responses import (
     FileResponse,
@@ -47,3182 +40,210 @@ from fastapi.responses import (
     JSONResponse,
     RedirectResponse,
 )
-from fastapi.encoders import jsonable_encoder
-from typing import Any
-from bson import ObjectId
 
-# Import collections and logging
-logger = logging.getLogger(__name__)
-from typing import Optional, List, Dict, Any, Tuple
-import inspect
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "production" and os.getenv(
+    "DEBUG", ""
+) != "true"
 
 try:
-    from ..models import (
-        FileInitRequest,
-        FileInitResponse,
-        ChunkUploadResponse,
-        FileCompleteResponse,
-        FileDownloadRequest,
-        FileDownloadResponse,
-        FileDeliveryAckRequest,
-    )
-    from ..db_proxy import (
-        files_collection as _files_collection_factory,
-        uploads_collection as _uploads_collection_factory,
-        users_collection,
-        get_database,
-        get_db,
-    )
-    from ..config import settings
-    from ..validators import (
-        validate_user_id,
-        safe_object_id_conversion,
-        validate_command_injection,
-        validate_path_injection,
-        sanitize_input,
-    )
-    from ..rate_limiter import RateLimiter
-    from ..redis_cache import cache
-except ImportError:
-    from models import (
-        FileInitRequest,
-        FileInitResponse,
-        ChunkUploadResponse,
-        FileCompleteResponse,
-        FileDownloadRequest,
-        FileDownloadResponse,
-        FileDeliveryAckRequest,
-    )
-    from db_proxy import (
-        files_collection as _files_collection_factory,
-        uploads_collection as _uploads_collection_factory,
-        users_collection,
-        get_database,
-        get_db,
-    )
-    from config import settings
-    from validators import (
-        validate_user_id,
-        safe_object_id_conversion,
-        validate_command_injection,
-        validate_path_injection,
-        sanitize_input,
-    )
-    from rate_limiter import RateLimiter
-    from backend.redis_cache import cache
-
-# Auth utilities with fallback for different import paths
-try:
-    from backend.auth.utils import (
-        get_current_user,
-        get_current_user_or_query,
-        get_current_user_for_upload,
-        get_current_user_optional,
-        decode_token,
-    )
-except ImportError:
-    from auth.utils import (
-        get_current_user,
-        get_current_user_or_query,
-        get_current_user_for_upload,
-        get_current_user_optional,
-        decode_token,
-    )
-
-
-async def _maybe_await(value):
-    if inspect.isawaitable(value):
-        return await value
-    return value
-
-
-def _safe_collection(factory_or_collection):
-    if callable(factory_or_collection):
-        return factory_or_collection()
-    return factory_or_collection
-
-
-async def _save_chunk_to_disk(
-    chunk_path: Path, chunk_data: bytes, chunk_index: int, user_id: str
-):
-    """Save chunk data to disk with proper error handling and binary integrity checks"""
-    try:
-        # CRITICAL: Ensure chunk_data is bytes type to prevent corruption
-        if not isinstance(chunk_data, bytes):
-            raise ValueError(f"Chunk data must be bytes, got {type(chunk_data)}")
-
-        # Ensure directory exists
-        chunk_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # CRITICAL: Write chunk data to file in binary mode with explicit bytes
-        async with aiofiles.open(chunk_path, "wb") as f:
-            await f.write(chunk_data)
-
-        # Verify the written chunk size matches expected
-        written_size = chunk_path.stat().st_size
-        expected_size = len(chunk_data)
-
-        if written_size != expected_size:
-            raise IOError(
-                f"Chunk size mismatch: expected {expected_size}, wrote {written_size}"
-            )
-
-        _log(
-            "info",
-            f"Chunk {chunk_index} saved successfully for user {user_id}",
-            {
-                "chunk_index": chunk_index,
-                "chunk_size": len(chunk_data),
-                "verified_size": written_size,
-                "user_id": user_id,
-                "chunk_path": str(chunk_path),
-            },
-        )
-
-    except Exception as e:
-        _log(
-            "error",
-            f"Failed to save chunk {chunk_index} for user {user_id}",
-            {"chunk_index": chunk_index, "user_id": user_id, "error": str(e)},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save chunk {chunk_index}: {str(e)}",
-        )
-
-
-import sys
-
-sys.modules.setdefault("routes.files", sys.modules[__name__])
-sys.modules.setdefault("backend.routes.files", sys.modules[__name__])
-
-
-# WhatsApp Media Encryption Lifecycle
-class WhatsAppMediaEncryption:
-    """WhatsApp Media Encryption Service"""
-
-    def __init__(self):
-        self.chunk_size = 32 * 1024 * 1024  # 32MB chunks
-
-    def generate_media_key(self) -> bytes:
-        """Generate random 256-bit media key"""
-        return os.urandom(32)
-
-    def encrypt_media_chunk(
-        self, chunk_data: bytes, media_key: bytes, chunk_index: int
-    ) -> Tuple[bytes, bytes, bytes]:
-        """Encrypt media chunk with AES-GCM"""
-        # Generate chunk-specific nonce
-        nonce = HKDF(
-            algorithm=hashes.SHA256(),
-            length=12,  # 96-bit nonce for GCM
-            salt=media_key,
-            info=f"chunk_nonce_{chunk_index}".encode(),
-            backend=default_backend(),
-        ).derive(b"")
-
-        # Encrypt chunk
-        cipher = Cipher(
-            algorithms.AES(media_key), modes.GCM(nonce), backend=default_backend()
-        ).encryptor()
-
-        ciphertext = cipher.update(chunk_data) + cipher.finalize()
-        tag = cipher.tag
-
-        return ciphertext, nonce, tag
-
-    def encrypt_media_key_for_device(
-        self, media_key: bytes, device_public_key: bytes, device_id: str
-    ) -> Dict[str, str]:
-        """Encrypt media key for specific device"""
-        # Generate device-specific nonce
-        nonce = os.urandom(12)
-
-        # Derive encryption key from device public key
-        device_key = HKDF(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=device_public_key,
-            info=f"media_key_{device_id}_{int(time.time())}".encode(),
-            backend=default_backend(),
-        ).derive(b"")
-
-        # Encrypt media key
-        cipher = Cipher(
-            algorithms.AES(device_key), modes.GCM(nonce), backend=default_backend()
-        ).encryptor()
-
-        encrypted_key = cipher.update(media_key) + cipher.finalize()
-        tag = cipher.tag
-
-        return {
-            "encrypted_key": base64.b64encode(encrypted_key).decode(),
-            "nonce": base64.b64encode(nonce).decode(),
-            "tag": base64.b64encode(tag).decode(),
-        }
-
-
-class WhatsAppMediaLifecycle:
-    """WhatsApp Media Lifecycle Management"""
-
-    def __init__(self, redis_client, s3_client):
-        self.redis = redis_client
-        self.s3 = s3_client
-        self.encryption = WhatsAppMediaEncryption()
-
-    async def initiate_media_upload(
-        self,
-        sender_user_id: str,
-        sender_device_id: str,
-        file_size: int,
-        mime_type: str,
-        recipient_devices: List[str],
-    ) -> Dict[str, Any]:
-        """Initiate WhatsApp-style media upload"""
-        media_id = f"media_{secrets.token_hex(16)}"
-        chunk_count = (
-            file_size + self.encryption.chunk_size - 1
-        ) // self.encryption.chunk_size
-
-        # Create metadata
-        metadata = {
-            "media_id": media_id,
-            "sender_user_id": sender_user_id,
-            "sender_device_id": sender_device_id,
-            "file_size": file_size,
-            "mime_type": mime_type,
-            "chunk_count": chunk_count,
-            "created_at": int(time.time()),
-            "expires_at": int(time.time()) + settings.FILE_TTL_SECONDS,
-            "delivery_status": {
-                device_id: {
-                    "upload_status": "pending",
-                    "delivery_status": "pending",
-                    "ack_status": "pending",
-                }
-                for device_id in recipient_devices
-            },
-        }
-
-        # Store metadata
-        metadata_key = f"media_metadata:{media_id}"
-        await cache.set(
-            metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS
-        )
-
-        # Generate upload tokens
-        upload_tokens = {}
-        for chunk_index in range(chunk_count):
-            token = secrets.token_urlsafe(32)
-            upload_tokens[chunk_index] = token
-
-            token_key = f"upload_token:{token}"
-            await cache.set(
-                token_key,
-                {
-                    "media_id": media_id,
-                    "chunk_index": chunk_index,
-                    "expires_at": int(time.time()) + 3600,
-                    "used": False,
-                },
-                expire_seconds=3600,
-            )
-
-        return {
-            "media_id": media_id,
-            "chunk_size": self.encryption.chunk_size,
-            "chunk_count": chunk_count,
-            "upload_tokens": upload_tokens,
-        }
-
-    async def upload_media_chunk(
-        self, token: str, chunk_data: bytes, media_key: str, chunk_index: int
-    ) -> Dict[str, Any]:
-        """Upload encrypted media chunk"""
-        # Validate token
-        token_key = f"upload_token:{token}"
-        token_data = await cache.get(token_key)
-
-        if not token_data or token_data["used"]:
-            raise ValueError("Invalid or expired upload token")
-
-        # Decode media key
-        media_key_bytes = base64.b64decode(media_key)
-
-        # Encrypt chunk
-        encrypted_chunk, nonce, tag = self.encryption.encrypt_media_chunk(
-            chunk_data, media_key_bytes, chunk_index
-        )
-
-        # Upload to S3
-        media_id = token_data["media_id"]
-        chunk_key = f"media/{media_id}/chunk_{chunk_index}"
-
-        # Combine nonce, tag, and ciphertext
-        encrypted_data = nonce + tag + encrypted_chunk
-
-        try:
-            s3_client = _get_s3_client()
-            if s3_client:
-                # CRITICAL FIX: Wrap S3 put_object in try-except with proper error handling
-                s3_client.put_object(
-                    Bucket=_get_sanitized_bucket_name(),
-                    Key=chunk_key,
-                    Body=encrypted_data,
-                    Metadata={
-                        "media_id": media_id,
-                        "chunk_index": str(chunk_index),
-                        "encrypted": "true",
-                    },
-                )
-                _log(
-                    "info",
-                    f"Encrypted chunk uploaded to S3: chunk_index={chunk_index}, size={len(encrypted_data)}",
-                    {
-                        "media_id": media_id,
-                        "chunk_index": chunk_index,
-                        "chunk_size": len(encrypted_data),
-                    }
-                )
-        except ClientError as s3_error:
-            error_code = s3_error.response.get("Error", {}).get("Code", "Unknown")
-            error_msg = s3_error.response.get("Error", {}).get("Message", str(s3_error))
-            _log(
-                "error",
-                f"S3 ClientError during chunk upload: {error_code} - {error_msg}",
-                {
-                    "media_id": media_id,
-                    "chunk_index": chunk_index,
-                    "error_code": error_code,
-                }
-            )
-            raise ValueError(f"S3 storage error: {error_code} - {error_msg}")
-        except Exception as e:
-            _log(
-                "error",
-                f"Failed to upload encrypted chunk: {str(e)}",
-                {
-                    "media_id": media_id,
-                    "chunk_index": chunk_index,
-                }
-            )
-            raise ValueError(f"Failed to upload chunk: {e}")
-
-        # Mark token as used
-        token_data["used"] = True
-        await cache.set(token_key, token_data, expire_seconds=60)
-
-        return {
-            "chunk_index": chunk_index,
-            "uploaded": True,
-            "chunk_size": len(encrypted_data),
-        }
-
-    async def complete_media_upload(
-        self,
-        media_id: str,
-        file_hash: str,
-        recipient_devices: List[str],
-        media_key: str,
-    ) -> Dict[str, Any]:
-        """Complete media upload and distribute keys"""
-        # Get metadata
-        metadata_key = f"media_metadata:{media_id}"
-        metadata = await cache.get(metadata_key)
-
-        if not metadata:
-            raise ValueError("Media not found")
-
-        # Update metadata
-        metadata["file_hash"] = file_hash
-        metadata["upload_status"] = "completed"
-        await cache.set(
-            metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS
-        )
-
-        # Distribute encrypted media keys
-        media_key_bytes = base64.b64decode(media_key)
-        key_packages = {}
-
-        for device_id in recipient_devices:
-            # Get device public key (simplified)
-            device_public_key = await self._get_device_public_key(device_id)
-
-            if device_public_key:
-                key_package = self.encryption.encrypt_media_key_for_device(
-                    media_key_bytes, device_public_key, device_id
-                )
-                key_packages[device_id] = key_package
-
-                # Store key package
-                key_package_key = f"media_key:{media_id}:{device_id}"
-                await cache.set(
-                    key_package_key,
-                    key_package,
-                    expire_seconds=settings.FILE_TTL_SECONDS,
-                )
-
-        # Generate download tokens
-        download_tokens = {}
-        for device_id in recipient_devices:
-            token = secrets.token_urlsafe(32)
-            download_tokens[device_id] = token
-
-            token_key = f"download_token:{token}"
-            await cache.set(
-                token_key,
-                {
-                    "media_id": media_id,
-                    "device_id": device_id,
-                    "expires_at": int(time.time()) + 7200,
-                    "used": False,
-                },
-                expire_seconds=7200,
-            )
-
-        return {
-            "media_id": media_id,
-            "upload_completed": True,
-            "key_packages_distributed": len(key_packages),
-            "download_tokens": download_tokens,
-        }
-
-    async def process_media_ack(
-        self, media_id: str, device_id: str, ack_type: str
-    ) -> Dict[str, Any]:
-        """Process media ACK from device"""
-        # Get metadata
-        metadata_key = f"media_metadata:{media_id}"
-        metadata = await cache.get(metadata_key)
-
-        if not metadata:
-            raise ValueError("Media not found")
-
-        # Update device status
-        if device_id in metadata["delivery_status"]:
-            metadata["delivery_status"][device_id][f"{ack_type}_at"] = int(time.time())
-            metadata["delivery_status"][device_id]["ack_status"] = ack_type
-
-        await cache.set(
-            metadata_key, metadata, expire_seconds=settings.FILE_TTL_SECONDS
-        )
-
-        # Check if all devices have ACKed
-        await self._check_all_devices_acked(media_id, ack_type)
-
-        return {
-            "media_id": media_id,
-            "device_id": device_id,
-            "ack_type": ack_type,
-            "processed": True,
-        }
-
-    async def _check_all_devices_acked(self, media_id: str, ack_type: str):
-        """Check if all devices have ACKed for cleanup"""
-        metadata_key = f"media_metadata:{media_id}"
-        metadata = await cache.get(metadata_key)
-
-        if not metadata:
-            return
-
-        delivery_status = metadata["delivery_status"]
-
-        # Check if all devices have the required ACK
-        all_acked = all(
-            device_status.get("ack_status") == ack_type
-            for device_status in delivery_status.values()
-        )
-
-        if all_acked:
-            # Schedule cleanup
-            cleanup_key = f"media_cleanup:{media_id}"
-            await cache.set(
-                cleanup_key,
-                {
-                    "media_id": media_id,
-                    "cleanup_time": int(time.time()) + 300,
-                    "reason": f"all_devices_{ack_type}",
-                },
-                expire_seconds=600,
-            )
-
-    async def _get_device_public_key(self, device_id: str) -> Optional[bytes]:
-        """Get device public key"""
-        device_key = f"device_public_key:{device_id}"
-        key_data = await cache.get(device_key)
-
-        if key_data:
-            return base64.b64decode(key_data["public_key"])
-
-        return None
-
-
-# Global instances
-media_lifecycle = None
-
-
-def get_media_lifecycle():
-    global media_lifecycle
-    if media_lifecycle is None:
-        s3_client = _get_s3_client()
-        media_lifecycle = WhatsAppMediaLifecycle(cache, s3_client)
-    return media_lifecycle
-
-
-def _get_sanitized_bucket_name() -> str:
+    import boto3  # type: ignore[import-not-found]
+    from botocore.exceptions import ClientError  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - optional dependency
+    boto3 = None  # type: ignore[assignment]
+    ClientError = Exception
+
+# Initialize mimetypes once at module level
+mimetypes.init()
+# Add common MIME types that might be missing
+mimetypes.add_type('image/webp', '.webp')
+mimetypes.add_type('image/heic', '.heic')
+mimetypes.add_type('image/heif', '.heif')
+mimetypes.add_type('video/webm', '.webm')
+mimetypes.add_type('audio/opus', '.opus')
+mimetypes.add_type('application/zip', '.zip')
+mimetypes.add_type('application/pdf', '.pdf')
+mimetypes.add_type('application/vnd.ms-excel', '.xls')
+mimetypes.add_type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx')
+mimetypes.add_type('application/msword', '.doc')
+mimetypes.add_type('application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx')
+mimetypes.add_type('application/vnd.ms-powerpoint', '.ppt')
+mimetypes.add_type('application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx')
+mimetypes.add_type('text/plain', '.txt')
+mimetypes.add_type('text/csv', '.csv')
+
+
+def get_mime_type(filename: str, fallback_mime: str = "application/octet-stream") -> str:
     """
-    Get sanitized bucket name, ensuring it's not in ARN format.
-    Sometimes bucket names get converted to ARN format, strip ARN prefix if present.
-    """
-    bucket_name = settings.S3_BUCKET
-    if bucket_name.startswith("arn:aws:s3:::"):
-        bucket_name = bucket_name.replace("arn:aws:s3:::", "")
-    return bucket_name
-
-
-def _validate_s3_bucket_or_raise() -> str:
-    bucket_name = _get_sanitized_bucket_name()
-    if not bucket_name or str(bucket_name).strip() == "":
-        raise ValueError("S3_BUCKET is not set or empty")
-    if bucket_name.strip().lower() in {"zaply-temp", "example", "your-bucket"}:
-        raise ValueError(
-            "S3_BUCKET appears to be a placeholder value; configure the real bucket name"
-        )
-    return bucket_name
-
-
-def _get_s3_client():
-    """Get S3 client for AWS S3 operations with full credentials validation"""
-    import traceback
-
-    try:
-        if boto3 is None:
-            _log("warning", "boto3 not available - S3 operations disabled")
-            return None
-
-        # Validate S3_BUCKET is present and not a placeholder
-        try:
-            bucket_name = _validate_s3_bucket_or_raise()
-        except Exception as bucket_exc:
-            _log(
-                "error",
-                f"S3_BUCKET validation failed: {type(bucket_exc).__name__}: {bucket_exc}",
-            )
-            return None
-
-        # Validate AWS credentials
-        if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
-            _log(
-                "error",
-                "AWS credentials not configured - missing AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY",
-            )
-            return None
-
-        # Validate AWS region
-        if not settings.AWS_REGION:
-            _log("error", "AWS_REGION not configured in settings")
-            return None
-
-        # Log S3 client initialization parameters
-        _log("info", f"Initializing S3 client with region: {settings.AWS_REGION}")
-        _log("info", f"Target S3 bucket: {bucket_name}")
-
-        # Mask credentials for logging
-        masked_key_id = (
-            settings.AWS_ACCESS_KEY_ID[:4] + "***"
-            if len(settings.AWS_ACCESS_KEY_ID) > 4
-            else "***"
-        )
-        _log("info", f"Using AWS credentials with key ID: {masked_key_id}...")
-
-        client_kwargs: Dict[str, Any] = {
-            "region_name": settings.AWS_REGION,
-            "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
-            "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
-        }
-
-        try:
-            s3_client = boto3.client("s3", **client_kwargs)
-            _log("info", "S3 client created successfully")
-        except Exception as init_error:
-            _log("error", f"Failed to create S3 client: {str(init_error)}")
-            _log(
-                "error", f"S3 client initialization traceback: {traceback.format_exc()}"
-            )
-            return None
-
-        _log("info", f"Performing S3 connectivity check for bucket: {bucket_name}")
-
-        try:
-            # S3 connectivity check using head_bucket
-            s3_client.head_bucket(Bucket=bucket_name)
-            # Validate region match to avoid SignatureDoesNotMatch / AuthorizationHeaderMalformed
-            try:
-                loc = s3_client.get_bucket_location(Bucket=bucket_name)
-                bucket_region = (loc or {}).get("LocationConstraint") or "us-east-1"
-                configured_region = (settings.AWS_REGION or "").strip() or "us-east-1"
-                if bucket_region != configured_region:
-                    _log(
-                        "error",
-                        f"S3 bucket region mismatch: bucket_region={bucket_region} AWS_REGION={configured_region}",
-                    )
-                    return None
-            except Exception as region_check_exc:
-                _log(
-                    "warning",
-                    f"S3 region check skipped/failed: {type(region_check_exc).__name__}: {region_check_exc}",
-                )
-            _log(
-                "info",
-                f"S3 client initialized and verified successfully for bucket: {bucket_name} in region: {settings.AWS_REGION}",
-            )
-        except ClientError as bucket_error:
-            error_code = bucket_error.response.get("Error", {}).get("Code", "Unknown")
-            error_message = bucket_error.response.get("Error", {}).get(
-                "Message", str(bucket_error)
-            )
-
-            if error_code == "404":
-                _log(
-                    "error",
-                    f"S3 bucket '{bucket_name}' does not exist or access denied",
-                )
-            elif error_code == "403":
-                _log(
-                    "error",
-                    f"Access denied to S3 bucket '{bucket_name}' - check IAM permissions",
-                )
-            else:
-                _log(
-                    "error",
-                    f"S3 bucket verification failed - {error_code}: {error_message}",
-                )
-
-            _log("error", f"S3 connectivity check traceback: {traceback.format_exc()}")
-            return None
-        except Exception as e:
-            _log("error", f"Unexpected error during S3 bucket verification: {str(e)}")
-            _log("error", f"S3 verification traceback: {traceback.format_exc()}")
-            return None
-
-        return s3_client
-    except Exception as e:
-        _log("error", f"Failed to initialize S3 client: {str(e)}")
-        _log("error", f"S3 client initialization traceback: {traceback.format_exc()}")
-        return None
-
-
-def _generate_presigned_url(
-    method: str,
-    *,
-    object_key: str,
-    content_type: Optional[str] = None,
-    file_size: Optional[int] = None,
-    expires_in: int = 900,
-    bucket: Optional[str] = None,
-    response_content_disposition: Optional[str] = None,
-):
-    s3_client = _get_s3_client()
-    if not s3_client:
-        return None
-
-    # Test mode detection - if we can't access request, assume test mode
-    try:
-        import inspect
-
-        frame = inspect.currentframe()
-        while frame:
-            if "request" in frame.f_locals:
-                request = frame.f_locals["request"]
-                if hasattr(request, "headers") and _is_test_request(request):
-                    return f"https://mock-s3.test/{object_key}"
-            frame = frame.f_back
-    except:
-        pass
-
-    try:
-        params = {"Bucket": bucket or _get_sanitized_bucket_name(), "Key": object_key}
-        if content_type:
-            params["ContentType"] = content_type
-        # CRITICAL FIX: Remove ContentLength from presigned URL params - not valid for generate_presigned_url
-        # ContentLength is handled automatically by S3 when uploading objects
-        if response_content_disposition:
-            params["ResponseContentDisposition"] = response_content_disposition
-
-        return s3_client.generate_presigned_url(
-            method, Params=params, ExpiresIn=expires_in
-        )
-    except Exception as e:
-        # Return None if presigned URL generation fails
-        return None
-
-
-def _ensure_s3_available() -> bool:
-    """S3 is disabled - always return True to bypass S3 checks and force local storage."""
-    return True
-
-
-def _is_test_request(request: Request) -> bool:
-    """Detect if this is a test request that should bypass S3 checks."""
-    user_agent = request.headers.get("user-agent", "").lower()
-    return "testclient" in user_agent or not user_agent
-
-
-def _delete_s3_object(object_key: str) -> bool:
-    """S3 is disabled - always return True to bypass S3 checks."""
-    return True
-
-
-def _get_file_ttl_seconds() -> int:
-    """
-    Get file TTL in seconds for WhatsApp-style ephemeral storage.
-    Reads settings.FILE_TTL_SECONDS with a fallback of 432000 (120 hours).
-    """
-    # Use configured TTL from settings (reads FILE_TTL_SECONDS with fallback to 432000)
-    ttl_seconds = getattr(settings, "FILE_TTL_SECONDS", 432000)  # Fallback to 120 hours
-    return ttl_seconds
-
-
-def _check_and_enforce_file_ttl(upload_timestamp: datetime, file_id: str) -> bool:
-    """
-    Check if file has exceeded TTL and should be deleted.
-    MANDATORY: Files older than TTL must be deleted immediately.
-
-    Returns:
-        True if file is still valid (within TTL)
-        False if file has expired and should be deleted
-    """
-    if not upload_timestamp:
-        return True  # If no timestamp, assume valid
-
-    ttl_seconds = _get_file_ttl_seconds()
-    from datetime import datetime as dt, timezone as tz
-
-    current_time = dt.now(tz.utc)
-    time_diff = (current_time - upload_timestamp).total_seconds()
-
-    if time_diff > ttl_seconds:
-        logger.warning(
-            f"File TTL expired: {file_id} (age: {time_diff}s, TTL: {ttl_seconds}s)"
-        )
-        return False
-
-    return True
-
-
-def _should_delete_on_ack() -> bool:
-    """
-    Check if files should be deleted immediately on receiver ACK.
-    WhatsApp model: Delete immediately on ACK, don't wait 24h.
-    """
-    return getattr(settings, "DELETE_ON_ACK", True)
-
-
-def _s3_object_exists(object_key: str) -> bool:
-    """S3 is disabled - always return True to bypass S3 checks."""
-    return True
-
-
-# CRITICAL FIX: Custom dependency for download endpoints that accepts tokens from both headers and query params
-async def get_current_user_for_download(
-    request: Request, token: Optional[str] = Query(None)
-) -> str:
-    """
-    Get current user from secure session cookie, Authorization header, or query parameter token.
-
-    PRODUCTION FIX: Downloads must support multiple authentication methods for reliability:
-    - HTTPOnly session cookie (most secure, used by modern browsers)
-    - Authorization header (for API clients and programmatic access)
-    - Query parameter token (fallback for legacy/proxied requests)
-
-    Priority:
-    1. HTTPOnly session cookie (secure, preferred)
-    2. Authorization header (Bearer <token>)
-    3. Query parameter (?token=<token>)
-
+    Get MIME type for a file using multiple strategies.
+    
     Args:
-        request: The request object
-        token: Optional JWT token from query parameter
-
+        filename: The filename to determine MIME type for
+        fallback_mime: Default MIME type if detection fails
+        
     Returns:
-        The user_id from the validated token
-
-    Raises:
-        HTTPException: If no valid token found in any location
+        Detected MIME type or fallback
     """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    # PRIORITY 1: Try to get access token from HTTPOnly cookie (secure method - production standard)
-    access_token = request.cookies.get("access_token")
-    if access_token:
-        try:
-            token_data = decode_token(access_token)
-            if token_data.token_type == "access":
-                logger.debug(
-                    f"Download authenticated via HTTPOnly cookie for user {token_data.user_id}"
-                )
-                return token_data.user_id
-            else:
-                logger.warning(
-                    f"Invalid token type in HTTPOnly cookie: {token_data.token_type}"
-                )
-        except Exception as e:
-            logger.warning(f"Invalid token in HTTPOnly cookie: {e}")
-            # Fall through to try other methods
-
-    # PRIORITY 2: Try Authorization header
-    auth_header = request.headers.get("authorization", "")
-    if auth_header and auth_header.startswith("Bearer "):
-        header_token = auth_header.replace("Bearer ", "").strip()
-        if header_token:
-            try:
-                token_data = decode_token(header_token)
-                if token_data.token_type == "access":
-                    logger.debug(
-                        f"Download authenticated via Authorization header for user {token_data.user_id}"
-                    )
-                    return token_data.user_id
-            except Exception as e:
-                logger.warning(f"Invalid token in Authorization header: {e}")
-                # Fall through to try query parameter
-
-    # PRIORITY 3: Try query parameter as fallback (for legacy/special cases)
-    if token:
-        try:
-            token_data = decode_token(token)
-            if token_data.token_type == "access":
-                logger.debug(
-                    f"Download authenticated via query parameter token for user {token_data.user_id}"
-                )
-                return token_data.user_id
-            else:
-                logger.warning(
-                    f"Invalid token type in query parameter: {token_data.token_type}"
-                )
-        except Exception as e:
-            logger.warning(f"Invalid token in query parameter: {e}")
-
-    # No valid token found in any location
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Missing or invalid authentication token. Provide token via secure session cookie, Authorization header, or query parameter.",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    if not filename:
+        return fallback_mime
+    
+    # Strategy 1: Use mimetypes.guess_type (most reliable)
+    mime_type, encoding = mimetypes.guess_type(filename)
+    if mime_type and mime_type != "application/octet-stream":
+        return mime_type.lower().strip()
+    
+    # Strategy 2: Extension-based fallback for common types
+    ext = Path(filename).suffix.lower()
+    extension_map = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.heic': 'image/heic',
+        '.heif': 'image/heif',
+        '.mp4': 'video/mp4',
+        '.avi': 'video/x-msvideo',
+        '.mov': 'video/quicktime',
+        '.webm': 'video/webm',
+        '.mp3': 'audio/mpeg',
+        '.wav': 'audio/wav',
+        '.opus': 'audio/opus',
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.ppt': 'application/vnd.ms-powerpoint',
+        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        '.zip': 'application/zip',
+        '.txt': 'text/plain',
+        '.csv': 'text/csv',
+        '.json': 'application/json',
+        '.xml': 'application/xml',
+    }
+    
+    if ext in extension_map:
+        return extension_map[ext]
+    
+    # Strategy 3: Return fallback
+    return fallback_mime
 
 
-async def get_current_user_for_download_dependency(
-    request: Request, token: Optional[str] = Query(None)
-) -> str:
-    # Indirection layer so tests patching get_current_user_for_download affect auth behavior.
-    return await get_current_user_for_download(request=request, token=token)
-
-
-files_collection = _files_collection_factory
-uploads_collection = _uploads_collection_factory
-
-# Setup logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-
-def _ensure_storage_dirs() -> Tuple[Path, Path]:
+def sanitize_filename(filename: str) -> str:
     """
-    Ensure storage directories exist and are writable.
-    CRITICAL: This function is called before every upload operation.
-    Raises HTTPException with 503 if storage is unavailable.
+    Sanitize filename for safe Content-Disposition header.
+    
+    Args:
+        filename: Original filename
+        
+    Returns:
+        Sanitized filename safe for HTTP headers
     """
-    temp_root = Path(getattr(settings, "TEMP_STORAGE_PATH", "/app/temp"))
-    upload_root = Path(getattr(settings, "UPLOAD_DIR", "/app/uploads"))
-
-    error_details = []
-
-    try:
-        # Create directories if they don't exist
-        os.makedirs(str(temp_root), exist_ok=True)
-        os.makedirs(str(upload_root), exist_ok=True)
-
-        # Validate writeability - try to create and remove a test file
-        temp_test_file = temp_root / ".write_test"
-        upload_test_file = upload_root / ".write_test"
-
-        try:
-            temp_test_file.touch(exist_ok=True)
-            temp_test_file.unlink(missing_ok=True)
-        except Exception as e:
-            error_details.append(
-                f"TEMP_STORAGE_PATH not writable ({temp_root}): {type(e).__name__}: {str(e)}"
-            )
-
-        try:
-            upload_test_file.touch(exist_ok=True)
-            upload_test_file.unlink(missing_ok=True)
-        except Exception as e:
-            error_details.append(
-                f"UPLOAD_DIR not writable ({upload_root}): {type(e).__name__}: {str(e)}"
-            )
-
-        if error_details:
-            error_msg = " | ".join(error_details)
-            logger.error(f"[STORAGE] Writability check failed: {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Storage unavailable - permission denied: {error_msg}",
-            )
-
-        logger.debug(
-            f"[STORAGE] Storage directories validated: temp={temp_root}, upload={upload_root}"
-        )
-        return temp_root, upload_root
-
-    except HTTPException:
-        raise
-    except PermissionError as e:
-        error_msg = f"Permission denied accessing storage: {str(e)}"
-        logger.error(f"[STORAGE] {error_msg}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Storage unavailable: {error_msg}",
-        ) from e
-    except OSError as e:
-        error_msg = f"OS error accessing storage: {type(e).__name__}: {str(e)}"
-        logger.error(f"[STORAGE] {error_msg}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Storage unavailable: {error_msg}",
-        ) from e
-    except Exception as e:
-        error_msg = f"Failed to initialize storage: {type(e).__name__}: {str(e)}"
-        logger.error(f"[STORAGE] {error_msg}")
-        import traceback
-
-        logger.error(f"[STORAGE] Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Temporary storage unavailable: {type(e).__name__}",
-        ) from e
+    if not filename:
+        return "download"
+    
+    # Remove dangerous characters
+    sanitized = re.sub(r'[\r\n\t"\\]', '', filename)
+    
+    # Remove path separators
+    sanitized = Path(sanitized).name
+    
+    # Ensure filename is not empty
+    if not sanitized.strip():
+        sanitized = "download"
+    
+    return sanitized
 
 
-async def _await_maybe(value, timeout: float = 5.0):
-    if hasattr(value, "__await__"):
-        return await asyncio.wait_for(value, timeout=timeout)
-    return value
-
-
-async def _validate_chunk_data(chunk_data: bytes, chunk_index: int) -> None:
+def create_content_disposition(filename: str, is_inline: bool = False) -> str:
     """
-    Validate chunk data without persisting to disk (WhatsApp-style courier mode).
-    Server disk usage must remain 0 bytes.
+    Create proper Content-Disposition header.
+    
+    Args:
+        filename: The filename to include
+        is_inline: Whether to use inline disposition (for preview)
+        
+    Returns:
+        Properly formatted Content-Disposition header
     """
-    if not chunk_data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Chunk {chunk_index} is empty - no data to process",
-        )
-
-    chunk_size = settings.CHUNK_SIZE  # Use configured chunk size
-    if len(chunk_data) > chunk_size:
-        actual_size_mb = len(chunk_data) / (1024 * 1024)
-        max_size_mb = chunk_size / (1024 * 1024)
-        _log(
-            "warning",
-            f"Chunk {chunk_index} size exceeded: {actual_size_mb:.2f}MB > {max_size_mb}MB",
-            {
-                "operation": "chunk_upload",
-                "chunk_index": chunk_index,
-                "actual_size": len(chunk_data),
-                "max_size": chunk_size,
-                "actual_size_mb": actual_size_mb,
-                "max_size_mb": max_size_mb,
-            },
-        )
-
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail={
-                "error": f"Chunk {chunk_index} exceeds maximum size",
-                "actual_size": len(chunk_data),
-                "max_size": chunk_size,
-                "actual_size_mb": round(actual_size_mb, 2),
-                "max_size_mb": max_size_mb,
-                "guidance": f"Please split your data into chunks of max {max_size_mb}MB each",
-            },
-        )
-
-    try:
-        # Validation only - no disk operations
-        pass
-    except Exception as e:
-        _log(
-            "error",
-            f"Failed to validate chunk {chunk_index}",
-            {
-                "operation": "chunk_validate",
-                "chunk_index": chunk_index,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Validation service unavailable",
-        ) from e
-
-    _log(
-        "info",
-        f"Chunk {chunk_index} validated",
-        {
-            "operation": "chunk_validate",
-            "chunk_size": len(chunk_data),
-        },
-    )
-
-
-def _log(level: str, message: str, user_data: dict = None):
-    """Helper method for consistent logging with PII protection"""
-    from datetime import datetime as dt, timezone as tz
-
-    if user_data:
-        # Preserve all contextual fields while protecting PII
-        safe_data = {
-            "user_id": user_data.get("user_id", "unknown"),
-            "operation": user_data.get("operation", "unknown"),
-            "timestamp": dt.now(tz.utc).isoformat(),
-        }
-
-        # Include all additional contextual fields for debugging
-        for key, value in user_data.items():
-            if key not in ["user_id", "operation", "timestamp"]:
-                safe_data[key] = value
-
-        # Build comprehensive log message
-        context_str = ", ".join([f"{k}={v}" for k, v in safe_data.items()])
-        safe_message = f"{message} ({context_str})"
+    safe_name = sanitize_filename(filename)
+    disposition_type = "inline" if is_inline else "attachment"
+    
+    # Use RFC 6266 format for better compatibility
+    # Include both filename and filename*
+    ascii_name = safe_name.encode('ascii', errors='ignore').decode('ascii')
+    if ascii_name == safe_name:
+        # ASCII only - simple format
+        return f'{disposition_type}; filename="{safe_name}"'
     else:
-        safe_message = message
-
-    if level.lower() == "error":
-        logger.error(safe_message)
-    elif level.lower() == "warning":
-        logger.warning(safe_message)
-    elif level.lower() == "info":
-        logger.info(safe_message)
-    else:
-        logger.debug(safe_message)
+        # Non-ASCII characters - use RFC 6266 format
+        encoded_name = safe_name.encode('utf-8').decode('iso-8859-1')
+        return f'{disposition_type}; filename="{ascii_name}"; filename*=UTF-8\'\'\'{safe_name}'
 
 
-def detect_binary_content(content: bytes) -> dict:
+def create_error_response(
+    status_code: int,
+    message: str,
+    error_code: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None
+) -> JSONResponse:
     """
-    Detect if content contains binary data that might be malicious
-    Returns dict with detection results
+    Create structured error response.
+    
+    Args:
+        status_code: HTTP status code
+        message: Error message
+        error_code: Optional error code for client reference
+        details: Optional additional error details
+        
+    Returns:
+        Structured JSON error response
     """
-    if not content:
-        return {"is_binary": False, "reason": "empty_content"}
-
-    # Check for null bytes (common in binary files)
-    # Security validation pattern: b'\\x00' in content
-    # Literal match for test: b'\\x00' in content
-    if b"\x00" in content:
-        return {
-            "is_binary": True,
-            "reason": "null_bytes_detected",
-            "confidence": "high",
-        }
-
-    # Check for non-printable characters using control character detection
-    try:
-        content_str = content.decode("utf-8", errors="ignore")
-        for c in content_str:
-            if ord(c) < 32 and c not in "\t\n\r":
-                return {
-                    "is_binary": True,
-                    "reason": "control_characters_detected",
-                    "confidence": "medium",
-                }
-    except (UnicodeDecodeError, ValueError):
-        # If decode fails, it's likely binary
-        return {"is_binary": True, "reason": "decode_failed", "confidence": "high"}
-
-    # Check for non-printable character ratio
-    printable_chars = sum(
-        1 for b in content if 32 <= b <= 126 or b in [9, 10, 13]
-    )  # printable + tab, newline, carriage return
-    total_chars = len(content)
-
-    if total_chars > 0:
-        non_printable = total_chars - printable_chars
-        non_printable_ratio = non_printable / total_chars
-        # Security validation: reject files with >30% non-printable characters (but allow valid binary files)
-        if (
-            non_printable_ratio > 0.85
-        ):  # Further increased threshold to reduce false positives with legitimate binary files
-            return {
-                "is_binary": True,
-                "reason": f"high_non_printable_ratio_{non_printable_ratio:.2f}",
-                "confidence": "medium" if non_printable_ratio < 0.9 else "high",
-            }
-
-    # Check for common binary file signatures
-    binary_signatures = [
-        b"\x7fELF",  # ELF executable
-        b"MZ",  # Windows PE executable
-        b"\xca\xfe\xba\xbe",  # Java class
-        b"\xfe\xed\xfa\xce",  # Mach-O binary (macOS)
-        b"\xfe\xed\xfa\xcf",  # Mach-O binary (macOS)
-    ]
-
-    for sig in binary_signatures:
-        if content.startswith(sig):
-            return {
-                "is_binary": True,
-                "reason": f"binary_signature_{sig.hex()}",
-                "confidence": "high",
-            }
-
-    return {"is_binary": False, "reason": "safe_content"}
-
-
-router = APIRouter(prefix="", tags=["Files"])
-attach_router = APIRouter(prefix="/attach", tags=["Attachments"])
-media_router = APIRouter(prefix="", tags=["Media"])
-
-
-def get_secure_cors_origin(request_origin: Optional[str]) -> str:
-    """Get secure CORS origin based on configuration and security"""
-    from ..config import settings
-
-    # In production, use strict origin validation
-    if not settings.DEBUG:
-        if request_origin and request_origin in settings.CORS_ORIGINS:
-            return request_origin
-        elif settings.CORS_ORIGINS:
-            return settings.CORS_ORIGINS[0]  # Return first allowed origin
-        else:
-            return "https://zaply.in.net/"  # Secure default
-
-    # In debug mode, allow configured origins only
-    if request_origin:
-        if request_origin in settings.CORS_ORIGINS:
-            return request_origin
-
-    return (
-        settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "https://zaply.in.net/"
-    )
-
-
-# OPTIONS handlers for CORS preflight requests
-@router.options("/init")
-@router.options("/{upload_id}/chunk")
-@router.options("/{upload_id}/complete")
-@router.options("/{upload_id}/info")
-@router.options("/{upload_id}/download")
-@router.options("/{upload_id}/cancel")
-async def files_options(request: Request):
-    """Handle CORS preflight for files endpoints with secure origin validation"""
-
-    origin = request.headers.get("origin", "")
-    secure_origin = get_secure_cors_origin(origin)
-
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": secure_origin,
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Disposition",
-            "Access-Control-Max-Age": "86400",
-        },
-    )
-
-
-# Rate limiters for different operations
-upload_init_limiter = RateLimiter(
-    max_requests=10, window_seconds=60
-)  # 10 uploads per minute
-upload_chunk_limiter = RateLimiter(
-    max_requests=60, window_seconds=60
-)  # 60 chunks per minute
-upload_complete_limiter = RateLimiter(
-    max_requests=10, window_seconds=60
-)  # 10 completes per minute
-
-
-@router.post("/init", response_model=FileInitResponse)
-async def initialize_upload(
-    request: Request, current_user: Optional[str] = Depends(get_current_user_for_upload)
-):
-    """
-    WhatsApp-style ephemeral file upload initialization.
-    Uses local filesystem storage in UPLOAD_DIR.
-    """
-
-    # Import required modules at the start to prevent UnboundLocalError
-    import uuid
-    import math
-    from bson import ObjectId
-    from datetime import datetime, timedelta, timezone
-
-    # Initialize all variables at the start to prevent UnboundLocalError
-    filename = None
-    file_size = None
-    chat_id = None
-    mime_type = None
-    chunk_size = None
-    total_chunks = None
-    upload_id = None
-    file_oid = None
-    storage_key = None
-    presigned_put_url = None
-    is_anonymous = True
-    upload_user_id = None
-
-    try:
-        # Log request details for debugging
-        _log(
-            "info",
-            "[WHATSAPP_UPLOAD] File upload initialization",
-            {
-                "path": str(request.url.path),
-                "method": request.method,
-                "user_agent": request.headers.get("user-agent", ""),
-                "current_user": current_user,
-                "content_type": request.headers.get("content-type", ""),
-            },
-        )
-
-        # Validate HTTP method first
-        if request.method != "POST":
-            raise HTTPException(
-                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Method not allowed. Use POST for file upload initialization.",
-                    "data": None,
-                },
-                headers={"Allow": "POST, OPTIONS"},
-            )
-
-        # Rate limiting check
-        user_agent = request.headers.get("user-agent", "").lower()
-        is_testclient = "testclient" in user_agent
-        is_rate_limit_test = (
-            request.headers.get("x-test-rate-limit", "").lower() == "true"
-        )
-
-        if settings.DEBUG and not is_testclient:
-            upload_init_limiter.requests.clear()
-        elif is_testclient and not is_rate_limit_test:
-            upload_init_limiter.requests.clear()
-
-        limiter_key = current_user or "anonymous"
-        if not upload_init_limiter.is_allowed(limiter_key):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "status": "ERROR",
-                    "message": "Too many upload initialization requests. Please try again later.",
-                    "data": None,
-                },
-                headers={"Retry-After": "60"},
-            )
-
-        # Validate S3 configuration before proceeding with enhanced checks
-        _log(
-            "info",
-            "[UPLOAD_INIT] Starting S3 configuration validation",
-            {
-                "user_id": current_user or "anonymous",
-                "operation": "upload_init",
-                "s3_bucket": settings.S3_BUCKET,
-                "aws_region": settings.AWS_REGION,
-                "has_access_key": bool(settings.AWS_ACCESS_KEY_ID),
-                "has_secret_key": bool(settings.AWS_SECRET_ACCESS_KEY),
-            },
-        )
-
-        s3_client = _get_s3_client()
-        if s3_client is None:
-            _log(
-                "error",
-                "[UPLOAD_INIT] S3 configuration validation failed - cannot initialize upload",
-                {
-                    "user_id": current_user or "anonymous",
-                    "operation": "upload_init",
-                    "s3_bucket": settings.S3_BUCKET,
-                    "aws_region": settings.AWS_REGION,
-                    "has_credentials": bool(
-                        settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY
-                    ),
-                },
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "status": "ERROR",
-                    "message": "S3 configuration invalid - upload service temporarily unavailable",
-                    "data": {
-                        "error_code": "S3_CONFIG_ERROR",
-                        "s3_bucket": settings.S3_BUCKET,
-                        "aws_region": settings.AWS_REGION,
-                        "credentials_configured": bool(
-                            settings.AWS_ACCESS_KEY_ID
-                            and settings.AWS_SECRET_ACCESS_KEY
-                        ),
-                    },
-                },
-            )
-
-        _log(
-            "info",
-            "[UPLOAD_INIT] S3 configuration validated - proceeding with upload initialization",
-            {
-                "user_id": current_user or "anonymous",
-                "s3_bucket": settings.S3_BUCKET,
-                "aws_region": settings.AWS_REGION,
-            },
-        )
-
-        # Parse request body
-        try:
-            body = await request.json()
-        except ValueError as json_error:
-            _log(
-                "error",
-                f"Invalid JSON in upload init request: {str(json_error)}",
-                {
-                    "user_id": current_user or "anonymous",
-                    "operation": "upload_init",
-                    "error_type": "json_parse_error",
-                },
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Malformed JSON in request body",
-                    "data": {"error_code": "JSON_PARSE_ERROR"},
-                },
-            )
-
-        _log(
-            "info",
-            "[UPLOAD_INIT] Incoming payload received",
-            {
-                "user_id": current_user or "anonymous",
-                "operation": "upload_init",
-                "has_body": bool(body),
-                "keys": sorted(list(body.keys())) if isinstance(body, dict) else [],
-            },
-        )
-
-        # Check for empty body
-        if not body or len(str(body).strip()) == 0:
-            _log(
-                "error",
-                f"[WHATSAPP_UPLOAD] Empty request body",
-                {"operation": "upload_init", "user_id": current_user or "anonymous"},
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Empty request body",
-                    "data": {
-                        "required_fields": ["filename", "size", "chat_id"],
-                        "hint": "All fields are required for file upload initialization",
-                    },
-                },
-            )
-
-        # Extract required fields (support both new and legacy field names)
-        filename = body.get("file_name")
-        if filename is None:
-            filename = body.get("filename")
-
-        file_size = body.get("file_size")
-        if file_size is None:
-            file_size = body.get("size")
-
-        chat_id = body.get("chat_id")
-
-        mime_type = body.get("mime_type")
-        if mime_type is None:
-            mime_type = body.get("mime")
-        if mime_type is None:
-            mime_type = body.get("content_type")
-
-        chunk_size = body.get("chunk_size")
-        if chunk_size is None:
-            chunk_size = int(
-                getattr(
-                    settings,
-                    "CHUNK_SIZE",
-                    getattr(settings, "UPLOAD_CHUNK_SIZE", 8 * 1024 * 1024),
-                )
-            )
-
-        total_chunks = body.get("total_chunks")
-
-        # CRITICAL: Ensure all variables are properly initialized and validated
-        # Prevent None values from causing issues downstream
-        if filename is not None:
-            filename = str(filename).strip() if isinstance(filename, str) else ""
-        if file_size is not None:
-            file_size = (
-                int(file_size)
-                if isinstance(file_size, (int, str)) and str(file_size).isdigit()
-                else 0
-            )
-        if chat_id is not None:
-            chat_id = str(chat_id).strip() if isinstance(chat_id, str) else ""
-        if mime_type is not None:
-            mime_type = (
-                str(mime_type).strip().lower() if isinstance(mime_type, str) else ""
-            )
-        if chunk_size is not None:
-            chunk_size = (
-                int(chunk_size)
-                if isinstance(chunk_size, (int, str)) and str(chunk_size).isdigit()
-                else 0
-            )
-        if total_chunks is not None:
-            total_chunks = (
-                int(total_chunks)
-                if isinstance(total_chunks, (int, str)) and str(total_chunks).isdigit()
-                else 0
-            )
-
-        # Calculate total_chunks when missing after coercion
-        if (not total_chunks or total_chunks == 0) and chunk_size > 0 and file_size > 0:
-            total_chunks = (file_size + chunk_size - 1) // chunk_size
-
-        # DEBUG: Log variable states for troubleshooting
-        _log(
-            "info",
-            "[UPLOAD_INIT] Variable states after initialization",
-            {
-                "user_id": current_user or "anonymous",
-                "filename": filename,
-                "file_size": file_size,
-                "chat_id": chat_id,
-                "mime_type": mime_type,
-                "chunk_size": chunk_size,
-                "total_chunks": total_chunks,
-                "types": {
-                    "filename": type(filename).__name__,
-                    "file_size": type(file_size).__name__,
-                    "chat_id": type(chat_id).__name__,
-                    "mime_type": type(mime_type).__name__,
-                    "chunk_size": type(chunk_size).__name__,
-                    "total_chunks": type(total_chunks).__name__,
-                },
-            },
-        )
-
-        # Validate required fields
-        if not all([filename, file_size, chat_id, mime_type]):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Missing required fields",
-                    "data": {
-                        "required_fields": [
-                            "file_name",
-                            "file_size",
-                            "mime_type",
-                            "chat_id",
-                        ],
-                        "provided_fields": {
-                            "filename": bool(filename),
-                            "file_size": bool(file_size),
-                            "mime_type": bool(mime_type),
-                            "chat_id": bool(chat_id),
-                        },
-                    },
-                },
-            )
-
-        # Validate chat_id format early - be permissive for test clients and Flutter
-        user_agent = request.headers.get("user-agent", "").lower()
-        is_flutter_client = "zaply-flutter" in user_agent or (
-            "flutter" in user_agent and "test" not in user_agent
-        )
-        if not isinstance(chat_id, str) or (
-            not is_flutter_client and not ObjectId.is_valid(chat_id)
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid chat_id",
-                    "data": {"chat_id": chat_id},
-                },
-            )
-
-        if not isinstance(chunk_size, int) or chunk_size <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid chunk_size. Must be an integer > 0",
-                    "data": {"chunk_size": chunk_size},
-                },
-            )
-
-        if not isinstance(total_chunks, int) or total_chunks <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid total_chunks. Must be an integer > 0",
-                    "data": {"total_chunks": total_chunks},
-                },
-            )
-
-        # Validate file size (15GB limit)
-        max_size = getattr(settings, "MAX_FILE_SIZE_BYTES", 16106127360)  # 15GB
-        if not isinstance(file_size, int) or file_size <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid file_size. Must be an integer > 0",
-                    "data": {"file_size": file_size},
-                },
-            )
-
-        if file_size > max_size:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail={
-                    "status": "ERROR",
-                    "message": f"File size too large. Must be between 1 byte and {max_size} bytes",
-                    "data": {
-                        "provided_size": file_size,
-                        "max_size": max_size,
-                        "max_size_gb": round(max_size / (1024**3), 2),
-                    },
-                },
-            )
-
-        # Validate filename
-        if not isinstance(filename, str) or len(filename.strip()) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Invalid filename provided",
-                    "data": {"filename": filename},
-                },
-            )
-
-        # Sanitize filename
-        filename = sanitize_input(filename.strip())
-        if len(filename) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Filename cannot be empty after sanitization",
-                    "data": {"filename": filename},
-                },
-            )
-
-        # Enforce auth only after the request has passed input validation.
-        # This ensures invalid JSON / missing fields tests get 400/422 rather than 401.
-        is_testclient = "testclient" in (request.headers.get("user-agent", "").lower())
-        if not current_user and not (
-            bool(getattr(settings, "DEBUG", False)) or is_testclient
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Missing authentication credentials",
-                    "data": {"error_code": "AUTH_REQUIRED"},
-                },
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        is_anonymous = not bool(current_user)
-
-        # Check file size against quota (10GB default)
-        user_quota_bytes = getattr(
-            settings, "USER_QUOTA_BYTES", 10 * 1024 * 1024 * 1024
-        )  # 10GB default
-
-        if file_size > user_quota_bytes:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail={
-                    "status": "ERROR",
-                    "message": "Storage quota exceeded. Please upgrade your plan.",
-                    "data": {
-                        "quota_bytes": user_quota_bytes,
-                        "requested_size": file_size,
-                        "quota_gb": user_quota_bytes / (1024 * 1024 * 1024),
-                    },
-                },
-            )
-
-        # Validate MIME type for security - Only block truly dangerous script files
-        # Executables are ALLOWED as per security.py configuration
-        if not isinstance(mime_type, str) or mime_type.strip() == "":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "mime_type is required and cannot be empty",
-                    "data": {"mime_type": mime_type},
-                },
-            )
-
-        dangerous_mime_types = [
-            "application/x-php",
-            "application/x-shellscript",
-            "application/x-javascript",
-            "text/javascript",
-            "application/x-bat",
-            "application/x-cmd",
-            "application/x-com",
-            "application/x-wsh",
-            "application/x-ps1",
-            "application/x-vbs",
-            "application/x-scr",
-            "application/x-lnk",
-        ]
-
-        if mime_type in dangerous_mime_types:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail={
-                    "status": "ERROR",
-                    "message": f"Unsupported or dangerous MIME type: {mime_type}",
-                    "data": {
-                        "mime_type": mime_type,
-                        "allowed_types": "application/pdf, image/jpeg, image/png, text/plain",
-                    },
-                },
-            )
-
-        # CRITICAL FIX: Validate filename for ACTUAL dangerous patterns only
-        # Do NOT block legitimate file extensions (.exe, .js, .msi, .jar, etc.)
-        # Users should be able to share ANY file type via encrypted connection
-        # Only block actual security threats: path traversal, code injection, reserved names
-
-        # COMPREHENSIVE SECURITY: Only block ACTUAL threats, NOT legitimate file types
-        # Reasoning: Users should be able to share ANY file type via encrypted connection
-        # Server-side encryption ensures users cannot run malicious code
-        import re
-        from pathlib import Path as PathlibPath
-
-        # ONLY block actual security threats, NOT legitimate file types
-        filename_lower = filename.lower()
-        filename_without_ext = PathlibPath(filename).stem.lower()
-
-        # Windows reserved device names - EXACT match only (critical security)
-        reserved_names = {
-            "con",
-            "prn",
-            "aux",
-            "nul",
-            "com1",
-            "com2",
-            "com3",
-            "com4",
-            "com5",
-            "com6",
-            "com7",
-            "com8",
-            "com9",
-            "lpt1",
-            "lpt2",
-            "lpt3",
-            "lpt4",
-            "lpt5",
-            "lpt6",
-            "lpt7",
-            "lpt8",
-            "lpt9",
-        }
-
-        is_dangerous = False
-        danger_reason = ""
-
-        # Check 1: Path traversal attempts - CRITICAL SECURITY
-        if "../" in filename or "..\\" in filename:
-            is_dangerous = True
-            danger_reason = "Path traversal pattern detected"
-
-        # Check 2: Null byte injection - CRITICAL SECURITY (already removed by sanitize_input)
-        elif "\x00" in filename:
-            is_dangerous = True
-            danger_reason = "Null byte injection detected"
-
-        # Check 3: Windows reserved names - must be EXACT match (case-insensitive)
-        elif filename_without_ext in reserved_names:
-            is_dangerous = True
-            danger_reason = f"Windows reserved name: {filename_without_ext}"
-
-        if is_dangerous:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": f"Invalid filename: {danger_reason}",
-                    "data": {
-                        "filename": filename,
-                        "reason": danger_reason,
-                    },
-                },
-            )
-
-        # CRITICAL FIX: Auto-detect MIME type from filename if not provided or is generic
-        if (
-            not mime_type
-            or mime_type.strip() == ""
-            or mime_type == "application/octet-stream"
-        ):
-            if filename:
-                import mimetypes
-
-                guessed_type, _ = mimetypes.guess_type(filename)
-                if guessed_type and guessed_type != "application/octet-stream":
-                    mime_type = guessed_type.lower().strip()
-                    _log(
-                        "info",
-                        f"[UPLOAD_INIT] Auto-detected MIME type from filename: {filename} -> {mime_type}",
-                        {"user_id": current_user, "filename": filename},
-                    )
-                else:
-                    mime_type = "application/octet-stream"
-            else:
-                mime_type = "application/octet-stream"
-        else:
-            mime_type = (
-                mime_type.lower().strip() if mime_type else "application/octet-stream"
-            )
-
-        # VALIDATION: Check filename extension matches MIME type (warn on mismatch)
-        if filename and mime_type != "application/octet-stream":
-            import mimetypes
-
-            guessed_ext = mimetypes.guess_extension(mime_type)
-            file_ext = mimetypes.guess_extension(
-                f"image/{filename.split('.')[-1]}" if "." in filename else "unknown"
-            )
-            file_actual_ext = (
-                "." + filename.split(".")[-1].lower() if "." in filename else ""
-            )
-
-            # Log MIME type vs extension for debugging
-            _log(
-                "info",
-                f"[UPLOAD_INIT] File validation: filename={filename}, mime={mime_type}, ext={file_actual_ext}",
-                {"user_id": current_user, "filename": filename, "mime_type": mime_type},
-            )
-
-        # Create upload session in MongoDB Atlas (uploads collection)
-        # ObjectId already imported at function start
-
-        upload_user_id: Optional[ObjectId] = None
-        if not is_anonymous:
-            if not ObjectId.is_valid(current_user):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid user_id",
-                )
-            upload_user_id = ObjectId(current_user)
-
-        upload_id = str(uuid.uuid4())
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        file_oid = ObjectId()
-        storage_key_owner = (
-            str(upload_user_id) if upload_user_id is not None else "anonymous"
-        )
-
-        # CRITICAL: Safely construct file key using sanitized file_name
-        # Prevent path traversal and ensure valid S3 key format
-        safe_filename = sanitize_input(filename.strip())
-        if not safe_filename:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": "Filename cannot be empty after sanitization",
-                    "data": {"error_code": "INVALID_FILENAME"},
-                },
-            )
-
-        storage_key = f"files/{storage_key_owner}/{upload_id}/{safe_filename}"
-
-        # Debug logging for bucket, key, and content_type before S3 call
-        _log(
-            "info",
-            "[UPLOAD_INIT] Preparing S3 storage with debug info",
-            {
-                "user_id": current_user or "anonymous",
-                "upload_id": upload_id,
-                "filename": safe_filename,
-                "original_filename": filename,
-                "storage_key": storage_key,
-                "bucket": _get_sanitized_bucket_name(),
-                "content_type": mime_type,
-                "file_size": file_size,
-                "chunk_size": chunk_size,
-                "total_chunks": total_chunks,
-            },
-        )
-
-        # CRITICAL: Configurable TTL expiry for compliance (UTC only)
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        expires_at = now + timedelta(seconds=_get_file_ttl_seconds())
-
-        upload_doc = {
-            "upload_id": upload_id,
-            "user_id": upload_user_id,
-            "owner_id": upload_user_id,
-            "file_id": file_oid,
-            "filename": filename,
-            "file_size": file_size,
-            "mime_type": mime_type,
-            "chunk_size": chunk_size,
-            "total_chunks": total_chunks,
-            "storage_key": storage_key,
-            "bucket": _get_sanitized_bucket_name(),
-            "region": settings.AWS_REGION,
-            "uploaded_chunks": [],
-            "created_at": now,
-            "updated_at": now,
-            "expires_at": expires_at,  # 72-hour expiry
-            "status": "initialized",
-            "upload_status": "initialized",
-        }
-        uploads_col = _safe_collection(uploads_collection)
-        await _maybe_await(uploads_col.insert_one(upload_doc))
-
-        # Generate presigned PUT URL for direct S3 upload with enhanced error handling
-        try:
-            _log(
-                "info",
-                "[UPLOAD_INIT] Generating presigned URL for S3 upload",
-                {
-                    "user_id": current_user or "anonymous",
-                    "upload_id": upload_id,
-                    "storage_key": storage_key,
-                    "bucket": _get_sanitized_bucket_name(),
-                    "content_type": mime_type,
-                },
-            )
-
-            # Prevent None values from being passed into boto3 methods
-            bucket_name = _get_sanitized_bucket_name()
-            if not bucket_name:
-                raise ValueError("S3 bucket name is empty or invalid")
-
-            if not storage_key or not isinstance(storage_key, str):
-                raise ValueError("Storage key is empty or invalid")
-
-            if not mime_type or not isinstance(mime_type, str):
-                raise ValueError("Content type is empty or invalid")
-
-            presigned_put_url = _generate_presigned_url(
-                "put_object",
-                object_key=storage_key,
-                content_type=mime_type,
-                expires_in=900,
-                bucket=bucket_name,
-            )
-
-            if not presigned_put_url:
-                # Log as service error when presigned URL generation fails (infrastructure issue)
-                _log(
-                    "error",
-                    f"[UPLOAD_INIT] Service error: Failed to generate presigned URL",
-                    {
-                        "user_id": current_user or "anonymous",
-                        "upload_id": upload_id,
-                        "storage_key": storage_key,
-                        "bucket_name": bucket_name,
-                        "mime_type": mime_type,
-                        "error_type": "ServiceError",
-                        "error_details": "Presigned URL generation returned None",
-                    },
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail={
-                        "status": "ERROR",
-                        "message": "Upload service temporarily unavailable - please retry",
-                        "data": {
-                            "error_code": "PRESIGN_SERVICE_ERROR",
-                            "error_details": "Presigned URL generation failed",
-                        },
-                    },
-                )
-
-        except ValueError as ve:
-            _log(
-                "error",
-                f"[UPLOAD_INIT] ValueError during presigned URL generation: {str(ve)}",
-                {
-                    "user_id": current_user or "anonymous",
-                    "upload_id": upload_id,
-                    "storage_key": storage_key,
-                    "bucket": bucket_name,
-                    "content_type": mime_type,
-                    "error_type": "ValueError",
-                    "error_details": str(ve),
-                },
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "status": "ERROR",
-                    "message": f"Invalid parameters for upload: {str(ve)}",
-                    "data": {
-                        "error_code": "PRESIGN_VALIDATION_ERROR",
-                        "error_details": str(ve),
-                    },
-                },
-            )
-        except Exception as e:
-            _log(
-                "error",
-                f"[UPLOAD_INIT] Unexpected error during presigned URL generation: {str(e)}",
-                {
-                    "user_id": current_user or "anonymous",
-                    "upload_id": upload_id,
-                    "storage_key": storage_key,
-                    "bucket": bucket_name,
-                    "content_type": mime_type,
-                    "error_type": type(e).__name__,
-                    "error_details": str(e),
-                },
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={
-                    "status": "ERROR",
-                    "message": "Failed to generate upload URL",
-                    "data": {
-                        "error_code": "PRESIGN_FAILED",
-                        "error_details": str(e)
-                        if settings.DEBUG
-                        else "Contact administrator",
-                    },
-                },
-            )
-
-        _log(
-            "info",
-            f"[UPLOAD_INIT] Upload session initialized",
-            {
-                "upload_id": upload_id,
-                "filename": filename,
-                "file_size": file_size,
-                "chunk_size": chunk_size,
-                "total_chunks": total_chunks,
-                "owner_id": current_user,
-            },
-        )
-
-        # Return upload initialization response with proper serialization
-        response_data = FileInitResponse(
-            uploadId=upload_id,
-            file_id=str(file_oid),
-            chunk_size=int(chunk_size),
-            total_chunks=int(total_chunks),
-            expires_in=900,
-            max_parallel=1,
-            upload_url=presigned_put_url,
-        )
-
-        # Ensure proper JSON serialization to prevent namespace errors
-        return JSONResponse(
-            content=jsonable_encoder(response_data), status_code=status.HTTP_200_OK
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-
-        _log(
-            "error",
-            f"[WHATSAPP_UPLOAD] Unexpected error in upload initialization",
-            {
-                "user_id": current_user or "anonymous",
-                "operation": "upload_init",
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "traceback": traceback.format_exc(),
-            },
-        )
-
-        # Check if S3 configuration is the issue
-        error_str = str(e).lower()
-
-        # Only return mock response for test clients if chat_id validation already passed
-        # We check by looking at ObjectId validity of chat_id (if it's already been validated)
-        user_agent = request.headers.get("user-agent", "").lower()
-        is_test_client = "testclient" in user_agent
-
-        # Check if chat_id has been validated (valid ObjectId format)
-        chat_id_validated = False
-        if chat_id:
-            try:
-                from bson import ObjectId
-
-                is_test_or_flutter = (
-                    "testclient" in user_agent
-                    or "zaply-flutter" in user_agent
-                    or ("flutter" in user_agent and "test" not in user_agent)
-                )
-                # For test clients and Flutter, consider chat_id validated (we allow any string)
-                chat_id_validated = is_flutter_client or ObjectId.is_valid(chat_id)
-            except:
-                chat_id_validated = False
-
-        if (
-            "attached to a different loop" in error_str
-            or "running in different thread" in error_str
-        ):
-            # Only return mock response for test clients with valid chat_id or Flutter clients
-            if is_test_client and chat_id_validated:
-                _log(
-                    "warning",
-                    "Returning mock response for test client due to event loop error",
-                    {"user_id": current_user or "anonymous"},
-                )
-                from bson import ObjectId
-
-                mock_upload_id = str(uuid.uuid4())
-                mock_file_id = str(ObjectId())
-                mock_response = FileInitResponse(
-                    uploadId=mock_upload_id,
-                    file_id=mock_file_id,
-                    chunk_size=chunk_size,
-                    total_chunks=total_chunks,
-                    expires_in=900,
-                    max_parallel=1,
-                    upload_url=f"https://mock-s3.test/{mock_upload_id}",
-                )
-                return JSONResponse(
-                    content=jsonable_encoder(mock_response),
-                    status_code=status.HTTP_200_OK,
-                )
-            error_message = "Service temporarily busy - please retry the request"
-            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        elif "S3" in str(e) or "AWS" in str(e) or "credentials" in str(e).lower():
-            error_message = "S3 configuration error - please check AWS credentials and bucket permissions"
-            if settings.DEBUG:
-                error_message += f": {str(e)}"
-            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        else:
-            error_message = "Internal server error during upload initialization"
-            if settings.DEBUG:
-                error_message += f": {str(e)}"
-            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-
-        raise HTTPException(
-            status_code=status_code,
-            detail={
-                "status": "ERROR",
-                "message": error_message,
-                "data": {
-                    "error_type": type(e).__name__,
-                    "error_details": str(e)
-                    if settings.DEBUG
-                    else "Contact administrator for details",
-                },
-            },
-        )
-
-
-@router.put("/{upload_id}/chunk", response_model=ChunkUploadResponse)
-async def upload_chunk(
-    upload_id: str,
-    request: Request,
-    chunk_index: int = Query(...),
-    current_user: str = Depends(get_current_user),
-):
-    """Upload a single file chunk with streaming support"""
-
-    # Validate upload_id early (tests expect 400 for null/undefined)
-    if not upload_id or upload_id.strip() == "" or upload_id in ("null", "undefined"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid upload ID: {upload_id}",
-        )
-
-    # Rate limiting check (before DB operations)
-    limiter_key = f"{current_user}:{upload_id}"
-    if not upload_chunk_limiter.is_allowed(limiter_key):
-        # Direct function-call unit test expects 412. Real HTTP flows and
-        # comprehensive HTTP status code tests expect 429.
-        try:
-            from starlette.requests import Request as StarletteRequest
-        except Exception:  # pragma: no cover
-            StarletteRequest = Request  # type: ignore[assignment]
-
-        is_direct_call = not isinstance(request, StarletteRequest)
-        raise HTTPException(
-            status_code=(
-                status.HTTP_412_PRECONDITION_FAILED
-                if is_direct_call
-                else status.HTTP_429_TOO_MANY_REQUESTS
-            ),
-            detail=("Precondition failed" if is_direct_call else "Too many requests"),
-            headers={"Retry-After": "60"} if not is_direct_call else None,
-        )
-
-    if chunk_index < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="chunk_index must be >= 0",
-        )
-
-    # CRITICAL FIX: Check URI length (414 URI Too Long)
-    request_uri = str(request.url)
-    if len(request_uri) > 8192:  # 8KB URL limit
-        _log(
-            "warning",
-            f"Request URI too long: {len(request_uri)} chars",
-            {
-                "user_id": current_user,
-                "operation": "chunk_upload",
-                "uri_length": len(request_uri),
-                "upload_id": upload_id[:16] + "..."
-                if len(upload_id) > 16
-                else upload_id,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_414_URI_TOO_LONG,
-            detail={
-                "error": "URI Too Long",
-                "message": "Request URL exceeds maximum length",
-                "max_length": 8192,
-                "actual_length": len(request_uri),
-            },
-        )
-
-    # CRITICAL FIX: Check Content-Length header (411 Length Required)
-    content_length = request.headers.get("content-length")
-    if content_length is None or (
-        isinstance(content_length, str) and content_length.strip() == ""
-    ):
-        _log(
-            "warning",
-            f"Missing Content-Length header for chunk upload",
-            {
-                "user_id": current_user,
-                "operation": "chunk_upload",
-                "upload_id": upload_id,
-                "chunk_index": chunk_index,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "error": "Length Required",
-                "message": "Content-Length header is required for chunk uploads",
-                "upload_id": upload_id,
-                "chunk_index": chunk_index,
-            },
-        )
-
-    # Validate HTTP method
-    if request.method != "PUT":
-        raise HTTPException(
-            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-            detail={
-                "status": "ERROR",
-                "message": "Method not allowed. Use PUT for chunk upload.",
-                "data": None,
-            },
-            headers={"Allow": "PUT, OPTIONS"},
-        )
-
-    from datetime import datetime as dt
-
-    from bson import ObjectId
-
-    if not ObjectId.is_valid(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id"
-        )
-
-    upload = await _maybe_await(uploads_collection().find_one({"upload_id": upload_id}))
-    if not upload:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found"
-        )
-
-    if upload.get("user_id") != ObjectId(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to upload chunks for this upload",
-        )
-
-    temp_root, _upload_root = _ensure_storage_dirs()
-    upload_temp_dir = temp_root / upload_id
-    chunk_path = upload_temp_dir / f"{int(chunk_index)}.part"
-
-    try:
-        chunk_data = await request.body()
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to read chunk data",
-        ) from e
-
-    await _save_chunk_to_disk(chunk_path, chunk_data, int(chunk_index), current_user)
-
-    # Update database first
-    await _maybe_await(
-        uploads_collection().update_one(
-            {"upload_id": upload_id},
-            {
-                "$addToSet": {"uploaded_chunks": int(chunk_index)},
-                "$set": {"updated_at": datetime.now(timezone.utc)},
-            },
-        )
-    )
-
-    # Get updated upload data from DB for accurate progress
-    updated_upload = await _maybe_await(
-        uploads_collection().find_one({"upload_id": upload_id})
-    )
-
-    # Calculate progress from persisted data
-    total_chunks = updated_upload.get("total_chunks", 1)
-    uploaded_chunks = updated_upload.get("uploaded_chunks", [])
-    # Deduplicate chunks to prevent inflation on retries
-    unique_uploaded_chunks = list(set(uploaded_chunks))
-    progress_percent = (len(unique_uploaded_chunks) / total_chunks) * 100
-
-    # Broadcast upload progress via WebSocket after DB update
-    try:
-        from websocket.websocket_manager import websocket_manager
-
-        progress_message = {
-            "type": "upload_progress",
-            "upload_id": upload_id,
-            "user_id": current_user,
-            "chunk_index": int(chunk_index),
-            "total_chunks": total_chunks,
-            "uploaded_chunks": len(unique_uploaded_chunks),
-            "progress_percent": round(progress_percent, 2),
-            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        }
-
-        # Send to all user devices
-        try:
-            devices_notified = await websocket_manager.send_message_to_user(
-                current_user, progress_message
-            )
-
-            _log(
-                "info",
-                f"Upload progress broadcast: {progress_percent}%",
-                {
-                    "upload_id": upload_id,
-                    "user_id": current_user,
-                    "chunk_index": int(chunk_index),
-                    "progress_percent": progress_percent,
-                    "unique_uploaded_chunks": len(unique_uploaded_chunks),
-                    "devices_notified": devices_notified,
-                },
-            )
-        except AttributeError as ae:
-            # WebSocketManager method missing - log but continue (non-fatal)
-            _log(
-                "error",
-                f"WebSocket send_message_to_user not available: {ae}",
-                {
-                    "upload_id": upload_id,
-                    "user_id": current_user,
-                    "error_type": "AttributeError",
-                },
-            )
-        except Exception as e:
-            # Any other broadcast error - log but continue upload (non-fatal)
-            _log(
-                "warning",
-                f"Failed to broadcast upload progress: {type(e).__name__}: {e}",
-                {
-                    "upload_id": upload_id,
-                    "user_id": current_user,
-                    "error_type": type(e).__name__,
-                },
-            )
-
-    except Exception as e:
-        _log(
-            "warning",
-            f"Failed to broadcast upload progress (outer): {type(e).__name__}: {e}",
-            {"upload_id": upload_id, "user_id": current_user},
-        )
-
-    # Ensure proper JSON serialization to prevent namespace errors
-    response_data = ChunkUploadResponse(
-        upload_id=upload_id, chunk_index=int(chunk_index), status="received"
-    )
+    error_data = {
+        "status": "error",
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    if error_code:
+        error_data["error_code"] = error_code
+    
+    if details:
+        error_data["details"] = details
+    
     return JSONResponse(
-        content=jsonable_encoder(response_data), status_code=status.HTTP_200_OK
+        status_code=status_code,
+        content=error_data
     )
 
 
-def _is_transient_error(exc: Exception) -> bool:
-    """Determine if an error is transient and worth retrying."""
-    error_str = str(exc).lower()
-    transient_keywords = [
-        "timeout",
-        "timed out",
-        "connection",
-        "unavailable",
-        "temporary",
-        "retry",
-        "network",
-        "reset",
-        "broken pipe",
-        "host unreachable",
-        "no route to host",
-    ]
-    return any(keyword in error_str for keyword in transient_keywords)
-
-
-async def _complete_upload_with_retry(
-    upload_id: str,
-    current_user: str,
-    max_retries: int = 3,
-    base_delay: float = 0.5,
-) -> dict:
-    """
-    Complete upload with retry logic for transient failures.
-    Returns dict with success status or raises HTTPException for final failures.
-    """
-    from bson import ObjectId
-    import shutil
-    import asyncio
-
-    last_exception = None
-
-    for attempt in range(max_retries):
-        try:
-            uploads_col = _safe_collection(uploads_collection)
-            upload_doc = await _maybe_await(
-                uploads_col.find_one({"upload_id": upload_id})
-            )
-            if upload_doc is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found"
-                )
-
-            filename = upload_doc.get("filename")
-            if not filename or not isinstance(filename, str):
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Upload metadata missing filename",
-                )
-
-            upload_user_id = upload_doc.get("user_id")
-            if upload_user_id != ObjectId(current_user):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You don't have permission to complete this upload",
-                )
-
-            total_chunks = upload_doc.get("total_chunks")
-            uploaded_chunks = upload_doc.get("uploaded_chunks") or []
-            if not isinstance(total_chunks, int):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid total_chunks",
-                )
-            if not isinstance(uploaded_chunks, list):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid uploaded_chunks",
-                )
-            if total_chunks != len(uploaded_chunks):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Not all chunks have been uploaded",
-                )
-
-            temp_root, upload_root = _ensure_storage_dirs()
-            upload_temp_dir = temp_root / upload_id
-            final_dir = upload_root / upload_id
-            os.makedirs(str(final_dir), exist_ok=True)
-            final_path = final_dir / filename
-
-            # Assemble file from chunks with strict binary handling
-            try:
-                async with aiofiles.open(str(final_path), "wb") as out_f:
-                    for idx in range(int(total_chunks)):
-                        part_path = upload_temp_dir / f"{idx}.part"
-                        if not part_path.exists():
-                            raise HTTPException(
-                                status_code=status.HTTP_400_BAD_REQUEST,
-                                detail=f"Missing chunk {idx}",
-                            )
-                        # CRITICAL: Stream chunk data through fixed-size buffer to prevent memory issues
-                        BUFFER_SIZE = 65536  # 64KB buffer
-                        async with aiofiles.open(str(part_path), "rb") as in_f:
-                            chunk_size = 0
-                            while True:
-                                chunk_data = await in_f.read(BUFFER_SIZE)
-                                if not chunk_data:
-                                    break
-                                # CRITICAL: Write raw bytes directly without buffering
-                                await out_f.write(chunk_data)
-                                chunk_size += len(chunk_data)
-
-                        _log(
-                            "debug",
-                            f"Assembled chunk {idx} into final file",
-                            {
-                                "chunk_index": idx,
-                                "chunk_size": chunk_size,
-                                "upload_id": upload_id,
-                            },
-                        )
-
-                # CRITICAL: Verify assembled file integrity with smart tolerance for all file types
-                # Supports all file types like Telegram - allows various variance sources (padding, metadata, line endings)
-                final_size = final_path.stat().st_size
-                expected_total_size = upload_doc.get("total_size") or upload_doc.get(
-                    "file_size", 0
-                )
-                size_difference = abs(final_size - expected_total_size)
-                
-                # Smart tolerance: percentage-based for large files, fixed for small files
-                # This accommodates: chunk boundary alignment, compression metadata, line-end differences, etc.
-                if expected_total_size < 1024:  # < 1KB
-                    SIZE_TOLERANCE = 64  # Allow 64 bytes for tiny files
-                elif expected_total_size < 10485760:  # < 10MB (most common case)
-                    SIZE_TOLERANCE = max(1024, int(expected_total_size * 0.001))  # 0.1% or 1KB minimum
-                else:  # Large files (10MB+)
-                    SIZE_TOLERANCE = max(4096, int(expected_total_size * 0.0005))  # 0.05% or 4KB minimum
-
-                # Log all variances for diagnostics
-                if size_difference > 0:
-                    variance_percent = (size_difference / expected_total_size * 100) if expected_total_size > 0 else 0
-                    _log(
-                        "info" if size_difference <= SIZE_TOLERANCE else "warning",
-                        f"File assembly size variance: expected={expected_total_size}, actual={final_size}, diff={size_difference} bytes ({variance_percent:.3f}%)",
-                        {
-                            "upload_id": upload_id,
-                            "expected_size": expected_total_size,
-                            "actual_size": final_size,
-                            "size_difference": size_difference,
-                            "tolerance": SIZE_TOLERANCE,
-                            "variance_percent": variance_percent,
-                            "total_chunks": total_chunks,
-                            "filename": filename,
-                        },
-                    )
-
-                # Only error on SUBSTANTIAL mismatches (exceeding tolerance)
-                if expected_total_size > 0 and size_difference > SIZE_TOLERANCE:
-                    _log(
-                        "error",
-                        f"File assembly size exceeds tolerance: expected={expected_total_size}, actual={final_size}, diff={size_difference}, tolerance={SIZE_TOLERANCE}",
-                        {
-                            "upload_id": upload_id,
-                            "expected_size": expected_total_size,
-                            "actual_size": final_size,
-                            "total_chunks": total_chunks,
-                        },
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"File assembly failed: size mismatch (expected ~{expected_total_size}, got {final_size})",
-                    )
-
-                _log(
-                    "info",
-                    f"File assembly completed successfully",
-                    {
-                        "upload_id": upload_id,
-                        "final_size": final_size,
-                        "expected_size": expected_total_size,
-                        "total_chunks": total_chunks,
-                        "filename": filename,
-                    },
-                )
-            except HTTPException:
-                raise
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Temporary storage unavailable",
-                ) from e
-
-            # Upload to S3
-            s3_client = _get_s3_client()
-            if not s3_client:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="S3 service unavailable - cannot upload file",
-                )
-
-            s3_key = f"files/{upload_user_id}/{upload_id}/{filename}"
-
-            file_hash = None
-            actual_size = 0
-            now = datetime.utcnow().replace(tzinfo=timezone.utc)
-
-            try:
-                # CRITICAL: Stream file assembly directly to S3 without loading entire file into memory
-                s3_client = _get_s3_client()
-                if not s3_client:
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail="Storage service unavailable",
-                    )
-
-                # Initialize hasher for checksum calculation
-                file_hasher = hashlib.sha256()
-                actual_size = 0
-                now = datetime.utcnow().replace(tzinfo=timezone.utc)
-
-                # Open assembled file for streaming read and hash calculation
-                async with aiofiles.open(str(final_path), "rb") as file_data:
-                    # CRITICAL: Stream through hasher in chunks
-                    BUFFER_SIZE = 65536  # 64KB buffer
-                    while True:
-                        chunk = await file_data.read(BUFFER_SIZE)
-                        if not chunk:
-                            break
-
-                        # Update hasher with chunk
-                        file_hasher.update(chunk)
-                        actual_size += len(chunk)
-
-                    # Get final hash after reading entire file
-                    file_hash = file_hasher.hexdigest()
-
-                    # Check expected size
-                    expected_size = upload_doc.get("total_size") or upload_doc.get(
-                        "file_size", 0
-                    )
-                    if expected_size > 0 and actual_size != expected_size:
-                        _log(
-                            "warning",
-                            f"File size mismatch during upload: expected={expected_size}, actual={actual_size}",
-                            {"user_id": current_user, "upload_id": upload_id},
-                        )
-
-                # CRITICAL: Upload to S3 using synchronous file handle in threadpool
-                upload_doc_mime_type = (
-                    upload_doc.get("mime_type") or "application/octet-stream"
-                )
-
-                def _sync_s3_upload():
-                    """Synchronous S3 upload function for threadpool execution"""
-                    # boto3 and ClientError are already imported at module level
-
-                    try:
-                        # Open file synchronously for boto3
-                        with open(str(final_path), "rb") as sync_file:
-                            # Use upload_fileobj for better handling of large files
-                            # CRITICAL FIX: Remove invalid ContentLength from ExtraArgs - only ContentType and Metadata are valid
-                            extra_args = {
-                                "Metadata": {
-                                    "upload_id": upload_id,
-                                    "user_id": str(upload_user_id),
-                                    "original_filename": filename,
-                                    "mime_type": upload_doc_mime_type,
-                                    "sha256_checksum": file_hash,
-                                    "file_size": str(actual_size),
-                                    "upload_timestamp": now.isoformat(),
-                                },
-                                "ContentType": upload_doc_mime_type,
-                            }
-
-                            # CRITICAL FIX: Wrap S3 upload in try-except with proper error handling
-                            s3_client.upload_fileobj(
-                                sync_file,
-                                _get_sanitized_bucket_name(),
-                                s3_key,
-                                ExtraArgs=extra_args,
-                            )
-                            
-                            # Verify upload succeeded by checking object metadata
-                            try:
-                                obj_metadata = s3_client.head_object(
-                                    Bucket=_get_sanitized_bucket_name(), 
-                                    Key=s3_key
-                                )
-                                uploaded_size = obj_metadata.get("ContentLength", 0)
-                                
-                                # CRITICAL FIX: Validate file size consistency
-                                if uploaded_size != actual_size:
-                                    raise Exception(f"Size mismatch: expected {actual_size}, got {uploaded_size}")
-                                    
-                                _log(
-                                    "info",
-                                    f"S3 upload verified: size={uploaded_size}, checksum={file_hash[:16] + '...' if file_hash else 'unknown'}",
-                                    {
-                                        "user_id": current_user,
-                                        "upload_id": upload_id,
-                                        "s3_key": s3_key,
-                                        "expected_size": actual_size,
-                                        "uploaded_size": uploaded_size,
-                                    }
-                                )
-                                
-                            except Exception as verify_error:
-                                _log(
-                                    "error",
-                                    f"S3 upload verification failed: {str(verify_error)}",
-                                    {
-                                        "user_id": current_user,
-                                        "upload_id": upload_id,
-                                        "s3_key": s3_key,
-                                    }
-                                )
-                                # Delete the uploaded object if verification failed
-                                try:
-                                    s3_client.delete_object(Bucket=_get_sanitized_bucket_name(), Key=s3_key)
-                                except:
-                                    pass
-                                raise verify_error
-
-                    except ClientError as s3_error:
-                        error_code = s3_error.response.get("Error", {}).get("Code", "Unknown")
-                        error_msg = s3_error.response.get("Error", {}).get("Message", str(s3_error))
-                        _log(
-                            "error",
-                            f"S3 ClientError during upload: {error_code} - {error_msg}",
-                            {
-                                "user_id": current_user,
-                                "upload_id": upload_id,
-                                "s3_key": s3_key,
-                                "error_code": error_code,
-                            }
-                        )
-                        raise HTTPException(
-                            status_code=503,  # Service Unavailable for S3 errors
-                            detail=f"Storage service unavailable: {error_code}"
-                        )
-                    except Exception as upload_error:
-                        _log(
-                            "error",
-                            f"S3 upload failed: {str(upload_error)}",
-                            {
-                                "user_id": current_user,
-                                "upload_id": upload_id,
-                                "s3_key": s3_key,
-                            }
-                        )
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"File upload failed: {str(upload_error)}"
-                        )
-
-                # Execute synchronous upload in threadpool
-                await asyncio.to_thread(_sync_s3_upload)
-
-                _log(
-                    "info",
-                    f"File uploaded to S3: mime_type={upload_doc_mime_type}, size={actual_size}, checksum={file_hash}",
-                    {
-                        "user_id": current_user,
-                        "upload_id": upload_id,
-                        "s3_key": s3_key,
-                        "file_size": actual_size,
-                        "mime_type": upload_doc_mime_type,
-                        "checksum": file_hash[:16] + "..." if file_hash else "unknown",
-                    },
-                )
-
-                # Clean up temporary files
-                if upload_temp_dir.exists():
-                    shutil.rmtree(str(upload_temp_dir))
-                if final_path.exists():
-                    final_path.unlink()
-
-            except HTTPException:
-                raise
-            except Exception as e:
-                _log(
-                    "error",
-                    f"Failed to upload file to S3: {str(e)}",
-                    {
-                        "user_id": current_user,
-                        "operation": "s3_upload",
-                        "upload_id": upload_id,
-                        "s3_key": s3_key,
-                    },
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Failed to upload file to S3 storage",
-                ) from e
-
-            now = datetime.utcnow().replace(tzinfo=timezone.utc)
-            await _maybe_await(
-                uploads_col.update_one(
-                    {"upload_id": upload_id},
-                    {
-                        "$set": {
-                            "status": "completed",
-                            "upload_status": "completed",
-                            "completed_at": now,
-                            "updated_at": now,
-                        }
-                    },
-                )
-            )
-
-            # Store file metadata
-            file_oid = upload_doc.get("file_id")
-            if not isinstance(file_oid, ObjectId):
-                file_oid = ObjectId()
-
-            file_id = str(file_oid)
-
-            s3_key = f"files/{upload_user_id}/{upload_id}/{filename}"
-
-            if not s3_key or not s3_key.strip():
-                _log(
-                    "error",
-                    "Invalid s3_key for file upload",
-                    {"user_id": current_user, "upload_id": upload_id},
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to complete upload - invalid storage key",
-                )
-
-            expires_at = now + timedelta(seconds=_get_file_ttl_seconds())
-            file_doc = {
-                "_id": file_oid,
-                "file_id": file_oid,
-                "owner_id": upload_user_id,
-                "filename": filename,
-                "size": actual_size,
-                "mime_type": upload_doc.get("mime_type"),
-                "storage_key": s3_key,
-                "s3_key": s3_key,
-                "storage_type": "s3",
-                "bucket": _get_sanitized_bucket_name(),
-                "region": settings.AWS_REGION,
-                "upload_status": "completed",
-                "created_at": now,
-                "updated_at": now,
-                "expires_at": expires_at,
-                "status": "active",
-                "upload_id": upload_id,
-                "storage_path": None,
-                "checksum": file_hash,
-            }
-
-            files_col = _safe_collection(files_collection)
-            await _maybe_await(files_col.insert_one(file_doc))
-
-            _log(
-                "info",
-                f"[FILE_METADATA] File uploaded to S3 and metadata stored in Atlas",
-                {
-                    "file_id": file_id,
-                    "filename": filename,
-                    "owner_id": str(upload_user_id),
-                    "s3_key": s3_key,
-                    "storage_type": "s3",
-                    "bucket": _get_sanitized_bucket_name(),
-                    "region": settings.AWS_REGION,
-                },
-            )
-
-            return {
-                "success": True,
-                "upload_id": upload_id,
-                "file_id": file_id,
-                "status": "completed",
-            }
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            last_exception = e
-            _log(
-                "warning",
-                f"Upload complete attempt {attempt + 1}/{max_retries} failed: {str(e)}",
-                {
-                    "user_id": current_user,
-                    "operation": "upload_complete",
-                    "upload_id": upload_id,
-                    "attempt": attempt + 1,
-                    "error_type": type(e).__name__,
-                },
-            )
-
-            if attempt < max_retries - 1 and _is_transient_error(e):
-                delay = base_delay * (2**attempt)
-                _log(
-                    "info",
-                    f"Retrying upload complete in {delay}s...",
-                    {"upload_id": upload_id, "delay": delay},
-                )
-                await asyncio.sleep(delay)
-                continue
-            else:
-                break
-
-    # All retries exhausted - convert to proper HTTPException
-    if last_exception:
-        if isinstance(last_exception, (OSError, IOError)):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storage service temporarily unavailable - please retry",
-            )
-        elif isinstance(last_exception, MemoryError):
-            raise HTTPException(
-                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-                detail="Insufficient storage space - please free up space",
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to complete upload",
-            )
-
-
-@router.post("/{upload_id}/complete", response_model=dict)
-async def complete_upload(
-    upload_id: str,
-    request: Request,
-    current_user: str = Depends(get_current_user),
-):
-    """Complete file upload session (Atlas-only)."""
-
-    # Validate HTTP method
-    if request.method != "POST":
-        raise HTTPException(
-            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-            detail={
-                "status": "ERROR",
-                "message": "Method not allowed. Use POST for file upload completion.",
-                "data": None,
-            },
-            headers={"Allow": "POST, OPTIONS"},
-        )
-
-    # Enhanced logging for debugging large file uploads
-    _log(
-        "info",
-        f"File completion requested",
-        {
-            "user_id": current_user,
-            "operation": "file_complete",
-            "upload_id": upload_id,
-            "debug": "large_file_upload_debug",
-        },
-    )
-
-    # Rate limiting check
-    if not upload_complete_limiter.is_allowed(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many upload completion requests. Please try again later.",
-            headers={"Retry-After": "60"},
-        )
-
-    # Validate upload_id
-    if (
-        not upload_id
-        or upload_id == "null"
-        or upload_id == "undefined"
-        or upload_id.strip() == ""
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid upload ID: {upload_id}",
-        )
-
-    from bson import ObjectId
-
-    if not ObjectId.is_valid(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id"
-        )
-
-    # Use retry logic for completing upload
-    try:
-        return await _complete_upload_with_retry(upload_id, current_user)
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log(
-            "error",
-            f"Failed to complete upload: {str(e)}",
-            {
-                "user_id": current_user,
-                "operation": "upload_complete",
-                "upload_id": upload_id,
-            },
-        )
-        if isinstance(e, (OSError, IOError)):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storage service temporarily unavailable - please retry",
-            )
-        elif isinstance(e, MemoryError):
-            raise HTTPException(
-                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-                detail="Insufficient storage space - please free up space",
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to complete upload",
-            )
-
-
-@router.get("/{file_id}/info")
-async def get_file_info(
-    file_id: str, request: Request, current_user: str = Depends(get_current_user)
-):
-    """Get file metadata information (ephemeral storage only)"""
-
-    # SECURITY: Validate file_id to prevent path injection attacks
-    if not validate_path_injection(file_id):
-        _log(
-            "warning",
-            f"Path injection attempt blocked: file_id={file_id}",
-            {"user_id": current_user, "operation": "file_info"},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file identifier format",
-        )
-
-    try:
-        _log(
-            "info",
-            f"Getting file info",
-            {"user_id": current_user, "operation": "file_info"},
-        )
-
-        # First try to find file in files_collection (regular chat files)
-        import asyncio
-        from bson import ObjectId
-
-        file_id_key = file_id
-        try:
-            if ObjectId.is_valid(file_id):
-                file_id_key = ObjectId(file_id)
-        except Exception:
-            file_id_key = file_id
-
-        file_doc = await asyncio.wait_for(
-            files_collection().find_one({"_id": file_id_key}), timeout=30.0
-        )
-        if not file_doc and file_id_key != file_id:
-            # Backward compatibility: some deployments stored _id as a string.
-            file_doc = await asyncio.wait_for(
-                files_collection().find_one({"_id": file_id}), timeout=30.0
-            )
-
-        if file_doc:
-            owner_id = file_doc.get("owner_id")
-            receiver_id = file_doc.get("receiver_id")
-            owner_ok = str(owner_id) == str(current_user)
-            receiver_ok = receiver_id is not None and str(receiver_id) == str(
-                current_user
-            )
-            if not owner_ok and not receiver_ok:
-                _log(
-                    "warning",
-                    f"Unauthorized file info attempt: user={current_user}, file={file_id}",
-                    {"user_id": current_user, "operation": "file_info"},
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: you don't have permission to access this file.",
-                )
-
-            # Ensure all values are JSON-serializable (Mongo ObjectId -> str, etc.)
-            encoded_doc = jsonable_encoder(
-                file_doc,
-                custom_encoder={
-                    # Keep import local to avoid hard dependency when bson isn't installed.
-                    __import__("bson").ObjectId: str  # type: ignore[attr-defined]
-                },
-            )
-            return {
-                "file_id": file_id,
-                "filename": encoded_doc.get("filename"),
-                "size": encoded_doc.get("size"),
-                "uploaded_by": str(owner_id) if owner_id is not None else None,
-                "created_at": encoded_doc.get(
-                    "created_at",
-                    (
-                        __import__("datetime").datetime.now(
-                            __import__("datetime").timezone.utc
-                        )
-                    ),
-                ),
-                "checksum": encoded_doc.get("checksum"),
-                "file_type": "file",
-                "mime_type": encoded_doc.get("mime_type"),
-                "owner_id": str(owner_id) if owner_id is not None else None,
-                "chat_id": str(file_doc.get("chat_id"))
-                if file_doc.get("chat_id") is not None
-                else None,
-                "delivery_status": encoded_doc.get("delivery_status"),
-                "expiry_time": encoded_doc.get("expiry_time"),
-                "user_id": current_user,
-            }
-
-        # Check if it's an avatar file (special handling for user avatars)
-        # Avatar files use the file_id as the filename directly in the users collection
-        if await _is_avatar_owner(file_id, current_user):
-            _log(
-                "info",
-                f"Accessing avatar file info: {file_id}",
-                {"user_id": current_user, "operation": "file_info"},
-            )
-            try:
-                file_path = settings.DATA_ROOT / "avatars" / file_id
-                file_stat = file_path.stat()
-            except (OSError, ValueError) as avatar_error:
-                _log(
-                    "error",
-                    f"Avatar file not found on disk: {avatar_error}",
-                    {"user_id": current_user, "operation": "file_info"},
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Avatar file not found",
-                )
-
-            # Get user info for avatar metadata
-            import asyncio
-
-            user_doc = await asyncio.wait_for(
-                users_collection().find_one({"_id": current_user}), timeout=30.0
-            )
-
-            # Get content type from file extension for better avatar serving
-            content_type = "image/jpeg"  # Default safe default
-            if "." in file_id:
-                ext = file_id.split(".")[-1].lower()
-                mime_map = {
-                    # Standard web formats
-                    "jpg": "image/jpeg",
-                    "jpeg": "image/jpeg",
-                    "png": "image/png",
-                    "gif": "image/gif",
-                    "webp": "image/webp",
-                    "svg": "image/svg+xml",
-                    "bmp": "image/bmp",
-                    # Video formats
-                    "mp4": "video/mp4",
-                    "webm": "video/webm",
-                    "mov": "video/quicktime",
-                    # Zaply application MIME types
-                    "exe": "application/x-msdownload",  # Windows executable
-                    "dmg": "application/x-apple-diskimage",  # macOS disk image
-                    "pkg": "application/x-newton-compatible-pkg",  # macOS installer
-                    "app": "application/x-apple-bundle",  # macOS app bundle
-                    "deb": "application/x-debian-package",  # Debian package
-                    "rpm": "application/x-rpm",  # Red Hat package
-                    "AppImage": "application/x-AppImage",  # Linux AppImage
-                    "snap": "application/x-snap",  # Linux Snap package
-                }
-                content_type = mime_map.get(
-                    ext, "image/jpeg"
-                )  # Safe default for avatars
-
-            # Import re for sanitization
-            import re
-
-            return {
-                "file_id": file_id,
-                "filename": f"avatar_{re.sub(r'[^a-zA-Z0-9_-]', '', current_user)[:20]}",  # Sanitize and truncate
-                "content_type": content_type,
-                "size": file_stat.st_size,
-                "uploaded_by": current_user,
-                "created_at": user_doc.get(
-                    "created_at",
-                    (
-                        __import__("datetime").datetime.now(
-                            __import__("datetime").timezone.utc
-                        )
-                    ),
-                ),
-                "checksum": None,  # Avatars don't have checksums
-                "file_type": "avatar",
-                "mime_type": content_type,
-                "user_id": current_user,
-            }
-
-        # File not found in either collection
-        _log(
-            "warning",
-            f"File not found",
-            {"user_id": current_user, "operation": "file_info"},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
-        )
-
-    except HTTPException:
-        raise
-    except asyncio.TimeoutError:
-        _log(
-            "error",
-            f"Timeout getting file info",
-            {"user_id": current_user, "operation": "file_info"},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Database timeout while getting file information",
-        )
-    except (ConnectionError, TimeoutError) as conn_error:
-        _log(
-            "error",
-            f"Connection error getting file info: {type(conn_error).__name__}",
-            {"user_id": current_user, "operation": "file_info"},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service temporarily unavailable",
-        )
-    except Exception as e:
-        _log(
-            "error",
-            f"Failed to get file info: {type(e).__name__}: {str(e)}",
-            {"user_id": current_user, "operation": "file_info"},
-        )
-        # Only return 504 for actual timeout-like errors, not general exceptions
-        error_msg = str(e).lower()
-        if any(
-            keyword in error_msg
-            for keyword in ["timeout", "timed out", "deadline", "expired"]
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="File information request timed out",
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to get file information",
-            )
-
-
-async def _is_avatar_owner(file_id: str, current_user: str) -> bool:
+# Create router
+router = APIRouter()
+
+# Import dependencies
+from fastapi import Depends
+from auth.utils import get_current_user
+from db_proxy import files_collection, users_collection
+from utils.security import validate_path_injection
+from utils.logging import _log
+from utils.s3 import _get_s3_client
+
+# Create download dependency
+async def get_current_user_for_download_dependency(request: Request) -> str:
+    """Get current user for download operations"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    token = auth_header.replace("Bearer ", "").strip()
+    from auth.utils import decode_token
+    token_data = decode_token(token)
+    return token_data.sub
+
+
+async def _is_avatar_url_owner(file_id: str, current_user: str) -> bool:
     """Check if current user owns this avatar file by checking their avatar_url"""
     try:
-        import asyncio
-
         user_doc = await asyncio.wait_for(
             users_collection().find_one({"_id": current_user}), timeout=30.0
         )
@@ -3283,9 +304,11 @@ async def download_file(
             f"Path injection attempt blocked: file_id={file_id}",
             {"user_id": current_user, "operation": "file_download"},
         )
-        raise HTTPException(
+        return create_error_response(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file identifier format",
+            message="Invalid file identifier format",
+            error_code="INVALID_FILE_ID",
+            details={"file_id": file_id}
         )
 
     try:
@@ -3512,15 +535,13 @@ async def download_file(
                 obj_metadata = s3_client.head_object(Bucket=bucket, Key=storage_key)
                 actual_size = obj_metadata.get("ContentLength", file_size)
 
-                # CRITICAL: Get MIME type from S3 metadata if available, otherwise use DB or guess from filename
-                actual_mime_type = obj_metadata.get("ContentType")
-                if (
-                    not actual_mime_type
-                    or actual_mime_type.lower() == "application/octet-stream"
-                ):
-                    actual_mime_type = mime_type
+                # CRITICAL: Get MIME type from S3 metadata if available, otherwise use improved detection
+                s3_mime_type = obj_metadata.get("ContentType")
+                if s3_mime_type and s3_mime_type.lower() != "application/octet-stream":
+                    actual_mime_type = s3_mime_type.lower().strip()
                 else:
-                    actual_mime_type = actual_mime_type.lower().strip()
+                    # Use improved MIME type detection
+                    actual_mime_type = get_mime_type(filename, mime_type)
 
                 _log(
                     "info",
@@ -3550,12 +571,10 @@ async def download_file(
                 # Determine Content-Disposition based on dl parameter and file type
                 is_image = actual_mime_type.startswith("image/")
                 is_video = actual_mime_type.startswith("video/")
-                # Use inline for preview (images/videos without ?dl=1), attachment for forced download
-                content_disposition = (
-                    f'inline; filename="{filename}"'
-                    if not dl_requested and (is_image or is_video)
-                    else f'attachment; filename="{filename}"'
-                )
+                is_pdf = actual_mime_type == "application/pdf"
+                # Use inline for preview (images/videos/pdf without ?dl=1), attachment for forced download
+                is_inline = not dl_requested and (is_image or is_video or is_pdf)
+                content_disposition = create_content_disposition(filename, is_inline)
 
                 # Update download status
                 try:
@@ -3762,7 +781,6 @@ async def download_file(
                     headers={
                         "Content-Length": str(actual_size),
                         "Content-Disposition": content_disposition,
-                        "Content-Type": actual_mime_type,
                         "Cache-Control": "no-cache, no-store, must-revalidate"
                         if dl_requested
                         else "public, max-age=3600",
@@ -3773,7 +791,7 @@ async def download_file(
                 )
 
             except s3_client.exceptions.NoSuchKey:
-                # S3 object not found - log and raise 404
+                # S3 object not found - log and return 404
                 _log(
                     "warning",
                     f"S3 object not found during download",
@@ -3783,9 +801,11 @@ async def download_file(
                         "s3_key": storage_key,
                     },
                 )
-                raise HTTPException(
+                return create_error_response(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found - does not exist in storage",
+                    message="File not found - does not exist in storage",
+                    error_code="FILE_NOT_FOUND_S3",
+                    details={"s3_key": storage_key, "file_id": file_id}
                 )
             except s3_client.exceptions.ClientError as e:
                 # Handle S3 client errors with proper logging
@@ -3807,19 +827,25 @@ async def download_file(
 
                 # Map S3 error codes to appropriate HTTP status codes
                 if error_code == "AccessDenied":
-                    raise HTTPException(
+                    return create_error_response(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="You do not have permission to access this file",
+                        message="You do not have permission to access this file",
+                        error_code="ACCESS_DENIED_S3",
+                        details={"s3_key": storage_key}
                     )
                 elif error_code == "InvalidArgument":
-                    raise HTTPException(
+                    return create_error_response(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid file request parameters",
+                        message="Invalid file request parameters",
+                        error_code="INVALID_ARGUMENT_S3",
+                        details={"s3_key": storage_key}
                     )
                 else:
-                    raise HTTPException(
+                    return create_error_response(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Storage service error - please try again",
+                        message="Storage service error - please try again",
+                        error_code="S3_CLIENT_ERROR",
+                        details={"error_code": error_code, "s3_key": storage_key}
                     )
             except Exception as e:
                 _log(
@@ -3831,9 +857,11 @@ async def download_file(
                         "s3_key": storage_key,
                     },
                 )
-                raise HTTPException(
+                return create_error_response(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to download file from storage - please try again",
+                    message="Failed to download file from storage - please try again",
+                    error_code="S3_DOWNLOAD_ERROR",
+                    details={"s3_key": storage_key, "error": str(e)}
                 )
 
         # Check if it's an avatar file
@@ -8649,3 +5677,192 @@ if (Platform.isAndroid) {{
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get path provider downloads",
         )
+
+
+# ============================================================================
+# MEDIA LIFECYCLE SERVICE
+# ============================================================================
+
+class MediaLifecycleService:
+    """Service for handling media upload lifecycle with proper S3 configuration"""
+    
+    def __init__(self):
+        self.s3_client = None
+        self.bucket_name = settings.S3_BUCKET
+        self._init_s3_client()
+    
+    def _init_s3_client(self):
+        """Initialize S3 client with proper configuration"""
+        if not boto3 or not settings.S3_BUCKET:
+            _log("warning", "S3 not configured - media uploads will fail")
+            return
+        
+        try:
+            self.s3_client = boto3.client(
+                's3',
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                region_name=settings.AWS_REGION,
+                config={
+                    'max_pool_connections': 50,
+                    'retries': {
+                        'max_attempts': 3,
+                        'mode': 'adaptive'
+                    }
+                }
+            )
+            _log("info", f"S3 client initialized for bucket: {self.bucket_name}")
+        except Exception as e:
+            _log("error", f"Failed to initialize S3 client: {str(e)}")
+            self.s3_client = None
+    
+    async def initiate_media_upload(
+        self,
+        sender_user_id: str,
+        sender_device_id: str,
+        file_size: int,
+        mime_type: str,
+        recipient_devices: List[str]
+    ) -> Dict[str, Any]:
+        """Initiate media upload with proper S3 configuration"""
+        if not self.s3_client:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage service not available"
+            )
+        
+        try:
+            # Generate unique media ID
+            media_id = str(uuid.uuid4())
+            
+            # Generate S3 key with proper structure
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+            s3_key = f"media/{timestamp}/{media_id}"
+            
+            # Detect MIME type properly
+            detected_mime_type = get_mime_type(f"file.{mime_type.split('/')[-1]}", mime_type)
+            
+            # Create upload record in database
+            upload_record = {
+                "_id": media_id,
+                "media_id": media_id,
+                "sender_user_id": sender_user_id,
+                "sender_device_id": sender_device_id,
+                "file_size": file_size,
+                "mime_type": detected_mime_type,
+                "recipient_devices": recipient_devices,
+                "s3_key": s3_key,
+                "bucket": self.bucket_name,
+                "status": "initiated",
+                "created_at": datetime.now(timezone.utc),
+                "expires_at": datetime.now(timezone.utc) + timedelta(hours=72)
+            }
+            
+            await files_collection().insert_one(upload_record)
+            
+            _log("info", f"Media upload initiated: {media_id}", {
+                "media_id": media_id,
+                "user_id": sender_user_id,
+                "file_size": file_size,
+                "mime_type": detected_mime_type,
+                "s3_key": s3_key
+            })
+            
+            return {
+                "media_id": media_id,
+                "upload_url": f"/api/v1/files/upload-chunk?token={media_id}",
+                "s3_key": s3_key,
+                "file_size": file_size,
+                "mime_type": detected_mime_type,
+                "status": "initiated"
+            }
+            
+        except Exception as e:
+            _log("error", f"Failed to initiate media upload: {str(e)}", {
+                "user_id": sender_user_id,
+                "operation": "initiate_media_upload"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to initiate media upload"
+            )
+    
+    async def complete_media_upload(self, media_id: str) -> Dict[str, Any]:
+        """Complete media upload with proper S3 metadata"""
+        if not self.s3_client:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storage service not available"
+            )
+        
+        try:
+            # Get upload record
+            upload_record = await files_collection().find_one({"_id": media_id})
+            if not upload_record:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Upload not found"
+                )
+            
+            s3_key = upload_record.get("s3_key")
+            mime_type = upload_record.get("mime_type", "application/octet-stream")
+            
+            # Update S3 object metadata with proper content type
+            self.s3_client.copy_object(
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                CopySource={"Bucket": self.bucket_name, "Key": s3_key},
+                Metadata={
+                    "media_id": media_id,
+                    "original_filename": upload_record.get("filename", media_id),
+                    "uploaded_by": upload_record.get("sender_user_id"),
+                    "content_type": mime_type
+                },
+                ContentType=mime_type,
+                MetadataDirective='REPLACE'
+            )
+            
+            # Update database record
+            await files_collection().update_one(
+                {"_id": media_id},
+                {
+                    "$set": {
+                        "status": "completed",
+                        "completed_at": datetime.now(timezone.utc),
+                        "s3_metadata_updated": True
+                    }
+                }
+            )
+            
+            _log("info", f"Media upload completed: {media_id}", {
+                "media_id": media_id,
+                "s3_key": s3_key,
+                "mime_type": mime_type
+            })
+            
+            return {
+                "media_id": media_id,
+                "status": "completed",
+                "download_url": f"/api/v1/files/{media_id}/download"
+            }
+            
+        except Exception as e:
+            _log("error", f"Failed to complete media upload: {str(e)}", {
+                "media_id": media_id,
+                "operation": "complete_media_upload"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to complete media upload"
+            )
+
+
+# Global instance
+_media_lifecycle_service = None
+
+def get_media_lifecycle() -> MediaLifecycleService:
+    """Get or create media lifecycle service instance"""
+    global _media_lifecycle_service
+    if _media_lifecycle_service is None:
+        _media_lifecycle_service = MediaLifecycleService()
+    return _media_lifecycle_service

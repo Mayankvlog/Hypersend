@@ -162,6 +162,8 @@ services:
       # S3_BUCKET must be provided via .env file - no default to prevent exposure
       S3_BUCKET: ${S3_BUCKET}
       AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       # Leave unset to allow AWS SDK credential chain fallback (IAM role, instance profile, etc.)
       # Only set if explicitly provided in .env - handled by entrypoint script
       # Note: Credentials from AWS IAM roles will be used if keys above are not set
