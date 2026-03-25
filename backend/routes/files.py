@@ -384,16 +384,16 @@ def _maybe_await(obj):
 # Create missing dependency functions
 async def get_current_user_for_download(request: Request) -> str:
     """Get current user for download"""
-    return get_current_user_for_download_dependency(request)
+    return await get_current_user_for_download_dependency(request)
 
 async def get_current_user_for_upload(request: Request) -> str:
     """Get current user for upload"""
-    return get_current_user_for_download_dependency(request)
+    return await get_current_user_for_download_dependency(request)
 
 async def get_current_user_optional(request: Request) -> Optional[str]:
     """Get current user optionally"""
     try:
-        return get_current_user_for_download_dependency(request)
+        return await get_current_user_for_download_dependency(request)
     except:
         return None
 
@@ -417,16 +417,30 @@ except ImportError:
 
 import logging
 
-# Create download dependency
+# Create download dependency using proper FastAPI pattern
+from fastapi import Depends
+
 async def get_current_user_for_download_dependency(request: Request) -> str:
     """Get current user for download operations"""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Authentication required")
-    
-    token = auth_header.replace("Bearer ", "").strip()
-    token_data = decode_token(token)
-    return token_data.sub
+    try:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        token = auth_header.replace("Bearer ", "").strip()
+        token_data = decode_token(token)
+        return token_data.sub
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+# Create a proper dependency function
+def get_current_user_download_dependency():
+    """FastAPI dependency factory for download authentication"""
+    async def dependency(request: Request) -> str:
+        return await get_current_user_for_download_dependency(request)
+    return dependency
 
 
 async def _is_avatar_url_owner(file_id: str, current_user: str) -> bool:
@@ -478,7 +492,8 @@ async def _is_avatar_url_owner(file_id: str, current_user: str) -> bool:
 async def download_file(
     file_id: str,
     request: Request,
-    current_user: str = Depends(get_current_user_for_download_dependency),
+    device_id: Optional[str] = Query(None, description="Device ID (optional for web clients)"),
+    current_user: str = Depends(get_current_user_download_dependency()),
 ):
     """Generate presigned download URL for ephemeral storage"""
 
@@ -500,11 +515,32 @@ async def download_file(
         )
 
     try:
+        # Enhanced logging with device_id information
+        log_data = {
+            "user_id": current_user, 
+            "operation": "file_download", 
+            "file_id": file_id,
+            "device_id": device_id,
+            "has_device_id": device_id is not None,
+            "user_agent": request.headers.get("user-agent", "unknown"),
+            "dl_param": dl_param
+        }
+        
         _log(
             "info",
-            f"File download request",
-            {"user_id": current_user, "operation": "file_download", "file_id": file_id},
+            f"File download request - device_id {'present' if device_id else 'missing (web client)'}",
+            log_data,
         )
+
+        # Fallback logic for web clients without device_id
+        if not device_id:
+            # Generate a temporary device identifier for web clients
+            device_id = f"web_{current_user}_{int(time.time())}"
+            _log(
+                "info",
+                f"Generated fallback device_id for web client",
+                {"user_id": current_user, "file_id": file_id, "generated_device_id": device_id},
+            )
 
         # First try to find file in files_collection (regular chat files)
         import asyncio
@@ -723,13 +759,48 @@ async def download_file(
                 obj_metadata = s3_client.head_object(Bucket=bucket, Key=storage_key)
                 actual_size = obj_metadata.get("ContentLength", file_size)
 
-                # CRITICAL: Get MIME type from S3 metadata if available, otherwise use improved detection
+                # ENHANCED: Get MIME type from S3 metadata with improved fallback
                 s3_mime_type = obj_metadata.get("ContentType")
                 if s3_mime_type and s3_mime_type.lower() != "application/octet-stream":
                     actual_mime_type = s3_mime_type.lower().strip()
+                    _log(
+                        "info",
+                        f"Using S3 MIME type: {actual_mime_type}",
+                        {"user_id": current_user, "file_id": file_id, "source": "s3_metadata"},
+                    )
                 else:
-                    # Use improved MIME type detection
+                    # Use enhanced MIME type detection with multiple fallback strategies
                     actual_mime_type = get_mime_type(filename, mime_type)
+                    
+                    # Additional fallback for common web formats
+                    if not actual_mime_type or actual_mime_type == "application/octet-stream":
+                        if filename:
+                            filename_lower = filename.lower()
+                            if any(filename_lower.endswith(ext) for ext in ['.jpg', '.jpeg']):
+                                actual_mime_type = "image/jpeg"
+                            elif filename_lower.endswith('.png'):
+                                actual_mime_type = "image/png"
+                            elif filename_lower.endswith('.gif'):
+                                actual_mime_type = "image/gif"
+                            elif filename_lower.endswith('.webp'):
+                                actual_mime_type = "image/webp"
+                            elif filename_lower.endswith('.pdf'):
+                                actual_mime_type = "application/pdf"
+                            elif any(filename_lower.endswith(ext) for ext in ['.mp4', '.webm']):
+                                actual_mime_type = "video/mp4" if filename_lower.endswith('.mp4') else "video/webm"
+                            elif any(filename_lower.endswith(ext) for ext in ['.mp3', '.wav', '.ogg']):
+                                actual_mime_type = "audio/mpeg" if filename_lower.endswith('.mp3') else "audio/wav" if filename_lower.endswith('.wav') else "audio/ogg"
+                            elif filename_lower.endswith('.txt'):
+                                actual_mime_type = "text/plain"
+                            elif filename_lower.endswith('.json'):
+                                actual_mime_type = "application/json"
+                            
+                            if actual_mime_type != mime_type:
+                                _log(
+                                    "info",
+                                    f"Enhanced MIME type detection: {filename} -> {actual_mime_type}",
+                                    {"user_id": current_user, "file_id": file_id, "source": "enhanced_detection"},
+                                )
 
                 _log(
                     "info",
