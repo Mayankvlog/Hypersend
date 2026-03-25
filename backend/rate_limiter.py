@@ -1,116 +1,128 @@
-from typing import Dict
+from typing import Deque, Dict, Optional
 import time
 import threading
 import os
-import sys
-from collections import defaultdict
+from collections import defaultdict, deque
 
-# Centralized pytest detection - disable rate limiting completely during tests
+
 def _is_pytest_running() -> bool:
-    """Centralized pytest detection - used across all modules"""
+    """Check if pytest is running"""
     try:
         if os.getenv("PYTEST_CURRENT_TEST"):
-            return True
-        if "pytest" in sys.modules:
             return True
         return False
     except Exception:
         return False
 
-# Global flag to disable rate limiting during pytest
-PYTEST_RUNNING = _is_pytest_running()
+
+def _is_rate_limit_enabled() -> bool:
+    """Check if rate limiting is enabled (defaults to True)"""
+    # Always enable rate limiting - tests need to verify actual rate limiting behavior
+    # Use RATE_LIMIT_ENABLED env var to disable if needed for specific tests
+    return os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+
 
 class RateLimiter:
     def __init__(self, max_requests: int = 5, window_seconds: int = 300):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self.requests: Dict[str, list] = defaultdict(list)
+        # Per-identifier request timestamps (monotonic seconds)
+        self.requests: Dict[str, Deque[float]] = defaultdict(deque)
         self.lock = threading.Lock()
-    
+
     def is_allowed(self, identifier: str) -> bool:
-        """Check if identifier is allowed to make a request - DISABLED during pytest"""
-        # CRITICAL: Completely disable rate limiting during pytest
-        if PYTEST_RUNNING:
+        """Check if identifier is allowed to make a request.
+
+        Uses a fixed window with per-identifier isolation.
+        Thread-safe: all read/modify/write operations are performed under a lock.
+        """
+        # Disable rate limiting during pytest or when RATE_LIMIT_ENABLED is false
+        if not _is_rate_limit_enabled():
             return True
-            
-        """Check if identifier is allowed to make a request with enhanced thread safety"""
+
         try:
-            now = time.time()
-            
+            now = time.monotonic()
+
             with self.lock:
-                # ENHANCED: Atomic operations with proper cleanup
-                current_requests = self.requests.get(identifier, [])
-                
-                # Filter old requests atomically
-                cutoff_time = now - self.window_seconds
-                valid_requests = [
-                    req_time for req_time in current_requests
-                    if req_time > cutoff_time
-                ]
-                
-                # Check limit and update atomically
-                if len(valid_requests) >= self.max_requests:
-                    # Store filtered requests but don't add new one
-                    self.requests[identifier] = valid_requests
+                q = self.requests[identifier]
+                cutoff = now - self.window_seconds
+
+                # Evict old timestamps
+                while q and q[0] <= cutoff:
+                    q.popleft()
+
+                # Block only when the next request would exceed the limit
+                if len(q) >= self.max_requests:
                     return False
-                
-                # Add current request atomically
-                valid_requests.append(now)
-                self.requests[identifier] = valid_requests
+
+                q.append(now)
                 return True
-                
+
         except Exception as e:
             # Enhanced error handling with logging
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Rate limiter error: {e}")
             # Allow request on errors to prevent service disruption
             return True
-    
+
     def get_retry_after(self, identifier: str) -> int:
-        """Get seconds until next request is allowed - DISABLED during pytest"""
-        # CRITICAL: Completely disable rate limiting during pytest
-        if PYTEST_RUNNING:
+        """Get seconds until next request is allowed.
+
+        Returns a *non-zero* value when currently rate-limited.
+        """
+        # Disable rate limiting during pytest or when RATE_LIMIT_ENABLED is false
+        if not _is_rate_limit_enabled():
             return 0
-            
-        """Get seconds until next request is allowed"""
+
         try:
-            now = time.time()
+            now = time.monotonic()
             with self.lock:
-                current_requests = self.requests.get(identifier, [])
-                
-                if not current_requests:
+                q = self.requests.get(identifier)
+                if not q:
                     return 0
-                
-                # Clean old requests
-                valid_requests = [
-                    req_time for req_time in current_requests
-                    if now - req_time < self.window_seconds
-                ]
-                
-                # Find when rate limit will be reset
-                if len(valid_requests) >= self.max_requests:
-                    # After reaching limit, calculate reset time
-                    oldest_request = min(valid_requests)
-                    reset_time = oldest_request + self.window_seconds
-                    return max(0, int(reset_time - now))
-                
-                return 0
+
+                cutoff = now - self.window_seconds
+                while q and q[0] <= cutoff:
+                    q.popleft()
+
+                if len(q) < self.max_requests:
+                    return 0
+
+                # Oldest request determines when the window opens again
+                oldest = q[0]
+                reset_at = oldest + self.window_seconds
+                # Ensure non-zero for an active limit (minimum 1 second)
+                return max(1, int(reset_at - now + 0.999))
         except Exception as e:
             # Rate limiter errors should not crash the service
             return 0
-    
+
     def reset(self):
         """Reset the rate limiter by clearing all request history"""
         with self.lock:
             self.requests.clear()
 
+
 # Global rate limiters for different auth operations
-auth_rate_limiter = RateLimiter(max_requests=5, window_seconds=300)  # 5 requests per 5 minutes
-qr_code_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 requests per minute
-password_reset_limiter = RateLimiter(max_requests=3, window_seconds=900)  # 3 requests per 15 minutes
+auth_rate_limiter = RateLimiter(
+    max_requests=5, window_seconds=300
+)  # 5 requests per 5 minutes
+qr_code_limiter = RateLimiter(
+    max_requests=10, window_seconds=60
+)  # 10 requests per minute
+password_reset_limiter = RateLimiter(
+    max_requests=3, window_seconds=900
+)  # 3 requests per 15 minutes
 
 # Global rate limiters for file upload operations
-upload_init_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 requests per minute
-upload_chunk_limiter = RateLimiter(max_requests=60, window_seconds=60)  # 60 requests per minute
-upload_complete_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 requests per minute
+upload_init_limiter = RateLimiter(
+    max_requests=10, window_seconds=60
+)  # 10 requests per minute
+upload_chunk_limiter = RateLimiter(
+    max_requests=60, window_seconds=60
+)  # 60 requests per minute
+upload_complete_limiter = RateLimiter(
+    max_requests=10, window_seconds=60
+)  # 10 requests per minute

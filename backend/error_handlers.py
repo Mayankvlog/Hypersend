@@ -134,6 +134,14 @@ def create_success_response(
     # Add data if provided (except for 204 which should have no body)
     if data is not None and status_code != 204:
         response_data["data"] = data
+    elif status_code != 204:
+        # Always include data for envelope consistency
+        response_data["data"] = None
+
+    # Add detail (production-safe if not provided)
+    response_data["detail"] = detail or safe_messages.get(
+        status_code, "Internal server error. Please try again later."
+    )
 
     # Add request context if available
     if request:
@@ -343,6 +351,7 @@ def create_client_error_response(
         "status_code": status_code,
         "error": error_descriptions.get(status_code, "Client Error"),
         "detail": detail,
+        "data": None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "error_type": "client_error",
     }
@@ -356,6 +365,7 @@ def create_client_error_response(
     if field_errors:
         response_data["field_errors"] = field_errors
         response_data["error_count"] = len(field_errors)
+        response_data["data"] = {"field_errors": field_errors}
 
     # Add hints
     base_hints = default_hints.get(
@@ -387,7 +397,12 @@ def create_client_error_response(
     if status_code == 429:
         # Safely read from optional headers dict
         retry_after = (headers or {}).get("Retry-After", "60")
-        response_headers["Retry-After"] = retry_after
+        # Ensure non-zero retry after for active rate limits
+        try:
+            retry_after_int = int(str(retry_after))
+        except Exception:
+            retry_after_int = 60
+        response_headers["Retry-After"] = str(max(1, retry_after_int))
     elif status_code == 408:
         response_headers["Retry-After"] = "30"
 
@@ -470,6 +485,8 @@ def create_server_error_response(
         "status": "ERROR",
         "status_code": status_code,
         "error": error_descriptions.get(status_code, "Server Error"),
+        "detail": None,
+        "data": None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "error_type": "server_error",
     }
@@ -1233,7 +1250,8 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         error_description = type(exc).__name__
         # Ensure we preserve the original detail for test assertions
         original_detail = getattr(exc, "detail", "An error occurred")
-        detail = str(original_detail)
+        # Don't convert dict to string - preserve the structure for tests
+        detail = original_detail
     else:
         error_description = error_descriptions.get(
             status_code, f"HTTP Error {status_code}"
@@ -1320,6 +1338,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         "error": error_description,
         "detail": detail,  # Use sanitized detail
         "message": detail,  # Add message field for test compatibility
+        "data": None,  # Always include data key (even if None)
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "path": str(getattr(getattr(request, "url", None), "path", "")),
         "method": str(getattr(request, "method", "")),

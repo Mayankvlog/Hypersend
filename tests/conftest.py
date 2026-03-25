@@ -21,6 +21,7 @@ pytest_plugins = ("pytest_asyncio",)
 os.environ.setdefault("USE_MOCK_DB", "false")
 os.environ.setdefault("MONGODB_ATLAS_ENABLED", "true")
 os.environ["ENVIRONMENT"] = "test"
+os.environ["RATE_LIMIT_ENABLED"] = "true"  # Enable rate limiting for tests
 
 # Set longer timeout for HTTP requests to prevent connection pool issues
 os.environ["TEST_TIMEOUT"] = "60"

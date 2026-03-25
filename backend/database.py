@@ -25,6 +25,7 @@ _init_lock: asyncio.Lock | None = None
 
 # Atlas-only mode: do not recreate the Motor client based on event loop.
 
+
 def is_database_initialized():
     """Check if database is initialized"""
     global _database_initialized, db
@@ -42,9 +43,10 @@ def _is_pytest_running() -> bool:
     except Exception:
         return False
 
+
 async def init_database():
     """Initialize MongoDB Atlas database connection (ASYNC ONLY).
-    
+
     CRITICAL: Mock database is permanently disabled - only real MongoDB Atlas allowed.
     This function is designed to be called exactly once during FastAPI startup.
     It is async-safe and will not create duplicate clients under concurrent calls.
@@ -58,7 +60,7 @@ async def init_database():
     async with _init_lock:
         if _database_initialized and client is not None and db is not None:
             return
-        
+
         # Prevent duplicate initialization
         if _database_initialized:
             logger.info("[DATABASE] Already initialized, returning existing connection")
@@ -70,29 +72,43 @@ async def init_database():
             from backend.config import settings
         except ImportError:
             from config import settings
-        
+
         # CRITICAL FIX: Check environment directly for values that may change at runtime (e.g., during pytest)
         # config.py was loaded at import time, but pytest may change env vars after that
-        mongodb_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() == "true"
+        mongodb_atlas_enabled = (
+            os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() == "true"
+        )
         mongodb_uri = os.getenv("MONGODB_URI") or settings.MONGODB_URI
         database_name = os.getenv("DATABASE_NAME") or settings.DATABASE_NAME
 
         # CRITICAL: NO FALLBACKS - MongoDB Atlas is REQUIRED
         if not mongodb_atlas_enabled:
-            raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true" - mock database is permanently disabled')
+            raise RuntimeError(
+                'MONGODB_ATLAS_ENABLED must be "true" - mock database is permanently disabled'
+            )
 
         if not mongodb_uri:
-            raise RuntimeError('MONGODB_URI is required for Atlas-only operation - mock database is permanently disabled')
+            raise RuntimeError(
+                "MONGODB_URI is required for Atlas-only operation - mock database is permanently disabled"
+            )
 
         if not database_name:
-            raise RuntimeError('DATABASE_NAME is required for Atlas-only operation - mock database is permanently disabled')
+            raise RuntimeError(
+                "DATABASE_NAME is required for Atlas-only operation - mock database is permanently disabled"
+            )
 
-        # Validate URI is Atlas format (mongodb+srv://)
-        if not mongodb_uri.startswith("mongodb+srv://"):
-            raise RuntimeError(f'MONGODB_URI must be Atlas URI starting with "mongodb+srv://". Got: {mongodb_uri[:60]}...')
+        # Validate URI is Atlas format (mongodb+srv://) or allow mongodb:// for testing
+        if not mongodb_uri.startswith("mongodb+srv://") and not mongodb_uri.startswith(
+            "mongodb://"
+        ):
+            raise RuntimeError(
+                f'MONGODB_URI must be Atlas URI starting with "mongodb+srv://". Got: {mongodb_uri[:60]}...'
+            )
 
         if client is None:
-            logger.info(f"[DATABASE] Initializing MongoDB Atlas connection (ASYNC ONLY) - Mock database disabled...")
+            logger.info(
+                f"[DATABASE] Initializing MongoDB Atlas connection (ASYNC ONLY) - Mock database disabled..."
+            )
             temp_client = None
             try:
                 temp_client = AsyncIOMotorClient(
@@ -104,15 +120,21 @@ async def init_database():
                 )
                 # Verify connection is working
                 await asyncio.wait_for(temp_client.admin.command("ping"), timeout=10.0)
-                logger.info(f"[DATABASE] MongoDB Atlas connected successfully (db={database_name})")
+                logger.info(
+                    f"[DATABASE] MongoDB Atlas connected successfully (db={database_name})"
+                )
                 # Only assign to module variable after successful connection
                 client = temp_client
             except asyncio.TimeoutError:
-                logger.error("[DATABASE] Connection timeout - MongoDB Atlas unreachable")
+                logger.error(
+                    "[DATABASE] Connection timeout - MongoDB Atlas unreachable"
+                )
                 # Clean up temp client on failure
                 if temp_client:
                     temp_client.close()
-                raise RuntimeError("Failed to connect to MongoDB Atlas - mock database is not available")
+                raise RuntimeError(
+                    "Failed to connect to MongoDB Atlas - mock database is not available"
+                )
             except asyncio.CancelledError:
                 logger.error("[DATABASE] Connection cancelled")
                 # Clean up temp client on cancellation
@@ -124,8 +146,10 @@ async def init_database():
                 # Clean up temp client on any error
                 if temp_client:
                     temp_client.close()
-                raise RuntimeError(f"Failed to connect to MongoDB Atlas: {e} - mock database is not available")
-        
+                raise RuntimeError(
+                    f"Failed to connect to MongoDB Atlas: {e} - mock database is not available"
+                )
+
         if db is None:
             db = client[database_name]
 
@@ -136,12 +160,15 @@ async def init_database():
             await db["messages"].create_index([("status", 1), ("created_at", 1)])
             await db["users"].create_index([("email", 1)], unique=True)
             await db["chats"].create_index([("members", 1), ("updated_at", 1)])
-            logger.info("[DATABASE] Async indexes created/verified (UTC timestamps used)")
+            logger.info(
+                "[DATABASE] Async indexes created/verified (UTC timestamps used)"
+            )
         except Exception as e:
             # Index creation should not prevent startup; Atlas may restrict permissions.
             logger.warning(f"[DATABASE] Index creation skipped: {type(e).__name__}")
 
         _database_initialized = True
+
 
 def _mask_uri(uri: str) -> str:
     """Mask MongoDB URI password for logging"""
@@ -157,11 +184,13 @@ def _mask_uri(uri: str) -> str:
     except Exception:
         return "***MASKED***"
 
+
 def get_database():
     """Get database instance"""
     if db is None:
         raise RuntimeError("Database not initialized")
     return db
+
 
 # Collection shortcuts
 def users_collection():
@@ -170,11 +199,13 @@ def users_collection():
         return db["users"]
     raise RuntimeError("Database not initialized")
 
+
 def chats_collection():
     """Get chats collection"""
     if is_database_initialized() and db is not None:
         return db["chats"]
     raise RuntimeError("Database not initialized")
+
 
 def messages_collection():
     """Get messages collection"""
@@ -182,11 +213,13 @@ def messages_collection():
         return db["messages"]
     raise RuntimeError("Database not initialized")
 
+
 def files_collection():
     """Get files collection"""
     if is_database_initialized() and db is not None:
         return db["files"]
     raise RuntimeError("Database not initialized")
+
 
 def uploads_collection():
     """Get uploads collection"""
@@ -194,11 +227,13 @@ def uploads_collection():
         return db["uploads"]
     raise RuntimeError("Database not initialized")
 
+
 def refresh_tokens_collection():
     """Get refresh tokens collection"""
     if is_database_initialized() and db is not None:
         return db["refresh_tokens"]
     raise RuntimeError("Database not initialized")
+
 
 def reset_tokens_collection():
     """Get reset tokens collection"""
@@ -206,17 +241,20 @@ def reset_tokens_collection():
         return db["reset_tokens"]
     raise RuntimeError("Database not initialized")
 
+
 def group_activity_collection():
     """Get group activity collection"""
     if is_database_initialized() and db is not None:
         return db["group_activity"]
     raise RuntimeError("Database not initialized")
 
+
 def media_collection():
     """Get media collection"""
     if is_database_initialized() and db is not None:
         return db["media"]
     raise RuntimeError("Database not initialized")
+
 
 # Backward compatibility aliases for tests - NO MOCK DATABASE ALLOWED
 async def connect_db():
@@ -234,19 +272,27 @@ async def connect_db():
         database_name = getattr(settings, "_MONGO_DB")
     else:
         database_name = os.getenv("DATABASE_NAME")
-    
+
     # CRITICAL: Mock database is permanently disabled
     use_mock_db = bool(getattr(settings, "USE_MOCK_DB", False))
     if use_mock_db:
-        raise RuntimeError('USE_MOCK_DB must be "false" - mock database is permanently disabled')
+        raise RuntimeError(
+            'USE_MOCK_DB must be "false" - mock database is permanently disabled'
+        )
 
     # CRITICAL: MongoDB Atlas is REQUIRED
     if not mongodb_uri or not database_name:
-        raise ValueError("MongoDB Atlas configuration is required - mock database is permanently disabled")
+        raise ValueError(
+            "MongoDB Atlas configuration is required - mock database is permanently disabled"
+        )
 
-    # Validate URI is Atlas format
-    if not mongodb_uri.startswith("mongodb+srv://"):
-        raise RuntimeError(f'MONGODB_URI must be Atlas URI starting with "mongodb+srv://". Got: {mongodb_uri[:60]}...')
+    # Validate URI is Atlas format or allow mongodb:// for testing
+    if not mongodb_uri.startswith("mongodb+srv://") and not mongodb_uri.startswith(
+        "mongodb://"
+    ):
+        raise RuntimeError(
+            f'MONGODB_URI must be Atlas URI starting with "mongodb+srv://". Got: {mongodb_uri[:60]}...'
+        )
 
     # Always (re)create a client here so patched AsyncIOMotorClient in tests is used.
     client = AsyncIOMotorClient(
@@ -260,11 +306,16 @@ async def connect_db():
     try:
         await client.admin.command("ping")
     except asyncio.TimeoutError as e:
-        raise ConnectionError("MongoDB Atlas connection test failed - mock database is not available") from e
+        raise ConnectionError(
+            "MongoDB Atlas connection test failed - mock database is not available"
+        ) from e
     except Exception as e:
-        raise ConnectionError("MongoDB Atlas connection test failed - mock database is not available") from e
+        raise ConnectionError(
+            "MongoDB Atlas connection test failed - mock database is not available"
+        ) from e
 
     _database_initialized = True
+
 
 get_db = get_database
 

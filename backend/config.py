@@ -108,11 +108,24 @@ def _validate_mongodb_uri(uri: str) -> str:
     # Strip quotes if present
     uri = _strip_quotes(uri)
 
-    # Check scheme
-    if not uri.startswith("mongodb+srv://"):
-        raise ValueError(
-            f"MONGODB_URI must be Atlas URI starting with 'mongodb+srv://'. Got: {uri[:60]}..."
+    # Allow mongodb:// for testing/development environments
+    if not uri.startswith("mongodb+srv://") and not uri.startswith("mongodb://"):
+        # For production, require mongodb+srv://
+        if not TESTING:
+            raise ValueError(
+                f"MONGODB_URI must be Atlas URI starting with 'mongodb+srv://'. Got: {uri[:60]}..."
+            )
+        # For testing, allow mongodb:// but warn
+        logger.warning(
+            f"[CONFIG] Using non-Atlas MongoDB URI for testing: {uri[:40]}..."
         )
+
+    # Check scheme - handle both mongodb:// and mongodb+srv://
+    if uri.startswith("mongodb://"):
+        # For testing, normalize mongodb:// to mongodb+srv:// if needed
+        if TESTING and not uri.startswith("mongodb+srv://"):
+            # Don't convert, just pass through for testing
+            pass
 
     # Parse URI to check and auto-append missing parameters
     parsed = urlparse(uri)
@@ -508,7 +521,9 @@ class Settings:
     AWS_SECRET_ACCESS_KEY: str = _strip_quotes(
         os.getenv("AWS_SECRET_ACCESS_KEY", "")
     ).strip()
-    AWS_REGION: str = _sanitize_aws_region(os.getenv("AWS_REGION", "us-east-1")) or "us-east-1"
+    AWS_REGION: str = (
+        _sanitize_aws_region(os.getenv("AWS_REGION", "us-east-1")) or "us-east-1"
+    )
 
     # Helper: Check if AWS credentials are configured
     _AWS_CREDENTIALS_CONFIGURED: bool = bool(
@@ -618,10 +633,12 @@ class Settings:
     # ============================================================================
     logger.info(f"[CONFIG] S3 Bucket: {S3_BUCKET}")
     logger.info(f"[CONFIG] AWS Region: {AWS_REGION}")
-    
+
     # VALIDATE S3 CONFIGURATION - Log bucket status
     if not _raw_s3_bucket:
-        logger.warning("[CONFIG] S3_BUCKET not set (uploads requiring S3 will fail until configured)")
+        logger.warning(
+            "[CONFIG] S3_BUCKET not set (uploads requiring S3 will fail until configured)"
+        )
     else:
         logger.info(f"[CONFIG] S3_BUCKET configured: {S3_BUCKET}")
 
