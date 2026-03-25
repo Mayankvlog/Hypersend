@@ -213,8 +213,9 @@ class Settings:
     # DEVELOPMENT CONFIGURATION
     # ============================================================================
 
-    # Mock database flag for testing (defaults to False for Atlas-only mode)
-    USE_MOCK_DB: bool = os.getenv("USE_MOCK_DB", "false").lower() == "true"
+    # CRITICAL: Mock database is PERMANENTLY DISABLED for production testing
+    # Force real MongoDB Atlas connection even during pytest
+    USE_MOCK_DB: bool = False  # Always False - no exceptions for testing
 
     # ============================================================================
     # SECURITY CONFIGURATION

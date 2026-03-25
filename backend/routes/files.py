@@ -387,17 +387,21 @@ def _generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> st
 
 
 def _safe_collection(collection_name: str):
-    """Safe collection access for tests"""
+    """Safe collection access - CRITICAL: No mock database allowed"""
+    # CRITICAL: Mock database is permanently disabled - always return real collection
     try:
-        return uploads_collection()
-    except Exception:
-        # Return mock collection for tests
-        mock_collection = MagicMock()
-        mock_collection.insert_one = MagicMock()
-        mock_collection.find_one = MagicMock()
-        mock_collection.update_one = MagicMock()
-        mock_collection.delete_one = MagicMock()
-        return mock_collection
+        if collection_name == "uploads":
+            return uploads_collection()
+        elif collection_name == "files":
+            return files_collection()
+        elif collection_name == "users":
+            return users_collection()
+        else:
+            # Default to uploads collection
+            return uploads_collection()
+    except Exception as e:
+        # CRITICAL: No fallback to mock - raise proper error
+        raise RuntimeError(f"Database collection '{collection_name}' not available - mock database is disabled: {e}")
 
 
 def _delete_s3_object(bucket: str, key: str):
@@ -543,19 +547,22 @@ async def _save_chunk_to_disk(upload_id: str, chunk_index: int, data: bytes) -> 
     return True
 
 
-def _safe_collection(collection_name: str):
-    """Safe collection access for tests"""
+def _safe_collection_alt(collection_name: str):
+    """Safe collection access - CRITICAL: No mock database allowed"""
+    # CRITICAL: Mock database is permanently disabled - always return real collection
     try:
-        return uploads_collection()
-    except Exception:
-        from unittest.mock import MagicMock
-
-        mock_collection = MagicMock()
-        mock_collection.insert_one = MagicMock()
-        mock_collection.find_one = MagicMock()
-        mock_collection.update_one = MagicMock()
-        mock_collection.delete_one = MagicMock()
-        return mock_collection
+        if collection_name == "uploads":
+            return uploads_collection()
+        elif collection_name == "files":
+            return files_collection()
+        elif collection_name == "users":
+            return users_collection()
+        else:
+            # Default to uploads collection
+            return uploads_collection()
+    except Exception as e:
+        # CRITICAL: No fallback to mock - raise proper error
+        raise RuntimeError(f"Database collection '{collection_name}' not available - mock database is disabled: {e}")
 
 
 def _generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
@@ -692,25 +699,25 @@ async def initialize_upload(
             if any(pattern in filename for pattern in dangerous_patterns):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid filename: contains dangerous characters",
+                    detail="Invalid filename",
                 )
 
         # Validate required fields
         if not body.get("file_name"):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="filename is required"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Missing required fields"
             )
 
         # Validate file_size
         file_size = body.get("file_size", 0)
         if file_size is None or file_size <= 0:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file size"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file_size"
             )
         if file_size > 15 * 1024 * 1024 * 1024:  # 15GB max
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File size exceeds maximum allowed size",
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Payload too large",
             )
 
         # Validate chat_id - must be valid format if provided
@@ -825,7 +832,7 @@ async def upload_chunk(
         # Validate upload_id - reject null/empty/invalid values
         if not upload_id or upload_id == "null" or upload_id == "undefined" or upload_id.strip() == "":
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Invalid upload_id"
             )
         
@@ -886,7 +893,7 @@ async def complete_upload(
         # Validate upload_id
         if not upload_id or upload_id == "null" or upload_id == "undefined" or upload_id.strip() == "":
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Invalid upload_id"
             )
         
@@ -4114,14 +4121,7 @@ async def init_photo_video_upload(
     if not is_valid_mime or content_type.strip() == "":
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail={
-                "status": "ERROR",
-                "message": "Invalid MIME type format",
-                "data": {
-                    "error_code": "INVALID_MIME_TYPE",
-                    "provided_mime_type": content_type,
-                },
-            },
+            detail="Invalid MIME type",
         )
 
     # Set validated and sanitized values back to body

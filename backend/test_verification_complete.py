@@ -17,7 +17,7 @@ import json
 import asyncio
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 # Add backend to path
 import sys

@@ -44,7 +44,8 @@ def _is_pytest_running() -> bool:
 
 async def init_database():
     """Initialize MongoDB Atlas database connection (ASYNC ONLY).
-
+    
+    CRITICAL: Mock database is permanently disabled - only real MongoDB Atlas allowed.
     This function is designed to be called exactly once during FastAPI startup.
     It is async-safe and will not create duplicate clients under concurrent calls.
     CRITICAL: Uses UTC timestamps only via datetime.utcnow()
@@ -63,6 +64,7 @@ async def init_database():
             logger.info("[DATABASE] Already initialized, returning existing connection")
             return
 
+        # CRITICAL: NO MOCK DATABASE ALLOWED - Force MongoDB Atlas only
         # Import settings to get centralized config (already validated by config.py)
         try:
             from backend.config import settings
@@ -75,17 +77,22 @@ async def init_database():
         mongodb_uri = os.getenv("MONGODB_URI") or settings.MONGODB_URI
         database_name = os.getenv("DATABASE_NAME") or settings.DATABASE_NAME
 
+        # CRITICAL: NO FALLBACKS - MongoDB Atlas is REQUIRED
         if not mongodb_atlas_enabled:
-            raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true"')
+            raise RuntimeError('MONGODB_ATLAS_ENABLED must be "true" - mock database is permanently disabled')
 
         if not mongodb_uri:
-            raise RuntimeError('MONGODB_URI is required for Atlas-only operation')
+            raise RuntimeError('MONGODB_URI is required for Atlas-only operation - mock database is permanently disabled')
 
         if not database_name:
-            raise RuntimeError('DATABASE_NAME is required for Atlas-only operation')
+            raise RuntimeError('DATABASE_NAME is required for Atlas-only operation - mock database is permanently disabled')
+
+        # Validate URI is Atlas format (mongodb+srv://)
+        if not mongodb_uri.startswith("mongodb+srv://"):
+            raise RuntimeError(f'MONGODB_URI must be Atlas URI starting with "mongodb+srv://". Got: {mongodb_uri[:60]}...')
 
         if client is None:
-            logger.info(f"[DATABASE] Initializing MongoDB Atlas connection (ASYNC ONLY)...")
+            logger.info(f"[DATABASE] Initializing MongoDB Atlas connection (ASYNC ONLY) - Mock database disabled...")
             temp_client = None
             try:
                 temp_client = AsyncIOMotorClient(
@@ -105,7 +112,7 @@ async def init_database():
                 # Clean up temp client on failure
                 if temp_client:
                     temp_client.close()
-                raise RuntimeError("Failed to connect to MongoDB Atlas")
+                raise RuntimeError("Failed to connect to MongoDB Atlas - mock database is not available")
             except asyncio.CancelledError:
                 logger.error("[DATABASE] Connection cancelled")
                 # Clean up temp client on cancellation
@@ -117,7 +124,7 @@ async def init_database():
                 # Clean up temp client on any error
                 if temp_client:
                     temp_client.close()
-                raise
+                raise RuntimeError(f"Failed to connect to MongoDB Atlas: {e} - mock database is not available")
         
         if db is None:
             db = client[database_name]
@@ -211,14 +218,13 @@ def media_collection():
         return db["media"]
     raise RuntimeError("Database not initialized")
 
-# Backward compatibility aliases for tests
+# Backward compatibility aliases for tests - NO MOCK DATABASE ALLOWED
 async def connect_db():
-    # Legacy wrapper used by some test suites that patch `database.settings` and
-    # `database.AsyncIOMotorClient`. Keep behavior predictable for those tests
-    # without changing the Atlas-only guarantees enforced by `init_database()`.
+    # Legacy wrapper used by some test suites - ENFORCES MongoDB Atlas only
+    # Mock database is permanently disabled - only real Atlas connections allowed
     global client, db, _database_initialized
 
-    # If the attribute exists on `settings` (even if None), honor it.
+    # If attribute exists on `settings` (even if None), honor it.
     if hasattr(settings, "MONGODB_URI"):
         mongodb_uri = getattr(settings, "MONGODB_URI")
     else:
@@ -228,13 +234,19 @@ async def connect_db():
         database_name = getattr(settings, "_MONGO_DB")
     else:
         database_name = os.getenv("DATABASE_NAME")
+    
+    # CRITICAL: Mock database is permanently disabled
     use_mock_db = bool(getattr(settings, "USE_MOCK_DB", False))
-
     if use_mock_db:
-        raise RuntimeError('USE_MOCK_DB must be "false" for Atlas-only operation')
+        raise RuntimeError('USE_MOCK_DB must be "false" - mock database is permanently disabled')
 
+    # CRITICAL: MongoDB Atlas is REQUIRED
     if not mongodb_uri or not database_name:
-        raise ValueError("Database configuration is invalid")
+        raise ValueError("MongoDB Atlas configuration is required - mock database is permanently disabled")
+
+    # Validate URI is Atlas format
+    if not mongodb_uri.startswith("mongodb+srv://"):
+        raise RuntimeError(f'MONGODB_URI must be Atlas URI starting with "mongodb+srv://". Got: {mongodb_uri[:60]}...')
 
     # Always (re)create a client here so patched AsyncIOMotorClient in tests is used.
     client = AsyncIOMotorClient(
@@ -248,9 +260,9 @@ async def connect_db():
     try:
         await client.admin.command("ping")
     except asyncio.TimeoutError as e:
-        raise ConnectionError("Database connection test failed") from e
+        raise ConnectionError("MongoDB Atlas connection test failed - mock database is not available") from e
     except Exception as e:
-        raise ConnectionError("Database connection test failed") from e
+        raise ConnectionError("MongoDB Atlas connection test failed - mock database is not available") from e
 
     _database_initialized = True
 
