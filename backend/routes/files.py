@@ -709,7 +709,7 @@ async def initialize_upload(
             )
         if file_size > 15 * 1024 * 1024 * 1024:  # 15GB max
             raise HTTPException(
-                status_code=status.HTTP_413_PAYLOAD_TOO_LARGE,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="File size exceeds maximum allowed size",
             )
 
@@ -1032,7 +1032,7 @@ def handle_chunk_size_error(
     chunk_size = settings.CHUNK_SIZE  # Use configured chunk size
 
     return HTTPException(
-        status_code=status.HTTP_413_PAYLOAD_TOO_LARGE,
+        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
         detail={
             "error": "Chunk too large",
             "actual_size_mb": round(actual_size_mb, 2),

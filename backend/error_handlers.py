@@ -1319,6 +1319,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         "status_code": status_code,
         "error": error_description,
         "detail": detail,  # Use sanitized detail
+        "message": detail,  # Add message field for test compatibility
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "path": str(getattr(getattr(request, "url", None), "path", "")),
         "method": str(getattr(request, "method", "")),
@@ -1330,6 +1331,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         msg = detail_dict.get("message") or detail_dict.get("detail")
         if msg:
             response_data["detail"] = str(msg)
+            response_data["message"] = str(msg)  # Update message field too
         # Merge remaining keys
         for k, v in detail_dict.items():
             if k not in ("message", "detail"):
