@@ -177,7 +177,7 @@ class TestFileDownloadResponseFix:
             test_file_id = str(ObjectId())
             test_user_id = str(ObjectId())
             
-            with patch("backend.routes.files.get_current_user_for_download") as mock_get_user:
+            with patch("backend.routes.files.get_current_user_for_download_dependency") as mock_get_user:
                 mock_get_user.return_value = test_user_id
                 
                 with patch("backend.routes.files.files_collection") as mock_files:
@@ -217,7 +217,7 @@ class TestFileDownloadResponseFix:
             test_file_id = str(ObjectId())
             test_user_id = str(ObjectId())
             
-            with patch("backend.routes.files.get_current_user_for_download") as mock_get_user:
+            with patch("backend.routes.files.get_current_user_for_download_dependency") as mock_get_user:
                 mock_get_user.return_value = test_user_id
                 
                 with patch("backend.routes.files.files_collection") as mock_files:

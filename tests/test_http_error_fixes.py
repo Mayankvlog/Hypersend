@@ -402,10 +402,10 @@ class TestFileUploadFlow:
     @pytest.mark.asyncio
     async def test_chunk_upload_rate_limiting(self):
         """Test chunk upload rate limiting"""
-        from routes.files import upload_chunk
+        from backend.routes.files import upload_chunk
         
         # Mock rate limiter to return False
-        with patch('routes.files.upload_chunk_limiter') as mock_limiter:
+        with patch('backend.routes.files.upload_chunk_limiter') as mock_limiter:
             mock_limiter.is_allowed.return_value = False
             
             request = MagicMock()
@@ -423,10 +423,10 @@ class TestFileUploadFlow:
     @pytest.mark.asyncio
     async def test_complete_upload_rate_limiting(self):
         """Test complete upload rate limiting"""
-        from routes.files import complete_upload
+        from backend.routes.files import complete_upload
         
         # Mock rate limiter to return False
-        with patch('routes.files.upload_complete_limiter') as mock_limiter:
+        with patch('backend.routes.files.upload_complete_limiter') as mock_limiter:
             mock_limiter.is_allowed.return_value = False
             
             request = MagicMock()

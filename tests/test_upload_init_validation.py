@@ -153,13 +153,11 @@ class TestUploadInitValidation:
             # Any other format
             print(f"INFO: Other error format: {data}")
 
-    @patch("backend.routes.files.get_database")
-    def test_invalid_chat_id(self, mock_get_database):
+    @patch("backend.routes.files.uploads_collection")
+    def test_invalid_chat_id(self, mock_uploads_collection):
         """Test upload with invalid chat_id"""
-        mock_db = MagicMock()
         mock_collection = MagicMock()
-        mock_db.__getitem__.return_value = mock_collection
-        mock_get_database.return_value = mock_db
+        mock_uploads_collection.return_value = mock_collection
 
         invalid_payload = {
             "file_name": "test.jpg",

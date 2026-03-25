@@ -117,11 +117,11 @@ class TestProductionSafety:
     def test_upload_init_invalid_chat_id(self, client, valid_upload_data):
         """Test upload initialization with invalid chat_id"""
         invalid_data = valid_upload_data.copy()
-        invalid_data["chat_id"] = "invalid_objectid"
+        invalid_data["chat_id"] = "ab"  # Too short - should fail validation
         
         response = client.post("/api/v1/files/init", json=invalid_data)
-        # Accept 503 when S3 is not configured, or 400 for validation errors
-        assert response.status_code in [503, 400]
+        # Should fail with 400 for validation error
+        assert response.status_code == 400
         data = response.json()
         # Handle both old and new error response formats
         if "message" in data:
