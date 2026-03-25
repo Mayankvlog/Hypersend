@@ -451,17 +451,10 @@ class TestFileDownloadAuthentication:
 
         sig = inspect.signature(get_current_user_for_download)
 
-        # Should accept request and token
+        # Should accept request only (auth from Authorization header)
         params = sig.parameters
         assert "request" in params, "Should have 'request' parameter"
-        assert "token" in params, "Should have 'token' parameter"
-
-        # The token parameter should be optional (from Query)
-        token_param = params["token"]
-        # Query parameters are optional by default
-        assert (
-            token_param.default is not inspect.Parameter.empty
-        ), "token should have a default value (Query dependency)"
+        assert len(params) == 1, "Should only have 'request' parameter"
 
 
 class TestFileDownloadUIFix:

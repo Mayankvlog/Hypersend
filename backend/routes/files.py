@@ -526,6 +526,12 @@ async def download_file(
             "dl_param": dl_param
         }
         
+        # Log incoming headers for debugging auth issues
+        auth_header = request.headers.get("Authorization")
+        log_data["auth_header_present"] = auth_header is not None
+        if auth_header:
+            log_data["auth_header_prefix"] = auth_header[:20]
+        
         _log(
             "info",
             f"File download request - device_id {'present' if device_id else 'missing (web client)'}",
@@ -3249,13 +3255,19 @@ async def get_upload_progress(
 # WHATSAPP-STYLE ATTACHMENT ENDPOINTS
 @attach_router.post("/photos-videos/init")
 async def init_photo_video_upload(
-    request: Request, current_user: Optional[str] = Depends(get_current_user_for_upload)
+    request: Request, current_user: str = Depends(get_current_user_download_dependency())
 ):
     """Initialize photo/video upload - Uses /init endpoint under the hood"""
     import traceback
     
     # Log when route is hit
-    logger.info(f"[ATTACH] POST /photos-videos/init endpoint hit by user: {current_user or 'anonymous'}")
+    logger.info(f"[ATTACH] POST /photos-videos/init endpoint hit by user: {current_user}")
+    
+    # Log incoming headers for debugging auth issues
+    auth_header = request.headers.get("Authorization")
+    logger.info(f"[ATTACH] Authorization header: {'present' if auth_header else 'missing'}")
+    if auth_header:
+        logger.info(f"[ATTACH] Authorization header prefix: {auth_header[:20]}...")
 
     try:
         body = await request.json()

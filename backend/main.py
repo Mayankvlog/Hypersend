@@ -2164,6 +2164,10 @@ app.add_middleware(
         "Content-Language",
         "X-Access-Token",
         "X-Skip-Auth-Interceptor",
+        "X-Device-ID",
+        "X-File-ID",
+        "Cache-Control",
+        "Pragma",
     ],
     expose_headers=[
         "Content-Disposition",
@@ -2173,6 +2177,8 @@ app.add_middleware(
         "Access-Control-Allow-Headers",
         "Content-Length",
         "Set-Cookie",
+        "X-Auth-Token",
+        "X-Device-ID",
     ],
     max_age=3600,  # Cache preflight requests for 1 hour
 )
