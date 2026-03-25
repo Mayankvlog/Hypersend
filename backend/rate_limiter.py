@@ -82,3 +82,8 @@ class RateLimiter:
 auth_rate_limiter = RateLimiter(max_requests=5, window_seconds=300)  # 5 requests per 5 minutes
 qr_code_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 requests per minute
 password_reset_limiter = RateLimiter(max_requests=3, window_seconds=900)  # 3 requests per 15 minutes
+
+# Global rate limiters for file upload operations
+upload_init_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 requests per minute
+upload_chunk_limiter = RateLimiter(max_requests=60, window_seconds=60)  # 60 requests per minute
+upload_complete_limiter = RateLimiter(max_requests=10, window_seconds=60)  # 10 requests per minute

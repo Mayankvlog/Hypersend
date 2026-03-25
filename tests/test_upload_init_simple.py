@@ -30,11 +30,11 @@ class TestUploadInitSimple:
             "mime_type": "image/jpeg"
         }
         
-        with patch('routes.files._get_s3_client') as mock_s3:
+        with patch('backend.routes.files._get_s3_client') as mock_s3:
             mock_s3.return_value = MagicMock()
-            with patch('routes.files._generate_presigned_url') as mock_presign:
+            with patch('backend.routes.files._generate_presigned_url') as mock_presign:
                 mock_presign.return_value = "https://mock-s3.test/upload-url"
-                with patch('routes.files._safe_collection') as mock_collection:
+                with patch('backend.routes.files._safe_collection') as mock_collection:
                     mock_collection.return_value.insert_one = MagicMock()
                     
                     response = client.post(
@@ -137,7 +137,7 @@ class TestUploadInitSimple:
             "mime_type": "image/jpeg"
         }
         
-        with patch('routes.files._get_s3_client') as mock_s3:
+        with patch('backend.routes.files._get_s3_client') as mock_s3:
             mock_s3.return_value = None  # S3 not configured
             
             response = client.post(
@@ -161,11 +161,11 @@ class TestUploadInitSimple:
             "mime_type": "image/jpeg"
         }
         
-        with patch('routes.files._get_s3_client') as mock_s3:
+        with patch('backend.routes.files._get_s3_client') as mock_s3:
             mock_s3.return_value = MagicMock()
-            with patch('routes.files._generate_presigned_url') as mock_presign:
+            with patch('backend.routes.files._generate_presigned_url') as mock_presign:
                 mock_presign.return_value = "https://mock-s3.test/upload-url"
-                with patch('routes.files._safe_collection') as mock_collection:
+                with patch('backend.routes.files._safe_collection') as mock_collection:
                     mock_collection.return_value.insert_one = MagicMock()
                     
                     response = client.post(
@@ -189,11 +189,11 @@ class TestUploadInitSimple:
             "mime": "image/jpeg"  # Legacy field name
         }
         
-        with patch('routes.files._get_s3_client') as mock_s3:
+        with patch('backend.routes.files._get_s3_client') as mock_s3:
             mock_s3.return_value = MagicMock()
-            with patch('routes.files._generate_presigned_url') as mock_presign:
+            with patch('backend.routes.files._generate_presigned_url') as mock_presign:
                 mock_presign.return_value = "https://mock-s3.test/upload-url"
-                with patch('routes.files._safe_collection') as mock_collection:
+                with patch('backend.routes.files._safe_collection') as mock_collection:
                     mock_collection.return_value.insert_one = MagicMock()
                     
                     response = client.post(
